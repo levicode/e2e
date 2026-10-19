@@ -1,0 +1,10 @@
+{
+  "name": "agent-browser-packaged-consumer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "list": "e2e list --reporter json",
+    "smoke": "node run-smoke.ts"
+  }
+}

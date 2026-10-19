@@ -1260,7 +1260,42 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      // Unlike normal auth login, no-navigation mode must never launch a
      // browser or manufacture an about:blank page to satisfy the command.
      let auth_login_no_navigate = action == "auth_login"
-@@ -3005,6 +3176,7 @@
+@@ -2729,9 +2900,13 @@
+         server.broadcast_command(action, &id, cmd_for_broadcast);
+     }
+ 
+-    // Drain and apply pending CDP events (console, errors, screencast frames, target lifecycle)
+-    if let Err(e) = state.drain_cdp_events_background().await {
+-        return error_response(&id, &super::browser::to_ai_friendly_error(&e));
++    // Shutdown does not need a live page and must not attach/probe/resume
++    // queued targets on its way out. Scope validation above still runs first.
++    let scoped_close = action == "close" && state.cdp_scope.is_some();
++    if !scoped_close {
++        if let Err(e) = state.drain_cdp_events_background().await {
++            return error_response(&id, &super::browser::to_ai_friendly_error(&e));
++        }
+     }
+ 
+     // Keep element resolution in sync with the `frame` selection (see
+@@ -2877,6 +3052,17 @@
+         }
+     }
+ 
++    // Keep the normal action-policy and confirmation checks above, but no
++    // restore transitions or event re-drains may resurrect a closing scope.
++    if scoped_close {
++        let mut response = match handle_close(state).await {
++            Ok(data) => success_response(&id, data),
++            Err(error) => error_response(&id, &super::browser::to_ai_friendly_error(&error)),
++        };
++        inject_lifecycle(&mut response, state, false, false, false);
++        return response;
++    }
++
+     let restore_transition_closed_browser = match async {
+         if auth_login_no_navigate && command_changes_restore_key(cmd, state) {
+             return Err(
+@@ -3005,6 +3191,7 @@
          "evaluate" => handle_evaluate(cmd, state).await,
          "close" => handle_close(state).await,
          "snapshot" => handle_snapshot(cmd, state).await,
@@ -1268,7 +1303,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          "screenshot" => handle_screenshot(cmd, state).await,
          "click" => handle_click(cmd, state).await,
          "dblclick" => handle_dblclick(cmd, state).await,
-@@ -3160,6 +3332,7 @@
+@@ -3160,6 +3347,7 @@
          "keydown" => handle_keydown(cmd, state).await,
          "keyup" => handle_keyup(cmd, state).await,
          "inserttext" => handle_inserttext(cmd, state).await,
@@ -1276,7 +1311,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          "mousemove" => handle_mousemove(cmd, state).await,
          "mousedown" => handle_mousedown(cmd, state).await,
          "mouseup" => handle_mouseup(cmd, state).await,
-@@ -3320,7 +3493,26 @@
+@@ -3320,7 +3508,26 @@
  /// re-bound to the persisted target, entered the `tab_gone` state (pin-tab,
  /// bound tab dead), or bound to a fresh tab (pin-tab, no prior binding).
  /// Returns false when no binding existed and the legacy selection stands.
@@ -1303,7 +1338,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let session = state.session_id.clone();
      // A corrupt or unreadable binding file is a recovery error, not a
      // first-time session: it may have carried pinned=true, and silently
-@@ -4073,6 +4265,9 @@
+@@ -4073,6 +4280,9 @@
      }
      let engine = env::var("AGENT_BROWSER_ENGINE").ok();
      let cdp = env::var("AGENT_BROWSER_CDP").ok();
@@ -1313,7 +1348,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let auto_connect = env::var("AGENT_BROWSER_AUTO_CONNECT").is_ok();
      let provider = env::var("AGENT_BROWSER_PROVIDER").ok();
      validate_ca_cert_launch_mode(
-@@ -4115,7 +4310,7 @@
+@@ -4115,7 +4325,7 @@
              restore_key: restore_key.as_deref(),
              storage_state,
          })?;
@@ -1322,7 +1357,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          let hash = launch_hash(
              &options,
              &allowed_domains,
-@@ -4132,12 +4327,13 @@
+@@ -4132,12 +4342,13 @@
          state.subscribe_to_browser_events();
          state.start_fetch_handler();
          state.start_dialog_handler();
@@ -1337,7 +1372,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          return Ok(());
      }
  
-@@ -4554,6 +4750,11 @@
+@@ -4554,6 +4765,11 @@
  }
  
  async fn try_auto_restore_state(state: &mut DaemonState) {
@@ -1349,7 +1384,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let session_name = match state.session_name.as_deref() {
          Some(n) if !n.is_empty() => n.to_string(),
          _ => {
-@@ -4719,6 +4920,11 @@
+@@ -4719,6 +4935,11 @@
  pub(crate) async fn auto_save_restore_state(
      state: &mut DaemonState,
  ) -> Result<Option<String>, String> {
@@ -1361,7 +1396,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      validate_restore_if_pending(state).await;
  
      let Some(session_name) = state.session_name.clone() else {
-@@ -4883,6 +5089,9 @@
+@@ -4883,6 +5104,9 @@
          .unwrap_or_else(|| !headed_from_env());
      let cdp_url = cmd.get("cdpUrl").and_then(|v| v.as_str());
      let cdp_port = cmd.get("cdpPort").and_then(|v| v.as_u64());
@@ -1371,7 +1406,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let auto_connect = cmd
          .get("autoConnect")
          .and_then(|v| v.as_bool())
-@@ -4901,6 +5110,9 @@
+@@ -4901,6 +5125,9 @@
          });
      let storage_state = cmd.get("storageState").and_then(|v| v.as_str());
      let storage_state_owned = storage_state.map(|s| s.to_string());
@@ -1381,7 +1416,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let engine = cmd
          .get("engine")
          .and_then(|v| v.as_str())
-@@ -5136,11 +5348,12 @@
+@@ -5136,11 +5363,12 @@
  
      if let Some(url) = cdp_url {
          state.reset_input_state();
@@ -1395,7 +1430,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          apply_tab_binding_on_attach_or_rollback(state).await?;
          state.update_stream_client().await;
          install_network_controls_or_close(state, has_proxy_auth).await?;
-@@ -5153,11 +5366,12 @@
+@@ -5153,11 +5381,12 @@
  
      if let Some(port) = cdp_port {
          state.reset_input_state();
@@ -1409,7 +1444,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          apply_tab_binding_on_attach_or_rollback(state).await?;
          state.update_stream_client().await;
          install_network_controls_or_close(state, has_proxy_auth).await?;
-@@ -5716,6 +5930,91 @@
+@@ -5716,6 +5945,91 @@
  // Phase 2 handlers
  // ---------------------------------------------------------------------------
  
@@ -1501,7 +1536,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
  async fn handle_snapshot(cmd: &Value, state: &mut DaemonState) -> Result<Value, String> {
      let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
      let session_id = mgr.active_session_id()?.to_string();
-@@ -5738,15 +6037,17 @@
+@@ -5738,15 +6052,17 @@
              .and_then(|v| v.as_u64())
              .map(|d| d as usize),
          urls: cmd.get("urls").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -1521,7 +1556,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          state.active_frame_id.as_deref(),
          &state.iframe_sessions,
      )
-@@ -5754,19 +6055,22 @@
+@@ -5754,19 +6070,22 @@
  
      let url = mgr.get_url().await.unwrap_or_default();
  
@@ -1547,7 +1582,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let mut removed_refs = previous_refs
          .difference(&current_refs)
          .map(|ref_id| format!("@{}", ref_id))
-@@ -5780,7 +6084,7 @@
+@@ -5780,7 +6099,7 @@
  
      if !cmd.get("delta").and_then(Value::as_bool).unwrap_or(false) {
          return Ok(
@@ -1556,7 +1591,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          );
      }
  
-@@ -5790,6 +6094,7 @@
+@@ -5790,6 +6109,7 @@
          "compact": options.compact,
          "depth": options.depth,
          "urls": options.urls,
@@ -1564,7 +1599,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }))
      .unwrap_or_default();
      let previous = state.snapshot_revisions.get(&session_id).cloned();
-@@ -6288,13 +6593,14 @@
+@@ -6288,13 +6608,14 @@
          .await?;
      }
  
@@ -1580,7 +1615,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -6319,11 +6625,14 @@
+@@ -6319,11 +6640,14 @@
          .and_then(|v| v.as_str())
          .ok_or("Missing 'selector' parameter")?;
  
@@ -1596,7 +1631,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -6538,6 +6847,7 @@
+@@ -6538,6 +6862,7 @@
          &state.ref_map,
          selector,
          &values,
@@ -1604,7 +1639,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -7584,6 +7894,11 @@
+@@ -7584,6 +7909,11 @@
          let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
          mgr.resolve_tab_ref(&tab_ref)?
      };
@@ -1616,7 +1651,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let dialog_session = state
          .pending_dialog
          .as_ref()
-@@ -11057,22 +11372,23 @@
+@@ -11057,22 +11387,23 @@
      let (tab_id, session_id) = {
          let mgr = state.browser.as_mut().ok_or("Browser not launched")?;
  
@@ -1651,7 +1686,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                  None,
              )
              .await?;
-@@ -11089,6 +11405,9 @@
+@@ -11089,6 +11420,9 @@
              )
              .await?;
  
@@ -1661,7 +1696,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          mgr.prepare_domains_pub(&attach.session_id).await?;
  
          let tab_id = mgr.assign_tab_id();
-@@ -13659,7 +13978,15 @@
+@@ -13659,7 +13993,15 @@
      });
      // Machine-readable code for "the bound tab no longer exists" so scripts
      // using --json can match on it instead of parsing the message.
@@ -1678,7 +1713,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          resp["code"] = json!("tab_gone");
      } else if let Some((code, _)) = error.split_once(": ") {
          if code.starts_with("webmcp_") {
-@@ -13695,7 +14022,7 @@
+@@ -13695,7 +14037,7 @@
          use futures_util::{SinkExt, StreamExt};
          use tokio_tungstenite::tungstenite::Message;
  
@@ -1687,7 +1722,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
              let url = format!("ws://{}", listener.local_addr().unwrap());
              let server = tokio::spawn(async move {
-@@ -13729,12 +14056,15 @@
+@@ -13729,12 +14071,15 @@
                          "DOM.resolveNode" => {
                              json!({ "object": { "type": "object", "objectId": "login-node" } })
                          }
@@ -1705,7 +1740,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              response["error"] = json!({ "code": -32000, "message": "CDP failure" });
                              Value::Null
                          }
-@@ -13759,18 +14089,63 @@
+@@ -13759,18 +14104,131 @@
              let filled = element.fill(&client, "session", "test-value").await;
              client.close().await;
              let (attempts, mut releases) = server.await.unwrap();
@@ -1725,6 +1760,74 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              expected.sort();
              assert_eq!(releases, expected, "{failure}");
          }
++    }
++
++    #[tokio::test]
++    async fn scoped_close_after_target_or_browser_loss_never_reconnects() {
++        use futures_util::{SinkExt, StreamExt};
++        use tokio_tungstenite::tungstenite::Message;
++        for browser_lost in [false, true] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url = format!("ws://{}", listener.local_addr().unwrap());
++            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
++            let (lost_tx, lost_rx) = tokio::sync::oneshot::channel::<()>();
++            let server = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.unwrap();
++                let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++                for expected in ["Target.getTargets", "Target.attachToTarget", "Runtime.evaluate"] {
++                    let Some(Ok(Message::Text(text))) = ws.next().await else { panic!("Missing scoped setup command"); };
++                    let command: Value = serde_json::from_str(&text).unwrap();
++                    assert_eq!(command["method"], expected);
++                    let result = match expected {
++                        "Target.getTargets" => json!({"targetInfos":[{"targetId":"selected","type":"page","url":"about:blank","title":"","browserContextId":"owned"}]}),
++                        "Target.attachToTarget" => json!({"sessionId":"selected-session"}),
++                        _ => json!({"result":{"type":"number","value":1}}),
++                    };
++                    ws.send(Message::Text(json!({"id":command["id"],"result":result}).to_string())).await.unwrap();
++                }
++                ready_rx.await.unwrap();
++                if browser_lost { ws.close(None).await.unwrap(); }
++                lost_tx.send(()).unwrap();
++                if !browser_lost {
++                    loop {
++                        tokio::select! {
++                            connection = listener.accept() => panic!("Shutdown attempted to reconnect: {:?}", connection.is_ok()),
++                            message = ws.next() => match message {
++                                Some(Ok(Message::Text(text))) => panic!("Shutdown issued a browser command: {text}"),
++                                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
++                                _ => {},
++                            }
++                        }
++                    }
++                }
++                assert!(tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept()).await.is_err(), "Shutdown created another CDP connection");
++            });
++            let scope = CdpScope { initial_target:"selected".into(), context_id:Some("owned".into()) };
++            let mut manager = BrowserManager::connect_cdp_scoped(&url, Some(scope.clone())).await.unwrap();
++            manager.remove_page_by_target_id("selected");
++            manager.scope_guard().invalidate();
++            ready_tx.send(()).unwrap();
++            lost_rx.await.unwrap();
++            let mut state = DaemonState::new();
++            state.cdp_scope = Some(scope.clone());
++            state.browser = Some(manager);
++            let (events, receiver) = broadcast::channel(2);
++            state.event_rx = Some(receiver);
++            events.send(CdpEvent {
++                method:"Target.attachedToTarget".into(), session_id:Some("selected-session".into()),
++                params:json!({"sessionId":"late-session","waitingForDebugger":true,"targetInfo":{"targetId":"late-frame","type":"iframe","url":"about:blank","title":""}}),
++            }).unwrap();
++            let command = json!({"id":"shutdown","action":"close","cdpTarget":"selected","cdpContext":"owned"});
++            let result = tokio::time::timeout(std::time::Duration::from_secs(2), execute_command(&command, &mut state)).await.unwrap();
++            assert_eq!(result["success"], true, "{result}");
++            assert_eq!(result["data"]["closed"], true);
++            assert!(state.browser.is_none());
++            assert_eq!(state.cdp_scope.as_ref(), Some(&scope), "Shutdown must not shed immutable ownership");
++            assert_eq!(execute_command(&command, &mut state).await["success"], true, "Already closed scoped shutdown remains idempotent");
++            let wrong = json!({"id":"wrong","action":"close","cdpTarget":"foreign","cdpContext":"owned"});
++            assert_eq!(execute_command(&wrong, &mut state).await["success"], false);
++            tokio::time::timeout(std::time::Duration::from_secs(3), server).await.unwrap().unwrap();
++        }
 +    }
 +
 +    #[tokio::test]
@@ -1772,7 +1875,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[tokio::test]
-@@ -14368,6 +14743,121 @@
+@@ -14368,6 +14826,121 @@
              "agent-browser-{label}-{}-{nanos}",
              std::process::id()
          ))
@@ -1894,7 +1997,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[test]
-@@ -16240,6 +16730,31 @@
+@@ -16240,6 +16813,31 @@
      }
  
      #[test]
@@ -3175,7 +3278,24 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
      attach_ca_cert_to_launch_command(&mut launch_cmd, flags);
  
      if let Some(ref cs) = flags.color_scheme {
-@@ -442,7 +454,7 @@
+@@ -288,6 +300,16 @@
+     }
+ 
+     None
++}
++
++/// Scoped shutdown must remain possible after its owned target or browser exits.
++/// The actual close command still carries the immutable target/context pair.
++fn cdp_connection_for_command<'a>(flags: &'a Flags, command: &serde_json::Value) -> Option<&'a str> {
++    if flags.cdp_target.is_some() && command["action"] == "close" {
++        None
++    } else {
++        flags.cdp.as_deref()
++    }
+ }
+ 
+ fn should_send_local_launch_config(flags: &Flags, command: &serde_json::Value) -> bool {
+@@ -442,7 +464,7 @@
              false
          };
  
@@ -3184,7 +3304,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
              json!({
                  "id": gen_id(),
                  "action": "confirm",
-@@ -456,6 +468,7 @@
+@@ -456,6 +478,7 @@
              })
          };
  
@@ -3192,7 +3312,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
          match send_command(confirm_cmd, &flags.session) {
              Ok(next_resp) => {
                  if !approved {
-@@ -707,18 +720,18 @@
+@@ -707,18 +730,18 @@
      }
  }
  
@@ -3220,7 +3340,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
      });
  
      let runtime_data = runtime.as_ref().and_then(|resp| resp.data.clone());
-@@ -778,12 +791,14 @@
+@@ -778,12 +801,14 @@
      }
  }
  
@@ -3237,7 +3357,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
          Some("list") => {
              let sessions: Vec<String> = walk_daemons()
                  .sessions
-@@ -1295,7 +1310,25 @@
+@@ -1295,7 +1320,25 @@
      }
  }
  
@@ -3263,7 +3383,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
      // walk_daemons auto-cleans stale .pid / .sock / .stream sidecar files and
      // separates out the standalone dashboard. We only want to send `close` to
      // real session daemons; the dashboard has its own `dashboard stop`.
-@@ -1431,6 +1464,14 @@
+@@ -1431,6 +1474,14 @@
  
      let args: Vec<String> = env::args().skip(1).collect();
      let mut flags = parse_flags(&args);
@@ -3278,7 +3398,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
      if flags.restore_uses_session {
          flags.restore = Some(flags.session.clone());
      }
-@@ -1440,8 +1481,9 @@
+@@ -1440,8 +1491,9 @@
      let clean = clean_args(&args);
      tls::configure_process(&flags);
  
@@ -3290,7 +3410,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
  
      if has_help {
          if let Some(cmd) = clean.first() {
-@@ -1575,7 +1617,7 @@
+@@ -1575,7 +1627,7 @@
  
      // Handle session separately (doesn't need daemon)
      if clean.first().map(|s| s.as_str()) == Some("session") {
@@ -3299,7 +3419,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
          return;
      }
  
-@@ -1668,6 +1710,7 @@
+@@ -1668,6 +1720,7 @@
  
      attach_pin_tab_to_command(&mut cmd, &flags);
      attach_restore_config_to_command(&mut cmd, &flags);
@@ -3307,7 +3427,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
  
      // Validate restore/session persistence name before starting daemon
      if let Some(name) = restore_key_from_flags(&flags) {
-@@ -1838,6 +1881,7 @@
+@@ -1838,6 +1891,7 @@
          attach_allowed_domains_to_launch_command(&mut launch_cmd, &flags);
          attach_pin_tab_to_command(&mut launch_cmd, &flags);
          attach_restore_config_to_command(&mut launch_cmd, &flags);
@@ -3315,7 +3435,16 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
  
          if flags.ignore_https_errors {
              launch_cmd["ignoreHTTPSErrors"] = json!(true);
-@@ -1940,6 +1984,7 @@
+@@ -1875,7 +1929,7 @@
+ 
+     // Connect via CDP if --cdp flag is set
+     // Accepts either a port number (e.g., "9222") or a full URL (e.g., "ws://..." or "wss://...")
+-    if let Some(ref cdp_value) = flags.cdp {
++    if let Some(cdp_value) = cdp_connection_for_command(&flags, &cmd) {
+         // Validate CDP value eagerly (even when daemon is already running) so
+         // the user gets an immediate error for bad input instead of a silent no-op.
+         let launch_cmd = if cdp_value.starts_with("ws://")
+@@ -1940,6 +1994,7 @@
          attach_allowed_domains_to_launch_command(&mut launch_cmd, &flags);
          attach_pin_tab_to_command(&mut launch_cmd, &flags);
          attach_restore_config_to_command(&mut launch_cmd, &flags);
@@ -3323,7 +3452,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
  
          if flags.ignore_https_errors {
              launch_cmd["ignoreHTTPSErrors"] = json!(true);
-@@ -2016,6 +2061,7 @@
+@@ -2016,6 +2071,7 @@
          }
          launch_cmd["plugins"] = json!(flags.plugins.clone());
          attach_restore_config_to_command(&mut launch_cmd, &flags);
@@ -3331,7 +3460,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
  
          let cmd_obj = launch_cmd
              .as_object_mut()
-@@ -2320,6 +2366,7 @@
+@@ -2320,6 +2376,7 @@
              .map(|s| s.to_string());
          attach_plugins_to_command(&mut parsed, &flags.plugins);
          attach_restore_config_to_command(&mut parsed, flags);
@@ -3339,10 +3468,28 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
  
          attach_pin_tab_to_command(&mut parsed, flags);
  
-@@ -2397,6 +2444,37 @@
+@@ -2397,6 +2454,55 @@
  #[cfg(test)]
  mod tests {
      #[test]
++    fn scoped_close_never_schedules_a_cdp_launch() {
++        for verb in ["close", "quit", "exit"] {
++            let input: Vec<String> = ["--cdp", "ws://closed.invalid/devtools/browser/closed", "--cdp-target", "closed-target", "--cdp-context", "owned-context", verb]
++                .into_iter().map(str::to_string).collect();
++            let flags = parse_flags(&input);
++            let mut command = parse_command(&clean_args(&input), &flags).unwrap();
++            attach_cdp_scope_to_command(&mut command, &flags);
++            assert_eq!(command["action"], "close");
++            assert_eq!(cdp_connection_for_command(&flags, &command), None);
++            assert_eq!(command["cdpTarget"], "closed-target");
++            assert_eq!(command["cdpContext"], "owned-context");
++            assert_eq!(cdp_connection_for_command(&flags, &json!({"action":"snapshot"})), flags.cdp.as_deref());
++        }
++        let flags = parse_flags(&["--cdp".into(), "9222".into()]);
++        assert_eq!(cdp_connection_for_command(&flags, &json!({"action":"close"})), Some("9222"), "legacy unscoped behavior is unchanged");
++    }
++
++    #[test]
 +    fn scoped_close_all_rejects_before_cross_session_shutdown() {
 +        let mut flags = parse_flags(&[]);
 +        assert_eq!(close_all_scope_error(&flags), None);

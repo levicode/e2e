@@ -22,12 +22,15 @@ appendFileSync(process.env.TEST_LOG, JSON.stringify({ args, env: Object.fromEntr
 const emit = (data) => process.stdout.write(JSON.stringify({success:true,data}));
 if (globals.includes('--version')) {
   setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser 0.39.1-e2e.2'), Number(process.env.TEST_VERSION_DELAY || 0));
+} else if (args.at(-1) === '--all' && args.includes('--cdp-target')) {
+  console.log(JSON.stringify({success:false,error:'Cannot use close --all with scoped flags'}));
+  process.exitCode = 1;
 } else if (args.at(-1) === '--all' && process.env.TEST_ALL_ACK) {
   emit({closed:1,sessions:[args[args.indexOf('--session') + 1]],failed:[]});
 } else if (args.at(-1) === 'close') {
   const marker = process.env.TEST_CLOSE_MARKER;
   if (marker && !existsSync(marker)) { writeFileSync(marker, '1'); emit({closed:false}); }
-  else emit({closed:true});
+  else setTimeout(() => emit({closed:true}), Number(process.env.TEST_CLOSE_DELAY || 0));
 } else if (args.includes('hang')) {
   if (process.env.TEST_STARTED) writeFileSync(process.env.TEST_STARTED, 'started');
   setInterval(() => {}, 1000);
@@ -252,6 +255,46 @@ test('failed close keeps files and permits another cleanup attempt', async (t) =
   assert.ok(stateDirectory);
   await access(stateDirectory);
   await transport.close(context());
+  await assert.rejects(access(stateDirectory));
+});
+
+test('scoped cleanup keeps the binding and uses the full caller budget without close-all', async (t) => {
+  const { transport, log } = await fake(t, { TEST_CLOSE_DELAY: '1150' }, {
+    cdp: '9222', cdpTarget: 'owned-target', cdpContext: 'owned-context',
+  });
+  await transport.run(['get', 'title'], context());
+  await transport.close(context(3_000));
+  const observed = await calls(log);
+  assert.equal(observed.length, 3);
+  assert.equal(observed.at(-1)?.args.at(-1), 'close');
+  assert.ok(observed.at(-1)?.args.includes('--cdp-target'));
+  assert.ok(!observed.some(call => call.args.includes('--all')));
+  const stateDirectory = observed[0]?.env.AGENT_BROWSER_SOCKET_DIR;
+  assert.ok(stateDirectory);
+  await assert.rejects(access(stateDirectory));
+});
+
+test('unacknowledged scoped close retains files and never broadens scope to force cleanup', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'ab-scoped-close-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { transport, log } = await fake(t, { TEST_CLOSE_MARKER: join(directory, 'marker'), TEST_ALL_ACK: '1' }, {
+    cdp: '9222', cdpTarget: 'owned-target', cdpContext: null,
+  });
+  await transport.run(['get', 'title'], context());
+  await assert.rejects(transport.close(context()), classified('ENGINE_FAILURE'));
+  assert.equal(transport.poisoned, true);
+  const observed = await calls(log);
+  assert.equal(observed.length, 3);
+  assert.ok(!observed.some(call => call.args.includes('--all')));
+  const stateDirectory = observed[0]?.env.AGENT_BROWSER_SOCKET_DIR;
+  assert.ok(stateDirectory);
+  await access(stateDirectory);
+  await assert.rejects(transport.run(['click', '@e1'], context(), { mutating: true }), classified('INVALID_STATE'));
+  await transport.close(context());
+  const retried = (await calls(log)).at(-1)!;
+  assert.equal(retried.args[retried.args.indexOf('--cdp-target') + 1], 'owned-target');
+  assert.equal(retried.args[retried.args.indexOf('--cdp-context') + 1], 'default');
+  assert.equal(retried.args[retried.args.indexOf('--session') + 1], transport.session);
   await assert.rejects(access(stateDirectory));
 });
 

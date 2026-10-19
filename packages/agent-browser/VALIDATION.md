@@ -6,14 +6,15 @@ This is an implementation checkpoint, not a declaration of complete compatibilit
 
 - Public SPI-only package boundary; no core-to-engine dependency or Playwright runtime import.
 - Adapter TypeScript build and typecheck.
-- 233 unit tests passed in the latest workspace follow-up, including real ffmpeg encode/decode validation without Chromium. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, owned-target routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
+- 257 unit tests passed in the latest workspace follow-up, including real ffmpeg encode/decode validation without Chromium. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, owned-target routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
 - The maintained Rust patch applies to the exact pinned upstream source.
+- Fresh packaged consumption passed outside the workspace: actual `e2e` and adapter tarballs, offline installation and frozen reinstall, public imports resolving inside the consumer, installed TypeScript declarations, and installed CLI test collection. Its real-browser observation/action/report/trace smoke is a separate mandatory CI gate, not a local browser pass.
 
 ## Awaiting the required execution environment
 
-- CI run 39295892553 on commit `134a1826427983c850d8ded7ae38d153d83f6209` passed native compilation and the native suite: 1,470 passed, zero failed, 147 upstream ignored. Adapter build, typecheck, lint and 209 unit tests also passed.
-- Its first real Chromium gate ran all 43 cases: seven passed, 36 failed, zero skipped. Most public-engine tests stopped at a default-context identity mismatch; other failures exposed remote-frame topology, popup initialization and visibility restoration. Follow-up fixes must pass a new exact-commit CI run before these paths are called verified.
-- The seven browser passes cover same-target fulfilment, asynchronous LIFO rewrite, truncated-body rejection, scoped-auth redirect isolation, excluded-frame observation policy, ffmpeg timing, and real Chromium screencast segments. They do not establish glyph/input/state/runner acceptance.
+- Latest frozen CI checkpoint `9235f57a` (CI5) passed native compilation and the native suite: 1,491 passed, zero failed, 147 upstream ignored. The adapter unit suite passed 236 tests at that commit.
+- Its real Chromium gate ran all 47 cases: 14 passed, 33 failed, zero skipped. These results do not establish complete local or dedicated-provider acceptance. The latest source includes follow-up fixes and a dedicated-only ownership boundary that still require a new exact-commit CI run.
+- The real failures exposed the incompatibility between shared-browser first-popup interception and zero foreign attachment/pause. Shared endpoints are now rejected before provisioning; the revised dedicated/local browser gates remain pending. Passing unit tests does not establish real-browser safety or application compatibility.
 - The local workspace blocks Chromium sockets; the supported escalation path also fails during sandbox setup. No local real-browser pass is claimed.
 - Private application UAT is separate and has not been run by these synthetic fixtures.
 
@@ -31,11 +32,13 @@ No item above is treated as passing merely because its API or test source exists
 ## Explicit compatibility limits
 
 - Chromium only; non-Chromium CDP implementations, Firefox, and WebKit are refused.
+- Remote endpoints must be dedicated to one explicit attempt, with no unrelated contexts, pages, clients, or users. The public factory rejects worker/default-scope providers and worker/default-scope callback endpoints before any acquire or resolver callback. Use an attempt-scoped provider or `connect: { scope: 'attempt', cdpEndpoint }`. The legacy two-callback form still implies attempt scope unless explicitly overridden.
+- Shared-browser/provider parity is unsupported. Real Chromium CI exposed that required first-popup interception and zero attachment/pause of unrelated targets cannot both be guaranteed through public CDP. Internal worker lease/source tests are implementation tests, not evidence of a supported public shared mode. Initial exclusive-context verification remains enabled; the provisioner is responsible for exclusive ownership throughout the attempt.
 - State covers supported structured-clone IndexedDB values, cookies, localStorage and live-tab sessionStorage. Partitioned third-party storage, unsupported host objects such as CryptoKeys, and historical per-tab sessionStorage are not silently approximated.
 - Artifact video is unredacted and never supplied as model pixels. Remote downloads require a provider transfer hook.
 - Automatic reconnect/retry after ambiguous input is intentionally unavailable. A new explicit attempt is required.
 - Real hosted-provider accounts and private application UAT remain separate from the synthetic local-service fixtures.
-- Asynchronous fixture callbacks and input acknowledgements are fenced to their original browser generation. The regressions pass locally, but real-browser restart acceptance still awaits CI.
+- Asynchronous fixture callbacks and input acknowledgements are fenced to their original browser generation. Callback continuations also cannot acquire fresh fixture operations after their invocation completes or expires. Route decision chains remain live through tracked fallback completion. These guards do not undo commands already dispatched. Unit regressions pass; the real-browser callback-retirement and restart gates still require execution.
 - Successful fill/clear, uncheck, hover, explicit scrolling, locator drag/swipe, and coordinate swipe actions now have mandatory real acceptance cases. They still await execution. Do not treat this development checkpoint as a production release.
 
-- Scoped initial CLI attachment and owned-family companion monitoring have been implemented. Their transparent-proxy provider-isolation fixtures remain mandatory and unverified; they assert no foreign attachment/pause and owned popup interception before application code.
+- Scoped initial CLI attachment remains required within dedicated endpoint mode. Factory preflight regression tests assert that shared providers and callback endpoints are rejected without invoking any provider or endpoint callbacks. The revised dedicated-provider real-browser gates must still pass at the exact candidate commit; the earlier shared-provider sentinel expectations are not a supported compatibility claim.

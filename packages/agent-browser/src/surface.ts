@@ -200,6 +200,9 @@ export class AgentBrowserSurface {
     const contexts = await this.cdp.send<BrowserContexts>('Target.getBrowserContexts', {}, context);
     const existingTargets = await this.cdp.listTargets(context);
     this.defaultContextId = defaultContextIdentity(contexts, existingTargets);
+    const browserExclusive = !this.remote || (this.leases?.scope ?? this.connectionSource?.scope) === 'attempt';
+    if (!browserExclusive) unsupported('Shared browser endpoints cannot guarantee first-popup hooks without affecting unrelated pages; use a dedicated attempt-scoped browser');
+    if (this.remote && contexts.browserContextIds.length > 0) unsupported('An attempt-scoped endpoint must exclusively own its browser; unrelated contexts are present');
     let selectedTarget: string | undefined;
     if (this.remote) {
       if ((this.leases?.scope ?? this.connectionSource?.scope) === 'attempt' && !this.launchedThisAttempt) {
@@ -225,6 +228,8 @@ export class AgentBrowserSurface {
     const launchAttempt = this.attempt ?? invalidState();
     const launchRunId = info.runId;
     this.network = new NetworkHub(connection, {
+      callbackOwner: this,
+      browserExclusive,
       browserContextId: this.contextId ?? null,
       ...(this.contextId !== undefined || this.defaultContextId === undefined ? {} : { defaultBrowserContextId: this.defaultContextId }),
       operation: () => ({ signal: launchAttempt.signal, timeoutMs: 30_000, runId: launchRunId, attemptId: launchAttempt.attemptId, origin: 'test' }),
@@ -619,6 +624,11 @@ export class AgentBrowserSurface {
       this.restartCallbacks.length = 0;
     }
     for (const unsubscribe of this.activeUnsubscribe.splice(0)) unsubscribe();
+    // Disconnect our CLI sessions while their exact targets still exist. A scoped close never
+    // authorizes a reconnect or a broader browser close after the owned context is disposed.
+    try { await this.traceTransport?.close(context); } catch (cause) { error ??= cause; }
+    try { await this.transport?.close(context); } catch (cause) { error ??= cause; }
+    this.traceTransport = undefined; this.traceAdapter = undefined; this.traceBusy = false;
     if (this.defaultLeaseContext && this.connection) {
       try {
         const pages = (await this.connection.listTargets(context)).filter(target => target.type === 'page' && target.browserContextId === this.defaultContextId);
@@ -632,9 +642,7 @@ export class AgentBrowserSurface {
     this.contextId = undefined; this.defaultContextId = undefined;
     try { await this.owned?.close(); } catch (cause) { error ??= cause; }
     this.owned = undefined;
-    try { await this.transport?.close(context); } catch (cause) { error ??= cause; }
-    try { await this.traceTransport?.close(context); } catch (cause) { error ??= cause; }
-    this.traceTransport = undefined; this.traceAdapter = undefined; this.traceBusy = false; this.endpoint = undefined;
+    this.endpoint = undefined;
     this.connection?.close(); this.connection = undefined;
     this.transport = undefined; this.sessionId = undefined; this.targetId = undefined;
     this.input.reset();

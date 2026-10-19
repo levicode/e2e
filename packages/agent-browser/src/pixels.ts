@@ -157,16 +157,24 @@ interface FrameOwner {
 /** Page.getFrameTree omits remote children; the owning DOM node is the ownership proof. */
 function frameOwners(root: DomNode, mainFrame: string): FrameOwner[] {
   const found: FrameOwner[] = [];
-  const visit = (node: DomNode, parentFrame: string): void => {
+  const visit = (node: DomNode, parentFrame: string, parentIsDocument = false): void => {
     const frame = node.nodeType === 9 ? node.frameId ?? parentFrame : parentFrame;
-    const isOwner = node.nodeType !== 9 && (node.frameId !== undefined || node.contentDocument !== undefined || ['IFRAME', 'FRAME', 'FENCEDFRAME'].includes(node.nodeName?.toUpperCase() ?? ''));
+    const name = node.nodeName?.toUpperCase() ?? '';
+    const ownerElement = ['IFRAME', 'FRAME', 'FENCEDFRAME'].includes(name);
+    // Chromium also puts the containing frame's id on the document element.
+    // Only that exact direct-child marker is non-owning; all other frame ids
+    // still require a separately inspected child document.
+    const documentElement = node.nodeType === 1 && parentIsDocument && node.frameId !== undefined;
+    if (documentElement && (node.frameId !== frame || ownerElement || ['OBJECT', 'EMBED', 'PORTAL'].includes(name) || node.contentDocument !== undefined)) throw denied();
+    const isOwner = node.nodeType !== 9 && !documentElement && (node.frameId !== undefined || node.contentDocument !== undefined || ownerElement);
     if (isOwner) {
       if (!node.frameId || node.frameId === frame || !Number.isSafeInteger(node.backendNodeId) || node.backendNodeId! <= 0 || found.some(owner => owner.frameId === node.frameId)) throw denied();
       if (node.contentDocument && (node.contentDocument.nodeType !== 9 || (node.contentDocument.frameId !== undefined && node.contentDocument.frameId !== node.frameId))) throw denied();
       found.push({ parentFrameId: frame, frameId: node.frameId, backendNodeId: node.backendNodeId!, localDocument: node.contentDocument !== undefined });
     }
     if (node.contentDocument) visit(node.contentDocument, node.frameId ?? frame);
-    for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) visit(child, frame);
+    for (const child of node.children ?? []) visit(child, frame, node.nodeType === 9);
+    for (const shadow of node.shadowRoots ?? []) visit(shadow, frame);
   };
   visit(root, mainFrame);
   return found;

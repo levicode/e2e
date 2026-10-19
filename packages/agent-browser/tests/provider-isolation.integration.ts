@@ -26,9 +26,69 @@ async function evaluate<T>(observer: CdpConnection, session: string, expression:
   assert.equal(result.exceptionDetails, undefined);
   return result.result.value;
 }
+async function withCleanup(work: () => Promise<void>, cleanup: readonly (() => Promise<unknown> | void)[]): Promise<void> {
+  const failures: unknown[] = [];
+  try { await work(); } catch (error) { failures.push(error); }
+  for (const close of cleanup) { try { await close(); } catch (error) { failures.push(error); } }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Original acceptance failure and cleanup failures');
+}
 function* walk(node: SemanticNode): Generator<SemanticNode> { yield node; for (const child of node.children ?? []) yield* walk(child); }
 
-test('shared provider never attaches to or pauses foreign pages, while owned popup first requests remain intercepted', { timeout: 300_000 }, async (t) => {
+test('shared worker endpoints refuse before acquisition and leave real foreign pages completely untouched', { timeout: 120_000 }, async (t) => {
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'text/html');
+    response.end('<!doctype html><title>Foreign sentinel</title><script>window.started=true</script>');
+  });
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const owned = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', env: process.env,
+    args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [],
+  }, operation());
+  t.after(() => owned.close());
+  const observer = await CdpConnection.connect(owned.endpoint, operation());
+  t.after(() => observer.close());
+  const proxy = await cdpAuditProxy(owned.endpoint);
+  t.after(() => proxy.close());
+  const sessions: { id: string; url: string }[] = [];
+  const seed = async (targetId: string, suffix: string): Promise<void> => {
+    const id = await observer.attachTarget(targetId, operation());
+    const url = `${origin}/${suffix}`; sessions.push({ id, url });
+    await observer.send('Page.enable', {}, operation(), id);
+    await observer.send('Page.navigate', { url }, operation(), id);
+    await waitFor(async () => { try { return await evaluate<boolean>(observer, id, 'window.started===true'); } catch { return false; } });
+    await evaluate(observer, id, 'localStorage.setItem("sentinel","unchanged");document.cookie="sentinel=unchanged; Path=/";true');
+  };
+  const defaultPage = (await observer.listTargets(operation())).find(target => target.type === 'page'); assert.ok(defaultPage);
+  const foreign = await observer.send<{ browserContextId: string }>('Target.createBrowserContext', {}, operation());
+  const extra = await observer.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', browserContextId: foreign.browserContextId }, operation());
+  await seed(defaultPage.targetId, 'foreign-default'); await seed(extra.targetId, 'foreign-context');
+  let acquired = 0; let released = 0; let connected = 0;
+  const provider: BrowserProvider = { name: 'shared-refusal-sentinel', scope: 'worker',
+    async acquire() { acquired++; return { id: 'foreign-service', cdpEndpoint: proxy.endpoint }; },
+    async release() { released++; },
+  };
+  // Refusal is the explicitly documented compatibility boundary, not a claim
+  // that shared first-popup interception can satisfy the no-touch contract.
+  assert.throws(() => agentBrowser({ browser: provider }), { code: 'INVALID_CONFIG' });
+  assert.throws(() => agentBrowser({ browser: { ...provider, scope: undefined } }), { code: 'INVALID_CONFIG' });
+  assert.throws(() => agentBrowser({ connect: { cdpEndpoint: async () => { connected++; return proxy.endpoint; } } }), { code: 'INVALID_CONFIG' });
+  const late = await observer.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' }, operation());
+  await seed(late.targetId, 'foreign-late');
+  for (const session of sessions) {
+    assert.deepEqual(await evaluate(observer, session.id, '({url:location.href,title:document.title,seed:localStorage.getItem("sentinel"),cookie:document.cookie,ready:window.started})'), {
+      url: session.url, title: 'Foreign sentinel', seed: 'unchanged', cookie: 'sentinel=unchanged', ready: true,
+    });
+  }
+  assert.deepEqual((await observer.send<{ browserContextIds: string[] }>('Target.getBrowserContexts', {}, operation())).browserContextIds, [foreign.browserContextId]);
+  assert.equal(acquired, 0); assert.equal(released, 0); assert.equal(connected, 0);
+  assert.deepEqual(proxy.commands, [], 'A refused endpoint must receive no discovery, attachment, probe, input, storage or closure command');
+  assert.deepEqual(proxy.attachments, [], 'Even temporary foreign attachment or pause is forbidden');
+  assert.deepEqual(proxy.errors, []);
+});
+
+test('dedicated attempt provider preserves nested OOPIF default refs and popup first-request initialization', { timeout: 300_000 }, async (t) => {
   assert.ok(process.env.E2E_AGENT_BROWSER_EXECUTABLE, 'The strict-ref binary is mandatory; isolation acceptance cannot skip');
   const childServer = createServer((request, response) => {
     response.setHeader('content-type', 'text/html');
@@ -38,7 +98,7 @@ test('shared provider never attaches to or pauses foreign pages, while owned pop
   });
   await new Promise<void>((resolve, reject) => { childServer.once('error', reject); childServer.listen(0, '127.0.0.1', resolve); });
   t.after(async () => { childServer.closeAllConnections(); await new Promise<void>(resolve => childServer.close(() => resolve())); });
-  const childOrigin = `http://127.0.0.1:${(childServer.address() as AddressInfo).port}`;
+  const childOrigin = `http://child.audit.test:${(childServer.address() as AddressInfo).port}`;
   const server = createServer((request, response) => {
     if (request.url === '/api') { response.setHeader('content-type', 'application/json'); response.end('{"owner":"service"}'); return; }
     response.setHeader('content-type', 'text/html');
@@ -49,56 +109,40 @@ test('shared provider never attaches to or pauses foreign pages, while owned pop
     </script>`);
   });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const origin = `http://main.audit.test:${(server.address() as AddressInfo).port}`;
   const directory = await mkdtemp(path.join(tmpdir(), 'e2e-cdp-isolation-'));
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(directory, { recursive: true, force: true }); });
   const owned = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', env: process.env,
-    // A same-site isolated origin keeps the public app-site policy intact while requiring an actual OOPIF.
-    args: ['--site-per-process', `--isolate-origins=${childOrigin}`, ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])],
+    // Separate same-site hostnames keep the app-site policy intact and force a real OOPIF.
+    // Chromium ignores ports in isolate-origins, so two ports of one IP are insufficient.
+    // Both reserved test names resolve only to this fixture's loopback servers.
+    args: ['--site-per-process', '--isolate-origins=http://child.audit.test', '--host-resolver-rules=MAP *.audit.test 127.0.0.1', '--no-proxy-server', ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])],
   }, operation());
   t.after(() => owned.close());
   const observer = await CdpConnection.connect(owned.endpoint, operation());
   t.after(() => observer.close());
   const proxy = await cdpAuditProxy(owned.endpoint);
   t.after(() => proxy.close());
-  const foreignIds = new Set<string>();
-  const foreignSessions: string[] = [];
   let host: E2EHost<{ browser: Browser }> | undefined;
   let acquired = 0; let released = 0;
-  try {
-    const foreignContext = await observer.send<{ browserContextId: string }>('Target.createBrowserContext', {}, operation());
-    const seed = async (targetId: string, url: string) => {
-      foreignIds.add(targetId);
-      const session = await observer.attachTarget(targetId, operation()); foreignSessions.push(session);
-      await observer.send('Page.enable', {}, operation(), session);
-      await observer.send('Page.navigate', { url }, operation(), session);
-      await waitFor(async () => {
-        try { return await evaluate<boolean>(observer, session, 'window.started===true && window.apiResult?.owner==="service"'); }
-        catch { return false; }
-      });
-      await evaluate(observer, session, 'localStorage.setItem("sentinel","unchanged");document.cookie="sentinel=unchanged; Path=/";true');
-    };
-    const defaultPage = (await observer.listTargets(operation())).find(target => target.type === 'page'); assert.ok(defaultPage);
-    await seed(defaultPage.targetId, `${origin}/foreign-default`);
-    const extra = await observer.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', browserContextId: foreignContext.browserContextId }, operation());
-    await seed(extra.targetId, `${origin}/foreign-context`);
-    const lease = { id: 'shared-service', cdpEndpoint: proxy.endpoint };
-    const provider: BrowserProvider = { name: 'transparent-cdp-audit', scope: 'worker',
+  await withCleanup(async () => {
+    const lease = { id: 'dedicated-service', cdpEndpoint: proxy.endpoint };
+    const provider: BrowserProvider = { name: 'transparent-cdp-audit', scope: 'attempt',
       async acquire() { acquired++; return lease; },
       async release(value) { assert.equal(value, lease); released++; },
     };
     const engine = agentBrowser({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE!, browser: provider });
     host = await openHost<{ browser: Browser }>({ cwd: directory, env: { ...process.env, E2E_TELEMETRY_DISABLED: '1' }, config: {
-      projectId: 'shared-cdp-wire-audit', targets: [{ name: 'browser', platform: 'web', engine, app: { url: `${origin}/app` } }],
+      projectId: 'dedicated-cdp-wire-audit', targets: [{ name: 'browser', platform: 'web', engine, app: { url: `${origin}/app` } }],
       workers: 1, retries: 0, timeout: 180_000, launchTimeout: 90_000, actionTimeout: 30_000,
       cache: 'off', trace: 'on', video: 'off',
     } });
-    const attempt = await host.openSession({ name: 'Foreign protocol isolation' });
-    try {
+    const attempt = await host.openSession({ name: 'Dedicated protocol acceptance' });
+    await withCleanup(async () => {
       const browser = attempt.fixtures.browser;
       await browser.addInitScript('window.attemptOwner="owned"');
       await browser.route('**/api', route => route.fulfill({ json: { owner: 'attempt' } }));
-      await browser.route('**/owned-popup', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Intercepted popup</title><script>window.navigationOwner="attempt";fetch("/api").then(response=>response.json()).then(value=>window.apiResult=value)</script>' }));
+      await browser.route('**/owned-popup', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Intercepted popup</title><script>window.initWasEarly=window.attemptOwner==="owned";window.navigationOwner="attempt";fetch("/api").then(response=>response.json()).then(value=>window.apiResult=value)</script>' }));
       await browser.goto('/app');
       await waitFor(async () => await browser.evaluate('window.apiResult?.owner==="attempt"'));
       let frameTarget: string | undefined;
@@ -107,21 +151,21 @@ test('shared provider never attaches to or pauses foreign pages, while owned pop
         return frameTarget !== undefined;
       });
       const frameSession = await observer.attachTarget(frameTarget!, operation());
-      try {
+      await withCleanup(async () => {
         await waitFor(async () => {
           try { return await evaluate<boolean>(observer, frameSession, '!!document.querySelector("#nested")?.contentWindow?.document.getElementById("deep")'); }
           catch { return false; }
         });
         const context = { ...operation(), runId: attempt.runId, attemptId: attempt.attemptId };
         const observed = await engine.observe!(context);
-        const deep = [...walk(observed.root)].find(node => node.attributes?.id === 'deep');
+        const deep = [...walk(observed.root)].find(node => node.selector === '#deep');
         assert.ok(deep, 'The production scoped native snapshot must include the nested owned OOPIF target');
         await engine.perform!(deep.ref, { kind: 'tap' }, context);
         assert.equal(await evaluate(observer, frameSession, 'document.querySelector("#nested").contentWindow.deepHit===true'), true);
-      } finally { await observer.send('Target.detachFromTarget', { sessionId: frameSession }, operation()); }
+      }, [() => observer.send('Target.detachFromTarget', { sessionId: frameSession }, operation())]);
       const popupContext = { ...operation(), runId: attempt.runId, attemptId: attempt.attemptId };
       const popupObservation = await engine.observe!(popupContext);
-      const popupButton = [...walk(popupObservation.root)].find(node => node.attributes?.id === 'open');
+      const popupButton = [...walk(popupObservation.root)].find(node => node.selector === '#open');
       assert.ok(popupButton, 'The default production observation must expose the popup trigger');
       await engine.perform!(popupButton.ref, { kind: 'tap' }, popupContext);
       assert.deepEqual(await browser.evaluate('window.popupClick'), { trusted: true, opened: true }, 'Exact native input must create the popup before interception assertions');
@@ -131,47 +175,28 @@ test('shared provider never attaches to or pauses foreign pages, while owned pop
         return popup !== undefined;
       });
       const popupSession = await observer.attachTarget(popup!, operation());
-      try {
+      await withCleanup(async () => {
         await waitFor(async () => {
-          try { return await evaluate<boolean>(observer, popupSession, 'window.apiResult?.owner==="attempt" && window.attemptOwner==="owned" && window.navigationOwner==="attempt"'); }
+          try { return await evaluate<boolean>(observer, popupSession, 'window.apiResult?.owner==="attempt" && window.attemptOwner==="owned" && window.initWasEarly===true && window.navigationOwner==="attempt"'); }
           catch { return false; }
         });
-      } finally { await observer.send('Target.detachFromTarget', { sessionId: popupSession }, operation()); }
+      }, [() => observer.send('Target.detachFromTarget', { sessionId: popupSession }, operation())]);
 
-      // This page is created outside the adapter while interception is active. Even a
-      // short auto-attach pause followed by resume/detach is a failed isolation contract.
-      const late = await observer.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' }, operation());
-      await seed(late.targetId, `${origin}/foreign-late`);
       await attempt.fixtures.app.restart();
       await attempt.fixtures.app.clearState();
-    } finally { assert.deepEqual(await attempt.close(), []); }
+    }, [async () => { assert.deepEqual(await attempt.close(), []); }]);
     assert.deepEqual(await host.close(), []); host = undefined;
     assert.equal(acquired, 1); assert.equal(released, 1);
-    for (const session of foreignSessions) {
-      assert.deepEqual(await evaluate(observer, session, '({seed:localStorage.getItem("sentinel"),cookie:document.cookie,owner:window.attemptOwner??null,api:window.apiResult})'), {
-        seed: 'unchanged', cookie: 'sentinel=unchanged', owner: null, api: { owner: 'service' },
-      });
-    }
     const contexts = await observer.send<{ browserContextIds: string[] }>('Target.getBrowserContexts', {}, operation());
-    assert.deepEqual(contexts.browserContextIds, [foreignContext.browserContextId]);
+    assert.deepEqual(contexts.browserContextIds, [], 'Dedicated attempt cleanup must remove every replacement context');
     assert.ok(proxy.commands.some(command => command.method === 'Runtime.evaluate'), 'The proxy must actually observe production companion traffic');
     assert.ok(proxy.commands.some(command => command.method === 'Accessibility.getFullAXTree'), 'The native snapshot connection must also traverse the proxy');
-    assert.deepEqual(proxy.attachments.filter(event => foreignIds.has(event.targetId)), [], 'An adapter connection must never attach to a foreign target, even if it immediately resumes/detaches it');
-    const forbidden = proxy.commands.filter(command => {
-      if (command.targetId !== undefined && foreignIds.has(command.targetId)) return true;
-      if (command.method === 'Browser.close') return true;
-      if (command.method === 'Target.createTarget' || command.method === 'Target.disposeBrowserContext'
-        || command.method === 'Browser.setDownloadBehavior' || /^Storage\.(?:getCookies|setCookies|clearCookies)$/.test(command.method)) {
-        return typeof command.params.browserContextId !== 'string' || !proxy.createdContexts.has(command.params.browserContextId);
-      }
-      return false;
-    });
-    assert.deepEqual(forbidden.map(command => ({ method: command.method, targetId: command.targetId })), [], 'No foreign page probe, domain setup, input, navigation, closure or default-context storage command is allowed');
+    assert.equal(proxy.commands.some(command => command.method === 'Browser.close'), false, 'The adapter must release the provider lease without terminating its service browser');
     assert.deepEqual(proxy.errors, []);
-  } finally {
-    await host?.close();
-    await proxy.close(); observer.close(); await owned.close();
-    server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
-    await rm(directory, { recursive: true, force: true });
-  }
+  }, [
+    async () => { if (host) assert.deepEqual(await host.close(), []); },
+    () => proxy.close(), () => observer.close(), () => owned.close(),
+    async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); },
+    () => rm(directory, { recursive: true, force: true }),
+  ]);
 });

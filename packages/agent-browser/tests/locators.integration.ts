@@ -8,7 +8,7 @@ import { CdpConnection } from '../src/cdp.ts';
 import { launchChromium, type OwnedBrowser } from '../src/launch.ts';
 import { LocatorCompanion } from '../src/locators.ts';
 import { NetworkHub } from '../src/network.ts';
-import { SnapshotAdapter } from '../src/observation.ts';
+import { SnapshotAdapter, type SnapshotRef } from '../src/observation.ts';
 import { CliTransport } from '../src/transport.ts';
 
 const operation = (): OperationContext => ({ signal: new AbortController().signal, timeoutMs: 25_000, runId: 'locator-integration', attemptId: 'one', origin: 'test' });
@@ -21,13 +21,19 @@ const flatten = (node: SemanticNode): SemanticNode[] => [node, ...(node.children
 async function withLocators(run: (fixture: {
   cli: CliTransport; cdp: CdpConnection; session: string; companion: LocatorCompanion; adapter: SnapshotAdapter;
   createCompanion: (allowFrameUrl?: (url: string) => boolean) => LocatorCompanion;
-}) => Promise<void>): Promise<void> {
+}) => Promise<void>, initialPath = '/'): Promise<void> {
   assert.ok(process.env.E2E_AGENT_BROWSER_EXECUTABLE, 'A reviewed exact-ref binary is required; do not skip the browser gate');
   let port = 0;
   const server = createServer((request, response) => {
     response.setHeader('content-type', 'text/html');
     const path = new URL(request.url ?? '/', 'http://localhost').pathname;
-    if (path === '/grand') {
+    if (path === '/glyph') {
+      response.end(`<!doctype html><meta charset="utf-8"><style>
+        html,body{margin:0}.font-icon{width:40px;height:40px;cursor:pointer;background:#ddd}
+        .font-icon::before{content:'\\e000';font-family:Arial}
+        </style><p>waiting</p><div style="height:1800px"></div><div id="glyph" class="font-icon"></div>
+        <script>window.clicks=0;document.getElementById('glyph').addEventListener('click',()=>window.clicks++)</script>`);
+    } else if (path === '/grand') {
       response.end('<!doctype html><body style="margin:0"><button id="deep" style="position:absolute;left:7px;top:9px;width:80px;height:25px">Deep save</button>');
     } else if (path === '/child') {
       response.end(`<!doctype html><body style="margin:0"><p>${request.headers.host?.startsWith('localhost:') ? 'Foreign-only static text' : 'Same-only static text'}</p><div id="panel"><button class="choice">First choice</button><button class="choice">Second choice</button></div><iframe id="inner" src="/grand" style="position:absolute;left:10px;top:80px;width:200px;height:100px;border:2px solid"></iframe><div id="child-host"></div><script>document.querySelector('#child-host').attachShadow({mode:'closed'}).innerHTML='<button id="child-shadow">Child shadow</button>'</script>`);
@@ -53,7 +59,7 @@ async function withLocators(run: (fixture: {
     const initial = (await cdp.listTargets(operation())).find(target => target.type === 'page');
     assert.ok(initial, 'The exclusively owned Chromium must expose its initial page');
     cli = new CliTransport({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE, cdp: browser.endpoint, cdpTarget: initial.targetId, cdpContext: null });
-    await cli.run(['open', `http://127.0.0.1:${port}`, '--wait-until', 'load'], operation(), { mutating: true });
+    await cli.run(['open', `http://127.0.0.1:${port}${initialPath}`, '--wait-until', 'load'], operation(), { mutating: true });
     const { tabs } = await cli.run<{ tabs: { targetId: string; active: boolean }[] }>(['tab', 'list'], operation());
     const active = tabs.find((tab) => tab.active); assert.ok(active);
     hub = new NetworkHub(cdp, { operation, resolveUrl: value => new URL(value, `http://127.0.0.1:${port}`).href, resolvePath: value => value });
@@ -67,6 +73,33 @@ async function withLocators(run: (fixture: {
     try { await cli?.close(operation()); } finally { await browser?.close(); await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); }
   }
 }
+
+test('unnamed icon smoke retains the native default snapshot ref and clicks it exactly once without a locator', { timeout: 120_000 }, async () => {
+  await withLocators(async ({ cli, adapter }) => {
+    const native = await cli.run<{ snapshot: string; refs: Record<string, SnapshotRef> }>(['snapshot'], operation());
+    const clickableLines = native.snapshot.split('\n').filter(line => line.includes('clickable [cursor:pointer]'));
+    assert.equal(clickableLines.length, 1, 'The unfiltered public snapshot must expose the cursor-only font icon');
+    const nativeId = /\[ref=(e\d+)\]/.exec(clickableLines[0]!)?.[1];
+    assert.ok(nativeId, 'The native cursor hint must carry an actionable default ref');
+    assert.equal(native.refs[nativeId]?.name, '');
+    assert.equal(native.refs[nativeId]?.role, 'generic');
+    assert.equal(typeof native.refs[nativeId]?.backendNodeId, 'number');
+    assert.equal((await cli.run<{ value: string }>(['get', 'attr', `@${nativeId}`, 'id'], operation())).value, 'glyph');
+
+    const snapshot = await adapter.observe(operation());
+    const icons = flatten(snapshot.root).filter(node => node.attributes?.['agent-browser:interaction'] === 'clickable'
+      && node.attributes['agent-browser:hints']?.includes('cursor:pointer'));
+    assert.equal(icons.length, 1, 'The semantic adapter must retain the native interaction hint');
+    const icon = icons[0]!;
+    assert.equal(icon.selector, '#glyph');
+    assert.equal(icon.name, '');
+    assert.equal(icon.role, 'generic');
+    assert.equal(icon.attributes?.id, undefined, 'Observation does not expose arbitrary DOM attributes');
+    assert.ok(icon.rect && icon.rect.y >= snapshot.viewport.height);
+    await cli.run(['click', adapter.resolve(icon.ref)], operation(), { mutating: true });
+    assert.deepEqual((await cli.run<{ result: { clicks: number; scrolled: boolean } }>(['eval', '({clicks:window.clicks,scrolled:window.scrollY>0})'], operation())).result, { clicks: 1, scrolled: true });
+  }, '/glyph');
+});
 
 test('semantic labels, state filters, CSS, XPath, exact nonref import and closed-shadow actions agree', { timeout: 120_000 }, async () => {
   await withLocators(async ({ cli, companion, adapter }) => {

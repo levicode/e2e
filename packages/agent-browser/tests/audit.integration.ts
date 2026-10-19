@@ -102,17 +102,20 @@ async function withEngine(run: (engine: EngineHandle, browser: Browser, artifact
     ...(configure ? await configure(artifactsDir) : {}),
   });
   const signal = new AbortController().signal;
+  const failures: unknown[] = [];
   try {
     await engine.init!({ runId: 'independent-audit', targetName: 'audit', projectRoot: artifactsDir, app: { site: '127.0.0.1' }, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
     await engine.startAttempt!({ attemptId: 'audit', artifactsDir, signal, resolveSecret: () => Promise.reject(new Error('No engine secrets are configured')), appLog: () => undefined, navigation: () => undefined, environment: () => undefined });
     await run(engine, fixture(engine), artifactsDir);
-  } finally {
-    try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
-    finally {
-      await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 15_000 });
-      await rm(artifactsDir, { recursive: true, force: true });
-    }
-  }
+  } catch (error) { failures.push(error); }
+  try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
+  catch (error) { failures.push(error); }
+  try { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
+  catch (error) { failures.push(error); }
+  try { await rm(artifactsDir, { recursive: true, force: true }); }
+  catch (error) { failures.push(error); }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Audit body or setup failed; cleanup failures are retained after the original error');
 }
 
 for (const endpoint of ['/glyph', '/overflow']) {
@@ -120,7 +123,7 @@ for (const endpoint of ['/glyph', '/overflow']) {
     await withEngine(async (engine, browser) => {
       await engine.session!.open!(`${origin}${endpoint}`, context());
       const observed = await engine.observe!(context());
-      const target = [...walk(observed.root)].find((node) => node.attributes?.id === 'glyph');
+      const target = [...walk(observed.root)].find((node) => node.selector === '#glyph');
       assert.ok(target, 'Default snapshot must expose the generic clickable icon before any selector query or scroll');
       assert.equal(target.name ?? '', '', 'Fixture must remain an unnamed generic control');
       assert.equal(target.attributes?.role, undefined);
@@ -155,7 +158,7 @@ test('lost acknowledgement after an actual click poisons the attempt and never r
   await withEngine(async (engine, browser) => {
     await engine.session!.open!(`${origin}/lost-ack`, context());
     const observation = await engine.observe!(context());
-    const target = [...walk(observation.root)].find((node) => node.attributes?.id === 'mutate'); assert.ok(target);
+    const target = [...walk(observation.root)].find((node) => node.selector === '#mutate'); assert.ok(target);
     const started = Date.now();
     await assert.rejects(engine.perform!(target.ref, { kind: 'tap' }, context('audit', 5_000)), (error: unknown) => {
       assert.ok(error instanceof Error && 'code' in error && error.code === 'ACTION_MAY_HAVE_COMMITTED');
@@ -187,11 +190,11 @@ test('check waits for a controlled checkbox without issuing a second synthetic c
   await withEngine(async (engine, browser) => {
     await engine.session!.open!(`${origin}/controlled-check`, context());
     const observation = await engine.observe!(context());
-    const target = [...walk(observation.root)].find((node) => node.attributes?.id === 'controlled');
+    const target = [...walk(observation.root)].find((node) => node.selector === '#controlled');
     assert.ok(target);
     await engine.perform!(target.ref, { kind: 'check' }, context());
     assert.deepEqual(await browser.evaluate('({clicks:window.clicks,checked:document.getElementById("controlled").checked})'), { clicks: 1, checked: true });
-    const next = [...walk((await engine.observe!(context())).root)].find((node) => node.attributes?.id === 'controlled');
+    const next = [...walk((await engine.observe!(context())).root)].find((node) => node.selector === '#controlled');
     assert.ok(next);
     await engine.perform!(next.ref, { kind: 'check' }, context());
     assert.equal(await browser.evaluate('window.clicks'), 1, 'Checking an already checked node must not click again');
@@ -202,7 +205,7 @@ test('post-click node replacement cannot produce a retryable pre-dispatch stale 
   await withEngine(async (engine, browser) => {
     await engine.session!.open!(`${origin}/replaced-check`, context());
     const observation = await engine.observe!(context());
-    const target = [...walk(observation.root)].find((node) => node.attributes?.id === 'controlled');
+    const target = [...walk(observation.root)].find((node) => node.selector === '#controlled');
     assert.ok(target);
     replacedCheckboxClicks = 0;
     try { await engine.perform!(target.ref, { kind: 'check' }, context()); }
@@ -379,6 +382,34 @@ test('attempt routes, init scripts, media, viewport and dialogs survive restart,
     await engine.session!.reset!(context()); await verify(null);
     await engine.state!.restore(saved, context()); await verify('captured-A');
     await engine.settleAttempt!({ signal: new AbortController().signal, timeoutMs: 10_000 });
+  });
+});
+
+test('completed dialog callbacks cannot start fresh nested fixture mutations in the same attempt', { timeout: 180_000 }, async () => {
+  await withEngine(async (engine, browser) => {
+    await engine.session!.open!(`${origin}/storage`, context());
+    await browser.evaluate('(() => { window.retiredCallbackMutations=0; return true; })()');
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let late: Promise<unknown> | undefined;
+    let calls = 0;
+    await browser.onDialog(async (dialog) => {
+      calls++;
+      // This continuation is deliberately detached from the completed handler.
+      // It retains the callback scope but attempts to acquire a fresh operation.
+      late = gate.then(() => browser.evaluate('++window.retiredCallbackMutations'))
+        .then((result) => ({ unexpectedMutation: result }), (error: unknown) => error);
+      await dialog.dismiss();
+    });
+    assert.equal(await browser.evaluate("confirm('callback retirement audit')"), false);
+    await engine.settleAttempt!({ signal: new AbortController().signal, timeoutMs: 10_000 });
+    assert.equal(calls, 1);
+    assert.ok(late, 'The real dialog must invoke the registered handler');
+    release();
+    const result = await late;
+    assert.ok(result instanceof Error && 'code' in result && result.code === 'INVALID_STATE', 'A retired callback must be refused before dispatch, even without a restart');
+    assert.ok('retryable' in result && result.retryable === false);
+    assert.equal(await browser.evaluate('window.retiredCallbackMutations'), 0, 'Retired work must not mutate or poison the still-current browser');
   });
 });
 

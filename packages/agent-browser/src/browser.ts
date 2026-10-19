@@ -10,7 +10,7 @@ import {
 } from 'e2e/engine';
 import type { WebResponse, WebRoute } from './network.ts';
 import type { CdpConnection } from './cdp.ts';
-import { guardCallbackScope, runCallbackScope } from './callback-scope.ts';
+import { callbackLifetime, guardCallbackScope, runCallbackScope } from './callback-scope.ts';
 import { AgentBrowserSurface, unsupported } from './surface.ts';
 
 export interface Dialog {
@@ -589,8 +589,8 @@ class FixtureCompanion {
   }
 
   /** Every async continuation created by user callbacks retains its originating browser. */
-  private invokeCallback<T>(scope: CompanionGeneration, callback: () => T): T {
-    return runCallbackScope(this.surface, () => this.guardCurrent(scope), () => {
+  private invokeCallback<T>(scope: CompanionGeneration, callback: () => T, invocationGuard?: () => void): T {
+    return runCallbackScope(this.surface, () => { this.guardCurrent(scope); invocationGuard?.(); }, () => {
       this.context.operation();
       return callback();
     });
@@ -709,11 +709,13 @@ class FixtureCompanion {
     if (!this.current(scope)) return;
     const handler = this.dialogs.at(-1)?.handler;
     const operation = this.context.operation();
+    const lifetime = callbackLifetime(operation);
     const connection = scope.connection;
     let decided = false;
     let responded = false;
     const answer = async (accept: boolean, text?: string): Promise<void> => {
       this.guard(scope, operation);
+      lifetime.guard();
       if (decided) throw new TestError('ACTION_FAILED', 'The dialog handler already made a decision');
       if (text !== undefined && (typeof text !== 'string' || event.type !== 'prompt')) throw new TestError('INVALID_ARGUMENT', 'Only a prompt dialog accepts text');
       decided = true;
@@ -729,7 +731,7 @@ class FixtureCompanion {
         const work = Promise.resolve(this.invokeCallback(scope, () => handler({
           type: event.type as Dialog['type'], message: event.message,
           accept: (text) => answer(true, text), dismiss: () => answer(false),
-        })));
+        }), lifetime.guard));
         await withTimeout(work, operation.timeoutMs, () => new TestError('ACTION_FAILED', 'The dialog handler exceeded its budget'));
         if (!responded) throw new TestError('ACTION_FAILED', 'The dialog handler returned without accepting or dismissing');
       }
@@ -739,7 +741,7 @@ class FixtureCompanion {
       if (!this.current(scope)) return;
       if (error instanceof EngineError || error instanceof TestError) throw error;
       throw new TestError('ACTION_FAILED', 'The dialog handler failed');
-    }
+    } finally { lifetime.retire(); }
   }
 
   /** Captures one active-document download using validated GUIDs and generated artifact names. */
@@ -760,6 +762,7 @@ class FixtureCompanion {
     if (operation.timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Download wait timed out before dispatch', { retryable: false });
     this.downloading = true;
     const deadline = new Deadline(operation.timeoutMs);
+    const lifetime = callbackLifetime(operation);
     const budget = () => ({ ...operation, timeoutMs: deadline.remaining() });
     const remotePath = downloads !== undefined && path.win32.isAbsolute(downloads.dir) && !path.posix.isAbsolute(downloads.dir) ? path.win32 : path.posix;
     const directory = downloads?.dir ?? path.join(artifactsDir, `.download-${randomUUID()}`);
@@ -807,7 +810,7 @@ class FixtureCompanion {
       void waited.catch(() => undefined);
       await this.mutate('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: directory, eventsEnabled: true, ...browserContext }, budget(), undefined, scope);
       enabled = true;
-      const triggering = Promise.resolve().then(() => this.invokeCallback(scope, trigger)).finally(() => { triggerFinished = true; });
+      const triggering = Promise.resolve().then(() => this.invokeCallback(scope, trigger, lifetime.guard)).finally(() => { triggerFinished = true; lifetime.retire(); });
       const [, completed] = await Promise.all([
         withTimeout(triggering, deadline.remaining(), () => new TestError('ACTION_FAILED', 'The download trigger exceeded its budget')),
         waited,
@@ -833,6 +836,7 @@ class FixtureCompanion {
       if (enabled && !triggerFinished) { this.guard(scope, operation); this.surface.markUncertain(); }
       throw error;
     } finally {
+      lifetime.retire();
       if (timer !== undefined) clearTimeout(timer);
       cancelWait(); unsubscribeStart(); unsubscribeProgress(); unsubscribeClose();
       let permissionUnknown = false;

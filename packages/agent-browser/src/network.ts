@@ -6,6 +6,7 @@ import {
   type JsonValue, type OperationContext, type TextPattern,
 } from 'e2e/engine';
 import type { CdpConnection, CdpTarget } from './cdp.ts';
+import { callbackLifetime, runCallbackScope } from './callback-scope.ts';
 
 export type RouteFulfillResponse = {
   status?: number;
@@ -52,6 +53,10 @@ export interface HttpCredentials {
 }
 
 export interface NetworkOptions {
+  /** The caller exclusively owns the whole browser, permitting popup throttling before navigation. */
+  readonly browserExclusive?: boolean;
+  /** Surface identity used to fence nested fixture calls from retired asynchronous handlers. */
+  readonly callbackOwner?: object;
   /** Exact browser context owned by this attempt; null restricts an exclusive default context. */
   readonly browserContextId?: string | null;
   /** Verified TargetInfo identity for a default context that Chromium reports with a concrete ID. */
@@ -413,9 +418,14 @@ export class NetworkCompanion {
           return choose(() => send('Fetch.failRequest', { errorReason: 'Aborted' }));
         },
       };
-      await route.handler(publicRoute);
-      if (!decided) throw problem('Route handler returned without calling fulfill, continue, fallback, or abort');
-      await decision;
+      const lifetime = callbackLifetime(remaining());
+      const guard = (): void => { remaining(); lifetime.guard(); };
+      try {
+        if (this.#options.callbackOwner) await runCallbackScope(this.#options.callbackOwner, guard, () => route.handler(publicRoute));
+        else await route.handler(publicRoute);
+        if (!decided) throw problem('Route handler returned without calling fulfill, continue, fallback, or abort');
+        await decision;
+      } finally { lifetime.retire(); }
     };
     try { await bounded(dispatch(0), context, 'Route handler'); }
     catch (error) {
@@ -665,7 +675,7 @@ export class NetworkHub {
       connection.on<TargetAttached>('Target.attachedToTarget', (event) => this.#attached(event)),
       connection.on<{ sessionId: string }>('Target.detachedFromTarget', (event) => this.#detached(event.sessionId)),
       connection.on<{ targetInfo: CdpTarget }>('Target.targetCreated', (event) => {
-        if (this.#options.browserContextId !== undefined) void this.#watchRelated(event.targetInfo, this.#options.operation()).catch(() => undefined);
+        if (this.#options.browserContextId !== undefined && !this.#options.browserExclusive) void this.#watchRelated(event.targetInfo, this.#options.operation()).catch(() => undefined);
       }),
       connection.onClose(() => this.close()),
     );
@@ -701,7 +711,7 @@ export class NetworkHub {
   start(context: OperationContext): Promise<void> {
     if (this.#closed) return Promise.reject(problem('Network hub is closed'));
     this.#ready ??= (async () => {
-      if (this.#options.browserContextId === undefined) {
+      if (this.#options.browserContextId === undefined || this.#options.browserExclusive) {
         await this.#connection.send('Target.setAutoAttach', autoAttachOptions(), context);
       } else {
         await this.#connection.send('Target.setDiscoverTargets', { discover: true, filter: documentTargetFilter() }, context);
@@ -763,7 +773,7 @@ export class NetworkHub {
     if (!target) {
       const verified = (await this.#connection.listTargets(context)).find((entry) => entry.targetId === targetId);
       if (!verified || !this.#includes(verified)) throw problem('Selected target is outside this attempt');
-      if (this.#options.browserContextId !== undefined) await this.#watchRelated(verified, context);
+      if (this.#options.browserContextId !== undefined && !this.#options.browserExclusive) await this.#watchRelated(verified, context);
       target = this.#targets.get(targetId);
       if (!target) {
         const sessionId = await this.#connection.attachTarget(targetId, context);
@@ -961,7 +971,7 @@ export class NetworkHub {
     target.ready = (async () => {
       await target.pageReady;
       if (!this.#live(target)) return;
-      if (this.#options.browserContextId !== undefined) await this.#watchRelated(target.target, context);
+      if (this.#options.browserContextId !== undefined && !this.#options.browserExclusive) await this.#watchRelated(target.target, context);
       if (!this.#live(target)) return;
       await companion.start(context);
       if (!this.#live(target)) return;

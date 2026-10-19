@@ -234,9 +234,10 @@ test('diagnostics capture actual main-tab and popup console, runtime, HTTP error
   });
 });
 
-test('an isolated provider context selects the same public CLI target while foreign tabs keep their own requests', { timeout: 60_000 }, async () => {
+test('an exclusively owned browser routes the selected context and its first popup navigation', { timeout: 60_000 }, async () => {
   await withCompanion(async ({ cli, cdp: previousConnection, hub, targetId: originalTarget, origin, endpoint }) => {
-    // The original fixture tab represents another browser context the attempt does not own.
+    // This low-level fixture owns the entire disposable browser, including its original tab.
+    // Browser-wide attachment is necessary to pause a popup before its first navigation.
     hub.close();
     previousConnection.close();
     const cdp = await CdpConnection.connect(endpoint, operation());
@@ -246,7 +247,7 @@ test('an isolated provider context selects the same public CLI target while fore
       const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', browserContextId }, operation());
       const initialized: string[] = [];
       scoped = new NetworkHub(cdp, {
-        operation, resolveUrl: (url) => new URL(url, origin).href, resolvePath: (file) => file, browserContextId,
+        operation, resolveUrl: (url) => new URL(url, origin).href, resolvePath: (file) => file, browserContextId, browserExclusive: true,
       });
       scoped.onTarget((target) => { initialized.push(target.targetId); });
       await scoped.start(operation());
@@ -268,7 +269,7 @@ test('an isolated provider context selects the same public CLI target while fore
           expression: `fetch('${origin}/scoped-api').then(response=>response.text())`, awaitPromise: true, returnByValue: true,
         }, operation(), foreignSession);
         assert.match(foreign.result.value, /Network fixture/);
-        assert.equal(interceptions, 1, 'Foreign context requests must not enter this attempt route registry');
+        assert.equal(interceptions, 1, 'Other owned context requests must not enter this attempt route registry');
       } finally { foreignObserver.close(); }
       await clickPopup(cli, cdp, scopedSession, `${origin}/scoped-api`);
       await until(() => interceptions === 2);
@@ -278,7 +279,7 @@ test('an isolated provider context selects the same public CLI target while fore
       scoped?.close();
       try {
         await cdp.send('Target.disposeBrowserContext', { browserContextId }, operation());
-        assert.ok((await cdp.listTargets(operation())).some((target) => target.targetId === originalTarget), 'Disposal must preserve the foreign original context');
+        assert.ok((await cdp.listTargets(operation())).some((target) => target.targetId === originalTarget), 'Context disposal must preserve the other owned original context');
       } finally { cdp.close(); }
     }
   });

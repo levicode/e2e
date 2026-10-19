@@ -172,6 +172,7 @@ export class CliTransport {
   private readonly executable: string;
   private readonly directory: string;
   private readonly flags: readonly string[];
+  private readonly scoped: boolean;
   private readonly env: NodeJS.ProcessEnv;
   private reservation: Reservation | undefined;
   private verified = false;
@@ -185,6 +186,7 @@ export class CliTransport {
       throw failure('UNSUPPORTED_CAPABILITY', 'The agent-browser engine supports Chromium only');
     }
     const scope = scopeFlags(options);
+    this.scoped = scope.length !== 0;
     this.session = `${(options.session ?? 'e2e').replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 24)}-${randomUUID()}`;
     this.executable = options.executable ?? installedExecutable();
     try {
@@ -247,7 +249,9 @@ export class CliTransport {
   /**
    * Cancel local callers, then ask the public CLI to close this exact session.
    * Only an explicit closed:true acknowledgement permits deleting its files.
-   * A failed close remains retryable with a fresh cleanup budget.
+   * Scoped close keeps its immutable binding and gets the full cleanup budget.
+   * It cannot use the public cross-session close --all fallback. A failed close
+   * retains its files and remains retryable with a fresh cleanup budget.
    */
   async close(context: OperationContext): Promise<void> {
     if (this.closed) return;
@@ -308,13 +312,18 @@ export class CliTransport {
     if (this.sessionStarted) {
       try {
         const budget = remaining(context, startedAt);
-        const output = await this.execute([...this.flags, 'close'], { ...budget, timeoutMs: Math.min(1_000, budget.timeoutMs / 2) }, false, true);
+        const output = await this.execute([...this.flags, 'close'], this.scoped ? budget
+          : { ...budget, timeoutMs: Math.min(1_000, budget.timeoutMs / 2) }, false, true);
         const data = this.data(output, false);
         if (typeof data !== 'object' || data === null || !('closed' in data) || data.closed !== true) {
           throw failure('ENGINE_FAILURE', 'agent-browser did not acknowledge session closure');
         }
-      } catch {
+      } catch (error) {
         this.uncertain = true;
+        // The reviewed native CLI rejects scoped close --all. Removing scope
+        // would violate the daemon's immutable binding, so never broaden it to
+        // rescue cleanup. A failed scoped close is not proof that work stopped.
+        if (this.scoped) throw error;
         // --all only sees this instance's private socket directory. Its public
         // implementation can reap unreachable daemons; no other session is targeted.
         const output = await this.execute([...this.flags, 'close', '--all'], remaining(context, startedAt), false, true);

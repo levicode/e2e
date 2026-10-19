@@ -80,15 +80,21 @@ async function withBrowser(run: (browser: Browser, attached: string[], artifacts
   const engine = agentBrowser({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE!, executablePath: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium',
     args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [], viewport: { width: 640, height: 480 } });
   const signal = new AbortController().signal;
+  const errors: unknown[] = [];
   try {
     await engine.init!({ runId: 'browser-input', targetName: 'browser-input', projectRoot: directory, app: { site: '127.0.0.1' }, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
     await engine.startAttempt!({ attemptId: 'fixture', artifactsDir: directory, signal, resolveSecret: async () => { throw new Error('No secrets configured'); }, appLog: () => undefined, navigation: () => undefined, environment: () => undefined });
     const attached: string[] = [];
     await run(fixture(engine, attached), attached, directory, engine);
-  } finally {
-    try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
-    finally { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 15_000 }); await rm(directory, { recursive: true, force: true }); }
-  }
+  } catch (error) { errors.push(error); }
+  try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
+  catch (error) { errors.push(error); }
+  try { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
+  catch (error) { errors.push(error); }
+  try { await rm(directory, { recursive: true, force: true }); }
+  catch (error) { errors.push(error); }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, 'Browser input body and cleanup failed');
 }
 
 async function eventually(check: () => Promise<boolean>): Promise<void> {

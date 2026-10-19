@@ -3,8 +3,10 @@ import { ConfigurationError, EngineError, type EngineInitInfo } from 'e2e/engine
 
 export type CdpEndpointResolver = (signal: AbortSignal) => Promise<string>;
 export interface BrowserConnect {
+  /** Public engines require 'attempt': the whole browser must belong exclusively to that attempt. */
+  readonly scope?: 'worker' | 'attempt' | undefined;
   readonly cdpEndpoint: CdpEndpointResolver;
-  /** Selects attempt-scoped provisioning for compatibility; this callback is never invoked. */
+  /** Selects attempt scope when scope is omitted for compatibility; this callback is never invoked. */
   readonly reconnectEndpoint?: CdpEndpointResolver | undefined;
 }
 
@@ -16,21 +18,22 @@ interface Attempt {
   uncertain: boolean;
 }
 
-function invalid(): never { throw new ConfigurationError('INVALID_CONFIG', 'agentBrowser connect requires an endpoint callback and optional reconnect callback'); }
+function invalid(): never { throw new ConfigurationError('INVALID_CONFIG', 'agentBrowser connect requires an endpoint callback, optional reconnect callback, and optional worker or attempt scope'); }
 function failure(code: 'CANCELLED' | 'INVALID_STATE' | 'ENGINE_FAILURE' | 'OPERATION_TIMEOUT', message: string): EngineError {
   return new EngineError(code, message, { retryable: false });
 }
 
 /** Snapshots callbacks so later mutations of the config cannot change connection scope. */
-export function validateConnect(value: unknown): BrowserConnect {
+export function validateConnect(value: unknown): BrowserConnect & { readonly scope: 'worker' | 'attempt' } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) invalid();
   try {
     const candidate = value as Partial<BrowserConnect>;
-    const { cdpEndpoint, reconnectEndpoint } = candidate;
-    if (Object.keys(candidate).some((key) => key !== 'cdpEndpoint' && key !== 'reconnectEndpoint')
+    const { cdpEndpoint, reconnectEndpoint, scope } = candidate;
+    if (Object.keys(candidate).some((key) => key !== 'cdpEndpoint' && key !== 'reconnectEndpoint' && key !== 'scope')
       || typeof cdpEndpoint !== 'function'
+      || (scope !== undefined && scope !== 'worker' && scope !== 'attempt')
       || (reconnectEndpoint !== undefined && typeof reconnectEndpoint !== 'function')) invalid();
-    return { cdpEndpoint, ...(reconnectEndpoint === undefined ? {} : { reconnectEndpoint }) };
+    return { cdpEndpoint, scope: scope ?? (reconnectEndpoint === undefined ? 'worker' : 'attempt'), ...(reconnectEndpoint === undefined ? {} : { reconnectEndpoint }) };
   } catch { invalid(); }
 }
 
@@ -78,8 +81,9 @@ export class ConnectionSource {
   private generation = 0;
 
   constructor(connect: BrowserConnect) {
-    this.connect = validateConnect(connect);
-    this.scope = this.connect.reconnectEndpoint === undefined ? 'worker' : 'attempt';
+    const validated = validateConnect(connect);
+    this.connect = validated;
+    this.scope = validated.scope;
   }
 
   init(info: Pick<EngineInitInfo, 'signal'>): void {

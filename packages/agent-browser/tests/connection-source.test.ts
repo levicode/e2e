@@ -45,8 +45,33 @@ test('reconnect-shaped connect provisions once per explicit attempt but never ca
   source.dispose();
 });
 
+test('explicit attempt scope provisions a fresh endpoint per attempt without a reconnect callback', async () => {
+  let provisioned = 0;
+  const source = new ConnectionSource({ scope: 'attempt', cdpEndpoint: async () => `ws://browser.example/attempt-${++provisioned}` });
+  source.init({ signal: signal() });
+  assert.equal(source.scope, 'attempt');
+  assert.equal(provisioned, 0);
+  await source.startAttempt(attempt('first'));
+  assert.equal(await source.endpoint(signal()), 'ws://browser.example/attempt-1');
+  assert.equal(await source.endpoint(signal()), 'ws://browser.example/attempt-1');
+  source.poisonAttempt();
+  await assert.rejects(source.endpoint(signal()), { code: 'INVALID_STATE' });
+  assert.equal(provisioned, 1);
+  source.endAttempt();
+  await source.startAttempt(attempt('second'));
+  assert.equal(await source.endpoint(signal()), 'ws://browser.example/attempt-2');
+  assert.equal(provisioned, 2);
+  source.dispose();
+});
+
+test('explicit scope takes precedence over the legacy reconnect shape in the internal connection source', () => {
+  const source = new ConnectionSource({ scope: 'worker', cdpEndpoint: async () => 'ws://browser.example/worker', reconnectEndpoint: async () => 'ws://browser.example/recovered' });
+  assert.equal(source.scope, 'worker');
+  source.dispose();
+});
+
 test('invalid shapes and private callback errors are replaced with static diagnostics', async () => {
-  for (const value of [undefined, {}, [], { cdpEndpoint: 'secret' }, { cdpEndpoint: async () => '', private: true }, { cdpEndpoint: async () => '', reconnectEndpoint: 2 }]) {
+  for (const value of [undefined, {}, [], { cdpEndpoint: 'secret' }, { cdpEndpoint: async () => '', private: true }, { cdpEndpoint: async () => '', reconnectEndpoint: 2 }, { cdpEndpoint: async () => '', scope: 'secret' }, { cdpEndpoint: async () => '', scope: null }]) {
     assert.throws(() => validateConnect(value), (error: unknown) => error instanceof Error && !String(error.stack).includes('secret') && 'code' in error && error.code === 'INVALID_CONFIG');
   }
   const source = new ConnectionSource({ cdpEndpoint: async () => { throw new Error('private credentials in callback'); } });
@@ -129,5 +154,21 @@ test('config callback references and scope are snapshotted before user mutation'
   await source.startAttempt(attempt());
   assert.equal(source.scope, 'worker');
   assert.equal(await source.endpoint(signal()), 'ws://browser.example/original');
+  source.dispose();
+});
+
+test('explicit attempt scope remains snapshotted after the config becomes worker-scoped', async () => {
+  let calls = 0;
+  const config = { scope: 'attempt' as 'worker' | 'attempt', cdpEndpoint: async () => `ws://browser.example/original-${++calls}` };
+  const source = new ConnectionSource(config);
+  config.scope = 'worker';
+  config.cdpEndpoint = async () => 'ws://browser.example/replacement';
+  source.init({ signal: signal() });
+  assert.equal(source.scope, 'attempt');
+  await source.startAttempt(attempt('first'));
+  assert.equal(await source.endpoint(signal()), 'ws://browser.example/original-1');
+  source.endAttempt();
+  await source.startAttempt(attempt('second'));
+  assert.equal(await source.endpoint(signal()), 'ws://browser.example/original-2');
   source.dispose();
 });

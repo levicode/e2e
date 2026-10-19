@@ -41,6 +41,7 @@ async function withEngine(run: (engine: EngineHandle, browser: Browser) => Promi
   const directory = await mkdtemp(path.join(tmpdir(), 'e2e-action-contracts-'));
   const engine = agentBrowser({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE!, executablePath: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [], viewport: { width: 640, height: 480 } });
   const signal = new AbortController().signal;
+  const failures: unknown[] = [];
   try {
     await engine.init!({ runId: 'actions', targetName: 'actions', projectRoot: directory, app: { site: '127.0.0.1' }, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
     await engine.startAttempt!({ attemptId: 'actions', artifactsDir: directory, signal, resolveSecret: async () => { throw new Error('No fixture secrets'); }, appLog: () => undefined, navigation: () => undefined, environment: () => undefined });
@@ -50,10 +51,14 @@ async function withEngine(run: (engine: EngineHandle, browser: Browser) => Promi
       locator: () => { throw new Error('These tests use the public SPI'); }, screen: () => { throw new Error('These tests use the public SPI'); },
     } as unknown as EngineFixtureContext) as Browser;
     await browser.goto('/'); await run(engine, browser);
-  } finally {
-    try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 15_000 }); }
-    finally { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 15_000 }); await rm(directory, { recursive: true, force: true }); }
+  } catch (error) { failures.push(error); }
+  finally {
+    try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 15_000 }); } catch (error) { failures.push(error); }
+    try { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 15_000 }); } catch (error) { failures.push(error); }
+    try { await rm(directory, { recursive: true, force: true }); } catch (error) { failures.push(error); }
   }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Action acceptance failed; original body error precedes cleanup failures');
 }
 async function ref(engine: EngineHandle, selector: string): Promise<NodeRef> {
   const nodes = await engine.locate!({ kind: 'selector', selector }, operation());

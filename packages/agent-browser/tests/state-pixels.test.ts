@@ -124,7 +124,8 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
       const owner = { nodeType: 1, nodeName: 'IFRAME', ...(options.missingOwnerIdentity ? {} : { frameId: session === 'child-session' ? 'grandchild' : 'child' }), backendNodeId: changed && (options.ownerChangeKind ?? 'replace') === 'replace' ? 23 : 22 };
       const hasOwner = (options.oopif && session === 'top-session') || (options.nestedOopif && session === 'child-session');
       const owners = changed && options.ownerChangeKind === 'remove' ? [] : changed && options.ownerChangeKind === 'add' ? [owner, { nodeType: 1, nodeName: 'IFRAME', frameId: 'new-child', backendNodeId: 24 }] : [owner];
-      value = { root: { nodeType: 9, ...(hasOwner ? { children: options.ownerInClosedShadow ? [{ nodeType: 1, nodeName: 'DIV', shadowRoots: [{ nodeType: 11, shadowRootType: 'closed', backendNodeId: 77, children: owners }] }] : owners } : {}) } };
+      const frameId = session === 'grandchild-session' ? 'grandchild' : session === 'child-session' ? 'child' : 'top';
+      value = { root: { nodeType: 9, children: [{ nodeType: 1, nodeName: 'HTML', frameId, backendNodeId: 10, ...(hasOwner ? { children: options.ownerInClosedShadow ? [{ nodeType: 1, nodeName: 'DIV', shadowRoots: [{ nodeType: 11, shadowRootType: 'closed', backendNodeId: 77, children: owners }] }] : owners } : {}) }] } };
     }
     if (method === 'Target.attachToTarget') value = { sessionId: `${String(params.targetId)}-session` };
     if (method === 'Page.createIsolatedWorld') value = { executionContextId: session === 'grandchild-session' ? 3 : session === 'child-session' ? 2 : 1 };
@@ -164,6 +165,35 @@ test('pixel capture independently masks the verified OOPIF renderer and releases
   assert.equal(calls.filter(call=>call.method==='Page.createIsolatedWorld').length, 2);
   assert.deepEqual(calls.filter(call=>call.method==='Target.detachFromTarget').map(call=>call.params.sessionId).toSorted(), ['child-session','top-session']);
   assert.deepEqual(calls.filter(call=>call.method==='Target.attachToTarget').map(call=>call.params.targetId), ['child'], 'Unrelated iframe targets must never be inspected');
+});
+
+test('Chromium document-element frame markers are not mistaken for child frame owners', async () => {
+  const { cdp, calls } = mockPixels();
+  const result = await captureMaskedPixels(cdp, 'top', operation());
+  assert.equal(result.maskingProven, true);
+  assert.equal(result.maskedRegionCount, 1);
+  assert.equal(calls.filter(call => call.method === 'DOM.getDocument').length, 3);
+  assert.equal(calls.some(call => call.method === 'Target.attachToTarget'), false);
+  assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), true);
+});
+
+test('document marker exception never accepts mismatched, nested or frame-owning markers', async () => {
+  const element = { nodeType: 1, nodeName: 'HTML', frameId: 'top', backendNodeId: 10 };
+  const candidates = [
+    { ...element, frameId: 'foreign' },
+    { ...element, children: [{ ...element, nodeName: 'DIV', backendNodeId: 11 }] },
+    { ...element, contentDocument: { nodeType: 9 } },
+    ...['IFRAME', 'FRAME', 'FENCEDFRAME', 'OBJECT', 'EMBED', 'PORTAL'].map(nodeName => ({ ...element, nodeName })),
+  ];
+  for (const candidate of candidates) {
+    const { cdp, calls } = mockPixels(); const send = cdp.send.bind(cdp);
+    cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+      if (method === 'DOM.getDocument') return { root: { nodeType: 9, children: [candidate] } } as T;
+      return send<T>(method, params, context, session);
+    };
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /masking could not be proven/);
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
+  }
 });
 
 test('pixel capture discovers nested remote owners in closed roots even when every Page frame tree omits them', async () => {

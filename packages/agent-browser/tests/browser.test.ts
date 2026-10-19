@@ -16,7 +16,7 @@ import type { AgentBrowserSurface } from '../src/surface.ts';
 type EventHandler = (event: Record<string, unknown>) => void;
 type Initializer = (session: string, target: string, context: OperationContext) => Promise<void>;
 
-async function setup(t: TestContext, settings: { browserContextId?: string; remote?: boolean; downloads?: LeaseDownloads; failDownloadCleanup?: boolean } = {}) {
+async function setup(t: TestContext, settings: { browserContextId?: string; remote?: boolean; downloads?: LeaseDownloads; failDownloadCleanup?: boolean; callbackTimeoutMs?: number } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'ab-browser-test-'));
   const calls: Array<{ method: string; params: Record<string, unknown>; session?: string }> = [];
   const events = new Map<string, Set<EventHandler>>();
@@ -35,7 +35,7 @@ async function setup(t: TestContext, settings: { browserContextId?: string; remo
   let href = 'https://example.test/start';
   let title = 'Hello world';
   let intercept: ((method: string) => Promise<void>) | undefined;
-  const op = (timeoutMs = 1_000): OperationContext => ({ signal: controller.signal, timeoutMs, runId: 'r', attemptId: 'a', origin: 'test' });
+  const op = (timeoutMs = settings.callbackTimeoutMs ?? 1_000): OperationContext => ({ signal: controller.signal, timeoutMs, runId: 'r', attemptId: 'a', origin: 'test' });
   const emit = (method: string, event: Record<string, unknown>, session?: string) => {
     for (const callback of events.get(`${session ?? ''}:${method}`) ?? []) callback(event);
   };
@@ -226,6 +226,46 @@ test('unanswered dialogs latch a failure and are dismissed without exposing page
     return true;
   });
   assert.deepEqual(fixture.calls.findLast((call) => call.method === 'Page.handleJavaScriptDialog')?.params, { accept: false });
+});
+
+test('timed-out dialog callbacks cannot acquire fresh operations in the same live browser', async t => {
+  const fixture = await setup(t, { callbackTimeoutMs: 20 });
+  let release!: () => void;
+  let finished!: () => void;
+  const resumed = new Promise<void>(resolve => { finished = resolve; });
+  await fixture.browser.onDialog(async dialog => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await assert.rejects(fixture.browser.evaluate('1'), { code: 'INVALID_STATE' });
+    await assert.rejects(async () => fixture.browser.mouse.move(1, 2), { code: 'INVALID_STATE' });
+    await assert.rejects(async () => fixture.browser.locator('button').click(), { code: 'INVALID_STATE' });
+    await assert.rejects(dialog.accept(), { code: 'INVALID_STATE' });
+    finished();
+  });
+  fixture.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'Synthetic question' }, 'main');
+  await assert.rejects(Promise.all(fixture.background), { code: 'ACTION_FAILED' });
+  release(); await resumed;
+  assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 0);
+  assert.equal(fixture.calls.filter(call => call.method === 'locator.click').length, 0);
+  assert.equal(fixture.calls.filter(call => call.method === 'Page.handleJavaScriptDialog').length, 1);
+  assert.equal(await fixture.browser.evaluate('2'), 2);
+  assert.equal(fixture.poisoned, false);
+});
+
+test('completed dialog callbacks cannot launch deferred fixture work after accepting', async t => {
+  const fixture = await setup(t);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let deferred: Promise<unknown> | undefined;
+  await fixture.browser.onDialog(async dialog => {
+    deferred = gate.then(() => fixture.browser.evaluate('1'));
+    await dialog.accept();
+  });
+  fixture.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'Synthetic question' }, 'main');
+  await Promise.all(fixture.background);
+  assert.ok(deferred);
+  const rejected = assert.rejects(deferred, { code: 'INVALID_STATE' });
+  release(); await rejected;
+  assert.equal(await fixture.browser.evaluate('2'), 2);
 });
 
 test('download saves by GUID to a generated artifact path, never the suggested filename', async (t) => {

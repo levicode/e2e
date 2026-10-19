@@ -56,8 +56,15 @@ function scriptedExecutor(): { executor: StepExecutor; calls: () => number } {
         calls++;
         const observation = await context.observe({ tree: true });
         assert.ok(observation.tree);
-        const target = [...walk(observation.tree)].find((node) => node.attributes?.id === 'glyph');
-        assert.ok(target, 'The executor must receive the unnamed icon from default observation, without a locator or prior scroll');
+        // Executor observations intentionally omit DOM IDs and replay selectors.
+        // Identify the fixture using only the default snapshot's public interaction
+        // hint and geometry, never a locator or an out-of-band DOM read.
+        const candidates = [...walk(observation.tree)].filter((node) =>
+          node.attributes?.['agent-browser:interaction'] === 'clickable'
+          && node.attributes?.['agent-browser:hints']?.includes('cursor:pointer')
+          && node.rect?.width === 40 && node.rect.height === 40 && node.rect.y >= observation.viewport.height);
+        assert.equal(candidates.length, 1, 'The executor must receive exactly one offscreen cursor-pointer icon from default observation, without a locator or prior scroll');
+        const target = candidates[0]!;
         assert.equal(target.name ?? '', '');
         assert.equal(target.attributes?.['aria-label'], undefined);
         assert.equal(target.attributes?.role, undefined);

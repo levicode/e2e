@@ -9,7 +9,7 @@ Development candidate for a separate `@e2e-dev/agent-browser` package. This pack
 - Each local attempt owns a new Chromium process and disposable profile. Cancellation with uncertain mutation outcomes poisons that attempt. The adapter does not equate killing a CLI client with cancelling the daemon.
 - Engine-owned ref IDs are unique across attempts and workers. The runner owns revisions; sequential locator resolutions retain their exact native identities so a drag destination cannot erase its source.
 - Optional trace capture uses a second isolated agent-browser CLI session attached to the same browser and exact target. Its non-activating tab binding and separate ref namespace cannot replace action refs; a failed optional read disables trace capture without retrying input.
-- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-2`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
+- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-3`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
 
 ## Required CLI extension
 
@@ -44,6 +44,28 @@ const engine = agentBrowser({
 
 Tests use `test` from the new package for its `browser` fixture, and `expect` from `e2e`. The factory supports Chromium, not Firefox or WebKit. Read `VALIDATION.md` before treating this development candidate as a complete Web-engine replacement.
 
+## Dedicated remote endpoints
+
+Remote browsers are supported only with dedicated ownership for each attempt. A structural browser provider must explicitly set `scope: 'attempt'`. Its lease must grant this attempt exclusive use of the entire Chromium browser for its lifetime, including every context and page. No unrelated clients or users may share the endpoint.
+
+For a callback provisioner, use an explicit attempt scope:
+
+```ts
+const engine = agentBrowser({
+  executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE,
+  connect: {
+    scope: 'attempt',
+    cdpEndpoint: async (signal) => provisionDedicatedChromium(signal),
+  },
+});
+```
+
+`provisionDedicatedChromium` is your provisioner and must return a Chromium CDP HTTP discovery or WebSocket endpoint for that attempt. It is called once at each explicit attempt boundary, never to recover an uncertain action. You remain responsible for releasing the remote browser; callback connection cleanup does not terminate it.
+
+Worker/shared providers, including providers whose scope is omitted, are rejected by the factory before `acquire`. Likewise, `connect: { cdpEndpoint }` and explicit `connect.scope: 'worker'` fail before endpoint resolution. The old two-callback form `{ cdpEndpoint, reconnectEndpoint }` still selects attempt scope when scope is omitted, but `reconnectEndpoint` is never invoked.
+
+A scope declaration does not create isolation. The runtime still checks initial context exclusivity, but cannot determine whether a default-context page belongs to another user or prevent a service from adding other users later. The provisioner must enforce the ownership contract. Real Chromium CI exposed that the shared-browser zero-foreign-attachment guarantee and first-popup interception cannot both be delivered through public CDP; this package makes no shared-provider compatibility claim. See [the adapter inventory](ADAPTER_COMPATIBILITY.md) for provider-specific migration limits.
+
 ## Verification
 
 ```sh
@@ -54,6 +76,8 @@ pnpm --filter @e2e-dev/agent-browser test:browser
 ```
 
 Browser tests require the patched binary and a runnable Chromium. They use local synthetic HTTP fixtures and no model, account, private service, or credentials. Integration tests deliberately fail if prerequisites are missing; a skipped real-browser check must never be reported as proof.
+
+The [packaged-consumer example](examples/packaged-consumer/README.md) includes a complete config, deterministic test, fresh tarball installation checks, and a runnable browser smoke with hashed CI artifacts.
 
 ## Upstream maintenance
 

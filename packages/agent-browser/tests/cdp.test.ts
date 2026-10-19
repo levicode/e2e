@@ -3,6 +3,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 import type { OperationContext } from 'e2e/engine';
 import { CdpConnection } from '../src/cdp.ts';
 import { NetworkCompanion, NetworkHub } from '../src/network.ts';
+import { guardCallbackScope, runCallbackScope } from '../src/callback-scope.ts';
 
 type Command = { id: number; method: string; params: Record<string, unknown>; sessionId?: string };
 const actualWebSocket = globalThis.WebSocket;
@@ -365,6 +366,28 @@ async function networkHub(): Promise<{ connection: CdpConnection; socket: FakeWe
   return { ...current, hub };
 }
 
+test('an explicitly exclusive browser retains browser-wide popup throttling with exact context filtering', async () => {
+  const { connection, socket } = await transport();
+  socket.respondTo = command => {
+    if (command.method === 'Target.setAutoAttach' && command.sessionId === undefined) attachEvent(socket, 'owned', 'active', undefined, 'page', 'attempt');
+    socket.reply(command, {});
+  };
+  const hub = new NetworkHub(connection, {
+    browserExclusive: true, browserContextId: 'attempt', operation, resolveUrl: value => value, resolvePath: value => value,
+  });
+  await hub.start(operation());
+  await hub.useTarget('owned', operation());
+  await hub.route('**/api', route => route.fulfill({ body: 'owned' }), operation());
+  attachEvent(socket, 'popup', 'popup-session', undefined, 'page', 'attempt');
+  await hub.settle(operation());
+  assert.equal(socket.commands.filter(command => command.method === 'Target.setAutoAttach' && command.sessionId === undefined).length, 1);
+  assert.equal(socket.commands.some(command => command.method === 'Target.autoAttachRelated'), false, 'Related-target mode would cancel the browser popup throttle');
+  const enabled = socket.commands.findIndex(command => command.method === 'Fetch.enable' && command.sessionId === 'popup-session');
+  const resumed = socket.commands.findIndex(command => command.method === 'Runtime.runIfWaitingForDebugger' && command.sessionId === 'popup-session');
+  assert.ok(enabled >= 0 && resumed > enabled);
+  hub.close();
+});
+
 test('browser-wide routes reach new popups and OOPIFs before those targets resume', async () => {
   const { socket, hub } = await networkHub();
   const handled: string[] = [];
@@ -529,6 +552,72 @@ test('a handler that resumes after its deadline cannot issue a late request deci
   await tick();
   assert.equal(socket.commands.some((command) => command.method === 'Fetch.fulfillRequest'), false);
   assert.equal(socket.commands.filter((command) => command.method === 'Fetch.failRequest').length, 1);
+});
+
+test('a timed-out route callback cannot obtain fresh fixture operations in the same live generation', async () => {
+  const { connection, socket } = await transport();
+  const owner = {};
+  let release!: () => void;
+  let finished!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const resumed = new Promise<void>(resolve => { finished = resolve; });
+  const companion = new NetworkCompanion(connection, 'active', {
+    callbackOwner: owner, operation: () => operation(15), resolveUrl: url => url, resolvePath: path => path,
+  });
+  await companion.route('**/api', async route => runCallbackScope(owner, () => {}, async () => {
+    await gate;
+    assert.throws(() => guardCallbackScope(owner), /no longer active/);
+    await assert.rejects(async () => route.abort(), /no longer active/);
+    finished();
+  }), operation());
+  pause(socket);
+  await assert.rejects(companion.settle(operation()), { code: 'ACTION_FAILED' });
+  release();
+  await resumed;
+  guardCallbackScope(owner);
+  assert.equal(socket.commands.filter(command => command.method === 'Fetch.failRequest').length, 1);
+});
+
+test('completed route callbacks cannot launch deferred fixture work after returning a decision', async () => {
+  const { connection, socket } = await transport();
+  const owner = {};
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let deferred: Promise<void> | undefined;
+  const companion = new NetworkCompanion(connection, 'active', {
+    callbackOwner: owner, operation, resolveUrl: url => url, resolvePath: path => path,
+  });
+  await companion.route('**/api', async route => {
+    deferred = gate.then(() => { guardCallbackScope(owner); });
+    await route.fulfill({ body: 'complete' });
+  }, operation());
+  pause(socket);
+  await companion.settle(operation());
+  assert.ok(deferred);
+  const rejection = assert.rejects(deferred, /no longer active|finished or expired/);
+  release(); await rejection;
+  guardCallbackScope(owner);
+});
+
+test('unawaited fallback keeps the older async handler live through its tracked decision', async () => {
+  const { connection, socket } = await transport();
+  const owner = {};
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const companion = new NetworkCompanion(connection, 'active', {
+    callbackOwner: owner, operation, resolveUrl: url => url, resolvePath: path => path,
+  });
+  await companion.route('**/api', async route => {
+    await gate;
+    guardCallbackScope(owner);
+    await route.fulfill({ body: 'older handler finished' });
+  }, operation());
+  await companion.route('**/api', route => { void route.fallback(); }, operation());
+  pause(socket);
+  await tick();
+  release(); await companion.settle(operation());
+  assert.equal(socket.commands.filter(command => command.method === 'Fetch.fulfillRequest').length, 1);
+  assert.equal(socket.commands.filter(command => command.method === 'Fetch.failRequest').length, 0);
 });
 
 test('a route added during target initialization is fully installed before that target resumes', async () => {
