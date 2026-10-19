@@ -67,3 +67,14 @@ jobs:
           path: ${{ runner.temp }}/agent-browser-consumer-artifacts
           if-no-files-found: error
           retention-days: 7
+      - name: Package verified native executable
+        run: |
+          node --input-type=module -e 'import assert from "node:assert/strict"; assert.equal(process.platform, "linux"); assert.equal(process.arch, "x64");'
+          node packages/agent-browser/scripts/native-artifact.ts --output "$RUNNER_TEMP/agent-browser-native-artifact"
+      - name: Preserve verified native executable
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-browser-native-linux-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/agent-browser-native-artifact
+          if-no-files-found: error
+          retention-days: 7

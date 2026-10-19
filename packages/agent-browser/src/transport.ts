@@ -1,16 +1,74 @@
 /** The pinned public CLI is the only agent-browser protocol this adapter uses. */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { EngineError, type EngineErrorCode, type OperationContext } from 'e2e/engine';
 
 /** The reviewed CLI build enforces exact node identity and immutable attachment scope. */
 export const AGENT_BROWSER_VERSION = '0.39.1-e2e.3';
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const PRE_DISPATCH_REF_COMMANDS = new Set(['click', 'dblclick', 'fill', 'type', 'focus', 'hover', 'check', 'uncheck', 'select', 'upload']);
+// The public CLI applies Darwin's sun_path[104] limit on every Unix platform.
+// Include its stream metadata and longer sidecars, not just the main socket.
+const MAX_SOCKET_PATH_BYTES = 103;
+const SESSION_SUFFIXES = ['.sock', '.stream', '.pid', '.version', '.config', '.port', '.trust.json', '.target', '.log', '.engine', '.provider', '.extensions'];
+
+function pathsFit(directory: string, session: string): boolean {
+  return process.platform === 'win32' || SESSION_SUFFIXES.every(suffix =>
+    Buffer.byteLength(join(directory, `${session}${suffix}`), 'utf8') <= MAX_SOCKET_PATH_BYTES);
+}
+
+/** Resolve aliases (notably Darwin /tmp) and reject replaceable ancestry. */
+function temporaryRoot(candidate: string): string {
+  if (!isAbsolute(candidate)) throw new Error('Invalid temporary root');
+  const root = realpathSync(candidate);
+  if (process.platform === 'win32') return root;
+  const uid = process.geteuid?.();
+  if (uid === undefined) throw new Error('Cannot verify temporary root ownership');
+  for (let path = root; ; path = dirname(path)) {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory() || (stat.uid !== 0 && stat.uid !== uid)
+      || ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) {
+      throw new Error('Unsafe temporary root');
+    }
+    if (dirname(path) === path) return root;
+  }
+}
+
+/** Each fallback is another independently owned directory, never a shared session. */
+function sessionDirectory(session: string): string {
+  const candidates = process.platform === 'win32' ? [tmpdir()] : [tmpdir(), '/tmp'];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    let directory: string | undefined;
+    try {
+      const root = temporaryRoot(candidate);
+      if (seen.has(root)) continue;
+      seen.add(root);
+      // mkdtemp appends six random characters. Check before creation and again
+      // on the actual path, so neither UTF-16 length nor an alias can hide bytes.
+      if (!pathsFit(join(root, 'e2e-ab-XXXXXX'), session)) continue;
+      directory = mkdtempSync(join(root, 'e2e-ab-'));
+      const stat = lstatSync(directory);
+      if (!stat.isDirectory() || realpathSync(directory) !== directory || !pathsFit(directory, session)
+        || (process.platform !== 'win32' && (stat.uid !== process.geteuid?.() || (stat.mode & 0o777) !== 0o700))) {
+        throw new Error('Unsafe session directory');
+      }
+      writeFileSync(join(directory, 'config.json'), '{}', { mode: 0o600, flag: 'wx' });
+      return directory;
+    } catch {
+      if (directory !== undefined) {
+        try { rmSync(directory, { recursive: true, force: true }); } catch {
+          throw failure('ENGINE_FAILURE', 'Could not remove incomplete isolated agent-browser configuration');
+        }
+      }
+    }
+  }
+  throw failure('ENGINE_FAILURE', 'Could not create a private agent-browser session directory with safe socket paths');
+}
 
 /** CLI launch settings; executablePath is Chromium, executable is the CLI. */
 export interface CliTransportOptions {
@@ -189,12 +247,7 @@ export class CliTransport {
     this.scoped = scope.length !== 0;
     this.session = `${(options.session ?? 'e2e').replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 24)}-${randomUUID()}`;
     this.executable = options.executable ?? installedExecutable();
-    try {
-      this.directory = mkdtempSync(join(tmpdir(), 'e2e-ab-'));
-      writeFileSync(join(this.directory, 'config.json'), '{}', { mode: 0o600 });
-    } catch {
-      throw failure('ENGINE_FAILURE', 'Could not create isolated agent-browser configuration');
-    }
+    this.directory = sessionDirectory(this.session);
     this.flags = [
       '--config', join(this.directory, 'config.json'), '--session', this.session,
       '--json', '--engine', 'chrome', '--no-webmcp', '--no-auto-dialog', '--input-mode', 'instant',

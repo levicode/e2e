@@ -45,11 +45,12 @@ Endpoint callbacks have a bounded initial resolution budget and receive cancella
 
 - Basic authentication defaults to the configured app site. `basicAuth.scope: 'any-origin'` explicitly opts into the original engine's broader server-challenge behavior. Proxy challenges and mismatched challenge origins are never answered.
 - Protected header values may be declared `Secret` values and are resolved through the attempt's redaction ledger. No protected value is placed in CLI arguments or state files.
+- Screenshot attestation verifies the decoded PNG bytes for every visible masked field rectangle, as well as source DOM/frame geometry. It refuses pixels for transformed/perspective/zoomed frame-owner chains, non-integral or mismatched frame viewport mapping, unsupported PNG formats, over 16,777,216 pixels, or over 4,096 required regions. These are explicit fail-closed screenshot limits, not silently unmasked fallbacks. Sensitive-input taint continues to suppress screenshots entirely.
 - Exact-node `fill` uses the native DOM value setter and a synthetic `InputEvent` after actionability validation. It does not reproduce trusted text-entry events; applications that require `event.isTrusted` for fill need separate compatibility validation. `keyboard.type` emits trusted keydown/up for US-layout characters and uses trusted text insertion for unmapped Unicode, matching the original browser keyboard behavior.
 - Node and coordinate swipes use trusted CDP wheel input with the original engine's direction and momentum distances; element swipes target the element center after exact-ref hover.
 - Concurrent UI input sequences are rejected rather than serialized behind waits. Network waits, asynchronous route handlers, response delivery, and diagnostics remain independent of the UI-command path.
 - Route, dialog, and download-trigger continuations retain their originating browser generation and invocation lifetime. Once a callback completes or expires, it cannot obtain a new fixture operation even if the browser generation is unchanged. This does not cancel or undo browser commands that were already dispatched.
-- The factory's cache identity is `agent-browser-exact-4`. The runner keys by engine name and SPI, not package version. Incompatible semantic changes require a new identity epoch.
+- The factory's cache identity is `agent-browser-exact-5`. The runner keys by engine name and SPI, not package version. Incompatible semantic changes require a new identity epoch.
 - Stock agent-browser is refused. The maintained public CLI extension supplies strict refs and several necessary semantic safeguards; upgrading only the npm executable is not supported.
 
 ## Remaining proof

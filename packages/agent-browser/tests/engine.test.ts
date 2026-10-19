@@ -11,6 +11,7 @@ test('separate public SPI identity advertises actual implemented capabilities', 
   assert.equal(engine.name, ENGINE_NAME);
   assert.equal(engine.version, ENGINE_VERSION);
   assert.notEqual(engine.name, 'web');
+  assert.notEqual(engine.name, 'agent-browser-exact-4', 'The prior optimistic pixel-proof epoch must not share replay caches');
   for (const capability of ['observation', 'actions', 'location', 'keyboard', 'pointer', 'state', 'artifacts', 'browser']) assert.ok(engine.capabilities.has(capability));
   assert.equal(typeof engine.artifacts?.startVideo, 'function');
   assert.equal(engine.pointerActions?.includes('doubleTap'), true);

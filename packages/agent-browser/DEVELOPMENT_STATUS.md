@@ -1,11 +1,9 @@
-# Agent-browser engine development
+# Source-pinned agent-browser candidate
 
-This branch contains work in progress toward an independent agent-browser engine for e2e.
+The complete source is on this feature branch. Upstream e2e remains pinned to `97f453fbcfd99b73faa0177ba60e489df9625b86`; the independent adapter does not replace the original Web or mobile packages.
 
-Pinned e2e base: 97f453fbcfd99b73faa0177ba60e489df9625b86.
+Linux commit `e4d2561db569582525251c1d207a996f8ed235ef` passed 53/53 integration cases once, but its exact repeat exposed a screenshot pixel-proof defect. That older privacy epoch must not be treated as stable. The follow-up adds decoded-PNG black-region attestation, repeated masking fixtures, the `agent-browser-exact-5` cache epoch, and safe short socket paths for macOS.
 
-The implementation and tests have been prepared in a separate build workspace. Publication is being verified before uploading the coherent source checkpoint.
+See `VALIDATION.md` for exact evidence and remaining platform/UAT boundaries, `INSTALL.md` for matching source-pinned package/native artifacts, and `UPSTREAM_SYNC.md` for maintenance. Only successful current workflows and their exact artifact manifests establish a tested candidate. The macOS workflow exercises native/unit and selected locator/runner/consumer acceptance, not the full Linux matrix.
 
-Local build, typecheck, lint, and unit checks passed for the frozen implementation checkpoints. Native patched agent-browser compilation and real Chromium integration tests are pending GitHub Actions. Private application acceptance has not run.
-
-This file is a publication checkpoint, not a finished release or a claim of full compatibility. The main branch remains unchanged.
+No npm release, GitHub release, deployment or main-branch merge is performed by these workflows. Private-application acceptance on the user's actual computer remains separate.

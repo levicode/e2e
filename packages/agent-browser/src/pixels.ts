@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { EngineError, TestError, type ObservationPixels, type OperationContext } from 'e2e/engine';
 import type { CdpConnection } from './cdp.ts';
 import { releaseStateProbeTarget, type StateProbeTargets } from './state.ts';
+import { verifyPngMaskProof } from './png-mask-proof.ts';
 
 interface FrameTree { frame: { id: string }; childFrames?: FrameTree[] }
 interface DomNode {
@@ -15,10 +16,11 @@ export interface PixelCapture {
   readonly maskedRegionCount: number;
   readonly maskingProven: true;
 }
+type PngFailureReason = Extract<ReturnType<typeof verifyPngMaskProof>, { ok: false }>['reason'];
 type PixelPhase = 'operation' | 'inventory-main' | 'inventory-remote' | 'inventory-stability' | 'world' | 'closed-shadow' | 'mask-install' | 'freeze'
   | 'verify-before-owners' | 'verify-before-shadows' | 'verify-before-documents' | 'verify-before-trees' | 'verify-before-masks'
   | 'verify-after-owners' | 'verify-after-shadows' | 'verify-after-documents' | 'verify-after-trees' | 'verify-after-masks'
-  | 'viewport' | 'capture' | 'png' | 'cleanup-masks' | 'cleanup-objects' | 'cleanup-active' | 'cleanup-visible' | 'cleanup-tasks' | 'cleanup-detach';
+  | 'paint' | 'geometry-before' | 'geometry-after' | `pixel-proof-${PngFailureReason}` | 'pixel-proof' | 'viewport' | 'capture' | 'png' | 'cleanup-masks' | 'cleanup-objects' | 'cleanup-active' | 'cleanup-visible' | 'cleanup-tasks' | 'cleanup-detach';
 const denied = (phase: PixelPhase = 'operation'): TestError => new TestError('POLICY_DENIED', `Screenshot masking could not be proven for every frame and editable field (${phase})`);
 class InventoryNotReady extends Error {}
 function frameIds(tree: FrameTree): string[] { return [tree.frame.id, ...(tree.childFrames ?? []).flatMap(frameIds)]; }
@@ -93,12 +95,15 @@ const INSTALL_MASKS = `(key) => {
     mask.setAttribute('popover', 'manual');
     mask.setAttribute('aria-hidden', 'true');
     mask.style.cssText = 'all:initial!important;position:fixed!important;display:block!important;box-sizing:border-box!important;margin:0!important;padding:0!important;border:0!important;outline:0!important;background:rgb(0,0,0)!important;opacity:1!important;visibility:visible!important;pointer-events:none!important;transform:none!important;filter:none!important;clip-path:none!important;mix-blend-mode:normal!important;z-index:2147483647!important;';
-    mask.style.setProperty('left', rect[0] + 'px', 'important');
-    mask.style.setProperty('top', rect[1] + 'px', 'important');
-    mask.style.setProperty('width', rect[2] + 'px', 'important');
-    mask.style.setProperty('height', rect[3] + 'px', 'important');
+    // Pad beyond the sensitive rectangle so every intersecting screenshot pixel is
+    // opaque black, including fractional CSS coordinates and device-scale edges.
+    const maskRect = [Math.floor(rect[0]) - 2, Math.floor(rect[1]) - 2, Math.ceil(rect[0] + rect[2]) - Math.floor(rect[0]) + 4, Math.ceil(rect[1] + rect[3]) - Math.floor(rect[1]) + 4];
+    mask.style.setProperty('left', maskRect[0] + 'px', 'important');
+    mask.style.setProperty('top', maskRect[1] + 'px', 'important');
+    mask.style.setProperty('width', maskRect[2] + 'px', 'important');
+    mask.style.setProperty('height', maskRect[3] + 'px', 'important');
     document.documentElement.append(mask); mask.showPopover();
-    masks.push({ mask, node, rect });
+    masks.push({ mask, node, rect, maskRect });
   }
   return state.count;
 }`;
@@ -117,7 +122,7 @@ const VERIFY_MASKS = `(key) => {
     const mask = saved.mask; if (!mask.isConnected || !mask.matches(':popover-open')) return false;
     const style = getComputedStyle(mask); const box = mask.getBoundingClientRect();
     if (style.backgroundColor !== 'rgb(0, 0, 0)' || style.opacity !== '1' || style.visibility !== 'visible' || style.display === 'none' || style.filter !== 'none' || style.transform !== 'none' || style.mixBlendMode !== 'normal') return false;
-    if ([box.left, box.top, box.width, box.height].some((n, i) => Math.abs(n - rect[i]) > 0.01)) return false;
+    if ([box.left, box.top, box.width, box.height].some((n, i) => Math.abs(n - saved.maskRect[i]) > 0.01)) return false;
     // A newer top-layer element must not cover the black mask.
     const x = Math.max(0, Math.min(innerWidth - 1, box.left + box.width / 2));
     const y = Math.max(0, Math.min(innerHeight - 1, box.top + box.height / 2));
@@ -130,6 +135,39 @@ const VERIFY_MASKS = `(key) => {
   }
   return index === state.masks.length;
 }`;
+const MASK_GEOMETRY = `(key) => {
+  const state = globalThis[key]; if (!state) return null;
+  const viewport = globalThis.visualViewport;
+  if (viewport && (viewport.scale !== 1 || viewport.offsetLeft !== 0 || viewport.offsetTop !== 0)) return null;
+  // Cover the verification tolerance too; never narrow proof to a center sample.
+  return { width: innerWidth, height: innerHeight, rectangles: state.masks.map(entry => ({ x: entry.rect[0] - 0.02, y: entry.rect[1] - 0.02, width: entry.rect[2] + 0.04, height: entry.rect[3] + 0.04 })) };
+}`;
+// A frame's content viewport is translated into its parent's viewport. More complex
+// transforms require a separately proven projection; never guess screen coordinates.
+const FRAME_GEOMETRY = `function() {
+  if (!this.isConnected || !['IFRAME','FRAME'].includes(this.tagName)) return null;
+  for (let node = this; node; node = node.parentElement ?? node.getRootNode().host) {
+    const style = getComputedStyle(node);
+    if (style.transform !== 'none' || style.perspective !== 'none' || style.rotate !== 'none' || style.scale !== 'none' || style.translate !== 'none' || Number(style.zoom) !== 1) return null;
+  }
+  const box = this.getBoundingClientRect(); const style = getComputedStyle(this);
+  const left = parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+  const top = parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop);
+  const right = parseFloat(style.borderRightWidth) + parseFloat(style.paddingRight);
+  const bottom = parseFloat(style.borderBottomWidth) + parseFloat(style.paddingBottom);
+  return { x: box.left + left, y: box.top + top, width: box.width - left - right, height: box.height - top - bottom };
+}`;
+interface MaskRectangle { x: number; y: number; width: number; height: number }
+interface MaskGeometry { width: number; height: number; rectangles: MaskRectangle[] }
+function validRectangle(value: MaskRectangle): boolean {
+  return value !== null && typeof value === 'object' && [value.x, value.y, value.width, value.height].every(Number.isFinite) && value.width > 0 && value.height > 0;
+}
+function clipRectangle(rect: MaskRectangle, width: number, height: number): MaskRectangle | undefined {
+  const x = Math.max(0, rect.x); const y = Math.max(0, rect.y);
+  const right = Math.min(width, rect.x + rect.width); const bottom = Math.min(height, rect.y + rect.height);
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : undefined;
+}
+
 const REMOVE_MASKS = `(key) => {
   delete globalThis[key + '_closed'];
   const state = globalThis[key]; if (!state) return true;
@@ -242,7 +280,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
   const current = (): OperationContext => ({ ...context, timeoutMs: Math.max(0, ends - Date.now()) });
   const session = await cdp.attachTarget(targetId, current());
   const key = `__e2e_masks_${randomUUID().replaceAll('-', '')}`;
-  const installed: { contextId: number; session: string }[] = [];
+  const installed: { contextId: number; session: string; frameId: string }[] = [];
   const sessions: FrameSession[] = [];
   const attached = new Set([session]);
   let freezeAttempted = false;
@@ -331,7 +369,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       const { executionContextId } = await cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
         frameId, worldName: key, grantUniveralAccess: false,
       }, current(), frameSessionId);
-      installed.push({ contextId: executionContextId, session: frameSessionId });
+      installed.push({ contextId: executionContextId, session: frameSessionId, frameId });
       if (frameSessionId === session && frameId === frameSession.documents[0]) {
         const visible = await evaluate<boolean>(cdp, frameSessionId, executionContextId, 'document.visibilityState === "visible"', current());
         if (typeof visible !== 'boolean') throw denied(); restoreVisibility = visible; mainContextId = executionContextId;
@@ -353,6 +391,42 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       const added = await evaluate<number>(cdp, frameSessionId, executionContextId, `(${INSTALL_MASKS})(${JSON.stringify(key)})`, current());
       if (!Number.isSafeInteger(added) || added < 0) throw denied(); count += added;
     }
+    phase = 'paint';
+    // DOM/layout acknowledgement does not mean the compositor has painted the new
+    // overlays. Give every inspected renderer a complete frame before hiding it.
+    await Promise.all(installed.map(async item => {
+      if (await evaluate<boolean>(cdp, item.session, item.contextId, 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))', current()) !== true) throw denied();
+    }));
+    const collectGeometry = async (): Promise<{ frames: [string, MaskGeometry][]; offsets: [string, MaskRectangle][]; rectangles: MaskRectangle[] }> => {
+      const frames = new Map<string, MaskGeometry>(); const offsets = new Map<string, MaskRectangle>();
+      for (const item of installed) {
+        const geometry = await evaluate<MaskGeometry>(cdp, item.session, item.contextId, `(${MASK_GEOMETRY})(${JSON.stringify(key)})`, current());
+        if (!geometry || !Number.isFinite(geometry.width) || !Number.isFinite(geometry.height) || geometry.width <= 0 || geometry.height <= 0 || !Array.isArray(geometry.rectangles) || !geometry.rectangles.every(validRectangle)) throw denied();
+        frames.set(item.frameId, geometry);
+      }
+      for (const [frameId, owner] of ownership) {
+        const parent = installed.find(item => item.frameId === owner.parentFrameId && item.session === owner.session);
+        const child = frames.get(frameId); if (!parent || !child) throw denied();
+        const { object } = await cdp.send<{ object: { objectId?: string } }>('DOM.resolveNode', { backendNodeId: owner.backendNodeId, executionContextId: parent.contextId, objectGroup: key }, current(), parent.session);
+        if (!object.objectId) throw denied();
+        const answer = await cdp.send<Evaluation<MaskRectangle>>('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: FRAME_GEOMETRY, returnByValue: true }, current(), parent.session);
+        const rectangle = answer.result.value;
+        if (answer.exceptionDetails || !rectangle || !validRectangle(rectangle) || rectangle.width !== child.width || rectangle.height !== child.height) throw denied();
+        offsets.set(frameId, rectangle);
+      }
+      const mainFrame = sessions[0]!.documents[0]!; const rectangles: MaskRectangle[] = [];
+      for (const [frameId, geometry] of frames) for (const rectangle of geometry.rectangles) {
+        let visible = clipRectangle(rectangle, geometry.width, geometry.height); let frame = frameId; const visited = new Set<string>();
+        while (visible && frame !== mainFrame) {
+          if (visited.has(frame)) throw denied(); visited.add(frame);
+          const offset = offsets.get(frame); const owner = ownership.get(frame); if (!offset || !owner) throw denied();
+          const parent = frames.get(owner.parentFrameId); if (!parent) throw denied();
+          visible = clipRectangle({ ...visible, x: visible.x + offset.x, y: visible.y + offset.y }, parent.width, parent.height); frame = owner.parentFrameId;
+        }
+        if (visible) rectangles.push(visible);
+      }
+      return { frames: [...frames], offsets: [...offsets], rectangles };
+    };
     freezeAttempted = true; phase = 'freeze';
     await cdp.send('Page.setWebLifecycleState', { state: 'frozen' }, current(), session);
     const verifyAll = async (stage: 'verify-before' | 'verify-after'): Promise<void> => {
@@ -360,7 +434,8 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       phase = `${stage}-masks`;
       for (const item of installed) if (!await evaluate<boolean>(cdp, item.session, item.contextId, `(${VERIFY_MASKS})(${JSON.stringify(key)})`, current())) throw denied();
     };
-    await verifyAll('verify-before'); phase = 'viewport';
+    await verifyAll('verify-before'); phase = 'geometry-before';
+    const geometry = await collectGeometry(); phase = 'viewport';
     const { cssVisualViewport } = await cdp.send<{ cssVisualViewport: { clientWidth: number; clientHeight: number; pageX: number; pageY: number; scale: number } }>('Page.getLayoutMetrics', {}, current(), session);
     const viewport = cssVisualViewport;
     if (!viewport || !Number.isFinite(viewport.clientWidth) || !Number.isFinite(viewport.clientHeight) || viewport.clientWidth <= 0 || viewport.clientHeight <= 0 || viewport.scale !== 1) throw denied();
@@ -369,9 +444,16 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       format: 'png', fromSurface: true, captureBeyondViewport: false,
       clip: { x: viewport.pageX, y: viewport.pageY, width: viewport.clientWidth, height: viewport.clientHeight, scale: 1 },
     }, current(), session);
-    await verifyAll('verify-after'); phase = 'png';
+    await verifyAll('verify-after'); phase = 'geometry-after';
+    if (JSON.stringify(await collectGeometry()) !== JSON.stringify(geometry)) throw denied();
+    phase = 'png';
     const data = new Uint8Array(Buffer.from(capture.data, 'base64')); const size = readPngSize(data);
-    if (!size || Math.abs(size.width / viewport.clientWidth - size.height / viewport.clientHeight) > 0.01) throw denied();
+    if (!size || size.width * viewport.clientHeight !== size.height * viewport.clientWidth) throw denied();
+    phase = 'pixel-proof';
+    const scale = size.width / viewport.clientWidth;
+    const rectangles = geometry.rectangles.map(rectangle => ({ x: rectangle.x * scale, y: rectangle.y * scale, width: rectangle.width * scale, height: rectangle.height * scale }));
+    const proof = verifyPngMaskProof(data, { expectedWidth: size.width, expectedHeight: size.height, rectangles });
+    if (!proof.ok) { phase = `pixel-proof-${proof.reason}`; throw denied(); }
     output = { pixels: { data, mediaType: 'image/png', ...size, scale: size.width / viewport.clientWidth }, maskedRegionCount: count, maskingProven: true };
   } catch (error) {
     failure = error instanceof EngineError && (error.code === 'CANCELLED' || error.code === 'OPERATION_TIMEOUT') ? error : denied(phase);

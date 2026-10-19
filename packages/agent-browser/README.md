@@ -2,6 +2,8 @@
 
 Development candidate for a separate `@e2e-dev/agent-browser` package. This package is not published and does not replace or modify `@e2e-dev/web`. It implements the public `e2e/engine` SPI version 1 with a distinct engine/cache identity.
 
+See [installation and source-pinned artifacts](INSTALL.md), [exact validation evidence](VALIDATION.md), and the [upstream synchronization checklist](UPSTREAM_SYNC.md). Native artifacts identify their tested OS and CPU architecture; a Linux pass is not macOS or private-application UAT proof.
+
 ## Architecture
 
 - agent-browser owns default accessibility snapshots, refs, and primary node actions. No interactive-only, compact, depth, viewport, accessible-name, or cursor filtering is added. Unnamed font-icon controls stay in the observation.
@@ -9,7 +11,7 @@ Development candidate for a separate `@e2e-dev/agent-browser` package. This pack
 - Each local attempt owns a new Chromium process and disposable profile. Cancellation with uncertain mutation outcomes poisons that attempt. The adapter does not equate killing a CLI client with cancelling the daemon.
 - Engine-owned ref IDs are unique across attempts and workers. The runner owns revisions; sequential locator resolutions retain their exact native identities so a drag destination cannot erase its source.
 - Optional trace capture uses a second isolated agent-browser CLI session attached to the same browser and exact target. Its non-activating tab binding and separate ref namespace cannot replace action refs; a failed optional read disables trace capture without retrying input.
-- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-4`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
+- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-5`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
 
 ## Required CLI extension
 

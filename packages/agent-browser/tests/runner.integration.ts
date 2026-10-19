@@ -163,22 +163,26 @@ test('public run records/replays the real icon action and refuses incompatible e
       expect(await browser.evaluate('window.clicks')).toBe(1);
     });`);
   try {
-    // Identity simulation only: production browser hooks create a valid recording under the old name.
-    // This proves cross-name cache refusal; it does not pretend to be a Playwright-generated recording.
-    const legacy = defineEngine(Object.create(engine(), { name: { value: 'web', enumerable: true } }) as Engine);
-    const legacyRecorded = await run({ cwd, config: { ...config(legacy, brain.executor), cache: 'read-write' } });
-    passed(legacyRecorded);
-    assert.equal(brain.calls(), 1);
-    await waitForCommits(priorCommits + 1);
-    const oldEntries = await cacheEntries(cwd);
-    assert.equal(oldEntries.length, 1);
-    assert.equal(oldEntries[0]?.payload.keyedBy?.engineName, 'web');
+    // Identity simulation only: production browser hooks record under both incompatible names.
+    // This proves core's strict identity boundary, not provenance from a historical implementation.
+    const incompatibleNames = ['web', 'agent-browser-exact-4'];
+    assert.ok(!incompatibleNames.includes(ENGINE_NAME));
+    for (const [index, name] of incompatibleNames.entries()) {
+      const legacy = defineEngine(Object.create(engine(), { name: { value: name, enumerable: true } }) as Engine);
+      const legacyRecorded = await run({ cwd, config: { ...config(legacy, brain.executor), cache: 'read-write' } });
+      passed(legacyRecorded);
+      assert.equal(brain.calls(), index + 1);
+      await waitForCommits(priorCommits + index + 1);
+      const oldEntries = await cacheEntries(cwd);
+      assert.equal(oldEntries.length, index + 1);
+      assert.equal(oldEntries.filter(entry => entry.payload.keyedBy?.engineName === name).length, 1);
 
-    const refused = await run({ cwd, config: { ...config(engine(), brain.executor), cache: { mode: 'read-only', strict: true } } });
-    assert.equal(refused.exitCode, 2);
-    assert.equal(actStep(refused.report).error?.code, 'REPLAY_STALE');
-    assert.equal(brain.calls(), 1, 'An incompatible existing recording must not silently fall back to live execution in strict mode');
-    assert.equal(committedClicks, priorCommits + 1, 'Cross-engine replay refusal must occur before input');
+      const refused = await run({ cwd, config: { ...config(engine(), brain.executor), cache: { mode: 'read-only', strict: true } } });
+      assert.equal(refused.exitCode, 2);
+      assert.equal(actStep(refused.report).error?.code, 'REPLAY_STALE');
+      assert.equal(brain.calls(), index + 1, `Incompatible ${name} recording must not fall back to live execution in strict mode`);
+      assert.equal(committedClicks, priorCommits + index + 1, `Incompatible ${name} replay refusal must occur before input`);
+    }
 
     let tracePaths: string[] = [];
     const recorded = await run({ cwd, config: {
@@ -186,7 +190,7 @@ test('public run records/replays the real icon action and refuses incompatible e
       reporters: [{ name: 'independent-trace-audit', async onRunFinished(finished) { tracePaths = [...finished.traces.values()]; } }],
     } });
     passed(recorded);
-    assert.equal(brain.calls(), 2);
+    assert.equal(brain.calls(), 3);
     assert.equal(recorded.report.run.targets[0]?.engine.name, ENGINE_NAME);
     assert.equal(recorded.report.run.targets[0]?.engine.version, ENGINE_VERSION);
     assert.ok(recorded.reportPath);
@@ -198,20 +202,20 @@ test('public run records/replays the real icon action and refuses incompatible e
     const currentEntries = (await cacheEntries(cwd)).filter((entry) => entry.payload.keyedBy?.engineName === ENGINE_NAME);
     assert.equal(currentEntries.length, 1);
     assert.equal(currentEntries[0]?.payload.actions.length, 1);
-    await waitForCommits(priorCommits + 2);
+    await waitForCommits(priorCommits + 3);
 
     const replayed = await run({ cwd, config: { ...config(engine(), brain.executor), cache: { mode: 'read-only', strict: true } } });
     passed(replayed);
-    assert.equal(brain.calls(), 2, 'Replay must execute the browser action without invoking the scripted executor again');
+    assert.equal(brain.calls(), 3, 'Replay must execute the browser action without invoking the scripted executor again');
     assert.equal(actStep(replayed.report).cache?.mode, 'self-finalized');
     assert.equal(actStep(replayed.report).cache?.replayedActions, 1);
-    await waitForCommits(priorCommits + 3);
+    await waitForCommits(priorCommits + 4);
 
     showGlyph = false;
     const stale = await run({ cwd, config: { ...config(engine(), brain.executor), cache: { mode: 'read-only', strict: true } } });
     assert.equal(stale.exitCode, 2);
     assert.equal(actStep(stale.report).error?.code, 'REPLAY_STALE');
-    assert.equal(brain.calls(), 2);
-    assert.equal(committedClicks, priorCommits + 3, 'A missing replay target must not be replaced by an arbitrary click');
+    assert.equal(brain.calls(), 3);
+    assert.equal(committedClicks, priorCommits + 4, 'A missing replay target must not be replaced by an arbitrary click');
   } finally { showGlyph = true; await rm(cwd, { recursive: true, force: true }); }
 });

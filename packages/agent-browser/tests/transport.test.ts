@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile, access } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import childProcess from 'node:child_process';
+import fs from 'node:fs';
+import { mkdtemp, readFile, rm, writeFile, access, mkdir, realpath, stat, readdir, symlink } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import os, { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { EngineError, type OperationContext } from 'e2e/engine';
 import { CliTransport, type CliTransportOptions } from '../src/transport.ts';
@@ -81,6 +84,202 @@ function classified(code: string, secret?: string): (error: unknown) => boolean 
     return true;
   };
 }
+
+/** Built-in bindings are restored explicitly; no transport-only configuration seam. */
+function useTemporaryRoot(t: TestContext, directory: string): void {
+  const mocked = t.mock.method(os, 'tmpdir', () => directory);
+  syncBuiltinESMExports();
+  t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
+}
+
+async function shortTestRoot(t: TestContext): Promise<string> {
+  const directory = await realpath(await mkdtemp('/tmp/a-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+function assertSocketPaths(directory: string, session: string): void {
+  for (const suffix of ['.sock', '.stream', '.pid', '.version', '.config', '.port', '.trust.json', '.target', '.log', '.engine', '.provider', '.extensions']) {
+    assert.ok(Buffer.byteLength(join(directory, `${session}${suffix}`), 'utf8') <= 103, `Path exceeds the public CLI's Unix limit for ${suffix}`);
+  }
+}
+
+test('normal short temp roots retain a private, exclusively owned directory and config', async (t) => {
+  const root = await shortTestRoot(t);
+  useTemporaryRoot(t, root);
+  const { transport, log } = await fake(t);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), root);
+  assertSocketPaths(directory, transport.session);
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  assert.equal((await stat(directory)).uid, process.geteuid?.());
+  assert.equal((await stat(join(directory, 'config.json'))).mode & 0o777, 0o600);
+  await transport.close(context());
+  await assert.rejects(access(directory));
+  await access(root);
+});
+
+test('very long temp roots fall back to a verified short root without shortening the unique session', async (t) => {
+  const root = join(await shortTestRoot(t), 'var', 'folders', 'long-temporary-component-'.repeat(5), 'T');
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  useTemporaryRoot(t, root);
+  const { transport, log } = await fake(t, {}, { session: 'readable-prefix-'.repeat(5) });
+  assert.match(transport.session, /^readable-prefix-readable-[0-9a-f-]{36}$/);
+  assert.equal(transport.session.length, 61);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), await realpath('/tmp'));
+  assertSocketPaths(directory, transport.session);
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  assert.ok((await readdir(root)).every(name => !name.startsWith('e2e-ab-')));
+});
+
+test('UTF-8 bytes, not string length, decide whether a non-ASCII temp root fits', async (t) => {
+  const root = join(await shortTestRoot(t), '界'.repeat(12));
+  await mkdir(root, { mode: 0o700 });
+  const predicted = join(root, 'e2e-ab-XXXXXX', `${'e'.repeat(40)}.extensions`);
+  assert.ok(predicted.length <= 103);
+  assert.ok(Buffer.byteLength(predicted, 'utf8') > 103);
+  useTemporaryRoot(t, root);
+  const { transport, log } = await fake(t);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), await realpath('/tmp'));
+  assertSocketPaths(directory, transport.session);
+});
+
+test('longer public sidecars are checked even when the main socket would fit', async (t) => {
+  const base = await shortTestRoot(t);
+  const root = join(base, 'x'.repeat(43 - Buffer.byteLength(base, 'utf8') - 1));
+  await mkdir(root, { mode: 0o700 });
+  assert.equal(Buffer.byteLength(join(root, 'e2e-ab-XXXXXX', `${'e'.repeat(40)}.sock`)), 103);
+  assert.ok(Buffer.byteLength(join(root, 'e2e-ab-XXXXXX', `${'e'.repeat(40)}.stream`)) > 103);
+  useTemporaryRoot(t, root);
+  const { transport, log } = await fake(t);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), await realpath('/tmp'));
+  assertSocketPaths(directory, transport.session);
+});
+
+test('the longest sidecar may use exactly 103 UTF-8 bytes', async (t) => {
+  const base = await shortTestRoot(t);
+  const root = join(base, 'x'.repeat(37 - Buffer.byteLength(base, 'utf8') - 1));
+  await mkdir(root, { mode: 0o700 });
+  useTemporaryRoot(t, root);
+  const { transport, log } = await fake(t);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), root);
+  assert.equal(Buffer.byteLength(join(directory, `${transport.session}.extensions`)), 103);
+  assertSocketPaths(directory, transport.session);
+});
+
+test('a short directory alias cannot conceal a longer canonical socket path', async (t) => {
+  const base = await shortTestRoot(t);
+  const root = join(base, 'long-'.repeat(25));
+  const alias = join(base, 'alias');
+  await mkdir(root, { mode: 0o700 });
+  await symlink(root, alias, 'dir');
+  useTemporaryRoot(t, alias);
+  const { transport, log } = await fake(t);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), await realpath('/tmp'));
+  assertSocketPaths(directory, transport.session);
+});
+
+test('a foreign-owned temporary root is rejected even when its path and mode fit', async (t) => {
+  const root = await shortTestRoot(t);
+  useTemporaryRoot(t, root);
+  const inspect = fs.lstatSync;
+  const inspecting = t.mock.method(fs, 'lstatSync', ((path: fs.PathLike) => {
+    const result = inspect(path);
+    if (path === root) result.uid = (process.geteuid?.() ?? 0) + 100_000;
+    return result;
+  }) as typeof fs.lstatSync);
+  syncBuiltinESMExports();
+  try {
+    const { transport, log } = await fake(t);
+    await transport.version(context());
+    const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+    assert.equal(dirname(directory), await realpath('/tmp'));
+    assert.equal((await stat(directory)).uid, process.geteuid?.());
+  } finally {
+    inspecting.mock.restore(); syncBuiltinESMExports();
+  }
+});
+
+test('a writable non-sticky temp root is rejected instead of weakening session isolation', async (t) => {
+  const root = join(await shortTestRoot(t), 'unsafe');
+  await mkdir(root, { mode: 0o700 });
+  fs.chmodSync(root, 0o777);
+  useTemporaryRoot(t, root);
+  const { transport, log } = await fake(t);
+  await transport.version(context());
+  const directory = (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!;
+  assert.equal(dirname(directory), await realpath('/tmp'));
+  assert.equal((await stat(root)).mode & 0o777, 0o777, 'The caller-owned root is not modified');
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+});
+
+test('concurrent transports keep distinct short directories and clean up only their own files', async (t) => {
+  const root = join(await shortTestRoot(t), 'long-'.repeat(25));
+  await mkdir(root, { mode: 0o700 });
+  useTemporaryRoot(t, root);
+  const fixtures = await Promise.all(Array.from({ length: 5 }, () => fake(t, {}, { session: 'p'.repeat(80) })));
+  await Promise.all(fixtures.map(({ transport }) => transport.version(context())));
+  const directories = await Promise.all(fixtures.map(async ({ log }) => (await calls(log))[0]!.env.AGENT_BROWSER_SOCKET_DIR!));
+  assert.equal(new Set(directories).size, fixtures.length);
+  assert.equal(new Set(fixtures.map(({ transport }) => transport.session)).size, fixtures.length);
+  for (const [index, directory] of directories.entries()) {
+    assertSocketPaths(directory, fixtures[index]!.transport.session);
+    assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  }
+  await fixtures[0]!.transport.close(context());
+  await assert.rejects(access(directories[0]!));
+  for (const directory of directories.slice(1)) await access(join(directory, 'config.json'));
+  await Promise.all(fixtures.slice(1).map(({ transport }) => transport.close(context())));
+  for (const directory of directories) await assert.rejects(access(directory));
+  await access(root);
+});
+
+test('no safe temporary root fails with a sanitized error before any CLI spawn', (t) => {
+  useTemporaryRoot(t, '/private-secret/unusable-temp');
+  const resolving = t.mock.method(fs, 'realpathSync', Object.assign(() => { throw new Error('private-secret root access'); }, { native: fs.realpathSync.native }));
+  const spawning = t.mock.method(childProcess, 'spawn', () => { throw new Error('Unexpected spawn'); });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => new CliTransport(), classified('ENGINE_FAILURE', 'private-secret'));
+    assert.equal(spawning.mock.callCount(), 0);
+    assert.equal(resolving.mock.callCount(), 2);
+  } finally {
+    resolving.mock.restore(); spawning.mock.restore(); syncBuiltinESMExports();
+  }
+});
+
+test('a config-write failure removes every newly owned directory before reporting failure', async (t) => {
+  const root = await shortTestRoot(t);
+  useTemporaryRoot(t, root);
+  const create = fs.mkdtempSync;
+  const directories: string[] = [];
+  const creating = t.mock.method(fs, 'mkdtempSync', ((prefix: string) => {
+    const directory = create(prefix);
+    directories.push(directory);
+    return directory;
+  }) as typeof fs.mkdtempSync);
+  const writing = t.mock.method(fs, 'writeFileSync', () => { throw new Error('private-secret config failure'); });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => new CliTransport(), classified('ENGINE_FAILURE', 'private-secret'));
+    assert.equal(directories.length, 2);
+    for (const directory of directories) await assert.rejects(access(directory));
+    await access(root);
+  } finally {
+    creating.mock.restore(); writing.mock.restore(); syncBuiltinESMExports();
+  }
+});
 
 test('uses exact argv, JSON, a unique session, and an isolated config/environment', async (t) => {
   const { transport, log } = await fake(t, { AGENT_BROWSER_RESTORE: 'victim', AGENT_BROWSER_PROFILE: '/private/profile', AGENT_BROWSER_PLUGINS: 'danger' });
