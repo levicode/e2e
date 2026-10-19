@@ -902,7 +902,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              json!({ "object": { "type": "object", "objectId": "login-node" } })
                          }
 -                        "Runtime.callFunctionOn" if failure == "fill-exception" => json!({
-+                        "Runtime.callFunctionOn" if request["params"]["functionDeclaration"].as_str().is_some_and(|source|source.contains("return this.isConnected")) && !failure.starts_with("gate") => {
++                        "Runtime.callFunctionOn" if request["params"]["functionDeclaration"].as_str().is_some_and(|source|source == "function() { return this.isConnected === true && (this.nodeType === 9 || this.ownerDocument === document); }") && !failure.starts_with("gate") => {
 +                            json!({ "result": { "type": "boolean", "value": true } })
 +                        }
 +                        "Runtime.callFunctionOn" if failure == "fill-exception" || failure == "gate-exception" => json!({
