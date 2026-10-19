@@ -43,7 +43,8 @@ const ANCHOR = `el => {
 const FRAME_GEOMETRY = `el => {
   for(let node=el;node;node=node.parentElement){const transform=getComputedStyle(node).transform;if(transform!=='none'){const matrix=new DOMMatrixReadOnly(transform);if(!matrix.is2D || matrix.b!==0 || matrix.c!==0 || matrix.a<=0 || matrix.d<=0)return null;}}
   const r=el.getBoundingClientRect(); const scaleX=el.offsetWidth?r.width/el.offsetWidth:1; const scaleY=el.offsetHeight?r.height/el.offsetHeight:1;
-  return {x:r.x+el.clientLeft*scaleX,y:r.y+el.clientTop*scaleY,scaleX,scaleY};
+  const style=getComputedStyle(el); const paddingLeft=Number.parseFloat(style.paddingLeft)||0; const paddingTop=Number.parseFloat(style.paddingTop)||0;
+  return {x:r.x+(el.clientLeft+paddingLeft)*scaleX,y:r.y+(el.clientTop+paddingTop)*scaleY,scaleX,scaleY};
 }`;
 
 /** Moves document boundaries outside their narrowing wrappers without changing match order. */

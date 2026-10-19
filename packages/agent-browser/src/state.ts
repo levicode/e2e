@@ -27,8 +27,21 @@ interface Evaluation<T> { result: { value?: T }; exceptionDetails?: unknown }
 
 const FORMAT = 'agent-browser-state';
 const invalid = (): EngineError => new EngineError('INVALID_STATE', 'Unsupported or malformed agent-browser state', { retryable: false });
-const failed = (): EngineError => new EngineError('ENGINE_FAILURE', 'Storage state could not be captured or restored safely', { retryable: false });
+type StoragePhase = 'operation' | 'context-identity' | 'target-list' | 'tab-attach' | 'tab-frames' | 'tab-storage-key' | 'tab-world' | 'tab-session-storage' | 'tab-release' | 'origin-create' | 'origin-attach' | 'origin-enable' | 'origin-interception' | 'origin-navigation' | 'origin-world' | 'origin-verification' | 'origin-storage' | 'origin-release' | 'cookies' | 'snapshot-validation';
+class StorageFailure extends EngineError {
+  constructor(phase: StoragePhase) { super('ENGINE_FAILURE', `Storage state could not be captured or restored safely (${phase})`, { retryable: false }); }
+}
+const failed = (phase: StoragePhase = 'operation'): EngineError => new StorageFailure(phase);
 const unsupported = (): EngineError => new EngineError('UNSUPPORTED_CAPABILITY', 'Storage contains unsupported structured-clone values, keys, or partitioned origins', { retryable: false });
+
+/** Only fixed internal phase names enter diagnostics, never browser errors or storage values. */
+async function storageStep<T>(phase: StoragePhase, run: () => Promise<T>): Promise<T> {
+  try { return await run(); }
+  catch (error) {
+    if (error instanceof StorageFailure || (error instanceof EngineError && ['CANCELLED', 'OPERATION_TIMEOUT', 'UNSUPPORTED_CAPABILITY'].includes(error.code))) throw error;
+    throw failed(phase);
+  }
+}
 
 function budget(context: OperationContext): () => OperationContext {
   const ends = Date.now() + context.timeoutMs;
@@ -51,14 +64,14 @@ async function targetContext(cdp: CdpConnection, context: OperationContext, prob
   let closed = true;
   try {
     const { targetInfo } = await cdp.send<{ targetInfo: { targetId: string; type: string; browserContextId?: string } }>('Target.getTargetInfo', { targetId }, current());
-    if (targetInfo.targetId !== targetId || targetInfo.type !== 'page' || (targetInfo.browserContextId !== undefined && (typeof targetInfo.browserContextId !== 'string' || !targetInfo.browserContextId))) throw failed();
+    if (targetInfo.targetId !== targetId || targetInfo.type !== 'page' || (targetInfo.browserContextId !== undefined && (typeof targetInfo.browserContextId !== 'string' || !targetInfo.browserContextId))) throw failed('context-identity');
     identity = targetInfo.browserContextId;
   } finally {
     const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
     if (probes) await probes.release(targetId, cleanup);
     else closed = (await cdp.send<{ success: boolean }>('Target.closeTarget', { targetId }, cleanup)).success;
   }
-  if (!closed) throw failed();
+  if (!closed) throw failed('context-identity');
   return identity;
 }
 
@@ -283,7 +296,7 @@ async function navigateReady(cdp: CdpConnection, session: string, url: string, c
     const [navigation] = await Promise.all([
       cdp.send<{ frameId: string; errorText?: string }>('Page.navigate', { url }, context, session), loaded,
     ]);
-    if (navigation.errorText) throw failed();
+    if (navigation.errorText) throw failed('origin-navigation');
     return navigation;
   } finally { unsubscribe(); unsubscribeNavigation(); clearTimeout(timer); context.signal.removeEventListener('abort', aborted); }
 }
@@ -291,12 +304,12 @@ async function navigateReady(cdp: CdpConnection, session: string, url: string, c
 /** Opens an origin without contacting it or running application code. Always closes the temporary tab. */
 async function withOrigin<T>(cdp: CdpConnection, origin: string, context: OperationContext, run: (session: string, contextId: number, current: () => OperationContext) => Promise<T>, existingTargetId?: string, probes?: StateProbeTargets): Promise<T> {
   const current = budget(context);
-  const targetId = existingTargetId ?? (probes ? await probes.create(current()) : (await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true }, current())).targetId);
+  const targetId = existingTargetId ?? await storageStep('origin-create', async () => probes ? probes.create(current()) : (await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true }, current())).targetId);
   let session: string | undefined;
   let unsubscribe: (() => void) | undefined;
   let interceptFailure = false;
   try {
-    session = await cdp.attachTarget(targetId, current());
+    session = await storageStep('origin-attach', () => cdp.attachTarget(targetId, current()));
     const attached = session;
     unsubscribe = cdp.on<{ requestId: string }>('Fetch.requestPaused', ({ requestId }) => {
       void cdp.send('Fetch.fulfillRequest', {
@@ -305,22 +318,22 @@ async function withOrigin<T>(cdp: CdpConnection, origin: string, context: Operat
         body: Buffer.from('<!doctype html><html><head></head><body></body></html>').toString('base64'),
       }, current(), attached).catch(() => { interceptFailure = true; });
     }, session);
-    await cdp.send('Page.enable', {}, current(), session);
-    await cdp.send('Network.setBypassServiceWorker', { bypass: true }, current(), session);
-    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, current(), session);
-    const navigation = await navigateReady(cdp, session, `${origin}/`, current());
-    if (interceptFailure) throw failed();
-    const { executionContextId } = await cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
+    await storageStep('origin-enable', () => cdp.send('Page.enable', {}, current(), attached));
+    await storageStep('origin-interception', () => cdp.send('Network.setBypassServiceWorker', { bypass: true }, current(), attached));
+    await storageStep('origin-interception', () => cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, current(), attached));
+    const navigation = await storageStep('origin-navigation', () => navigateReady(cdp, attached, `${origin}/`, current()));
+    if (interceptFailure) throw failed('origin-interception');
+    const { executionContextId } = await storageStep('origin-world', () => cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
       frameId: navigation.frameId, worldName: 'e2e-agent-browser-storage', grantUniveralAccess: false,
-    }, current(), session);
-    if (await evaluate<string>(cdp, session, 'location.origin', current(), executionContextId) !== origin) throw failed();
-    return await run(session, executionContextId, current);
+    }, current(), attached));
+    if (await storageStep('origin-verification', () => evaluate<string>(cdp, attached, 'location.origin', current(), executionContextId)) !== origin) throw failed('origin-verification');
+    return await storageStep('origin-storage', () => run(attached, executionContextId, current));
   } finally {
     unsubscribe?.();
     const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
     if (existingTargetId === undefined) {
-      if (probes) await probes.release(targetId, cleanup);
-      else await cdp.send('Target.closeTarget', { targetId }, cleanup);
+      if (probes) await storageStep('origin-release', () => probes.release(targetId, cleanup));
+      else await storageStep('origin-release', () => cdp.send('Target.closeTarget', { targetId }, cleanup));
     }
     else if (session) {
       await cdp.send('Fetch.disable', {}, cleanup, session);
@@ -386,45 +399,45 @@ const CAPTURE_ORIGIN = `async () => {
 export async function captureState(cdp: CdpConnection, context: OperationContext, visitedOrigins: ReadonlySet<string> = new Set(), probes?: StateProbeTargets): Promise<EngineState> {
   const current = budget(context);
   try {
-    const browserContextId = await targetContext(cdp, current(), probes);
+    const browserContextId = await storageStep('context-identity', () => targetContext(cdp, current(), probes));
     const origins = new Set([...visitedOrigins].filter((origin) => originOf(origin) === origin));
     const tabs: TabState[] = [];
-    for (const target of await cdp.listTargets(current())) {
+    for (const target of await storageStep('target-list', () => cdp.listTargets(current()))) {
       if (target.type !== 'page' || target.browserContextId !== browserContextId) continue;
-      const session = await cdp.attachTarget(target.targetId, current());
+      const session = await storageStep('tab-attach', () => cdp.attachTarget(target.targetId, current()));
       try {
-      const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), session);
+      const { frameTree } = await storageStep('tab-frames', () => cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), session));
       const tab: TabState = { url: originOf(target.url) ? target.url : 'about:blank', sessionStorage: [] };
       const seen = new Set<string>();
       for (const frame of frames(frameTree)) {
         const origin = originOf(frame.securityOrigin ?? frame.url);
         if (!origin) continue;
         origins.add(origin);
-        const { storageKey } = await cdp.send<{ storageKey: string }>('Storage.getStorageKeyForFrame', { frameId: frame.id }, current(), session);
+        const { storageKey } = await storageStep('tab-storage-key', () => cdp.send<{ storageKey: string }>('Storage.getStorageKeyForFrame', { frameId: frame.id }, current(), session));
         if (storageKey !== origin && storageKey !== `${origin}/`) throw unsupported();
         if (seen.has(origin)) continue;
         seen.add(origin);
-        const { executionContextId } = await cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
+        const { executionContextId } = await storageStep('tab-world', () => cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
           frameId: frame.id, worldName: 'e2e-agent-browser-storage', grantUniveralAccess: false,
-        }, current(), session);
-        const values = await evaluate<Pairs>(cdp, session, 'Object.keys(sessionStorage).map(k => [k, sessionStorage.getItem(k)])', current(), executionContextId);
+        }, current(), session));
+        const values = await storageStep('tab-session-storage', () => evaluate<Pairs>(cdp, session, 'Object.keys(sessionStorage).map(k => [k, sessionStorage.getItem(k)])', current(), executionContextId));
         if (!pairs(values)) throw unsupported();
         tab.sessionStorage.push({ origin, values });
       }
       tabs.push(tab);
       } finally {
-        await cdp.send('Target.detachFromTarget', { sessionId: session }, { ...context, signal: new AbortController().signal, timeoutMs: 2_000 });
+        await storageStep('tab-release', () => cdp.send('Target.detachFromTarget', { sessionId: session }, { ...context, signal: new AbortController().signal, timeoutMs: 2_000 }));
       }
     }
     const storage: OriginState[] = [];
     for (const origin of origins) storage.push(await withOrigin(cdp, origin, current(), (session, contextId, remaining) =>
       evaluate<OriginState>(cdp, session, `(${CAPTURE_ORIGIN})()`, remaining(), contextId), undefined, probes));
-    const { cookies } = await cdp.send<{ cookies: Record<string, Json>[] }>('Storage.getCookies', probes?.browserContextId?.() ? { browserContextId: probes.browserContextId() } : {}, current());
+    const { cookies } = await storageStep('cookies', () => cdp.send<{ cookies: Record<string, Json>[] }>('Storage.getCookies', probes?.browserContextId?.() ? { browserContextId: probes.browserContextId() } : {}, current()));
     const state: EngineState = { format: FORMAT, version: 1, data: { cookies, origins: storage, tabs } };
-    readState(state);
+    await storageStep('snapshot-validation', async () => readState(state));
     return state;
   } catch (error) {
-    if (error instanceof EngineError && (error.code === 'CANCELLED' || error.code === 'OPERATION_TIMEOUT' || error.code === 'UNSUPPORTED_CAPABILITY')) throw error;
+    if (error instanceof StorageFailure || (error instanceof EngineError && (error.code === 'CANCELLED' || error.code === 'OPERATION_TIMEOUT' || error.code === 'UNSUPPORTED_CAPABILITY'))) throw error;
     throw failed();
   }
 }

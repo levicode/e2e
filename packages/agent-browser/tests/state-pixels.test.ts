@@ -266,6 +266,48 @@ test('storage capture and replacement are scoped to the active browser context',
   ]);
 });
 
+test('storage failure diagnostics identify only fixed phases and never browser errors or state contents', async () => {
+  for (const phase of ['tab-frames', 'cookies', 'snapshot-validation'] as const) {
+    const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
+    cdp.listTargets = async () => [{ targetId: 'owned', type: 'page', url: 'about:blank' }];
+    cdp.attachTarget = async () => 'session';
+    cdp.send = async <T>(method: string): Promise<T> => {
+      if ((phase === 'tab-frames' && method === 'Page.getFrameTree') || (phase === 'cookies' && method === 'Storage.getCookies')) throw new Error('private-browser-payload');
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'top', url: 'about:blank' } } } as T;
+      if (method === 'Storage.getCookies') return { cookies: [{ malformed: 'private-state-value' }] } as T;
+      return {} as T;
+    };
+    await assert.rejects(captureState(cdp, operation(), new Set(), { targetBrowserContextId: () => undefined, create: async () => 'probe', release: async () => {} }), (error: unknown) => {
+      assert.ok(error instanceof EngineError); assert.equal(error.code, 'ENGINE_FAILURE');
+      assert.equal(error.message, `Storage state could not be captured or restored safely (${phase})`);
+      assert.doesNotMatch(JSON.stringify(error), /private-/); return true;
+    });
+  }
+});
+
+test('origin probe phase survives cleanup without exposing its browser error', async () => {
+  const cdp = Object.create(CdpConnection.prototype) as CdpConnection; const released: string[] = [];
+  cdp.listTargets = async () => []; cdp.attachTarget = async () => 'probe-session'; cdp.on = () => () => {};
+  cdp.send = async <T>(): Promise<T> => { throw new Error('private-origin-error'); };
+  await assert.rejects(captureState(cdp, operation(), new Set(['https://private-origin.test']), {
+    targetBrowserContextId: () => undefined, create: async () => 'probe', release: async id => { released.push(id); },
+  }), (error: unknown) => {
+    assert.ok(error instanceof EngineError); assert.equal(error.code, 'ENGINE_FAILURE');
+    assert.equal(error.message, 'Storage state could not be captured or restored safely (origin-enable)');
+    assert.doesNotMatch(JSON.stringify(error), /private-/); return true;
+  });
+  assert.deepEqual(released, ['probe']);
+});
+
+test('storage phase diagnostics preserve cancellation and timeout taxonomy', async () => {
+  for (const code of ['CANCELLED', 'OPERATION_TIMEOUT'] as const) {
+    const expected = new EngineError(code, 'Operation interrupted', { retryable: false });
+    const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
+    cdp.listTargets = async () => { throw expected; };
+    await assert.rejects(captureState(cdp, operation(), new Set(), { targetBrowserContextId: () => undefined, create: async () => 'probe', release: async () => {} }), error => error === expected);
+  }
+});
+
 test('default storage scope captures concrete-identity tabs and reuses the replacement tab without scoping cookies', async () => {
   for (const suppliedIdentity of [false, true]) {
     let identity = 'default-before';

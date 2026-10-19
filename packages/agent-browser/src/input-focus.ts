@@ -6,7 +6,7 @@ import { beforeDispatch, bounded } from './budget.ts';
 interface Remote { objectId?: string; value?: unknown }
 interface Response { result: Remote; exceptionDetails?: unknown }
 interface DomNode { backendNodeId: number; nodeName: string; frameId?: string; shadowRootType?: string; shadowRoots?: DomNode[] }
-interface FrameTree { frame: { id: string }; childFrames?: FrameTree[] }
+interface FrameTree { frame: { id: string; parentId?: string }; childFrames?: FrameTree[] }
 interface FocusObject { objectId: string; session: string }
 export interface TextFocusOptions {
   readonly cdp: () => Pick<CdpConnection, 'send'>;
@@ -39,16 +39,21 @@ export async function assertTextFocus(options: TextFocusOptions, context: Operat
     for (const child of tree.childFrames ?? []) { parents.set(child.frame.id, tree.frame.id); visit(child); }
   };
   visit(frameTree);
-  const world = async (frameId: string, parentSession: string): Promise<{ session: string; contextId: number }> => {
+  const world = async (frameId: string, parentSession: string, parentFrameId?: string): Promise<{ session: string; contextId: number }> => {
     let session = parentSession;
     let result: { executionContextId: number };
     try { result = await connection.send('Page.createIsolatedWorld', { frameId, worldName: 'e2e-agent-browser-focus' }, context, session); }
     catch (error) {
       beforeDispatch(context);
-      if (frameId === frameTree.frame.id || !options.frameSession) throw error;
+      if (frameId === frameTree.frame.id || !options.frameSession || parentFrameId === undefined) throw error;
       session = await options.frameSession(frameId, context);
       const remote = await connection.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, context, session);
-      if (remote.frameTree.frame.id !== frameId) throw noFocus();
+      // Chromium's Page.getFrameTree includes only local frames. An OOPIF is
+      // absent from the parent's tree, so establish its edge from the owned
+      // remote root only after DOM.getFrameOwner proved the focused element.
+      if (remote.frameTree.frame.id !== frameId || remote.frameTree.frame.parentId !== parentFrameId) throw noFocus();
+      parents.set(frameId, parentFrameId);
+      visit(remote.frameTree);
       result = await connection.send('Page.createIsolatedWorld', { frameId, worldName: 'e2e-agent-browser-focus' }, context, session);
     }
     sessions.add(session);
@@ -88,11 +93,14 @@ export async function assertTextFocus(options: TextFocusOptions, context: Operat
         if (inner.objectId) { focused = { objectId: inner.objectId, session: focused.session }; continue; }
       }
       if (node.nodeName === 'IFRAME' || node.nodeName === 'FRAME') {
-        if (!node.frameId || parents.get(node.frameId) !== frameId) throw noFocus();
+        if (!node.frameId) throw noFocus();
+        const knownParent = parents.get(node.frameId);
+        if (knownParent !== undefined && knownParent !== frameId) throw noFocus();
         const owner = await connection.send<{ backendNodeId: number }>('DOM.getFrameOwner', { frameId: node.frameId }, context, focused.session);
         if (owner.backendNodeId !== node.backendNodeId) throw noFocus();
+        realm = await world(node.frameId, focused.session, frameId);
+        if (parents.get(node.frameId) !== frameId) throw noFocus();
         frameId = node.frameId;
-        realm = await world(frameId, focused.session);
         focused = await active(realm);
         continue;
       }

@@ -167,6 +167,19 @@ test('native pointer state rejects malformed and ambiguous button masks before c
   assert.equal(calls.length, 0);
 });
 
+test('native pointer state projects required fields from the public lifecycle envelope', async () => {
+  const { input, calls } = setup();
+  input.adoptPointer({ x: 12.5, y: 40.25, buttons: 0,
+    lifecycle: { reused: true, launched: false, relaunchedBrowser: false, restartedBackground: false,
+      restoreStatus: null, saveStatus: null, effectiveLaunch: { browserLaunched: true, engine: 'chrome', launchHash: 42 } },
+    webmcp: { available: false } });
+  await input.mouseDown('left', operation());
+  assert.equal(calls[0]?.params.x, 12.5);
+  assert.equal(calls[0]?.params.y, 40.25);
+  assert.equal('lifecycle' in calls[0]!.params, false);
+  assert.equal('webmcp' in calls[0]!.params, false);
+});
+
 test('a retired operation cannot dispatch input or let a late acknowledgement mutate the next attempt', async () => {
   let active = true;
   let dispatched = 0;

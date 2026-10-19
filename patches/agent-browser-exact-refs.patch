@@ -624,7 +624,7 @@ diff --git a/cli/src/commands.rs b/cli/src/commands.rs
      fn test_open_without_url_launches() {
          let cmd = parse_command(&args("open"), &default_flags()).unwrap();
          assert_eq!(cmd["action"], "launch");
-@@ -4451,6 +4528,46 @@
+@@ -4451,6 +4528,54 @@
      }
  
      // === Core Actions ===
@@ -642,6 +642,14 @@ diff --git a/cli/src/commands.rs b/cli/src/commands.rs
 +        }
 +        assert!(parse_command(&args("select @e1 --index -1"),&default_flags()).is_err());
 +        assert!(parse_command(&args("select @e1 --label"),&default_flags()).is_err());
++    }
++
++    #[test]
++    fn upload_without_paths_is_an_explicit_empty_file_selection() {
++        let value=parse_command(&args("upload @e7"), &default_flags()).unwrap();
++        assert_eq!(value["action"], "upload");
++        assert_eq!(value["selector"], "@e7");
++        assert_eq!(value["files"], json!([]));
 +    }
 +
 +    #[test]
@@ -671,7 +679,7 @@ diff --git a/cli/src/commands.rs b/cli/src/commands.rs
  
      #[test]
      fn test_click() {
-@@ -4871,6 +4988,23 @@
+@@ -4871,6 +4996,23 @@
      // === Snapshot ===
  
      #[test]
@@ -3957,7 +3965,32 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  None,
              )
              .await?;
-@@ -2114,6 +2390,16 @@
+@@ -2056,6 +2332,12 @@
+             resolve_element_object_id(&self.client, session_id, ref_map, selector, iframe_sessions)
+                 .await?;
+ 
++        let result = async {
++            // Chromium deliberately treats DOM.setFileInputFiles([]) as a no-op.
++            // Clearing must bind to this exact input rather than keyboard focus.
++            if files.is_empty() {
++                return clear_exact_file_input(&self.client, &object_id, &effective_session_id).await;
++            }
+         let describe: Value = self
+             .client
+             .send_command(
+@@ -2082,7 +2364,10 @@
+             )
+             .await?;
+ 
+-        Ok(())
++            Ok(())
++        }.await;
++        let _ = self.client.send_command("Runtime.releaseObject", Some(json!({"objectId": object_id})), Some(&effective_session_id)).await;
++        result
+     }
+ 
+     pub async fn add_script_to_evaluate(&self, source: &str) -> Result<String, String> {
+@@ -2114,6 +2399,16 @@
          Ok(())
      }
  
@@ -3974,7 +4007,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      pub async fn tab_switch_by_id(
          &mut self,
          tab_id: u32,
-@@ -2165,6 +2451,7 @@
+@@ -2165,6 +2460,7 @@
      }
  
      fn add_page_with_activation(&mut self, page: PageInfo, activate: bool) {
@@ -3982,7 +4015,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let new_index = self.pages.len();
          // In the tab_gone state, adopting a discovered tab would clear it and
          // re-bind to a tab the session never opened. Recovery stays explicit
-@@ -2197,10 +2484,12 @@
+@@ -2197,10 +2493,12 @@
      }
  
      pub fn update_page_target_info(&mut self, target: &TargetInfo) -> bool {
@@ -3995,7 +4028,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          if let Some(pos) = self.pages.iter().position(|p| p.target_id == target_id) {
              let page = self.pages.remove(pos);
              self.update_active_page_after_removal(pos);
-@@ -2279,14 +2568,14 @@
+@@ -2279,19 +2577,43 @@
  
      pub async fn set_download_behavior(&self, download_path: &str) -> Result<(), String> {
          let session_id = self.active_session_id()?;
@@ -4015,7 +4048,36 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  Some(session_id),
              )
              .await?;
-@@ -2429,6 +2718,7 @@
+         Ok(())
+     }
++}
++
++/// File paths cannot express an empty selection in Chromium's DOM domain.
++/// No rejection after the native setter is allowed to become a safe retry.
++async fn clear_exact_file_input(client: &CdpClient, object_id: &str, session_id: &str) -> Result<(), String> {
++    let result: EvaluateResult = client.send_command_typed("Runtime.callFunctionOn", &json!({
++        "objectId":object_id,
++        "functionDeclaration":r#"function() {
++            if (!this.isConnected || this.ownerDocument !== document || !(this instanceof HTMLInputElement) || this.type !== 'file') return {beforeInput:true};
++            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(this, '');
++            if (this.files.length !== 0) return false;
++            this.dispatchEvent(new Event('input', {bubbles:true, composed:true}));
++            this.dispatchEvent(new Event('change', {bubbles:true}));
++            return true;
++        }"#,
++        "returnByValue":true,
++    }), Some(session_id)).await?;
++    if result.exception_details.is_none() && result.result.value.as_ref().is_some_and(|value| value["beforeInput"].as_bool() == Some(true)) {
++        return Err("e2e_not_actionable".into());
++    }
++    if result.exception_details.is_some() || result.result.value.as_ref().and_then(Value::as_bool) != Some(true) {
++        return Err("File selection clearing did not complete after mutation may have committed".into());
++    }
++    Ok(())
+ }
+ 
+ /// Core network-idle polling loop, extracted so it can be unit-tested without a
+@@ -2429,6 +2751,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4023,7 +4085,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
  
-@@ -2538,6 +2828,7 @@
+@@ -2538,6 +2861,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4031,15 +4093,64 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
  
-@@ -3333,6 +3624,7 @@
+@@ -3333,7 +3657,56 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
 +            scope_guard: CdpScopeGuard::new(None),
              headless: true,
++        }
++    }
++
++    #[tokio::test]
++    async fn empty_upload_uses_one_exact_setter_and_never_retries_after_mutation() {
++        use futures_util::{SinkExt, StreamExt};
++        use tokio_tungstenite::tungstenite::Message;
++        for outcome in ["cleared", "before-input", "after-mutation", "exception"] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url = format!("ws://{}", listener.local_addr().unwrap());
++            let server = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.unwrap();
++                let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++                let Some(Ok(Message::Text(text))) = ws.next().await else { panic!("Missing exact input operation"); };
++                let command: Value = serde_json::from_str(&text).unwrap();
++                assert_eq!(command["method"], "Runtime.callFunctionOn");
++                assert_eq!(command["sessionId"], "owned-frame");
++                assert_eq!(command["params"]["objectId"], "exact-file-input");
++                let source = command["params"]["functionDeclaration"].as_str().unwrap();
++                assert!(!source.contains("querySelector"));
++                assert_eq!(source.matches(".set.call(this, '')").count(), 1);
++                assert_eq!(source.matches("new Event('input'").count(), 1);
++                assert_eq!(source.matches("new Event('change'").count(), 1);
++                assert!(source.find("return {beforeInput:true}").unwrap() < source.find(".set.call").unwrap());
++                let result = match outcome {
++                    "cleared" => json!({"result":{"type":"boolean","value":true}}),
++                    "before-input" => json!({"result":{"type":"object","value":{"beforeInput":true}}}),
++                    "after-mutation" => json!({"result":{"type":"boolean","value":false}}),
++                    _ => json!({"result":{"type":"undefined"},"exceptionDetails":{"text":"synthetic exception","lineNumber":0,"columnNumber":0}}),
++                };
++                ws.send(Message::Text(json!({"id":command["id"],"result":result}).to_string())).await.unwrap();
++                while let Some(Ok(message)) = ws.next().await {
++                    match message {
++                        Message::Text(text) => panic!("Empty upload dispatched another command: {text}"),
++                        Message::Close(_) => break,
++                        _ => {},
++                    }
++                }
++            });
++            let client = CdpClient::connect(&url).await.unwrap();
++            let result = clear_exact_file_input(&client, "exact-file-input", "owned-frame").await;
++            match outcome {
++                "cleared" => assert!(result.is_ok()),
++                "before-input" => assert_eq!(result.unwrap_err(), "e2e_not_actionable"),
++                _ => { let error=result.unwrap_err(); assert!(!error.starts_with("e2e_")); assert!(error.contains("may have committed")); },
++            }
++            client.close().await;
++            tokio::time::timeout(Duration::from_secs(3), server).await.unwrap().unwrap();
          }
      }
-@@ -3393,6 +3685,7 @@
+ 
+@@ -3393,6 +3766,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4047,7 +4158,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
          manager.close().await.unwrap();
-@@ -3488,14 +3781,14 @@
+@@ -3488,14 +3862,14 @@
          existing: bool,
      ) {
          let (url, server) = initialization_server(fail_method, existing, 2, false).await;
@@ -4064,7 +4175,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          )
          .await
          .expect("retry should succeed after cleanup")
-@@ -4451,6 +4744,11 @@
+@@ -4451,6 +4825,11 @@
      /// never needlessly reactivated.
      async fn start_mock_cdp_browser_responsive(
      ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
@@ -4076,7 +4187,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          use futures_util::{SinkExt, StreamExt};
          use std::sync::atomic::{AtomicUsize, Ordering};
          use std::sync::Arc;
-@@ -4489,7 +4787,7 @@
+@@ -4489,7 +4868,7 @@
                  let method = cmd["method"].as_str().unwrap_or("");
                  let respond = |result: Value| json!({ "id": id, "result": result }).to_string();
  
@@ -4085,7 +4196,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                      activations_task.fetch_add(1, Ordering::SeqCst);
                  }
  
-@@ -4523,6 +4821,17 @@
+@@ -4523,6 +4902,17 @@
      /// A responsive tab must not be reactivated: recovery only runs when the
      /// liveness probe gets no answer, so a healthy tab keeps its state and is
      /// never touched by Target.activateTarget (#1528).
@@ -4103,7 +4214,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      #[tokio::test]
      async fn test_tab_switch_does_not_revive_responsive_tab() {
          let (url, activations) = start_mock_cdp_browser_responsive().await;
-@@ -4996,4 +5305,402 @@
+@@ -4996,4 +5386,402 @@
              "cancelled connect-time probes left orphaned CDP requests in the pending map"
          );
      }

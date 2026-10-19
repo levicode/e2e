@@ -114,7 +114,10 @@ export class InputController {
     this.options.assertUsable();
     if (this.busy || this.buttons !== 0) throw new EngineError('INVALID_STATE', 'Cannot merge native pointer state with pending or held companion input', { retryable: false });
     if (typeof value !== 'object' || value === null || Array.isArray(value)
-      || Object.keys(value).length !== 3 || !('x' in value) || !('y' in value) || !('buttons' in value)
+      // The public CLI enriches successful data objects with lifecycle and,
+      // when enabled, WebMCP availability. These are not pointer state.
+      || Object.keys(value).some(key => !['x', 'y', 'buttons', 'lifecycle', 'webmcp'].includes(key))
+      || !('x' in value) || !('y' in value) || !('buttons' in value)
       || typeof value.x !== 'number' || !Number.isFinite(value.x) || typeof value.y !== 'number' || !Number.isFinite(value.y)
       || typeof value.buttons !== 'number' || !Number.isSafeInteger(value.buttons) || value.buttons < 0 || value.buttons > 31
       || (value.buttons !== 0 && (value.buttons & (value.buttons - 1)) !== 0)) {

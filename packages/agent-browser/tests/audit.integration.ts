@@ -269,7 +269,7 @@ test('unknown check state and disabled/readonly fill refuse before mutating; tap
       const [node] = await engine.locate!({ kind: 'selector', selector }, context()); assert.ok(node); return node;
     };
     const business = await locate('#action');
-    await assert.rejects(engine.perform!(business.ref, { kind: 'check' }, context()), { code: 'UNSUPPORTED_CAPABILITY' });
+    await assert.rejects(engine.perform!(business.ref, { kind: 'check' }, context()), { code: 'NOT_ACTIONABLE', retryable: false });
     assert.deepEqual(await browser.evaluate('window.clickEvents'), []);
     for (const selector of ['#disabled', '#readonly']) {
       const target = await locate(selector);
@@ -455,7 +455,7 @@ function pngPixel(bytes: Uint8Array, x: number, y: number): number[] {
 
 test('secure observation omits password values and pixels mask main, open-shadow and child-frame fields', { timeout: 240_000 }, async () => {
   await withEngine(async (engine, browser, artifactsDir) => {
-    await engine.session!.open!(`${origin}/masks`, context());
+    await assert.doesNotReject(engine.session!.open!(`${origin}/masks`, context()), 'Initial secure-fixture navigation must complete before pixel capture');
     const observation = await engine.observe!(context(), { pixels: true });
     assert.ok(!JSON.stringify(observation.root).includes(secret), 'No secure field value can enter the semantic tree');
     for (const node of walk(observation.root)) if (node.states?.secure) { assert.equal(node.value, undefined); assert.equal(node.selection, undefined); }
@@ -466,7 +466,7 @@ test('secure observation omits password values and pixels mask main, open-shadow
     assert.deepEqual(pngPixel(observation.pixels.data, 400, 40), [255, 255, 255], 'Masking must retain non-sensitive pixels');
     assert.equal(await browser.evaluate('document.querySelectorAll("[popover]").length'), 0, 'Mask overlays must be removed after capture');
     const existingArtifacts = await readdir(artifactsDir);
-    await engine.session!.open!(`${origin}/closed-mask`, context());
+    await assert.doesNotReject(engine.session!.open!(`${origin}/closed-mask`, context()), 'Navigation after source-masked capture must remain usable before closed-shadow capture');
     try {
       const artifact = await engine.artifacts!.screenshot('closed-shadow-fail-closed', context());
       assert.deepEqual(pngPixel(await readFile(path.join(artifactsDir, artifact)), 10, 10), [0, 0, 0], 'A supported closed shadow screenshot must mask its password field');

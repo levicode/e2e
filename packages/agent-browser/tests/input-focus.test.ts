@@ -15,7 +15,12 @@ function setup(nodes: Node[], frames: Frame[] = [{ id: 'main', active: 1, sessio
   const realms = new Map<number, Frame>();
   let realmId = 0;
   let interceptor: ((method: string, params: Record<string, unknown>) => void) | undefined;
-  const tree = (frame: Frame): unknown => ({ frame: { id: frame.id }, childFrames: frames.filter((child) => child.parent === frame.id).map(tree) });
+  // InspectorPageAgent omits remote children; each renderer reports its local
+  // tree, including the remote root's parentId in that renderer's own reply.
+  const tree = (frame: Frame): unknown => ({
+    frame: { id: frame.id, ...(frame.parent === undefined ? {} : { parentId: frame.parent }) },
+    childFrames: frames.filter((child) => child.parent === frame.id && child.session === frame.session).map(tree),
+  });
   const object = (id: number): Record<string, unknown> => {
     const node = byId.get(id)!;
     return {
@@ -95,13 +100,16 @@ test('same-origin iframe focus descends only through its exact focused owner', a
   assert.ok(fixture.calls.every((call) => call.session === 'main-session'));
 });
 
-test('cross-origin focus uses its owned session and checks remote root identity', async () => {
+test('cross-origin focus proves an omitted remote edge through its exact owner and remote root', async () => {
   const fixture = setup([{ id: 1, tag: 'IFRAME', frame: 'child' }, { id: 2, tag: 'INPUT' }], [
     { id: 'main', active: 1, session: 'main-session' },
     { id: 'child', active: 2, session: 'child-session', parent: 'main', owner: 1 },
   ]);
   await assertTextFocus(fixture.options, context());
   assert.ok(fixture.calls.some((call) => call.method === 'Page.getFrameTree' && call.session === 'child-session'));
+  const owner = fixture.calls.findIndex(call => call.method === 'DOM.getFrameOwner');
+  const remote = fixture.calls.findIndex(call => call.method === 'Page.getFrameTree' && call.session === 'child-session');
+  assert.ok(owner >= 0 && remote > owner);
   assert.equal(fixture.calls.filter((call) => call.method === 'Runtime.releaseObjectGroup').length, 2);
 });
 
@@ -114,15 +122,57 @@ test('a focused body never selects an editable field from another frame', async 
   assert.ok(fixture.calls.every((call) => call.session === 'main-session'));
 });
 
-test('replacement frame owners and ancestry mismatches fail closed', async () => {
-  for (const child of [
+test('replacement frame owners fail before resolving an OOPIF session', async () => {
+  const fixture = setup([{ id: 1, tag: 'IFRAME', frame: 'child' }, { id: 2, tag: 'INPUT' }], [
+    { id: 'main', active: 1, session: 'main-session' },
     { id: 'child', active: 2, session: 'child-session', parent: 'main', owner: 99 },
-    { id: 'child', active: 2, session: 'child-session', parent: 'different', owner: 1 },
-  ]) {
-    const fixture = setup([{ id: 1, tag: 'IFRAME', frame: 'child' }, { id: 2, tag: 'INPUT' }], [{ id: 'main', active: 1, session: 'main-session' }, child]);
+  ]);
+  await assert.rejects(assertTextFocus(fixture.options, context()), { code: 'NOT_ACTIONABLE' });
+  assert.ok(fixture.calls.every((call) => call.session === 'main-session'));
+});
+
+test('an omitted remote edge still requires its exact parent and cannot accept a different session root', async () => {
+  for (const parent of [undefined, 'different']) {
+    const fixture = setup([{ id: 1, tag: 'IFRAME', frame: 'child' }, { id: 2, tag: 'INPUT' }], [
+      { id: 'main', active: 1, session: 'main-session' },
+      { id: 'child', active: 2, session: 'child-session', ...(parent === undefined ? {} : { parent }), owner: 1 },
+    ]);
     await assert.rejects(assertTextFocus(fixture.options, context()), { code: 'NOT_ACTIONABLE' });
-    assert.ok(fixture.calls.every((call) => call.session === 'main-session'));
+    assert.ok(!fixture.calls.some(call => call.method === 'Runtime.evaluate' && call.session === 'child-session'));
   }
+  const fixture = setup([{ id: 1, tag: 'IFRAME', frame: 'child' }, { id: 2, tag: 'INPUT' }, { id: 3, tag: 'INPUT' }], [
+    { id: 'main', active: 1, session: 'main-session' },
+    { id: 'child', active: 2, session: 'child-session', parent: 'main', owner: 1 },
+    { id: 'other', active: 3, session: 'other-session', parent: 'main', owner: 9 },
+  ]);
+  await assert.rejects(assertTextFocus({ ...fixture.options, frameSession: async () => 'other-session' }, context()), { code: 'NOT_ACTIONABLE' });
+  assert.ok(!fixture.calls.some(call => call.method === 'Runtime.evaluate' && call.session === 'other-session'));
+});
+
+test('known local ancestry mismatches fail before frame-owner or remote-session lookup', async () => {
+  const fixture = setup([{ id: 1, tag: 'IFRAME', frame: 'child' }, { id: 2, tag: 'INPUT' }, { id: 3, tag: 'IFRAME' }], [
+    { id: 'main', active: 1, session: 'main-session' },
+    { id: 'other', active: 3, session: 'main-session', parent: 'main', owner: 8 },
+    { id: 'child', active: 2, session: 'main-session', parent: 'other', owner: 1 },
+  ]);
+  await assert.rejects(assertTextFocus(fixture.options, context()), { code: 'NOT_ACTIONABLE' });
+  assert.ok(!fixture.calls.some(call => call.method === 'DOM.getFrameOwner'));
+});
+
+test('remote focus traversal incorporates local descendants and nested remote roots without scanning siblings', async () => {
+  const fixture = setup([
+    { id: 1, tag: 'IFRAME', frame: 'remote' }, { id: 2, tag: 'IFRAME', frame: 'local' },
+    { id: 3, tag: 'IFRAME', frame: 'nested' }, { id: 4, tag: 'INPUT' }, { id: 5, tag: 'INPUT' },
+  ], [
+    { id: 'main', active: 1, session: 'main-session' },
+    { id: 'remote', active: 2, session: 'remote-session', parent: 'main', owner: 1 },
+    { id: 'local', active: 3, session: 'remote-session', parent: 'remote', owner: 2 },
+    { id: 'nested', active: 4, session: 'nested-session', parent: 'local', owner: 3 },
+    { id: 'sibling', active: 5, session: 'sibling-session', parent: 'main', owner: 9 },
+  ]);
+  await assertTextFocus(fixture.options, context());
+  assert.deepEqual(fixture.calls.filter(call => call.method === 'DOM.getFrameOwner').map(call => call.params.frameId), ['remote', 'local', 'nested']);
+  assert.ok(!fixture.calls.some(call => call.session === 'sibling-session' || call.method.startsWith('Input.')));
 });
 
 test('a removed focus ancestor during the multi-command read is rechecked before accepting input', async () => {

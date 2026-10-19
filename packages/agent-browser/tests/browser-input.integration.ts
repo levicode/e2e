@@ -149,7 +149,7 @@ test('native typing accepts exact closed-root and same/cross-origin frame focus,
     for (const tag of ['same', 'cross']) {
       await browser.evaluate((id) => { (document.getElementById(id) as HTMLIFrameElement).contentWindow!.postMessage('focus', '*'); return null; }, tag);
       await eventually(async () => await browser.evaluate((id) => Boolean((window as unknown as { messages: Record<string, { ready?: boolean }> }).messages[id]?.ready), tag));
-      await browser.keyboard.type(`${tag}字`);
+      await assert.doesNotReject(browser.keyboard.type(`${tag}字`), `${tag}-origin frame focus must accept native typing`);
       await eventually(async () => await browser.evaluate((id) => (window as unknown as { messages: Record<string, { value?: string }> }).messages[id]?.value === `${id}字`, tag));
     }
     await browser.evaluate(() => { document.body.tabIndex = -1; document.body.focus(); return null; });

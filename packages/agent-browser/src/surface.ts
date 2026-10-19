@@ -403,7 +403,7 @@ export class AgentBrowserSurface {
       const selector = adapter.resolve(ref);
       const act = async (argv: string[]) => {
         const result = await this.command(argv, budget(), true); dispatched = true;
-        if (['click', 'dblclick', 'hover', 'drag', 'mouse'].includes(argv[0] ?? '')) this.input.adoptPointer(await this.command(['mouse', 'state'], budget()));
+        if (['click', 'dblclick', 'hover', 'check', 'uncheck', 'drag', 'mouse'].includes(argv[0] ?? '')) this.input.adoptPointer(await this.command(['mouse', 'state'], budget()));
         return result;
       };
       const modifiers = ('modifiers' in action ? action.modifiers ?? [] : []).filter(modifier => !this.input.isKeyDown(modifier));

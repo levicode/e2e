@@ -106,6 +106,28 @@ test('nested frame rectangles compose content origins and scale, and snapshot re
   assert.equal(protocol.calls.find(call => call.method === 'Page.createIsolatedWorld' && call.params.frameId === 'grand')?.session, 'session:child');
 });
 
+test('frame geometry includes border and padding before applying CSS scale', async () => {
+  const { companion, protocol } = fixture();
+  protocol.tree = { frame: { id: 'root' }, childFrames: [{ frame: { id: 'child' } }] };
+  protocol.data.set(50, { ...raw(), frameSelector: '#frame', frameGeometry: { x: 0, y: 0, scaleX: 1, scaleY: 1 } });
+  protocol.data.set(7, raw());
+  await companion.readMetadata({ e7: { role: 'button', name: 'Save', backendNodeId: 7, frameId: 'child' } }, context());
+  const call = protocol.calls.find(entry => entry.method === 'Runtime.callFunctionOn' && entry.params.objectId === 'backend:50');
+  const source = /data\.frameGeometry=\(([\s\S]*?)\)\(this\);/.exec(String(call?.params.functionDeclaration))?.[1];
+  assert.ok(source, 'Exercise the geometry reader actually sent to the parent-frame CDP realm');
+  const script = new Script(`(${source})(frame)`);
+  for (const example of [
+    { width: 350, height: 230, paddingLeft: '5px', paddingTop: '5px', expected: { x: 85, y: 255, scaleX: 1, scaleY: 1 } },
+    { width: 700, height: 345, paddingLeft: '5.5px', paddingTop: '7.25px', expected: { x: 101, y: 265.875, scaleX: 2, scaleY: 1.5 } },
+    { width: 350, height: 230, paddingLeft: '0px', paddingTop: '0px', expected: { x: 80, y: 250, scaleX: 1, scaleY: 1 } },
+  ]) {
+    const frame = { parentElement: null, offsetWidth: 350, offsetHeight: 230, clientLeft: 10, clientTop: 10,
+      getBoundingClientRect: () => ({ x: 70, y: 240, width: example.width, height: example.height }) };
+    const result = script.runInNewContext({ frame, getComputedStyle: () => ({ transform: 'none', paddingLeft: example.paddingLeft, paddingTop: example.paddingTop }) }) as { x: number; y: number; scaleX: number; scaleY: number };
+    assert.deepEqual({ ...result }, example.expected);
+  }
+});
+
 test('frame scopes nested beneath index, filter and query are evaluated in the child realm', async () => {
   const { companion, protocol, calls, adapter } = fixture();
   protocol.tree = { frame: { id: 'root' }, childFrames: [{ frame: { id: 'child' } }] };

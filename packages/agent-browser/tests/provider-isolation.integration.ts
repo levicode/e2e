@@ -98,7 +98,7 @@ test('dedicated attempt provider preserves nested OOPIF default refs and popup f
   });
   await new Promise<void>((resolve, reject) => { childServer.once('error', reject); childServer.listen(0, '127.0.0.1', resolve); });
   t.after(async () => { childServer.closeAllConnections(); await new Promise<void>(resolve => childServer.close(() => resolve())); });
-  const childOrigin = `http://child.audit.test:${(childServer.address() as AddressInfo).port}`;
+  const childOrigin = `http://child.audit.localhost:${(childServer.address() as AddressInfo).port}`;
   const server = createServer((request, response) => {
     if (request.url === '/api') { response.setHeader('content-type', 'application/json'); response.end('{"owner":"service"}'); return; }
     response.setHeader('content-type', 'text/html');
@@ -109,14 +109,14 @@ test('dedicated attempt provider preserves nested OOPIF default refs and popup f
     </script>`);
   });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  const origin = `http://main.audit.test:${(server.address() as AddressInfo).port}`;
+  const origin = `http://main.audit.localhost:${(server.address() as AddressInfo).port}`;
   const directory = await mkdtemp(path.join(tmpdir(), 'e2e-cdp-isolation-'));
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(directory, { recursive: true, force: true }); });
   const owned = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', env: process.env,
     // Separate same-site hostnames keep the app-site policy intact and force a real OOPIF.
     // Chromium ignores ports in isolate-origins, so two ports of one IP are insufficient.
-    // Both reserved test names resolve only to this fixture's loopback servers.
-    args: ['--site-per-process', '--isolate-origins=http://child.audit.test', '--host-resolver-rules=MAP *.audit.test 127.0.0.1', '--no-proxy-server', ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])],
+    // Both reserved .localhost names satisfy the harness HTTP policy and resolve only to fixture loopback servers.
+    args: ['--site-per-process', '--isolate-origins=http://child.audit.localhost', '--host-resolver-rules=MAP *.audit.localhost 127.0.0.1', '--no-proxy-server', ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])],
   }, operation());
   t.after(() => owned.close());
   const observer = await CdpConnection.connect(owned.endpoint, operation());
