@@ -1,59 +1,61 @@
-# Validation status
+# Verified validation status
 
-This is an implementation checkpoint, not a declaration of complete compatibility.
+Updated October 19, 2026. The tested runtime is **`e1c7458d44a6ce0d7b7cb12bfdd727271898ae72`**, native **`0.39.1-e2e.4`**, engine/cache identity **`agent-browser-exact-5`**, engine version **`0.0.0-ab.0.39.1-exact.4-cdp.5`**.
 
-## Verified in the build workspace
+The documented synthetic acceptance gates pass. Private-application UAT and the user's actual computer have not been exercised. This is a source-pinned fork candidate, not an npm release or a claim of unrestricted Web/Playwright compatibility.
 
-- Public SPI-only package boundary; no core-to-engine dependency or Playwright runtime import.
-- Adapter TypeScript build and typecheck.
-- 332 unit tests passed in the latest workspace follow-up. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, owned-target routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
-- The maintained Rust patch applies to the exact pinned upstream source.
-- Fresh packaged consumption passed outside the workspace: actual `e2e` and adapter tarballs, offline installation and frozen reinstall, public imports resolving inside the consumer, installed TypeScript declarations, and installed CLI test collection. Its real-browser observation/action/report/trace smoke is a separate mandatory CI gate, not a local browser pass.
+## Linux: two complete runs of the exact final commit
 
-## Exact-commit real-browser evidence
+[Attempt 1](https://github.com/levicode/e2e/actions/runs/39324527722/attempts/1), job `118306808095`, and [attempt 2](https://github.com/levicode/e2e/actions/runs/39324527722/attempts/2), job `118312315969`, both passed:
 
-The exact runtime at `e4d2561db569582525251c1d207a996f8ed235ef` passed [CI9 attempt 1](https://github.com/levicode/e2e/actions/runs/39310203701/attempts/1):
+- Focused native launch-isolation regression: 1 passed.
+- Entire native suite: 1,501 passed, zero failed, 147 existing upstream ignored tests, explicitly reported.
+- Adapter build, typecheck, lint and all 333 units, with zero skipped.
+- Focused native default unnamed-icon smoke: 1 passed.
+- All 54 integration cases, zero failed and zero skipped. These include real Chromium contracts, explicit configuration-refusal checks and the real video encoder check.
+- Fresh outside-workspace installation of the actual core/adapter tarballs, frozen reinstall, public imports, declarations, test collection and real-browser action/report/trace.
+- Native executable packaging and architecture/provenance checks.
 
-- Native compilation and tests: 1,498 passed, zero failed, 147 upstream ignored.
-- Adapter unit tests: 292 passed, zero skipped; build, typecheck and lint passed.
-- Focused default-snapshot unnamed-icon smoke: passed.
-- Full integration gate: 53 passed, zero failed, zero skipped. This includes real Chromium contracts and the separate real ffmpeg encoder check.
-- Fresh packaged-consumer installation and browser gate: passed, with exactly one external fixture mutation and zero model calls.
+Each fresh consumer records exactly one fixture-side mutation and zero model calls. Both runs include 12 independent decoded-PNG mask captures and a separate 12-round public state-capture → native-observe → masked-observe → native-open regression. Required opaque-black pixels, unrelated-white controls, restoration, retained storage and subsequent native actions all pass without retries or enlarged operation budgets.
 
-The default observation preserves an unchanged unnamed, below-viewport cursor-pointer icon. Public `openHost` and runner tests use it to open a visible synthetic tag list, without a preloaded business label or selector workaround. Closed trace/report output, record/replay, strict cross-engine cache refusal, zero-executor replay with exactly one click, and missing-target replay refusal pass.
+## macOS: both native architectures
 
-Other passing Linux cases cover ordered trusted ASCII events, literal CLI-looking input, stale-ref refusal, lost-acknowledgement no-duplicate behavior, frame/closed-shadow locators, actionability, controlled checkboxes, upload/select semantics, rich IndexedDB state replacement, attempt hook preservation, callback retirement, protected popup initialization, OOPIF source-mask PNG pixels, post-capture task resumption, dedicated-provider ownership, shared-provider no-touch refusal, downloads and video artifacts.
+The [macOS workflow](https://github.com/levicode/e2e/actions/runs/39324527558) passed on standard hosted macOS 15 ARM64 and Intel machines, both reporting macOS 15.7.9:
 
-[The exact packaged-consumer artifact](https://github.com/levicode/e2e/actions/runs/39310203701/artifacts/12215766306) was independently checked: all 17 evidence files and all 48 adapter output files match the frozen source build. It contains no private application data.
+- [ARM64 job `118306807904`](https://github.com/levicode/e2e/actions/runs/39324527558/job/118306807904).
+- [Intel job `118306807693`](https://github.com/levicode/e2e/actions/runs/39324527558/job/118306807693).
 
-The exact-commit repeat (attempt 2) passed 52/53 integration cases and the fresh consumer again, but failed a real password-mask pixel assertion: the returned image contained white where opaque black was required. This blocks release and proves the first green run was insufficient. The follow-up requires decoded-PNG mask attestation, a new privacy/cache epoch (`agent-browser-exact-5`), and a fresh repeated full run.
+Each passed the focused native regression, all 1,499 platform-native tests (147 upstream ignored), all 333 units with zero skips, build/typecheck/lint, five real locator/default-glyph cases, two public runner/replay cases, fresh installed consumer and native artifact upload. The platform-specific native counts differ from Linux; no additional skip was introduced.
 
-[The decoded-PNG follow-up at `ffa91805374e2aa05f283877c0daf40c93161bd5`](https://github.com/levicode/e2e/actions/runs/39314268883) passed native 1,498 tests, all 331 then-current adapter units, the icon smoke and fresh consumer. All 12 independent repeated masking captures passed actual opaque-black pixel checks and cleanup assertions. The full matrix was 51/53: two existing native lifecycle timeouts still blocked restart and navigation after a temporary probe. No native binary artifact was uploaded from the failed full gate.
+**This macOS scope is seven selected browser cases plus the fresh consumer, not the full Linux matrix.** Pixel/state/network/video contracts have not received that complete matrix on macOS. Hosted Macs are not the user's actual desktop or private application.
 
-The next candidate gates native version `0.39.1-e2e.4`, with cancellation tied to destroyed probe targets, and adds a separate 12-round public native-observe/open regression. Its real matrix now has 54 mandatory cases. Those source changes and the macOS workflow corrections require new execution evidence; they are not a completed acceptance result.
+## What the fixtures establish
 
-A second complete green run of the corrected exact commit is required before calling this candidate stable. Test source and isolated unit success do not substitute for a full run.
+- The unchanged unnamed, below-viewport cursor-pointer font icon stays in the default observation, including overflow scrolling. Public host/runner actions use its observed ref, automatically scroll, open a visible synthetic tag list and mutate exactly once. No preloaded business label or selector query supplies the agent's target.
+- Detached refs cannot retarget replacement nodes. Controlled checkboxes do not click twice. Actual lost-acknowledgement fault injection commits once, reports nonretryable uncertainty and poisons the attempt.
+- Actionability, fill/clear/uncheck/hover/scroll/gestures, trusted ASCII key pairs, literal CLI-looking input, selection/upload semantics, semantic/CSS/XPath locators and nested-frame/closed-shadow scopes are covered by the Linux matrix.
+- Lifecycle/state cases cover attempt isolation, restart/reset/replacement, supported structured-clone IndexedDB graphs, cookies/localStorage/live sessionStorage, prepared dedicated providers and callback retirement.
+- Network/fixture cases cover asynchronous routing, protected popup/OOPIF first requests, scoped headers and Basic authorization, early scripts, dialogs, downloads, diagnostics and recording.
+- Screenshot proof requires source ownership, exact supported geometry, actual decoded opaque-black pixels and successful cleanup. A failed proof withholds bytes; no unmasked fallback is tested or allowed.
+- Public e2e report/trace closure, record/replay, zero-executor replay and strict refusal of Web/previous-privacy-epoch/missing-target caches pass. Deterministic executors exercise execution, not model reasoning quality.
 
-## Platform and application boundaries
+## Independent artifact checks
 
-- Linux full-contract evidence targets GitHub-hosted Ubuntu 24.04 x86_64 and the workflow's pinned Chromium distribution.
-- The separate macOS workflow targets standard macOS 15 ARM64 and Intel runners. Its required scope is native compilation/tests, all adapter units, all seven locator/runner integration cases, and a fresh packaged-consumer browser run. It does **not** run the full Linux integration matrix: pixel/state/network/video contracts are not independently validated on macOS by that workflow. A workflow file is not an executed platform pass; check each architecture's successful job and artifact manifest.
-- The local build workspace blocks Chromium sockets; its supported escalation path also fails during sandbox setup. No local real-browser pass is claimed.
-- Private application UAT and real hosted-service accounts remain separate from these synthetic fixtures. The user's actual desktop environment has not been exercised.
-- Artifacts identify exact source, compiler, OS, architecture and browser version. Older OS releases, other distributions, other browsers, and Windows are not implicitly supported.
+The final Linux repeat [consumer](https://github.com/levicode/e2e/actions/runs/39324527722/artifacts/12222124713) and [native](https://github.com/levicode/e2e/actions/runs/39324527722/artifacts/12222448273), ARM64 [consumer](https://github.com/levicode/e2e/actions/runs/39324527558/artifacts/12222277507) and [native](https://github.com/levicode/e2e/actions/runs/39324527558/artifacts/12222073579), and Intel [consumer](https://github.com/levicode/e2e/actions/runs/39324527558/artifacts/12223776234) and [native](https://github.com/levicode/e2e/actions/runs/39324527558/artifacts/12223508115) were independently checked.
 
-## Explicit compatibility limits
+All 17 consumer evidence hashes and all 50 packed adapter output files match the reviewed build. Core/adapter tarballs are byte-identical across platforms. Native archive checksums, binary hashes, ELF/Mach-O architecture, executable mode 0755, license/NOTICE and exact source/patch metadata verify. The Linux binary is byte-identical across both complete final-commit builds.
 
-- Chromium only; non-Chromium CDP implementations, Firefox, and WebKit are refused.
-- Remote endpoints must be dedicated to one explicit attempt, with no unrelated contexts, pages, clients, or users. The public factory rejects worker/default-scope providers and worker/default-scope callback endpoints before any acquire or resolver callback. Use an attempt-scoped provider or `connect: { scope: 'attempt', cdpEndpoint }`. The legacy two-callback form still implies attempt scope unless explicitly overridden.
-- Provider-side preparation or recording clients must not retain competing process-wide locale/timezone overrides. Exact duplicate-override handling relies on this documented condition; it does not independently prove renderer identity. Local launches do not have such a competing client.
-- Shared-browser/provider parity is unsupported. Real Chromium CI exposed that required first-popup interception and zero attachment/pause of unrelated targets cannot both be guaranteed through public CDP. Internal worker lease/source tests are implementation tests, not evidence of a supported public shared mode. Initial exclusive-context verification remains enabled; the provisioner is responsible for exclusive ownership throughout the attempt.
-- State covers supported structured-clone IndexedDB values, cookies, localStorage and live-tab sessionStorage. Partitioned third-party storage, unsupported host objects such as CryptoKeys, and historical per-tab sessionStorage are not silently approximated.
-- Screenshot proof rejects unsupported frame geometry and PNG formats/resource sizes; see the exact limits in `ADAPTER_COMPATIBILITY.md`. Rejected screenshot bytes are neither returned nor written to artifacts.
-- Artifact video is unredacted and never supplied as model pixels. Remote downloads require a provider transfer hook.
-- Automatic reconnect/retry after ambiguous input is intentionally unavailable. A new explicit attempt is required.
-- Real hosted-provider accounts and private application UAT remain separate from the synthetic local-service fixtures.
-- Asynchronous fixture callbacks and input acknowledgements are fenced to their original browser generation. Callback continuations also cannot acquire fresh fixture operations after their invocation completes or expires. Route decision chains remain live through tracked fallback completion. These guards do not undo commands already dispatched. Unit regressions and the real-browser callback-retirement and restart gates passed CI9.
-- Successful fill/clear, uncheck, hover, explicit scrolling, locator drag and coordinate swipe actions have mandatory real acceptance cases. The pointer-only swipe fixture and its trusted event assertions passed CI9. Do not treat this development checkpoint as a production release.
+Artifacts record Node 24.19.0, Rust 1.93.0 and Chrome for Testing 156.0.8078.4. Linux is Ubuntu 24.04.5 x64/glibc 2.39. GitHub artifacts expire after seven days; supplied durable copies and their hashes do not depend on that retention. Read `INSTALL.md`, `ADAPTER_COMPATIBILITY.md` and the repository-root `VERIFIED_DELIVERY.md`.
 
-- Scoped initial CLI attachment remains required within dedicated endpoint mode. Factory preflight regression tests assert that shared providers and callback endpoints are rejected without invoking any provider or endpoint callbacks. The dedicated-provider real-browser gates passed CI9; earlier shared-provider success expectations are not a supported compatibility claim.
+## Boundaries and maintenance
+
+- Chromium only. Shared/worker endpoints are refused before acquisition or connection; remote attempts require exclusive ownership of the whole endpoint. Provider-side preparation/recording clients must retain no competing locale/timezone overrides. Initial checks do not prove continued ownership or renderer identity.
+- Fill uses exact-node DOM setters and synthetic input events. Trusted physical typing is a separate keyboard contract; unmapped Unicode uses text insertion.
+- Partitioned third-party storage, unsupported IndexedDB host objects such as CryptoKeys, and historical per-tab sessionStorage are not silently approximated.
+- Screenshot format/geometry/resource limits fail closed. Artifact video is unredacted and never supplied as model pixels; remote downloads require a provider transfer hook.
+- Ambiguous input is not automatically retried or reconnected. A new explicit attempt is required. Lifetime guards cannot undo already-dispatched commands.
+- Real hosted Kernel/smol accounts, private UAT, actual user desktops, Windows and other OS/browser versions remain untested. The local build workspace's Chromium socket restriction was respected; local units are not represented as local browser proof.
+
+A previous privacy epoch failed a repeated real pixel assertion. The current epoch adds decoded-PNG attestation, preserves that assertion, and rejects old cache identities. Transient native target-lifetime stalls were fixed without raising stack or operation limits. Both complete final-source Linux runs pass the added stress regressions. See `UPSTREAM_SYNC.md` before changing either upstream pin or the maintained native patch.
+
+Later documentation-only commits do not represent new runtime test runs. The evidence above always names the exact tested runtime commit. No npm release, GitHub Release, deployment or main-branch merge is performed by these validation workflows.

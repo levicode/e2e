@@ -1,9 +1,11 @@
-# Source-pinned agent-browser candidate
+# Source-pinned agent-browser delivery
 
-The complete source is on this feature branch. Upstream e2e remains pinned to `97f453fbcfd99b73faa0177ba60e489df9625b86`; the independent adapter does not replace the original Web or mobile packages.
+Updated October 19, 2026. Tested runtime: **`e1c7458d44a6ce0d7b7cb12bfdd727271898ae72`**.
 
-Linux commit `e4d2561db569582525251c1d207a996f8ed235ef` passed 53/53 integration cases once, but its exact repeat exposed a screenshot pixel-proof defect. That older privacy epoch must not be treated as stable. The decoded-PNG follow-up at `ffa91805374e2aa05f283877c0daf40c93161bd5` passed all 12 independent masking rounds and its packaged consumer, but the full matrix remained 51/53 because of native target-lifetime timeouts. The next candidate requires native `0.39.1-e2e.4`, adds a 12-round public probe/native-command regression, retains the `agent-browser-exact-5` privacy epoch, and corrects the macOS workflow setup. Full repeated Linux and both hosted Mac gates remain required.
+The final runtime passes two complete Linux runs: 1,501 native tests, all 333 units, default unnamed-icon smoke, all 54 integration cases with zero skips, and fresh installed-package execution. Both macOS 15 ARM64 and Intel pass their native/unit/static gates, five locator cases, two public runner/replay cases and fresh installed consumer. The 147 existing upstream native ignored tests remain explicitly reported.
 
-See `VALIDATION.md` for exact evidence and remaining platform/UAT boundaries, `INSTALL.md` for matching source-pinned package/native artifacts, and `UPSTREAM_SYNC.md` for maintenance. Only successful current workflows and their exact artifact manifests establish a tested candidate. The macOS workflow exercises native/unit and selected locator/runner/consumer acceptance, not the full Linux matrix.
+The Mac workflow covers selected browser contracts; the complete pixel/state/network/video matrix remains Linux-only. Private-application UAT and the user's actual computer remain untested. This is a usable source-pinned candidate within the explicit Chromium/dedicated-endpoint scope, not unrestricted Web/Playwright parity.
 
-No npm release, GitHub release, deployment or main-branch merge is performed by these workflows. Private-application acceptance on the user's actual computer remains separate.
+Read `VALIDATION.md` for exact run/artifact links and limitations, `INSTALL.md` for installation, `ADAPTER_COMPATIBILITY.md` for migration, `UPSTREAM_SYNC.md` for maintenance, and repository-root `VERIFIED_DELIVERY.md` for the dated delivery summary. Native version is `0.39.1-e2e.4`; cache identity is `agent-browser-exact-5`.
+
+Original Web/mobile packages and upstream core remain preserved. Later status-document updates change documentation only and do not create another tested runtime build. No npm/GitHub release, deployment or main merge has been performed.
