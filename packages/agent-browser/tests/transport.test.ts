@@ -5,9 +5,10 @@ import { mkdtemp, readFile, rm, writeFile, access, mkdir, realpath, stat, readdi
 import { syncBuiltinESMExports } from 'node:module';
 import os, { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import test, { type TestContext } from 'node:test';
 import { EngineError, type OperationContext } from 'e2e/engine';
-import { CliTransport, type CliTransportOptions } from '../src/transport.ts';
+import { AGENT_BROWSER_VERSION, CliTransport, type CliTransportOptions } from '../src/transport.ts';
 
 function context(timeoutMs = 2_000, signal = new AbortController().signal): OperationContext {
   return { signal, timeoutMs, runId: 'run', attemptId: 'attempt', origin: 'test' };
@@ -510,11 +511,90 @@ test('observation batch unwraps result arrays and drops echoed commands', async 
   assert.deepEqual(await transport.run(['batch', '--bail', 'get attr @e1 type', 'is visible @e1'], context()), [{ value: 'text' }, { visible: true }]);
 });
 
-test('a first version check and the command share one deadline', async (t) => {
-  const { transport } = await fake(t, { TEST_VERSION_DELAY: '100' });
-  const began = performance.now();
-  await assert.rejects(transport.run(['fill', 'hang', 'value'], context(180), { mutating: true }), classified('ACTION_MAY_HAVE_COMMITTED'));
-  assert.ok(performance.now() - began < 300);
+/** Control process acknowledgement and elapsed time without depending on Node startup. */
+function deadlineProcesses(t: TestContext) {
+  const transport = new CliTransport({ executable: 'controlled-agent-browser' });
+  const spawnedCalls: Array<{ args: readonly string[]; child: childProcess.ChildProcess; stdout: PassThrough }> = [];
+  const waiters = new Map<number, (call: (typeof spawnedCalls)[number]) => void>();
+  const killed: number[] = [];
+  let elapsed = 0;
+  const clock = t.mock.method(performance, 'now', () => elapsed);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  // Fake PIDs never reach the operating system, including during cleanup.
+  const killing = t.mock.method(process, 'kill', (pid: number) => { killed.push(Math.abs(pid)); return true; });
+  const reply = (call: (typeof spawnedCalls)[number], output: string): void => {
+    call.stdout.write(output);
+    call.child.emit('close', 0);
+  };
+  const spawning = t.mock.method(childProcess, 'spawn', ((_command: string, args: readonly string[]) => {
+    const child = new childProcess.ChildProcess();
+    const stdout = new PassThrough();
+    Object.defineProperty(child, 'pid', { value: 10_000 + spawnedCalls.length });
+    child.stdout = stdout;
+    child.stderr = new PassThrough();
+    child.kill = () => { killed.push(child.pid!); return true; };
+    const call = { args: [...args], child, stdout };
+    spawnedCalls.push(call);
+    waiters.get(spawnedCalls.length - 1)?.(call);
+    if (args.at(-1) === 'close') queueMicrotask(() => reply(call, JSON.stringify({ success: true, data: { closed: true } })));
+    return child;
+  }) as typeof childProcess.spawn);
+  syncBuiltinESMExports();
+  t.after(async () => {
+    try { await transport.close(context()); } finally {
+      spawning.mock.restore(); killing.mock.restore(); clock.mock.restore();
+      syncBuiltinESMExports(); t.mock.timers.reset();
+      for (const call of spawnedCalls) { call.stdout.destroy(); call.child.stderr?.destroy(); }
+    }
+  });
+  return {
+    transport, calls: spawnedCalls, killed, reply,
+    spawned: (index: number): Promise<(typeof spawnedCalls)[number]> => spawnedCalls[index] === undefined
+      ? new Promise(resolve => waiters.set(index, resolve)) : Promise.resolve(spawnedCalls[index]),
+    advance: (milliseconds: number): void => { elapsed += milliseconds; t.mock.timers.tick(milliseconds); },
+  };
+}
+
+test('a first version check can consume the shared deadline without dispatching input or poisoning the session', { timeout: 5_000 }, async (t) => {
+  const gate = deadlineProcesses(t);
+  const pending = gate.transport.run(['fill', 'hang', 'value'], context(180), { mutating: true });
+  const rejected = assert.rejects(pending, classified('OPERATION_TIMEOUT'));
+  const version = await gate.spawned(0);
+  assert.equal(version.args.at(-1), '--version');
+  gate.advance(180);
+  await rejected;
+  assert.equal(gate.transport.poisoned, false);
+  assert.equal(gate.calls.length, 1);
+  assert.deepEqual(gate.killed, [version.child.pid]);
+  // A late version acknowledgement cannot dispatch the abandoned mutation.
+  gate.reply(version, `agent-browser ${AGENT_BROWSER_VERSION}`);
+  await Promise.resolve();
+  assert.equal(gate.calls.length, 1);
+});
+
+test('version and mutation share one shrinking deadline, with uncertainty only after mutation dispatch', { timeout: 5_000 }, async (t) => {
+  const gate = deadlineProcesses(t);
+  const pending = gate.transport.run(['fill', 'hang', 'value'], context(180), { mutating: true });
+  const rejected = assert.rejects(pending, classified('ACTION_MAY_HAVE_COMMITTED'));
+  let settled = false;
+  void pending.then(() => { settled = true; }, () => { settled = true; });
+  const version = await gate.spawned(0);
+  assert.equal(version.args.at(-1), '--version');
+  gate.advance(100);
+  gate.reply(version, `agent-browser ${AGENT_BROWSER_VERSION}`);
+  const mutation = await gate.spawned(1);
+  assert.deepEqual(mutation.args.slice(-3), ['fill', 'hang', 'value']);
+  gate.advance(79);
+  await Promise.resolve();
+  assert.equal(settled, false);
+  assert.deepEqual(gate.killed, []);
+  gate.advance(1);
+  await rejected;
+  assert.equal(gate.transport.poisoned, true);
+  assert.deepEqual(gate.killed, [mutation.child.pid]);
+  assert.equal(gate.calls.length, 2, 'Exactly one version check and one mutation were spawned');
+  await assert.rejects(gate.transport.run(['fill', 'hang', 'value'], context(), { mutating: true }), classified('INVALID_STATE'));
+  assert.equal(gate.calls.length, 2, 'An uncertain mutation is never dispatched twice');
 });
 
 test('spawn errors are sanitized and do not poison a session that never started', async () => {
