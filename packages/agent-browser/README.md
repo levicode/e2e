@@ -64,6 +64,8 @@ const engine = agentBrowser({
 
 Worker/shared providers, including providers whose scope is omitted, are rejected by the factory before `acquire`. Likewise, `connect: { cdpEndpoint }` and explicit `connect.scope: 'worker'` fail before endpoint resolution. The old two-callback form `{ cdpEndpoint, reconnectEndpoint }` still selects attempt scope when scope is omitted, but `reconnectEndpoint` is never invoked.
 
+Provider preparation and recording clients must not retain competing locale/timezone emulation overrides, even within the same attempt; see the exact condition in `ADAPTER_COMPATIBILITY.md`.
+
 A scope declaration does not create isolation. The runtime still checks initial context exclusivity, but cannot determine whether a default-context page belongs to another user or prevent a service from adding other users later. The provisioner must enforce the ownership contract. Real Chromium CI exposed that the shared-browser zero-foreign-attachment guarantee and first-popup interception cannot both be delivered through public CDP; this package makes no shared-provider compatibility claim. See [the adapter inventory](ADAPTER_COMPATIBILITY.md) for provider-specific migration limits.
 
 ## Verification

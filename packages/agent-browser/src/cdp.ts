@@ -2,6 +2,7 @@
 import { EngineError, type OperationContext } from 'e2e/engine';
 
 type Pending = {
+  method: string;
   resolve(value: unknown): void;
   reject(error: EngineError): void;
   cleanup(): void;
@@ -18,6 +19,22 @@ export interface CdpTarget {
   readonly type: string;
   readonly url: string;
   readonly browserContextId?: string;
+}
+
+const existingOverrides = new WeakMap<Error, 'locale' | 'timezone'>();
+
+/** Recognizes two fixed Chromium responses without retaining arbitrary protocol error text. */
+export function isExistingEmulationOverride(error: unknown, kind: 'locale' | 'timezone'): boolean {
+  return error instanceof Error && existingOverrides.get(error) === kind;
+}
+
+/** Locale and timezone overrides can already belong to another page in the same renderer. */
+function protocolFailure(method: string, payload: unknown): EngineError {
+  const error = failure('CDP command failed');
+  const message = typeof payload === 'object' && payload !== null && 'message' in payload ? payload.message : undefined;
+  if (method === 'Emulation.setLocaleOverride' && message === 'Another locale override is already in effect') existingOverrides.set(error, 'locale');
+  if (method === 'Emulation.setTimezoneOverride' && message === 'Timezone override is already in effect') existingOverrides.set(error, 'timezone');
+  return error;
 }
 
 /** Fixed diagnostics deliberately omit endpoint, protocol payload, and browser-supplied text. */
@@ -147,6 +164,7 @@ export class CdpConnection {
         'OPERATION_TIMEOUT', 'CDP operation timed out; the command may have been dispatched', { retryable: false },
       )), Math.min(context.timeoutMs, 2_147_483_647));
       this.#pending.set(id, {
+        method,
         // The type parameter is a caller-owned protocol contract; no browser value enters diagnostics.
         resolve: (value) => resolve(value as T),
         reject,
@@ -216,7 +234,7 @@ export class CdpConnection {
       if (!pending) return;
       this.#pending.delete(message.id);
       pending.cleanup();
-      if (message.error !== undefined) pending.reject(failure('CDP command failed'));
+      if (message.error !== undefined) pending.reject(protocolFailure(pending.method, message.error));
       else pending.resolve(message.result ?? {});
       return;
     }

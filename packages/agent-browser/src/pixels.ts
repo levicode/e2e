@@ -15,7 +15,12 @@ export interface PixelCapture {
   readonly maskedRegionCount: number;
   readonly maskingProven: true;
 }
-const denied = (): TestError => new TestError('POLICY_DENIED', 'Screenshot masking could not be proven for every frame and editable field');
+type PixelPhase = 'operation' | 'inventory-main' | 'inventory-remote' | 'inventory-stability' | 'world' | 'closed-shadow' | 'mask-install' | 'freeze'
+  | 'verify-before-owners' | 'verify-before-shadows' | 'verify-before-documents' | 'verify-before-trees' | 'verify-before-masks'
+  | 'verify-after-owners' | 'verify-after-shadows' | 'verify-after-documents' | 'verify-after-trees' | 'verify-after-masks'
+  | 'viewport' | 'capture' | 'png' | 'cleanup-masks' | 'cleanup-objects' | 'cleanup-active' | 'cleanup-visible' | 'cleanup-tasks' | 'cleanup-detach';
+const denied = (phase: PixelPhase = 'operation'): TestError => new TestError('POLICY_DENIED', `Screenshot masking could not be proven for every frame and editable field (${phase})`);
+class InventoryNotReady extends Error {}
 function frameIds(tree: FrameTree): string[] { return [tree.frame.id, ...(tree.childFrames ?? []).flatMap(frameIds)]; }
 
 interface ClosedShadow { frameId: string; backendNodeId: number }
@@ -243,15 +248,18 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
   let freezeAttempted = false;
   let restoreVisibility = false;
   let mainContextId: number | undefined;
-  let cleanupFailed = false;
+  let cleanupFailure: PixelPhase | undefined;
+  let phase: PixelPhase = 'inventory-main';
   let output: PixelCapture | undefined;
   let failure: unknown;
   try {
     const expected = new Set<string>();
     const covered = new Set<string>();
     const ownership = new Map<string, FrameOwner & { session: string }>();
+    const frameSessions = new Map<string, string>();
+    const enabled = new Set<string>();
     const readSession = async (sessionId: string, expectedRoot?: string): Promise<void> => {
-      await cdp.send('DOM.enable', {}, current(), sessionId);
+      if (!enabled.has(sessionId)) { await cdp.send('DOM.enable', {}, current(), sessionId); enabled.add(sessionId); }
       const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), sessionId);
       if (expectedRoot && frameTree.frame.id !== expectedRoot) throw denied();
       const treeFrames = frameIds(frameTree); for (const id of treeFrames) expected.add(id);
@@ -269,26 +277,57 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       for (const id of documents) covered.add(id);
       sessions.push({ session: sessionId, treeFrames, documents, owners, closedRoots });
     };
-    await readSession(session);
-    // OOPIF documents are absent from the parent's DOM. Resolve only frame targets
-    // proved to belong to this page's tree, then inspect those independent renderers.
-    while ([...expected].some((id) => !covered.has(id))) {
-      const missing = [...expected].filter((id) => !covered.has(id));
-      const targets = await cdp.listTargets(current());
-      let advanced = false;
-      for (const frameId of missing) {
-        if (covered.has(frameId)) continue;
-        const owner = ownership.get(frameId);
-        if (!owner || owner.localDocument || !covered.has(owner.parentFrameId) || !sessions.some(item => item.session === owner.session)) throw denied();
-        if (!targets.some((target) => target.type === 'iframe' && target.targetId === frameId)) continue;
-        const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: frameId, flatten: true }, current());
-        attached.add(sessionId); await readSession(sessionId, frameId); advanced = true;
+    const inventoryMatches = async (frameSession: FrameSession, stage: 'inventory-stability' | 'verify-before' | 'verify-after'): Promise<boolean> => {
+      phase = stage === 'inventory-stability' ? stage : `${stage}-owners`;
+      const { root } = await cdp.send<{ root: DomNode }>('DOM.getDocument', { depth: -1, pierce: true }, current(), frameSession.session);
+      if (JSON.stringify(frameOwners(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.owners)) return false;
+      phase = stage === 'inventory-stability' ? stage : `${stage}-shadows`;
+      if (JSON.stringify(verifyMaskableDom(root, frameSession.documents, true)) !== JSON.stringify(frameSession.closedRoots)) return false;
+      phase = stage === 'inventory-stability' ? stage : `${stage}-documents`;
+      if (JSON.stringify(documentFrames(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.documents)) return false;
+      phase = stage === 'inventory-stability' ? stage : `${stage}-trees`;
+      const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), frameSession.session);
+      return JSON.stringify(frameIds(frameTree)) === JSON.stringify(frameSession.treeFrames);
+    };
+    // Remote targets and DOM owners arrive through independent protocol streams. Establish
+    // a stable complete inventory before any mask or lifecycle mutation. A failed masked
+    // proof is never retried, and no bytes from such a proof can escape.
+    const inventoryEnd = Math.min(ends, Date.now() + 2_000);
+    while (true) {
+      expected.clear(); covered.clear(); ownership.clear(); sessions.length = 0;
+      try {
+        phase = 'inventory-main'; await readSession(session);
+        // OOPIF documents are absent from the parent's DOM. Resolve only exact DOM owners.
+        while ([...expected].some((id) => !covered.has(id))) {
+          phase = 'inventory-remote';
+          const missing = [...expected].filter((id) => !covered.has(id));
+          const targets = await cdp.listTargets(current());
+          let advanced = false;
+          for (const frameId of missing) {
+            if (covered.has(frameId)) continue;
+            const owner = ownership.get(frameId);
+            if (!owner || owner.localDocument || !covered.has(owner.parentFrameId) || !sessions.some(item => item.session === owner.session)) throw denied();
+            if (!targets.some((target) => target.type === 'iframe' && target.targetId === frameId)) continue;
+            let childSession = frameSessions.get(frameId);
+            if (!childSession) {
+              childSession = (await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: frameId, flatten: true }, current())).sessionId;
+              frameSessions.set(frameId, childSession); attached.add(childSession);
+            }
+            await readSession(childSession, frameId); advanced = true;
+          }
+          if (!advanced) throw new InventoryNotReady();
+        }
+        for (const frameSession of sessions) if (!await inventoryMatches(frameSession, 'inventory-stability')) throw new InventoryNotReady();
+        break;
+      } catch (error) {
+        if (!(error instanceof InventoryNotReady) || Date.now() >= inventoryEnd) throw error;
+        if (context.signal.aborted) throw new EngineError('CANCELLED', 'Screenshot masking cancelled', { retryable: false });
+        await new Promise<void>(resolve => setTimeout(resolve, Math.min(20, Math.max(0, inventoryEnd - Date.now()))));
       }
-      if (!advanced) throw denied();
     }
     let count = 0;
     for (const frameSession of sessions) for (const frameId of frameSession.documents) {
-      const frameSessionId = frameSession.session;
+      const frameSessionId = frameSession.session; phase = 'world';
       const { executionContextId } = await cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
         frameId, worldName: key, grantUniveralAccess: false,
       }, current(), frameSessionId);
@@ -297,6 +336,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
         const visible = await evaluate<boolean>(cdp, frameSessionId, executionContextId, 'document.visibilityState === "visible"', current());
         if (typeof visible !== 'boolean') throw denied(); restoreVisibility = visible; mainContextId = executionContextId;
       }
+      phase = 'closed-shadow';
       for (const shadow of frameSession.closedRoots.filter((entry) => entry.frameId === frameId)) {
         const { object } = await cdp.send<{ object: { objectId?: string } }>('DOM.resolveNode', {
           backendNodeId: shadow.backendNodeId, executionContextId, objectGroup: key,
@@ -309,52 +349,56 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
         }, current(), frameSessionId);
         if (result.exceptionDetails || result.result.value !== true) throw denied();
       }
+      phase = 'mask-install';
       const added = await evaluate<number>(cdp, frameSessionId, executionContextId, `(${INSTALL_MASKS})(${JSON.stringify(key)})`, current());
       if (!Number.isSafeInteger(added) || added < 0) throw denied(); count += added;
     }
-    freezeAttempted = true;
+    freezeAttempted = true; phase = 'freeze';
     await cdp.send('Page.setWebLifecycleState', { state: 'frozen' }, current(), session);
-    const verifyAll = async (): Promise<void> => {
-      for (const frameSession of sessions) {
-        const { root } = await cdp.send<{ root: DomNode }>('DOM.getDocument', { depth: -1, pierce: true }, current(), frameSession.session);
-        if (JSON.stringify(frameOwners(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.owners)) throw denied();
-        if (JSON.stringify(verifyMaskableDom(root, frameSession.documents, true)) !== JSON.stringify(frameSession.closedRoots)) throw denied();
-        if (JSON.stringify(documentFrames(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.documents)) throw denied();
-        const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), frameSession.session);
-        if (JSON.stringify(frameIds(frameTree)) !== JSON.stringify(frameSession.treeFrames)) throw denied();
-      }
+    const verifyAll = async (stage: 'verify-before' | 'verify-after'): Promise<void> => {
+      for (const frameSession of sessions) if (!await inventoryMatches(frameSession, stage)) throw denied();
+      phase = `${stage}-masks`;
       for (const item of installed) if (!await evaluate<boolean>(cdp, item.session, item.contextId, `(${VERIFY_MASKS})(${JSON.stringify(key)})`, current())) throw denied();
     };
-    await verifyAll();
+    await verifyAll('verify-before'); phase = 'viewport';
     const { cssVisualViewport } = await cdp.send<{ cssVisualViewport: { clientWidth: number; clientHeight: number; pageX: number; pageY: number; scale: number } }>('Page.getLayoutMetrics', {}, current(), session);
     const viewport = cssVisualViewport;
     if (!viewport || !Number.isFinite(viewport.clientWidth) || !Number.isFinite(viewport.clientHeight) || viewport.clientWidth <= 0 || viewport.clientHeight <= 0 || viewport.scale !== 1) throw denied();
+    phase = 'capture';
     const capture = await cdp.send<{ data: string }>('Page.captureScreenshot', {
       format: 'png', fromSurface: true, captureBeyondViewport: false,
       clip: { x: viewport.pageX, y: viewport.pageY, width: viewport.clientWidth, height: viewport.clientHeight, scale: 1 },
     }, current(), session);
-    await verifyAll();
+    await verifyAll('verify-after'); phase = 'png';
     const data = new Uint8Array(Buffer.from(capture.data, 'base64')); const size = readPngSize(data);
     if (!size || Math.abs(size.width / viewport.clientWidth - size.height / viewport.clientHeight) > 0.01) throw denied();
     output = { pixels: { data, mediaType: 'image/png', ...size, scale: size.width / viewport.clientWidth }, maskedRegionCount: count, maskingProven: true };
   } catch (error) {
-    failure = error instanceof EngineError && (error.code === 'CANCELLED' || error.code === 'OPERATION_TIMEOUT') ? error : denied();
+    failure = error instanceof EngineError && (error.code === 'CANCELLED' || error.code === 'OPERATION_TIMEOUT') ? error : denied(phase);
   } finally {
     // Cleanup is intentionally independent of an expired/cancelled observation budget.
     const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
     await Promise.all(installed.map(async (item) => {
-      try { await evaluate(cdp, item.session, item.contextId, `(${REMOVE_MASKS})(${JSON.stringify(key)})`, cleanup); } catch { cleanupFailed = true; }
+      try { await evaluate(cdp, item.session, item.contextId, `(${REMOVE_MASKS})(${JSON.stringify(key)})`, cleanup); } catch { cleanupFailure ??= 'cleanup-masks'; }
     }));
-    await Promise.all([...attached].map(async (sessionId) => { try { await cdp.send('Runtime.releaseObjectGroup', { objectGroup: key }, cleanup, sessionId); } catch { cleanupFailed = true; } }));
+    await Promise.all([...attached].map(async (sessionId) => { try { await cdp.send('Runtime.releaseObjectGroup', { objectGroup: key }, cleanup, sessionId); } catch { cleanupFailure ??= 'cleanup-objects'; } }));
     if (freezeAttempted) {
-      try { await cdp.send('Page.setWebLifecycleState', { state: 'active' }, cleanup, session); } catch { cleanupFailed = true; }
+      try { await cdp.send('Page.setWebLifecycleState', { state: 'active' }, cleanup, session); } catch { cleanupFailure ??= 'cleanup-active'; }
       // Chromium's freeze also hides WebContents; 'active' alone does not show it again.
-      if (restoreVisibility && mainContextId !== undefined) try { await restoreVisiblePage(cdp, targetId, session, mainContextId, cleanup, probes); } catch { cleanupFailed = true; }
+      if (restoreVisibility && mainContextId !== undefined) try { await restoreVisiblePage(cdp, targetId, session, mainContextId, cleanup, probes); } catch { cleanupFailure ??= 'cleanup-visible'; }
+      // Debugger evaluation and visibility reads run even while ordinary page tasks are
+      // frozen. A timer acknowledgement proves each inspected renderer resumed its task
+      // queues before the caller can issue its next navigation. No application data is read.
+      await Promise.all(installed.map(async item => {
+        try {
+          if (await evaluate<boolean>(cdp, item.session, item.contextId, 'new Promise(resolve => setTimeout(() => resolve(true), 0))', cleanup) !== true) cleanupFailure ??= 'cleanup-tasks';
+        } catch { cleanupFailure ??= 'cleanup-tasks'; }
+      }));
     }
     // Each attachment above belongs only to this capture, never the engine's network handlers.
-    await Promise.all([...attached].map(async (sessionId) => { try { await cdp.send('Target.detachFromTarget', { sessionId }, cleanup); } catch { cleanupFailed = true; } }));
+    await Promise.all([...attached].map(async (sessionId) => { try { await cdp.send('Target.detachFromTarget', { sessionId }, cleanup); } catch { cleanupFailure ??= 'cleanup-detach'; } }));
   }
-  if (cleanupFailed) throw denied();
+  if (cleanupFailure) throw denied(cleanupFailure);
   if (failure) throw failure;
   if (!output) throw denied();
   return output;

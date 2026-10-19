@@ -5,7 +5,7 @@ import {
   ConfigurationError, EngineError, isSecret, rejectUnknownKeys, sameSite,
   type OperationContext, type ResolveSecretOptions, type Secret,
 } from 'e2e/engine';
-import type { CdpConnection } from './cdp.ts';
+import { isExistingEmulationOverride, type CdpConnection } from './cdp.ts';
 
 export interface BasicAuth {
   readonly username: string;
@@ -134,6 +134,8 @@ export class ProtectedContext {
   private auth: Readonly<{ username: string; password: string }> | undefined;
   private sources: readonly string[] = [];
   private prepared = false;
+  private readonly localeConfigured = new WeakSet<CdpConnection>();
+  private readonly timezoneConfigured = new WeakSet<CdpConnection>();
 
   constructor(options: ProtectedOptions, site?: string) {
     validateProtectedOptions(options);
@@ -207,8 +209,8 @@ export class ProtectedContext {
       if (typeof userAgent !== 'string' || userAgent === '') throw new EngineError('ENGINE_FAILURE', 'Chromium did not provide a default user agent', { retryable: false });
       await send('Network.setUserAgentOverride', { userAgent, ...(this.options.locale === undefined ? {} : { acceptLanguage: this.options.locale }) });
     }
-    if (this.options.locale !== undefined) await send('Emulation.setLocaleOverride', { locale: this.options.locale });
-    if (this.options.timezoneId !== undefined) await send('Emulation.setTimezoneOverride', { timezoneId: this.options.timezoneId });
+    if (this.options.locale !== undefined) await this.configureRendererOverride(connection, sessionId, budget(), 'locale', this.options.locale);
+    if (this.options.timezoneId !== undefined) await this.configureRendererOverride(connection, sessionId, budget(), 'timezone', this.options.timezoneId);
     const features = [
       ...(this.options.colorScheme === undefined ? [] : [{ name: 'prefers-color-scheme', value: this.options.colorScheme }]),
       ...(this.options.reducedMotion === undefined ? [] : [{ name: 'prefers-reduced-motion', value: this.options.reducedMotion }]),
@@ -217,6 +219,21 @@ export class ProtectedContext {
     if (this.sources.length > 0) {
       await send('Page.enable', {});
       for (const source of this.sources) await send('Page.addScriptToEvaluateOnNewDocument', { source });
+    }
+  }
+
+  /** Same-renderer popups inherit these process-wide settings from our already configured page. */
+  private async configureRendererOverride(connection: CdpConnection, sessionId: string, context: OperationContext, kind: 'locale' | 'timezone', value: string): Promise<void> {
+    const configured = kind === 'locale' ? this.localeConfigured : this.timezoneConfigured;
+    try {
+      await connection.send(kind === 'locale' ? 'Emulation.setLocaleOverride' : 'Emulation.setTimezoneOverride',
+        kind === 'locale' ? { locale: value } : { timezoneId: value }, context, sessionId);
+      configured.add(connection);
+    } catch (error) {
+      // This controller's values are immutable, and the attempt-exclusive endpoint admits no
+      // unrelated clients that could install a different value. Accept only a fixed Chromium
+      // conflict after this controller established this identical value on this connection.
+      if (!configured.has(connection) || !isExistingEmulationOverride(error, kind)) throw error;
     }
   }
 

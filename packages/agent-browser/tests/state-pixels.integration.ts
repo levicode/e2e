@@ -17,12 +17,15 @@ async function listen(server: Server): Promise<string> {
 }
 async function evaluate<T>(cdp: CdpConnection, target: string, expression: string): Promise<T> {
   const session = await cdp.attachTarget(target, operation());
-  const answer = await cdp.send<{ result: { value: T }; exceptionDetails?: unknown }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, operation(), session);
-  assert.equal(answer.exceptionDetails, undefined); return answer.result.value;
+  try {
+    const answer = await cdp.send<{ result: { value: T }; exceptionDetails?: unknown }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, operation(), session);
+    assert.equal(answer.exceptionDetails, undefined); return answer.result.value;
+  } finally { await cdp.send('Target.detachFromTarget', { sessionId: session }, operation()); }
 }
 async function navigate(cdp: CdpConnection, target: string, url: string): Promise<void> {
   const session = await cdp.attachTarget(target, operation());
-  await cdp.send('Page.navigate', { url }, operation(), session);
+  try { await cdp.send('Page.navigate', { url }, operation(), session); }
+  finally { await cdp.send('Target.detachFromTarget', { sessionId: session }, operation()); }
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     try { if (await evaluate<boolean>(cdp, target, `location.href === ${JSON.stringify(url)} && document.readyState === 'complete'`)) return; } catch { /* document changing */ }
@@ -78,6 +81,8 @@ test('real Chromium masks all frames and shadows and restores complete structure
     const visibility = await evaluate(connection, target, 'document.visibilityState');
     const capture = await captureMaskedPixels(connection, target, operation());
     assert.equal(await evaluate(connection, target, 'document.visibilityState'), visibility);
+    assert.equal(await evaluate(connection, target, 'new Promise(resolve => setTimeout(() => resolve(true), 0))'), true, 'Main-frame ordinary tasks must resume after capture');
+    assert.equal(await evaluate(connection, target, 'new Promise(resolve => document.querySelector("iframe").contentWindow.setTimeout(() => resolve(true), 0))'), true, 'Same-origin child tasks must resume after capture');
     assert.equal(await evaluate(connection, target, `document.querySelector('#secret').getAnimations()[0].playState`), 'running');
     assert.ok(capture.maskedRegionCount >= 3); assert.equal(capture.maskingProven, true);
     const center = await evaluate<number[]>(connection, target, `(() => {const r=document.querySelector('#secret').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()`);
@@ -87,6 +92,9 @@ test('real Chromium masks all frames and shadows and restores complete structure
     await evaluate(connection, target, `new Promise(resolve=>{const frame=document.createElement('iframe');frame.id='cross';frame.style.cssText='display:block;width:220px;height:80px';frame.onload=()=>resolve(true);frame.src=${JSON.stringify(crossOrigin + '/')};document.body.append(frame)})`);
     const crossCapture = await captureMaskedPixels(connection, target, operation());
     assert.ok(crossCapture.maskedRegionCount >= 4);
+    const remote = (await connection.listTargets(operation())).find(item => item.type === 'iframe' && item.url === `${crossOrigin}/`);
+    assert.ok(remote, 'The fixture must exercise a real out-of-process child frame');
+    assert.equal(await evaluate(connection, remote.targetId, 'new Promise(resolve => setTimeout(() => resolve(true), 0))'), true, 'Out-of-process child tasks must resume after capture');
     const crossCenter = await evaluate<number[]>(connection, target, `(()=>{const r=document.querySelector('#cross').getBoundingClientRect();return [r.x+100,r.y+30]})()`);
     assert.deepEqual(pixelAt(crossCapture.pixels.data, Math.floor(crossCenter[0]! * crossCapture.pixels.scale), Math.floor(crossCenter[1]! * crossCapture.pixels.scale)), [0,0,0]);
     await evaluate(connection, target, `document.querySelector('#cross').remove();true`);

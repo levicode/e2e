@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import type { OperationContext } from 'e2e/engine';
-import { CdpConnection } from '../src/cdp.ts';
+import { CdpConnection, isExistingEmulationOverride } from '../src/cdp.ts';
 import { NetworkCompanion, NetworkHub } from '../src/network.ts';
 import { guardCallbackScope, runCallbackScope } from '../src/callback-scope.ts';
+import { ProtectedContext } from '../src/protected.ts';
 
 type Command = { id: number; method: string; params: Record<string, unknown>; sessionId?: string };
 const actualWebSocket = globalThis.WebSocket;
@@ -32,8 +33,8 @@ class FakeWebSocket extends EventTarget {
     this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ id: command.id, result, sessionId: command.sessionId }) }));
   }
 
-  protocolError(command: Command): void {
-    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ id: command.id, error: { message: 'secret-token https://private.example/' } }) }));
+  protocolError(command: Command, message = 'secret-token https://private.example/'): void {
+    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ id: command.id, error: { message } }) }));
   }
 
   event(method: string, params: object, sessionId: string | undefined = 'active'): void {
@@ -157,6 +158,88 @@ test('sanitizes protocol failures and fails every pending command when the socke
   await assert.rejects(second, { code: 'ENGINE_FAILURE' });
   connection.close();
   assert.equal(closes, 1);
+});
+
+test('known renderer-override conflicts require the exact method and response while error text remains sanitized', async () => {
+  const { connection, socket } = await transport();
+  for (const [method, message, kind] of [
+    ['Emulation.setLocaleOverride', 'Another locale override is already in effect', 'locale'],
+    ['Emulation.setTimezoneOverride', 'Timezone override is already in effect', 'timezone'],
+    ['Runtime.evaluate', 'Another locale override is already in effect', undefined],
+    ['Emulation.setLocaleOverride', 'Another locale override is already in effect: private-token', undefined],
+    ['Emulation.setTimezoneOverride', 'Invalid timezone id', undefined],
+  ] as const) {
+    socket.respondTo = command => socket.protocolError(command, message);
+    await assert.rejects(connection.send(method, {}, operation(), 'active'), (error: unknown) => {
+      assert.equal(error instanceof Error ? error.message : undefined, 'CDP command failed');
+      assert.equal(isExistingEmulationOverride(error, 'locale'), kind === 'locale');
+      assert.equal(isExistingEmulationOverride(error, 'timezone'), kind === 'timezone');
+      assert.doesNotMatch(String(error), /already in effect|private-token|Invalid timezone/);
+      return true;
+    });
+  }
+});
+
+test('same-renderer popup override conflicts preserve initialization before resume after our initial successful override', async () => {
+  const { connection, socket, hub } = await networkHub();
+  const protectedContext = new ProtectedContext({ locale: 'en-GB', timezoneId: 'Europe/London', initScripts: ['globalThis.configuredBeforeApp=true'] });
+  await protectedContext.prepare('.', async () => 'unused');
+  socket.respondTo = command => {
+    if (command.sessionId === 'popup-session' && command.method === 'Emulation.setLocaleOverride') {
+      socket.protocolError(command, 'Another locale override is already in effect');
+    } else if (command.sessionId === 'popup-session' && command.method === 'Emulation.setTimezoneOverride') {
+      socket.protocolError(command, 'Timezone override is already in effect');
+    } else socket.reply(command, command.method === 'Browser.getVersion' ? { userAgent: 'synthetic' } : {});
+  };
+  await hub.registerSessionInitializer((session, _target, context) => protectedContext.configureSession(connection, session, context), operation());
+  attachEvent(socket, 'popup', 'popup-session');
+  await hub.settle(operation());
+  const commands = socket.commands.filter(command => command.sessionId === 'popup-session').map(command => command.method);
+  assert.ok(commands.indexOf('Emulation.setTimezoneOverride') > commands.indexOf('Emulation.setLocaleOverride'));
+  assert.ok(commands.indexOf('Runtime.runIfWaitingForDebugger') > commands.indexOf('Page.addScriptToEvaluateOnNewDocument'));
+});
+
+test('first-target and new-connection override conflicts fail closed', async () => {
+  for (const kind of ['locale', 'timezone'] as const) {
+    const method = kind === 'locale' ? 'Emulation.setLocaleOverride' : 'Emulation.setTimezoneOverride';
+    const message = kind === 'locale' ? 'Another locale override is already in effect' : 'Timezone override is already in effect';
+    const protectedContext = new ProtectedContext(kind === 'locale' ? { locale: 'en-GB' } : { timezoneId: 'Europe/London' });
+    await protectedContext.prepare('.', async () => 'unused');
+    const current = await transport();
+    current.socket.respondTo = command => {
+      if (command.method === method) current.socket.protocolError(command, message);
+      else current.socket.reply(command, command.method === 'Browser.getVersion' ? { userAgent: 'synthetic' } : {});
+    };
+    await assert.rejects(protectedContext.configureSession(current.connection, 'first', operation()), /CDP command failed/);
+    current.socket.respondTo = command => current.socket.reply(command, command.method === 'Browser.getVersion' ? { userAgent: 'synthetic' } : {});
+    await protectedContext.configureSession(current.connection, 'first', operation());
+    const replacement = await transport();
+    replacement.socket.respondTo = command => {
+      if (command.method === method) replacement.socket.protocolError(command, message);
+      else replacement.socket.reply(command, command.method === 'Browser.getVersion' ? { userAgent: 'synthetic' } : {});
+    };
+    await assert.rejects(protectedContext.configureSession(replacement.connection, 'replacement', operation()), /CDP command failed/);
+  }
+});
+
+test('unexpected renderer override failures stay fatal after a successful earlier setting', async () => {
+  for (const kind of ['locale', 'timezone'] as const) {
+    const method = kind === 'locale' ? 'Emulation.setLocaleOverride' : 'Emulation.setTimezoneOverride';
+    const protectedContext = new ProtectedContext(kind === 'locale' ? { locale: 'en-GB' } : { timezoneId: 'Europe/London' });
+    await protectedContext.prepare('.', async () => 'unused');
+    const { connection, socket } = await transport();
+    socket.respondTo = command => socket.reply(command, command.method === 'Browser.getVersion' ? { userAgent: 'synthetic' } : {});
+    await protectedContext.configureSession(connection, 'first', operation());
+    socket.respondTo = command => {
+      if (command.method === method) socket.protocolError(command);
+      else socket.reply(command, command.method === 'Browser.getVersion' ? { userAgent: 'synthetic' } : {});
+    };
+    await assert.rejects(protectedContext.configureSession(connection, 'popup', operation()), (error: unknown) => {
+      assert.equal(error instanceof Error ? error.message : undefined, 'CDP command failed');
+      assert.doesNotMatch(String(error), /secret-token|private\.example/);
+      return true;
+    });
+  }
 });
 
 test('response wait registers before an independent action and reads body only after loadingFinished', async () => {

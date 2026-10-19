@@ -17,7 +17,7 @@ before(async () => {
     response.setHeader('content-type', 'text/html; charset=utf-8');
     response.end(`<!doctype html><meta charset="utf-8"><style>
       body{margin:0}input,textarea,[contenteditable]{display:block;width:250px;height:24px;margin:4px}
-      #source,#destination{position:absolute;top:170px;width:100px;height:60px;background:#ddd}
+      #source,#destination{position:absolute;top:170px;width:100px;height:60px;background:#ddd;user-select:none}
       #source{left:20px}#destination{left:300px}#scroller{position:absolute;top:250px;left:20px;width:300px;height:150px;overflow:auto;border:0}
       #below{position:absolute;top:2000px;left:20px}#tail{height:2400px}
     </style><input id="text"><textarea id="area"></textarea><div contenteditable id="editable"></div>
@@ -105,6 +105,9 @@ function assertDrag(events: PointerEventRecord[], from: { x: number; y: number }
 
 test('two independent locator resolutions remain usable for native dragTo and point swipeTo', { timeout: 180_000 }, async () => {
   await withEngine(async (engine, browser) => {
+    // These blocks test a pointer gesture, not HTML selected-text drag-and-drop.
+    // Selectable text can start a native drag on the second gesture, correctly
+    // replacing pointerup with pointercancel and dragend under Pointer Events.
     const source = await ref(engine, '#source');
     const destination = await ref(engine, '#destination');
     await engine.perform!(source, { kind: 'dragTo', target: destination }, operation());

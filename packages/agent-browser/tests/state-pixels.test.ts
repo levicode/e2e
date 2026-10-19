@@ -97,7 +97,7 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
   const calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] = [];
   const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
   let visible = true; let switchedAway = false;
-  let topDocuments = 0;
+  let masksInstalled = false; let screenshotRequested = false;
   cdp.attachTarget = async () => 'top-session';
   cdp.listTargets = async () => [
     { targetId: 'top', type: 'page', url: 'https://top.test', ...(options.browserContextId ? { browserContextId: options.browserContextId } : {}) },
@@ -119,8 +119,7 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
     }
     if (method === 'Page.getFrameTree') value = { frameTree: { frame: { id: session === 'grandchild-session' ? 'grandchild' : session === 'child-session' ? options.mismatchedOopif ? 'foreign-frame' : 'child' : 'top' }, ...(options.inaccessibleFrame && session === 'top-session' ? { childFrames: [{ frame: { id: 'child' } }] } : {}) } };
     if (method === 'DOM.getDocument') {
-      if (session === 'top-session') topDocuments++;
-      const changed = options.ownerChangesAt === 'before' ? topDocuments >= 2 : options.ownerChangesAt === 'after' && topDocuments >= 3;
+      const changed = options.ownerChangesAt === 'before' ? masksInstalled : options.ownerChangesAt === 'after' && screenshotRequested;
       const owner = { nodeType: 1, nodeName: 'IFRAME', ...(options.missingOwnerIdentity ? {} : { frameId: session === 'child-session' ? 'grandchild' : 'child' }), backendNodeId: changed && (options.ownerChangeKind ?? 'replace') === 'replace' ? 23 : 22 };
       const hasOwner = (options.oopif && session === 'top-session') || (options.nestedOopif && session === 'child-session');
       const owners = changed && options.ownerChangeKind === 'remove' ? [] : changed && options.ownerChangeKind === 'add' ? [owner, { nodeType: 1, nodeName: 'IFRAME', frameId: 'new-child', backendNodeId: 24 }] : [owner];
@@ -134,7 +133,7 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
     if (method === 'Runtime.evaluate') {
       const expression = String(params.expression);
       if (expression === 'document.visibilityState === "visible"') value = { result: { value: visible } };
-      else if (expression.includes('mask state already exists')) value = { result: { value: 1 } };
+      else if (expression.includes('mask state already exists')) { masksInstalled = true; value = { result: { value: 1 } }; }
       else if (expression.includes("delete globalThis[key + '_closed']")) {
         if (options.cleanupFails) throw new Error('cleanup failure');
         value = { result: { value: true } };
@@ -142,6 +141,7 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
     }
     if (method === 'Page.getLayoutMetrics') value = { cssVisualViewport: { clientWidth: 100, clientHeight: 80, pageX: 0, pageY: 0, scale: 1 } };
     if (method === 'Page.captureScreenshot') {
+      screenshotRequested = true;
       if (options.cancelCapture) { options.cancelCapture.abort(); throw new EngineError('CANCELLED', 'cancelled', { retryable: false }); }
       const png = Buffer.alloc(33); png.writeUInt32BE(0x89504e47, 0); png.writeUInt32BE(0x0d0a1a0a, 4); png.writeUInt32BE(13, 8); png.write('IHDR', 12); png.writeUInt32BE(100, 16); png.writeUInt32BE(80, 20);
       value = { data: png.toString('base64') };
@@ -172,7 +172,7 @@ test('Chromium document-element frame markers are not mistaken for child frame o
   const result = await captureMaskedPixels(cdp, 'top', operation());
   assert.equal(result.maskingProven, true);
   assert.equal(result.maskedRegionCount, 1);
-  assert.equal(calls.filter(call => call.method === 'DOM.getDocument').length, 3);
+  assert.equal(calls.filter(call => call.method === 'DOM.getDocument').length, 4);
   assert.equal(calls.some(call => call.method === 'Target.attachToTarget'), false);
   assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), true);
 });
@@ -207,7 +207,7 @@ test('pixel capture discovers nested remote owners in closed roots even when eve
 test('missing or mismatched remote target or owner identity prevents screenshot capture', async () => {
   for (const options of [{ unavailableOopif: true }, { mismatchedOopif: true }, { missingOwnerIdentity: true }]) {
     const { cdp, calls } = mockPixels({ oopif: true, ...options });
-    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /masking could not be proven/);
+    await assert.rejects(captureMaskedPixels(cdp, 'top', { ...operation(), timeoutMs: 50 }), /masking could not be proven/);
     assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
     assert.equal(calls.some(call => call.method === 'Target.attachToTarget' && call.params.targetId === 'foreign-frame'), false);
   }
@@ -220,6 +220,91 @@ test('new, disappearing or replaced frame owners invalidate both pre-capture and
     assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), ownerChangesAt === 'after');
     assert.deepEqual(calls.filter(call => call.method === 'Target.detachFromTarget').map(call => call.params.sessionId).toSorted(), ['child-session', 'top-session']);
   }
+});
+
+test('pre-mask inventory waits for its exact remote target without capturing or freezing partial coverage', async () => {
+  const { cdp, calls } = mockPixels({ oopif: true }); const list = cdp.listTargets.bind(cdp); let reads = 0;
+  cdp.listTargets = async context => {
+    const targets = await list(context);
+    if (++reads === 1) {
+      assert.equal(calls.some(call => call.method === 'Page.setWebLifecycleState' || call.method === 'Page.captureScreenshot'), false);
+      assert.equal(calls.some(call => String(call.params.expression).includes('mask state already exists')), false);
+      return targets.filter(target => target.targetId !== 'child');
+    }
+    return targets;
+  };
+  const result = await captureMaskedPixels(cdp, 'top', operation());
+  assert.equal(result.maskedRegionCount, 2); assert.equal(reads, 2);
+  assert.equal(calls.filter(call => call.method === 'Target.attachToTarget').length, 1);
+  assert.equal(calls.filter(call => call.method === 'Page.captureScreenshot').length, 1);
+});
+
+test('pre-mask inventory can settle but never retries a changed owner once masks are installed', async () => {
+  const { cdp, calls } = mockPixels({ oopif: true }); const send = cdp.send.bind(cdp); let reads = 0;
+  cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+    const value = await send<T>(method, params, context, session);
+    if (method === 'DOM.getDocument' && session === 'top-session' && ++reads >= 2) {
+      assert.ok(typeof value === 'object' && value !== null && 'root' in value);
+      const root = value.root as { children: { children: { backendNodeId: number }[] }[] };
+      root.children[0]!.children[0]!.backendNodeId = 33;
+    }
+    return value;
+  };
+  assert.equal((await captureMaskedPixels(cdp, 'top', operation())).maskedRegionCount, 2);
+  assert.equal(reads, 6, 'One initial changed inventory requires a new complete two-pass inventory before masked proof');
+  assert.equal(calls.filter(call => call.method === 'Page.captureScreenshot').length, 1);
+  assert.equal(calls.filter(call => call.method === 'Page.setWebLifecycleState' && call.params.state === 'frozen').length, 1);
+});
+
+test('an inventory that never settles is refused without any source mutation or capture', async () => {
+  const { cdp, calls } = mockPixels({ oopif: true }); const send = cdp.send.bind(cdp); let reads = 0;
+  cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+    const value = await send<T>(method, params, context, session);
+    if (method === 'DOM.getDocument' && session === 'top-session') {
+      assert.ok(typeof value === 'object' && value !== null && 'root' in value);
+      const root = value.root as { children: { children: { backendNodeId: number }[] }[] };
+      root.children[0]!.children[0]!.backendNodeId = ++reads;
+    }
+    return value;
+  };
+  await assert.rejects(captureMaskedPixels(cdp, 'top', { ...operation(), timeoutMs: 50 }), /\(inventory-stability\)/);
+  assert.ok(reads >= 4);
+  assert.equal(calls.some(call => call.method === 'Page.setWebLifecycleState' || call.method === 'Page.captureScreenshot'), false);
+  assert.equal(calls.some(call => String(call.params.expression).includes('mask state already exists')), false);
+});
+
+test('pixels wait for each frame task queue to resume and are withheld when that acknowledgement fails', async () => {
+  for (const fail of [false, true]) {
+    const { cdp, calls } = mockPixels({ oopif: true }); const send = cdp.send.bind(cdp); const resumed: string[] = [];
+    cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+      if (method === 'Runtime.evaluate' && String(params.expression).startsWith('new Promise(resolve => setTimeout')) {
+        assert.ok(calls.some(call => call.method === 'Page.setWebLifecycleState' && call.params.state === 'active'));
+        assert.equal(calls.some(call => call.method === 'Target.detachFromTarget'), false);
+        await new Promise(resolve => setTimeout(resolve, 5)); resumed.push(session!);
+        if (fail && session === 'child-session') throw new Error('private-task-error');
+      }
+      return send<T>(method, params, context, session);
+    };
+    if (fail) await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), error => {
+      assert.ok(error instanceof Error); assert.match(error.message, /\(cleanup-tasks\)/); assert.doesNotMatch(error.message, /private-/); return true;
+    });
+    else assert.equal((await captureMaskedPixels(cdp, 'top', operation())).maskingProven, true);
+    assert.deepEqual(resumed.toSorted(), ['child-session', 'top-session']);
+    assert.equal(calls.filter(call => call.method === 'Target.detachFromTarget').length, 2);
+  }
+});
+
+test('pixel failure phases contain no browser text and retain exact post-mask proof stage', async () => {
+  const { cdp } = mockPixels({ oopif: true, ownerChangesAt: 'after' });
+  await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /\(verify-after-owners\)/);
+  const broken = mockPixels(); const send = broken.cdp.send.bind(broken.cdp);
+  broken.cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+    if (method === 'Page.captureScreenshot') throw new Error('private-browser-error');
+    return send<T>(method, params, context, session);
+  };
+  await assert.rejects(captureMaskedPixels(broken.cdp, 'top', operation()), error => {
+    assert.ok(error instanceof Error); assert.match(error.message, /\(capture\)/); assert.doesNotMatch(error.message, /private-/); return true;
+  });
 });
 
 test('unproven mask verification never produces pixels and always resumes the page', async () => {
