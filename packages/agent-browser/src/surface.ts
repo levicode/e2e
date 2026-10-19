@@ -235,9 +235,11 @@ export class AgentBrowserSurface {
       operation: () => ({ signal: launchAttempt.signal, timeoutMs: 30_000, runId: launchRunId, attemptId: launchAttempt.attemptId, origin: 'test' }),
       resolveUrl: (url) => { if (!/^https?:/.test(url)) throw new TestError('INVALID_ARGUMENT', 'Route URL override must be absolute until a fixture resolver is registered'); return new URL(url).href; },
       resolvePath: (file) => path.resolve(this.projectRoot, file),
-      siteHeaders: (url) => protectedContext?.siteHeaders(url),
       configuredHeaderNames: protectedContext?.configuredHeaderNames ?? [],
-      authorization: (url) => protectedContext?.authorization(url),
+      ...(protectedContext && protectedContext.configuredHeaderNames.length > 0
+        ? { siteHeaders: (url: string) => protectedContext.siteHeaders(url) } : {}),
+      ...(protectedContext && this.options.basicAuth !== undefined
+        ? { authorization: (url: string) => protectedContext.authorization(url) } : {}),
     });
     if (!deferUserHooks) await this.installProtected(context);
     await this.network.start(context);

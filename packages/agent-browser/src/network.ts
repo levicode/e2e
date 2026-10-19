@@ -7,6 +7,7 @@ import {
 } from 'e2e/engine';
 import type { CdpConnection, CdpTarget } from './cdp.ts';
 import { callbackLifetime, runCallbackScope } from './callback-scope.ts';
+import { releaseStateProbeTarget } from './state.ts';
 
 export type RouteFulfillResponse = {
   status?: number;
@@ -325,9 +326,10 @@ export class NetworkCompanion {
   /** Answers only a server Basic challenge whose origin is exactly the request's origin, once. */
   #authRequired(event: AuthRequired): void {
     if (this.#closed) return;
+    const context = this.#options.operation();
+    let preparationFailed = false;
     const work = (async () => {
       let credential: HttpCredentials | undefined;
-      let failed = false;
       try {
         const origin = new URL(event.request.url);
         const challenge = new URL(event.authChallenge.origin);
@@ -336,9 +338,9 @@ export class NetworkCompanion {
           && challenge.origin === origin.origin) credential = this.#options.authorization?.(event.request.url);
         if (credential && (typeof credential.username !== 'string' || typeof credential.password !== 'string')) {
           credential = undefined;
-          failed = true;
+          preparationFailed = true;
         }
-      } catch { failed = true; }
+      } catch { preparationFailed = true; }
       this.#authAttempts.add(event.requestId);
       if (credential) this.#protection.basic.add(`Basic ${Buffer.from(`${credential.username}:${credential.password}`, 'utf8').toString('base64')}`);
       await this.#connection.send('Fetch.continueWithAuth', {
@@ -346,9 +348,12 @@ export class NetworkCompanion {
         authChallengeResponse: credential
           ? { response: 'ProvideCredentials', username: credential.username, password: credential.password }
           : { response: 'CancelAuth' },
-      }, this.#options.operation(), this.#sessionId);
-      if (failed) throw problem('HTTP authorization could not be prepared');
-    })().catch(() => { this.#errors.push(problem('HTTP authorization failed')); });
+      }, context, this.#sessionId);
+      if (preparationFailed) throw problem('HTTP authorization could not be prepared');
+    })().catch((error: unknown) => {
+      if (!preparationFailed && context.signal.aborted && error instanceof EngineError && error.code === 'CANCELLED') return;
+      this.#errors.push(problem('HTTP authorization failed'));
+    });
     this.#handlers.add(work);
     void work.finally(() => this.#handlers.delete(work));
   }
@@ -357,8 +362,13 @@ export class NetworkCompanion {
   #paused(event: Paused): void {
     if (this.#closed) return;
     const routes = this.#routes.filter((route) => route.matches(event.request.url)).toReversed();
-    const work = this.#handle(event, routes).catch((error: unknown) => {
-      const safe = error instanceof Error && ownErrors.has(error) ? error : problem('Asynchronous route handler failed');
+    const context = this.#options.operation();
+    const work = this.#handle(event, routes, context).catch((error: unknown) => {
+      // The runner aborts the attempt signal before draining handlers. Cancelling our own
+      // automatic continuation is ordinary teardown, not a failed user route callback.
+      if (routes.length === 0 && context.signal.aborted && error instanceof EngineError && error.code === 'CANCELLED') return;
+      const safe = error instanceof Error && ownErrors.has(error) ? error
+        : problem(routes.length === 0 ? 'Automatic request continuation failed' : 'Asynchronous route handler failed');
       if (!this.#errors.includes(safe)) this.#errors.push(safe);
     });
     this.#handlers.add(work);
@@ -366,8 +376,7 @@ export class NetworkCompanion {
   }
 
   /** Runs one isolated LIFO chain, enforcing one decision per handler and bounded asynchronous work. */
-  async #handle(event: Paused, routes: readonly StoredRoute[]): Promise<void> {
-    const context = this.#options.operation();
+  async #handle(event: Paused, routes: readonly StoredRoute[], context: OperationContext): Promise<void> {
     const endsAt = Date.now() + context.timeoutMs;
     let terminal = false;
     let expired = false;
@@ -759,8 +768,9 @@ export class NetworkHub {
   /** Closes only a target this hub explicitly reserved for a state probe. */
   async releaseProbeTarget(targetId: string, context: OperationContext): Promise<void> {
     if (!this.#probes.has(targetId)) throw problem('Target is not an owned state probe', 'INVALID_ARGUMENT');
-    const result = await this.#connection.send<{ success: boolean }>('Target.closeTarget', { targetId }, context);
-    if (result.success !== true) throw problem('State probe target could not be closed');
+    // Chromium acknowledges close before removing the target. Keep it excluded from user
+    // routes and scripts until destruction is verified, including late attachment events.
+    await releaseStateProbeTarget(this.#connection, targetId, context);
     this.#probes.delete(targetId);
     this.#probeSessions.delete(targetId);
   }

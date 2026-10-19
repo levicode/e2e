@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { EngineError, TestError, type ObservationPixels, type OperationContext } from 'e2e/engine';
 import type { CdpConnection } from './cdp.ts';
-import type { StateProbeTargets } from './state.ts';
+import { releaseStateProbeTarget, type StateProbeTargets } from './state.ts';
 
 interface FrameTree { frame: { id: string }; childFrames?: FrameTree[] }
 interface DomNode {
@@ -215,7 +215,6 @@ async function restoreVisiblePage(cdp: CdpConnection, targetId: string, session:
   }
   if (!probe || probe === targetId) throw denied();
   let reactivated = false;
-  let closed = true;
   try {
     await cdp.send('Target.activateTarget', { targetId: probe }, current());
     await cdp.send('Target.activateTarget', { targetId }, current()); reactivated = true;
@@ -227,11 +226,9 @@ async function restoreVisiblePage(cdp: CdpConnection, targetId: string, session:
     const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
     try { if (!reactivated) await cdp.send('Target.activateTarget', { targetId }, cleanup); }
     finally {
-      if (probes) await probes.release(probe, cleanup);
-      else closed = (await cdp.send<{ success: boolean }>('Target.closeTarget', { targetId: probe }, cleanup)).success === true;
+      await releaseStateProbeTarget(cdp, probe, cleanup, probes);
     }
   }
-  if (!closed) throw denied();
 }
 
 /** The caller must also enforce the attempt's persistent post-secret-fill pixel taint. */

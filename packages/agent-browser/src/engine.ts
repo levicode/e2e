@@ -7,8 +7,8 @@ import { validateVideoOptions } from './video.ts';
 import { validateConnect } from './connection-source.ts';
 
 /** Core cache keys include name + SPI, not package version. Bump this semantic epoch on incompatible changes. */
-export const ENGINE_NAME = 'agent-browser-exact-3';
-export const ENGINE_VERSION = '0.0.0-ab.0.39.1-exact.2-cdp.3';
+export const ENGINE_NAME = 'agent-browser-exact-4';
+export const ENGINE_VERSION = '0.0.0-ab.0.39.1-exact.3-cdp.4';
 const ACTIONS = ['tap', 'doubleTap', 'secondaryTap', 'longPress', 'fill', 'clear', 'press', 'check', 'uncheck', 'focus', 'hover', 'scrollIntoView', 'selectOption', 'setInputFiles', 'dragTo', 'swipe'] as const satisfies readonly LocatorActionKind[];
 const POINTER = ['tap', 'doubleTap', 'secondaryTap', 'longPress', 'hover', 'dragTo', 'swipe', 'swipeTo'] as const satisfies readonly PointerActionKind[];
 

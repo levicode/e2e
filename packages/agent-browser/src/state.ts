@@ -52,6 +52,20 @@ function originOf(url: string): string | undefined {
 }
 function frames(tree: FrameTree): FrameTree['frame'][] { return [tree.frame, ...(tree.childFrames ?? []).flatMap(frames)]; }
 
+/** Close acknowledgement precedes destruction; callers may discard only their exact owned probe. */
+export async function releaseStateProbeTarget(cdp: CdpConnection, targetId: string, context: OperationContext, probes?: StateProbeTargets): Promise<void> {
+  const current = budget(context);
+  if (probes) await probes.release(targetId, current());
+  else if ((await cdp.send<{ success: boolean }>('Target.closeTarget', { targetId }, current())).success !== true) throw failed('origin-release');
+  while (true) {
+    const remaining = current();
+    if (remaining.signal.aborted) throw new EngineError('CANCELLED', 'Storage probe disposal cancelled', { retryable: false });
+    if (remaining.timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Storage probe disposal was not confirmed', { retryable: false });
+    if (!(await cdp.listTargets(remaining)).some(target => target.targetId === targetId)) return;
+    await new Promise<void>(resolve => setTimeout(resolve, Math.min(10, current().timeoutMs)));
+  }
+}
+
 /** Resolve default ownership from a target we created, never from an arbitrary existing page. */
 async function targetContext(cdp: CdpConnection, context: OperationContext, probes?: StateProbeTargets): Promise<string | undefined> {
   if (probes?.targetBrowserContextId) return probes.targetBrowserContextId();
@@ -61,17 +75,14 @@ async function targetContext(cdp: CdpConnection, context: OperationContext, prob
   const targetId = probes ? await probes.create(current())
     : (await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true }, current())).targetId;
   let identity: string | undefined;
-  let closed = true;
   try {
     const { targetInfo } = await cdp.send<{ targetInfo: { targetId: string; type: string; browserContextId?: string } }>('Target.getTargetInfo', { targetId }, current());
     if (targetInfo.targetId !== targetId || targetInfo.type !== 'page' || (targetInfo.browserContextId !== undefined && (typeof targetInfo.browserContextId !== 'string' || !targetInfo.browserContextId))) throw failed('context-identity');
     identity = targetInfo.browserContextId;
   } finally {
     const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
-    if (probes) await probes.release(targetId, cleanup);
-    else closed = (await cdp.send<{ success: boolean }>('Target.closeTarget', { targetId }, cleanup)).success;
+    await releaseStateProbeTarget(cdp, targetId, cleanup, probes);
   }
-  if (!closed) throw failed('context-identity');
   return identity;
 }
 
@@ -332,8 +343,7 @@ async function withOrigin<T>(cdp: CdpConnection, origin: string, context: Operat
     unsubscribe?.();
     const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
     if (existingTargetId === undefined) {
-      if (probes) await storageStep('origin-release', () => probes.release(targetId, cleanup));
-      else await storageStep('origin-release', () => cdp.send('Target.closeTarget', { targetId }, cleanup));
+      await storageStep('origin-release', () => releaseStateProbeTarget(cdp, targetId, cleanup, probes));
     }
     else if (session) {
       await cdp.send('Fetch.disable', {}, cleanup, session);

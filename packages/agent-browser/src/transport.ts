@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { EngineError, type EngineErrorCode, type OperationContext } from 'e2e/engine';
 
 /** The reviewed CLI build enforces exact node identity and immutable attachment scope. */
-export const AGENT_BROWSER_VERSION = '0.39.1-e2e.2';
+export const AGENT_BROWSER_VERSION = '0.39.1-e2e.3';
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const PRE_DISPATCH_REF_COMMANDS = new Set(['click', 'dblclick', 'fill', 'type', 'focus', 'hover', 'check', 'uncheck', 'select', 'upload']);
 

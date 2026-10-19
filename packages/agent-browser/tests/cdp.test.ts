@@ -286,6 +286,111 @@ test('handler failure and no-decision abort the request and fail settle without 
   await assert.rejects(companion.settle(operation()), /without calling/);
 });
 
+test('attempt teardown cancels an automatic continuation without inventing a user route failure', async () => {
+  const { connection, socket } = await transport();
+  const controller = new AbortController();
+  const companion = new NetworkCompanion(connection, 'active', {
+    operation: () => operation(1000, controller.signal), resolveUrl: url => url, resolvePath: file => file,
+    siteHeaders: () => ({ 'x-preview-key': 'synthetic' }),
+  });
+  await companion.start(operation());
+  socket.respondTo = command => {
+    if (command.method !== 'Fetch.continueRequest') socket.reply(command, {});
+  };
+  pause(socket);
+  await tick();
+  assert.equal(socket.commands.at(-1)?.method, 'Fetch.continueRequest');
+  controller.abort();
+  await companion.settle(operation());
+  assert.equal(socket.commands.filter(command => command.method === 'Fetch.failRequest').length, 0);
+});
+
+test('automatic protocol failures and real user route failures remain errors across teardown', async () => {
+  const { connection, socket } = await transport();
+  const controller = new AbortController();
+  const companion = new NetworkCompanion(connection, 'active', {
+    operation: () => operation(1000, controller.signal), resolveUrl: url => url, resolvePath: file => file,
+    siteHeaders: () => ({ 'x-preview-key': 'synthetic' }),
+  });
+  await companion.start(operation());
+  socket.respondTo = command => {
+    if (command.method === 'Fetch.continueRequest') socket.protocolError(command);
+    else socket.reply(command, {});
+  };
+  pause(socket);
+  await tick();
+  controller.abort();
+  await assert.rejects(companion.settle(operation()), /Automatic request continuation failed/);
+
+  const user = await network();
+  await user.network.route('**/api', () => { throw new Error('private handler failure'); }, operation());
+  pause(user.socket);
+  await tick();
+  user.network.close();
+  await assert.rejects(user.network.settle(operation()), /Asynchronous route handler failed/);
+});
+
+test('attempt cancellation does not disguise an unfinished user route as automatic cleanup', async () => {
+  const { connection, socket } = await transport();
+  const controller = new AbortController();
+  const companion = new NetworkCompanion(connection, 'active', {
+    operation: () => operation(1000, controller.signal), resolveUrl: url => url, resolvePath: file => file,
+  });
+  let resume!: () => void;
+  const waiting = new Promise<void>(resolve => { resume = resolve; });
+  await companion.route('**/api', () => waiting, operation());
+  pause(socket);
+  await tick();
+  controller.abort();
+  await assert.rejects(companion.settle(operation()), /Asynchronous route handler failed/);
+  resume();
+  await tick();
+  assert.equal(socket.commands.some(command => command.method === 'Fetch.continueRequest'), false);
+});
+
+test('attempt teardown cancels a built-in Basic authentication response without a spurious failure', async () => {
+  const { connection, socket } = await transport();
+  const controller = new AbortController();
+  const companion = new NetworkCompanion(connection, 'active', {
+    operation: () => operation(1000, controller.signal), resolveUrl: url => url, resolvePath: file => file,
+    authorization: () => ({ username: 'synthetic', password: 'synthetic' }),
+  });
+  await companion.start(operation());
+  socket.respondTo = command => {
+    if (command.method !== 'Fetch.continueWithAuth') socket.reply(command, {});
+  };
+  socket.event('Fetch.authRequired', { requestId: 'auth', request: { url: 'https://app.test/auth' },
+    authChallenge: { source: 'Server', origin: 'https://app.test', scheme: 'basic', realm: 'synthetic' } });
+  await tick();
+  assert.equal(socket.commands.at(-1)?.method, 'Fetch.continueWithAuth');
+  controller.abort();
+  await companion.settle(operation());
+});
+
+test('authorization preparation failures remain sanitized failures when teardown cancels their reply', async () => {
+  const { connection, socket } = await transport();
+  const controller = new AbortController();
+  const companion = new NetworkCompanion(connection, 'active', {
+    operation: () => operation(1000, controller.signal), resolveUrl: url => url, resolvePath: file => file,
+    authorization: () => { throw new Error('private-token https://private.example'); },
+  });
+  await companion.start(operation());
+  socket.respondTo = command => {
+    if (command.method !== 'Fetch.continueWithAuth') socket.reply(command, {});
+  };
+  socket.event('Fetch.authRequired', { requestId: 'auth', request: { url: 'https://app.test/auth' },
+    authChallenge: { source: 'Server', origin: 'https://app.test', scheme: 'basic', realm: 'synthetic' } });
+  await tick();
+  assert.equal(socket.commands.at(-1)?.method, 'Fetch.continueWithAuth');
+  assert.deepEqual(socket.commands.at(-1)?.params.authChallengeResponse, { response: 'CancelAuth' });
+  controller.abort();
+  await assert.rejects(companion.settle(operation()), (error: unknown) => {
+    assert.equal(error instanceof Error ? error.message : undefined, 'HTTP authorization failed');
+    assert.doesNotMatch(String(error), /private-token|private\.example/);
+    return true;
+  });
+});
+
 test('double decision is latched even if user code catches the rejection, with no second dispatch', async () => {
   const { socket, network: companion } = await network();
   await companion.route('**/api', async (route) => {
@@ -407,6 +512,14 @@ test('browser-wide routes reach new popups and OOPIFs before those targets resum
   assert.equal(handled.length, 2);
   assert.deepEqual(socket.commands.filter((command) => command.method === 'Fetch.fulfillRequest').map((command) => command.sessionId).toSorted(), ['frame-session', 'popup-session']);
   assert.equal(socket.commands.some((command) => command.method === 'Target.createTarget'), false);
+});
+
+test('an unprotected hub observes current and future pages without installing Fetch interception', async () => {
+  const { socket, hub } = await networkHub();
+  attachEvent(socket, 'popup', 'popup-session');
+  await hub.settle(operation());
+  assert.deepEqual(socket.commands.filter(command => command.method === 'Network.enable').map(command => command.sessionId), ['active', 'popup-session']);
+  assert.equal(socket.commands.some(command => command.method === 'Fetch.enable'), false);
 });
 
 test('hub response waits stay on the selected target while route registrations survive tab switches', async () => {
@@ -703,7 +816,8 @@ test('state probe reservation excludes its target before hooks or routes while u
       attachEvent(socket, 'state-probe', 'probe-session');
       attachEvent(socket, 'unrelated-popup', 'popup-session');
       finishCreation = () => socket.reply(command, { targetId: 'state-probe' });
-    } else socket.reply(command, command.method === 'Target.closeTarget' ? { success: true } : {});
+    } else socket.reply(command, command.method === 'Target.closeTarget' ? { success: true }
+      : command.method === 'Target.getTargets' ? { targetInfos: [] } : {});
   };
   const creating = hub.createProbeTarget(operation());
   await tick();
@@ -720,8 +834,38 @@ test('state probe reservation excludes its target before hooks or routes while u
   assert.equal(socket.commands.some((command) => command.sessionId === 'popup-session' && command.method === 'Fetch.enable'), true);
   await assert.rejects(hub.sessionForTarget('state-probe', operation()), /cannot become application targets/);
   await hub.releaseProbeTarget('state-probe', operation());
-  assert.deepEqual(socket.commands.at(-1)!.params, { targetId: 'state-probe' });
+  assert.deepEqual(socket.commands.findLast(command => command.method === 'Target.closeTarget')!.params, { targetId: 'state-probe' });
   await assert.rejects(hub.releaseProbeTarget('main', operation()), { code: 'INVALID_ARGUMENT' });
+});
+
+test('a closing state probe remains excluded until its exact target is no longer listed', async () => {
+  const { socket, hub } = await networkHub();
+  const initialized: string[] = [];
+  await hub.registerSessionInitializer((_session, targetId) => { initialized.push(targetId); }, operation());
+  let listing: Command | undefined;
+  socket.respondTo = command => {
+    if (command.method === 'Target.createTarget') {
+      attachEvent(socket, 'probe', 'probe-session');
+      socket.reply(command, { targetId: 'probe' });
+    } else if (command.method === 'Target.closeTarget') socket.reply(command, { success: true });
+    else if (command.method === 'Target.getTargets') listing = command;
+    else socket.reply(command, {});
+  };
+  assert.equal(await hub.createProbeTarget(operation()), 'probe');
+  let released = false;
+  const release = hub.releaseProbeTarget('probe', operation()).then(() => { released = true; });
+  await tick();
+  assert.ok(listing);
+  assert.equal(released, false, 'Close acknowledgement must not release probe ownership');
+  attachEvent(socket, 'probe', 'late-probe-session');
+  await tick();
+  await assert.rejects(hub.sessionForTarget('probe', operation()), /cannot become application targets/);
+  assert.deepEqual(initialized, ['main']);
+  assert.equal(socket.commands.some(command => command.sessionId === 'late-probe-session' && command.method !== 'Runtime.runIfWaitingForDebugger'), false);
+  socket.reply(listing, { targetInfos: [] });
+  await release;
+  assert.equal(released, true);
+  assert.equal(socket.commands.filter(command => command.method === 'Target.closeTarget').length, 1);
 });
 
 test('uncertain probe creation closes the companion instead of admitting an unidentified late target', async () => {

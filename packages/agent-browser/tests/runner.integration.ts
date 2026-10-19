@@ -26,8 +26,10 @@ before(async () => {
       .font-icon::before{content:'\\e000';font-family:Arial}
       </style><p data-testid="result">waiting</p><div style="height:1800px"></div>
       ${showGlyph ? '<div id="glyph" class="font-icon"></div>' : ''}
+      <ul data-testid="tag-list" hidden style="position:fixed;right:20px;top:20px;background:white"><li>Engineering</li><li>Design</li></ul>
       <script>window.clicks=0;document.getElementById('glyph')?.addEventListener('click',()=>{
         window.clicks++;document.querySelector('[data-testid=result]').textContent='clicked once';
+        document.querySelector('[data-testid=tag-list]').hidden=false;
         navigator.sendBeacon('/commit');
       })</script>`);
   });
@@ -119,6 +121,9 @@ test('public openHost preserves default icon observation through agent action an
       await session.fixtures.app.open('/glyph');
       await session.fixtures.agent.act('Tap the unnamed font icon once');
       await expect(session.fixtures.screen.getByTestId('result')).toHaveText('clicked once');
+      await expect(session.fixtures.screen.getByTestId('tag-list')).toBeVisible();
+      await expect(session.fixtures.screen.getByText('Engineering', { exact: true })).toBeVisible();
+      await expect(session.fixtures.screen.getByText('Design', { exact: true })).toBeVisible();
       assert.deepEqual(await session.fixtures.browser.evaluate('({clicks:window.clicks,scrolled:window.scrollY>0})'), { clicks: 1, scrolled: true });
       assert.equal(brain.calls(), 1);
       assert.equal(session.report(), undefined);
@@ -152,6 +157,9 @@ test('public run records/replays the real icon action and refuses incompatible e
       await app.open('/glyph');
       await agent.act('Tap the unnamed font icon once');
       await expect(screen.getByTestId('result')).toHaveText('clicked once');
+      await expect(screen.getByTestId('tag-list')).toBeVisible();
+      await expect(screen.getByText('Engineering', { exact: true })).toBeVisible();
+      await expect(screen.getByText('Design', { exact: true })).toBeVisible();
       expect(await browser.evaluate('window.clicks')).toBe(1);
     });`);
   try {
@@ -182,7 +190,7 @@ test('public run records/replays the real icon action and refuses incompatible e
     assert.equal(recorded.report.run.targets[0]?.engine.name, ENGINE_NAME);
     assert.equal(recorded.report.run.targets[0]?.engine.version, ENGINE_VERSION);
     assert.ok(recorded.reportPath);
-    assert.deepEqual(JSON.parse(await readFile(recorded.reportPath, 'utf8')), recorded.report);
+    assert.deepEqual(JSON.parse(await readFile(recorded.reportPath, 'utf8')), JSON.parse(JSON.stringify(recorded.report)), 'Persisted report must equal the complete JSON representation of the in-memory report');
     assert.equal(tracePaths.length, 1);
     const trace = await readFile(path.join(cwd, tracePaths[0]!), 'utf8');
     assert.match(trace, /agent\.act/);

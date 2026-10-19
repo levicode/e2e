@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EngineError, type EngineState, type OperationContext } from 'e2e/engine';
 import { CdpConnection } from '../src/cdp.ts';
-import { captureState, decodeStateValue, encodeStateValue, readState, restoreState } from '../src/state.ts';
+import { captureState, decodeStateValue, encodeStateValue, readState, releaseStateProbeTarget, restoreState } from '../src/state.ts';
 import { captureMaskedPixels, readPngSize, verifyMaskableDom } from '../src/pixels.ts';
 
 const operation = (): OperationContext => ({ signal: new AbortController().signal, timeoutMs: 30_000, runId: 'test', attemptId: 'test', origin: 'test' });
@@ -363,7 +363,53 @@ test('default ownership probing uses excluded target callbacks and cleans up bef
     create: async () => { events.push('create'); return 'excluded-probe'; },
     release: async targetId => { assert.equal(targetId, 'excluded-probe'); events.push('release'); },
   });
-  assert.deepEqual(events, ['create', 'identity', 'release', 'list']);
+  assert.deepEqual(events, ['create', 'identity', 'release', 'list', 'list']);
+});
+
+test('state capture waits for its closing identity probe to disappear instead of attaching a stale page', async () => {
+  const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
+  const attached: string[] = []; let closeCalls = 0; let listings = 0;
+  const owned = { targetId: 'owned', type: 'page', url: 'about:blank', browserContextId: 'default' };
+  const closing = { targetId: 'probe', type: 'page', url: 'about:blank', browserContextId: 'default' };
+  cdp.listTargets = async () => ++listings <= 2 ? [owned, closing] : [owned];
+  cdp.attachTarget = async id => { attached.push(id); if (id === 'probe') throw new Error('Closing target is unavailable'); return 'owned-session'; };
+  cdp.send = async <T>(method: string): Promise<T> => {
+    if (method === 'Target.createTarget') return { targetId: 'probe' } as T;
+    if (method === 'Target.getTargetInfo') return { targetInfo: { ...closing } } as T;
+    if (method === 'Target.closeTarget') { closeCalls++; return { success: true } as T; }
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'top', url: 'about:blank' } } } as T;
+    if (method === 'Storage.getCookies') return { cookies: [] } as T;
+    return {} as T;
+  };
+  const state = await captureState(cdp, operation());
+  assert.deepEqual(readState(state).tabs, [{ url: 'about:blank', sessionStorage: [] }]);
+  assert.deepEqual(attached, ['owned']); assert.equal(closeCalls, 1); assert.ok(listings >= 4);
+});
+
+test('owned probe disposal waits read-only for destruction and never closes unrelated live pages', async () => {
+  for (const callbacks of [false, true]) {
+    const cdp = Object.create(CdpConnection.prototype) as CdpConnection; let listings = 0; const closed: string[] = [];
+    cdp.listTargets = async () => [{ targetId: 'unrelated', type: 'page', url: 'about:blank' }, ...(++listings < 3 ? [{ targetId: 'probe', type: 'page', url: 'about:blank' }] : [])];
+    cdp.send = async <T>(method: string, params: Record<string, unknown>): Promise<T> => { assert.equal(method, 'Target.closeTarget'); closed.push(String(params.targetId)); return { success: true } as T; };
+    await releaseStateProbeTarget(cdp, 'probe', operation(), callbacks ? { create: async () => 'probe', release: async id => { closed.push(id); } } : undefined);
+    assert.deepEqual(closed, ['probe']); assert.equal(listings, 3);
+  }
+});
+
+test('unconfirmed owned-probe destruction times out without retrying the close mutation', async () => {
+  const cdp = Object.create(CdpConnection.prototype) as CdpConnection; let closed = 0;
+  cdp.listTargets = async () => [{ targetId: 'probe', type: 'page', url: 'about:blank' }];
+  cdp.send = async <T>(): Promise<T> => { closed++; return { success: true } as T; };
+  await assert.rejects(releaseStateProbeTarget(cdp, 'probe', { ...operation(), timeoutMs: 20 }), (error: unknown) => error instanceof EngineError && error.code === 'OPERATION_TIMEOUT');
+  assert.equal(closed, 1);
+});
+
+test('capture still refuses unknown application-tab attachment failures rather than skipping them', async () => {
+  const cdp = Object.create(CdpConnection.prototype) as CdpConnection; let attaches = 0;
+  cdp.listTargets = async () => [{ targetId: 'application', type: 'page', url: 'about:blank' }];
+  cdp.attachTarget = async () => { attaches++; throw new Error('Application tab closed during capture'); };
+  await assert.rejects(captureState(cdp, operation(), new Set(), { targetBrowserContextId: () => undefined, create: async () => 'probe', release: async () => {} }), /\(tab-attach\)/);
+  assert.equal(attaches, 1);
 });
 
 

@@ -28,7 +28,7 @@ before(async () => {
       for(const id of ['text','area','editable'])document.getElementById(id).addEventListener('input',event=>window.changed.push({id,type:event.type}));
       document.getElementById('checked').addEventListener('click',()=>window.checkedClicks++);
       document.getElementById('hover').addEventListener('pointerenter',()=>window.hovered=true);
-      for(const type of ['pointerdown','pointermove','pointerup'])document.addEventListener(type,event=>window.pointerLog.push({type,x:event.clientX,y:event.clientY,buttons:event.buttons,trusted:event.isTrusted}));
+      for(const type of ['pointerdown','pointermove','pointerup','pointercancel','dragstart','dragend'])document.addEventListener(type,event=>window.pointerLog.push({type,x:event.clientX,y:event.clientY,buttons:event.buttons,trusted:event.isTrusted}));
       document.addEventListener('wheel',event=>window.wheels.push({target:event.target.id||event.target.parentElement.id,dy:event.deltaY,trusted:event.isTrusted}),{passive:true});
     </script>`);
   });
@@ -96,7 +96,7 @@ interface PointerEventRecord { type: string; x: number; y: number; buttons: numb
 function assertDrag(events: PointerEventRecord[], from: { x: number; y: number }, to: { x: number; y: number }): void {
   const down = events.find(event => event.type === 'pointerdown');
   const up = events.findLast(event => event.type === 'pointerup');
-  assert.ok(down?.trusted && up?.trusted);
+  assert.ok(down?.trusted && up?.trusted, `Trusted pointer down/up required; synthetic fixture events: ${JSON.stringify(events)}`);
   assert.ok(Math.abs(down.x - from.x) <= 1 && Math.abs(down.y - from.y) <= 1);
   assert.ok(Math.abs(up.x - to.x) <= 1 && Math.abs(up.y - to.y) <= 1);
   assert.equal(up.buttons, 0);

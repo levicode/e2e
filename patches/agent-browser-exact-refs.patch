@@ -5,7 +5,7 @@ diff --git a/cli/Cargo.toml b/cli/Cargo.toml
  [package]
  name = "agent-browser"
 -version = "0.39.1"
-+version = "0.39.1-e2e.2"
++version = "0.39.1-e2e.3"
  edition = "2021"
  description = "Fast browser automation CLI for AI agents"
  license = "Apache-2.0"
@@ -17,7 +17,7 @@ diff --git a/cli/Cargo.lock b/cli/Cargo.lock
  [[package]]
  name = "agent-browser"
 -version = "0.39.1"
-+version = "0.39.1-e2e.2"
++version = "0.39.1-e2e.3"
  dependencies = [
   "aes-gcm",
   "async-trait",
@@ -28,7 +28,7 @@ diff --git a/package.json b/package.json
  {
    "name": "agent-browser",
 -  "version": "0.39.1",
-+  "version": "0.39.1-e2e.2",
++  "version": "0.39.1-e2e.3",
    "description": "Browser automation CLI for AI agents",
    "type": "module",
    "packageManager": "pnpm@11.1.3",
@@ -825,7 +825,8 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 +                                    return Ok(());
 +                                }
                                  if let Some(ref target) = target_info {
-                                     prepare_network_control_target_session(&client, &sid, target)
+-                                    prepare_network_control_target_session(&client, &sid, target)
++                                    prepare_network_control_target_session(&client, &sid, target, scope_guard.owns_debugger_pause())
                                          .await?;
 +                                }
 +                                if !scope_guard.accepts_session(Some(&sid)) {
@@ -833,16 +834,17 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  }
                                  if let Some(ref target) = target_info {
                                      if target_is_worker_like(target) {
-@@ -955,7 +1007,7 @@
+@@ -955,7 +1007,8 @@
                              Ok(())
                          };
  
 -                        if controls_result.is_ok() {
-+                        if controls_result.is_ok() && scope_guard.accepts_session(Some(&sid)) {
++                        if controls_result.is_ok() && scope_guard.owns_debugger_pause()
++                            && scope_guard.accepts_session(Some(&sid)) {
                              let _ = client
                                  .send_command_no_wait(
                                      "Runtime.runIfWaitingForDebugger",
-@@ -971,6 +1023,9 @@
+@@ -971,6 +1024,9 @@
                          }
                      }
                      Ok(event) if event.method == "Fetch.requestPaused" => {
@@ -852,7 +854,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let request_id = event
                              .params
                              .get("requestId")
-@@ -1010,10 +1065,17 @@
+@@ -1010,10 +1066,17 @@
                          let rt = routes.read().await;
                          let oh = origin_headers.read().await;
  
@@ -872,7 +874,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      Err(_) => break,
                  }
              }
-@@ -1037,12 +1099,16 @@
+@@ -1037,12 +1100,16 @@
          };
  
          let client = browser.client.clone();
@@ -889,7 +891,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let dialog_type = event
                              .params
                              .get("type")
-@@ -1072,7 +1138,12 @@
+@@ -1072,7 +1139,12 @@
                          }
                      }
                      Ok(_) => continue,
@@ -903,7 +905,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      Err(_) => break,
                  }
              }
-@@ -1225,6 +1296,17 @@
+@@ -1225,6 +1297,17 @@
      }
  
      async fn apply_drained_events(&mut self, drained: DrainedEvents) -> Result<(), String> {
@@ -921,7 +923,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          // Popups and externally closed pages can change the active top-level
          // target without changing iframe topology. Refresh after either kind
          // of event so network capture stays scoped to the active page.
-@@ -1234,6 +1316,9 @@
+@@ -1234,6 +1317,9 @@
              if let Some(ref browser) = self.browser {
                  if let Ok(session_id) = browser.active_session_id() {
                      for ack_sid in drained.pending_acks {
@@ -931,7 +933,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let _ = stream::ack_screencast_frame(&browser.client, session_id, ack_sid)
                              .await;
                      }
-@@ -1250,6 +1335,9 @@
+@@ -1250,6 +1336,9 @@
  
          // Track cross-origin iframe sessions
          for (frame_id, iframe_sid) in &drained.attached_iframe_sessions {
@@ -941,7 +943,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              self.iframe_sessions
                  .insert(frame_id.clone(), iframe_sid.clone());
              let filter = self.domain_filter.read().await.clone();
-@@ -1257,6 +1345,9 @@
+@@ -1257,6 +1346,9 @@
              let controls_active = filter.is_some() || has_proxy_creds;
              let setup_result = if let Some(ref mgr) = self.browser {
                  async {
@@ -951,7 +953,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.prepare_domains_pub(iframe_sid).await?;
                      let _ = mgr
                          .client
-@@ -1295,11 +1386,17 @@
+@@ -1295,11 +1387,17 @@
          // Register top-level pages that browser-level auto-attach paused before
          // their first request. Controls must be installed before resuming.
          for (target_info, page_sid) in &drained.attached_page_sessions {
@@ -969,7 +971,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.prepare_domains_pub(page_sid).await?;
                      if controls_active {
                          install_network_controls_for_session(
-@@ -1366,11 +1463,17 @@
+@@ -1366,12 +1464,18 @@
          }
  
          for (target_info, worker_sid) in &drained.attached_worker_sessions {
@@ -981,13 +983,15 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let controls_active = filter.is_some() || has_proxy_creds;
              let setup_result = if let Some(ref mgr) = self.browser {
                  async {
+-                    prepare_network_control_target_session(&mgr.client, worker_sid, target_info)
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(worker_sid))) {
 +                        return Ok(());
 +                    }
-                     prepare_network_control_target_session(&mgr.client, worker_sid, target_info)
++                    prepare_network_control_target_session(&mgr.client, worker_sid, target_info, !mgr.is_scoped())
                          .await?;
                      if controls_active {
-@@ -1383,14 +1486,11 @@
+                         install_worker_network_controls_for_session(
+@@ -1383,14 +1487,9 @@
                          )
                          .await?;
                      }
@@ -1000,14 +1004,12 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 -                        )
 -                        .await;
 +                    if scope_guard.as_ref().is_none_or(|guard| guard.accepts_session(Some(worker_sid))) {
-+                        let _ = mgr.client.send_command_no_wait(
-+                            "Runtime.runIfWaitingForDebugger", None, Some(worker_sid),
-+                        ).await;
++                        mgr.resume_if_waiting_pub(worker_sid).await?;
 +                    }
                      Ok(())
                  }
                  .await
-@@ -1409,6 +1509,9 @@
+@@ -1409,6 +1508,9 @@
          }
  
          for sid in &drained.attached_other_sessions {
@@ -1017,7 +1019,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              if let Some(ref mgr) = self.browser {
                  let _ = mgr.resume_if_waiting_pub(sid).await;
              }
-@@ -1421,11 +1524,19 @@
+@@ -1421,11 +1523,19 @@
  
          // Attach and register new targets
          for te in &drained.new_targets {
@@ -1037,7 +1039,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      let attach: AttachToTargetResult = mgr
                          .client
                          .send_command_typed(
-@@ -1437,6 +1548,13 @@
+@@ -1437,6 +1547,13 @@
                              None,
                          )
                          .await?;
@@ -1051,7 +1053,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.prepare_domains_pub(&attach.session_id).await?;
                      if controls_active {
                          install_network_controls_for_session(
-@@ -1494,6 +1612,9 @@
+@@ -1494,6 +1611,9 @@
  
          // Update changed targets
          for te in &drained.changed_targets {
@@ -1061,7 +1063,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              if let Some(ref mut mgr) = self.browser {
                  mgr.update_page_target_info(&te.target_info);
              }
-@@ -1534,6 +1655,9 @@
+@@ -1534,6 +1654,9 @@
                      let Some(sid) = event_sid.or_else(|| active_sid.clone()) else {
                          continue;
                      };
@@ -1071,7 +1073,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      let Ok(result) = mgr
                          .client
                          .send_command(
-@@ -1606,6 +1730,7 @@
+@@ -1606,6 +1729,7 @@
      }
  
      fn drain_cdp_events(&mut self) -> DrainedEvents {
@@ -1079,7 +1081,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          let rx = match self.event_rx.as_mut() {
              Some(rx) => rx,
              None => return DrainedEvents::default(),
-@@ -1621,6 +1746,7 @@
+@@ -1621,6 +1745,7 @@
          let mut attached_iframe_sessions: Vec<(String, String)> = Vec::new();
          let mut attached_worker_sessions: Vec<(TargetInfo, String)> = Vec::new();
          let mut attached_other_sessions: Vec<String> = Vec::new();
@@ -1087,7 +1089,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          let mut detached_iframe_sessions: Vec<String> = Vec::new();
          let mut har_finished_requests: Vec<(String, Option<String>)> = Vec::new();
  
-@@ -1633,7 +1759,9 @@
+@@ -1633,7 +1758,9 @@
                              if let Ok(te) =
                                  serde_json::from_value::<TargetCreatedEvent>(event.params.clone())
                              {
@@ -1098,7 +1100,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                      let already_tracked = self
                                          .browser
                                          .as_ref()
-@@ -1650,7 +1778,9 @@
+@@ -1650,7 +1777,9 @@
                              if let Ok(te) = serde_json::from_value::<TargetInfoChangedEvent>(
                                  event.params.clone(),
                              ) {
@@ -1109,7 +1111,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                      // If this target is not yet tracked (e.g. it was
                                      // initially filtered because its URL was
                                      // chrome://newtab/), promote it to a new target
-@@ -1677,6 +1807,9 @@
+@@ -1677,6 +1806,9 @@
                              if let Ok(te) =
                                  serde_json::from_value::<TargetDestroyedEvent>(event.params.clone())
                              {
@@ -1119,7 +1121,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  let destroyed_active_target = self
                                      .browser
                                      .as_ref()
-@@ -1706,41 +1839,41 @@
+@@ -1706,41 +1838,41 @@
                              continue;
                          }
                          "Target.attachedToTarget" => {
@@ -1195,7 +1197,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              }
                              continue;
                          }
-@@ -1748,6 +1881,9 @@
+@@ -1748,6 +1880,9 @@
                              if let Some(sid) =
                                  event.params.get("sessionId").and_then(|v| v.as_str())
                              {
@@ -1205,7 +1207,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  if let Some(frame_id) =
                                      self.iframe_sessions
                                          .iter()
-@@ -1766,6 +1902,10 @@
+@@ -1766,6 +1901,10 @@
                              continue;
                          }
                          _ => {}
@@ -1216,7 +1218,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      }
  
                      let session_matches = if let Some(ref browser) = self.browser {
-@@ -2156,6 +2296,9 @@
+@@ -2156,6 +2295,9 @@
                  }
                  Err(broadcast::error::TryRecvError::Empty) => break,
                  Err(broadcast::error::TryRecvError::Lagged(n)) => {
@@ -1226,7 +1228,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      eprintln!("[agent-browser] Warning: CDP event buffer overflowed, {} events dropped. Network requests may be missing from HAR output.", n);
                      continue;
                  }
-@@ -2179,6 +2322,7 @@
+@@ -2179,6 +2321,7 @@
              attached_iframe_sessions,
              attached_worker_sessions,
              attached_other_sessions,
@@ -1234,7 +1236,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              detached_iframe_sessions,
              har_finished_requests,
          }
-@@ -2660,6 +2804,33 @@
+@@ -2660,6 +2803,33 @@
  
  pub async fn execute_command(cmd: &Value, state: &mut DaemonState) -> Value {
      let action = cmd.get("action").and_then(|v| v.as_str()).unwrap_or("");
@@ -1268,7 +1270,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      // Unlike normal auth login, no-navigation mode must never launch a
      // browser or manufacture an about:blank page to satisfy the command.
      let auth_login_no_navigate = action == "auth_login"
-@@ -2729,9 +2900,13 @@
+@@ -2729,9 +2899,13 @@
          server.broadcast_command(action, &id, cmd_for_broadcast);
      }
  
@@ -1285,7 +1287,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      // Keep element resolution in sync with the `frame` selection (see
-@@ -2877,6 +3052,17 @@
+@@ -2877,6 +3051,17 @@
          }
      }
  
@@ -1303,7 +1305,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let restore_transition_closed_browser = match async {
          if auth_login_no_navigate && command_changes_restore_key(cmd, state) {
              return Err(
-@@ -3005,6 +3191,7 @@
+@@ -3005,6 +3190,7 @@
          "evaluate" => handle_evaluate(cmd, state).await,
          "close" => handle_close(state).await,
          "snapshot" => handle_snapshot(cmd, state).await,
@@ -1311,7 +1313,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          "screenshot" => handle_screenshot(cmd, state).await,
          "click" => handle_click(cmd, state).await,
          "dblclick" => handle_dblclick(cmd, state).await,
-@@ -3160,6 +3347,7 @@
+@@ -3160,6 +3346,7 @@
          "keydown" => handle_keydown(cmd, state).await,
          "keyup" => handle_keyup(cmd, state).await,
          "inserttext" => handle_inserttext(cmd, state).await,
@@ -1319,7 +1321,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          "mousemove" => handle_mousemove(cmd, state).await,
          "mousedown" => handle_mousedown(cmd, state).await,
          "mouseup" => handle_mouseup(cmd, state).await,
-@@ -3320,7 +3508,26 @@
+@@ -3320,7 +3507,26 @@
  /// re-bound to the persisted target, entered the `tab_gone` state (pin-tab,
  /// bound tab dead), or bound to a fresh tab (pin-tab, no prior binding).
  /// Returns false when no binding existed and the legacy selection stands.
@@ -1346,6 +1348,38 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let session = state.session_id.clone();
      // A corrupt or unreadable binding file is a recovery error, not a
      // first-time session: it may have carried pinned=true, and silently
+@@ -3684,7 +3890,7 @@
+     None
+ }
+ 
+-async fn prepare_auto_attached_session(client: &CdpClient, session_id: &str) -> Result<(), String> {
++async fn prepare_auto_attached_session(client: &CdpClient, session_id: &str, owns_debugger_pause: bool) -> Result<(), String> {
+     client
+         .send_command_no_params("Page.enable", Some(session_id))
+         .await?;
+@@ -3699,7 +3905,7 @@
+             "Target.setAutoAttach",
+             Some(json!({
+                 "autoAttach": true,
+-                "waitForDebuggerOnStart": true,
++                "waitForDebuggerOnStart": owns_debugger_pause,
+                 "flatten": true
+             })),
+             Some(session_id),
+@@ -3727,11 +3933,12 @@
+     client: &CdpClient,
+     session_id: &str,
+     target: &TargetInfo,
++    owns_debugger_pause: bool,
+ ) -> Result<(), String> {
+     if target_is_worker_like(target) {
+         Ok(())
+     } else {
+-        prepare_auto_attached_session(client, session_id).await
++        prepare_auto_attached_session(client, session_id, owns_debugger_pause).await
+     }
+ }
+ 
 @@ -4073,6 +4280,9 @@
      }
      let engine = env::var("AGENT_BROWSER_ENGINE").ok();
@@ -1647,7 +1681,21 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -7584,6 +7909,11 @@
+@@ -7466,8 +7791,11 @@
+                 .get("text")
+                 .and_then(|v| v.as_str())
+                 .ok_or("Missing 'text' parameter")?;
+-            interaction::type_text_into_active_context(&mgr.client, &session_id, text, None)
+-                .await?;
++            if state.cdp_scope.is_some() {
++                interaction::type_keys_into_active_context(&mgr.client, &session_id, text, None).await?;
++            } else {
++                interaction::type_text_into_active_context(&mgr.client, &session_id, text, None).await?;
++            }
+             return Ok(json!({ "typed": text }));
+         }
+         Some("insertText") => {
+@@ -7584,6 +7912,11 @@
          let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
          mgr.resolve_tab_ref(&tab_ref)?
      };
@@ -1659,7 +1707,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let dialog_session = state
          .pending_dialog
          .as_ref()
-@@ -11057,22 +11387,23 @@
+@@ -11057,22 +11390,23 @@
      let (tab_id, session_id) = {
          let mgr = state.browser.as_mut().ok_or("Browser not launched")?;
  
@@ -1694,7 +1742,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                  None,
              )
              .await?;
-@@ -11089,6 +11420,9 @@
+@@ -11089,6 +11423,9 @@
              )
              .await?;
  
@@ -1704,7 +1752,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          mgr.prepare_domains_pub(&attach.session_id).await?;
  
          let tab_id = mgr.assign_tab_id();
-@@ -13659,7 +13993,15 @@
+@@ -13659,7 +13996,15 @@
      });
      // Machine-readable code for "the bound tab no longer exists" so scripts
      // using --json can match on it instead of parsing the message.
@@ -1721,7 +1769,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          resp["code"] = json!("tab_gone");
      } else if let Some((code, _)) = error.split_once(": ") {
          if code.starts_with("webmcp_") {
-@@ -13695,7 +14037,7 @@
+@@ -13695,7 +14040,7 @@
          use futures_util::{SinkExt, StreamExt};
          use tokio_tungstenite::tungstenite::Message;
  
@@ -1730,7 +1778,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
              let url = format!("ws://{}", listener.local_addr().unwrap());
              let server = tokio::spawn(async move {
-@@ -13729,12 +14071,15 @@
+@@ -13729,12 +14074,15 @@
                          "DOM.resolveNode" => {
                              json!({ "object": { "type": "object", "objectId": "login-node" } })
                          }
@@ -1748,7 +1796,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              response["error"] = json!({ "code": -32000, "message": "CDP failure" });
                              Value::Null
                          }
-@@ -13759,18 +14104,131 @@
+@@ -13759,18 +14107,131 @@
              let filled = element.fill(&client, "session", "test-value").await;
              client.close().await;
              let (attempts, mut releases) = server.await.unwrap();
@@ -1883,7 +1931,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[tokio::test]
-@@ -14368,6 +14826,121 @@
+@@ -14368,6 +14829,136 @@
              "agent-browser-{label}-{}-{nanos}",
              std::process::id()
          ))
@@ -1924,7 +1972,15 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 +                    let root_iframe = json!({"targetId":"T-ROOT-IFRAME","type":"iframe","title":"frame","url":"https://frame.test/","browserContextId":"C-APPROVED"});
 +                    let foreign_parent_worker = json!({"targetId":"T-WORKER","type":"worker","title":"worker","url":"https://worker.test/","browserContextId":"C-APPROVED"});
 +                    let mismatch = json!({"targetId":"T-MISMATCH","type":"iframe","title":"frame","url":"https://frame.test/","browserContextId":"C-FOREIGN"});
++                    let popup = json!({"targetId":"T-POPUP","type":"page","title":"popup","url":"https://scope.test/","browserContextId":"C-APPROVED"});
++                    let frame = json!({"targetId":"T-IFRAME","type":"iframe","title":"frame","url":"https://scope.test/","browserContextId":"C-APPROVED"});
++                    let worker = json!({"targetId":"T-APPROVED-WORKER","type":"worker","title":"worker","url":"https://scope.test/","browserContextId":"C-APPROVED"});
++                    let manual = json!({"targetId":"T-MANUAL","type":"page","title":"manual","url":"https://scope.test/","browserContextId":"C-APPROVED"});
 +                    let events = vec![
++                        json!({"method":"Target.targetCreated","params":{"targetInfo":manual}}),
++                        json!({"method":"Target.attachedToTarget","params":{"sessionId":"S-POPUP","targetInfo":popup,"waitingForDebugger":false}}),
++                        json!({"method":"Target.attachedToTarget","sessionId":"S-SELECTED","params":{"sessionId":"S-IFRAME","targetInfo":frame,"waitingForDebugger":false}}),
++                        json!({"method":"Target.attachedToTarget","sessionId":"S-SELECTED","params":{"sessionId":"S-APPROVED-WORKER","targetInfo":worker,"waitingForDebugger":false}}),
 +                        json!({"method":"Target.targetCreated","params":{"targetInfo":foreign.clone()}}),
 +                        json!({"method":"Target.targetInfoChanged","params":{"targetInfo":foreign.clone()}}),
 +                        json!({"method":"Target.attachedToTarget","params":{"sessionId":"S-FOREIGN","targetInfo":foreign,"waitingForDebugger":true}}),
@@ -1946,7 +2002,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 +                }
 +                let result = match method {
 +                    "Target.getTargets" => json!({"targetInfos":[{"targetId":"T-SELECTED","type":"page","title":"selected","url":"https://selected.test/","browserContextId":"C-APPROVED"}]}),
-+                    "Target.attachToTarget" => json!({"sessionId":"S-SELECTED"}),
++                    "Target.attachToTarget" => json!({"sessionId":if command["params"]["targetId"] == "T-MANUAL" { "S-MANUAL" } else { "S-SELECTED" }}),
 +                    "Runtime.evaluate" => json!({"result":{"type":"number","value":1}}),
 +                    _ => json!({}),
 +                };
@@ -1973,11 +2029,11 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 +        state.browser.as_ref().unwrap().client.send_command_no_params("Browser.getVersion", None).await.unwrap();
 +        let drained = state.drain_cdp_events();
 +        assert_eq!(drained.rejected_scope_sessions.len(), 5);
-+        assert!(drained.new_targets.is_empty());
++        assert_eq!(drained.new_targets.len(), 1);
 +        assert!(drained.changed_targets.is_empty());
-+        assert!(drained.attached_page_sessions.is_empty());
-+        assert!(drained.attached_iframe_sessions.is_empty());
-+        assert!(drained.attached_worker_sessions.is_empty());
++        assert_eq!(drained.attached_page_sessions.len(), 1);
++        assert_eq!(drained.attached_iframe_sessions.len(), 1);
++        assert_eq!(drained.attached_worker_sessions.len(), 1);
 +        assert!(drained.attached_other_sessions.is_empty());
 +        state.apply_drained_events(drained).await.unwrap();
 +        tokio::time::timeout(Duration::from_secs(3), async {
@@ -2001,11 +2057,18 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 +            assert!(!observed.iter().any(|c| c["sessionId"] == sid), "rejected session received a renderer/network/dialog command: {observed:?}");
 +        }
 +        assert!(observed.iter().any(|c| c["method"] == "Target.detachFromTarget" && c["params"]["sessionId"] == "S-MISMATCH" && c["sessionId"] == "S-SELECTED"), "child detachment must address its approved parent owner");
-+        assert!(observed.iter().filter(|c| c["method"] == "Target.attachToTarget").all(|c| c["params"]["targetId"] == "T-SELECTED"));
++        assert!(observed.iter().filter(|c| c["method"] == "Target.attachToTarget").all(|c| matches!(c["params"]["targetId"].as_str(), Some("T-SELECTED" | "T-MANUAL"))));
++        assert!(!observed.iter().any(|c| c["method"] == "Runtime.runIfWaitingForDebugger"), "scoped background/drain resumed a companion-owned pause: {observed:?}");
++        for command in observed.iter().filter(|c| c["method"] == "Target.setAutoAttach") {
++            assert_eq!(command["params"]["waitForDebuggerOnStart"], false, "scoped consumer requested a pause: {command}");
++        }
++        for sid in ["S-POPUP", "S-IFRAME", "S-MANUAL"] {
++            assert!(observed.iter().any(|c| c["method"] == "Page.enable" && c["sessionId"] == sid), "approved passive session was not prepared: {sid}");
++        }
      }
  
      #[test]
-@@ -16240,6 +16813,31 @@
+@@ -16240,6 +16831,31 @@
      }
  
      #[test]
@@ -2189,7 +2252,64 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
      Ok(())
  }
  
-@@ -442,6 +458,7 @@
+@@ -257,11 +273,41 @@
+     text: &str,
+     delay_ms: Option<u64>,
+ ) -> Result<(), String> {
++    type_text_into_context(client, session_id, text, delay_ms, false).await
++}
++
++/// Scoped browser engines require real key events for printable US-layout keys.
++/// Unmapped Unicode still uses the browser's trusted text insertion command.
++pub async fn type_keys_into_active_context(
++    client: &CdpClient,
++    session_id: &str,
++    text: &str,
++    delay_ms: Option<u64>,
++) -> Result<(), String> {
++    type_text_into_context(client, session_id, text, delay_ms, true).await
++}
++
++fn typing_key_info(ch: char) -> (String, String, i32) {
++    // char_to_key_info intentionally retains the legacy CLI layout. Complete
++    // its shifted digit keys only for the scoped keyboard typing contract.
++    if let Some(digit) = ")!@#$%^&*(".chars().position(|candidate| candidate == ch) {
++        return (ch.to_string(), format!("Digit{}", digit), 48 + digit as i32);
++    }
++    char_to_key_info(ch)
++}
++
++async fn type_text_into_context(
++    client: &CdpClient,
++    session_id: &str,
++    text: &str,
++    delay_ms: Option<u64>,
++    keyboard_events: bool,
++) -> Result<(), String> {
+     let delay = delay_ms.unwrap_or(0);
+ 
+     for ch in text.chars() {
+-        if matches!(ch, '\n' | '\r' | '\t') {
+-            let (key, code, key_code) = char_to_key_info(ch);
++        let (key, code, key_code) = typing_key_info(ch);
++        if matches!(ch, '\n' | '\r' | '\t') || (keyboard_events && key_code != 0) {
+             let text_str = key_text(&key);
+             client
+                 .send_command_typed::<_, Value>(
+@@ -297,9 +343,9 @@
+                 )
+                 .await?;
+         } else {
+-            // VS Code/Electron webviews reject repeated dispatchKeyEvent calls
+-            // carrying printable `text`. Insert printable characters directly
+-            // and reserve key events for controls like Enter and Tab.
++            // Legacy Electron compatibility uses direct printable insertion.
++            // Scoped typing reaches this branch only for unmapped characters;
++            // never synthesize a physical keyboard code for Unicode text.
+             client
+                 .send_command_typed::<_, Value>(
+                     "Input.insertText",
+@@ -442,6 +488,7 @@
      ref_map: &RefMap,
      selector_or_ref: &str,
      values: &[String],
@@ -2197,7 +2317,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
      iframe_sessions: &HashMap<String, String>,
  ) -> Result<(), String> {
      let (object_id, effective_session_id) = resolve_element_object_id(
-@@ -453,46 +470,22 @@
+@@ -453,46 +500,22 @@
      )
      .await?;
  
@@ -2260,7 +2380,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
  
      let result = client
          .send_command_typed::<_, Value>(
-@@ -500,10 +493,10 @@
+@@ -500,10 +523,10 @@
              &CallFunctionOnParams {
                  function_declaration: js,
                  object_id: Some(object_id),
@@ -2275,7 +2395,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
                  return_by_value: Some(true),
                  await_promise: Some(false),
              },
-@@ -511,13 +504,19 @@
+@@ -511,13 +534,19 @@
          )
          .await?;
  
@@ -2296,7 +2416,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
      }
  
      Ok(())
-@@ -531,11 +530,12 @@
+@@ -531,11 +560,12 @@
      iframe_sessions: &HashMap<String, String>,
  ) -> Result<Option<(f64, f64)>, String> {
      let mut position = None;
@@ -2310,7 +2430,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
          iframe_sessions,
      )
      .await?;
-@@ -552,27 +552,7 @@
+@@ -552,27 +582,7 @@
          .await?;
          position = Some(result.position);
  
@@ -2339,7 +2459,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
      }
      Ok(position)
  }
-@@ -585,11 +565,12 @@
+@@ -585,11 +595,12 @@
      iframe_sessions: &HashMap<String, String>,
  ) -> Result<Option<(f64, f64)>, String> {
      let mut position = None;
@@ -2353,7 +2473,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
          iframe_sessions,
      )
      .await?;
-@@ -606,93 +587,54 @@
+@@ -606,93 +617,54 @@
          .await?;
          position = Some(result.position);
  
@@ -2494,7 +2614,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
  }
  
  pub async fn focus(
-@@ -1036,6 +978,7 @@
+@@ -1036,6 +1008,7 @@
      y: f64,
      button: &str,
      click_count: i32,
@@ -2502,7 +2622,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
  ) -> Result<ClickResult, String> {
      // Move
      if dispatch_mouse_or_dialog(
-@@ -1051,7 +994,7 @@
+@@ -1051,7 +1024,7 @@
              click_count: None,
              delta_x: None,
              delta_y: None,
@@ -2511,7 +2631,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
          },
      )
      .await?
-@@ -1087,7 +1030,7 @@
+@@ -1087,7 +1060,7 @@
              click_count: Some(click_count),
              delta_x: None,
              delta_y: None,
@@ -2520,7 +2640,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
          },
      )
      .await?
-@@ -1103,6 +1046,7 @@
+@@ -1103,6 +1076,7 @@
                  x,
                  y,
                  button: button.to_string(),
@@ -2528,7 +2648,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
              }),
              x,
              y,
-@@ -1125,7 +1069,7 @@
+@@ -1125,7 +1099,7 @@
              click_count: Some(click_count),
              delta_x: None,
              delta_y: None,
@@ -2537,7 +2657,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
          },
      )
      .await?;
-@@ -1157,7 +1101,7 @@
+@@ -1157,7 +1131,7 @@
                  click_count: Some(1),
                  delta_x: None,
                  delta_y: None,
@@ -2546,7 +2666,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
              },
              Some(&release.session_id),
          )
-@@ -1274,6 +1218,100 @@
+@@ -1274,7 +1248,200 @@
  
  #[cfg(test)]
  mod tests {
@@ -2645,8 +2765,108 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
 +    }
 +
      use super::*;
++
++    #[tokio::test]
++    async fn scoped_keyboard_type_emits_trusted_key_commands_and_unicode_insertion() {
++        use futures_util::{SinkExt, StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        for keyboard_events in [false, true] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url = format!("ws://{}", listener.local_addr().unwrap());
++            let server = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.unwrap();
++                let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++                let mut commands = Vec::new();
++                while let Some(Ok(message)) = ws.next().await {
++                    match message {
++                        Message::Text(text) => {
++                            let command: Value = serde_json::from_str(&text).unwrap();
++                            assert_eq!(command["sessionId"], "owned-page");
++                            ws.send(Message::Text(json!({"id":command["id"],"result":{}}).to_string())).await.unwrap();
++                            commands.push(command);
++                        }
++                        Message::Close(_) => break,
++                        _ => {},
++                    }
++                }
++                commands
++            });
++            let client = CdpClient::connect(&url).await.unwrap();
++            let text = "--sessionA@! \n\t汉🙂";
++            if keyboard_events {
++                type_keys_into_active_context(&client, "owned-page", text, None).await.unwrap();
++            } else {
++                type_text_into_active_context(&client, "owned-page", text, None).await.unwrap();
++            }
++            client.close().await;
++            let commands = tokio::time::timeout(std::time::Duration::from_secs(3), server).await.unwrap().unwrap();
++            let mut commands = commands.iter();
++            for ch in text.chars() {
++                let (key, code, key_code) = typing_key_info(ch);
++                if matches!(ch, '\n' | '\r' | '\t') || (keyboard_events && key_code != 0) {
++                    let down = commands.next().unwrap();
++                    let up = commands.next().unwrap();
++                    for (command, event) in [(down, "keyDown"), (up, "keyUp")] {
++                        assert_eq!(command["method"], "Input.dispatchKeyEvent");
++                        assert_eq!(command["params"]["type"], event);
++                        assert_eq!(command["params"]["key"], key);
++                        assert_eq!(command["params"]["code"], code);
++                        assert_eq!(command["params"]["windowsVirtualKeyCode"], key_code);
++                    }
++                    assert_eq!(down["params"]["text"], json!(key_text(&key)));
++                    assert!(up["params"]["text"].is_null());
++                } else {
++                    let command = commands.next().unwrap();
++                    assert_eq!(command["method"], "Input.insertText");
++                    assert_eq!(command["params"]["text"], ch.to_string());
++                }
++            }
++            assert!(commands.next().is_none());
++        }
++        for (ch, code, key_code) in [('!', "Digit1", 49), ('@', "Digit2", 50), (')', "Digit0", 48)] {
++            assert_eq!(typing_key_info(ch), (ch.to_string(), code.to_string(), key_code));
++        }
++    }
++
++    #[tokio::test]
++    async fn scoped_keyboard_type_stops_after_a_partial_key_pair_without_retry() {
++        use futures_util::{SinkExt, StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let url = format!("ws://{}", listener.local_addr().unwrap());
++        let server = tokio::spawn(async move {
++            let (socket, _) = listener.accept().await.unwrap();
++            let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++            let mut count = 0;
++            while let Some(Ok(message)) = ws.next().await {
++                match message {
++                    Message::Text(text) => {
++                        count += 1;
++                        assert!(count <= 2, "Typing retried or continued after an uncertain key pair");
++                        let command: Value = serde_json::from_str(&text).unwrap();
++                        assert_eq!(command["method"], "Input.dispatchKeyEvent");
++                        assert_eq!(command["params"]["key"], "a");
++                        let response = if count == 1 { json!({"id":command["id"],"result":{}}) }
++                            else { json!({"id":command["id"],"error":{"code":-32000,"message":"synthetic keyup failure"}}) };
++                        ws.send(Message::Text(response.to_string())).await.unwrap();
++                    }
++                    Message::Close(_) => break,
++                    _ => {},
++                }
++            }
++            count
++        });
++        let client = CdpClient::connect(&url).await.unwrap();
++        let error = type_keys_into_active_context(&client, "owned-page", "abc", None).await.unwrap_err();
++        assert!(!error.starts_with("e2e_"));
++        client.close().await;
++        assert_eq!(tokio::time::timeout(std::time::Duration::from_secs(3), server).await.unwrap().unwrap(), 2);
++    }
  
      /// Verify that `char_to_key_info` returns the correct (key, code,
+     /// windowsVirtualKeyCode) triple for every character in Playwright's
 diff --git a/cli/src/native/snapshot.rs b/cli/src/native/snapshot.rs
 --- a/cli/src/native/snapshot.rs
 +++ b/cli/src/native/snapshot.rs
@@ -3535,7 +3755,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
 diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 --- a/cli/src/native/browser.rs
 +++ b/cli/src/native/browser.rs
-@@ -436,8 +436,143 @@
+@@ -436,8 +436,147 @@
      }
  }
  
@@ -3593,6 +3813,10 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +    pub fn new(scope: Option<CdpScope>) -> Self {
 +        Self { scope, resolved_default_context: None, sessions: Arc::new(std::sync::Mutex::new(ScopedSessions::default())) }
 +    }
++
++    /// A scoped CDP client is a passive participant. The owning companion
++    /// alone pauses/resumes renderers while installing first-request controls.
++    pub fn owns_debugger_pause(&self) -> bool { self.scope.is_none() }
 +
 +    pub fn accepts_target(&self, target: &TargetInfo) -> bool {
 +        self.scope.as_ref().map_or(true, |scope| should_track_target(target)
@@ -3679,7 +3903,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      browser_process: Option<BrowserProcess>,
      ws_url: String,
      pages: Vec<PageInfo>,
-@@ -610,6 +745,7 @@
+@@ -610,6 +749,7 @@
                  pin_tab: false,
                  bound_target_id: None,
                  bound_target_gone: None,
@@ -3687,7 +3911,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  headless,
              };
              if let Err(error) = manager.discover_and_attach_targets().await {
-@@ -679,26 +815,31 @@
+@@ -679,26 +819,31 @@
      }
  
      pub async fn connect_cdp(url: &str) -> Result<Self, String> {
@@ -3722,7 +3946,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      ) -> Result<Self, String> {
          let ws_url = resolve_cdp_url(url).await?;
          let client = Arc::new(CdpClient::connect_with_headers(&ws_url, headers).await?);
-@@ -717,9 +858,11 @@
+@@ -717,9 +862,11 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -3734,7 +3958,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let initialization = if direct_page {
              let tab_id = manager.assign_tab_id();
              manager.pages.push(PageInfo {
-@@ -750,7 +893,117 @@
+@@ -750,7 +897,117 @@
          Self::connect_cdp(&ws_url).await
      }
  
@@ -3852,7 +4076,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.client
              .send_command_typed::<_, Value>(
                  "Target.setDiscoverTargets",
-@@ -887,6 +1140,8 @@
+@@ -887,6 +1144,8 @@
      }
  
      pub async fn enable_browser_auto_attach_pub(&self) -> Result<(), String> {
@@ -3861,7 +4085,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.client
              .send_command(
                  "Target.setAutoAttach",
-@@ -908,6 +1163,9 @@
+@@ -908,6 +1167,9 @@
      }
  
      async fn prepare_domains(&self, session_id: &str) -> Result<(), String> {
@@ -3871,7 +4095,27 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.client
              .send_command_no_params("Page.enable", Some(session_id))
              .await?;
-@@ -980,6 +1238,9 @@
+@@ -923,8 +1185,8 @@
+             .await;
+         // Enable auto-attach for cross-origin iframe support.
+         // flatten: true gives each iframe its own session_id.
+-        // waitForDebuggerOnStart keeps child targets paused until the daemon
+-        // installs any required network controls and explicitly resumes them.
++        // Only legacy standalone sessions own the debugger pause. Scoped
++        // participants must never race the companion's network setup/resume.
+         // Ignored on engines that don't support it (e.g. Lightpanda).
+         let _ = self
+             .client
+@@ -932,7 +1194,7 @@
+                 "Target.setAutoAttach",
+                 Some(json!({
+                     "autoAttach": true,
+-                    "waitForDebuggerOnStart": true,
++                    "waitForDebuggerOnStart": self.scope_guard.owns_debugger_pause(),
+                     "flatten": true
+                 })),
+                 Some(session_id),
+@@ -980,6 +1242,9 @@
          if dialog_session == Some(session_id) {
              return Ok(RendererState::DialogBlocked);
          }
@@ -3881,17 +4125,40 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          match tokio::time::timeout(
              Duration::from_millis(REVIVED_RENDERER_TIMEOUT_MS),
              self.client.send_command(
-@@ -1048,6 +1309,9 @@
+@@ -1048,6 +1313,14 @@
      }
  
      async fn resume_if_waiting(&self, session_id: &str) -> Result<(), String> {
 +        if !self.scope_guard.accepts_session(Some(session_id)) {
 +            return Err("CDP session is outside the immutable scope".to_string());
 +        }
++        // A manual/non-waiting session (or duplicate resume) bypasses V8's
++        // shared debugger barrier and can release another client's page pause.
++        // Scoped sessions never own that pause, including selected pages,
++        // discovered popups, explicitly switched tabs, OOPIFs and workers.
++        if !self.scope_guard.owns_debugger_pause() { return Ok(()); }
          // Needed for real browser sessions (Chrome 144+) where targets are
          // paused after attach until explicitly resumed. No-op otherwise.
          let _ = self
-@@ -1084,7 +1348,8 @@
+@@ -1065,10 +1338,13 @@
+         self.client
+             .send_command_no_params("Runtime.enable", None)
+             .await?;
+-        let _ = self
+-            .client
+-            .send_command_no_params("Runtime.runIfWaitingForDebugger", None)
+-            .await;
++        // Direct provider connections currently have no scoped constructor;
++        // retain the ownership guard here so future callers cannot bypass it.
++        if self.scope_guard.owns_debugger_pause() {
++            let _ = self.client
++                .send_command_no_params("Runtime.runIfWaitingForDebugger", None)
++                .await;
++        }
+         self.client
+             .send_command_no_params("Network.enable", None)
+             .await?;
+@@ -1084,7 +1360,8 @@
          self.pages
              .get(self.active_page_index)
              .map(|p| p.session_id.as_str())
@@ -3901,7 +4168,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      }
  
      // -----------------------------------------------------------------------
-@@ -1096,6 +1361,7 @@
+@@ -1096,6 +1373,7 @@
      /// waiting for a restart to re-derive it. Disabling clears any pending
      /// `tab_gone` state so the session falls back to legacy selection.
      pub fn set_pin_tab(&mut self, pin: bool) {
@@ -3909,7 +4176,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.pin_tab = pin;
          if pin {
              self.bind_active_target();
-@@ -1490,6 +1756,9 @@
+@@ -1490,6 +1768,9 @@
      /// Ensures the browser has at least one page. If `pages` is empty, creates a new
      /// about:blank page and attaches to it.
      pub async fn ensure_page(&mut self) -> Result<(), String> {
@@ -3919,7 +4186,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          if !self.pages.is_empty() {
              return Ok(());
          }
-@@ -1669,9 +1938,7 @@
+@@ -1669,9 +1950,7 @@
              .client
              .send_command_typed(
                  "Target.createTarget",
@@ -3930,7 +4197,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  None,
              )
              .await?;
-@@ -1688,6 +1955,9 @@
+@@ -1688,6 +1967,9 @@
              )
              .await?;
  
@@ -3940,7 +4207,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.enable_domains(&attach.session_id).await?;
  
          let tab_id = self.next_tab_id;
-@@ -1888,6 +2158,8 @@
+@@ -1888,6 +2170,8 @@
                  Some(session_id),
              )
              .await?;
@@ -3949,7 +4216,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
  
          // Screencast captures the actual content area, not the emulated CSS
          // viewport, so resize the content area to match.
-@@ -2013,10 +2285,14 @@
+@@ -2013,10 +2297,14 @@
      }
  
      pub async fn grant_permissions(&self, permissions: &[String]) -> Result<(), String> {
@@ -3965,7 +4232,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  None,
              )
              .await?;
-@@ -2056,6 +2332,12 @@
+@@ -2056,6 +2344,12 @@
              resolve_element_object_id(&self.client, session_id, ref_map, selector, iframe_sessions)
                  .await?;
  
@@ -3978,7 +4245,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let describe: Value = self
              .client
              .send_command(
-@@ -2082,7 +2364,10 @@
+@@ -2082,7 +2376,10 @@
              )
              .await?;
  
@@ -3990,7 +4257,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      }
  
      pub async fn add_script_to_evaluate(&self, source: &str) -> Result<String, String> {
-@@ -2114,6 +2399,16 @@
+@@ -2114,6 +2411,16 @@
          Ok(())
      }
  
@@ -4007,7 +4274,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      pub async fn tab_switch_by_id(
          &mut self,
          tab_id: u32,
-@@ -2165,6 +2460,7 @@
+@@ -2165,6 +2472,7 @@
      }
  
      fn add_page_with_activation(&mut self, page: PageInfo, activate: bool) {
@@ -4015,7 +4282,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let new_index = self.pages.len();
          // In the tab_gone state, adopting a discovered tab would clear it and
          // re-bind to a tab the session never opened. Recovery stays explicit
-@@ -2197,10 +2493,12 @@
+@@ -2197,10 +2505,12 @@
      }
  
      pub fn update_page_target_info(&mut self, target: &TargetInfo) -> bool {
@@ -4028,7 +4295,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          if let Some(pos) = self.pages.iter().position(|p| p.target_id == target_id) {
              let page = self.pages.remove(pos);
              self.update_active_page_after_removal(pos);
-@@ -2279,19 +2577,43 @@
+@@ -2279,19 +2589,43 @@
  
      pub async fn set_download_behavior(&self, download_path: &str) -> Result<(), String> {
          let session_id = self.active_session_id()?;
@@ -4077,7 +4344,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
  }
  
  /// Core network-idle polling loop, extracted so it can be unit-tested without a
-@@ -2429,6 +2751,7 @@
+@@ -2429,6 +2763,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4085,7 +4352,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
  
-@@ -2538,6 +2861,7 @@
+@@ -2538,6 +2873,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4093,7 +4360,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
  
-@@ -3333,7 +3657,56 @@
+@@ -3333,7 +3669,56 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4150,7 +4417,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          }
      }
  
-@@ -3393,6 +3766,7 @@
+@@ -3393,6 +3778,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4158,7 +4425,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
          manager.close().await.unwrap();
-@@ -3488,14 +3862,14 @@
+@@ -3488,14 +3874,14 @@
          existing: bool,
      ) {
          let (url, server) = initialization_server(fail_method, existing, 2, false).await;
@@ -4175,7 +4442,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          )
          .await
          .expect("retry should succeed after cleanup")
-@@ -4451,6 +4825,11 @@
+@@ -4451,6 +4837,11 @@
      /// never needlessly reactivated.
      async fn start_mock_cdp_browser_responsive(
      ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
@@ -4187,7 +4454,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          use futures_util::{SinkExt, StreamExt};
          use std::sync::atomic::{AtomicUsize, Ordering};
          use std::sync::Arc;
-@@ -4489,7 +4868,7 @@
+@@ -4489,7 +4880,7 @@
                  let method = cmd["method"].as_str().unwrap_or("");
                  let respond = |result: Value| json!({ "id": id, "result": result }).to_string();
  
@@ -4196,7 +4463,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                      activations_task.fetch_add(1, Ordering::SeqCst);
                  }
  
-@@ -4523,6 +4902,17 @@
+@@ -4523,6 +4914,17 @@
      /// A responsive tab must not be reactivated: recovery only runs when the
      /// liveness probe gets no answer, so a healthy tab keeps its state and is
      /// never touched by Target.activateTarget (#1528).
@@ -4214,7 +4481,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      #[tokio::test]
      async fn test_tab_switch_does_not_revive_responsive_tab() {
          let (url, activations) = start_mock_cdp_browser_responsive().await;
-@@ -4996,4 +5386,402 @@
+@@ -4996,4 +5398,436 @@
              "cancelled connect-time probes left orphaned CDP requests in the pending map"
          );
      }
@@ -4500,8 +4767,10 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +            if let Some(sid) = command["sessionId"].as_str() {
 +                assert_eq!(sid, "S-T-SELECTED", "foreign/sibling session command: {command}");
 +            }
++            assert_ne!(method, "Runtime.runIfWaitingForDebugger", "scoped client resumed a renderer it does not own: {command}");
 +            if method == "Target.setAutoAttach" {
 +                assert_eq!(command["sessionId"], "S-T-SELECTED", "browser-wide auto-attach: {command}");
++                assert_eq!(command["params"]["waitForDebuggerOnStart"], false, "scoped client requested a debugger pause: {command}");
 +            }
 +        }
 +    }
@@ -4534,6 +4803,38 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +        let commands = recorded.lock().unwrap();
 +        assert_strict_scope_wire_boundary(&commands);
 +        assert!(commands.iter().any(|c| c["method"] == "Page.enable"));
++    }
++
++    #[tokio::test]
++    async fn test_passive_scope_never_resumes_selected_or_child_sessions_and_legacy_still_does() {
++        for scoped in [false, true] {
++            let (url, recorded, server) = strict_scope_sentinel(StrictScopeSentinelMode::Matching).await;
++            let scope = scoped.then(|| strict_scope(Some("C-APPROVED")));
++            let mut manager = BrowserManager::connect_cdp_scoped(&url, scope).await.unwrap();
++            let active = manager.active_session_id().unwrap().to_string();
++            manager.enable_domains(&active).await.unwrap();
++            // Exercise the same centralized preparation/resume used by tab
++            // switching, explicit tab creation and synchronous event drains.
++            for (sid, target, parent) in [
++                ("S-POPUP", "T-POPUP", None),
++                ("S-FRAME", "T-FRAME", Some(active.as_str())),
++            ] {
++                assert!(manager.scope_guard.register_session(sid, target, parent));
++                manager.prepare_domains_pub(sid).await.unwrap();
++                manager.resume_if_waiting_pub(sid).await.unwrap();
++                manager.resume_if_waiting_pub(sid).await.unwrap();
++            }
++            manager.close().await.unwrap();
++            tokio::time::timeout(Duration::from_secs(3), server).await.unwrap().unwrap();
++            let commands = recorded.lock().unwrap();
++            let resumes: Vec<_> = commands.iter().filter(|c| c["method"] == "Runtime.runIfWaitingForDebugger").collect();
++            assert_eq!(resumes.is_empty(), scoped);
++            for command in commands.iter().filter(|c| c["method"] == "Target.setAutoAttach") {
++                assert_eq!(command["params"]["waitForDebuggerOnStart"], !scoped);
++            }
++            assert!(commands.iter().any(|c| c["method"] == "Target.setAutoAttach" && c["sessionId"] == "S-FRAME"));
++            assert!(commands.iter().any(|c| c["method"] == "Target.setAutoAttach" && c["sessionId"] == "S-POPUP"));
++        }
 +    }
 +
 +    #[tokio::test]

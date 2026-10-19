@@ -35,7 +35,7 @@ before(async () => {
     else if (pathname === '/action-contract') response.end(page(`
       <button id="action" onclick="window.clickEvents.push({control:event.ctrlKey,shift:event.shiftKey,alt:event.altKey,meta:event.metaKey})">Business action</button>
       <input id="disabled" value="disabled-original" disabled><input id="readonly" value="readonly-original" readonly><input id="editable" value="editable-original">
-      <script>window.clickEvents=[];window.keyEvents=[];document.addEventListener('keydown',event=>window.keyEvents.push(event.key));document.getElementById('editable').focus()</script>`));
+      <script>window.clickEvents=[];window.keyEvents=[];for(const type of ['keydown','keyup'])document.addEventListener(type,event=>window.keyEvents.push({type:event.type,key:event.key,trusted:event.isTrusted}));document.getElementById('editable').focus()</script>`));
     else if (pathname === '/select-upload') response.end(page(`
       <select id="choice"><option value="initial">Initial</option><option value="target-label">Value route</option><option value="label-route">target-label</option><option value="index-route">Index route</option></select>
       <input id="files" type="file" multiple>
@@ -284,8 +284,10 @@ test('unknown check state and disabled/readonly fill refuse before mutating; tap
     await browser.evaluate('(() => {window.keyEvents=[];return null})()');
     await engine.keyboard!.type('--session', { replace: true }, context());
     assert.equal(await browser.evaluate('document.getElementById("editable").value'), '--session');
-    const keys = await browser.evaluate('window.keyEvents') as string[];
-    for (const letter of ['s', 'e', 'i', 'o', 'n']) assert.ok(keys.includes(letter), 'Typing must take the keyboard path instead of assigning a value');
+    const keys = await browser.evaluate('window.keyEvents') as { type: string; key: string; trusted: boolean }[];
+    assert.deepEqual(keys.slice(-'--session'.length * 2), [...'--session'].flatMap(key => [
+      { type: 'keydown', key, trusted: true }, { type: 'keyup', key, trusted: true },
+    ]), 'Literal text must emit an ordered trusted keydown/keyup pair for every ASCII character');
   });
 });
 
@@ -361,27 +363,30 @@ test('deterministic locator AST supports query families, CSS, XPath, filters and
 
 test('attempt routes, init scripts, media, viewport and dialogs survive restart, reset and state replacement', { timeout: 240_000 }, async () => {
   await withEngine(async (engine, browser) => {
-    await browser.addInitScript('window.auditBeforeApp=true');
-    await browser.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await browser.setViewport({ width: 700, height: 500 });
-    await browser.onDialog('dismiss');
-    await browser.route('**/configuration-api', (route) => route.fulfill({ body: 'attempt-route' }));
-    await engine.session!.open!(`${origin}/configuration`, context());
-    await browser.evaluate('(() => { localStorage.setItem("audit-token", "captured-A"); return true; })()');
-    await browser.addInitScript('window.tokenBeforeInit=localStorage.getItem("audit-token");localStorage.setItem("audit-token","init-rewrite")');
-    const saved = await engine.state!.capture(context());
+    const phase = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+      try { return await work(); } catch (cause) { throw new Error(`Configuration acceptance phase: ${label}`, { cause }); }
+    };
+    await phase('register initial script', () => browser.addInitScript('window.auditBeforeApp=true'));
+    await phase('configure media', () => browser.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' }));
+    await phase('configure viewport', () => browser.setViewport({ width: 700, height: 500 }));
+    await phase('register dialog handler', () => browser.onDialog('dismiss'));
+    await phase('register route', () => browser.route('**/configuration-api', (route) => route.fulfill({ body: 'attempt-route' })));
+    await phase('initial navigation', () => engine.session!.open!(`${origin}/configuration`, context()));
+    await phase('write initial storage', () => browser.evaluate('(() => { localStorage.setItem("audit-token", "captured-A"); return true; })()'));
+    await phase('register destructive init script', () => browser.addInitScript('window.tokenBeforeInit=localStorage.getItem("audit-token");localStorage.setItem("audit-token","init-rewrite")'));
+    const saved = await phase('capture state', () => engine.state!.capture(context()));
     assert.equal(await browser.evaluate('localStorage.getItem("audit-token")'), 'captured-A', 'Storage capture probes must not run the fixture init script against live storage');
-    const verify = async (expectedToken: string | null): Promise<void> => {
-      await engine.session!.open!(`${origin}/configuration`, context());
+    const verify = async (expectedToken: string | null, label: 'initial' | 'after restart' | 'after reset' | 'after restore'): Promise<void> => phase(`verify ${label}`, async () => {
+      await phase(`verify ${label}: navigation`, () => engine.session!.open!(`${origin}/configuration`, context()));
       assert.deepEqual(await browser.evaluate(`({early:window.initWasEarly,dark:matchMedia('(prefers-color-scheme: dark)').matches,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,width:innerWidth,height:innerHeight,dialog:confirm('synthetic configuration audit')})`), { early: true, dark: true, reduced: true, width: 700, height: 500, dialog: false });
       assert.equal(await browser.evaluate(`fetch('/configuration-api').then(response=>response.text())`), 'attempt-route');
       assert.deepEqual(await browser.evaluate('({beforeInit:window.tokenBeforeInit,current:localStorage.getItem("audit-token")})'), { beforeInit: expectedToken, current: 'init-rewrite' });
-    };
-    await verify('captured-A');
-    await engine.session!.restart!(context()); await verify('init-rewrite');
-    await engine.session!.reset!(context()); await verify(null);
-    await engine.state!.restore(saved, context()); await verify('captured-A');
-    await engine.settleAttempt!({ signal: new AbortController().signal, timeoutMs: 10_000 });
+    });
+    await verify('captured-A', 'initial');
+    await phase('restart', () => engine.session!.restart!(context())); await verify('init-rewrite', 'after restart');
+    await phase('reset', () => engine.session!.reset!(context())); await verify(null, 'after reset');
+    await phase('restore state', () => engine.state!.restore(saved, context())); await verify('captured-A', 'after restore');
+    await phase('settle callbacks', () => engine.settleAttempt!({ signal: new AbortController().signal, timeoutMs: 10_000 }));
   });
 });
 

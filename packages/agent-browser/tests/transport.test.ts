@@ -21,7 +21,7 @@ const globals = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;
 appendFileSync(process.env.TEST_LOG, JSON.stringify({ args, env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('AGENT_BROWSER_'))), config: readFileSync(args[args.indexOf('--config') + 1], 'utf8') }) + '\\n');
 const emit = (data) => process.stdout.write(JSON.stringify({success:true,data}));
 if (globals.includes('--version')) {
-  setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser 0.39.1-e2e.2'), Number(process.env.TEST_VERSION_DELAY || 0));
+  setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser 0.39.1-e2e.3'), Number(process.env.TEST_VERSION_DELAY || 0));
 } else if (args.at(-1) === '--all' && args.includes('--cdp-target')) {
   console.log(JSON.stringify({success:false,error:'Cannot use close --all with scoped flags'}));
   process.exitCode = 1;
@@ -153,14 +153,14 @@ test('rejects the wrong version before dispatch and never echoes it', async (t) 
   assert.equal(transport.poisoned, false);
 });
 
-test('rejects the earlier exact-ref build before any scoped CDP command or cleanup dispatch', async (t) => {
-  const { transport, log } = await fake(t, { TEST_VERSION: 'agent-browser 0.39.1-e2e.1' }, {
+for (const prior of ['0.39.1-e2e.1', '0.39.1-e2e.2']) test(`rejects earlier exact-ref build ${prior} before any scoped CDP command or cleanup dispatch`, async (t) => {
+  const { transport, log } = await fake(t, { TEST_VERSION: `agent-browser ${prior}` }, {
     cdp: 'ws://127.0.0.1:9222/devtools/browser/shared', cdpTarget: 'owned-target', cdpContext: 'owned-context',
   });
   await assert.rejects(transport.run(['click', '@e1'], context(), { mutating: true }), (error: unknown) => {
     assert.ok(classified('ENGINE_FAILURE')(error));
     assert.ok(error instanceof EngineError);
-    assert.match(error.message, /0\.39\.1-e2e\.2 is required/);
+    assert.match(error.message, /0\.39\.1-e2e\.3 is required/);
     return true;
   });
   assert.equal(transport.poisoned, false);
