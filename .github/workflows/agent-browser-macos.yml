@@ -33,7 +33,6 @@ jobs:
         shell: bash
     env:
       E2E_TELEMETRY_DISABLED: '1'
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/agent-browser-chromium
       CARGO_BUILD_JOBS: '2'
       EXPECTED_ARCH: ${{ matrix.arch }}
       EXPECTED_MACHINE: ${{ matrix.machine }}
@@ -55,6 +54,7 @@ jobs:
           node --input-type=module -e 'import assert from "node:assert/strict"; assert.equal(process.platform, "darwin"); assert.equal(process.arch, process.env.EXPECTED_ARCH); assert.equal(process.version, "v24.19.0");'
           sw_vers
           pnpm --version
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/agent-browser-chromium" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build and test pinned exact-ref native CLI
         run: |
