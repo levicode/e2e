@@ -70,7 +70,8 @@ export class AgentBrowserSurface {
   private tainted = false;
   private poisoned = false;
   private uiBusy = false;
-  private readonly uiContext = new AsyncLocalStorage<boolean>();
+  private readonly uiContext = new AsyncLocalStorage<{ active: boolean }>();
+  private uiOwner: { active: boolean } | undefined;
   private readonly origins = new Set<string>();
   private unsubscribe: (() => void)[] = [];
   private activeUnsubscribe: (() => void)[] = [];
@@ -89,16 +90,18 @@ export class AgentBrowserSurface {
     }
   }
   guardOperation(context: OperationContext): void { this.guardAttempt(context); this.requireTransport(); }
+  private ownsUi(): boolean { const owner = this.uiContext.getStore(); return owner !== undefined && owner.active && owner === this.uiOwner; }
   private assertInputUsable(): void {
     this.assertUsable();
-    if (this.uiBusy && !this.uiContext.getStore()) unsupported('Concurrent UI input is not supported; network handlers remain independent');
+    if (this.uiBusy && !this.ownsUi()) unsupported('Concurrent UI input is not supported; network handlers remain independent');
   }
   private async withUi<T>(context: OperationContext, work: () => Promise<T>): Promise<T> {
     if (this.uiBusy || this.input.isBusy) unsupported('Concurrent UI mutations are not supported; network event waits remain concurrent');
     this.uiBusy = true;
-    const attempt = this.attempt;
-    try { const result = await this.uiContext.run(true, work); await this.captureTrace(context); return result; }
-    finally { if (attempt === this.attempt) this.uiBusy = false; }
+    const owner = { active: true };
+    this.uiOwner = owner;
+    try { const result = await this.uiContext.run(owner, work); await this.captureTrace(context); return result; }
+    finally { owner.active = false; if (this.uiOwner === owner) { this.uiBusy = false; this.uiOwner = undefined; } }
   }
   markUncertain(context?: OperationContext): never {
     if (context && (!this.attempt || context.attemptId !== this.attempt.attemptId || context.runId !== this.info?.runId)) invalidState();
@@ -199,6 +202,10 @@ export class AgentBrowserSurface {
         this.defaultLeaseContext = true;
         selectedTarget = pages[0]?.targetId ?? (await this.cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' }, context)).targetId;
       } else {
+        // Upstream AB currently discovers/probes every existing page before selecting a tab.
+        // Refuse a shared endpoint rather than touch a foreign page during that initial attach.
+        const existingPages = (await this.cdp.listTargets(context)).filter(target => target.type === 'page');
+        if (existingPages.length > 0) unsupported('Shared browser attachment requires initial agent-browser context scoping; foreign pages are not safe to attach');
         const created = await this.cdp.send<{ browserContextId: string }>('Target.createBrowserContext', { disposeOnDetach: true }, context);
         if (!created.browserContextId) throw new EngineError('ENGINE_FAILURE', 'The remote browser did not create an isolated context', { retryable: false });
         this.contextId = created.browserContextId;
@@ -241,6 +248,7 @@ export class AgentBrowserSurface {
     const attempt = this.attempt;
     if (!attempt?.screen || this.traceDisabled || this.traceBusy || !this.endpoint || !this.locators || context.signal.aborted || context.timeoutMs <= 0) return;
     this.traceBusy = true;
+    const connection = this.connection;
     const operation = bounded({ ...context, timeoutMs: Math.min(context.timeoutMs, 1000) });
     try {
       this.guardOperation(operation);
@@ -250,6 +258,7 @@ export class AgentBrowserSurface {
       const locators = this.locators;
       const selected = await transport.run<{ targetId: string }>(['tab', target, '--no-activate'], operation);
       this.guardOperation(operation);
+      if (connection !== this.connection) return;
       if (selected.targetId !== target) throw new Error('Trace target identity mismatch');
       this.traceAdapter ??= new SnapshotAdapter(transport, {
         preserveRefs: true,
@@ -258,11 +267,11 @@ export class AgentBrowserSurface {
         ...(this.options.testIdAttribute ? { testIdAttribute: this.options.testIdAttribute } : {}),
       });
       const snapshot = await this.traceAdapter.observe(operation);
-      if (attempt === this.attempt) attempt.screen(snapshot);
+      if (attempt === this.attempt && connection === this.connection) attempt.screen(snapshot);
     } catch {
       // A missing optional trace must not poison an acknowledged UI action or replace its error.
-      if (attempt === this.attempt) this.traceDisabled = true;
-    } finally { if (attempt === this.attempt) this.traceBusy = false; }
+      if (attempt === this.attempt && connection === this.connection) this.traceDisabled = true;
+    } finally { if (attempt === this.attempt && connection === this.connection) this.traceBusy = false; }
   }
 
   private async installProtected(context: OperationContext): Promise<void> {
@@ -305,6 +314,8 @@ export class AgentBrowserSurface {
   }
 
   async switchTab(tab: string, context: OperationContext): Promise<void> {
+    this.guardOperation(context);
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.switchTab(tab, context)); }
     context = bounded(context);
     if (!(await this.tabs(context)).some(target => target.tabId === tab || target.targetId === tab)) throw new TestError('INVALID_ARGUMENT', 'The tab is outside this attempt');
     await this.video?.pageClosing(context);
@@ -333,22 +344,24 @@ export class AgentBrowserSurface {
   }
 
   async open(url: string, context: OperationContext, waitUntil = 'load'): Promise<void> {
+    this.guardOperation(context);
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.open(url, context, waitUntil)); }
     context = bounded(context);
     this.snapshots?.invalidate();
     this.ownNavigations++;
     try { await this.command(['open', url, '--wait-until', waitUntil], context, true); }
     finally { this.ownNavigations--; }
     try { const location = new URL(url); if (/^https?:$/.test(location.protocol)) this.origins.add(location.origin); } catch { /* harness validates */ }
-    await this.captureTrace(context);
   }
 
   async back(context: OperationContext): Promise<void> {
+    this.guardOperation(context);
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.back(context)); }
     context = bounded(context);
     this.snapshots?.invalidate();
     this.ownNavigations++;
     try { await this.command(['back'], context, true); }
     finally { this.ownNavigations--; }
-    await this.captureTrace(context);
   }
 
   async evaluate<T>(source: string, context: OperationContext, mutating = true): Promise<T> {
@@ -367,7 +380,7 @@ export class AgentBrowserSurface {
 
   async perform(ref: NodeRef, action: LocatorAction, context: OperationContext): Promise<void> {
     this.guardOperation(context);
-    if (!this.uiContext.getStore()) { context = bounded(context); return this.withUi(context, () => this.perform(ref, action, context)); }
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.perform(ref, action, context)); }
     context = bounded(context);
     let dispatched = false;
     const end = Date.now() + context.timeoutMs;
@@ -425,14 +438,14 @@ export class AgentBrowserSurface {
 
   async pressKey(key: string, context: OperationContext): Promise<void> {
     this.guardOperation(context);
-    if (!this.uiContext.getStore()) { context = bounded(context); return this.withUi(context, () => this.pressKey(key, context)); }
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.pressKey(key, context)); }
     if (!parseKey(key)) unsupported('Key is outside the engine keyboard grammar');
     await this.command(['press', key.replace('ControlOrMeta', process.platform === 'darwin' ? 'Meta' : 'Control')], context, true);
   }
 
   async typeText(text: string, replace: boolean, context: OperationContext): Promise<void> {
     this.guardOperation(context);
-    if (!this.uiContext.getStore()) { context = bounded(context); return this.withUi(context, () => this.typeText(text, replace, context)); }
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.typeText(text, replace, context)); }
     context = bounded(context);
     let dispatched = false;
     await this.input.assertTextFocus(context);
@@ -447,7 +460,7 @@ export class AgentBrowserSurface {
     const points = 'target' in action ? [point, action.target] : [point];
     if (points.some(value => !Number.isFinite(value.x) || !Number.isFinite(value.y))) throw new TestError('INVALID_ARGUMENT', 'Pointer coordinates must be finite');
     if ('durationMs' in action && action.durationMs !== undefined && (!Number.isFinite(action.durationMs) || action.durationMs < 0)) throw new TestError('INVALID_ARGUMENT', 'Pointer duration must be a nonnegative finite number');
-    if (!this.uiContext.getStore()) { context = bounded(context); return this.withUi(context, () => this.pointer(point, action, context)); }
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.pointer(point, action, context)); }
     context = bounded(context);
     let dispatched = false;
     const act = async (work: () => Promise<void>): Promise<void> => { await work(); dispatched = true; };
@@ -522,6 +535,7 @@ export class AgentBrowserSurface {
   }
   async restore(state: EngineState, context: OperationContext): Promise<void> {
     this.guardOperation(context);
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.restore(state, context)); }
     context = bounded(context);
     let replaced = false;
     try {
@@ -543,6 +557,7 @@ export class AgentBrowserSurface {
   async restart(context: OperationContext): Promise<void> { context = bounded(context); await this.restore(await this.capture(context), context); }
   async reset(context: OperationContext): Promise<void> {
     this.guardOperation(context);
+    if (!this.ownsUi()) { context = bounded(context); return this.withUi(context, () => this.reset(context)); }
     context = bounded(context);
     await this.closeBrowser(context); this.guardAttempt(context); this.poisoned = false; this.origins.clear(); await this.launch(context);
   }
@@ -559,7 +574,7 @@ export class AgentBrowserSurface {
     finally {
       try { await this.leases?.endAttempt(context); }
       finally { this.connectionSource?.endAttempt();
-        this.attempt = undefined; this.snapshots = undefined; this.uiBusy = false; this.video = undefined; this.backgroundGeneration++; this.pendingBackground.clear(); this.backgroundErrors.length = 0; }
+        this.attempt = undefined; this.snapshots = undefined; this.uiBusy = false; if (this.uiOwner) this.uiOwner.active = false; this.uiOwner = undefined; this.video = undefined; this.backgroundGeneration++; this.pendingBackground.clear(); this.backgroundErrors.length = 0; }
     }
   }
   async dispose(context: EngineCleanupContext): Promise<void> { try { await this.endAttempt(context); } finally { try { await this.leases?.dispose(context); } finally { this.connectionSource?.dispose(); this.info = undefined; } } }

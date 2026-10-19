@@ -9,6 +9,7 @@ import { createBrowserFixture, type BrowserExpectation } from '../src/browser.ts
 import { InputController } from '../src/input.ts';
 import type { CdpConnection } from '../src/cdp.ts';
 import type { LeaseDownloads } from '../src/provider.ts';
+import type { WebRoute } from '../src/network.ts';
 import type { AgentBrowserSurface } from '../src/surface.ts';
 
 type EventHandler = (event: Record<string, unknown>) => void;
@@ -32,6 +33,7 @@ async function setup(t: TestContext, settings: { browserContextId?: string; remo
   let downloadDirectory = '';
   let href = 'https://example.test/start';
   let title = 'Hello world';
+  let intercept: ((method: string) => Promise<void>) | undefined;
   const op = (timeoutMs = 1_000): OperationContext => ({ signal: controller.signal, timeoutMs, runId: 'r', attemptId: 'a', origin: 'test' });
   const emit = (method: string, event: Record<string, unknown>, session?: string) => {
     for (const callback of events.get(`${session ?? ''}:${method}`) ?? []) callback(event);
@@ -39,6 +41,7 @@ async function setup(t: TestContext, settings: { browserContextId?: string; remo
   const cdp = {
     async send(method: string, params: Record<string, unknown>, _context: OperationContext, session?: string) {
       calls.push({ method, params, ...(session === undefined ? {} : { session }) });
+      await intercept?.(method);
       if (method === 'Browser.setDownloadBehavior' && params.behavior === 'allowAndName') downloadDirectory = String(params.downloadPath);
       if (method === 'Browser.setDownloadBehavior' && params.behavior === 'deny' && settings.failDownloadCleanup) throw new Error('private cleanup response');
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame-main' }, childFrames: [{ frame: { id: 'frame-child' } }] } };
@@ -103,9 +106,11 @@ async function setup(t: TestContext, settings: { browserContextId?: string; remo
   return {
     browser, calls, emit, events, directory, artifacts, operations, background, controller,
     retire() { activeAttempt = 'next-attempt'; },
+    interceptSend(callback: (method: string) => Promise<void>) { intercept = callback; },
+    replaceConnection() { surface.cdp = { ...cdp }; },
     get expectation() { assert.ok(expectation); return expectation; },
     get poisoned() { return poisoned; },
-    async restart() { for (const cleanup of cleanups) cleanup(); initializers.length = 0; for (const callback of restarts) await callback(op()); },
+    async restart() { initializers.length = 0; for (const callback of restarts) await callback(op()); },
     async addSession(session: string) { sessions.push(session); for (const initializer of initializers) await initializer(session, `target-${session}`, op()); },
     async completeDownload(suggestedFilename = '../../secret.txt', frameId = 'frame-main') {
       const guid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -337,4 +342,133 @@ test('a late download callback cannot attach artifacts or poison the next attemp
   await assert.rejects(fixture.browser.waitForDownload(async () => { await fixture.completeDownload(); fixture.retire(); }), { code: 'INVALID_STATE' });
   assert.equal(fixture.poisoned, false);
   assert.equal(fixture.artifacts.length, 0);
+});
+
+test('late dialog answers cannot target a replacement connection or restarted generation', async (t) => {
+  for (const restart of [false, true]) {
+    const fixture = await setup(t);
+    let release: (() => void) | undefined;
+    await fixture.browser.onDialog(async (dialog) => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      await assert.rejects(dialog.accept(), { code: 'INVALID_STATE' });
+    });
+    fixture.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'Old browser' }, 'main');
+    assert.ok(release);
+    if (restart) await fixture.restart();
+    else fixture.replaceConnection();
+    release();
+    await Promise.all(fixture.background);
+    assert.equal(fixture.calls.filter(call => call.method === 'Page.handleJavaScriptDialog').length, 0);
+    assert.equal(fixture.poisoned, false);
+  }
+});
+
+test('a paused old initializer cannot install scripts after a same-attempt restart', async (t) => {
+  const fixture = await setup(t);
+  let release: (() => void) | undefined;
+  let entered: (() => void) | undefined;
+  const blocked = new Promise<void>((resolve) => { entered = resolve; });
+  let intercept = true;
+  fixture.interceptSend(async (method) => {
+    if (method !== 'Page.enable' || !intercept) return;
+    intercept = false; entered?.();
+    await new Promise<void>((resolve) => { release = resolve; });
+  });
+  const old = fixture.browser.addInitScript('globalThis.seed = true');
+  await blocked;
+  await fixture.restart();
+  const calls = fixture.calls.length;
+  assert.ok(release); release();
+  await assert.rejects(old, { code: 'INVALID_STATE' });
+  assert.equal(fixture.calls.length, calls);
+  assert.equal(fixture.poisoned, false);
+  assert.equal(fixture.calls.filter(call => call.method === 'Page.addScriptToEvaluateOnNewDocument').length, 2);
+});
+
+test('a late fixture mutation failure cannot poison the restarted browser', async (t) => {
+  const fixture = await setup(t);
+  let release: (() => void) | undefined;
+  let entered: (() => void) | undefined;
+  const blocked = new Promise<void>((resolve) => { entered = resolve; });
+  fixture.interceptSend(async (method) => {
+    if (method !== 'Storage.setCookies') return;
+    entered?.(); await new Promise<void>((resolve) => { release = resolve; });
+    throw new Error('Old closed connection');
+  });
+  const old = fixture.browser.setCookies([{ name: 'key', value: 'value', url: '/' }]);
+  await blocked;
+  await fixture.restart();
+  assert.ok(release); release();
+  await assert.rejects(old, { code: 'INVALID_STATE' });
+  assert.equal(fixture.poisoned, false);
+});
+
+test('a late download cannot attach artifacts after a same-attempt restart', async (t) => {
+  const fixture = await setup(t);
+  await assert.rejects(fixture.browser.waitForDownload(async () => {
+    await fixture.completeDownload();
+    await fixture.restart();
+  }), { code: 'INVALID_STATE' });
+  assert.equal(fixture.poisoned, false);
+  assert.equal(fixture.artifacts.length, 0);
+});
+
+test('route callback continuations cannot create new fixture operations after reset', async (t) => {
+  const fixture = await setup(t);
+  let release: (() => void) | undefined;
+  let first = true;
+  let rejected = 0;
+  await fixture.browser.route('**/callback', async () => {
+    if (first) {
+      first = false;
+      await new Promise<void>((resolve) => { release = resolve; });
+      await assert.rejects(fixture.browser.evaluate('1'), { code: 'INVALID_STATE' }); rejected++;
+      await assert.rejects(async () => fixture.browser.mouse.move(1, 2), { code: 'INVALID_STATE' }); rejected++;
+      return;
+    }
+    assert.equal(await fixture.browser.evaluate('2'), 2);
+    await fixture.browser.mouse.move(3, 4);
+  });
+  const handler = () => fixture.calls.findLast(call => call.method === 'route')?.params.handler as (route: WebRoute) => Promise<void>;
+  const oldHandler = handler();
+  const pending = oldHandler({} as WebRoute);
+  assert.ok(release);
+  await fixture.restart();
+  release(); await pending;
+  assert.equal(rejected, 2);
+  assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 0);
+  await assert.rejects(async () => oldHandler({} as WebRoute), { code: 'INVALID_STATE' });
+  await handler()({} as WebRoute);
+  assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 1);
+  assert.equal(fixture.poisoned, false);
+});
+
+test('dialog callback continuations cannot create new fixture operations after reset', async (t) => {
+  const fixture = await setup(t);
+  let release: (() => void) | undefined;
+  let first = true;
+  let rejected = 0;
+  await fixture.browser.onDialog(async (dialog) => {
+    if (first) {
+      first = false;
+      await new Promise<void>((resolve) => { release = resolve; });
+      await assert.rejects(fixture.browser.evaluate('1'), { code: 'INVALID_STATE' }); rejected++;
+      await assert.rejects(async () => fixture.browser.mouse.move(1, 2), { code: 'INVALID_STATE' }); rejected++;
+      return;
+    }
+    assert.equal(await fixture.browser.evaluate('2'), 2);
+    await fixture.browser.mouse.move(3, 4);
+    await dialog.accept();
+  });
+  fixture.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'Old browser' }, 'main');
+  assert.ok(release);
+  await fixture.restart();
+  release(); await Promise.all(fixture.background);
+  assert.equal(rejected, 2);
+  assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 0);
+  fixture.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'Replacement browser' }, 'main');
+  await Promise.all(fixture.background);
+  assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 1);
+  assert.deepEqual(fixture.calls.findLast(call => call.method === 'Page.handleJavaScriptDialog')?.params, { accept: true });
+  assert.equal(fixture.poisoned, false);
 });

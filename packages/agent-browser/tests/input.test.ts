@@ -126,7 +126,6 @@ test('overlapping input rejects immediately while independent dialog handling ca
   const first = fixture.input.keyDown('Shift', operation());
   assert.equal(fixture.input.isBusy, true);
   await assert.rejects(fixture.input.mouseMove(2, 3, operation()), { code: 'UNSUPPORTED_CAPABILITY' });
-  assert.throws(() => fixture.input.reset(), { code: 'INVALID_STATE' });
   assert.equal(fixture.calls.length, 1);
   assert.ok(complete); complete(); await first;
   assert.equal(fixture.input.isBusy, false);
@@ -188,4 +187,94 @@ test('a retired operation cannot dispatch input or let a late acknowledgement mu
   assert.equal(poisoned, 0);
   await assert.rejects(input.mouseMove(1, 2, operation()), { code: 'INVALID_STATE' });
   assert.equal(dispatched, 1);
+});
+
+test('reset fences late success and failure without clearing a replacement command busy flag', async () => {
+  for (const fail of [false, true]) {
+    let finishOld: (() => void) | undefined;
+    let finishNew: (() => void) | undefined;
+    let poisoned = 0;
+    const oldConnection = { send: async () => {
+      await new Promise<void>((resolve) => { finishOld = resolve; });
+      if (fail) throw new Error('Old disconnected command');
+    } } as unknown as CdpConnection;
+    const newConnection = { send: async () => { await new Promise<void>((resolve) => { finishNew = resolve; }); } } as unknown as CdpConnection;
+    let connection = oldConnection;
+    const input = new InputController({
+      cdp: () => connection, session: () => 'session', assertUsable() {}, guardOperation() {},
+      markUncertain(): never { poisoned++; throw new Error('Must not poison the replacement'); },
+    });
+    const old = input.keyDown('Shift', operation());
+    connection = newConnection;
+    input.reset(); // The old browser has been destroyed, even if its promise has not settled.
+    const replacement = input.keyDown('Control', operation());
+    assert.ok(finishOld); finishOld();
+    await assert.rejects(old, { code: 'INVALID_STATE' });
+    assert.equal(input.isBusy, true);
+    assert.equal(input.modifiers, 0);
+    assert.equal(poisoned, 0);
+    assert.ok(finishNew); finishNew(); await replacement;
+    assert.equal(input.isBusy, false);
+    assert.equal(input.modifiers, 2);
+    assert.equal(input.isKeyDown('Shift'), false);
+  }
+});
+
+test('connection identity fences a late input failure before the reset hook runs', async () => {
+  let finish: (() => void) | undefined;
+  let poisoned = false;
+  let connection = { send: async () => { await new Promise<void>((resolve) => { finish = resolve; }); throw new Error('Old connection'); } } as unknown as CdpConnection;
+  const input = new InputController({
+    cdp: () => connection, session: () => 'session', assertUsable() {},
+    markUncertain(): never { poisoned = true; throw new Error('Must not poison the replacement'); },
+  });
+  const pending = input.mouseMove(1, 2, operation());
+  connection = {} as CdpConnection;
+  assert.ok(finish); finish();
+  await assert.rejects(pending, { code: 'INVALID_STATE' });
+  assert.equal(poisoned, false);
+  assert.deepEqual(input.position, { x: 0, y: 0 });
+});
+
+test('an acknowledged input commits bookkeeping even when its signal and budget expire just after dispatch', async () => {
+  const controller = new AbortController();
+  let remaining = 1_000;
+  let guarded = 0;
+  const context: OperationContext = { ...operation(), signal: controller.signal, get timeoutMs() { return remaining; } };
+  const connection = { async send() { controller.abort(); remaining = 0; } } as unknown as CdpConnection;
+  const input = new InputController({
+    cdp: () => connection, session: () => 'session', assertUsable() {},
+    guardOperation(current) { guarded++; assert.equal(current.attemptId, context.attemptId); },
+    markUncertain(): never { throw new Error('Acknowledged input must not be uncertain'); },
+  });
+  await input.keyDown('Shift', context);
+  assert.equal(input.modifiers, 8);
+  assert.equal(input.isKeyDown('Shift'), true);
+  assert.equal(input.isBusy, false);
+  assert.equal(guarded, 2);
+});
+
+test('a successful focus read from a retired browser cannot authorize typing in its replacement', async () => {
+  let release: (() => void) | undefined;
+  let replacementCalls = 0;
+  let connection = { async send(method: string) {
+    if (method === 'Page.getFrameTree') {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { frameTree: { frame: { id: 'frame' } } };
+    }
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 };
+    if (method === 'Runtime.evaluate') return { result: { objectId: 'focused' } };
+    if (method === 'DOM.describeNode') return { node: { backendNodeId: 1, nodeName: 'INPUT' } };
+    return { result: { value: true } };
+  } } as unknown as CdpConnection;
+  const input = new InputController({
+    cdp: () => connection, session: () => 'session', assertUsable() {},
+    markUncertain(): never { throw new Error('A stale read cannot poison the replacement'); },
+  });
+  const pending = input.assertTextFocus(operation());
+  connection = { async send() { replacementCalls++; return {}; } } as unknown as CdpConnection;
+  input.reset();
+  assert.ok(release); release();
+  await assert.rejects(pending, { code: 'INVALID_STATE' });
+  assert.equal(replacementCalls, 0);
 });

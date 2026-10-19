@@ -101,17 +101,20 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
      }
  
      /// Observe the document behind a page/frame pair. Unknown documents never
-@@ -423,12 +449,15 @@
-     iframe_sessions: &HashMap<String, String>,
- ) -> Result<(f64, f64, String), String> {
+@@ -425,10 +451,18 @@
      if let Some(ref_id) = parse_ref(selector_or_ref) {
-+        // Coordinate actions must use the same connected exact-ref gate as
-+        // element actions before scrolling, hit-testing, or input dispatch.
-+        resolve_element_object_id(client, session_id, ref_map, selector_or_ref, iframe_sessions).await?;
          let entry = ref_map
              .get(&ref_id)
 -            .ok_or_else(|| format!("Unknown ref: {}", ref_id))?;
 +            .ok_or_else(|| stale_ref_error(&ref_id))?;
++        // An AX-only ref remains observable, but has no exact DOM action target.
++        if entry.backend_node_id.is_none() && !entry.allow_role_fallback {
++            return Err(stale_ref_error(&ref_id));
++        }
++        // Coordinate actions must use the same connected exact-ref gate as
++        // element actions before scrolling, hit-testing, or input dispatch.
++        let (checked_object,checked_session)=resolve_element_object_id(client, session_id, ref_map, selector_or_ref, iframe_sessions).await?;
++        let _=client.send_command("Runtime.releaseObject",Some(serde_json::json!({"objectId":checked_object})),Some(&checked_session)).await;
  
          let effective_session_id =
 -            resolve_frame_session(entry.frame_id.as_deref(), session_id, iframe_sessions);
@@ -119,7 +122,7 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
  
          // Try cached backend_node_id first (fast path)
          if let Some(backend_node_id) = entry.backend_node_id {
-@@ -668,6 +697,13 @@
+@@ -668,6 +702,13 @@
          .await;
  }
  
@@ -133,7 +136,7 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
  pub async fn resolve_element_object_id(
      client: &CdpClient,
      session_id: &str,
-@@ -678,20 +714,20 @@
+@@ -678,20 +719,20 @@
      if let Some(ref_id) = parse_ref(selector_or_ref) {
          let entry = ref_map
              .get(&ref_id)
@@ -160,13 +163,13 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
                      },
                      Some(effective_session_id),
                  )
-@@ -699,15 +735,36 @@
+@@ -699,15 +740,44 @@
  
              if let Ok(r) = result {
                  if let Some(object_id) = r.object.object_id {
 +                    // Resolving a detached backend node can still succeed. Never
 +                    // dispatch input to it, or rebind it to a same-name replacement.
-+                    let connected: EvaluateResult = client
++                    let connected: Result<EvaluateResult,String> = client
 +                        .send_command_typed(
 +                            "Runtime.callFunctionOn",
 +                            &CallFunctionOnParams {
@@ -178,11 +181,19 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
 +                            },
 +                            Some(effective_session_id),
 +                        )
-+                        .await
-+                        .map_err(|_| stale_ref_error(&ref_id))?;
-+                    if connected.exception_details.is_some()
-+                        || connected.result.value.as_ref().and_then(Value::as_bool) != Some(true)
-+                    {
++                        .await;
++                    let accepted=connected.as_ref().is_ok_and(|result|result.exception_details.is_none() && result.result.value.as_ref().and_then(Value::as_bool)==Some(true));
++                    if !accepted {
++                        // The caller never receives a rejected handle, so this
++                        // gate owns cleanup even on protocol/evaluation failure.
++                        let mut objects=std::collections::HashSet::from([object_id]);
++                        if let Ok(result)=connected {
++                            objects.extend(result.result.object_id);
++                            objects.extend(result.exception_details.and_then(|details|details.exception).and_then(|exception|exception.object_id));
++                        }
++                        for object in objects {
++                            let _=client.send_command("Runtime.releaseObject",Some(serde_json::json!({"objectId":object})),Some(effective_session_id)).await;
++                        }
 +                        return Err(stale_ref_error(&ref_id));
 +                    }
                      return Ok((object_id, effective_session_id.to_string()));
@@ -203,7 +214,7 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
          // Fallback: re-query the accessibility tree to find a fresh node by role/name
          let fresh_id = find_node_id_by_role_name(
              client,
-@@ -1354,7 +1411,11 @@
+@@ -1354,7 +1424,11 @@
              "Runtime.callFunctionOn",
              &CallFunctionOnParams {
                  function_declaration:
@@ -216,7 +227,7 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
                          .to_string(),
                  object_id: Some(object_id),
                  arguments: None,
-@@ -1538,6 +1599,72 @@
+@@ -1538,6 +1612,133 @@
      use super::*;
  
      #[test]
@@ -227,6 +238,60 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
 +        assert!(!map.get("e1").unwrap().allow_role_fallback);
 +        assert!(!map.get("e2").unwrap().allow_role_fallback);
 +        assert_ne!(map.get("e1").unwrap().backend_node_id, map.get("e2").unwrap().backend_node_id);
++    }
++
++    #[tokio::test]
++    async fn ax_only_ref_rejects_both_resolvers_without_querying_same_name_node() {
++        use futures_util::StreamExt;
++        use tokio_tungstenite::tungstenite::Message;
++        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let url=format!("ws://{}",listener.local_addr().unwrap());
++        let server=tokio::spawn(async move {
++            let (socket,_)=listener.accept().await.unwrap();
++            let mut ws=tokio_tungstenite::accept_async(socket).await.unwrap();
++            if let Ok(Some(Ok(Message::Text(command))))=tokio::time::timeout(std::time::Duration::from_millis(100),ws.next()).await {
++                panic!("AX-only ref must not query or dispatch: {command}");
++            }
++        });
++        let client=CdpClient::connect(&url).await.unwrap();
++        let mut map=RefMap::new();
++        map.add_with_frame("e1".into(),None,"button","Save",None,None);
++        map.add_with_frame("e2".into(),Some(43),"button","Save",None,None);
++        let object=tokio::time::timeout(std::time::Duration::from_millis(50),resolve_element_object_id(&client,"page-session",&map,"@e1",&HashMap::new())).await.unwrap();
++        assert_eq!(object.unwrap_err(),"e2e_node_stale:e1");
++        let center=tokio::time::timeout(std::time::Duration::from_millis(50),resolve_element_center(&client,"page-session",&map,"@e1",&HashMap::new())).await.unwrap();
++        assert_eq!(center.unwrap_err(),"e2e_node_stale:e1");
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn coordinate_probe_releases_its_handle_before_geometry() {
++        use futures_util::{SinkExt,StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let url=format!("ws://{}",listener.local_addr().unwrap());
++        let server=tokio::spawn(async move {
++            let (socket,_)=listener.accept().await.unwrap();
++            let mut ws=tokio_tungstenite::accept_async(socket).await.unwrap();
++            for method in ["DOM.resolveNode","Runtime.callFunctionOn","Runtime.releaseObject","DOM.scrollIntoViewIfNeeded","DOM.getBoxModel"] {
++                let incoming=ws.next().await.unwrap().unwrap();
++                let request:Value=serde_json::from_str(incoming.to_text().unwrap()).unwrap();
++                assert_eq!(request["method"],method);
++                let mut response=json!({"id":request["id"],"result":{}});
++                match method {
++                    "DOM.resolveNode"=>response["result"]=json!({"object":{"type":"object","objectId":"probe"}}),
++                    "Runtime.callFunctionOn"=>response["result"]=json!({"result":{"type":"boolean","value":true}}),
++                    "Runtime.releaseObject"=>assert_eq!(request["params"]["objectId"],"probe"),
++                    "DOM.getBoxModel"=>response["error"]=json!({"code":-32000,"message":"No box"}),
++                    _=>{},
++                }
++                ws.send(Message::Text(response.to_string())).await.unwrap();
++            }
++        });
++        let client=CdpClient::connect(&url).await.unwrap();let mut refs=RefMap::new();refs.add_with_frame("e1".into(),Some(42),"button","Save",None,None);
++        assert!(resolve_element_center(&client,"page",&refs,"@e1",&HashMap::new()).await.is_err());
++        server.await.unwrap();
 +    }
 +
 +    #[tokio::test]
@@ -256,6 +321,13 @@ diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
 +                        response["result"] = json!({"result":{"type":"boolean","value":false}});
 +                    }
 +                    ws.send(Message::Text(response.to_string())).await.unwrap();
++                }
++                if !backend_missing {
++                    let incoming=ws.next().await.unwrap().unwrap();
++                    let request:Value=serde_json::from_str(incoming.to_text().unwrap()).unwrap();
++                    assert_eq!(request["method"],"Runtime.releaseObject");
++                    assert_eq!(request["params"]["objectId"],"old-node");
++                    ws.send(Message::Text(json!({"id":request["id"],"result":{}}).to_string())).await.unwrap();
 +                }
 +                // No Accessibility.getFullAXTree or input event may follow.
 +                if let Ok(Some(Ok(Message::Text(next)))) = tokio::time::timeout(std::time::Duration::from_millis(50), ws.next()).await {
@@ -816,7 +888,51 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          resp["code"] = json!("tab_gone");
      } else if let Some((code, _)) = error.split_once(": ") {
          if code.starts_with("webmcp_") {
-@@ -16240,6 +16310,31 @@
+@@ -13695,7 +13765,7 @@
+         use futures_util::{SinkExt, StreamExt};
+         use tokio_tungstenite::tungstenite::Message;
+ 
+-        for failure in ["selection", "describe", "fill-exception", "fill-protocol"] {
++        for failure in ["selection", "describe", "fill-exception", "fill-protocol", "gate-exception", "gate-protocol"] {
+             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+             let url = format!("ws://{}", listener.local_addr().unwrap());
+             let server = tokio::spawn(async move {
+@@ -13729,12 +13799,15 @@
+                         "DOM.resolveNode" => {
+                             json!({ "object": { "type": "object", "objectId": "login-node" } })
+                         }
+-                        "Runtime.callFunctionOn" if failure == "fill-exception" => json!({
++                        "Runtime.callFunctionOn" if request["params"]["functionDeclaration"].as_str().is_some_and(|source|source.contains("return this.isConnected")) && !failure.starts_with("gate") => {
++                            json!({ "result": { "type": "boolean", "value": true } })
++                        }
++                        "Runtime.callFunctionOn" if failure == "fill-exception" || failure == "gate-exception" => json!({
+                             "result": { "type": "object", "objectId": "rejected-result" },
+                             "exceptionDetails": { "text": "Page exception",
+                                 "exception": { "type": "object", "objectId": "exception" } }
+                         }),
+-                        "Runtime.callFunctionOn" if failure == "fill-protocol" => {
++                        "Runtime.callFunctionOn" if failure == "fill-protocol" || failure == "gate-protocol" => {
+                             response["error"] = json!({ "code": -32000, "message": "CDP failure" });
+                             Value::Null
+                         }
+@@ -13759,12 +13832,13 @@
+             let filled = element.fill(&client, "session", "test-value").await;
+             client.close().await;
+             let (attempts, mut releases) = server.await.unwrap();
+-            assert_eq!(filled.is_ok(), !failure.starts_with("fill"), "{failure}");
+-            assert_eq!(attempts, if failure.starts_with("fill") { 1 } else { 2 });
++            let failed=failure.starts_with("fill") || failure.starts_with("gate");
++            assert_eq!(filled.is_ok(), !failed, "{failure}");
++            assert_eq!(attempts, if failed { 1 } else { 2 });
+             let mut expected = match failure {
+                 "selection" => vec!["exception", "rejected-result", "node-2", "login-node"],
+                 "describe" => vec!["node-1", "node-2", "login-node"],
+-                "fill-exception" => vec!["node-1", "rejected-result", "exception", "login-node"],
++                "fill-exception" | "gate-exception" => vec!["node-1", "rejected-result", "exception", "login-node"],
+                 _ => vec!["node-1", "login-node"],
+             };
+             releases.sort();
+@@ -16240,6 +16314,31 @@
      }
  
      #[test]
@@ -1357,7 +1473,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
              },
              Some(&release.session_id),
          )
-@@ -1274,6 +1218,99 @@
+@@ -1274,6 +1218,100 @@
  
  #[cfg(test)]
  mod tests {
@@ -1433,6 +1549,7 @@ diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
 +                            if function.contains("isConnected") { json!({"result":{"type":"boolean","value":!detached}}) }
 +                            else { reads += 1; json!({"result":{"type":"boolean","value":reads >= 3}}) }
 +                        }
++                        "Runtime.releaseObject" => {assert_eq!(request["params"]["objectId"],"checked-node");json!({})},
 +                        other => panic!("Post-click verification must be read-only, got {other}"),
 +                    };
 +                    let response = json!({"id":request["id"],"sessionId":request["sessionId"],"result":result});
@@ -1949,3 +2066,14 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      #[tokio::test]
      async fn test_tab_switch_does_not_revive_responsive_tab() {
          let (url, activations) = start_mock_cdp_browser_responsive().await;
+diff --git a/cli/src/native/stream/chat.rs b/cli/src/native/stream/chat.rs
+--- a/cli/src/native/stream/chat.rs
++++ b/cli/src/native/stream/chat.rs
+@@ -399,6 +399,7 @@
+     "screenshot",
+     "pdf",
+     "snapshot",
++    "ref",
+     "eval",
+     "close",
+     "quit",

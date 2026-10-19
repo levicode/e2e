@@ -1,5 +1,6 @@
 /** Deterministic browser fixture backed by agent-browser and its public CDP companion. */
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -9,6 +10,7 @@ import {
   type JsonValue, type Locator, type LocatorExpression, type OperationContext, type Screen, type TextMatch,
 } from 'e2e/engine';
 import type { WebResponse, WebRoute } from './network.ts';
+import type { CdpConnection } from './cdp.ts';
 import { AgentBrowserSurface, unsupported } from './surface.ts';
 
 export interface Dialog {
@@ -376,7 +378,13 @@ async function initScriptSource(script: unknown, rest: readonly unknown[], proje
 /** Builds the public browser fixture and records every asynchronous operation. */
 export function createBrowserFixture(surface: AgentBrowserSurface, context: EngineFixtureContext): Browser {
   const originalOperation = context.operation.bind(context);
-  context = { ...context, operation: (timeoutMs) => { const operation = originalOperation(timeoutMs); surface.guardOperation(operation); return operation; } };
+  const callbackScope = new AsyncLocalStorage<(operation: OperationContext) => void>();
+  context = { ...context, operation: (timeoutMs) => {
+    const operation = originalOperation(timeoutMs);
+    surface.guardOperation(operation);
+    callbackScope.getStore()?.(operation);
+    return operation;
+  } };
   const baseHref = () => context.app.resolveUrl('');
   const currentUrl = (deadline?: Deadline) => surface.evaluate<string>('location.href', context.operation(deadline?.remaining()), false);
   const currentTitle = (deadline?: Deadline) => surface.evaluate<string>('document.title', context.operation(deadline?.remaining()), false);
@@ -385,7 +393,7 @@ export function createBrowserFixture(surface: AgentBrowserSurface, context: Engi
     deadlineFor: (timeout) => new Deadline(context.operation(timeout ?? context.timeouts.assertion).timeoutMs),
   });
   const navigation = (options?: { timeout?: number }) => context.operation(options?.timeout ?? context.timeouts.test);
-  const companion = new FixtureCompanion(surface, context);
+  const companion = new FixtureCompanion(surface, context, callbackScope);
   const browser: Omit<Browser, keyof Expectable<BrowserExpectation>> = {
     async goto(url, options) {
       rejectUnknownOptions('browser.goto', options, ['timeout', 'waitUntil']);
@@ -508,10 +516,16 @@ interface SessionConfiguration {
   pending: Promise<void>;
 }
 
+interface CompanionGeneration {
+  readonly connection: CdpConnection;
+  readonly generation: number;
+}
+
 /** Shares the hub's paused-target initialization instead of owning another auto-attach controller. */
 class FixtureCompanion {
   private readonly surface: AgentBrowserSurface;
   private readonly context: EngineFixtureContext;
+  private readonly callbackScope: AsyncLocalStorage<(operation: OperationContext) => void>;
   private readonly sources: string[] = [];
   private readonly media = new Map<string, string>();
   private mediaVersion = 0;
@@ -522,92 +536,131 @@ class FixtureCompanion {
   private ready: Promise<void> | undefined;
   private downloading = false;
   private closed = false;
+  private generation = 0;
 
-  constructor(surface: AgentBrowserSurface, context: EngineFixtureContext) {
+  constructor(surface: AgentBrowserSurface, context: EngineFixtureContext, callbackScope: AsyncLocalStorage<(operation: OperationContext) => void>) {
     this.surface = surface;
     this.context = context;
+    this.callbackScope = callbackScope;
     const defaults = surface.options as WebMedia | undefined;
     if (defaults?.colorScheme !== undefined) this.media.set('prefers-color-scheme', defaults.colorScheme);
     if (defaults?.reducedMotion !== undefined) this.media.set('prefers-reduced-motion', defaults.reducedMotion);
     surface.registerCleanup(() => {
+      this.generation += 1;
       this.closed = true;
       for (const unsubscribe of this.subscriptions.splice(0)) unsubscribe();
       this.sessions.clear();
     });
     surface.registerRestart(async (operation) => {
+      this.generation += 1;
       for (const unsubscribe of this.subscriptions.splice(0)) unsubscribe();
       this.closed = false;
       this.ready = undefined;
+      this.downloading = false;
       this.sessions.clear();
-      for (const route of this.registeredRoutes) await this.surface.routes.route(route.pattern, route.handler, operation);
+      const scope = this.capture(operation);
+      const routes = this.surface.routes;
+      for (const route of this.registeredRoutes) {
+        this.guard(scope, operation);
+        await routes.route(route.pattern, current => this.invokeCallback(scope, () => route.handler(current)), operation);
+      }
+      this.guard(scope, operation);
       await this.start(operation);
+    });
+  }
+
+  private capture(operation: OperationContext): CompanionGeneration {
+    this.surface.guardOperation(operation);
+    const scope = { connection: this.surface.cdp, generation: this.generation };
+    this.guard(scope, operation);
+    return scope;
+  }
+
+  private current(scope: CompanionGeneration): boolean {
+    if (this.closed || scope.generation !== this.generation) return false;
+    try { return scope.connection === this.surface.cdp; }
+    catch { return false; }
+  }
+
+  private guard(scope: CompanionGeneration, operation: OperationContext): void {
+    this.surface.guardOperation(operation);
+    if (!this.current(scope)) throw new EngineError('INVALID_STATE', 'The browser operation belongs to a replaced browser', { retryable: false });
+  }
+
+  /** Every async continuation created by user callbacks retains its originating browser. */
+  private invokeCallback<T>(scope: CompanionGeneration, callback: () => T): T {
+    return this.callbackScope.run(operation => this.guard(scope, operation), () => {
+      this.context.operation();
+      return callback();
     });
   }
 
   /** Keep route registrations across an owned context replacement. */
   async route(pattern: string | RegExp, handler: (route: WebRoute) => void | Promise<void>, operation: OperationContext): Promise<void> {
-    this.surface.guardOperation(operation);
+    const scope = this.capture(operation);
     const snapshot = pattern instanceof RegExp ? new RegExp(pattern.source, pattern.flags) : pattern;
-    await this.surface.routes.route(snapshot, handler, operation);
+    await this.surface.routes.route(snapshot, current => this.invokeCallback(scope, () => handler(current)), operation);
+    this.guard(scope, operation);
     this.registeredRoutes.push({ pattern: snapshot, handler });
   }
 
   /** Remove matching patterns from the current hub and the restart registry together. */
   async unroute(pattern: string | RegExp, operation: OperationContext): Promise<void> {
-    this.surface.guardOperation(operation);
+    const scope = this.capture(operation);
     const key = JSON.stringify(toTextPattern(pattern));
     await this.surface.routes.unroute(pattern, operation);
+    this.guard(scope, operation);
     for (let index = this.registeredRoutes.length - 1; index >= 0; index -= 1) {
       if (JSON.stringify(toTextPattern(this.registeredRoutes[index]!.pattern)) === key) this.registeredRoutes.splice(index, 1);
     }
   }
 
   /** A lost mutation acknowledgement ends the attempt, never a retry of the same input. */
-  async mutate(method: string, params: Record<string, unknown>, operation: OperationContext, sessionId?: string): Promise<void> {
-    this.surface.guardOperation(operation);
+  async mutate(method: string, params: Record<string, unknown>, operation: OperationContext, sessionId?: string, scope = this.capture(operation)): Promise<void> {
+    this.guard(scope, operation);
     this.surface.assertUsable();
     if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Browser operation cancelled before dispatch', { retryable: false });
     if (operation.timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Browser operation timed out before dispatch', { retryable: false });
-    try { await this.surface.cdp.send(method, params, operation, sessionId); }
-    catch { this.surface.guardOperation(operation); this.surface.markUncertain(); }
+    try { await scope.connection.send(method, params, operation, sessionId); this.guard(scope, operation); }
+    catch { this.guard(scope, operation); this.surface.markUncertain(); }
   }
 
   /** New targets receive accumulated configuration before the hub resumes their renderer. */
   private start(operation: OperationContext): Promise<void> {
-    this.surface.guardOperation(operation);
+    const scope = this.capture(operation);
     this.surface.assertUsable();
     this.ready ??= this.surface.routes.registerSessionInitializer(
-      (sessionId, _targetId, context) => this.configure(sessionId, context), operation,
+      (sessionId, _targetId, context) => this.configure(sessionId, context, scope), operation,
     );
     return this.ready;
   }
 
   /** Applies script and media revisions once per target, including overlapping registrations. */
-  private configure(sessionId: string, operation: OperationContext): Promise<void> {
-    this.surface.guardOperation(operation);
+  private configure(sessionId: string, operation: OperationContext, scope: CompanionGeneration): Promise<void> {
+    this.guard(scope, operation);
     const deadline = new Deadline(operation.timeoutMs);
     const budget = () => ({ ...operation, timeoutMs: deadline.remaining() });
     let state = this.sessions.get(sessionId);
     if (state === undefined) {
       state = { scripts: 0, mediaVersion: -1, pending: Promise.resolve() };
       this.sessions.set(sessionId, state);
-      this.subscriptions.push(this.surface.cdp.on<{ type: string; message: string }>('Page.javascriptDialogOpening', (event) => {
-        this.surface.registerBackground(this.dispatchDialog(sessionId, event));
+      this.subscriptions.push(scope.connection.on<{ type: string; message: string }>('Page.javascriptDialogOpening', (event) => {
+        if (this.current(scope)) this.surface.registerBackground(this.dispatchDialog(sessionId, event, scope));
       }, sessionId));
     }
     const current = state;
     current.pending = current.pending.then(async () => {
-      if (this.closed) return;
-      this.surface.guardOperation(operation);
-      await this.surface.cdp.send('Page.enable', {}, budget(), sessionId);
+      this.guard(scope, operation);
+      await scope.connection.send('Page.enable', {}, budget(), sessionId);
+      this.guard(scope, operation);
       while (current.scripts < this.sources.length) {
         const source = this.sources[current.scripts];
         if (source === undefined) break;
-        await this.mutate('Page.addScriptToEvaluateOnNewDocument', { source }, budget(), sessionId);
+        await this.mutate('Page.addScriptToEvaluateOnNewDocument', { source }, budget(), sessionId, scope);
         current.scripts += 1;
       }
       if (current.mediaVersion !== this.mediaVersion && this.media.size > 0) {
-        await this.mutate('Emulation.setEmulatedMedia', { features: [...this.media].map(([name, value]) => ({ name, value })) }, budget(), sessionId);
+        await this.mutate('Emulation.setEmulatedMedia', { features: [...this.media].map(([name, value]) => ({ name, value })) }, budget(), sessionId, scope);
         current.mediaVersion = this.mediaVersion;
       }
     });
@@ -616,28 +669,34 @@ class FixtureCompanion {
 
   /** Register against existing targets as well as future paused targets. */
   async addInitScript(source: string, operation: OperationContext): Promise<void> {
+    const scope = this.capture(operation);
+    const routes = this.surface.routes;
     this.sources.push(source);
     await this.start(operation);
-    this.surface.guardOperation(operation);
-    await this.surface.routes.forEachSession((sessionId, _targetId, context) => this.configure(sessionId, context), operation);
+    this.guard(scope, operation);
+    await routes.forEachSession((sessionId, _targetId, context) => this.configure(sessionId, context, scope), operation);
   }
 
   /** Omitted features retain their prior values across every document target. */
   async emulateMedia(media: WebMedia, operation: OperationContext): Promise<void> {
+    const scope = this.capture(operation);
+    const routes = this.surface.routes;
     if (media.colorScheme !== undefined) this.media.set('prefers-color-scheme', media.colorScheme);
     if (media.reducedMotion !== undefined) this.media.set('prefers-reduced-motion', media.reducedMotion);
     this.mediaVersion += 1;
     await this.start(operation);
-    this.surface.guardOperation(operation);
-    await this.surface.routes.forEachSession((sessionId, _targetId, context) => this.configure(sessionId, context), operation);
+    this.guard(scope, operation);
+    await routes.forEachSession((sessionId, _targetId, context) => this.configure(sessionId, context, scope), operation);
   }
 
   /** The newest dialog registration wins; removal is idempotent and identity-based. */
   async onDialog(handler: DialogHandler, operation: OperationContext): Promise<() => Promise<void>> {
+    const scope = this.capture(operation);
     if (handler !== 'accept' && handler !== 'dismiss' && typeof handler !== 'function') throw new TestError('INVALID_ARGUMENT', 'A dialog handler must accept, dismiss, or be a function');
     const registration = { handler };
     this.dialogs.push(registration);
     await this.start(operation);
+    this.guard(scope, operation);
     return async () => {
       const index = this.dialogs.indexOf(registration);
       if (index !== -1) this.dialogs.splice(index, 1);
@@ -645,18 +704,19 @@ class FixtureCompanion {
   }
 
   /** Dialog work uses the companion channel, so it can unblock a pending CLI action. */
-  private async dispatchDialog(sessionId: string, event: { type: string; message: string }): Promise<void> {
-    if (this.closed) return;
+  private async dispatchDialog(sessionId: string, event: { type: string; message: string }, scope: CompanionGeneration): Promise<void> {
+    if (!this.current(scope)) return;
     const handler = this.dialogs.at(-1)?.handler;
     const operation = this.context.operation();
-    const connection = this.surface.cdp;
+    const connection = scope.connection;
     let decided = false;
     let responded = false;
     const answer = async (accept: boolean, text?: string): Promise<void> => {
+      this.guard(scope, operation);
       if (decided) throw new TestError('ACTION_FAILED', 'The dialog handler already made a decision');
       if (text !== undefined && (typeof text !== 'string' || event.type !== 'prompt')) throw new TestError('INVALID_ARGUMENT', 'Only a prompt dialog accepts text');
       decided = true;
-      await this.mutate('Page.handleJavaScriptDialog', { accept, ...(text === undefined ? {} : { promptText: text }) }, operation, sessionId);
+      await this.mutate('Page.handleJavaScriptDialog', { accept, ...(text === undefined ? {} : { promptText: text }) }, operation, sessionId, scope);
       responded = true;
     };
     try {
@@ -665,15 +725,17 @@ class FixtureCompanion {
       if (handler === 'accept') await answer(true);
       else if (handler === 'dismiss') await answer(false);
       else {
-        const work = Promise.resolve(handler({
+        const work = Promise.resolve(this.invokeCallback(scope, () => handler({
           type: event.type as Dialog['type'], message: event.message,
           accept: (text) => answer(true, text), dismiss: () => answer(false),
-        }));
+        })));
         await withTimeout(work, operation.timeoutMs, () => new TestError('ACTION_FAILED', 'The dialog handler exceeded its budget'));
         if (!responded) throw new TestError('ACTION_FAILED', 'The dialog handler returned without accepting or dismissing');
       }
     } catch (error) {
+      if (!this.current(scope)) return;
       if (!responded) await connection.send('Page.handleJavaScriptDialog', { accept: false }, operation, sessionId).catch(() => undefined);
+      if (!this.current(scope)) return;
       if (error instanceof EngineError || error instanceof TestError) throw error;
       throw new TestError('ACTION_FAILED', 'The dialog handler failed');
     }
@@ -686,7 +748,8 @@ class FixtureCompanion {
     if (this.downloading) unsupported('Overlapping download waits are unsupported');
     this.surface.assertUsable();
     const operation = this.context.operation(options?.timeout);
-    const connection = this.surface.cdp;
+    const scope = this.capture(operation);
+    const connection = scope.connection;
     const sessionId = this.surface.cdpSession;
     const artifactsDir = this.surface.artifactsDir;
     const downloads = this.surface.downloads;
@@ -708,7 +771,9 @@ class FixtureCompanion {
     let enabled = false;
     try {
       if (downloads === undefined) await mkdir(directory, { recursive: true, mode: 0o700 });
+      this.guard(scope, operation);
       const tree = await connection.send<{ frameTree: unknown }>('Page.getFrameTree', {}, budget(), sessionId);
+      this.guard(scope, operation);
       const frames = new Set<string>();
       const visit = (value: unknown): void => {
         if (typeof value !== 'object' || value === null || !('frame' in value) || typeof value.frame !== 'object' || value.frame === null || !('id' in value.frame) || typeof value.frame.id !== 'string') return;
@@ -739,14 +804,14 @@ class FixtureCompanion {
         });
       });
       void waited.catch(() => undefined);
-      await this.mutate('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: directory, eventsEnabled: true, ...browserContext }, budget());
+      await this.mutate('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: directory, eventsEnabled: true, ...browserContext }, budget(), undefined, scope);
       enabled = true;
-      const triggering = Promise.resolve().then(() => { this.surface.guardOperation(operation); return trigger(); }).finally(() => { triggerFinished = true; });
+      const triggering = Promise.resolve().then(() => { this.guard(scope, operation); return trigger(); }).finally(() => { triggerFinished = true; });
       const [, completed] = await Promise.all([
         withTimeout(triggering, deadline.remaining(), () => new TestError('ACTION_FAILED', 'The download trigger exceeded its budget')),
         waited,
       ]);
-      this.surface.guardOperation(operation);
+      this.guard(scope, operation);
       const relative = `download-${randomUUID()}.bin`;
       const absolutePath = path.join(artifactsDir, relative);
       try {
@@ -760,11 +825,11 @@ class FixtureCompanion {
         }
       }
       catch { throw new TestError('ACTION_FAILED', 'The completed download could not be saved'); }
-      this.surface.guardOperation(operation);
+      this.guard(scope, operation);
       this.context.attachArtifact('download', relative);
       return { path: relative, absolutePath, suggestedFilename: completed.suggestedFilename };
     } catch (error) {
-      if (enabled && !triggerFinished) { this.surface.guardOperation(operation); this.surface.markUncertain(); }
+      if (enabled && !triggerFinished) { this.guard(scope, operation); this.surface.markUncertain(); }
       throw error;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
@@ -779,8 +844,8 @@ class FixtureCompanion {
         try { await rm(directory, { recursive: true, force: true }); }
         catch { filesRemain = true; }
       }
-      this.downloading = false;
-      if (permissionUnknown) { this.surface.guardOperation(operation); this.surface.markUncertain(); }
+      if (scope.generation === this.generation) this.downloading = false;
+      if (permissionUnknown) { this.guard(scope, operation); this.surface.markUncertain(); }
       // oxlint-disable-next-line no-unsafe-finally -- Cleanup failure invalidates success, with no provider or filesystem details exposed.
       if (filesRemain) throw new EngineError('ENGINE_FAILURE', 'Temporary download files could not be removed', { retryable: false });
     }

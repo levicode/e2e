@@ -99,6 +99,7 @@ export class InputController {
   private readonly heldButtons = new Set<MouseButton>();
   private readonly pressedKeys = new Set<string>();
   private busy = false;
+  private generation = 0;
 
   constructor(options: InputControllerOptions) { this.options = options; }
 
@@ -129,12 +130,28 @@ export class InputController {
     this.options.assertUsable();
     this.options.guardOperation?.(context);
     if (this.busy) throw new EngineError('UNSUPPORTED_CAPABILITY', 'Cannot inspect focus while low-level input is pending', { retryable: false });
-    await assertTextFocus(this.options, context);
+    const connection = this.options.cdp();
+    const session = this.options.session();
+    const generation = this.generation;
+    const frameSession = this.options.frameSession;
+    try {
+      await assertTextFocus({
+        cdp: () => connection, session: () => session,
+        ...(frameSession === undefined ? {} : { frameSession: async (frame: string, operation: OperationContext) => {
+          this.guardConnection(context, connection, generation);
+          const target = await frameSession(frame, operation);
+          this.guardConnection(context, connection, generation);
+          return target;
+        } }),
+      }, context);
+    } catch (error) { this.guardConnection(context, connection, generation); throw error; }
+    this.guardConnection(context, connection, generation);
   }
 
   /** Only reset after destroying the old browser; this does not release input in a live target. */
   reset(): void {
-    if (this.busy) throw new EngineError('INVALID_STATE', 'Cannot reset input while a command is pending', { retryable: false });
+    this.generation += 1;
+    this.busy = false;
     this.x = 0; this.y = 0; this.modifierMask = 0;
     this.heldButtons.clear(); this.pressedKeys.clear();
   }
@@ -185,6 +202,13 @@ export class InputController {
 
   private keyIdentity(key: string): string { const description = describeKey(key, false); return description.code || description.key; }
 
+  private guardConnection(context: OperationContext, connection: CdpConnection, generation: number): void {
+    this.options.guardOperation?.(context);
+    if (generation !== this.generation || connection !== this.options.cdp()) {
+      throw new EngineError('INVALID_STATE', 'The input operation belongs to a replaced browser', { retryable: false });
+    }
+  }
+
   private async dispatch(method: string, params: Record<string, unknown>, context: OperationContext, commit?: () => void): Promise<void> {
     this.options.assertUsable();
     this.options.guardOperation?.(context);
@@ -192,9 +216,11 @@ export class InputController {
     if (this.busy) throw new EngineError('UNSUPPORTED_CAPABILITY', 'Concurrent low-level input commands are not supported', { retryable: false });
     const connection = this.options.cdp();
     const session = this.options.session();
+    const generation = this.generation;
+    const guard = () => this.guardConnection(context, connection, generation);
     this.busy = true;
-    try { await connection.send(method, params, context, session); this.options.guardOperation?.(context); commit?.(); }
-    catch { this.options.guardOperation?.(context); this.options.markUncertain(); }
-    finally { this.busy = false; }
+    try { await connection.send(method, params, context, session); guard(); commit?.(); }
+    catch { guard(); this.options.markUncertain(); }
+    finally { if (generation === this.generation) this.busy = false; }
   }
 }

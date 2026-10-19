@@ -6,7 +6,7 @@ This is an implementation checkpoint, not a declaration of complete compatibilit
 
 - Public SPI-only package boundary; no core-to-engine dependency or Playwright runtime import.
 - Adapter TypeScript build and typecheck.
-- 195 unit tests passed at checkpoint 3 preparation, including real ffmpeg encode/decode validation without Chromium. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, browser-wide routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
+- 207 unit tests passed after the checkpoint 3 safety follow-up, including real ffmpeg encode/decode validation without Chromium. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, browser-wide routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
 - The maintained Rust patch applies to the exact pinned upstream source.
 
 ## Awaiting the required execution environment
@@ -33,4 +33,7 @@ No item above is treated as passing merely because its API or test source exists
 - Artifact video is unredacted and never supplied as model pixels. Remote downloads require a provider transfer hook.
 - Automatic reconnect/retry after ambiguous input is intentionally unavailable. A new explicit attempt is required.
 - Real hosted-provider accounts and private application UAT remain separate from the synthetic local-service fixtures.
-- Asynchronous fixture callbacks surviving a same-attempt restart require additional generation review; do not treat this development checkpoint as a production release.
+- Asynchronous fixture callbacks and input acknowledgements are fenced to their original browser generation. The regressions pass locally, but real-browser restart acceptance still awaits CI.
+- Successful fill/clear, uncheck, hover, explicit scrolling, locator drag/swipe, and coordinate swipe actions need additional real acceptance cases beyond the initial fixture set. Do not treat this development checkpoint as a production release.
+
+- Shared worker endpoints with existing pages are temporarily refused before CLI attachment. Initial agent-browser discovery still needs an explicit context scope; companion filtering alone is insufficient. Provider isolation fixtures remain mandatory and are not skipped.
