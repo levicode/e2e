@@ -1,0 +1,1951 @@
+diff --git a/cli/Cargo.toml b/cli/Cargo.toml
+--- a/cli/Cargo.toml
++++ b/cli/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "agent-browser"
+-version = "0.39.1"
++version = "0.39.1-e2e.1"
+ edition = "2021"
+ description = "Fast browser automation CLI for AI agents"
+ license = "Apache-2.0"
+diff --git a/cli/Cargo.lock b/cli/Cargo.lock
+--- a/cli/Cargo.lock
++++ b/cli/Cargo.lock
+@@ -45,7 +45,7 @@
+ 
+ [[package]]
+ name = "agent-browser"
+-version = "0.39.1"
++version = "0.39.1-e2e.1"
+ dependencies = [
+  "aes-gcm",
+  "async-trait",
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "agent-browser",
+-  "version": "0.39.1",
++  "version": "0.39.1-e2e.1",
+   "description": "Browser automation CLI for AI agents",
+   "type": "module",
+   "packageManager": "pnpm@11.1.3",
+diff --git a/cli/src/native/element.rs b/cli/src/native/element.rs
+--- a/cli/src/native/element.rs
++++ b/cli/src/native/element.rs
+@@ -13,6 +13,8 @@
+     pub nth: Option<usize>,
+     pub selector: Option<String>,
+     pub frame_id: Option<String>,
++    pub session_id: Option<String>,
++    pub context_id: Option<i64>,
+     allow_role_fallback: bool,
+ }
+ 
+@@ -68,7 +70,9 @@
+                 nth,
+                 selector: None,
+                 frame_id: frame_id.map(|s| s.to_string()),
+-                allow_role_fallback: true,
++                session_id: None,
++                context_id: None,
++                allow_role_fallback: false,
+             },
+         );
+     }
+@@ -86,6 +90,8 @@
+                 nth: None,
+                 selector: None,
+                 frame_id: None,
++                session_id: None,
++                context_id: None,
+                 allow_role_fallback: false,
+             },
+         );
+@@ -108,9 +114,15 @@
+                 nth,
+                 selector: Some(selector),
+                 frame_id: None,
++                session_id: None,
++                context_id: None,
+                 allow_role_fallback: true,
+             },
+         );
++    }
++
++    pub fn bind_world(&mut self, ref_id: &str, session_id: &str, context_id: i64) {
++        if let Some(entry)=self.map.get_mut(ref_id){entry.session_id=Some(session_id.to_string());entry.context_id=Some(context_id);}
+     }
+ 
+     pub fn get(&self, ref_id: &str) -> Option<&RefEntry> {
+@@ -144,6 +156,20 @@
+ 
+     pub fn begin_snapshot(&mut self) {
+         self.map.clear();
++    }
++
++    /// Trace snapshots may append exact identities but cannot retire or rebind
++    /// any existing handle, even when the caller timed out before completion.
++    pub fn merge_snapshot(&mut self, snapshot: RefMap) -> Result<(), String> {
++        for (id, entry) in &snapshot.map {
++            if self.map.get(id).is_some_and(|old|old.backend_node_id!=entry.backend_node_id || old.frame_id!=entry.frame_id || old.session_id!=entry.session_id) {
++                return Err("Preserved snapshot attempted to rebind an exact reference".into());
++            }
++        }
++        self.map.extend(snapshot.map);
++        self.documents=snapshot.documents;
++        self.next_ref=self.next_ref.max(snapshot.next_ref);
++        Ok(())
+     }
+ 
+     /// Observe the document behind a page/frame pair. Unknown documents never
+@@ -423,12 +449,15 @@
+     iframe_sessions: &HashMap<String, String>,
+ ) -> Result<(f64, f64, String), String> {
+     if let Some(ref_id) = parse_ref(selector_or_ref) {
++        // Coordinate actions must use the same connected exact-ref gate as
++        // element actions before scrolling, hit-testing, or input dispatch.
++        resolve_element_object_id(client, session_id, ref_map, selector_or_ref, iframe_sessions).await?;
+         let entry = ref_map
+             .get(&ref_id)
+-            .ok_or_else(|| format!("Unknown ref: {}", ref_id))?;
++            .ok_or_else(|| stale_ref_error(&ref_id))?;
+ 
+         let effective_session_id =
+-            resolve_frame_session(entry.frame_id.as_deref(), session_id, iframe_sessions);
++            entry.session_id.as_deref().unwrap_or_else(||resolve_frame_session(entry.frame_id.as_deref(), session_id, iframe_sessions));
+ 
+         // Try cached backend_node_id first (fast path)
+         if let Some(backend_node_id) = entry.backend_node_id {
+@@ -668,6 +697,13 @@
+         .await;
+ }
+ 
++/// Closed marker generated only by exact-ref resolution before input dispatch.
++pub const STALE_REF_PREFIX: &str = "e2e_node_stale:";
++
++fn stale_ref_error(ref_id: &str) -> String {
++    format!("{STALE_REF_PREFIX}{ref_id}")
++}
++
+ pub async fn resolve_element_object_id(
+     client: &CdpClient,
+     session_id: &str,
+@@ -678,20 +714,20 @@
+     if let Some(ref_id) = parse_ref(selector_or_ref) {
+         let entry = ref_map
+             .get(&ref_id)
+-            .ok_or_else(|| format!("Unknown ref: {}", ref_id))?;
++            .ok_or_else(|| stale_ref_error(&ref_id))?;
+ 
+         let effective_session_id =
+-            resolve_frame_session(entry.frame_id.as_deref(), session_id, iframe_sessions);
++            entry.session_id.as_deref().unwrap_or_else(||resolve_frame_session(entry.frame_id.as_deref(), session_id, iframe_sessions));
+ 
+         // Try cached backend_node_id first (fast path)
+         if let Some(backend_node_id) = entry.backend_node_id {
+             let result: Result<DomResolveNodeResult, String> = client
+                 .send_command_typed(
+                     "DOM.resolveNode",
+-                    &DomResolveNodeParams {
+-                        backend_node_id: Some(backend_node_id),
+-                        node_id: None,
+-                        object_group: Some("agent-browser".to_string()),
++                    &{
++                        let mut params=serde_json::json!({"backendNodeId":backend_node_id,"objectGroup":"agent-browser"});
++                        if let Some(context)=entry.context_id{params["executionContextId"]=serde_json::json!(context);}
++                        params
+                     },
+                     Some(effective_session_id),
+                 )
+@@ -699,15 +735,36 @@
+ 
+             if let Ok(r) = result {
+                 if let Some(object_id) = r.object.object_id {
++                    // Resolving a detached backend node can still succeed. Never
++                    // dispatch input to it, or rebind it to a same-name replacement.
++                    let connected: EvaluateResult = client
++                        .send_command_typed(
++                            "Runtime.callFunctionOn",
++                            &CallFunctionOnParams {
++                                function_declaration: "function() { return this.isConnected === true && (this.nodeType === 9 || this.ownerDocument === document); }".to_string(),
++                                object_id: Some(object_id.clone()),
++                                arguments: None,
++                                return_by_value: Some(true),
++                                await_promise: Some(false),
++                            },
++                            Some(effective_session_id),
++                        )
++                        .await
++                        .map_err(|_| stale_ref_error(&ref_id))?;
++                    if connected.exception_details.is_some()
++                        || connected.result.value.as_ref().and_then(Value::as_bool) != Some(true)
++                    {
++                        return Err(stale_ref_error(&ref_id));
++                    }
+                     return Ok((object_id, effective_session_id.to_string()));
+                 }
+             }
+-            if !entry.allow_role_fallback {
+-                return Err(format!("Element ref {ref_id} is stale"));
+-            }
+-            // backend_node_id is stale; re-query the accessibility tree below
+-        }
+-
++        }
++        if !entry.allow_role_fallback {
++            return Err(stale_ref_error(&ref_id));
++        }
++
++        // Selector-only legacy entries may re-resolve; snapshot/imported refs never do.
+         // Fallback: re-query the accessibility tree to find a fresh node by role/name
+         let fresh_id = find_node_id_by_role_name(
+             client,
+@@ -1354,7 +1411,11 @@
+             "Runtime.callFunctionOn",
+             &CallFunctionOnParams {
+                 function_declaration:
+-                    "function() { return typeof this.value === 'string' ? this.value : ''; }"
++                    r#"function() {
++                        const autocomplete = (this.getAttribute?.('autocomplete') || '').toLowerCase().split(/\s+/);
++                        if (this.type === 'password' || autocomplete.includes('current-password') || autocomplete.includes('new-password')) return '';
++                        return typeof this.value === 'string' ? this.value : '';
++                    }"#
+                         .to_string(),
+                 object_id: Some(object_id),
+                 arguments: None,
+@@ -1538,6 +1599,72 @@
+     use super::*;
+ 
+     #[test]
++    fn snapshot_refs_never_fall_back_to_a_same_name_replacement() {
++        let mut map = RefMap::new();
++        map.add_with_frame("e1".into(), Some(42), "button", "Save", None, None);
++        map.add_with_frame("e2".into(), Some(43), "button", "Save", None, None);
++        assert!(!map.get("e1").unwrap().allow_role_fallback);
++        assert!(!map.get("e2").unwrap().allow_role_fallback);
++        assert_ne!(map.get("e1").unwrap().backend_node_id, map.get("e2").unwrap().backend_node_id);
++    }
++
++    #[tokio::test]
++    async fn detached_ref_rejects_without_querying_same_name_node() {
++        use futures_util::{SinkExt, StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        for (backend_missing, center) in [(false, false), (true, false), (false, true), (true, true)] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url = format!("ws://{}", listener.local_addr().unwrap());
++            let server = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.unwrap();
++                let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++                let expected = if backend_missing { 1 } else { 2 };
++                for step in 0..expected {
++                    let incoming = ws.next().await.unwrap().unwrap();
++                    let request: Value = serde_json::from_str(incoming.to_text().unwrap()).unwrap();
++                    let mut response = json!({ "id": request["id"], "sessionId": request["sessionId"] });
++                    if step == 0 {
++                        assert_eq!(request["method"], "DOM.resolveNode");
++                        assert_eq!(request["params"]["backendNodeId"], 42);
++                        if backend_missing { response["error"] = json!({"code": -32000, "message": "Node removed"}); }
++                        else { response["result"] = json!({"object":{"type":"object","objectId":"old-node"}}); }
++                    } else {
++                        assert_eq!(request["method"], "Runtime.callFunctionOn");
++                        assert_eq!(request["params"]["objectId"], "old-node");
++                        response["result"] = json!({"result":{"type":"boolean","value":false}});
++                    }
++                    ws.send(Message::Text(response.to_string())).await.unwrap();
++                }
++                // No Accessibility.getFullAXTree or input event may follow.
++                if let Ok(Some(Ok(Message::Text(next)))) = tokio::time::timeout(std::time::Duration::from_millis(50), ws.next()).await {
++                    panic!("Stale ref caused another command: {next}");
++                }
++            });
++            let client = CdpClient::connect(&url).await.unwrap();
++            let mut map = RefMap::new();
++            map.add_with_frame("e1".into(), Some(42), "button", "Save", None, None);
++            map.add_with_frame("e2".into(), Some(43), "button", "Save", None, None);
++            let error = if center {
++                resolve_element_center(&client, "page-session", &map, "@e1", &HashMap::new()).await.unwrap_err()
++            } else {
++                resolve_element_object_id(&client, "page-session", &map, "@e1", &HashMap::new()).await.unwrap_err()
++            };
++            assert_eq!(error, "e2e_node_stale:e1");
++            server.await.unwrap();
++        }
++    }
++
++    #[test]
++    fn preserved_snapshot_keeps_imported_identity_and_rejects_rebinding() {
++        let mut live=RefMap::new();live.add_with_frame("e1".into(),Some(42),"button","original",None,None);live.set_next_ref_num(2);
++        let mut snapshot=live.clone();snapshot.begin_snapshot();snapshot.add_with_frame("e2".into(),Some(43),"button","new",None,None);snapshot.set_next_ref_num(3);
++        live.merge_snapshot(snapshot).unwrap();assert_eq!(live.get("e1").unwrap().backend_node_id,Some(42));assert_eq!(live.next_ref_num(),3);
++        let mut bad=live.clone();bad.add_with_frame("e1".into(),Some(99),"button","replacement",None,None);
++        assert!(live.merge_snapshot(bad).is_err());assert_eq!(live.get("e1").unwrap().backend_node_id,Some(42));
++    }
++
++    #[test]
+     fn test_parse_ref_at_prefix() {
+         assert_eq!(parse_ref("@e1"), Some("e1".to_string()));
+         assert_eq!(parse_ref("@e123"), Some("e123".to_string()));
+diff --git a/cli/src/commands.rs b/cli/src/commands.rs
+--- a/cli/src/commands.rs
++++ b/cli/src/commands.rs
+@@ -123,6 +123,7 @@
+             | "screenshot"
+             | "pdf"
+             | "snapshot"
++            | "ref"
+             | "eval"
+             | "close"
+             | "quit"
+@@ -366,6 +367,35 @@
+         });
+     }
+ 
++    if let Some(boundary)=args.iter().position(|arg|arg=="--") {
++        const USAGE:&str="fill|type|select|eval [options] -- <literal data>";
++        let before=&args[..boundary];let values=&args[boundary+1..];
++        let command=before.first().map(String::as_str).unwrap_or("");
++        if command=="keyboard" && before.len()==2 && ["type","inserttext","insertText"].contains(&before[1].as_str()) {
++            let subaction=if before[1]=="type"{"type"}else{"insertText"};
++            return Ok(json!({"id":gen_id(),"action":"keyboard","subaction":subaction,"text":values.join(" ")}));
++        }
++        if command=="eval" && before.len()==1 {
++            return Ok(json!({"id":gen_id(),"action":"evaluate","script":values.join(" ")}));
++        }
++        if (command=="fill" && before.len()==2) || (command=="type" && before.len()>=2) || (command=="select" && before.len()>=2 && !values.is_empty()) {
++            let mut control=before.to_vec();
++            // The parser sees only a harmless placeholder; values never become flags.
++            control.push(if command=="select"{"0"}else{""}.to_string());
++            let mut parsed=parse_command_inner(&control,flags)?;
++            match command {
++                "fill"=>parsed["value"]=json!(values.join(" ")),
++                "type"=>parsed["text"]=json!(values.join(" ")),
++                "select"=>{
++                    if parsed["mode"]=="index" && values.iter().any(|value|value.parse::<usize>().is_err()) {return Err(ParseError::InvalidValue{message:"Invalid select index".into(),usage:USAGE});}
++                    parsed["values"]=if values.len()==1{json!(values[0])}else{json!(values)};
++                }
++                _=>unreachable!(),
++            }
++            return Ok(parsed);
++        }
++        return Err(ParseError::InvalidValue{message:"This command does not accept a literal-data boundary here".into(),usage:USAGE});
++    }
+     let cmd = args[0].as_str();
+     let rest: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
+     let id = gen_id();
+@@ -386,10 +416,33 @@
+             // scripts before the first real navigation (see `batch`).
+             // `goto` and `navigate` still require a URL since those verbs
+             // imply the navigation itself.
+-            let first_url = rest.iter().find(|a| !a.starts_with("--"));
++            let mut first_url: Option<&str> = None;
++            let mut wait_until: Option<&str> = None;
++            let mut i = 0;
++            while i < rest.len() {
++                if rest[i] == "--wait-until" {
++                    let value = *rest.get(i + 1).ok_or_else(|| ParseError::MissingArguments {
++                        context: format!("{cmd} --wait-until"),
++                        usage: "open <url> --wait-until <load|domcontentloaded|networkidle>",
++                    })?;
++                    if !matches!(value, "load" | "domcontentloaded" | "networkidle") {
++                        return Err(ParseError::InvalidValue {
++                            message: "Invalid navigation wait strategy".into(),
++                            usage: "open <url> --wait-until <load|domcontentloaded|networkidle>",
++                        });
++                    }
++                    wait_until = Some(value);
++                    i += 2;
++                    continue;
++                }
++                if !rest[i].starts_with("--") && first_url.is_none() {
++                    first_url = Some(rest[i]);
++                }
++                i += 1;
++            }
+             let url = match first_url {
+-                Some(u) => *u,
+-                None if cmd == "open" => {
++                Some(u) => u,
++                None if cmd == "open" && wait_until.is_none() => {
+                     return Ok(json!({ "id": id, "action": "launch", "headless": !flags.headed }));
+                 }
+                 None => {
+@@ -404,6 +457,7 @@
+             if flags.provider.is_some() {
+                 nav_cmd["waitUntil"] = json!("none");
+             }
++            if let Some(wait_until) = wait_until { nav_cmd["waitUntil"] = json!(wait_until); }
+             if let Some(ref headers_json) = flags.headers {
+                 let headers =
+                     serde_json::from_str::<serde_json::Value>(headers_json).map_err(|_| {
+@@ -429,31 +483,23 @@
+         "webmcp" => parse_webmcp(&rest, &id),
+ 
+         // === Core Actions ===
+-        "click" => {
+-            let new_tab = rest.contains(&"--new-tab");
+-            let human = rest.contains(&"--human");
+-            let sel = rest
+-                .iter()
+-                .find(|arg| **arg != "--new-tab" && **arg != "--human")
+-                .ok_or_else(|| ParseError::MissingArguments {
+-                    context: "click".to_string(),
+-                    usage: "click <selector> [--new-tab] [--human]",
+-                })?;
+-            let mut cmd = json!({ "id": id, "action": "click", "selector": sel });
+-            if new_tab {
+-                cmd["newTab"] = json!(true);
+-            }
+-            if human {
+-                cmd["inputMode"] = json!("human");
+-            }
+-            Ok(cmd)
+-        }
+-        "dblclick" => {
+-            let sel = rest.first().ok_or_else(|| ParseError::MissingArguments {
+-                context: "dblclick".to_string(),
+-                usage: "dblclick <selector>",
+-            })?;
+-            Ok(json!({ "id": id, "action": "dblclick", "selector": sel }))
++        "click" | "dblclick" => {
++            const USAGE: &str = "click|dblclick <selector> [--modifiers 0..15]";
++            let mut selector=None;let mut modifiers=0i32;let mut new_tab=false;let mut human=false;let mut i=0;
++            while i<rest.len(){
++                match rest[i] {
++                    "--modifiers" => { modifiers=rest.get(i+1).and_then(|value|value.parse::<i32>().ok()).filter(|value|(0..=15).contains(value)).ok_or_else(||ParseError::InvalidValue{message:"Invalid modifier mask".into(),usage:USAGE})?;i+=1; }
++                    "--new-tab" if cmd=="click" => new_tab=true,
++                    "--human" if cmd=="click" => human=true,
++                    value if !value.starts_with("--") && selector.is_none() => selector=Some(value),
++                    _ => return Err(ParseError::InvalidValue{message:"Invalid click arguments".into(),usage:USAGE}),
++                }
++                i+=1;
++            }
++            let selector=selector.ok_or_else(||ParseError::MissingArguments{context:cmd.into(),usage:USAGE})?;
++            let mut action=json!({"id":id,"action":cmd,"selector":selector,"modifiers":modifiers});
++            if new_tab {action["newTab"]=json!(true);}if human {action["inputMode"]=json!("human");}
++            Ok(action)
+         }
+         "fill" => {
+             let sel = rest.first().ok_or_else(|| ParseError::MissingArguments {
+@@ -534,20 +580,14 @@
+             Ok(json!({ "id": id, "action": "uncheck", "selector": sel }))
+         }
+         "select" => {
+-            let sel = rest.first().ok_or_else(|| ParseError::MissingArguments {
+-                context: "select".to_string(),
+-                usage: "select <selector> <value...>",
+-            })?;
+-            let _val = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+-                context: "select".to_string(),
+-                usage: "select <selector> <value...>",
+-            })?;
+-            let values = &rest[1..];
+-            if values.len() == 1 {
+-                Ok(json!({ "id": id, "action": "select", "selector": sel, "values": values[0] }))
+-            } else {
+-                Ok(json!({ "id": id, "action": "select", "selector": sel, "values": values }))
+-            }
++            const USAGE: &str="select <selector> [--value|--label|--index] <values...>";
++            let selector=rest.first().ok_or_else(||ParseError::MissingArguments{context:"select".into(),usage:USAGE})?;
++            let mut offset=1;let mode=match rest.get(1).copied(){Some("--value")=>{offset=2;"value"},Some("--label")=>{offset=2;"label"},Some("--index")=>{offset=2;"index"},_=>"auto"};
++            let values=&rest[offset..];
++            if values.is_empty() || (mode=="index" && values.iter().any(|value|value.parse::<usize>().is_err())) {
++                return Err(ParseError::InvalidValue{message:"Invalid select values".into(),usage:USAGE});
++            }
++            Ok(json!({"id":id,"action":"select","selector":selector,"values":if values.len()==1{json!(values[0])}else{json!(values)},"mode":mode}))
+         }
+         "drag" => {
+             let src = rest.first().ok_or_else(|| ParseError::MissingArguments {
+@@ -910,6 +950,20 @@
+             Ok(json!({ "id": id, "action": "pdf", "path": path }))
+         }
+ 
++        // Exact backend identities are accepted only from the active target.
++        "ref" => {
++            const USAGE: &str = "ref <backend-node-id> [--frame <frame-id>]";
++            let backend_id = rest.first().and_then(|value| value.parse::<i64>().ok())
++                .filter(|value| *value > 0)
++                .ok_or_else(|| ParseError::InvalidValue { message: "Expected a positive backend node id".into(), usage: USAGE })?;
++            let frame = match rest.as_slice() {
++                [_] => None,
++                [_, "--frame", frame] if !frame.is_empty() => Some(*frame),
++                _ => return Err(ParseError::InvalidValue { message: "Invalid exact ref arguments".into(), usage: USAGE }),
++            };
++            Ok(json!({ "id": id, "action": "ref", "backendNodeId": backend_id, "frameId": frame }))
++        }
++
+         // === Snapshot ===
+         "snapshot" => {
+             let mut cmd = json!({ "id": id, "action": "snapshot" });
+@@ -917,6 +971,14 @@
+             let mut i = 0;
+             while i < rest.len() {
+                 match rest[i] {
++                    "--preserve-refs" => {obj.insert("preserveRefs".into(),json!(true));}
++                    "--allowed-frame-documents" => {
++                        const USAGE:&str="snapshot --allowed-frame-documents <JSON frameId-to-loaderId map>";
++                        let value=rest.get(i+1).ok_or_else(||ParseError::MissingArguments{context:"snapshot".into(),usage:USAGE})?;
++                        let documents:std::collections::HashMap<String,String>=serde_json::from_str(value).map_err(|_|ParseError::InvalidValue{message:"Invalid frame document map".into(),usage:USAGE})?;
++                        if documents.values().any(String::is_empty){return Err(ParseError::InvalidValue{message:"Frame document ids cannot be empty".into(),usage:USAGE});}
++                        obj.insert("allowedFrameDocuments".into(),json!(documents));i+=1;
++                    }
+                     "-i" | "--interactive" => {
+                         obj.insert("interactive".to_string(), json!(true));
+                     }
+@@ -1604,11 +1666,10 @@
+                     }
+                     Ok(cmd)
+                 }
+-                Some(tab_ref) => Ok(json!({
+-                    "id": id,
+-                    "action": "tab_switch",
+-                    "tabId": tab_ref,
+-                })),
++                Some(tab_ref) => {
++                    if rest.len()>2 || (rest.len()==2 && rest[1]!="--no-activate"){return Err(ParseError::InvalidValue{message:"Invalid tab binding arguments".into(),usage:"tab <id> [--no-activate]"});}
++                    Ok(json!({"id":id,"action":"tab_switch","tabId":tab_ref,"noActivate":rest.len()==2}))
++                },
+                 None => Ok(json!({ "id": id, "action": "tab_list" })),
+             }
+         }
+@@ -3163,9 +3224,10 @@
+ }
+ 
+ fn parse_mouse(rest: &[&str], id: &str) -> Result<Value, ParseError> {
+-    const VALID: &[&str] = &["move", "down", "up", "wheel"];
++    const VALID: &[&str] = &["move", "down", "up", "wheel", "state"];
+ 
+     match rest.first().copied() {
++        Some("state") if rest.len()==1 => Ok(json!({"id":id,"action":"mousestate"})),
+         Some("move") => {
+             let x_str = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                 context: "mouse move".to_string(),
+@@ -4169,6 +4231,19 @@
+     // === Navigation Tests ===
+ 
+     #[test]
++    fn open_honors_explicit_wait_strategy() {
++        for strategy in ["load", "domcontentloaded", "networkidle"] {
++            let command = format!("open --wait-until {strategy} https://example.com");
++            let parsed = parse_command(&args(&command), &default_flags()).unwrap();
++            assert_eq!(parsed["url"], "https://example.com");
++            assert_eq!(parsed["waitUntil"], strategy);
++        }
++        assert!(parse_command(&args("open https://example.com --wait-until invented"), &default_flags()).is_err());
++        assert!(parse_command(&args("open https://example.com --wait-until"), &default_flags()).is_err());
++        assert!(parse_command(&args("open --wait-until load"), &default_flags()).is_err());
++    }
++
++    #[test]
+     fn test_open_without_url_launches() {
+         let cmd = parse_command(&args("open"), &default_flags()).unwrap();
+         assert_eq!(cmd["action"], "launch");
+@@ -4451,6 +4526,46 @@
+     }
+ 
+     // === Core Actions ===
++
++    #[test]
++    fn explicit_click_modifiers_and_select_modes() {
++        for verb in ["click","dblclick"] {
++            let value=parse_command(&args(&format!("{verb} @e1 --modifiers 10")),&default_flags()).unwrap();
++            assert_eq!(value["modifiers"],10);
++            assert!(parse_command(&args(&format!("{verb} @e1 --modifiers 16")),&default_flags()).is_err());
++        }
++        for mode in ["value","label","index"] {
++            let value=parse_command(&args(&format!("select @e1 --{mode} 1")),&default_flags()).unwrap();
++            assert_eq!(value["mode"],mode);assert_eq!(value["values"],"1");
++        }
++        assert!(parse_command(&args("select @e1 --index -1"),&default_flags()).is_err());
++        assert!(parse_command(&args("select @e1 --label"),&default_flags()).is_err());
++    }
++
++    #[test]
++    fn mouse_state_is_read_only() {
++        let value=parse_command(&args("mouse state"),&default_flags()).unwrap();
++        assert_eq!(value["action"],"mousestate");
++        assert!(parse_command(&args("mouse state unexpected"),&default_flags()).is_err());
++    }
++
++    #[test]
++    fn literal_data_never_changes_command_options() {
++        let input=args("fill @e1 -- --session --help --version");
++        let flags=crate::flags::parse_flags(&input);let value=parse_command(&crate::flags::clean_args(&input),&flags).unwrap();
++        assert_eq!(value["value"],"--session --help --version");
++        let value=parse_command(&args("type @e1 --delay 4 -- --clear --delay"),&default_flags()).unwrap();
++        assert_eq!(value["text"],"--clear --delay");assert_eq!(value["delay"],4);assert!(value.get("clear").is_none());
++        let value=parse_command(&args("select @e1 --label -- --value"),&default_flags()).unwrap();assert_eq!(value["mode"],"label");assert_eq!(value["values"],"--value");
++        let value=parse_command(&args("eval -- --help"),&default_flags()).unwrap();assert_eq!(value["script"],"--help");
++        let value=parse_command(&args("keyboard type -- --session"),&default_flags()).unwrap();assert_eq!(value["text"],"--session");assert_eq!(value["subaction"],"type");
++    }
++
++    #[test]
++    fn trace_tab_binding_never_requests_activation() {
++        let value=parse_command(&args("tab t1 --no-activate"),&default_flags()).unwrap();assert_eq!(value["noActivate"],true);
++        assert!(parse_command(&args("tab t1 --unknown"),&default_flags()).is_err());
++    }
+ 
+     #[test]
+     fn test_click() {
+@@ -4871,6 +4986,23 @@
+     // === Snapshot ===
+ 
+     #[test]
++    fn test_exact_ref_cli() {
++        let cmd = parse_command(&args("ref 42 --frame frame-1"), &default_flags()).unwrap();
++        assert_eq!(cmd["action"], "ref");
++        assert_eq!(cmd["backendNodeId"], 42);
++        assert_eq!(cmd["frameId"], "frame-1");
++        assert!(parse_command(&args("ref -1"), &default_flags()).is_err());
++        assert!(parse_command(&args("ref 42 extra"), &default_flags()).is_err());
++    }
++
++    #[test]
++    fn snapshot_preserves_refs_and_validates_frame_document_map() {
++        let input=vec!["snapshot".into(),"--preserve-refs".into(),"--allowed-frame-documents".into(),r#"{"child":"loader"}"#.into()];
++        let value=parse_command(&input,&default_flags()).unwrap();assert_eq!(value["preserveRefs"],true);assert_eq!(value["allowedFrameDocuments"]["child"],"loader");
++        assert!(parse_command(&args("snapshot --allowed-frame-documents []"),&default_flags()).is_err());
++    }
++
++    #[test]
+     fn test_snapshot() {
+         let cmd = parse_command(&args("snapshot"), &default_flags()).unwrap();
+         assert_eq!(cmd["action"], "snapshot");
+diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
+--- a/cli/src/native/actions.rs
++++ b/cli/src/native/actions.rs
+@@ -3005,6 +3005,7 @@
+         "evaluate" => handle_evaluate(cmd, state).await,
+         "close" => handle_close(state).await,
+         "snapshot" => handle_snapshot(cmd, state).await,
++        "ref" => handle_exact_ref(cmd, state).await,
+         "screenshot" => handle_screenshot(cmd, state).await,
+         "click" => handle_click(cmd, state).await,
+         "dblclick" => handle_dblclick(cmd, state).await,
+@@ -3160,6 +3161,7 @@
+         "keydown" => handle_keydown(cmd, state).await,
+         "keyup" => handle_keyup(cmd, state).await,
+         "inserttext" => handle_inserttext(cmd, state).await,
++        "mousestate" => Ok(json!({"x":state.mouse_state.x,"y":state.mouse_state.y,"buttons":state.mouse_state.buttons})),
+         "mousemove" => handle_mousemove(cmd, state).await,
+         "mousedown" => handle_mousedown(cmd, state).await,
+         "mouseup" => handle_mouseup(cmd, state).await,
+@@ -5716,6 +5718,50 @@
+ // Phase 2 handlers
+ // ---------------------------------------------------------------------------
+ 
++fn exact_ref_frame_in_tree(tree: &Value, frame_id: &str) -> bool {
++    tree["frame"]["id"].as_str() == Some(frame_id)
++        || tree["childFrames"].as_array().is_some_and(|children| children.iter().any(|child| exact_ref_frame_in_tree(child, frame_id)))
++}
++
++/// Registers a same-target backend node through the public CLI, never by role/name.
++async fn handle_exact_ref(cmd: &Value, state: &mut DaemonState) -> Result<Value, String> {
++    let backend_id = cmd.get("backendNodeId").and_then(Value::as_i64)
++        .filter(|value| *value > 0).ok_or("Invalid backend node id")?;
++    let frame_id = cmd.get("frameId").and_then(Value::as_str);
++    let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
++    let session_id = mgr.active_session_id()?.to_string();
++    let tree=mgr.client.send_command_no_params("Page.getFrameTree",Some(&session_id)).await?;
++    let requested=frame_id.or_else(||tree["frameTree"]["frame"]["id"].as_str()).ok_or("Active frame is unavailable")?;
++    if !exact_ref_frame_in_tree(&tree["frameTree"],requested){return Err("Exact ref frame does not belong to the active page".into());}
++    let mut sessions=vec![session_id.clone()];sessions.extend(state.iframe_sessions.values().cloned());sessions.sort();sessions.dedup();
++    let mut binding=None;
++    for candidate in sessions {
++        let Ok(world)=mgr.client.send_command("Page.createIsolatedWorld",Some(json!({"frameId":requested,"worldName":"agent-browser-exact-refs"})),Some(&candidate)).await else {continue;};
++        let Some(context)=world["executionContextId"].as_i64() else {continue;};
++        let Ok(resolved)=mgr.client.send_command("DOM.resolveNode",Some(json!({"backendNodeId":backend_id,"executionContextId":context})),Some(&candidate)).await else {continue;};
++        let Some(object)=resolved["object"]["objectId"].as_str() else {continue;};
++        let checked=mgr.client.send_command("Runtime.callFunctionOn",Some(json!({"objectId":object,"functionDeclaration":"function(){return this.nodeType===1&&this.isConnected&&this.ownerDocument===document}","returnByValue":true})),Some(&candidate)).await;
++        let _=mgr.client.send_command("Runtime.releaseObject",Some(json!({"objectId":object})),Some(&candidate)).await;
++        if checked.as_ref().ok().and_then(|value|value["result"]["value"].as_bool())==Some(true){binding=Some((candidate,context));break;}
++    }
++    let (bound_session,context_id)=binding.ok_or("Exact backend node does not belong to the requested connected document")?;
++    // Resolving through the active target session (or its attached frame session)
++    // rejects backend ids from a different tab. Connectedness is checked before
++    // publishing the ref; the normal action path checks it again at dispatch.
++    let next = state.ref_map.next_ref_num();
++    let ref_id = format!("e{next}");
++    state.ref_map.set_next_ref_num(next + 1);
++    state.ref_map.add_with_frame(ref_id.clone(), Some(backend_id), "", "", None, frame_id);
++    state.ref_map.bind_world(&ref_id,&bound_session,context_id);
++    if let Err(error) = super::element::resolve_element_object_id(
++        &mgr.client, &session_id, &state.ref_map, &format!("@{ref_id}"), &state.iframe_sessions,
++    ).await {
++        state.ref_map.remove(&ref_id);
++        return Err(error);
++    }
++    Ok(json!({"ref":ref_id,"backendNodeId":backend_id,"frameId":frame_id}))
++}
++
+ async fn handle_snapshot(cmd: &Value, state: &mut DaemonState) -> Result<Value, String> {
+     let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
+     let session_id = mgr.active_session_id()?.to_string();
+@@ -5738,15 +5784,17 @@
+             .and_then(|v| v.as_u64())
+             .map(|d| d as usize),
+         urls: cmd.get("urls").and_then(|v| v.as_bool()).unwrap_or(false),
++        allowed_frame_documents: cmd.get("allowedFrameDocuments").map(|value|serde_json::from_value::<HashMap<String,String>>(value.clone())).transpose().map_err(|_|"Invalid allowed frame documents".to_string())?,
+     };
+ 
+     let previous_refs = state.ref_map.ref_ids();
+-    state.ref_map.begin_snapshot();
++    let mut snapshot_refs=state.ref_map.clone();
++    snapshot_refs.begin_snapshot();
+     let tree = snapshot::take_snapshot(
+         &mgr.client,
+         &session_id,
+         &options,
+-        &mut state.ref_map,
++        &mut snapshot_refs,
+         state.active_frame_id.as_deref(),
+         &state.iframe_sessions,
+     )
+@@ -5754,19 +5802,22 @@
+ 
+     let url = mgr.get_url().await.unwrap_or_default();
+ 
+-    let refs: serde_json::Map<String, Value> = state
+-        .ref_map
++    let refs: serde_json::Map<String, Value> = snapshot_refs
+         .entries_sorted()
+         .into_iter()
+         .map(|(ref_id, entry)| {
+             let mut obj = serde_json::Map::new();
+             obj.insert("role".into(), Value::String(entry.role));
+             obj.insert("name".into(), Value::String(entry.name));
++            obj.insert("backendNodeId".into(), json!(entry.backend_node_id));
++            obj.insert("frameId".into(), json!(entry.frame_id));
+             (ref_id, Value::Object(obj))
+         })
+         .collect();
+ 
+-    let current_refs = state.ref_map.ref_ids();
++    let current_refs = snapshot_refs.ref_ids();
++    if cmd.get("preserveRefs").and_then(Value::as_bool).unwrap_or(false) {state.ref_map.merge_snapshot(snapshot_refs)?;}
++    else {state.ref_map=snapshot_refs;}
+     let mut removed_refs = previous_refs
+         .difference(&current_refs)
+         .map(|ref_id| format!("@{}", ref_id))
+@@ -5780,7 +5831,7 @@
+ 
+     if !cmd.get("delta").and_then(Value::as_bool).unwrap_or(false) {
+         return Ok(
+-            json!({ "snapshot": tree, "origin": url, "refs": refs, "removedRefs": removed_refs }),
++            json!({ "snapshot": tree, "origin": url, "refs": refs, "removedRefs": removed_refs, "complete":!options.interactive && !options.compact && options.depth.is_none() && options.selector.is_none() }),
+         );
+     }
+ 
+@@ -5790,6 +5841,7 @@
+         "compact": options.compact,
+         "depth": options.depth,
+         "urls": options.urls,
++        "allowedFrameDocuments":options.allowed_frame_documents,
+     }))
+     .unwrap_or_default();
+     let previous = state.snapshot_revisions.get(&session_id).cloned();
+@@ -6288,13 +6340,14 @@
+         .await?;
+     }
+ 
+-    let result = interaction::click(
++    let result = interaction::click_with_modifiers(
+         &mgr.client,
+         &session_id,
+         &state.ref_map,
+         selector,
+         button,
+         click_count,
++        cmd.get("modifiers").and_then(Value::as_i64).unwrap_or(0) as i32,
+         &state.iframe_sessions,
+     )
+     .await?;
+@@ -6319,11 +6372,14 @@
+         .and_then(|v| v.as_str())
+         .ok_or("Missing 'selector' parameter")?;
+ 
+-    let result = interaction::dblclick(
++    let result = interaction::click_with_modifiers(
+         &mgr.client,
+         &session_id,
+         &state.ref_map,
+         selector,
++        "left",
++        2,
++        cmd.get("modifiers").and_then(Value::as_i64).unwrap_or(0) as i32,
+         &state.iframe_sessions,
+     )
+     .await?;
+@@ -6538,6 +6594,7 @@
+         &state.ref_map,
+         selector,
+         &values,
++        cmd.get("mode").and_then(Value::as_str).unwrap_or("auto"),
+         &state.iframe_sessions,
+     )
+     .await?;
+@@ -7584,6 +7641,11 @@
+         let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
+         mgr.resolve_tab_ref(&tab_ref)?
+     };
++    if cmd.get("noActivate").and_then(Value::as_bool).unwrap_or(false){
++        let result=state.browser.as_mut().ok_or("Browser not launched")?.tab_bind_by_id(tab_id).await?;
++        state.ref_map.begin_snapshot();state.active_frame_id=None;state.webmcp.clear_invocations();state.refresh_active_iframe_sessions().await;
++        return Ok(result);
++    }
+     let dialog_session = state
+         .pending_dialog
+         .as_ref()
+@@ -13659,7 +13721,15 @@
+     });
+     // Machine-readable code for "the bound tab no longer exists" so scripts
+     // using --json can match on it instead of parsing the message.
+-    if error.starts_with(super::browser::TAB_GONE_PREFIX) {
++    if error == "e2e_not_actionable" || error == "e2e_unsupported_capability" {
++        resp["code"]=json!(if error=="e2e_not_actionable"{"not_actionable"}else{"unsupported_capability"});
++        resp["data"]=json!({"dispatched":false});
++    } else if let Some(ref_id) = error.strip_prefix(super::element::STALE_REF_PREFIX) {
++        if ref_id.strip_prefix('e').is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())) {
++            resp["code"] = json!("node_stale");
++            resp["data"] = json!({"dispatched":false});
++        }
++    } else if error.starts_with(super::browser::TAB_GONE_PREFIX) {
+         resp["code"] = json!("tab_gone");
+     } else if let Some((code, _)) = error.split_once(": ") {
+         if code.starts_with("webmcp_") {
+@@ -16240,6 +16310,31 @@
+     }
+ 
+     #[test]
++    fn exact_ref_frame_must_belong_to_active_page() {
++        let tree = json!({"frame":{"id":"main"},"childFrames":[{"frame":{"id":"child"},"childFrames":[{"frame":{"id":"nested"}}]}]});
++        assert!(exact_ref_frame_in_tree(&tree, "main"));
++        assert!(exact_ref_frame_in_tree(&tree, "nested"));
++        assert!(!exact_ref_frame_in_tree(&tree, "other-tab"));
++    }
++
++    #[test]
++    fn exact_ref_stale_is_machine_readable_before_dispatch() {
++        let response = error_response("cmd-exact-ref", "e2e_node_stale:e12");
++        assert_eq!(response["code"], "node_stale");
++        assert_eq!(response["data"]["dispatched"], false);
++        assert!(error_response("cmd-page-error", "Evaluation error: e2e_node_stale:e12").get("code").is_none());
++    }
++
++    #[test]
++    fn only_closed_preinput_validation_errors_are_safe() {
++        for (message,code) in [("e2e_not_actionable","not_actionable"),("e2e_unsupported_capability","unsupported_capability")] {
++            let value=error_response("test",message);assert_eq!(value["code"],code);assert_eq!(value["data"]["dispatched"],false);
++            assert!(error_response("test",&format!("Evaluation failed: {message}")).get("code").is_none());
++        }
++        assert!(error_response("test","Double click target unavailable after input may have committed").get("code").is_none());
++    }
++
++    #[test]
+     fn test_error_response_structure() {
+         let resp = error_response("cmd-2", "Something went wrong");
+         assert_eq!(resp["id"], "cmd-2");
+diff --git a/cli/src/native/interaction.rs b/cli/src/native/interaction.rs
+--- a/cli/src/native/interaction.rs
++++ b/cli/src/native/interaction.rs
+@@ -30,6 +30,7 @@
+     pub x: f64,
+     pub y: f64,
+     pub button: String,
++    pub modifiers: i32,
+ }
+ 
+ pub async fn click(
+@@ -41,7 +42,21 @@
+     click_count: i32,
+     iframe_sessions: &HashMap<String, String>,
+ ) -> Result<ClickResult, String> {
+-    let (x, y, effective_session_id) = resolve_element_center(
++    click_with_modifiers(client, session_id, ref_map, selector_or_ref, button, click_count, 0, iframe_sessions).await
++}
++
++#[allow(clippy::too_many_arguments)]
++pub async fn click_with_modifiers(
++    client: &CdpClient,
++    session_id: &str,
++    ref_map: &RefMap,
++    selector_or_ref: &str,
++    button: &str,
++    click_count: i32,
++    modifiers: i32,
++    iframe_sessions: &HashMap<String, String>,
++) -> Result<ClickResult, String> {
++    let (mut x, mut y, effective_session_id) = resolve_element_center(
+         client,
+         session_id,
+         ref_map,
+@@ -54,6 +69,16 @@
+     // other session belongs to a background tab and must not abort this click.
+     let offset =
+         session_viewport_offset(client, session_id, &effective_session_id, iframe_sessions).await?;
++    if click_count == 2 {
++        let mut first = dispatch_click(client,&effective_session_id,&[effective_session_id.as_str(),session_id],x,y,button,1,modifiers).await?;
++        if first.dialog_opened {
++            first.position=(x+offset.0,y+offset.1);(first.x,first.y)=first.position;return Ok(first);
++        }
++        let (next_x,next_y,next_session)=resolve_element_center(client,session_id,ref_map,selector_or_ref,iframe_sessions).await
++            .map_err(|_|"Double click target unavailable after input may have committed".to_string())?;
++        if next_session!=effective_session_id{return Err("Double click frame changed after input may have committed".into());}
++        x=next_x;y=next_y;
++    }
+     let mut result = dispatch_click(
+         client,
+         &effective_session_id,
+@@ -62,8 +87,9 @@
+         y,
+         button,
+         click_count,
+-    )
+-    .await?;
++        modifiers,
++    )
++    .await.map_err(|error| if click_count==2 {"Double click incomplete after input may have committed".to_string()} else {error})?;
+     // Compute before dispatch: a click may navigate or open a blocking dialog.
+     result.position = (x + offset.0, y + offset.1);
+     (result.x, result.y) = result.position;
+@@ -143,52 +169,42 @@
+     )
+     .await?;
+ 
+-    // Focus the element
+-    client
+-        .send_command_typed::<_, Value>(
+-            "Runtime.callFunctionOn",
+-            &CallFunctionOnParams {
+-                function_declaration: "function() { this.focus(); }".to_string(),
+-                object_id: Some(object_id.clone()),
+-                arguments: None,
+-                return_by_value: Some(true),
+-                await_promise: Some(false),
+-            },
+-            Some(&effective_session_id),
+-        )
+-        .await?;
+-
+-    // Select all + delete to clear
+-    client
+-        .send_command_typed::<_, Value>(
+-            "Runtime.callFunctionOn",
+-            &CallFunctionOnParams {
+-                function_declaration: r#"function() {
+-                    this.select && this.select();
+-                    this.value = '';
+-                    this.dispatchEvent(new Event('input', { bubbles: true }));
+-                }"#
+-                .to_string(),
+-                object_id: Some(object_id),
+-                arguments: None,
+-                return_by_value: Some(true),
+-                await_promise: Some(false),
+-            },
+-            Some(&effective_session_id),
+-        )
+-        .await?;
+-
+-    // Insert text (keyboard input dispatched at page level, use parent session_id)
+-    client
+-        .send_command_typed::<_, Value>(
+-            "Input.insertText",
+-            &InsertTextParams {
+-                text: value.to_string(),
+-            },
+-            Some(session_id),
+-        )
+-        .await?;
+-
++    let result: EvaluateResult = client.send_command_typed(
++        "Runtime.callFunctionOn",
++        &CallFunctionOnParams {
++            function_declaration: r#"function(value) {
++                const tag=this.localName;
++                const native=tag==='input'||tag==='textarea';
++                const types=['text','email','password','search','tel','url','number','date','datetime-local','month','time','week'];
++                const forbidden=['svg','math','canvas','video','audio','iframe','img','hr','br','wbr','area','a','button','select'];
++                const editable=native ? tag==='textarea'||types.includes(this.type) : this.isContentEditable&&!forbidden.includes(tag);
++                const blocked=()=>!this.isConnected||this.matches(':disabled')||this.readOnly||this.getAttribute('aria-disabled')==='true'||this.getAttribute('aria-readonly')==='true';
++                if(!editable||blocked()||this.getClientRects().length===0)return {beforeInput:true};
++                this.focus();
++                let active=this.ownerDocument.activeElement;
++                while(active && active.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;
++                const localActive=this.getRootNode().activeElement;
++                if(blocked()||(active!==this&&localActive!==this))return false;
++                if(native){
++                    const proto=tag==='input'?HTMLInputElement.prototype:HTMLTextAreaElement.prototype;
++                    Object.getOwnPropertyDescriptor(proto,'value').set.call(this,value);
++                    if(this.value!==value)return false;
++                    try {this.setSelectionRange(value.length,value.length);} catch {}
++                } else { this.textContent=value;const range=this.ownerDocument.createRange();range.selectNodeContents(this);range.collapse(false);const selection=this.ownerDocument.getSelection();selection.removeAllRanges();selection.addRange(range); }
++                this.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));
++                return true;
++            }"#.to_string(),
++            object_id: Some(object_id),
++            arguments: Some(vec![CallArgument { value: Some(serde_json::json!(value)), object_id: None }]),
++            return_by_value: Some(true), await_promise: Some(false),
++        }, Some(&effective_session_id),
++    ).await?;
++    if result.exception_details.is_none() && result.result.value.as_ref().is_some_and(|value|value["beforeInput"].as_bool()==Some(true)) {
++        return Err("e2e_not_actionable".into());
++    }
++    if result.exception_details.is_some() || result.result.value.as_ref().and_then(Value::as_bool) != Some(true) {
++        return Err("Exact fill was rejected or did not complete".to_string());
++    }
+     Ok(())
+ }
+ 
+@@ -442,6 +458,7 @@
+     ref_map: &RefMap,
+     selector_or_ref: &str,
+     values: &[String],
++    mode: &str,
+     iframe_sessions: &HashMap<String, String>,
+ ) -> Result<(), String> {
+     let (object_id, effective_session_id) = resolve_element_object_id(
+@@ -453,46 +470,22 @@
+     )
+     .await?;
+ 
+-    // Matching nothing must be an error, not a silent success: an agent that
+-    // selects a misspelled option otherwise sees "Done", and only discovers
+-    // the page state is wrong after more commands. List what was available.
+-    let js = r#"function(vals) {
+-            const normalize = (value) => String(value ?? '')
+-                .replace(/[\u200B\u200C\u200D\u2060\uFEFF]/g, '')
+-                .replace(/\s+/g, ' ')
+-                .trim();
+-            const options = Array.from(this.options);
+-            const wanted = new Set();
+-            for (const value of vals) {
+-                let matches = options.filter((opt) =>
+-                    value === opt.value ||
+-                    value === opt.label.trim() ||
+-                    value === opt.textContent.trim()
+-                );
+-                if (matches.length === 0) {
+-                    const normalizedValue = normalize(value);
+-                    matches = options.filter((opt) =>
+-                        normalize(opt.label) === normalizedValue
+-                    );
+-                    if (matches.length > 1) {
+-                        return { error: 'Multiple options matched ' + JSON.stringify(value) + ' after whitespace normalization' };
+-                    }
+-                }
+-                if (matches.length === 0) {
+-                    const available = options.map(o => o.value + ' ("' + normalize(o.label) + '")').join(', ');
+-                    return { error: 'No option matched ' + JSON.stringify(vals) + '. Available options: ' + available };
+-                }
+-                for (const opt of matches) wanted.add(opt);
+-            }
+-            if (wanted.size === 0) {
+-                const available = options.map(o => o.value + ' ("' + normalize(o.label) + '")').join(', ');
+-                return { error: 'No option matched ' + JSON.stringify(vals) + '. Available options: ' + available };
+-            }
+-            for (const opt of options) opt.selected = wanted.has(opt);
+-            this.dispatchEvent(new Event('change', { bubbles: true }));
+-            return { matched: wanted.size };
+-        }"#
+-    .to_string();
++    if !["auto", "value", "label", "index"].contains(&mode) { return Err("e2e_unsupported_capability".into()); }
++    let js = r#"function(vals, mode) {
++        if(!this.isConnected||this.localName!=='select'||this.matches(':disabled'))return {error:'e2e_not_actionable',beforeInput:true};
++        if(!this.multiple && vals.length!==1)return {error:'e2e_unsupported_capability',beforeInput:true};
++        const options=Array.from(this.options);const wanted=new Set();
++        for(const value of vals){
++            const matches=options.filter((option,index)=> mode==='index'?String(index)===value : mode==='value'?option.value===value : mode==='label'?option.label===value : option.value===value||option.label===value);
++            if(matches.length!==1)return {error:'e2e_not_actionable',beforeInput:true};
++            const option=matches[0];if(option.disabled||option.parentElement?.matches('optgroup:disabled'))return {error:'e2e_not_actionable',beforeInput:true};
++            wanted.add(option);
++        }
++        if(wanted.size===0)return {error:'e2e_unsupported_capability',beforeInput:true};
++        for(const option of options)option.selected=wanted.has(option);
++        this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
++        return {matched:wanted.size};
++    }"#.to_string();
+ 
+     let result = client
+         .send_command_typed::<_, Value>(
+@@ -500,10 +493,10 @@
+             &CallFunctionOnParams {
+                 function_declaration: js,
+                 object_id: Some(object_id),
+-                arguments: Some(vec![CallArgument {
+-                    value: Some(serde_json::json!(values)),
+-                    object_id: None,
+-                }]),
++                arguments: Some(vec![
++                    CallArgument { value: Some(serde_json::json!(values)), object_id: None },
++                    CallArgument { value: Some(serde_json::json!(mode)), object_id: None },
++                ]),
+                 return_by_value: Some(true),
+                 await_promise: Some(false),
+             },
+@@ -511,13 +504,19 @@
+         )
+         .await?;
+ 
++    if result.get("exceptionDetails").is_some() {
++        return Err("Select option did not complete".into());
++    }
+     if let Some(error) = result
+         .get("result")
+         .and_then(|r| r.get("value"))
+         .and_then(|v| v.get("error"))
+         .and_then(|e| e.as_str())
+     {
+-        return Err(error.to_string());
++        if result["result"]["value"]["beforeInput"].as_bool()==Some(true) && ["e2e_not_actionable","e2e_unsupported_capability"].contains(&error) {
++            return Err(error.to_string());
++        }
++        return Err("Select did not complete".into());
+     }
+ 
+     Ok(())
+@@ -531,11 +530,12 @@
+     iframe_sessions: &HashMap<String, String>,
+ ) -> Result<Option<(f64, f64)>, String> {
+     let mut position = None;
+-    let is_checked = super::element::is_element_checked(
++    let is_checked = read_checkable_state(
+         client,
+         session_id,
+         ref_map,
+         selector_or_ref,
++        false,
+         iframe_sessions,
+     )
+     .await?;
+@@ -552,27 +552,7 @@
+         .await?;
+         position = Some(result.position);
+ 
+-        // Verify the click changed the state (Playwright parity: _setChecked re-checks).
+-        // If the coordinate-based click missed (e.g. hidden input, overlay), retry
+-        // with a JS .click() on the element and its associated input.
+-        if !super::element::is_element_checked(
+-            client,
+-            session_id,
+-            ref_map,
+-            selector_or_ref,
+-            iframe_sessions,
+-        )
+-        .await?
+-        {
+-            js_click_checkbox(
+-                client,
+-                session_id,
+-                ref_map,
+-                selector_or_ref,
+-                iframe_sessions,
+-            )
+-            .await?;
+-        }
++        wait_for_checkbox_after_input(client, session_id, ref_map, selector_or_ref, true, iframe_sessions).await?;
+     }
+     Ok(position)
+ }
+@@ -585,11 +565,12 @@
+     iframe_sessions: &HashMap<String, String>,
+ ) -> Result<Option<(f64, f64)>, String> {
+     let mut position = None;
+-    let is_checked = super::element::is_element_checked(
++    let is_checked = read_checkable_state(
+         client,
+         session_id,
+         ref_map,
+         selector_or_ref,
++        true,
+         iframe_sessions,
+     )
+     .await?;
+@@ -606,93 +587,54 @@
+         .await?;
+         position = Some(result.position);
+ 
+-        // Same verify-and-retry as check().
+-        if super::element::is_element_checked(
+-            client,
+-            session_id,
+-            ref_map,
+-            selector_or_ref,
+-            iframe_sessions,
+-        )
+-        .await?
+-        {
+-            js_click_checkbox(
+-                client,
+-                session_id,
+-                ref_map,
+-                selector_or_ref,
+-                iframe_sessions,
+-            )
+-            .await?;
++        wait_for_checkbox_after_input(client, session_id, ref_map, selector_or_ref, false, iframe_sessions).await?;
++    }
++    Ok(position)
++}
++
++/// Reject unrelated controls and radio unchecking before dispatching any input.
++async fn read_checkable_state(
++    client: &CdpClient, session_id: &str, ref_map: &RefMap, selector_or_ref: &str,
++    uncheck: bool, iframe_sessions: &HashMap<String, String>,
++) -> Result<bool, String> {
++    let (object_id, effective_session_id)=resolve_element_object_id(client,session_id,ref_map,selector_or_ref,iframe_sessions).await?;
++    let result: EvaluateResult=client.send_command_typed("Runtime.callFunctionOn", &CallFunctionOnParams {
++        function_declaration:r#"function(uncheck){
++            let el=this;if(el.localName==='label')el=el.control;
++            if(!el||!el.isConnected||el.matches(':disabled')||el.getAttribute('aria-disabled')==='true')return null;
++            const native=el.localName==='input'&&['checkbox','radio'].includes(el.type);
++            const role=el.getAttribute('role');const radio=native?el.type==='radio':['radio','menuitemradio'].includes(role);
++            if(uncheck&&radio)return 'unsupported';
++            if(native)return el.checked;
++            if(!['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role))return null;
++            const checked=el.getAttribute('aria-checked');return checked==='true'?true:checked==='false'?false:null;
++        }"#.to_string(),object_id:Some(object_id),arguments:Some(vec![CallArgument{value:Some(serde_json::json!(uncheck)),object_id:None}]),return_by_value:Some(true),await_promise:Some(false),
++    },Some(&effective_session_id)).await?;
++    if result.exception_details.is_some(){return Err("Checkable target is unavailable".into());}
++    if result.result.value.as_ref().and_then(Value::as_str)==Some("unsupported") { return Err("e2e_unsupported_capability".into()); }
++    result.result.value.as_ref().and_then(Value::as_bool).ok_or_else(||"e2e_not_actionable".to_string())
++}
++
++/// After dispatch, only observe. A second click can undo a delayed controlled
++/// update. Any read failure after input is uncertain, never a retryable stale.
++async fn wait_for_checkbox_after_input(
++    client: &CdpClient,
++    session_id: &str,
++    ref_map: &RefMap,
++    selector_or_ref: &str,
++    wanted: bool,
++    iframe_sessions: &HashMap<String, String>,
++) -> Result<(), String> {
++    let started = std::time::Instant::now();
++    loop {
++        let checked = super::element::is_element_checked(client, session_id, ref_map, selector_or_ref, iframe_sessions)
++            .await.map_err(|_| "Checkbox state unavailable after input may have committed".to_string())?;
++        if checked == wanted { return Ok(()); }
++        if started.elapsed() >= std::time::Duration::from_millis(1500) {
++            return Err("Checkbox state did not settle after input may have committed".to_string());
+         }
+-    }
+-    Ok(position)
+-}
+-
+-/// Fallback for when the coordinate-based CDP click did not toggle the
+-/// checkbox/radio state. This mirrors how Playwright dispatches clicks
+-/// through the DOM rather than via raw Input.dispatchMouseEvent coordinates.
+-///
+-/// Uses the same follow-label resolution as `is_element_checked`:
+-/// 1. If the element is a native input → `.click()` it directly.
+-/// 2. If the element is inside a `<label>` → `.click()` the label's `.control`.
+-/// 3. If the element has a nested `<input>` → `.click()` that input.
+-/// 4. Otherwise → `.click()` the element itself (handles ARIA role controls).
+-async fn js_click_checkbox(
+-    client: &CdpClient,
+-    session_id: &str,
+-    ref_map: &RefMap,
+-    selector_or_ref: &str,
+-    iframe_sessions: &HashMap<String, String>,
+-) -> Result<(), String> {
+-    let (object_id, effective_session_id) = resolve_element_object_id(
+-        client,
+-        session_id,
+-        ref_map,
+-        selector_or_ref,
+-        iframe_sessions,
+-    )
+-    .await?;
+-
+-    let js = r#"function() {
+-            var el = this;
+-            var tag = el.tagName && el.tagName.toUpperCase();
+-            // 1. Native input — click it directly
+-            if (tag === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
+-                el.click();
+-                return;
+-            }
+-            // 2. Follow label → control association
+-            var label = tag === 'LABEL' ? el : (el.closest && el.closest('label'));
+-            if (label && label.tagName && label.tagName.toUpperCase() === 'LABEL' && label.control) {
+-                label.control.click();
+-                return;
+-            }
+-            // 3. Nested native input
+-            var input = el.querySelector && el.querySelector('input[type="checkbox"], input[type="radio"]');
+-            if (input) {
+-                input.click();
+-                return;
+-            }
+-            // 4. ARIA role control — click the element itself
+-            el.click();
+-        }"#;
+-
+-    client
+-        .send_command_typed::<_, Value>(
+-            "Runtime.callFunctionOn",
+-            &CallFunctionOnParams {
+-                function_declaration: js.to_string(),
+-                object_id: Some(object_id),
+-                arguments: None,
+-                return_by_value: Some(true),
+-                await_promise: Some(false),
+-            },
+-            Some(&effective_session_id),
+-        )
+-        .await?;
+-
+-    Ok(())
++        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
++    }
+ }
+ 
+ pub async fn focus(
+@@ -1036,6 +978,7 @@
+     y: f64,
+     button: &str,
+     click_count: i32,
++    modifiers: i32,
+ ) -> Result<ClickResult, String> {
+     // Move
+     if dispatch_mouse_or_dialog(
+@@ -1051,7 +994,7 @@
+             click_count: None,
+             delta_x: None,
+             delta_y: None,
+-            modifiers: None,
++            modifiers: Some(modifiers),
+         },
+     )
+     .await?
+@@ -1087,7 +1030,7 @@
+             click_count: Some(click_count),
+             delta_x: None,
+             delta_y: None,
+-            modifiers: None,
++            modifiers: Some(modifiers),
+         },
+     )
+     .await?
+@@ -1103,6 +1046,7 @@
+                 x,
+                 y,
+                 button: button.to_string(),
++                modifiers,
+             }),
+             x,
+             y,
+@@ -1125,7 +1069,7 @@
+             click_count: Some(click_count),
+             delta_x: None,
+             delta_y: None,
+-            modifiers: None,
++            modifiers: Some(modifiers),
+         },
+     )
+     .await?;
+@@ -1157,7 +1101,7 @@
+                 click_count: Some(1),
+                 delta_x: None,
+                 delta_y: None,
+-                modifiers: None,
++                modifiers: Some(release.modifiers),
+             },
+             Some(&release.session_id),
+         )
+@@ -1274,6 +1218,99 @@
+ 
+ #[cfg(test)]
+ mod tests {
++    #[tokio::test]
++    async fn exact_click_preserves_modifiers_on_move_press_and_release() {
++        use futures_util::{SinkExt, StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let url=format!("ws://{}",listener.local_addr().unwrap());
++        let server=tokio::spawn(async move {
++            let (socket,_)=listener.accept().await.unwrap();
++            let mut ws=tokio_tungstenite::accept_async(socket).await.unwrap();
++            for event in ["mouseMoved","mousePressed","mouseReleased"] {
++                let Some(Ok(Message::Text(text)))=ws.next().await else {panic!("Missing pointer event")};
++                let request:Value=serde_json::from_str(&text).unwrap();
++                assert_eq!(request["method"],"Input.dispatchMouseEvent");
++                assert_eq!(request["params"]["modifiers"],10);
++                assert_eq!(request["params"]["type"],event);
++                ws.send(Message::Text(json!({"id":request["id"],"sessionId":request["sessionId"],"result":{}}).to_string())).await.unwrap();
++            }
++        });
++        let client=CdpClient::connect(&url).await.unwrap();
++        dispatch_click(&client,"page",&["page"],3.5,7.25,"left",1,10).await.unwrap();
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn noncheckable_targets_never_dispatch_a_click() {
++        use futures_util::{SinkExt, StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        for remove_check in [false,true] {
++            let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url=format!("ws://{}",listener.local_addr().unwrap());
++            let server=tokio::spawn(async move {
++                let (socket,_)=listener.accept().await.unwrap();let mut ws=tokio_tungstenite::accept_async(socket).await.unwrap();
++                while let Ok(Some(Ok(Message::Text(text))))=tokio::time::timeout(std::time::Duration::from_millis(100),ws.next()).await {
++                    let request:Value=serde_json::from_str(&text).unwrap();
++                    let response=match request["method"].as_str().unwrap(){
++                        "DOM.resolveNode"=>json!({"object":{"type":"object","objectId":"node"}}),
++                        "Runtime.callFunctionOn"=>{let source=request["params"]["functionDeclaration"].as_str().unwrap();if source.contains("return this.isConnected"){json!({"result":{"type":"boolean","value":true}})}else{json!({"result":{"type":"object","subtype":"null","value":null}})}},
++                        method=>panic!("Uncheckable target dispatched {method}"),
++                    };
++                    ws.send(Message::Text(json!({"id":request["id"],"sessionId":request["sessionId"],"result":response}).to_string())).await.unwrap();
++                }
++            });
++            let client=CdpClient::connect(&url).await.unwrap();let mut refs=RefMap::new();refs.add_with_frame("e1".into(),Some(42),"button","Business action",None,None);
++            let result=if remove_check{uncheck(&client,"page",&refs,"@e1",&HashMap::new()).await}else{check(&client,"page",&refs,"@e1",&HashMap::new()).await};
++            assert!(result.is_err());server.await.unwrap();
++        }
++    }
++
++    #[tokio::test]
++    async fn checkbox_delayed_state_and_replacement_never_dispatch_again() {
++        use futures_util::{SinkExt, StreamExt};
++        use serde_json::json;
++        use tokio_tungstenite::tungstenite::Message;
++        for detached in [false, true] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url = format!("ws://{}", listener.local_addr().unwrap());
++            let server = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.unwrap();
++                let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++                let mut reads = 0;
++                while let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await {
++                    let request: Value = serde_json::from_str(&text).unwrap();
++                    let result = match request["method"].as_str().unwrap() {
++                        "DOM.resolveNode" => json!({"object":{"type":"object","objectId":"checked-node"}}),
++                        "Runtime.callFunctionOn" => {
++                            let function = request["params"]["functionDeclaration"].as_str().unwrap();
++                            assert!(!function.contains(".click("), "A delayed state must never trigger another click");
++                            if function.contains("isConnected") { json!({"result":{"type":"boolean","value":!detached}}) }
++                            else { reads += 1; json!({"result":{"type":"boolean","value":reads >= 3}}) }
++                        }
++                        other => panic!("Post-click verification must be read-only, got {other}"),
++                    };
++                    let response = json!({"id":request["id"],"sessionId":request["sessionId"],"result":result});
++                    ws.send(Message::Text(response.to_string())).await.unwrap();
++                }
++                reads
++            });
++            let client = CdpClient::connect(&url).await.unwrap();
++            let mut map = RefMap::new();
++            map.add_with_frame("e1".into(), Some(42), "checkbox", "Agree", None, None);
++            let result = wait_for_checkbox_after_input(&client, "page", &map, "@e1", true, &HashMap::new()).await;
++            if detached {
++                let error = result.unwrap_err();
++                assert!(!error.starts_with(super::super::element::STALE_REF_PREFIX));
++                assert!(error.contains("after input may have committed"));
++            } else { assert!(result.is_ok()); }
++            let reads = server.await.unwrap();
++            assert_eq!(reads, if detached { 0 } else { 3 });
++        }
++    }
++
+     use super::*;
+ 
+     /// Verify that `char_to_key_info` returns the correct (key, code,
+diff --git a/cli/src/native/snapshot.rs b/cli/src/native/snapshot.rs
+--- a/cli/src/native/snapshot.rs
++++ b/cli/src/native/snapshot.rs
+@@ -32,11 +32,14 @@
+                     "Page.getFrameTree" => json!({"frameTree": {"frame": {
+                         "id": "child", "loaderId": server_document.lock().unwrap().clone()
+                     }}}),
++                    "Page.createIsolatedWorld" => json!({"executionContextId": 7}),
+                     "Accessibility.getFullAXTree" => json!({"nodes": [{
+                         "nodeId": "1", "role": {"type": "role", "value": "button"},
+                         "name": {"type": "string", "value": "Buy"}, "backendDOMNodeId": 42
+                     }]}),
+-                    "Runtime.evaluate" => json!({"result": {"type": "object", "value": []}}),
++                    "Runtime.evaluate" => json!({"result": {"type": "object", "objectId": "cursor-array"}}),
++                    "Runtime.callFunctionOn" => json!({"result": {"type": "object", "value": []}}),
++                    "Runtime.getProperties" => json!({"result": []}),
+                     _ => json!({}),
+                 };
+                 ws.send(tokio_tungstenite::tungstenite::Message::Text(
+@@ -69,6 +72,47 @@
+     }
+ 
+     #[tokio::test]
++    async fn cursor_handles_preserve_unnamed_nodes_without_dom_writes_and_fail_closed() {
++        for fail in [false,true] {
++            let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url=format!("ws://{}",listener.local_addr().unwrap());
++            let server=tokio::spawn(async move {
++                let (stream,_)=listener.accept().await.unwrap();
++                let mut ws=tokio_tungstenite::accept_async(stream).await.unwrap();
++                while let Some(Ok(message))=ws.next().await {
++                    let Ok(text)=message.to_text() else {continue;};
++                    let request:Value=serde_json::from_str(text).unwrap();
++                    let method=request["method"].as_str().unwrap();
++                    let response=match method {
++                        "Runtime.evaluate"=>{
++                            assert_eq!(request["params"]["contextId"],7);
++                            let source=request["params"]["expression"].as_str().unwrap();
++                            assert!(!source.contains("setAttribute("));assert!(!source.contains("removeAttribute("));
++                            if fail {json!({"result":{"type":"undefined"},"exceptionDetails":{"text":"capture failed"}})}
++                            else {json!({"result":{"type":"object","objectId":"array"}})}
++                        },
++                        "Runtime.callFunctionOn"=>{
++                            if request["params"]["objectId"]=="array" {json!({"result":{"type":"object","value":[{"text":"","tagName":"span","hasCursorPointer":true}]}})}
++                            else {json!({"result":{"type":"object","objectId":"node"}})}
++                        },
++                        "Runtime.getProperties"=>json!({"result":[{"name":"0","value":{"objectId":"entry"}}]}),
++                        "DOM.describeNode"=>json!({"node":{"backendNodeId":42}}),
++                        "Runtime.releaseObjectGroup"=>json!({}),
++                        _=>panic!("Unexpected command {method}"),
++                    };
++                    ws.send(tokio_tungstenite::tungstenite::Message::Text(json!({"id":request["id"],"result":response}).to_string())).await.unwrap();
++                    if method=="Runtime.releaseObjectGroup" {break;}
++                }
++            });
++            let client=CdpClient::connect(&url).await.unwrap();
++            let result=find_cursor_interactive_elements(&client,"frame-session",7).await;
++            if fail {assert!(result.is_err());}
++            else {let result=result.unwrap();assert_eq!(result.len(),1);assert_eq!(result[&42].text,"");}
++            server.await.unwrap();
++        }
++    }
++
++    #[tokio::test]
+     async fn durable_refs_invalidate_replaced_iframe_document() {
+         let refs =
+             observe_documents(&[Some("a"), Some("a"), Some("b")], &["child-session"; 3]).await;
+@@ -186,6 +230,7 @@
+     pub compact: bool,
+     pub depth: Option<usize>,
+     pub urls: bool,
++    pub allowed_frame_documents: Option<HashMap<String, String>>,
+ }
+ 
+ struct TreeNode {
+@@ -415,6 +460,10 @@
+     let loader = frame_tree
+         .as_ref()
+         .and_then(|tree| frame_loader(&tree["frameTree"], frame_id));
++    if !snapshot_frame_allowed(options, frame_id, loader) { return Ok("(empty page)".into()); }
++    let target_frame=frame_id.or_else(||frame_tree.as_ref().and_then(|tree|tree["frameTree"]["frame"]["id"].as_str())).ok_or("Snapshot frame is unavailable")?;
++    let world=client.send_command("Page.createIsolatedWorld",Some(serde_json::json!({"frameId":target_frame,"worldName":"agent-browser-exact-refs"})),Some(effective_session_id)).await?;
++    let context_id=world["executionContextId"].as_i64().ok_or("Snapshot document realm is unavailable")?;
+     let document_is_known =
+         ref_map.observe_document(session_id, frame_id, effective_session_id, loader);
+     // Ensure domains are enabled on the iframe session (defensive fallback
+@@ -434,6 +483,14 @@
+             Some(effective_session_id),
+         )
+         .await?;
++
++    // Navigation may race the AX response. A new loader has not been approved;
++    // discard this child capture before refs or static text are published.
++    if frame_id.is_some() && options.allowed_frame_documents.is_some() {
++        let after=client.send_command_no_params("Page.getFrameTree",Some(effective_session_id)).await.ok();
++        let after_loader=after.as_ref().and_then(|tree|frame_loader(&tree["frameTree"],frame_id));
++        if !snapshot_frame_allowed(options,frame_id,after_loader) {return Ok("(empty page)".into());}
++    }
+ 
+     let (mut tree_nodes, root_indices) = build_tree(&ax_tree.nodes);
+ 
+@@ -482,9 +539,9 @@
+ 
+     // Pre-collect cursor-interactive elements so we can mark them with refs during tree building
+     let cursor_elements: HashMap<i64, CursorElementInfo> =
+-        find_cursor_interactive_elements(client, session_id)
++        find_cursor_interactive_elements(client, effective_session_id, context_id)
+             .await
+-            .unwrap_or_default();
++            .map_err(|_| "Cursor-interactive augmentation failed; snapshot is incomplete".to_string())?;
+ 
+     promote_hidden_inputs(&mut tree_nodes, &cursor_elements);
+ 
+@@ -550,6 +607,7 @@
+             frame_id,
+         );
+ 
++        ref_map.bind_world(&ref_id,effective_session_id,context_id);
+         tree_nodes[*idx].has_ref = true;
+         tree_nodes[*idx].ref_id = Some(ref_id);
+     }
+@@ -639,41 +697,17 @@
+         render_tree(&tree_nodes, root_idx, 0, &mut output, options);
+     }
+ 
+-    // Recurse into child iframes: for each Iframe node with a backend_node_id,
+-    // resolve the child frame ID and take a snapshot of its content.
+-    // We only recurse from the main frame (frame_id == None) to avoid
+-    // unbounded depth; nested iframes within iframes are not expanded.
+-    if frame_id.is_none() {
+-        let mut iframe_snapshots: Vec<(String, String)> = Vec::new(); // (ref_id, child_snapshot)
++    // Expand each document using its parent renderer. Same-process descendants
++    // of an OOPIF keep that renderer rather than accidentally using the top one.
++    {
++        let mut iframe_snapshots: Vec<(String, String)> = Vec::new();
+         for node in tree_nodes.iter() {
+-            if node.role != "Iframe" || !node.has_ref {
+-                continue;
+-            }
+-            let Some(bid) = node.backend_node_id else {
+-                continue;
+-            };
+-            let ref_id = node.ref_id.as_deref().unwrap_or("");
+-            if let Ok(child_fid) = resolve_iframe_frame_id(client, session_id, bid).await {
+-                // Snapshot the child frame; errors are silently ignored
+-                // (e.g. cross-origin iframes)
+-                if let Ok(child_text) = Box::pin(take_snapshot(
+-                    client,
+-                    session_id,
+-                    options,
+-                    ref_map,
+-                    Some(&child_fid),
+-                    iframe_sessions,
+-                ))
+-                .await
+-                {
+-                    if !child_text.is_empty()
+-                        && child_text != "(empty page)"
+-                        && child_text != "(no interactive elements)"
+-                    {
+-                        iframe_snapshots.push((ref_id.to_string(), child_text));
+-                    }
+-                }
+-            }
++            if node.role!="Iframe" || !node.has_ref {continue;}
++            let bid=node.backend_node_id.ok_or("Snapshot iframe has no DOM identity")?;
++            let ref_id=node.ref_id.as_deref().unwrap_or("");
++            let child_fid=resolve_iframe_frame_id(client,effective_session_id,bid).await?;
++            let child_text=Box::pin(take_snapshot(client,effective_session_id,options,ref_map,Some(&child_fid),iframe_sessions)).await?;
++            if !child_text.is_empty() && child_text!="(empty page)" && child_text!="(no interactive elements)" {iframe_snapshots.push((ref_id.to_string(),child_text));}
+         }
+ 
+         // Insert each child snapshot after its Iframe line in the output
+@@ -725,6 +759,13 @@
+ }
+ 
+ /// Resolve the child frame ID for an iframe element given its backendNodeId.
++fn snapshot_frame_allowed(options: &SnapshotOptions, frame_id: Option<&str>, loader: Option<&str>) -> bool {
++    match (&options.allowed_frame_documents,frame_id) {
++        (Some(allowed),Some(frame))=>loader.is_some_and(|loader|allowed.get(frame).is_some_and(|expected|expected==loader)),
++        _=>true,
++    }
++}
++
+ fn frame_loader<'a>(tree: &'a Value, frame_id: Option<&str>) -> Option<&'a str> {
+     let frame = &tree["frame"];
+     if frame_id.is_none() || frame["id"].as_str() == frame_id {
+@@ -772,6 +813,7 @@
+ async fn find_cursor_interactive_elements(
+     client: &CdpClient,
+     session_id: &str,
++    context_id: i64,
+ ) -> Result<HashMap<i64, CursorElementInfo>, String> {
+     // Single JS evaluation that matches the v0.19.0 Node.js findCursorInteractiveElements():
+     // - Uses querySelectorAll('*') to walk all elements
+@@ -781,7 +823,7 @@
+     // - Skips elements with interactive ARIA roles
+     // - Deduplicates inherited cursor:pointer from parent
+     // - Skips empty text and zero-size elements
+-    // - Tags each matched element with data-__ab-ci for batch backendNodeId resolution
++    // - Keeps each exact element in a remote object handle for backend identity
+     let js = r#"
+ (function() {
+     var results = [];
+@@ -846,8 +888,8 @@
+             }
+         }
+ 
+-        el.setAttribute('data-__ab-ci', String(results.length));
+         results.push({
++            element: el,
+             text: text,
+             tagName: tagName,
+             hasOnClick: hasOnClick,
+@@ -862,119 +904,37 @@
+ })()
+ "#;
+ 
+-    let result: EvaluateResult = client
+-        .send_command_typed(
+-            "Runtime.evaluate",
+-            &EvaluateParams {
+-                expression: js.to_string(),
+-                return_by_value: Some(true),
+-                await_promise: Some(false),
+-            },
+-            Some(session_id),
+-        )
+-        .await?;
+-
+-    let elements: Vec<Value> = result
+-        .result
+-        .value
+-        .and_then(|v| serde_json::from_value::<Vec<Value>>(v).ok())
+-        .unwrap_or_default();
+-
+-    if elements.is_empty() {
+-        return Ok(HashMap::new());
+-    }
+-
+-    // Batch-resolve backendNodeIds: use DOM.getDocument to get the root nodeId,
+-    // then DOM.querySelectorAll to get all tagged elements in a single call.
+-    let doc: Value = client
+-        .send_command(
+-            "DOM.getDocument",
+-            Some(serde_json::json!({ "depth": 0 })),
+-            Some(session_id),
+-        )
+-        .await?;
+-
+-    let root_node_id = doc
+-        .get("root")
+-        .and_then(|r| r.get("nodeId"))
+-        .and_then(|v| v.as_i64())
+-        .ok_or("DOM.getDocument did not return root nodeId")?;
+-
+-    let query_result: Value = client
+-        .send_command(
+-            "DOM.querySelectorAll",
+-            Some(serde_json::json!({
+-                "nodeId": root_node_id,
+-                "selector": "[data-__ab-ci]"
+-            })),
+-            Some(session_id),
+-        )
+-        .await?;
+-
+-    let node_ids: Vec<i64> = query_result
+-        .get("nodeIds")
+-        .and_then(|v| v.as_array())
+-        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+-        .unwrap_or_default();
+-
+-    // Resolve backendNodeIds for each DOM node using concurrent CDP calls.
+-    let describe_futures: Vec<_> = node_ids
+-        .iter()
+-        .map(|&node_id| {
+-            client.send_command(
+-                "DOM.describeNode",
+-                Some(serde_json::json!({ "nodeId": node_id })),
+-                Some(session_id),
+-            )
+-        })
+-        .collect();
+-
+-    let describe_results = futures_util::future::join_all(describe_futures).await;
+-
+-    // Build a map from data-__ab-ci index to backendNodeId.
+-    let mut idx_to_backend: HashMap<usize, i64> = HashMap::new();
+-    for desc in describe_results.into_iter().flatten() {
+-        let backend_id = desc
+-            .get("node")
+-            .and_then(|n| n.get("backendNodeId"))
+-            .and_then(|v| v.as_i64());
+-        let ci_attr = desc
+-            .get("node")
+-            .and_then(|n| n.get("attributes"))
+-            .and_then(|a| a.as_array())
+-            .and_then(|attrs| {
+-                // attributes is a flat array: [name, value, name, value, ...]
+-                attrs
+-                    .iter()
+-                    .enumerate()
+-                    .find(|(_, v)| v.as_str() == Some("data-__ab-ci"))
+-                    .and_then(|(i, _)| attrs.get(i + 1))
+-                    .and_then(|v| v.as_str())
+-                    .and_then(|s| s.parse::<usize>().ok())
+-            });
+-        if let (Some(bid), Some(idx)) = (backend_id, ci_attr) {
+-            idx_to_backend.insert(idx, bid);
+-        }
+-    }
+-
+-    // Clean up the data attributes we injected for backendNodeId resolution.
+-    let cleanup_js =
+-        r#"(function(){ var els = document.querySelectorAll('[data-__ab-ci]'); for (var i = 0; i < els.length; i++) els[i].removeAttribute('data-__ab-ci'); return els.length; })()"#.to_string();
+-    if let Err(e) = client
+-        .send_command_typed::<EvaluateParams, EvaluateResult>(
+-            "Runtime.evaluate",
+-            &EvaluateParams {
+-                expression: cleanup_js,
+-                return_by_value: Some(true),
+-                await_promise: Some(false),
+-            },
+-            Some(session_id),
+-        )
+-        .await
+-    {
+-        eprintln!("[agent-browser] Warning: failed to clean up data-__ab-ci attributes: {e}");
+-    }
+-
++    let captured:Result<(Vec<Value>,HashMap<usize,i64>),String>=async {
++        let result:EvaluateResult=client.send_command_typed("Runtime.evaluate",&serde_json::json!({
++            "expression":js,"returnByValue":false,"awaitPromise":false,"contextId":context_id,"objectGroup":"agent-browser-cursor-scan"
++        }),Some(session_id)).await?;
++        if result.exception_details.is_some(){return Err("Cursor augmentation evaluation failed".into());}
++        let array=result.result.object_id.ok_or("Cursor augmentation handle is unavailable")?;
++        let metadata:EvaluateResult=client.send_command_typed("Runtime.callFunctionOn",&serde_json::json!({
++            "objectId":array,"functionDeclaration":"function(){return this.map(({element,...info})=>info)}","returnByValue":true
++        }),Some(session_id)).await?;
++        if metadata.exception_details.is_some(){return Err("Cursor augmentation metadata failed".into());}
++        let elements:Vec<Value>=metadata.result.value.and_then(|value|serde_json::from_value(value).ok()).ok_or("Cursor augmentation metadata is unavailable")?;
++        let properties=client.send_command("Runtime.getProperties",Some(serde_json::json!({"objectId":array,"ownProperties":true})),Some(session_id)).await?;
++        let entries:Vec<(usize,String)>=properties["result"].as_array().ok_or("Cursor augmentation properties are unavailable")?.iter().filter_map(|entry|{
++            Some((entry["name"].as_str()?.parse::<usize>().ok()?,entry["value"]["objectId"].as_str()?.to_string()))
++        }).collect();
++        if entries.len()!=elements.len(){return Err("Cursor augmentation lost an exact element".into());}
++        let descriptions=futures_util::future::join_all(entries.into_iter().map(|(index,object)|async move{
++            let node:EvaluateResult=client.send_command_typed("Runtime.callFunctionOn",&serde_json::json!({
++                "objectId":object,"functionDeclaration":"function(){return this.element}","returnByValue":false,"objectGroup":"agent-browser-cursor-scan"
++            }),Some(session_id)).await?;
++            if node.exception_details.is_some(){return Err("Cursor augmentation element is unavailable".to_string());}
++            let object=node.result.object_id.ok_or("Cursor augmentation element is unavailable")?;
++            let description=client.send_command("DOM.describeNode",Some(serde_json::json!({"objectId":object})),Some(session_id)).await?;
++            let backend=description["node"]["backendNodeId"].as_i64().ok_or("Cursor augmentation identity is unavailable")?;
++            Ok::<_,String>((index,backend))
++        })).await;
++        let identities:HashMap<usize,i64>=descriptions.into_iter().collect::<Result<_,_>>()?;
++        Ok((elements,identities))
++    }.await;
++    let _=client.send_command("Runtime.releaseObjectGroup",Some(serde_json::json!({"objectGroup":"agent-browser-cursor-scan"})),Some(session_id)).await;
++    let (elements,idx_to_backend)=captured?;
+     // Build the map
+     let mut map: HashMap<i64, CursorElementInfo> = HashMap::new();
+     for (i, elem) in elements.iter().enumerate() {
+@@ -1507,6 +1467,18 @@
+ 
+ #[cfg(test)]
+ mod tests {
++    #[test]
++    fn child_frame_policy_requires_the_exact_approved_loader() {
++        let mut options=SnapshotOptions::default();
++        assert!(snapshot_frame_allowed(&options,Some("child"),Some("first")));
++        options.allowed_frame_documents=Some(HashMap::from([("child".into(),"first".into())]));
++        assert!(snapshot_frame_allowed(&options,Some("child"),Some("first")));
++        assert!(!snapshot_frame_allowed(&options,Some("child"),Some("replacement")));
++        assert!(!snapshot_frame_allowed(&options,Some("other"),Some("first")));
++        assert!(!snapshot_frame_allowed(&options,Some("child"),None));
++        assert!(snapshot_frame_allowed(&options,None,None));
++    }
++
+     use super::*;
+ 
+     #[test]
+diff --git a/cli/src/flags.rs b/cli/src/flags.rs
+--- a/cli/src/flags.rs
++++ b/cli/src/flags.rs
+@@ -457,6 +457,8 @@
+ }
+ 
+ pub fn parse_flags(args: &[String]) -> Flags {
++    // Values after -- never participate in global flag/config discovery.
++    let args=&args[..args.iter().position(|arg|arg=="--").unwrap_or(args.len())];
+     let config = load_config(args).unwrap_or_else(|e| {
+         eprintln!("{} {}", color::warning_indicator(), e);
+         std::process::exit(1);
+@@ -1228,6 +1230,7 @@
+     let mut seen_command = false;
+     while i < args.len() {
+         let arg = &args[i];
++        if arg=="--" && !skip_next {result.extend_from_slice(&args[i..]);break;}
+         if skip_next {
+             skip_next = false;
+             i += 1;
+@@ -1273,6 +1276,13 @@
+ 
+ #[cfg(test)]
+ mod tests {
++    #[test]
++    fn global_flags_stop_at_literal_boundary() {
++        let input=vec!["--session".into(),"owned".into(),"fill".into(),"@e1".into(),"--".into(),"--session".into(),"payload".into(),"--version".into()];
++        let flags=parse_flags(&input);assert_eq!(flags.session,"owned");
++        assert_eq!(clean_args(&input),vec!["fill","@e1","--","--session","payload","--version"]);
++    }
++
+     use super::*;
+     use crate::test_utils::EnvGuard;
+ 
+diff --git a/cli/src/main.rs b/cli/src/main.rs
+--- a/cli/src/main.rs
++++ b/cli/src/main.rs
+@@ -1440,8 +1440,9 @@
+     let clean = clean_args(&args);
+     tls::configure_process(&flags);
+ 
+-    let has_help = args.iter().any(|a| a == "--help" || a == "-h");
+-    let has_version = args.iter().any(|a| a == "--version" || a == "-V");
++    let control_args=&args[..args.iter().position(|arg|arg=="--").unwrap_or(args.len())];
++    let has_help = control_args.iter().any(|a| a == "--help" || a == "-h");
++    let has_version = control_args.iter().any(|a| a == "--version" || a == "-V");
+ 
+     if has_help {
+         if let Some(cmd) = clean.first() {
+diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
+--- a/cli/src/native/browser.rs
++++ b/cli/src/native/browser.rs
+@@ -2112,6 +2112,16 @@
+             )
+             .await?;
+         Ok(())
++    }
++
++    pub async fn tab_bind_by_id(&mut self,tab_id:u32)->Result<Value,String>{
++        let index=self.pages.iter().position(|page|page.tab_id==tab_id).ok_or("Unknown tab id")?;
++        let session=self.pages[index].session_id.clone();
++        if !self.renderer_responds(&session,RENDERER_PROBE_TIMEOUT_MS).await{return Err("Read-only tab binding requires a responsive renderer".into());}
++        self.enable_domains(&session).await?;
++        self.active_page_index=index;self.bind_active_target();
++        let page=&self.pages[index];
++        Ok(json!({"tabId":format_tab_id(page.tab_id),"targetId":page.target_id,"url":page.url,"title":page.title}))
+     }
+ 
+     pub async fn tab_switch_by_id(
+@@ -4451,6 +4461,11 @@
+     /// never needlessly reactivated.
+     async fn start_mock_cdp_browser_responsive(
+     ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
++        start_mock_cdp_browser_responsive_counting_focus(false).await
++    }
++
++    async fn start_mock_cdp_browser_responsive_counting_focus(include_front:bool
++    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+         use futures_util::{SinkExt, StreamExt};
+         use std::sync::atomic::{AtomicUsize, Ordering};
+         use std::sync::Arc;
+@@ -4489,7 +4504,7 @@
+                 let method = cmd["method"].as_str().unwrap_or("");
+                 let respond = |result: Value| json!({ "id": id, "result": result }).to_string();
+ 
+-                if method == "Target.activateTarget" {
++                if method == "Target.activateTarget" || (include_front && method == "Page.bringToFront") {
+                     activations_task.fetch_add(1, Ordering::SeqCst);
+                 }
+ 
+@@ -4523,6 +4538,17 @@
+     /// A responsive tab must not be reactivated: recovery only runs when the
+     /// liveness probe gets no answer, so a healthy tab keeps its state and is
+     /// never touched by Target.activateTarget (#1528).
++    #[tokio::test]
++    async fn trace_binding_returns_exact_target_without_focus() {
++        let (url,activations)=start_mock_cdp_browser_responsive_counting_focus(true).await;
++        let mut manager=BrowserManager::connect_cdp(&url).await.unwrap();
++        let id=manager.pages.iter().find(|page|page.target_id=="T-TWO").unwrap().tab_id;
++        let result=manager.tab_bind_by_id(id).await.unwrap();
++        assert_eq!(result["targetId"],"T-TWO");
++        assert_eq!(manager.active_target_id().unwrap(),"T-TWO");
++        assert_eq!(activations.load(std::sync::atomic::Ordering::SeqCst),0);
++    }
++
+     #[tokio::test]
+     async fn test_tab_switch_does_not_revive_responsive_tab() {
+         let (url, activations) = start_mock_cdp_browser_responsive().await;

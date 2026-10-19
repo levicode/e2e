@@ -1,0 +1,36 @@
+{
+  "name": "@e2e-dev/agent-browser",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent-browser Chromium engine for e2e with a public CDP capability companion",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts",
+    "test:browser": "node --test tests/*.integration.ts"
+  },
+  "peerDependencies": {
+    "e2e": ">=0.21.2 <1"
+  },
+  "devDependencies": {
+    "e2e": "workspace:*",
+    "typescript": "7.0.2",
+    "@types/node": "26.6.2"
+  },
+  "engines": {
+    "node": ">=24.8.0"
+  }
+}
