@@ -3900,6 +3900,23 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
          manager.close().await.unwrap();
+@@ -3488,14 +3781,14 @@
+         existing: bool,
+     ) {
+         let (url, server) = initialization_server(fail_method, existing, 2, false).await;
+-        let error = BrowserManager::connect_cdp_inner(&url, direct, None)
++        let error = BrowserManager::connect_cdp_inner(&url, direct, None, None)
+             .await
+             .err()
+             .expect("initialization should fail");
+         assert!(error.contains("injected initialization failure"), "{error}");
+         let mut manager = tokio::time::timeout(
+             Duration::from_secs(4),
+-            BrowserManager::connect_cdp_inner(&url, direct, None),
++            BrowserManager::connect_cdp_inner(&url, direct, None, None),
+         )
+         .await
+         .expect("retry should succeed after cleanup")
 @@ -4451,6 +4744,11 @@
      /// never needlessly reactivated.
      async fn start_mock_cdp_browser_responsive(

@@ -93,12 +93,18 @@ test('structured-clone graph rejects forged references and unrecognized construc
   await assert.rejects(encodeStateValue(() => 'never serializable'));
 });
 
-function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
+function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nestedOopif?: boolean; unavailableOopif?: boolean; mismatchedOopif?: boolean; ownerInClosedShadow?: boolean; missingOwnerIdentity?: boolean; ownerChangesAt?: 'before' | 'after'; ownerChangeKind?: 'replace' | 'add' | 'remove'; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
   const calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] = [];
   const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
   let visible = true; let switchedAway = false;
+  let topDocuments = 0;
   cdp.attachTarget = async () => 'top-session';
-  cdp.listTargets = async () => [{ targetId: 'top', type: 'page', url: 'https://top.test', ...(options.browserContextId ? { browserContextId: options.browserContextId } : {}) }, ...(options.oopif ? [{ targetId: 'child', type: 'iframe', url: 'https://child.test' }] : [])];
+  cdp.listTargets = async () => [
+    { targetId: 'top', type: 'page', url: 'https://top.test', ...(options.browserContextId ? { browserContextId: options.browserContextId } : {}) },
+    { targetId: 'foreign-frame', type: 'iframe', url: 'https://foreign.test' },
+    ...(options.oopif && !options.unavailableOopif ? [{ targetId: 'child', type: 'iframe', url: 'https://child.test' }] : []),
+    ...(options.nestedOopif ? [{ targetId: 'grandchild', type: 'iframe', url: 'https://grandchild.test' }] : []),
+  ];
   cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
     calls.push({ method, params, context, ...(session === undefined ? {} : { session }) });
     let value: unknown = {};
@@ -111,10 +117,19 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; ver
       else if (switchedAway && !options.visibilityFails) visible = true;
       else if (options.visibilityFails) throw new Error('Visibility recovery unavailable');
     }
-    if (method === 'Page.getFrameTree') value = { frameTree: { frame: { id: session === 'child-session' ? 'child' : 'top' }, ...((options.inaccessibleFrame || options.oopif) && session !== 'child-session' ? { childFrames: [{ frame: { id: 'child' } }] } : {}) } };
-    if (method === 'DOM.getDocument') value = { root: { nodeType: 9 } };
-    if (method === 'Target.attachToTarget') value = { sessionId: 'child-session' };
-    if (method === 'Page.createIsolatedWorld') value = { executionContextId: session === 'child-session' ? 2 : 1 };
+    if (method === 'Page.getFrameTree') value = { frameTree: { frame: { id: session === 'grandchild-session' ? 'grandchild' : session === 'child-session' ? options.mismatchedOopif ? 'foreign-frame' : 'child' : 'top' }, ...(options.inaccessibleFrame && session === 'top-session' ? { childFrames: [{ frame: { id: 'child' } }] } : {}) } };
+    if (method === 'DOM.getDocument') {
+      if (session === 'top-session') topDocuments++;
+      const changed = options.ownerChangesAt === 'before' ? topDocuments >= 2 : options.ownerChangesAt === 'after' && topDocuments >= 3;
+      const owner = { nodeType: 1, nodeName: 'IFRAME', ...(options.missingOwnerIdentity ? {} : { frameId: session === 'child-session' ? 'grandchild' : 'child' }), backendNodeId: changed && (options.ownerChangeKind ?? 'replace') === 'replace' ? 23 : 22 };
+      const hasOwner = (options.oopif && session === 'top-session') || (options.nestedOopif && session === 'child-session');
+      const owners = changed && options.ownerChangeKind === 'remove' ? [] : changed && options.ownerChangeKind === 'add' ? [owner, { nodeType: 1, nodeName: 'IFRAME', frameId: 'new-child', backendNodeId: 24 }] : [owner];
+      value = { root: { nodeType: 9, ...(hasOwner ? { children: options.ownerInClosedShadow ? [{ nodeType: 1, nodeName: 'DIV', shadowRoots: [{ nodeType: 11, shadowRootType: 'closed', backendNodeId: 77, children: owners }] }] : owners } : {}) } };
+    }
+    if (method === 'Target.attachToTarget') value = { sessionId: `${String(params.targetId)}-session` };
+    if (method === 'Page.createIsolatedWorld') value = { executionContextId: session === 'grandchild-session' ? 3 : session === 'child-session' ? 2 : 1 };
+    if (method === 'DOM.resolveNode') value = { object: { objectId: 'closed-root' } };
+    if (method === 'Runtime.callFunctionOn') value = { result: { value: true } };
     if (method === 'Runtime.evaluate') {
       const expression = String(params.expression);
       if (expression === 'document.visibilityState === "visible"') value = { result: { value: visible } };
@@ -148,6 +163,33 @@ test('pixel capture independently masks the verified OOPIF renderer and releases
   assert.equal(result.maskedRegionCount, 2); assert.equal(result.pixels.width, 100); assert.equal(result.pixels.height, 80); assert.equal(result.pixels.scale, 1);
   assert.equal(calls.filter(call=>call.method==='Page.createIsolatedWorld').length, 2);
   assert.deepEqual(calls.filter(call=>call.method==='Target.detachFromTarget').map(call=>call.params.sessionId).toSorted(), ['child-session','top-session']);
+  assert.deepEqual(calls.filter(call=>call.method==='Target.attachToTarget').map(call=>call.params.targetId), ['child'], 'Unrelated iframe targets must never be inspected');
+});
+
+test('pixel capture discovers nested remote owners in closed roots even when every Page frame tree omits them', async () => {
+  const { cdp, calls } = mockPixels({ oopif: true, nestedOopif: true, ownerInClosedShadow: true });
+  const result = await captureMaskedPixels(cdp, 'top', operation());
+  assert.equal(result.maskedRegionCount, 3);
+  assert.deepEqual(calls.filter(call => call.method === 'Target.attachToTarget').map(call => call.params.targetId), ['child', 'grandchild']);
+  assert.equal(calls.filter(call => call.method === 'DOM.resolveNode').length, 2);
+});
+
+test('missing or mismatched remote target or owner identity prevents screenshot capture', async () => {
+  for (const options of [{ unavailableOopif: true }, { mismatchedOopif: true }, { missingOwnerIdentity: true }]) {
+    const { cdp, calls } = mockPixels({ oopif: true, ...options });
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /masking could not be proven/);
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
+    assert.equal(calls.some(call => call.method === 'Target.attachToTarget' && call.params.targetId === 'foreign-frame'), false);
+  }
+});
+
+test('new, disappearing or replaced frame owners invalidate both pre-capture and post-capture proof', async () => {
+  for (const ownerChangesAt of ['before', 'after'] as const) for (const ownerChangeKind of ['replace', 'add', 'remove'] as const) {
+    const { cdp, calls } = mockPixels({ oopif: true, ownerChangesAt, ownerChangeKind });
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /masking could not be proven/);
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), ownerChangesAt === 'after');
+    assert.deepEqual(calls.filter(call => call.method === 'Target.detachFromTarget').map(call => call.params.sessionId).toSorted(), ['child-session', 'top-session']);
+  }
 });
 
 test('unproven mask verification never produces pixels and always resumes the page', async () => {

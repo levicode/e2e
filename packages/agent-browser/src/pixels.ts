@@ -6,7 +6,7 @@ import type { StateProbeTargets } from './state.ts';
 
 interface FrameTree { frame: { id: string }; childFrames?: FrameTree[] }
 interface DomNode {
-  nodeType?: number; frameId?: string; shadowRootType?: string; backendNodeId?: number;
+  nodeType?: number; nodeName?: string; frameId?: string; shadowRootType?: string; backendNodeId?: number;
   children?: DomNode[]; shadowRoots?: DomNode[]; contentDocument?: DomNode;
 }
 interface Evaluation<T> { result: { value?: T }; exceptionDetails?: unknown }
@@ -145,7 +145,31 @@ interface FrameSession {
   session: string;
   treeFrames: readonly string[];
   documents: readonly string[];
+  owners: readonly FrameOwner[];
   closedRoots: readonly ClosedShadow[];
+}
+interface FrameOwner {
+  parentFrameId: string;
+  frameId: string;
+  backendNodeId: number;
+  localDocument: boolean;
+}
+/** Page.getFrameTree omits remote children; the owning DOM node is the ownership proof. */
+function frameOwners(root: DomNode, mainFrame: string): FrameOwner[] {
+  const found: FrameOwner[] = [];
+  const visit = (node: DomNode, parentFrame: string): void => {
+    const frame = node.nodeType === 9 ? node.frameId ?? parentFrame : parentFrame;
+    const isOwner = node.nodeType !== 9 && (node.frameId !== undefined || node.contentDocument !== undefined || ['IFRAME', 'FRAME', 'FENCEDFRAME'].includes(node.nodeName?.toUpperCase() ?? ''));
+    if (isOwner) {
+      if (!node.frameId || node.frameId === frame || !Number.isSafeInteger(node.backendNodeId) || node.backendNodeId! <= 0 || found.some(owner => owner.frameId === node.frameId)) throw denied();
+      if (node.contentDocument && (node.contentDocument.nodeType !== 9 || (node.contentDocument.frameId !== undefined && node.contentDocument.frameId !== node.frameId))) throw denied();
+      found.push({ parentFrameId: frame, frameId: node.frameId, backendNodeId: node.backendNodeId!, localDocument: node.contentDocument !== undefined });
+    }
+    if (node.contentDocument) visit(node.contentDocument, node.frameId ?? frame);
+    for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) visit(child, frame);
+  };
+  visit(root, mainFrame);
+  return found;
 }
 function documentFrames(root: DomNode, mainFrame: string): string[] {
   const found: string[] = [];
@@ -220,6 +244,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
   try {
     const expected = new Set<string>();
     const covered = new Set<string>();
+    const ownership = new Map<string, FrameOwner & { session: string }>();
     const readSession = async (sessionId: string, expectedRoot?: string): Promise<void> => {
       await cdp.send('DOM.enable', {}, current(), sessionId);
       const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), sessionId);
@@ -227,10 +252,17 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       const treeFrames = frameIds(frameTree); for (const id of treeFrames) expected.add(id);
       const { root } = await cdp.send<{ root: DomNode }>('DOM.getDocument', { depth: -1, pierce: true }, current(), sessionId);
       const documents = documentFrames(root, frameTree.frame.id);
+      const owners = frameOwners(root, frameTree.frame.id);
+      if (documents[0] !== frameTree.frame.id || new Set(documents).size !== documents.length) throw denied();
+      for (const owner of owners) {
+        if (!documents.includes(owner.parentFrameId) || ownership.has(owner.frameId)) throw denied();
+        ownership.set(owner.frameId, { ...owner, session: sessionId }); expected.add(owner.frameId);
+      }
       if (documents.some((id) => !expected.has(id) || covered.has(id))) throw denied();
+      if (documents.slice(1).some(id => !owners.some(owner => owner.frameId === id && owner.localDocument))) throw denied();
       const closedRoots = verifyMaskableDom(root, documents, true);
       for (const id of documents) covered.add(id);
-      sessions.push({ session: sessionId, treeFrames, documents, closedRoots });
+      sessions.push({ session: sessionId, treeFrames, documents, owners, closedRoots });
     };
     await readSession(session);
     // OOPIF documents are absent from the parent's DOM. Resolve only frame targets
@@ -241,6 +273,8 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       let advanced = false;
       for (const frameId of missing) {
         if (covered.has(frameId)) continue;
+        const owner = ownership.get(frameId);
+        if (!owner || owner.localDocument || !covered.has(owner.parentFrameId) || !sessions.some(item => item.session === owner.session)) throw denied();
         if (!targets.some((target) => target.type === 'iframe' && target.targetId === frameId)) continue;
         const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: frameId, flatten: true }, current());
         attached.add(sessionId); await readSession(sessionId, frameId); advanced = true;
@@ -278,6 +312,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
     const verifyAll = async (): Promise<void> => {
       for (const frameSession of sessions) {
         const { root } = await cdp.send<{ root: DomNode }>('DOM.getDocument', { depth: -1, pierce: true }, current(), frameSession.session);
+        if (JSON.stringify(frameOwners(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.owners)) throw denied();
         if (JSON.stringify(verifyMaskableDom(root, frameSession.documents, true)) !== JSON.stringify(frameSession.closedRoots)) throw denied();
         if (JSON.stringify(documentFrames(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.documents)) throw denied();
         const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), frameSession.session);
