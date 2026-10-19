@@ -21,7 +21,18 @@ elif ! git -C "$SOURCE" apply --reverse --check "$PATCH"; then
   echo 'Patch does not apply cleanly; inspect the pinned upstream contract' >&2
   exit 1
 fi
-cargo test --locked --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser
+# Keep the isolated inherited-CDP launch-safety assertion visible even if a later
+# test aborts the harness. The complete suite still runs after a focused failure.
+focused_status=0
+cargo test --locked --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser \
+  native::e2e_tests::test_obscura_e2e_unlaunchable_binary_does_not_attach_to_inherited_cdp \
+  -- --exact --nocapture || focused_status=$?
+suite_status=0
+cargo test --locked --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser || suite_status=$?
+if [[ "$focused_status" != 0 || "$suite_status" != 0 ]]; then
+  echo 'Native launch-safety or complete-suite validation failed' >&2
+  exit 1
+fi
 cargo build --locked --profile ci --manifest-path "$SOURCE/cli/Cargo.toml"
 VERSION="$("$SOURCE/cli/target/ci/agent-browser" --version)"
 if [[ "$VERSION" != "agent-browser 0.39.1-e2e.4" ]]; then

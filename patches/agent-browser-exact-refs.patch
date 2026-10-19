@@ -835,7 +835,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 -                            async {
 +                            scope_guard.run_background(&client,
 +                                target_info.as_ref().map(|target| target.target_id.as_str()),
-+                                Some(&sid), async {
++                                Some(&sid), Box::pin(async {
 +                                if !scope_guard.accepts_session(Some(&sid)) {
 +                                    return Ok(());
 +                                }
@@ -855,7 +855,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  }
 -                            }
 -                            .await
-+                            }).await.map(|_| ())
++                            })).await.map(|_| ())
                          } else {
                              Ok(())
                          };
@@ -974,7 +974,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let setup_result = if let Some(ref mgr) = self.browser {
 -                async {
 +                let guard = mgr.scope_guard();
-+                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(frame_id.as_str()), Some(iframe_sid.as_str()), async {
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(frame_id.as_str()), Some(iframe_sid.as_str()), Box::pin(async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(iframe_sid))) {
 +                        return Ok(());
 +                    }
@@ -987,7 +987,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.resume_if_waiting_pub(iframe_sid).await
 -                }
 -                .await
-+                }).await.map(|_| ())
++                })).await.map(|_| ())
              } else {
                  Ok(())
              };
@@ -1004,7 +1004,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let setup_result = if let Some(ref mut mgr) = self.browser {
 -                async {
 +                let guard = mgr.scope_guard();
-+                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(target_info.target_id.as_str()), Some(page_sid.as_str()), async {
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(target_info.target_id.as_str()), Some(page_sid.as_str()), Box::pin(async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(page_sid))) {
 +                        return Ok(());
 +                    }
@@ -1017,7 +1017,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.resume_if_waiting_pub(page_sid).await
 -                }
 -                .await
-+                }).await.map(|_| ())
++                })).await.map(|_| ())
              } else {
                  Ok(())
              };
@@ -1035,7 +1035,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 -                async {
 -                    prepare_network_control_target_session(&mgr.client, worker_sid, target_info)
 +                let guard = mgr.scope_guard();
-+                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(target_info.target_id.as_str()), Some(worker_sid.as_str()), async {
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(target_info.target_id.as_str()), Some(worker_sid.as_str()), Box::pin(async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(worker_sid))) {
 +                        return Ok(());
 +                    }
@@ -1061,7 +1061,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      Ok(())
 -                }
 -                .await
-+                }).await.map(|_| ())
++                })).await.map(|_| ())
              } else {
                  Ok(())
              };
@@ -1090,7 +1090,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let setup_result = if let Some(ref mut mgr) = self.browser {
 -                async {
 +                let guard = mgr.scope_guard();
-+                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(te.target_info.target_id.as_str()), None, async {
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(te.target_info.target_id.as_str()), None, Box::pin(async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_target(&te.target_info)) {
 +                        return Ok(());
 +                    }
@@ -1117,7 +1117,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.resume_if_waiting_pub(&attach.session_id).await
 -                }
 -                .await
-+                }).await.map(|_| ())
++                })).await.map(|_| ())
              } else {
                  Ok(())
              };
@@ -1886,7 +1886,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              response["error"] = json!({ "code": -32000, "message": "CDP failure" });
                              Value::Null
                          }
-@@ -13759,18 +14122,270 @@
+@@ -13759,18 +14122,281 @@
              let filled = element.fill(&client, "session", "test-value").await;
              client.close().await;
              let (attempts, mut releases) = server.await.unwrap();
@@ -1906,6 +1906,17 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              expected.sort();
              assert_eq!(releases, expected, "{failure}");
          }
++    }
++
++    #[test]
++    fn scoped_lifetime_dispatch_future_stays_bounded() {
++        let mut state = DaemonState::new();
++        let command = json!({"id":"future-size","action":"tab_list"});
++        let future = execute_command(&command, &mut state);
++        let bytes = std::mem::size_of_val(&future);
++        // The test-thread default is 2 MiB; allow normal dispatch growth but
++        // never embed nested target-setup state machines near that stack limit.
++        assert!(bytes <= 512 * 1024, "Command dispatch future is {bytes} bytes; heap-box nested setup futures instead of raising thread stack limits");
 +    }
 +
 +    #[tokio::test]
@@ -2160,7 +2171,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[tokio::test]
-@@ -14368,6 +14983,136 @@
+@@ -14368,6 +14994,136 @@
              "agent-browser-{label}-{}-{nanos}",
              std::process::id()
          ))
@@ -2297,7 +2308,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[test]
-@@ -16240,6 +16985,31 @@
+@@ -16240,6 +16996,31 @@
      }
  
      #[test]
@@ -4056,7 +4067,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +        client: &CdpClient,
 +        target: Option<&str>,
 +        session: Option<&str>,
-+        work: F,
++        work: std::pin::Pin<Box<F>>,
 +    ) -> Result<Option<T>, String>
 +    where F: Future<Output = Result<T, String>>,
 +    {
@@ -4069,7 +4080,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +        events: &mut broadcast::Receiver<CdpEvent>,
 +        target: Option<&str>,
 +        session: Option<&str>,
-+        work: F,
++        work: std::pin::Pin<Box<F>>,
 +    ) -> Result<Option<T>, String>
 +    where F: Future<Output = Result<T, String>>,
 +    {
@@ -4080,7 +4091,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +                && session.is_none_or(|id| state.live.contains_key(id))).unwrap_or(false)
 +        };
 +        if !live() { return Ok(None); }
-+        tokio::pin!(work);
++        let mut work = work;
 +        loop {
 +            tokio::select! {
 +                biased;
@@ -4384,7 +4395,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
  
      async fn prepare_domains(&self, session_id: &str) -> Result<(), String> {
 +        self.scope_guard.run_background(&self.client, None, Some(session_id),
-+            self.prepare_live_domains(session_id)).await?
++            Box::pin(self.prepare_live_domains(session_id))).await?
 +            .ok_or_else(|| "Scoped preparation session detached".to_string())
 +    }
 +
@@ -4781,7 +4792,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      #[tokio::test]
      async fn test_tab_switch_does_not_revive_responsive_tab() {
          let (url, activations) = start_mock_cdp_browser_responsive().await;
-@@ -4996,4 +5469,436 @@
+@@ -4996,4 +5469,452 @@
              "cancelled connect-time probes left orphaned CDP requests in the pending map"
          );
      }
@@ -5103,6 +5114,22 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +        let commands = recorded.lock().unwrap();
 +        assert_strict_scope_wire_boundary(&commands);
 +        assert!(commands.iter().any(|c| c["method"] == "Page.enable"));
++    }
++
++    #[test]
++    fn scoped_lifecycle_wrapper_keeps_large_work_on_the_heap() {
++        let guard = CdpScopeGuard::new(Some(strict_scope(Some("C-APPROVED"))));
++        let (_sender, mut events) = broadcast::channel(1);
++        let payload = [0u8; 128 * 1024];
++        let work = Box::pin(async move {
++            std::future::pending::<()>().await;
++            std::hint::black_box(payload);
++            Ok::<(), String>(())
++        });
++        assert!(std::mem::size_of_val(work.as_ref().get_ref()) >= 128 * 1024);
++        let future = guard.run_background_events(&mut events, None, None, work);
++        let bytes = std::mem::size_of_val(&future);
++        assert!(bytes < 16 * 1024, "Lifecycle wrapper embedded {bytes} bytes of setup work instead of a heap pointer");
 +    }
 +
 +    #[tokio::test]
