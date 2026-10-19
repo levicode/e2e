@@ -54,6 +54,8 @@ export interface HttpCredentials {
 export interface NetworkOptions {
   /** Exact browser context owned by this attempt; null restricts an exclusive default context. */
   readonly browserContextId?: string | null;
+  /** Verified TargetInfo identity for a default context that Chromium reports with a concrete ID. */
+  readonly defaultBrowserContextId?: string;
   /** Optional additional ownership boundary, evaluated before attaching user hooks or network interception. */
   includeTarget?(target: CdpTarget): boolean;
   /** A fresh harness budget for asynchronous handlers and body reads. */
@@ -604,6 +606,7 @@ type TargetSession = {
   target: CdpTarget;
   sessionId: string;
   companion: NetworkCompanion;
+  pageReady: Promise<void>;
   sync: Promise<void>;
   ready: Promise<void>;
   appliedVersion: number;
@@ -630,6 +633,7 @@ export class NetworkHub {
   readonly #protection: NetworkProtection = { headers: new Map(), basic: new Set() };
   readonly #connection: CdpConnection;
   readonly #options: NetworkOptions;
+  readonly #ownershipContextId: string | null | undefined;
   readonly #targets = new Map<string, TargetSession>();
   readonly #sessions = new Map<string, TargetSession>();
   readonly #routes: { id: number; pattern: TextPattern; handler: RouteHandler; key: string }[] = [];
@@ -638,6 +642,7 @@ export class NetworkHub {
   readonly #probes = new Set<string>();
   readonly #probeSessions = new Map<string, string>();
   readonly #deferredAttachments = new Set<Promise<void>>();
+  readonly #relatedTargets = new Map<string, Promise<void>>();
   #reservationCount = 0;
   #reservation: { promise: Promise<void>; release(): void } | undefined;
   readonly #unsubscribers: (() => void)[] = [];
@@ -648,11 +653,20 @@ export class NetworkHub {
   #closed = false;
 
   constructor(connection: CdpConnection, configuration: NetworkOptions) {
+    if (configuration.defaultBrowserContextId !== undefined
+      && (configuration.browserContextId !== null || typeof configuration.defaultBrowserContextId !== 'string'
+        || !configuration.defaultBrowserContextId || /[\s\p{Cc}]/u.test(configuration.defaultBrowserContextId))) {
+      throw problem('A verified default context identity requires exclusive default-context scope', 'INVALID_ARGUMENT');
+    }
     this.#connection = connection;
-    this.#options = configuration;
+    this.#options = { ...configuration };
+    this.#ownershipContextId = configuration.defaultBrowserContextId ?? configuration.browserContextId;
     this.#unsubscribers.push(
       connection.on<TargetAttached>('Target.attachedToTarget', (event) => this.#attached(event)),
       connection.on<{ sessionId: string }>('Target.detachedFromTarget', (event) => this.#detached(event.sessionId)),
+      connection.on<{ targetInfo: CdpTarget }>('Target.targetCreated', (event) => {
+        if (this.#options.browserContextId !== undefined) void this.#watchRelated(event.targetInfo, this.#options.operation()).catch(() => undefined);
+      }),
       connection.onClose(() => this.close()),
     );
   }
@@ -683,11 +697,17 @@ export class NetworkHub {
     await bounded(Promise.all([...this.#targets.values()].map((target) => action(target.sessionId, target.target.targetId, context))).then(() => undefined), context, 'Target update');
   }
 
-  /** Starts browser-level auto-attachment without creating any target or launching another browser. */
+  /** Shared browsers discover first and attach only verified owned roots; foreign pages are never paused. */
   start(context: OperationContext): Promise<void> {
     if (this.#closed) return Promise.reject(problem('Network hub is closed'));
     this.#ready ??= (async () => {
-      await this.#connection.send('Target.setAutoAttach', autoAttachOptions(), context);
+      if (this.#options.browserContextId === undefined) {
+        await this.#connection.send('Target.setAutoAttach', autoAttachOptions(), context);
+      } else {
+        await this.#connection.send('Target.setDiscoverTargets', { discover: true, filter: documentTargetFilter() }, context);
+        const targets = await this.#connection.listTargets(context);
+        await Promise.all(targets.map(target => this.#watchRelated(target, context)));
+      }
       await this.#waitForTargets(context);
     })();
     return this.#ready;
@@ -743,12 +763,16 @@ export class NetworkHub {
     if (!target) {
       const verified = (await this.#connection.listTargets(context)).find((entry) => entry.targetId === targetId);
       if (!verified || !this.#includes(verified)) throw problem('Selected target is outside this attempt');
-      const sessionId = await this.#connection.attachTarget(targetId, context);
+      if (this.#options.browserContextId !== undefined) await this.#watchRelated(verified, context);
       target = this.#targets.get(targetId);
       if (!target) {
-        const info = (await this.#connection.listTargets(context)).find((entry) => entry.targetId === targetId);
-        if (!info || !this.#includes(info)) throw problem('Selected target disappeared or is outside this attempt');
-        target = this.#install({ sessionId, targetInfo: info, waitingForDebugger: false });
+        const sessionId = await this.#connection.attachTarget(targetId, context);
+        target = this.#targets.get(targetId);
+        if (!target) {
+          const info = (await this.#connection.listTargets(context)).find((entry) => entry.targetId === targetId);
+          if (!info || !this.#includes(info)) throw problem('Selected target disappeared or is outside this attempt');
+          target = this.#install({ sessionId, targetInfo: info, waitingForDebugger: false });
+        }
       }
     }
     await bounded(target.ready, context, 'Network target attachment');
@@ -828,10 +852,31 @@ export class NetworkHub {
     this.#hooks.clear();
     this.#probes.clear();
     this.#probeSessions.clear();
+    this.#relatedTargets.clear();
     this.#reservation?.release();
     this.#reservation = undefined;
     this.#protection.headers.clear();
     this.#protection.basic.clear();
+  }
+
+  /** Target discovery is read-only; ownership and probe reservation precede every root attachment. */
+  #watchRelated(target: CdpTarget, context: OperationContext): Promise<void> {
+    if (this.#closed || (target.type !== 'page' && target.type !== 'webview') || !this.#includes(target)) return Promise.resolve();
+    const existing = this.#relatedTargets.get(target.targetId);
+    if (existing) return existing;
+    const reserved = this.#reservation?.promise;
+    const work = Promise.resolve().then(async () => {
+      if (reserved) await reserved;
+      if (this.#closed || this.#probes.has(target.targetId) || !this.#includes(target)) return;
+      await this.#connection.send('Target.autoAttachRelated', {
+        targetId: target.targetId, waitForDebuggerOnStart: true, filter: documentTargetFilter(),
+      }, context);
+    });
+    this.#relatedTargets.set(target.targetId, work);
+    this.#deferredAttachments.add(work);
+    void work.catch(() => { if (!this.#closed) this.#errors.push(problem('Owned target could not be monitored safely')); })
+      .finally(() => this.#deferredAttachments.delete(work));
+    return work;
   }
 
   /** Captures attachment immediately so parent-target setup cannot race a child-target event. */
@@ -876,8 +921,8 @@ export class NetworkHub {
 
   /** Never enables page/network domains or invokes application hooks on an unowned context. */
   #includes(target: CdpTarget): boolean {
-    if (this.#options.browserContextId !== undefined
-      && (target.browserContextId || null) !== this.#options.browserContextId) return false;
+    if (this.#ownershipContextId !== undefined
+      && (target.browserContextId ?? null) !== this.#ownershipContextId) return false;
     try { return this.#options.includeTarget?.(target) ?? true; }
     catch { return false; }
   }
@@ -894,10 +939,12 @@ export class NetworkHub {
     const existing = this.#targets.get(event.targetInfo.targetId);
     if (existing) return existing;
     const companion = new NetworkCompanion(this.#connection, event.sessionId, this.#options, this.#protection);
+    const context = this.#options.operation();
     const target: TargetSession = {
       target: event.targetInfo,
       sessionId: event.sessionId,
       companion,
+      pageReady: this.#connection.send<void>('Page.enable', {}, context, event.sessionId),
       sync: Promise.resolve(),
       ready: Promise.resolve(),
       appliedVersion: -1,
@@ -912,7 +959,10 @@ export class NetworkHub {
       this.#connection.on<{ sessionId: string }>('Target.detachedFromTarget', (child) => this.#detached(child.sessionId), target.sessionId),
     );
     target.ready = (async () => {
-      const context = this.#options.operation();
+      await target.pageReady;
+      if (!this.#live(target)) return;
+      if (this.#options.browserContextId !== undefined) await this.#watchRelated(target.target, context);
+      if (!this.#live(target)) return;
       await companion.start(context);
       if (!this.#live(target)) return;
       await this.#synchronize(target, context);
@@ -944,7 +994,7 @@ export class NetworkHub {
   #applyHook(target: TargetSession, hook: TargetHook, context: OperationContext): Promise<void> {
     let work = target.hooks.get(hook);
     if (!work) {
-      work = Promise.resolve().then(() => { if (this.#live(target) && this.#hooks.has(hook)) return hook(target.target, target.sessionId, context); });
+      work = target.pageReady.then(() => { if (this.#live(target) && this.#hooks.has(hook)) return hook(target.target, target.sessionId, context); });
       target.hooks.set(hook, work);
     }
     return work;
@@ -992,14 +1042,16 @@ export class NetworkHub {
   /** Follows targets discovered while earlier targets initialize, bounded by the caller's deadline. */
   async #waitForTargets(context: OperationContext): Promise<void> {
     const endsAt = Date.now() + context.timeoutMs;
-    await bounded(Promise.all(this.#deferredAttachments).then(() => undefined), context, 'Reserved target attachment');
     let previous: Set<TargetSession>;
     do {
+      await bounded(Promise.all(this.#deferredAttachments).then(() => undefined), {
+        ...context, timeoutMs: Math.max(0, endsAt - Date.now()),
+      }, 'Reserved target attachment');
       previous = new Set(this.#targets.values());
       await bounded(Promise.all([...previous].map((target) => target.ready)).then(() => undefined), {
         ...context, timeoutMs: Math.max(0, endsAt - Date.now()),
       }, 'Network target initialization');
-    } while ([...this.#targets.values()].some((target) => !previous.has(target)));
+    } while (this.#deferredAttachments.size > 0 || [...this.#targets.values()].some((target) => !previous.has(target)));
   }
 }
 
@@ -1007,6 +1059,10 @@ export class NetworkHub {
 function autoAttachOptions(): Record<string, unknown> {
   return {
     autoAttach: true, waitForDebuggerOnStart: true, flatten: true,
-    filter: [{ type: 'page', exclude: false }, { type: 'iframe', exclude: false }, { exclude: true }],
+    filter: documentTargetFilter(),
   };
+}
+
+function documentTargetFilter(): Record<string, unknown>[] {
+  return [{ type: 'page', exclude: false }, { type: 'iframe', exclude: false }, { exclude: true }];
 }

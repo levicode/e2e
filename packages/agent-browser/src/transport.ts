@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EngineError, type EngineErrorCode, type OperationContext } from 'e2e/engine';
 
-/** The reviewed CLI build rejects fallback targeting after an observed node detaches. */
-export const AGENT_BROWSER_VERSION = '0.39.1-e2e.1';
+/** The reviewed CLI build enforces exact node identity and immutable attachment scope. */
+export const AGENT_BROWSER_VERSION = '0.39.1-e2e.2';
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const PRE_DISPATCH_REF_COMMANDS = new Set(['click', 'dblclick', 'fill', 'type', 'focus', 'hover', 'check', 'uncheck', 'select', 'upload']);
 
@@ -18,6 +18,10 @@ export interface CliTransportOptions {
   readonly executablePath?: string;
   readonly browser?: 'chrome' | 'chromium';
   readonly cdp?: string;
+  /** Pin initial attachment to an exact target in the required browser context. */
+  readonly cdpTarget?: string;
+  /** An opaque context ID, or null for the browser's default context. */
+  readonly cdpContext?: string | null;
   readonly headed?: boolean;
   /** A readable prefix, never an existing session to attach to. */
   readonly session?: string;
@@ -76,7 +80,7 @@ const GLOBAL_FLAGS = new Set([
   '--annotate', '--content-boundaries', '--confirm-interactive', '--no-auto-dialog',
   '-v', '--verbose', '-q', '--quiet', '--offline', '--quick', '--fix', '--session',
   '--restore', '--restore-save', '--restore-check-url', '--restore-check-text',
-  '--restore-check-fn', '--namespace', '--headers', '--executable-path', '--cdp',
+  '--restore-check-fn', '--namespace', '--headers', '--executable-path', '--cdp', '--cdp-target', '--cdp-context',
   '--extension', '--init-script', '--enable', '--profile', '--state', '--proxy',
   '--proxy-bypass', '--args', '--user-agent', '-p', '--provider', '--device',
   '--session-name', '--color-scheme', '--download-path', '--max-output',
@@ -118,7 +122,7 @@ function validateArguments(args: readonly string[]): void {
   if (marker !== -1 && !literalShape(args, marker)) {
     throw failure('UNSUPPORTED_CAPABILITY', 'This command does not support a literal-data marker in this position');
   }
-  if ((marker === -1 ? args : args.slice(0, marker)).some((arg) => GLOBAL_FLAGS.has(arg) || arg.startsWith('--restore='))) {
+  if ((marker === -1 ? args : args.slice(0, marker)).some((arg) => GLOBAL_FLAGS.has(arg.split('=', 1)[0] ?? ''))) {
     throw failure('UNSUPPORTED_CAPABILITY', 'agent-browser cannot safely pass a value that its CLI interprets as a global option');
   }
   if (['close', 'quit', 'exit', 'session', 'install', 'connect', 'mcp', 'chat', 'dashboard'].includes(args[0] ?? '')) {
@@ -127,6 +131,20 @@ function validateArguments(args: readonly string[]): void {
   if (args[0] === 'batch' && args.slice(1).some((arg) => arg !== '--bail' && !/^(?:get|is|snapshot)(?:\s|$)/.test(arg))) {
     throw failure('UNSUPPORTED_CAPABILITY', 'Only observation commands may be batched by the agent-browser transport');
   }
+}
+
+/** Scope IDs are opaque; never reinterpret whitespace or a flag as an identifier. */
+function scopeValue(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && !/[\s\p{Cc}]/u.test(value) && !value.startsWith('--');
+}
+
+function scopeFlags(options: CliTransportOptions): readonly string[] {
+  if (options.cdpTarget === undefined && options.cdpContext === undefined) return [];
+  if (!scopeValue(options.cdp) || !scopeValue(options.cdpTarget)
+    || (options.cdpContext !== null && (!scopeValue(options.cdpContext) || options.cdpContext === 'default'))) {
+    throw failure('INVALID_STATE', 'CDP scope requires an endpoint, an exact target, and a context ID or explicit null default context');
+  }
+  return ['--cdp-target', options.cdpTarget, '--cdp-context', options.cdpContext ?? 'default'];
 }
 
 /** Bound an entire operation, including its first version check, by one budget. */
@@ -166,6 +184,7 @@ export class CliTransport {
     if (options.browser !== undefined && options.browser !== 'chrome' && options.browser !== 'chromium') {
       throw failure('UNSUPPORTED_CAPABILITY', 'The agent-browser engine supports Chromium only');
     }
+    const scope = scopeFlags(options);
     this.session = `${(options.session ?? 'e2e').replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 24)}-${randomUUID()}`;
     this.executable = options.executable ?? installedExecutable();
     try {
@@ -179,6 +198,7 @@ export class CliTransport {
       '--json', '--engine', 'chrome', '--no-webmcp', '--no-auto-dialog', '--input-mode', 'instant',
       ...(options.executablePath === undefined ? [] : ['--executable-path', options.executablePath]),
       ...(options.cdp === undefined ? [] : ['--cdp', options.cdp]),
+      ...scope,
       ...(options.headed === true ? ['--headed'] : []),
     ];
     // Ambient connection/profile/restore/plugin settings can escape the attempt.

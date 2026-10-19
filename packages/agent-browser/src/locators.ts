@@ -11,7 +11,7 @@ type NodeData = { nodeId?: number; backendNodeId: number; nodeName?: string; fra
 type FrameTree = { frame: { id: string; parentId?: string; url?: string; loaderId?: string }; childFrames?: FrameTree[] };
 type Geometry = { x: number; y: number; scaleX: number; scaleY: number };
 type World = { session: string; contextId: number; frameId: string; framePath: readonly string[]; geometry: Geometry | null };
-type Scope = { context: OperationContext; root: string; parents: Map<string, string>; worlds: Map<string, World> };
+type Scope = { context: OperationContext; root: string; parents: Map<string, string>; frames: Map<string, FrameTree['frame']>; sessions: Map<string, string>; worlds: Map<string, World> };
 type Enriched = RawNodeData & { selector?: string; baseURI?: string; frameGeometry?: Geometry | null; frameSelector?: string };
 const SECURE = SECURE_FIELD_SELECTOR;
 const stale = () => new EngineError('NODE_STALE', 'The exact DOM node is no longer connected', { retryable: true });
@@ -165,25 +165,71 @@ export class LocatorCompanion {
   /** Public snapshot scope includes only exact document loaders approved for model observation. */
   async snapshotArgs(context: OperationContext): Promise<readonly string[]> {
     if (!this.#allowFrameUrl) return [];
-    const { frameTree } = await this.#cdp().send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, context, this.#session());
+    const scope = await this.#scope(context);
     const allowed: Record<string, string> = {};
-    const visit = (tree: FrameTree, inherited: boolean): void => {
-      const url = tree.frame.url ?? '';
-      const permitted = /^about:(blank|srcdoc)(?:[?#]|$)/.test(url) ? inherited : this.#allowFrameUrl!(url);
-      if (permitted && tree.frame.loaderId) allowed[tree.frame.id] = tree.frame.loaderId;
-      for (const child of tree.childFrames ?? []) visit(child, permitted);
+    const decisions = new Map<string, boolean>();
+    const permitted = (id: string): boolean => {
+      const previous = decisions.get(id); if (previous !== undefined) return previous;
+      const frame = scope.frames.get(id); if (!frame) return false;
+      const parent = scope.parents.get(id);
+      const inherited = parent ? permitted(parent) : false;
+      const url = frame.url ?? '';
+      const result = /^about:(blank|srcdoc)(?:[?#]|$)/.test(url) ? inherited : this.#allowFrameUrl!(url);
+      decisions.set(id, result);
+      return result;
     };
-    visit(frameTree, false);
+    for (const [id, frame] of scope.frames) if (permitted(id) && frame.loaderId) allowed[id] = frame.loaderId;
     return ['--allowed-frame-documents', JSON.stringify(allowed)];
   }
 
   async #scope(context: OperationContext): Promise<Scope> {
     context = boundedContext(context);
-    const { frameTree } = await this.#cdp().send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, context, this.#session());
     const parents = new Map<string, string>();
-    const visit = (tree: FrameTree): void => { for (const child of tree.childFrames ?? []) { parents.set(child.frame.id, tree.frame.id); visit(child); } };
-    visit(frameTree);
-    return { context, root: frameTree.frame.id, parents, worlds: new Map() };
+    const frames = new Map<string, FrameTree['frame']>();
+    const sessions = new Map<string, string>();
+    const pending: { frameId: string; parentId: string }[] = [];
+    const visited = new Set<string>();
+    let root = '';
+    const bindParent = (id: string, parent: string): void => {
+      if (id === parent || (parents.has(id) && parents.get(id) !== parent)) throw new EngineError('FRAME_NOT_FOUND', 'The document ownership changed during capture', { retryable: true });
+      parents.set(id, parent);
+    };
+    const read = async (session: string, expected?: { frameId: string; parentId: string }): Promise<void> => {
+      const { frameTree } = await this.#cdp().send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, context, session);
+      if (expected && (frameTree.frame.id !== expected.frameId || (frameTree.frame.parentId !== undefined && frameTree.frame.parentId !== expected.parentId))) {
+        throw new EngineError('FRAME_NOT_FOUND', 'The nested document session does not match its owner', { retryable: true });
+      }
+      root ||= frameTree.frame.id;
+      const visit = (tree: FrameTree, parent?: string): void => {
+        if (parent) bindParent(tree.frame.id, parent);
+        frames.set(tree.frame.id, tree.frame);
+        for (const child of tree.childFrames ?? []) visit(child, tree.frame.id);
+      };
+      visit(frameTree, expected?.parentId);
+      sessions.set(frameTree.frame.id, session);
+      // Chromium's Page.getFrameTree omits RemoteFrame children. DOM frame
+      // owners provide the exact boundary; read each proven OOPIF's own tree.
+      const { root: document } = await this.#cdp().send<{ root: NodeData }>('DOM.getDocument', { depth: -1, pierce: true }, context, session);
+      const owners = (node: NodeData, owner: string): void => {
+        const isFrame = node.nodeName?.toLowerCase() === 'iframe' || node.nodeName?.toLowerCase() === 'frame';
+        if (isFrame && node.frameId) {
+          bindParent(node.frameId, owner);
+          if (node.contentDocument) owners(node.contentDocument, node.frameId);
+          else if (!frames.has(node.frameId)) pending.push({ frameId: node.frameId, parentId: owner });
+        }
+        for (const child of [...node.children ?? [], ...node.shadowRoots ?? []]) owners(child, owner);
+      };
+      owners(document, frameTree.frame.id);
+    };
+    await read(this.#session());
+    for (let index = 0; index < pending.length; index += 1) {
+      const frame = pending[index]!;
+      if (visited.has(frame.frameId) || frames.has(frame.frameId)) continue;
+      visited.add(frame.frameId);
+      const session = await this.#frameSession(frame.frameId, context);
+      await read(session, frame);
+    }
+    return { context, root, parents, frames, sessions, worlds: new Map() };
   }
 
   async #world(frameId: string | undefined, scope: Scope): Promise<World> {
@@ -193,7 +239,7 @@ export class LocatorCompanion {
     const parentId = scope.parents.get(frameId);
     if (frameId !== scope.root && !parentId) throw new EngineError('FRAME_NOT_FOUND', 'The nested document is not in the active page', { retryable: true });
     const parent = parentId ? await this.#world(parentId, scope) : undefined;
-    let session = parent?.session ?? this.#session();
+    let session = scope.sessions.get(frameId) ?? parent?.session ?? this.#session();
     let world: { executionContextId: number };
     try { world = await this.#cdp().send('Page.createIsolatedWorld', { frameId, worldName: 'e2e-agent-browser-locators' }, context, session); }
     catch (error) {

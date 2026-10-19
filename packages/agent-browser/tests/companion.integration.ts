@@ -110,6 +110,31 @@ async function until(predicate: () => boolean): Promise<void> {
   }
 }
 
+/** A real input event grants popup activation; plain eval must not bypass Chromium's popup policy. */
+async function clickPopup(
+  cli: CliTransport, cdp: CdpConnection, sessionId: string, url: string,
+  beforeOpen = '', afterOpen = '',
+): Promise<void> {
+  await cli.run(['eval', '--', `(() => {
+    if (document.getElementById('e2e-companion-popup-trigger')) throw new Error('Duplicate popup fixture button');
+    const button = document.createElement('button');
+    button.id = 'e2e-companion-popup-trigger'; button.textContent = 'Open companion test popup';
+    button.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647';
+    button.onclick = event => {
+      ${beforeOpen}
+      globalThis.__e2ePopupClick = { trusted: event.isTrusted, opened: window.open(${JSON.stringify(url)}) !== null };
+      ${afterOpen}
+    };
+    document.body.append(button); return true;
+  })()`], operation(), { mutating: true });
+  await cli.run(['click', '#e2e-companion-popup-trigger'], operation(), { mutating: true });
+  const result = await cdp.send<{ result: { value: unknown }; exceptionDetails?: unknown }>('Runtime.evaluate', {
+    expression: 'globalThis.__e2ePopupClick', returnByValue: true,
+  }, operation(), sessionId);
+  assert.equal(result.exceptionDetails, undefined);
+  assert.deepEqual(result.result.value, { trusted: true, opened: true }, 'Native click must create a popup before waiting for its interception or diagnostics');
+}
+
 test('public CDP companion observes and fulfills the exact request issued by agent-browser on its active target', { timeout: 60_000 }, async () => {
   await withCompanion(async ({ cli, hub, origin }) => {
     await hub.route('**/api', (route) => route.fulfill({ status: 201, json: { sharedTarget: true } }), operation());
@@ -125,7 +150,7 @@ test('public CDP companion observes and fulfills the exact request issued by age
 });
 
 test('routes intercept the first popup navigation and a cross-origin OOPIF fetch before renderer execution', { timeout: 60_000 }, async () => {
-  await withCompanion(async ({ cli, cdp, hub, origin, frameOrigin }) => {
+  await withCompanion(async ({ cli, cdp, hub, sessionId, origin, frameOrigin }) => {
     let popupNavigations = 0;
     let frameRequests = 0;
     await hub.route('**/popup', (route) => {
@@ -133,7 +158,7 @@ test('routes intercept the first popup navigation and a cross-origin OOPIF fetch
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Intercepted popup</title>' });
     }, operation());
     await hub.route('**/api?child', (route) => { frameRequests += 1; return route.fulfill({ body: 'Intercepted child' }); }, operation());
-    await cli.run(['eval', `(()=>{window.open('${origin}/popup');const frame=document.createElement('iframe');frame.src='${frameOrigin}/frame';document.body.append(frame);return true})()`], operation(), { mutating: true });
+    await clickPopup(cli, cdp, sessionId, `${origin}/popup`, '', `const frame = document.createElement('iframe'); frame.src = ${JSON.stringify(`${frameOrigin}/frame`)}; document.body.append(frame);`);
     await until(() => popupNavigations === 1 && frameRequests === 1);
     await hub.settle(operation());
     const targets = await cdp.listTargets(operation());
@@ -190,7 +215,7 @@ test('server Basic auth and scoped headers work without routes and do not follow
 });
 
 test('diagnostics capture actual main-tab and popup console, runtime, HTTP errors, and origins', { timeout: 60_000 }, async () => {
-  await withCompanion(async ({ cli, cdp, hub, targetId, origin }) => {
+  await withCompanion(async ({ cli, cdp, hub, sessionId, targetId, origin }) => {
     const log: AppLogEntry[] = [];
     const navigations: string[] = [];
     const origins = new Set<string>();
@@ -198,7 +223,7 @@ test('diagnostics capture actual main-tab and popup console, runtime, HTTP error
       signal: new AbortController().signal, appLog: (entry) => log.push(entry), navigation: (line) => navigations.push(line),
     }, { activeTarget: () => targetId, onOrigin: (value) => origins.add(value) }, operation());
     try {
-      await cli.run(['eval', `(()=>{console.log('main diagnostic');fetch('${origin}/missing');window.open('${origin}/diagnostic-popup');return true})()`], operation(), { mutating: true });
+      await clickPopup(cli, cdp, sessionId, `${origin}/diagnostic-popup`, `console.log('main diagnostic'); fetch(${JSON.stringify(`${origin}/missing`)});`);
       await until(() => log.some((entry) => entry.source === 'error' && entry.text.includes('popup runtime error'))
         && log.some((entry) => entry.source === 'network' && entry.text.includes('/missing 404')));
       assert.ok(log.some((entry) => entry.source === 'console' && entry.text === 'main diagnostic'));
@@ -225,7 +250,7 @@ test('an isolated provider context selects the same public CLI target while fore
       });
       scoped.onTarget((target) => { initialized.push(target.targetId); });
       await scoped.start(operation());
-      await scoped.useTarget(targetId, operation());
+      const scopedSession = await scoped.useTarget(targetId, operation());
       let interceptions = 0;
       await scoped.route('**/scoped-api', (route) => { interceptions += 1; return route.fulfill({ json: { scoped: true } }); }, operation());
       await cli.run(['tab', targetId], operation(), { mutating: true });
@@ -245,7 +270,7 @@ test('an isolated provider context selects the same public CLI target while fore
         assert.match(foreign.result.value, /Network fixture/);
         assert.equal(interceptions, 1, 'Foreign context requests must not enter this attempt route registry');
       } finally { foreignObserver.close(); }
-      await cli.run(['eval', `window.open('${origin}/scoped-api');true`], operation(), { mutating: true });
+      await clickPopup(cli, cdp, scopedSession, `${origin}/scoped-api`);
       await until(() => interceptions === 2);
       await scoped.settle(operation());
       assert.ok(scoped.sessions().every((session) => session.targetId !== originalTarget));

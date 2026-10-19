@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { EngineError, TestError, type ObservationPixels, type OperationContext } from 'e2e/engine';
 import type { CdpConnection } from './cdp.ts';
+import type { StateProbeTargets } from './state.ts';
 
 interface FrameTree { frame: { id: string }; childFrames?: FrameTree[] }
 interface DomNode {
@@ -157,8 +158,52 @@ function documentFrames(root: DomNode, mainFrame: string): string[] {
   visit(root, mainFrame); return found;
 }
 
+/**
+ * Freeze hides WebContents without changing the selected tab. Activating that already-selected
+ * tab can therefore be a no-op. A round trip through an owned blank probe forces WasShown;
+ * never activate another application's existing tab or leave focus emulation enabled.
+ */
+async function restoreVisiblePage(cdp: CdpConnection, targetId: string, session: string, contextId: number, context: OperationContext, probes?: StateProbeTargets): Promise<void> {
+  const end = Date.now() + context.timeoutMs;
+  const current = (): OperationContext => ({ ...context, timeoutMs: Math.max(0, end - Date.now()) });
+  const visible = (): Promise<boolean> => evaluate<boolean>(cdp, session, contextId, 'document.visibilityState === "visible"', current());
+  await cdp.send('Page.bringToFront', {}, current(), session);
+  if (await visible()) return;
+  let probe: string;
+  if (probes) probe = await probes.create(current());
+  else {
+    const target = (await cdp.listTargets(current())).find(item => item.targetId === targetId);
+    if (!target) throw denied();
+    // Chrome can expose an opaque id for the default context. Only ids returned by
+    // getBrowserContexts are accepted as explicit creation scopes; default means omitted.
+    const { browserContextIds } = await cdp.send<{ browserContextIds: string[] }>('Target.getBrowserContexts', {}, current());
+    if (!Array.isArray(browserContextIds)) throw denied();
+    const browserContextId = target.browserContextId && browserContextIds.includes(target.browserContextId) ? target.browserContextId : undefined;
+    probe = (await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true, ...(browserContextId ? { browserContextId } : {}) }, current())).targetId;
+  }
+  if (!probe || probe === targetId) throw denied();
+  let reactivated = false;
+  let closed = true;
+  try {
+    await cdp.send('Target.activateTarget', { targetId: probe }, current());
+    await cdp.send('Target.activateTarget', { targetId }, current()); reactivated = true;
+    while (!await visible()) {
+      if (Date.now() >= end) throw denied();
+      await new Promise<void>(resolve => setTimeout(resolve, Math.min(10, Math.max(0, end - Date.now()))));
+    }
+  } finally {
+    const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
+    try { if (!reactivated) await cdp.send('Target.activateTarget', { targetId }, cleanup); }
+    finally {
+      if (probes) await probes.release(probe, cleanup);
+      else closed = (await cdp.send<{ success: boolean }>('Target.closeTarget', { targetId: probe }, cleanup)).success === true;
+    }
+  }
+  if (!closed) throw denied();
+}
+
 /** The caller must also enforce the attempt's persistent post-secret-fill pixel taint. */
-export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, context: OperationContext): Promise<PixelCapture> {
+export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, context: OperationContext, probes?: StateProbeTargets): Promise<PixelCapture> {
   const ends = Date.now() + Math.min(context.timeoutMs, 10_000);
   const current = (): OperationContext => ({ ...context, timeoutMs: Math.max(0, ends - Date.now()) });
   const session = await cdp.attachTarget(targetId, current());
@@ -168,6 +213,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
   const attached = new Set([session]);
   let freezeAttempted = false;
   let restoreVisibility = false;
+  let mainContextId: number | undefined;
   let cleanupFailed = false;
   let output: PixelCapture | undefined;
   let failure: unknown;
@@ -210,7 +256,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       installed.push({ contextId: executionContextId, session: frameSessionId });
       if (frameSessionId === session && frameId === frameSession.documents[0]) {
         const visible = await evaluate<boolean>(cdp, frameSessionId, executionContextId, 'document.visibilityState === "visible"', current());
-        if (typeof visible !== 'boolean') throw denied(); restoreVisibility = visible;
+        if (typeof visible !== 'boolean') throw denied(); restoreVisibility = visible; mainContextId = executionContextId;
       }
       for (const shadow of frameSession.closedRoots.filter((entry) => entry.frameId === frameId)) {
         const { object } = await cdp.send<{ object: { objectId?: string } }>('DOM.resolveNode', {
@@ -263,7 +309,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
     if (freezeAttempted) {
       try { await cdp.send('Page.setWebLifecycleState', { state: 'active' }, cleanup, session); } catch { cleanupFailed = true; }
       // Chromium's freeze also hides WebContents; 'active' alone does not show it again.
-      if (restoreVisibility) try { await cdp.send('Page.bringToFront', {}, cleanup, session); } catch { cleanupFailed = true; }
+      if (restoreVisibility && mainContextId !== undefined) try { await restoreVisiblePage(cdp, targetId, session, mainContextId, cleanup, probes); } catch { cleanupFailed = true; }
     }
     // Each attachment above belongs only to this capture, never the engine's network handlers.
     await Promise.all([...attached].map(async (sessionId) => { try { await cdp.send('Target.detachFromTarget', { sessionId }, cleanup); } catch { cleanupFailed = true; } }));

@@ -1,6 +1,5 @@
 /** Deterministic browser fixture backed by agent-browser and its public CDP companion. */
 import { randomUUID } from 'node:crypto';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -11,6 +10,7 @@ import {
 } from 'e2e/engine';
 import type { WebResponse, WebRoute } from './network.ts';
 import type { CdpConnection } from './cdp.ts';
+import { guardCallbackScope, runCallbackScope } from './callback-scope.ts';
 import { AgentBrowserSurface, unsupported } from './surface.ts';
 
 export interface Dialog {
@@ -378,11 +378,10 @@ async function initScriptSource(script: unknown, rest: readonly unknown[], proje
 /** Builds the public browser fixture and records every asynchronous operation. */
 export function createBrowserFixture(surface: AgentBrowserSurface, context: EngineFixtureContext): Browser {
   const originalOperation = context.operation.bind(context);
-  const callbackScope = new AsyncLocalStorage<(operation: OperationContext) => void>();
   context = { ...context, operation: (timeoutMs) => {
     const operation = originalOperation(timeoutMs);
     surface.guardOperation(operation);
-    callbackScope.getStore()?.(operation);
+    guardCallbackScope(surface);
     return operation;
   } };
   const baseHref = () => context.app.resolveUrl('');
@@ -393,7 +392,7 @@ export function createBrowserFixture(surface: AgentBrowserSurface, context: Engi
     deadlineFor: (timeout) => new Deadline(context.operation(timeout ?? context.timeouts.assertion).timeoutMs),
   });
   const navigation = (options?: { timeout?: number }) => context.operation(options?.timeout ?? context.timeouts.test);
-  const companion = new FixtureCompanion(surface, context, callbackScope);
+  const companion = new FixtureCompanion(surface, context);
   const browser: Omit<Browser, keyof Expectable<BrowserExpectation>> = {
     async goto(url, options) {
       rejectUnknownOptions('browser.goto', options, ['timeout', 'waitUntil']);
@@ -525,7 +524,6 @@ interface CompanionGeneration {
 class FixtureCompanion {
   private readonly surface: AgentBrowserSurface;
   private readonly context: EngineFixtureContext;
-  private readonly callbackScope: AsyncLocalStorage<(operation: OperationContext) => void>;
   private readonly sources: string[] = [];
   private readonly media = new Map<string, string>();
   private mediaVersion = 0;
@@ -538,10 +536,9 @@ class FixtureCompanion {
   private closed = false;
   private generation = 0;
 
-  constructor(surface: AgentBrowserSurface, context: EngineFixtureContext, callbackScope: AsyncLocalStorage<(operation: OperationContext) => void>) {
+  constructor(surface: AgentBrowserSurface, context: EngineFixtureContext) {
     this.surface = surface;
     this.context = context;
-    this.callbackScope = callbackScope;
     const defaults = surface.options as WebMedia | undefined;
     if (defaults?.colorScheme !== undefined) this.media.set('prefers-color-scheme', defaults.colorScheme);
     if (defaults?.reducedMotion !== undefined) this.media.set('prefers-reduced-motion', defaults.reducedMotion);
@@ -584,12 +581,16 @@ class FixtureCompanion {
 
   private guard(scope: CompanionGeneration, operation: OperationContext): void {
     this.surface.guardOperation(operation);
+    this.guardCurrent(scope);
+  }
+
+  private guardCurrent(scope: CompanionGeneration): void {
     if (!this.current(scope)) throw new EngineError('INVALID_STATE', 'The browser operation belongs to a replaced browser', { retryable: false });
   }
 
   /** Every async continuation created by user callbacks retains its originating browser. */
   private invokeCallback<T>(scope: CompanionGeneration, callback: () => T): T {
-    return this.callbackScope.run(operation => this.guard(scope, operation), () => {
+    return runCallbackScope(this.surface, () => this.guardCurrent(scope), () => {
       this.context.operation();
       return callback();
     });
@@ -806,7 +807,7 @@ class FixtureCompanion {
       void waited.catch(() => undefined);
       await this.mutate('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: directory, eventsEnabled: true, ...browserContext }, budget(), undefined, scope);
       enabled = true;
-      const triggering = Promise.resolve().then(() => { this.guard(scope, operation); return trigger(); }).finally(() => { triggerFinished = true; });
+      const triggering = Promise.resolve().then(() => this.invokeCallback(scope, trigger)).finally(() => { triggerFinished = true; });
       const [, completed] = await Promise.all([
         withTimeout(triggering, deadline.remaining(), () => new TestError('ACTION_FAILED', 'The download trigger exceeded its budget')),
         waited,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   EngineError,
   OBSERVED_NAME_LIMIT,
@@ -70,11 +71,12 @@ export class SnapshotAdapter {
   private readonly readMetadata: SnapshotMetadataReader | undefined;
   private readonly snapshotArgs: ((context: OperationContext) => Promise<readonly string[]>) | undefined;
   private readonly preserveRefs: boolean;
+  private readonly identity = `agent-browser:${randomUUID()}`;
   private generation = 0;
-  private revision = '';
   private nodes = new Map<string, SemanticNode>();
   private selectors = new Map<string, string>();
   private lastSnapshot: EngineSnapshot | undefined;
+  private readonly located = new Map<string, string>();
 
   constructor(transport: SnapshotTransport, options: { readonly testIdAttribute?: string; readonly readMetadata?: SnapshotMetadataReader; readonly snapshotArgs?: (context: OperationContext) => Promise<readonly string[]>; readonly preserveRefs?: boolean } = {}) {
     this.transport = transport;
@@ -89,10 +91,10 @@ export class SnapshotAdapter {
 
   /** Invalidates every element ref; the viewport root deliberately survives. */
   invalidate(): void {
-    this.revision = '';
     this.lastSnapshot = undefined;
     this.nodes.clear();
     this.selectors.clear();
+    this.located.clear();
   }
 
   /** The stable root remains addressable after navigation or an earlier observation. */
@@ -100,12 +102,12 @@ export class SnapshotAdapter {
     return ref.id === ROOT_ID;
   }
 
-  /** Resolves only refs minted by the latest completed read. */
+  /** The harness owns revisions; unique engine-owned IDs carry exact native identity. */
   resolve(ref: NodeRef): string {
     if (this.isRoot(ref)) return 'html';
-    if (ref.revision !== this.revision || !this.nodes.has(ref.id)) {
-      throw stale();
-    }
+    const located = this.located.get(ref.id);
+    if (located !== undefined) return located;
+    if (!this.nodes.has(ref.id)) throw stale();
     const selector = this.selectors.get(ref.id);
     if (selector === undefined) {
       throw new EngineError('NOT_ACTIONABLE', 'This snapshot text node has no public element reference', { retryable: false });
@@ -130,8 +132,10 @@ export class SnapshotAdapter {
   /** Captures full default output and enriches exact refs through public reads. */
   async observe(context: OperationContext): Promise<EngineSnapshot> {
     context = boundedContext(context);
-    this.invalidate();
-    const revision = `agent-browser:${this.preserveRefs ? 'trace:' : ''}${++this.generation}`;
+    this.lastSnapshot = undefined;
+    this.nodes.clear();
+    this.selectors.clear();
+    const revision = `${this.identity}:${this.preserveRefs ? 'trace:' : ''}${++this.generation}`;
     const raw = await this.snapshot(context);
     const parsed = parseSnapshot(raw, revision);
     const surface = await this.surface(context);
@@ -162,7 +166,6 @@ export class SnapshotAdapter {
       rect: { x: 0, y: 0, width: surface.width, height: surface.height },
       children: parsed.roots,
     };
-    this.revision = revision;
     this.nodes = new Map(flatten([root]).map((node) => [node.ref.id, node]));
     this.selectors = new Map([...parsed.refs].map(([id, node]) => [node.ref.id, `@${id}`]));
     const result: EngineSnapshot = {
@@ -176,19 +179,19 @@ export class SnapshotAdapter {
     return result;
   }
 
-  /** Adopts exact refs registered through the maintained public ref command. */
+  /** Located refs survive subsequent resolves (including a drag destination). */
   adopt(entries: readonly { readonly nativeRef: string; readonly node: Omit<SemanticNode, 'ref'> }[]): readonly SemanticNode[] {
-    this.invalidate();
-    const revision = `agent-browser:${this.preserveRefs ? 'trace:' : ''}${++this.generation}`;
+    this.lastSnapshot = undefined;
+    const revision = `${this.identity}:${this.preserveRefs ? 'trace:' : ''}located:${++this.generation}`;
     const result = entries.map(({ nativeRef, node }) => {
       if (!REF_ID.test(nativeRef)) throw malformed();
-      const projected: MutableNode = { ...node, ref: { id: `agent-browser:${nativeRef}`, revision }, children: [] };
+      const projected: MutableNode = { ...node, ref: { id: `${revision}:${nativeRef}`, revision }, children: [] };
       if (projected.states?.secure === true) { delete projected.value; delete projected.selection; delete projected.text; }
+      this.located.set(projected.ref.id, `@${nativeRef}`);
       return projected;
     });
-    this.revision = revision;
-    this.nodes = new Map(result.map((node) => [node.ref.id, node]));
-    this.selectors = new Map(entries.map(({ nativeRef }) => [`agent-browser:${nativeRef}`, `@${nativeRef}`]));
+    // Match the harness's bounded located-ref retention. Evicted refs fail stale.
+    while (this.located.size > 2048) this.located.delete(this.located.keys().next().value!);
     return result;
   }
 
@@ -205,31 +208,31 @@ export class SnapshotAdapter {
         const parsed = parseSnapshot(raw, 'selector-probe');
         const first = parsed.roots[0];
         // A descendant ref is never substituted for an unreferenced target.
-        const id = first?.ref.id.slice('agent-browser:'.length);
+        const id = first?.ref.id.split(':').at(-1);
         if (id === undefined || !REF_ID.test(id) || !Object.hasOwn(raw.refs, id)) {
           this.invalidate();
           throw new EngineError('UNSUPPORTED_CAPABILITY', 'The CSS target has no agent-browser element ref; it cannot be bound safely', { retryable: false });
         }
-        ids.add(`agent-browser:${id}`);
+        ids.add(id);
       }
       targets.set(selector, ids);
     }
     const snapshot = await this.observe(context);
     for (const ids of targets.values()) {
-      if ([...ids].some((id) => !this.nodes.has(id))) throw stale();
+      if ([...ids].some((id) => ![...this.selectors.values()].includes(`@${id}`))) throw stale();
     }
     // Unscoped DOM queries do not descend into a different document.
     const roots = snapshot.root.children?.map(withoutFrameChildren) ?? [];
     return resolveExpression(expression, roots, {
       selector: (selector, candidates) => {
         const ids = targets.get(selector);
-        return candidates.filter((node) => ids?.has(node.ref.id));
+        return candidates.filter((node) => ids?.has(this.selectors.get(node.ref.id)?.slice(1) ?? ''));
       },
     });
   }
 
   private async snapshot(context: OperationContext, selector?: string): Promise<RawSnapshot> {
-    const args = ['snapshot', ...(this.preserveRefs ? ['--preserve-refs'] : []), ...(await this.snapshotArgs?.(context) ?? []), ...(selector === undefined ? [] : ['--selector', selector])];
+    const args = ['snapshot', ...(this.preserveRefs || this.located.size > 0 ? ['--preserve-refs'] : []), ...(await this.snapshotArgs?.(context) ?? []), ...(selector === undefined ? [] : ['--selector', selector])];
     const raw = await this.transport.run<unknown>(args, context, { sensitive: true });
     if (!isRecord(raw) || typeof raw['snapshot'] !== 'string' || !isRecord(raw['refs'])) throw malformed();
     const refs: Record<string, SnapshotRef> = {};
@@ -382,7 +385,7 @@ function parseSnapshot(raw: RawSnapshot, revision: string): ParsedTree {
       } catch { throw malformed(); }
     }
     const node: MutableNode = {
-      ref: { id: `agent-browser:${ref ?? `text:${++synthetic}`}`, revision },
+      ref: { id: `${revision}:${ref ?? `text:${++synthetic}`}`, revision },
       role: normalizeRole(authoritative?.role ?? role), children: [],
       ...(name === undefined ? {} : { name: name.slice(0, OBSERVED_NAME_LIMIT) }),
       ...((role === 'StaticText' || role === 'text') && name !== undefined ? { text: name.slice(0, OBSERVED_TEXT_LIMIT) } : {}),
@@ -413,7 +416,7 @@ function parseSnapshot(raw: RawSnapshot, revision: string): ParsedTree {
   // ref-bearing node. Keeping it is critical for unnamed pointer/font icons.
   for (const [id, rawNode] of Object.entries(raw.refs)) {
     if (refs.has(id)) continue;
-    const node: MutableNode = { ref: { id: `agent-browser:${id}`, revision }, role: normalizeRole(rawNode.role), name: rawNode.name.slice(0, OBSERVED_NAME_LIMIT), children: [] };
+    const node: MutableNode = { ref: { id: `${revision}:${id}`, revision }, role: normalizeRole(rawNode.role), name: rawNode.name.slice(0, OBSERVED_NAME_LIMIT), children: [] };
     roots.push(node);
     refs.set(id, node);
   }

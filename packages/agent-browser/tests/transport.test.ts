@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { EngineError, type OperationContext } from 'e2e/engine';
-import { CliTransport } from '../src/transport.ts';
+import { CliTransport, type CliTransportOptions } from '../src/transport.ts';
 
 function context(timeoutMs = 2_000, signal = new AbortController().signal): OperationContext {
   return { signal, timeoutMs, runId: 'run', attemptId: 'attempt', origin: 'test' };
 }
 
-async function fake(t: TestContext, env: Record<string, string> = {}): Promise<{ transport: CliTransport; log: string }> {
+async function fake(t: TestContext, env: Record<string, string> = {}, options: Omit<CliTransportOptions, 'executable' | 'env'> = {}): Promise<{ transport: CliTransport; log: string }> {
   const directory = await mkdtemp(join(tmpdir(), 'ab-transport-test-'));
   const executable = join(directory, 'fake-cli.mjs');
   const log = join(directory, 'calls.jsonl');
@@ -21,7 +21,7 @@ const globals = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;
 appendFileSync(process.env.TEST_LOG, JSON.stringify({ args, env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('AGENT_BROWSER_'))), config: readFileSync(args[args.indexOf('--config') + 1], 'utf8') }) + '\\n');
 const emit = (data) => process.stdout.write(JSON.stringify({success:true,data}));
 if (globals.includes('--version')) {
-  setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser 0.39.1-e2e.1'), Number(process.env.TEST_VERSION_DELAY || 0));
+  setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser 0.39.1-e2e.2'), Number(process.env.TEST_VERSION_DELAY || 0));
 } else if (args.at(-1) === '--all' && process.env.TEST_ALL_ACK) {
   emit({closed:1,sessions:[args[args.indexOf('--session') + 1]],failed:[]});
 } else if (args.at(-1) === 'close') {
@@ -56,7 +56,7 @@ if (globals.includes('--version')) {
   console.log(JSON.stringify([{command:['secret'],success:true,result:{value:'text'},error:null},{command:['secret'],success:true,result:{visible:true},error:null}]));
 } else { emit({args}); }
 `);
-  const transport = new CliTransport({ executable, env: { TEST_LOG: log, ...env } });
+  const transport = new CliTransport({ ...options, executable, env: { TEST_LOG: log, ...env } });
   t.after(async () => {
     await transport.close(context()).catch(() => {});
     await rm(directory, { recursive: true, force: true });
@@ -96,11 +96,77 @@ test('uses exact argv, JSON, a unique session, and an isolated config/environmen
   assert.equal((await calls(log)).filter((call) => call.args.at(-1) === '--version').length, 1);
 });
 
+test('CDP scope stays immutable on every command, version check, and cleanup invocation', async (t) => {
+  for (const cdpContext of [null, 'provider.context:one']) {
+    const options = { cdp: 'ws://127.0.0.1:9222/devtools/browser/owned', cdpTarget: 'provider.target:one', cdpContext };
+    const { transport, log } = await fake(t, {
+      AGENT_BROWSER_CDP_TARGET: 'foreign-target', AGENT_BROWSER_CDP_CONTEXT: 'foreign-context',
+      AGENT_BROWSER_SESSION: 'foreign-session',
+    }, options);
+    options.cdpTarget = 'foreign-target'; options.cdpContext = 'foreign-context';
+    await transport.version(context());
+    await transport.run(['get', 'title'], context());
+    await transport.close(context());
+    const observed = await calls(log);
+    assert.equal(observed.length, 3);
+    for (const call of observed) {
+      assert.equal(call.args.filter(arg => arg === '--cdp-target').length, 1);
+      assert.equal(call.args.filter(arg => arg === '--cdp-context').length, 1);
+      assert.equal(call.args[call.args.indexOf('--cdp-target') + 1], 'provider.target:one');
+      assert.equal(call.args[call.args.indexOf('--cdp-context') + 1], cdpContext ?? 'default');
+      assert.equal(call.args[call.args.indexOf('--session') + 1], transport.session);
+      assert.deepEqual(Object.keys(call.env), ['AGENT_BROWSER_SOCKET_DIR']);
+      assert.ok(!call.args.includes('foreign-target') && !call.args.includes('foreign-context'));
+    }
+  }
+});
+
+test('incomplete and malformed CDP scope is rejected before configuration or process creation', () => {
+  const valid = { cdp: '9222', cdpTarget: 'target', cdpContext: null };
+  for (const options of [
+    { cdpTarget: 'target', cdpContext: null }, { cdp: '9222', cdpTarget: 'target' }, { cdp: '9222', cdpContext: null },
+    ...['', 'private token', 'private\ntoken', '--private-token', 'private\0token', 'private\u0085token'].flatMap(value => [
+      { ...valid, cdpTarget: value }, { ...valid, cdpContext: value }, { ...valid, cdp: value },
+    ]),
+    { ...valid, cdpContext: 'default' },
+  ]) assert.throws(() => new CliTransport(options), classified('INVALID_STATE', 'private'));
+});
+
+test('command arguments cannot override scope, including equals-form flags', async (t) => {
+  const { transport, log } = await fake(t, {}, { cdp: '9222', cdpTarget: 'owned', cdpContext: null });
+  for (const token of ['--cdp-target', '--cdp-context', '--cdp-target=foreign', '--cdp-context=default']) {
+    await assert.rejects(transport.run(['fill', '@e1', token], context(), { mutating: true }), classified('UNSUPPORTED_CAPABILITY'));
+  }
+  await assert.rejects(access(log));
+  const literal = await transport.run<{ args: string[] }>(['fill', '@e1', '--', '--cdp-context=foreign'], context(), { mutating: true });
+  assert.deepEqual(literal.args.slice(-4), ['fill', '@e1', '--', '--cdp-context=foreign']);
+  assert.equal(literal.args[literal.args.indexOf('--cdp-context') + 1], 'default');
+});
+
 test('rejects the wrong version before dispatch and never echoes it', async (t) => {
   const { transport, log } = await fake(t, { TEST_VERSION: 'agent-browser 0.39.2 private-token' });
   await assert.rejects(transport.run(['click', '@e1'], context(), { mutating: true }), classified('ENGINE_FAILURE', 'private-token'));
   assert.equal((await calls(log)).length, 1);
   assert.equal(transport.poisoned, false);
+});
+
+test('rejects the earlier exact-ref build before any scoped CDP command or cleanup dispatch', async (t) => {
+  const { transport, log } = await fake(t, { TEST_VERSION: 'agent-browser 0.39.1-e2e.1' }, {
+    cdp: 'ws://127.0.0.1:9222/devtools/browser/shared', cdpTarget: 'owned-target', cdpContext: 'owned-context',
+  });
+  await assert.rejects(transport.run(['click', '@e1'], context(), { mutating: true }), (error: unknown) => {
+    assert.ok(classified('ENGINE_FAILURE')(error));
+    assert.ok(error instanceof EngineError);
+    assert.match(error.message, /0\.39\.1-e2e\.2 is required/);
+    return true;
+  });
+  assert.equal(transport.poisoned, false);
+  await transport.close(context());
+  const observed = await calls(log);
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0]?.args.at(-1), '--version');
+  assert.ok(!observed[0]?.args.includes('click'));
+  assert.ok(!observed[0]?.args.includes('close'));
 });
 
 test('rejects global flag values and dangerous top-level commands without spawning', async (t) => {

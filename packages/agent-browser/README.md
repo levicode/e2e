@@ -7,14 +7,15 @@ Development candidate for a separate `@e2e-dev/agent-browser` package. This pack
 - agent-browser owns default accessibility snapshots, refs, and primary node actions. No interactive-only, compact, depth, viewport, accessible-name, or cursor filtering is added. Unnamed font-icon controls stay in the observation.
 - A documented public Chromium CDP companion uses the exact browser and target reported by agent-browser's public tab listing. It supplements metadata, deterministic locators, async network handlers, response events, state, and masked screenshots. It never starts a second browser or uses Playwright execution.
 - Each local attempt owns a new Chromium process and disposable profile. Cancellation with uncertain mutation outcomes poisons that attempt. The adapter does not equate killing a CLI client with cancelling the daemon.
+- Engine-owned ref IDs are unique across attempts and workers. The runner owns revisions; sequential locator resolutions retain their exact native identities so a drag destination cannot erase its source.
 - Optional trace capture uses a second isolated agent-browser CLI session attached to the same browser and exact target. Its non-activating tab binding and separate ref namespace cannot replace action refs; a failed optional read disables trace capture without retrying input.
-- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-1`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
+- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-2`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
 
 ## Required CLI extension
 
 Stock agent-browser 0.39.1 cannot safely reproduce strict e2e ref identity: its snapshot refs can fall back to a different node with the same role and name. Its checkbox path can also issue a second click after a delayed state update.
 
-`patches/agent-browser-exact-refs.patch` is a maintained public extension against upstream commit `1165952d74ceed98fdc2dd97190ad41f44dd0e24`. It exposes version `0.39.1-e2e.1`, exact refs, authoritative node IDs, public exact-ref registration, validated navigation wait options, and read-only checkbox completion checks. This adapter refuses the stock binary rather than claiming unsupported safety.
+`patches/agent-browser-exact-refs.patch` is a maintained public extension against upstream commit `1165952d74ceed98fdc2dd97190ad41f44dd0e24`. It exposes version `0.39.1-e2e.2`, exact refs, authoritative node IDs, public exact-ref registration, immutable initial target/context attachment scope, validated navigation wait options, and read-only checkbox completion checks. This adapter refuses the stock binary rather than claiming unsupported safety.
 
 Build the pinned extension from this repository:
 

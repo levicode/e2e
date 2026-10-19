@@ -72,8 +72,8 @@ test('preserves every default ref, including unnamed offscreen generic and font-
   const adapter = new SnapshotAdapter(transport);
   const result = await adapter.observe(context);
   const all = nodes(result.root);
-  assert.deepEqual(all.filter((node) => /:e\d+$/.test(node.ref.id)).map((node) => node.ref.id).toSorted(), ['agent-browser:e1', 'agent-browser:e2', 'agent-browser:e3', 'agent-browser:e4']);
-  const offscreen = all.find((node) => node.ref.id === 'agent-browser:e2')!;
+  assert.deepEqual(all.filter((node) => /:e\d+$/.test(node.ref.id)).map((node) => node.ref.id.split(':').at(-1)).toSorted(), ['e1', 'e2', 'e3', 'e4']);
+  const offscreen = all.find((node) => node.ref.id.endsWith(':e2'))!;
   assert.equal(offscreen.name, '');
   assert.equal(offscreen.attributes?.['agent-browser:interaction'], 'clickable');
   assert.equal(offscreen.attributes?.['agent-browser:hints'], 'cursor:pointer, onclick');
@@ -94,24 +94,25 @@ test('secure values and raw snapshot suffixes never enter the tree or get-value 
   });
   const result = await new SnapshotAdapter(transport).observe(context);
   const all = nodes(result.root);
-  const password = all.find((node) => node.ref.id === 'agent-browser:e1')!;
+  const password = all.find((node) => node.ref.id.endsWith(':e1'))!;
   assert.equal(password.states?.secure, true);
   assert.equal(password.inputPurpose, 'password');
   assert.equal(password.value, undefined);
   assert.ok(!JSON.stringify(result).includes('TOP_SECRET'));
   assert.ok(!JSON.stringify(result).includes('raw-untrusted-value'));
   assert.ok(!transport.calls.flatMap((call) => call.args).includes('get value @e1'));
-  assert.equal(all.find((node) => node.ref.id === 'agent-browser:e2')?.value, 'alice');
+  assert.equal(all.find((node) => node.ref.id.endsWith(':e2'))?.value, 'alice');
 });
 
-test('only latest element revision resolves, but root id remains stable across invalidation', async () => {
+test('latest observed identity resolves with harness revisions, while root survives invalidation', async () => {
   const adapter = new SnapshotAdapter(new FakeTransport({ snapshot: '- button "Save" [ref=e1]', refs: { e1: { role: 'button', name: 'Save' } } }));
   const first = await adapter.observe(context);
   const second = await adapter.observe(context);
   assert.equal(first.root.ref.id, second.root.ref.id);
   assert.notEqual(first.root.ref.revision, second.root.ref.revision);
   assert.throws(() => adapter.resolve(first.root.children![0]!.ref), errorCode('NODE_STALE'));
-  assert.equal(adapter.resolve(second.root.children![0]!.ref), '@e1');
+  assert.equal(adapter.resolve({ ...second.root.children![0]!.ref, revision: 'observe:7' }), '@e1');
+  assert.notEqual(first.root.children![0]!.ref.id, second.root.children![0]!.ref.id);
   adapter.invalidate();
   assert.equal(adapter.isRoot(first.root.ref), true);
   assert.equal(adapter.resolve(first.root.ref), 'html');
@@ -153,7 +154,7 @@ test('CSS selectors bind the rendered target ref without selecting a descendant'
   transport.scoped = { ...fixture, snapshot: '- button "Save" [ref=e1]' };
   const result = await new SnapshotAdapter(transport).locate({ kind: 'selector', selector: '#save' }, context);
   assert.equal(result.length, 1);
-  assert.equal(result[0]!.ref.id, 'agent-browser:e1');
+  assert.ok(result[0]!.ref.id.endsWith(':e1'));
   transport.scoped = { ...fixture, snapshot: '- generic\n  - button "Save" [ref=e1]' };
   await assert.rejects(new SnapshotAdapter(transport).locate({ kind: 'selector', selector: '#container' }, context), errorCode('UNSUPPORTED_CAPABILITY'));
 });
@@ -163,7 +164,7 @@ test('frames are visibly incomplete and frame locators explicitly unsupported', 
   const adapter = new SnapshotAdapter(transport);
   const snapshot = await adapter.observe(context);
   assert.equal(snapshot.truncated, true);
-  assert.equal(nodes(snapshot.root).find((node) => node.ref.id === 'agent-browser:e2')?.rect, undefined);
+  assert.equal(nodes(snapshot.root).find((node) => node.ref.id.endsWith(':e2'))?.rect, undefined);
   assert.equal((await adapter.locate(query('role', 'button'), context)).length, 0);
   await assert.rejects(adapter.locate({ kind: 'frame', selector: 'iframe', source: query('role', 'button') }, context), errorCode('UNSUPPORTED_CAPABILITY'));
 });
@@ -188,12 +189,12 @@ test('authoritative metadata callback preserves native identity and scrubs secur
   } });
   const snapshot = await adapter.observe(context);
   assert.deepEqual(nativeRefs, transport.fixture.refs);
-  assert.equal(nodes(snapshot.root).find((node) => node.ref.id === 'agent-browser:e1')?.inputPurpose, 'password');
+  assert.equal(nodes(snapshot.root).find((node) => node.ref.id.endsWith(':e1'))?.inputPurpose, 'password');
   assert.ok(!JSON.stringify(snapshot).includes('secret-'));
   assert.ok(!transport.calls.some((call) => call.args[0] === 'batch'));
 });
 
-test('adopt shares the same revision space for publicly imported exact refs', async () => {
+test('sequential locator resolves retain exact source and destination across harness revisions', async () => {
   const transport = new FakeTransport({ snapshot: '(empty page)', refs: {} });
   const adapter = new SnapshotAdapter(transport);
   const [first] = adapter.adopt([{ nativeRef: 'e100', node: { role: 'textbox', name: 'Imported', states: { secure: true }, value: 'never-keep' } }]);
@@ -201,6 +202,12 @@ test('adopt shares the same revision space for publicly imported exact refs', as
   assert.equal(first!.value, undefined);
   const [second] = adapter.adopt([{ nativeRef: 'e101', node: { role: 'button', name: 'Next' } }]);
   assert.equal(adapter.resolve(second!.ref), '@e101');
+  assert.equal(adapter.resolve({ ...first!.ref, revision: 'locate:1' }), '@e100');
+  assert.equal(adapter.resolve({ ...second!.ref, revision: 'locate:2' }), '@e101');
+  await adapter.observe(context);
+  assert.equal(adapter.resolve(first!.ref), '@e100');
+  assert.ok(transport.calls.some(call => call.args.join(' ') === 'snapshot --preserve-refs'));
+  adapter.invalidate();
   assert.throws(() => adapter.resolve(first!.ref), errorCode('NODE_STALE'));
 });
 
@@ -237,4 +244,27 @@ test('recursive native completeness is authoritative while an explicit partial c
   transport.fixture.complete = false;
   transport.fixture.frames = false;
   assert.equal((await adapter.observe(context)).truncated, true);
+});
+
+
+test('located-ref retention is bounded and invalidation never reuses old semantic IDs', () => {
+  const adapter = new SnapshotAdapter(new FakeTransport({ snapshot: '(empty page)', refs: {} }));
+  const [first] = adapter.adopt([{ nativeRef: 'e1', node: { role: 'button' } }]);
+  for (let index = 2; index <= 2049; index++) adapter.adopt([{ nativeRef: `e${index}`, node: { role: 'button' } }]);
+  assert.throws(() => adapter.resolve(first!.ref), errorCode('NODE_STALE'));
+  adapter.invalidate();
+  const [fresh] = adapter.adopt([{ nativeRef: 'e1', node: { role: 'button' } }]);
+  assert.notEqual(first!.ref.id, fresh!.ref.id);
+  assert.throws(() => adapter.resolve(first!.ref), errorCode('NODE_STALE'));
+  assert.equal(adapter.resolve(fresh!.ref), '@e1');
+});
+
+
+test('new adapter instances never reuse old attempt or foreign worker identities', () => {
+  const one = new SnapshotAdapter(new FakeTransport({ snapshot: '(empty page)', refs: {} }));
+  const two = new SnapshotAdapter(new FakeTransport({ snapshot: '(empty page)', refs: {} }));
+  const [old] = one.adopt([{ nativeRef: 'e1', node: { role: 'button' } }]);
+  const [fresh] = two.adopt([{ nativeRef: 'e1', node: { role: 'button' } }]);
+  assert.notEqual(old!.ref.id, fresh!.ref.id);
+  assert.throws(() => two.resolve(old!.ref), errorCode('NODE_STALE'));
 });

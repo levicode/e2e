@@ -17,6 +17,9 @@ const raw = (extra: Partial<RawNodeData> = {}): RawNodeData => ({
 type Data = RawNodeData & { selector?: string; baseURI?: string; frameGeometry?: { x: number; y: number; scaleX: number; scaleY: number }; frameSelector?: string };
 type Match = { backend: number; data: Data; frameId?: string };
 
+type TestFrameTree = { frame: { id: string; parentId?: string; url?: string; loaderId?: string }; childFrames?: TestFrameTree[] };
+type TestDocument = { backendNodeId: number; nodeName?: string; frameId?: string; children?: TestDocument[]; contentDocument?: TestDocument };
+
 /** Protocol double asserts identity/realm boundaries, independent of page selector semantics. */
 class Protocol {
   readonly calls: { method: string; params: Record<string, unknown>; budget: number; session?: string }[] = [];
@@ -24,18 +27,20 @@ class Protocol {
   readonly data = new Map<number, Data>();
   readonly queue: Match[][] = [];
   readonly arrays = new Map<string, Match[]>();
-  tree: { frame: { id: string }; childFrames?: { frame: { id: string }; childFrames?: { frame: { id: string } }[] }[] } = { frame: { id: 'root' } };
+  tree: TestFrameTree = { frame: { id: 'root' } };
+  readonly trees = new Map<string, TestFrameTree>();
+  readonly documents = new Map<string, TestDocument>();
   failChildInRoot = false;
   delay = 0;
   async send<T = Record<string, unknown>>(method: string, params: Record<string, unknown>, operation: OperationContext, session?: string): Promise<T> {
     this.calls.push({ method, params, budget: operation.timeoutMs, ...(session ? { session } : {}) });
     if (this.delay) { const delay = this.delay; this.delay = 0; await new Promise((resolve) => setTimeout(resolve, delay)); }
     let result: unknown;
-    if (method === 'Page.getFrameTree') result = { frameTree: this.tree };
+    if (method === 'Page.getFrameTree') result = { frameTree: this.trees.get(session ?? '') ?? this.tree };
     else if (method === 'Page.createIsolatedWorld') {
       if (this.failChildInRoot && params.frameId !== 'root' && session === 'main') throw new Error('Frame belongs to another target');
       result = { executionContextId: params.frameId === 'root' ? 1 : params.frameId === 'child' ? 2 : 3 };
-    } else if (method === 'DOM.getDocument') result = { root: { backendNodeId: 1 } };
+    } else if (method === 'DOM.getDocument') result = { root: this.documents.get(session ?? '') ?? { backendNodeId: 1 } };
     else if (method === 'DOM.getFrameOwner') result = { backendNodeId: params.frameId === 'child' ? 50 : 51 };
     else if (method === 'DOM.resolveNode') result = { object: { objectId: `backend:${String(params.backendNodeId)}` } };
     else if (method === 'Runtime.evaluate') {
@@ -145,7 +150,7 @@ test('the whole read shares one shrinking operation budget and keeps all matches
 
 test('observation frame policy approves exact loaders and inherits blank/srcdoc origin', async () => {
   const sent: string[] = [];
-  const cdp = { async send<T>(): Promise<T> { return { frameTree: { frame: { id: 'root', url: 'https://app.test/', loaderId: 'root-loader' }, childFrames: [
+  const cdp = { async send<T>(method: string): Promise<T> { if (method === 'DOM.getDocument') return { root: { backendNodeId: 1 } } as T; return { frameTree: { frame: { id: 'root', url: 'https://app.test/', loaderId: 'root-loader' }, childFrames: [
     { frame: { id: 'same', url: 'https://app.test/child', loaderId: 'same-loader' } },
     { frame: { id: 'blank', url: 'about:srcdoc', loaderId: 'blank-loader' } },
     { frame: { id: 'ad', url: 'https://ads.test/', loaderId: 'ad-loader' }, childFrames: [{ frame: { id: 'ad-blank', url: 'about:blank', loaderId: 'ad-blank-loader' } }] },
@@ -153,4 +158,22 @@ test('observation frame policy approves exact loaders and inherits blank/srcdoc 
   const companion = new LocatorCompanion({ cdp: () => cdp, session: () => 'main', transport: () => ({ async run<T>(): Promise<T> { throw new Error('No CLI command expected'); } }), frameSession: async id => id, allowFrameUrl: url => { sent.push(url); return url.startsWith('https://app.test/'); } });
   assert.deepEqual(await companion.snapshotArgs(context()), ['--allowed-frame-documents', '{"root":"root-loader","same":"same-loader","blank":"blank-loader"}']);
   assert.deepEqual(sent, ['https://app.test/', 'https://app.test/child', 'https://ads.test/']);
+});
+
+
+test('renderer-local frame trees merge only OOPIFs proven by DOM owners', async () => {
+  const { companion, protocol } = fixture();
+  protocol.tree = { frame: { id: 'root' } };
+  protocol.documents.set('main', { backendNodeId: 1, children: [{ backendNodeId: 50, nodeName: 'IFRAME', frameId: 'child' }] });
+  protocol.trees.set('session:child', { frame: { id: 'child', parentId: 'root' }, childFrames: [{ frame: { id: 'grand', parentId: 'child' } }] });
+  protocol.documents.set('session:child', { backendNodeId: 2, children: [{ backendNodeId: 51, nodeName: 'IFRAME', frameId: 'grand', contentDocument: { backendNodeId: 3 } }] });
+  protocol.data.set(50, { ...raw(), frameSelector: '#cross', frameGeometry: { x: 100, y: 200, scaleX: 1, scaleY: 1 } });
+  protocol.data.set(51, { ...raw(), frameSelector: '#inner', frameGeometry: { x: 20, y: 30, scaleX: 1, scaleY: 1 } });
+  protocol.data.set(7, { ...raw(), selector: '#deep' });
+  const metadata = await companion.readMetadata({ e7: { role: 'button', name: 'Save', backendNodeId: 7, frameId: 'grand' } }, context());
+  assert.deepEqual(metadata.e7?.framePath, ['#cross', '#inner']);
+  assert.deepEqual(metadata.e7?.rect, { x: 127, y: 239, width: 40, height: 20 });
+  assert.equal(protocol.calls.find(call => call.method === 'Page.createIsolatedWorld' && call.params.frameId === 'grand')?.session, 'session:child');
+  protocol.trees.set('session:child', { frame: { id: 'unrelated', parentId: 'another-page' } });
+  await assert.rejects(companion.readMetadata({ e7: { role: 'button', name: 'Save', backendNodeId: 7, frameId: 'grand' } }, context()), { code: 'FRAME_NOT_FOUND' });
 });

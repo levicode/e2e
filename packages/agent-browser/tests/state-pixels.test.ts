@@ -93,21 +93,31 @@ test('structured-clone graph rejects forged references and unrecognized construc
   await assert.rejects(encodeStateValue(() => 'never serializable'));
 });
 
-function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
+function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
   const calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] = [];
   const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
+  let visible = true; let switchedAway = false;
   cdp.attachTarget = async () => 'top-session';
-  cdp.listTargets = async () => [{ targetId: 'top', type: 'page', url: 'https://top.test' }, ...(options.oopif ? [{ targetId: 'child', type: 'iframe', url: 'https://child.test' }] : [])];
+  cdp.listTargets = async () => [{ targetId: 'top', type: 'page', url: 'https://top.test', ...(options.browserContextId ? { browserContextId: options.browserContextId } : {}) }, ...(options.oopif ? [{ targetId: 'child', type: 'iframe', url: 'https://child.test' }] : [])];
   cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
     calls.push({ method, params, context, ...(session === undefined ? {} : { session }) });
     let value: unknown = {};
+    if (method === 'Page.setWebLifecycleState' && params.state === 'frozen' && options.hidesOnFreeze) visible = false;
+    if (method === 'Target.getBrowserContexts') value = { browserContextIds: options.explicitContexts ?? [] };
+    if (method === 'Target.createTarget') value = { targetId: 'recovery' };
+    if (method === 'Target.closeTarget') value = { success: true };
+    if (method === 'Target.activateTarget') {
+      if (params.targetId !== 'top') switchedAway = true;
+      else if (switchedAway && !options.visibilityFails) visible = true;
+      else if (options.visibilityFails) throw new Error('Visibility recovery unavailable');
+    }
     if (method === 'Page.getFrameTree') value = { frameTree: { frame: { id: session === 'child-session' ? 'child' : 'top' }, ...((options.inaccessibleFrame || options.oopif) && session !== 'child-session' ? { childFrames: [{ frame: { id: 'child' } }] } : {}) } };
     if (method === 'DOM.getDocument') value = { root: { nodeType: 9 } };
     if (method === 'Target.attachToTarget') value = { sessionId: 'child-session' };
     if (method === 'Page.createIsolatedWorld') value = { executionContextId: session === 'child-session' ? 2 : 1 };
     if (method === 'Runtime.evaluate') {
       const expression = String(params.expression);
-      if (expression === 'document.visibilityState === "visible"') value = { result: { value: true } };
+      if (expression === 'document.visibilityState === "visible"') value = { result: { value: visible } };
       else if (expression.includes('mask state already exists')) value = { result: { value: 1 } };
       else if (expression.includes("delete globalThis[key + '_closed']")) {
         if (options.cleanupFails) throw new Error('cleanup failure');
@@ -182,4 +192,90 @@ test('storage capture and replacement are scoped to the active browser context',
     { method: 'Storage.getCookies', params: { browserContextId: 'before' } },
     { method: 'Storage.setCookies', params: { cookies: [], browserContextId: 'after' } },
   ]);
+});
+
+test('default storage scope captures concrete-identity tabs and reuses the replacement tab without scoping cookies', async () => {
+  for (const suppliedIdentity of [false, true]) {
+    let identity = 'default-before';
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    const attached: string[] = [];
+    const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
+    cdp.listTargets = async () => [
+      { targetId: 'foreign', type: 'page', url: 'https://foreign.test', browserContextId: 'foreign' },
+      { targetId: 'owned', type: 'page', url: 'about:blank', browserContextId: identity },
+    ];
+    cdp.attachTarget = async targetId => { attached.push(targetId); assert.equal(targetId, 'owned'); return 'owned-session'; };
+    cdp.send = async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
+      calls.push({ method, params });
+      let value: unknown = {};
+      if (method === 'Target.createTarget') value = { targetId: 'identity-probe' };
+      if (method === 'Target.getTargetInfo') value = { targetInfo: { targetId: params.targetId, type: 'page', browserContextId: identity } };
+      if (method === 'Target.closeTarget') value = { success: true };
+      if (method === 'Page.getFrameTree') value = { frameTree: { frame: { id: 'owned-frame', url: 'about:blank' } } };
+      if (method === 'Storage.getCookies') value = { cookies: [] };
+      return value as T;
+    };
+    const probes = suppliedIdentity ? {
+      browserContextId: () => undefined,
+      targetBrowserContextId: () => identity,
+      create: async () => { throw new Error('Unexpected probe'); },
+      release: async () => {},
+    } : undefined;
+    const captured = await captureState(cdp, operation(), new Set(), probes);
+    assert.deepEqual(readState(captured).tabs, [{ url: 'about:blank', sessionStorage: [] }]);
+    await restoreState(captured, operation(), async () => { identity = 'default-after'; return cdp; }, probes);
+    assert.deepEqual(attached, ['owned']);
+    assert.deepEqual(calls.filter(call => call.method.startsWith('Storage.')), [
+      { method: 'Storage.getCookies', params: {} },
+      { method: 'Storage.setCookies', params: { cookies: [] } },
+    ]);
+    const created = calls.filter(call => call.method === 'Target.createTarget');
+    assert.equal(created.length, suppliedIdentity ? 0 : 2, 'Only standalone ownership probes may be created; restore must reuse its existing blank tab');
+    assert.ok(created.every(call => !Object.hasOwn(call.params, 'browserContextId')));
+    assert.equal(calls.filter(call => call.method === 'Target.closeTarget').length, created.length);
+  }
+});
+
+test('default ownership probing uses excluded target callbacks and cleans up before capture', async () => {
+  const events: string[] = [];
+  const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
+  cdp.listTargets = async () => { events.push('list'); return []; };
+  cdp.send = async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
+    assert.notEqual(method, 'Target.createTarget');
+    if (method === 'Target.getTargetInfo') { events.push('identity'); return { targetInfo: { targetId: params.targetId, type: 'page', browserContextId: 'default' } } as T; }
+    return { cookies: [] } as T;
+  };
+  await captureState(cdp, operation(), new Set(), {
+    create: async () => { events.push('create'); return 'excluded-probe'; },
+    release: async targetId => { assert.equal(targetId, 'excluded-probe'); events.push('release'); },
+  });
+  assert.deepEqual(events, ['create', 'identity', 'release', 'list']);
+});
+
+
+test('pixel cleanup restores a frozen selected tab through an excluded owned probe', async () => {
+  const { cdp, calls } = mockPixels({ hidesOnFreeze: true });
+  const released: string[] = [];
+  const result = await captureMaskedPixels(cdp, 'top', operation(), { create: async () => 'excluded-probe', release: async id => { released.push(id); } });
+  assert.equal(result.maskingProven, true);
+  assert.deepEqual(calls.filter(call => call.method === 'Target.activateTarget').map(call => call.params.targetId), ['excluded-probe', 'top']);
+  assert.deepEqual(released, ['excluded-probe']);
+  assert.equal(calls.some(call => call.method === 'Target.createTarget'), false, 'Live hubs must reserve the temporary target before user hooks can run');
+});
+
+test('standalone visibility recovery preserves explicit scope and omits opaque default-context ids', async () => {
+  for (const explicit of [false, true]) {
+    const { cdp, calls } = mockPixels({ hidesOnFreeze: true, browserContextId: 'scope', explicitContexts: explicit ? ['scope'] : [] });
+    await captureMaskedPixels(cdp, 'top', operation());
+    assert.deepEqual(calls.find(call => call.method === 'Target.createTarget')?.params, { url: 'about:blank', background: true, ...(explicit ? { browserContextId: 'scope' } : {}) });
+    assert.deepEqual(calls.filter(call => call.method === 'Target.closeTarget').map(call => call.params.targetId), ['recovery']);
+  }
+});
+
+test('failed visibility recovery discards pixels and still closes the owned recovery probe', async () => {
+  const { cdp, calls } = mockPixels({ hidesOnFreeze: true, visibilityFails: true });
+  const released: string[] = [];
+  await assert.rejects(captureMaskedPixels(cdp, 'top', operation(), { create: async () => 'excluded-probe', release: async id => { released.push(id); } }), /masking could not be proven/);
+  assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), true);
+  assert.deepEqual(released, ['excluded-probe']);
 });

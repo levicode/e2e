@@ -15,8 +15,10 @@ interface TabState { url: string; sessionStorage: { origin: string; values: Pair
 export interface BrowserStateData { cookies: Record<string, Json>[]; origins: OriginState[]; tabs: TabState[] }
 /** Lets a live target coordinator exclude storage probes before installing user routes or init scripts. */
 export interface StateProbeTargets {
-  /** Resolves the current attempt context again after browser replacement. */
+  /** Creation/cookie scope; omitted for the default context. Resolved again after replacement. */
   browserContextId?(): string | undefined;
+  /** TargetInfo ownership identity, which may be concrete even for the default context. */
+  targetBrowserContextId?(): string | undefined;
   create(context: OperationContext): Promise<string>;
   release(targetId: string, context: OperationContext): Promise<void>;
 }
@@ -36,6 +38,30 @@ function originOf(url: string): string | undefined {
   try { const parsed = new URL(url); return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : undefined; } catch { return undefined; }
 }
 function frames(tree: FrameTree): FrameTree['frame'][] { return [tree.frame, ...(tree.childFrames ?? []).flatMap(frames)]; }
+
+/** Resolve default ownership from a target we created, never from an arbitrary existing page. */
+async function targetContext(cdp: CdpConnection, context: OperationContext, probes?: StateProbeTargets): Promise<string | undefined> {
+  if (probes?.targetBrowserContextId) return probes.targetBrowserContextId();
+  const explicit = probes?.browserContextId?.();
+  if (explicit !== undefined) return explicit;
+  const current = budget(context);
+  const targetId = probes ? await probes.create(current())
+    : (await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true }, current())).targetId;
+  let identity: string | undefined;
+  let closed = true;
+  try {
+    const { targetInfo } = await cdp.send<{ targetInfo: { targetId: string; type: string; browserContextId?: string } }>('Target.getTargetInfo', { targetId }, current());
+    if (targetInfo.targetId !== targetId || targetInfo.type !== 'page' || (targetInfo.browserContextId !== undefined && (typeof targetInfo.browserContextId !== 'string' || !targetInfo.browserContextId))) throw failed();
+    identity = targetInfo.browserContextId;
+  } finally {
+    const cleanup = { ...context, signal: new AbortController().signal, timeoutMs: 2_000 };
+    if (probes) await probes.release(targetId, cleanup);
+    else closed = (await cdp.send<{ success: boolean }>('Target.closeTarget', { targetId }, cleanup)).success;
+  }
+  if (!closed) throw failed();
+  return identity;
+}
+
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function json(value: unknown, seen = new Set<object>()): value is Json {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -360,10 +386,11 @@ const CAPTURE_ORIGIN = `async () => {
 export async function captureState(cdp: CdpConnection, context: OperationContext, visitedOrigins: ReadonlySet<string> = new Set(), probes?: StateProbeTargets): Promise<EngineState> {
   const current = budget(context);
   try {
+    const browserContextId = await targetContext(cdp, current(), probes);
     const origins = new Set([...visitedOrigins].filter((origin) => originOf(origin) === origin));
     const tabs: TabState[] = [];
     for (const target of await cdp.listTargets(current())) {
-      if (target.type !== 'page' || target.browserContextId !== probes?.browserContextId?.()) continue;
+      if (target.type !== 'page' || target.browserContextId !== browserContextId) continue;
       const session = await cdp.attachTarget(target.targetId, current());
       try {
       const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), session);
@@ -454,7 +481,8 @@ export async function restoreState(state: EngineState, context: OperationContext
     await cdp.send('Storage.setCookies', { cookies, ...(probes?.browserContextId?.() ? { browserContextId: probes.browserContextId() } : {}) }, current());
     for (const origin of data.origins) await withOrigin(cdp, origin.origin, current(), (session, contextId, remaining) =>
       evaluate(cdp, session, `(${RESTORE_ORIGIN})(${JSON.stringify(origin)})`, remaining(), contextId), undefined, probes);
-    const initial = (await cdp.listTargets(current())).find((target) => target.type === 'page' && target.browserContextId === probes?.browserContextId?.());
+    const browserContextId = data.tabs.length ? await targetContext(cdp, current(), probes) : undefined;
+    const initial = data.tabs.length ? (await cdp.listTargets(current())).find((target) => target.type === 'page' && target.browserContextId === browserContextId) : undefined;
     for (const [index, tab] of data.tabs.entries()) {
       const targetId = index === 0 && initial ? initial.targetId
         : (await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true, ...(probes?.browserContextId?.() ? { browserContextId: probes.browserContextId() } : {}) }, current())).targetId;

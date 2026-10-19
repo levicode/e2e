@@ -8,16 +8,18 @@ import {
   type EngineObserveOptions, type EngineSnapshot, type EngineState,
   type EnginePrepareInfo, type EnginePrepareResult, type EngineFinishInfo, type VideoSegment,
   type LocatorAction, type LocatorExpression, type NodeRef, type OperationContext,
-  type PointerAction, type ViewportPoint,
+  type PointerAction, type ViewportPoint, type Momentum, type ScrollDirection,
 } from 'e2e/engine';
-import { CliTransport } from './transport.ts';
+import { guardCallbackScope } from './callback-scope.ts';
+import { AGENT_BROWSER_VERSION, CliTransport } from './transport.ts';
 import { ConnectionSource, type BrowserConnect } from './connection-source.ts';
 import { CdpConnection } from './cdp.ts';
+import { defaultContextIdentity, type BrowserContexts } from './browser-context.ts';
 import { NetworkHub } from './network.ts';
 import { SnapshotAdapter } from './observation.ts';
 import { LocatorCompanion } from './locators.ts';
 import { launchChromium, type OwnedBrowser } from './launch.ts';
-import { captureState, restoreState } from './state.ts';
+import { captureState, restoreState, type StateProbeTargets } from './state.ts';
 import { captureMaskedPixels } from './pixels.ts';
 import { bounded, beforeDispatch, within } from './budget.ts';
 import { ProtectedContext, type ProtectedOptions } from './protected.ts';
@@ -51,6 +53,7 @@ export class AgentBrowserSurface {
   private readonly leases: LeasedBrowsers | undefined;
   private readonly connectionSource: ConnectionSource | undefined;
   private contextId: string | undefined;
+  private defaultContextId: string | undefined;
   private defaultLeaseContext = false;
   private launchedThisAttempt = false;
   private backgroundGeneration = 0;
@@ -89,7 +92,7 @@ export class AgentBrowserSurface {
       throw new EngineError('INVALID_STATE', 'The browser operation belongs to an inactive attempt', { retryable: false });
     }
   }
-  guardOperation(context: OperationContext): void { this.guardAttempt(context); this.requireTransport(); }
+  guardOperation(context: OperationContext): void { guardCallbackScope(this); this.guardAttempt(context); this.requireTransport(); }
   private ownsUi(): boolean { const owner = this.uiContext.getStore(); return owner !== undefined && owner.active && owner === this.uiOwner; }
   private assertInputUsable(): void {
     this.assertUsable();
@@ -130,6 +133,7 @@ export class AgentBrowserSurface {
   get activeTarget(): string { return this.targetId ?? invalidState(); }
   get routes(): NetworkHub { return this.network ?? invalidState(); }
   get browserContextId(): string | undefined { return this.contextId; }
+  private get targetContextId(): string | undefined { return this.contextId ?? this.defaultContextId; }
   get remote(): boolean { return this.leases !== undefined || this.connectionSource !== undefined; }
   get downloads(): LeaseDownloads | undefined { return this.leases?.downloads(); }
   async prepare(info: EnginePrepareInfo): Promise<EnginePrepareResult | void> { return this.leases?.prepare(info); }
@@ -163,7 +167,7 @@ export class AgentBrowserSurface {
     await this.protectedContext.prepare(this.projectRoot, attempt.resolveSecret);
     await this.launch(this.operation(attempt.signal, 30_000));
     const browser = await this.cdp.send<{ product: string; protocolVersion: string }>('Browser.getVersion', {}, this.operation(attempt.signal, 5000));
-    attempt.environment({ engine: 'agent-browser 0.39.1-e2e.1', browser: browser.product, protocol: browser.protocolVersion, companion: 'public Chromium CDP', isolation: this.remote ? (this.defaultLeaseContext ? 'exclusive leased default context' : 'owned context per attempt') : 'owned process per attempt' });
+    attempt.environment({ engine: `agent-browser ${AGENT_BROWSER_VERSION}`, browser: browser.product, protocol: browser.protocolVersion, companion: 'public Chromium CDP', isolation: this.remote ? (this.defaultLeaseContext ? 'exclusive leased default context' : 'owned context per attempt') : 'owned process per attempt' });
   }
 
   private cliOptions() {
@@ -193,19 +197,17 @@ export class AgentBrowserSurface {
     this.traceDisabled = false;
     this.connection = await CdpConnection.connect(endpoint, context);
     await this.cdp.verifyChromium(context);
+    const contexts = await this.cdp.send<BrowserContexts>('Target.getBrowserContexts', {}, context);
+    const existingTargets = await this.cdp.listTargets(context);
+    this.defaultContextId = defaultContextIdentity(contexts, existingTargets);
     let selectedTarget: string | undefined;
     if (this.remote) {
       if ((this.leases?.scope ?? this.connectionSource?.scope) === 'attempt' && !this.launchedThisAttempt) {
-        const contexts = await this.cdp.send<{ browserContextIds: string[] }>('Target.getBrowserContexts', {}, context);
-        const pages = (await this.cdp.listTargets(context)).filter(target => target.type === 'page');
-        if (contexts.browserContextIds.length > 0 || pages.some(page => page.browserContextId !== undefined)) unsupported('An attempt-scoped browser lease must exclusively own its default context');
+        const pages = existingTargets.filter(target => target.type === 'page');
+        if (contexts.browserContextIds.length > 0 || pages.some(page => page.browserContextId !== this.defaultContextId)) unsupported('An attempt-scoped browser lease must exclusively own its default context');
         this.defaultLeaseContext = true;
         selectedTarget = pages[0]?.targetId ?? (await this.cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' }, context)).targetId;
       } else {
-        // Upstream AB currently discovers/probes every existing page before selecting a tab.
-        // Refuse a shared endpoint rather than touch a foreign page during that initial attach.
-        const existingPages = (await this.cdp.listTargets(context)).filter(target => target.type === 'page');
-        if (existingPages.length > 0) unsupported('Shared browser attachment requires initial agent-browser context scoping; foreign pages are not safe to attach');
         const created = await this.cdp.send<{ browserContextId: string }>('Target.createBrowserContext', { disposeOnDetach: true }, context);
         if (!created.browserContextId) throw new EngineError('ENGINE_FAILURE', 'The remote browser did not create an isolated context', { retryable: false });
         this.contextId = created.browserContextId;
@@ -213,14 +215,18 @@ export class AgentBrowserSurface {
         selectedTarget = page.targetId;
       }
     }
+    selectedTarget ??= (await this.cdp.listTargets(context)).find(target => target.type === 'page' && target.browserContextId === this.targetContextId)?.targetId;
+    selectedTarget ??= (await this.cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', ...(this.contextId ? { browserContextId: this.contextId } : {}) }, context)).targetId;
+    if (this.contextId === undefined) this.defaultContextId = defaultContextIdentity(contexts, await this.cdp.listTargets(context));
     this.launchedThisAttempt = true;
-    this.transport = new CliTransport({ ...this.cliOptions(), cdp: endpoint });
+    this.transport = new CliTransport({ ...this.cliOptions(), cdp: endpoint, cdpTarget: selectedTarget, cdpContext: this.contextId ?? null });
     const connection = this.cdp;
     const protectedContext = this.protectedContext;
     const launchAttempt = this.attempt ?? invalidState();
     const launchRunId = info.runId;
     this.network = new NetworkHub(connection, {
       browserContextId: this.contextId ?? null,
+      ...(this.contextId !== undefined || this.defaultContextId === undefined ? {} : { defaultBrowserContextId: this.defaultContextId }),
       operation: () => ({ signal: launchAttempt.signal, timeoutMs: 30_000, runId: launchRunId, attemptId: launchAttempt.attemptId, origin: 'test' }),
       resolveUrl: (url) => { if (!/^https?:/.test(url)) throw new TestError('INVALID_ARGUMENT', 'Route URL override must be absolute until a fixture resolver is registered'); return new URL(url).href; },
       resolvePath: (file) => path.resolve(this.projectRoot, file),
@@ -252,7 +258,7 @@ export class AgentBrowserSurface {
     const operation = bounded({ ...context, timeoutMs: Math.min(context.timeoutMs, 1000) });
     try {
       this.guardOperation(operation);
-      this.traceTransport ??= new CliTransport({ ...this.cliOptions(), cdp: this.endpoint });
+      this.traceTransport ??= new CliTransport({ ...this.cliOptions(), cdp: this.endpoint, cdpTarget: this.activeTarget, cdpContext: this.contextId ?? null });
       const target = this.activeTarget;
       const transport = this.traceTransport;
       const locators = this.locators;
@@ -285,7 +291,7 @@ export class AgentBrowserSurface {
     const active = tabs.find((tab) => tab.active);
     if (!active) throw new EngineError('ENGINE_FAILURE', 'agent-browser did not identify its active tab', { retryable: false });
     const targets = await this.cdp.listTargets(context);
-    if (!targets.some((target) => target.targetId === active.targetId && target.type === 'page')) throw new EngineError('ENGINE_FAILURE', 'agent-browser and CDP do not share a page target', { retryable: false });
+    if (!targets.some((target) => target.targetId === active.targetId && target.type === 'page' && target.browserContextId === this.targetContextId)) throw new EngineError('ENGINE_FAILURE', 'agent-browser and CDP do not share a page target', { retryable: false });
     this.targetId = active.targetId;
     this.sessionId = await this.routes.useTarget(active.targetId, context);
     for (const unsubscribe of this.activeUnsubscribe.splice(0)) unsubscribe();
@@ -309,7 +315,7 @@ export class AgentBrowserSurface {
     const result = await this.command<{ tabs: Tab[] }>(['tab', 'list'], context);
     if (!Array.isArray(result.tabs)) throw new EngineError('ENGINE_FAILURE', 'Malformed public tab listing', { retryable: false });
     if (!this.remote) return result.tabs;
-    const permitted = new Set((await this.cdp.listTargets(context)).filter(target => target.browserContextId === this.contextId).map(target => target.targetId));
+    const permitted = new Set((await this.cdp.listTargets(context)).filter(target => target.browserContextId === this.targetContextId).map(target => target.targetId));
     return result.tabs.filter(tab => permitted.has(tab.targetId));
   }
 
@@ -331,7 +337,7 @@ export class AgentBrowserSurface {
     const snapshot = await (this.snapshots ?? invalidState()).observe(context);
     if (!options?.pixels) return snapshot;
     if (this.tainted) throw new TestError('POLICY_DENIED', 'Pixels are unavailable after sensitive input');
-    const masked = await captureMaskedPixels(this.cdp, this.activeTarget, context);
+    const masked = await captureMaskedPixels(this.cdp, this.activeTarget, context, this.probeTargets());
     return { ...snapshot, pixels: masked.pixels, maskedRegionCount: masked.maskedRegionCount };
   }
 
@@ -387,7 +393,7 @@ export class AgentBrowserSurface {
     const budget = (): OperationContext => ({ ...context, timeoutMs: Math.max(0, end - Date.now()) });
     const adapter = this.snapshots ?? invalidState();
     try {
-      if (adapter.isRoot(ref) && action.kind === 'swipe') { await this.command(['scroll', action.direction, '500'], budget(), true); return; }
+      if (adapter.isRoot(ref) && action.kind === 'swipe') { await this.wheel(action.direction, action.momentum ?? 'none', await this.viewportExtent(action.direction, budget()), budget()); return; }
       await adapter.verify(ref, budget());
       const selector = adapter.resolve(ref);
       const act = async (argv: string[]) => {
@@ -417,7 +423,12 @@ export class AgentBrowserSurface {
             const value = typeof action.value === 'string' ? action.value : 'value' in action.value ? action.value.value : 'index' in action.value ? String(action.value.index) : action.value.label;
             await act(['select', selector, mode, '--', value!]); break;
           }
-          case 'swipe': await act(['scroll', action.direction, '500', '--selector', selector]); break;
+          case 'swipe': {
+            await act(['hover', selector]);
+            const box = await this.command<{ width: number; height: number }>(['get', 'box', selector], budget());
+            await this.wheel(action.direction, action.momentum ?? 'none', action.direction === 'up' || action.direction === 'down' ? box.height : box.width, budget());
+            break;
+          }
           case 'secondaryTap': case 'longPress': {
             await act(['hover', selector]);
             const button = action.kind === 'secondaryTap' ? 'right' : 'left';
@@ -478,7 +489,7 @@ export class AgentBrowserSurface {
           return;
         }
         case 'swipe': {
-          await act(() => this.input.mouseWheel(action.direction === 'right' ? 500 : action.direction === 'left' ? -500 : 0, action.direction === 'down' ? 500 : action.direction === 'up' ? -500 : 0, context));
+          await act(async () => this.wheel(action.direction, action.momentum ?? 'none', await this.viewportExtent(action.direction, context), context));
           return;
         }
         case 'dragTo': case 'swipeTo': {
@@ -495,6 +506,20 @@ export class AgentBrowserSurface {
         }
       }
     } catch (error) { if (dispatched) this.markUncertain(context); throw error; }
+  }
+
+  private async viewportExtent(direction: ScrollDirection, context: OperationContext): Promise<number> {
+    return this.evaluate<number>(direction === 'up' || direction === 'down' ? 'innerHeight' : 'innerWidth', context, false);
+  }
+
+  private async wheel(direction: ScrollDirection, momentum: Momentum, extent: number, context: OperationContext): Promise<void> {
+    if (!Number.isFinite(extent) || extent <= 0) throw new EngineError('NOT_ACTIONABLE', 'The scroll target has no visible extent', { retryable: false });
+    const distance = Math.round(extent * (momentum === 'fast' ? 1.5 : momentum === 'slow' ? 0.75 : 0.5));
+    const dx = direction === 'right' ? distance : direction === 'left' ? -distance : 0;
+    const dy = direction === 'down' ? distance : direction === 'up' ? -distance : 0;
+    await this.input.mouseWheel(dx, dy, context);
+    try { await this.evaluate("document.visibilityState==='hidden'?undefined:new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)))", context, false); }
+    catch { this.markUncertain(context); }
   }
 
   private async delay(ms: number, context: OperationContext): Promise<void> {
@@ -516,7 +541,7 @@ export class AgentBrowserSurface {
     this.guardOperation(context);
     if (this.tainted) throw new TestError('POLICY_DENIED', 'Screenshots are unavailable after sensitive input');
     const artifactsDir = this.artifactsDir;
-    const capture = await captureMaskedPixels(this.cdp, this.activeTarget, context);
+    const capture = await captureMaskedPixels(this.cdp, this.activeTarget, context, this.probeTargets());
     this.guardOperation(context);
     const file = `agent-browser-${randomUUID()}.png`;
     await mkdir(artifactsDir, { recursive: true });
@@ -527,11 +552,16 @@ export class AgentBrowserSurface {
   async startVideo(context: OperationContext): Promise<void> { this.guardOperation(context); await (this.video ?? invalidState()).arm(this.cdp, this.activeTarget, context); }
   async stopVideo(context: OperationContext): Promise<readonly VideoSegment[]> { this.guardOperation(context); return (this.video ?? invalidState()).stop(context); }
 
-  async capture(context: OperationContext): Promise<EngineState> {
-    this.guardOperation(context);
+  private probeTargets(): StateProbeTargets {
     const network = this.routes;
     const contextId = this.contextId;
-    return captureState(this.cdp, context, this.origins, { create: operation => network.createProbeTarget(operation), release: (target, operation) => network.releaseProbeTarget(target, operation), browserContextId: () => contextId });
+    const targetContextId = this.targetContextId;
+    return { create: operation => network.createProbeTarget(operation), release: (target, operation) => network.releaseProbeTarget(target, operation), browserContextId: () => contextId, targetBrowserContextId: () => targetContextId };
+  }
+
+  async capture(context: OperationContext): Promise<EngineState> {
+    this.guardOperation(context);
+    return captureState(this.cdp, context, this.origins, this.probeTargets());
   }
   async restore(state: EngineState, context: OperationContext): Promise<void> {
     this.guardOperation(context);
@@ -546,7 +576,7 @@ export class AgentBrowserSurface {
       this.poisoned = false;
       await this.launch(context, true);
       return this.cdp;
-    }, { create: (operation) => this.routes.createProbeTarget(operation), release: (target, operation) => this.routes.releaseProbeTarget(target, operation), browserContextId: () => this.contextId });
+    }, { create: (operation) => this.routes.createProbeTarget(operation), release: (target, operation) => this.routes.releaseProbeTarget(target, operation), browserContextId: () => this.contextId, targetBrowserContextId: () => this.targetContextId });
     await this.installProtected(context);
     for (const callback of this.restartCallbacks) await callback(context);
     this.snapshots?.invalidate();
@@ -591,7 +621,7 @@ export class AgentBrowserSurface {
     for (const unsubscribe of this.activeUnsubscribe.splice(0)) unsubscribe();
     if (this.defaultLeaseContext && this.connection) {
       try {
-        const pages = (await this.connection.listTargets(context)).filter(target => target.type === 'page' && target.browserContextId === undefined);
+        const pages = (await this.connection.listTargets(context)).filter(target => target.type === 'page' && target.browserContextId === this.defaultContextId);
         await Promise.all(pages.map(page => this.connection!.send('Target.closeTarget', { targetId: page.targetId }, context)));
       } catch (cause) { error ??= cause; }
     }
@@ -599,7 +629,7 @@ export class AgentBrowserSurface {
     if (this.contextId !== undefined && this.connection) {
       try { await this.connection.send('Target.disposeBrowserContext', { browserContextId: this.contextId }, context); } catch (cause) { error ??= cause; }
     }
-    this.contextId = undefined;
+    this.contextId = undefined; this.defaultContextId = undefined;
     try { await this.owned?.close(); } catch (cause) { error ??= cause; }
     this.owned = undefined;
     try { await this.transport?.close(context); } catch (cause) { error ??= cause; }

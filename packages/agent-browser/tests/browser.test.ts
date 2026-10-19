@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import { EngineError, TestError, type EngineFixtureContext, type OperationContext } from 'e2e/engine';
 import { createBrowserFixture, type BrowserExpectation } from '../src/browser.ts';
 import { InputController } from '../src/input.ts';
+import { guardCallbackScope } from '../src/callback-scope.ts';
 import type { CdpConnection } from '../src/cdp.ts';
 import type { LeaseDownloads } from '../src/provider.ts';
 import type { WebRoute } from '../src/network.ts';
@@ -73,7 +74,10 @@ async function setup(t: TestContext, settings: { browserContextId?: string; remo
     registerCleanup: (fn: () => void) => cleanups.push(fn),
     registerRestart: (fn: (context: OperationContext) => Promise<void>) => restarts.push(fn),
     registerBackground(work: Promise<void>) { void work.catch(() => undefined); background.push(work); },
-    guardOperation(operation: OperationContext) { if (operation.runId !== 'r' || operation.attemptId !== activeAttempt) throw new EngineError('INVALID_STATE', 'Old fixture attempt', { retryable: false }); },
+    guardOperation(operation: OperationContext) {
+      if (operation.runId !== 'r' || operation.attemptId !== activeAttempt) throw new EngineError('INVALID_STATE', 'Old fixture attempt', { retryable: false });
+      guardCallbackScope(surface);
+    },
     assertUsable() { if (poisoned) throw new EngineError('INVALID_STATE', 'poisoned', { retryable: false }); },
     markUncertain(): never { poisoned = true; throw new EngineError('ACTION_MAY_HAVE_COMMITTED', 'uncertain', { retryable: false }); },
     async command(args: readonly string[], _context: OperationContext, mutating: boolean) { calls.push({ method: 'command', params: { args, mutating } }); },
@@ -96,7 +100,11 @@ async function setup(t: TestContext, settings: { browserContextId?: string; remo
     app: { resolveUrl(value: string) { const url = new URL(value, 'https://example.test/base/'); if (!/^https?:$/.test(url.protocol)) throw new TestError('POLICY_DENIED', 'blocked'); return url.href; } },
     fixture(name: string, value: object, configuration: unknown) { operations.set(name, configuration); return value; },
     expectable(value: object, factory: () => BrowserExpectation) { expectation = factory(); return value; },
-    locator: (expression: unknown) => expression,
+    locator: (expression: unknown) => ({ expression, async click() {
+      // Harness-created locator operations bypass the browser fixture's context wrapper.
+      surface.guardOperation(op());
+      calls.push({ method: 'locator.click', params: {} });
+    } }),
     screen: (scope: unknown) => ({ scope }),
     attachArtifact(_kind: string, name: string) { artifacts.push(name); },
     attachViewport(size: Record<string, unknown>) { calls.push({ method: 'attachViewport', params: size }); },
@@ -424,10 +432,12 @@ test('route callback continuations cannot create new fixture operations after re
       await new Promise<void>((resolve) => { release = resolve; });
       await assert.rejects(fixture.browser.evaluate('1'), { code: 'INVALID_STATE' }); rejected++;
       await assert.rejects(async () => fixture.browser.mouse.move(1, 2), { code: 'INVALID_STATE' }); rejected++;
+      await assert.rejects(fixture.browser.locator('#button').click(), { code: 'INVALID_STATE' }); rejected++;
       return;
     }
     assert.equal(await fixture.browser.evaluate('2'), 2);
     await fixture.browser.mouse.move(3, 4);
+    await fixture.browser.locator('#button').click();
   });
   const handler = () => fixture.calls.findLast(call => call.method === 'route')?.params.handler as (route: WebRoute) => Promise<void>;
   const oldHandler = handler();
@@ -435,11 +445,12 @@ test('route callback continuations cannot create new fixture operations after re
   assert.ok(release);
   await fixture.restart();
   release(); await pending;
-  assert.equal(rejected, 2);
+  assert.equal(rejected, 3);
   assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 0);
   await assert.rejects(async () => oldHandler({} as WebRoute), { code: 'INVALID_STATE' });
   await handler()({} as WebRoute);
   assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 1);
+  assert.equal(fixture.calls.filter(call => call.method === 'locator.click').length, 1);
   assert.equal(fixture.poisoned, false);
 });
 
@@ -471,4 +482,28 @@ test('dialog callback continuations cannot create new fixture operations after r
   assert.equal(fixture.calls.filter(call => call.method === 'Input.dispatchMouseEvent').length, 1);
   assert.deepEqual(fixture.calls.findLast(call => call.method === 'Page.handleJavaScriptDialog')?.params, { accept: true });
   assert.equal(fixture.poisoned, false);
+});
+
+test('download triggers cannot create replacement-browser operations after an awaited reset', async (t) => {
+  const fixture = await setup(t);
+  let release: (() => void) | undefined;
+  let entered: (() => void) | undefined;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let rejected = 0;
+  const pending = fixture.browser.waitForDownload(async () => {
+    await fixture.completeDownload();
+    await new Promise<void>(resolve => { release = resolve; entered?.(); });
+    await assert.rejects(fixture.browser.evaluate('1'), { code: 'INVALID_STATE' }); rejected++;
+    await assert.rejects(fixture.browser.locator('#button').click(), { code: 'INVALID_STATE' }); rejected++;
+  });
+  await started;
+  await fixture.restart();
+  assert.ok(release); release();
+  await assert.rejects(pending, { code: 'INVALID_STATE' });
+  assert.equal(rejected, 2);
+  assert.equal(fixture.calls.filter(call => call.method === 'locator.click').length, 0);
+  assert.equal(fixture.artifacts.length, 0);
+  assert.equal(fixture.poisoned, false);
+  await fixture.browser.waitForDownload(() => fixture.completeDownload());
+  assert.equal(fixture.artifacts.length, 1);
 });

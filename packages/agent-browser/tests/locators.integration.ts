@@ -49,11 +49,13 @@ async function withLocators(run: (fixture: {
   let browser: OwnedBrowser | undefined; let cdp: CdpConnection | undefined; let cli: CliTransport | undefined; let hub: NetworkHub | undefined;
   try {
     browser = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', env: process.env, args: ['--site-per-process', ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])] }, operation());
-    cli = new CliTransport({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE, cdp: browser.endpoint });
+    cdp = await CdpConnection.connect(browser.endpoint, operation());
+    const initial = (await cdp.listTargets(operation())).find(target => target.type === 'page');
+    assert.ok(initial, 'The exclusively owned Chromium must expose its initial page');
+    cli = new CliTransport({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE, cdp: browser.endpoint, cdpTarget: initial.targetId, cdpContext: null });
     await cli.run(['open', `http://127.0.0.1:${port}`, '--wait-until', 'load'], operation(), { mutating: true });
     const { tabs } = await cli.run<{ tabs: { targetId: string; active: boolean }[] }>(['tab', 'list'], operation());
     const active = tabs.find((tab) => tab.active); assert.ok(active);
-    cdp = await CdpConnection.connect(browser.endpoint, operation());
     hub = new NetworkHub(cdp, { operation, resolveUrl: value => new URL(value, `http://127.0.0.1:${port}`).href, resolvePath: value => value });
     await hub.start(operation()); const session = await hub.useTarget(active.targetId, operation());
     const createCompanion = (allowFrameUrl?: (url: string) => boolean) => new LocatorCompanion({ cdp: () => cdp!, session: () => session, transport: () => cli!, frameSession: (id, context) => hub!.sessionForTarget(id, context), ...(allowFrameUrl ? { allowFrameUrl } : {}) });

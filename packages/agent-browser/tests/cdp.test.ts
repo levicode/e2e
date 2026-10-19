@@ -426,8 +426,30 @@ test('hub invokes instrumentation hooks before unpausing a newly created target'
   attachEvent(socket, 'popup', 'popup-session');
   await hub.settle(operation());
   const enabled = socket.commands.findIndex((command) => command.method === 'Runtime.enable' && command.sessionId === 'popup-session');
+  const pageEnabled = socket.commands.findIndex((command) => command.method === 'Page.enable' && command.sessionId === 'popup-session');
   const resumed = socket.commands.findIndex((command) => command.method === 'Runtime.runIfWaitingForDebugger' && command.sessionId === 'popup-session');
-  assert.ok(enabled >= 0 && resumed > enabled);
+  assert.ok(pageEnabled >= 0 && enabled > pageEnabled && resumed > enabled);
+});
+
+test('initializer registration racing attachment waits for Page.enable before installing document scripts', async () => {
+  const { connection, socket, hub } = await networkHub();
+  let pageCommand: Command | undefined;
+  socket.respondTo = command => {
+    if (command.method === 'Page.enable' && command.sessionId === 'popup-session') pageCommand = command;
+    else socket.reply(command, {});
+  };
+  attachEvent(socket, 'popup', 'popup-session');
+  const registering = hub.registerSessionInitializer((sessionId, _targetId, context) =>
+    connection.send<void>('Page.addScriptToEvaluateOnNewDocument', { source: 'globalThis.fixtureHook = true' }, context, sessionId), operation());
+  await tick();
+  assert.ok(pageCommand);
+  assert.equal(socket.commands.some(command => command.method === 'Page.addScriptToEvaluateOnNewDocument' && command.sessionId === 'popup-session'), false);
+  socket.reply(pageCommand, {});
+  await registering;
+  await hub.settle(operation());
+  const initialized = socket.commands.findIndex(command => command.method === 'Page.addScriptToEvaluateOnNewDocument' && command.sessionId === 'popup-session');
+  const resumed = socket.commands.findIndex(command => command.method === 'Runtime.runIfWaitingForDebugger' && command.sessionId === 'popup-session');
+  assert.ok(initialized > socket.commands.indexOf(pageCommand) && resumed > initialized);
 });
 
 test('fallback to the network preserves app-site headers and normalizes the original request headers', async () => {
@@ -646,8 +668,12 @@ test('context ownership excludes foreign targets before routes, scripts, auth, o
   const excluded = target('excluded', 'attempt-context');
   const initialized: string[] = [];
   socket.respondTo = (command) => {
-    if (command.method === 'Target.setAutoAttach' && !command.sessionId) {
-      for (const info of [owned, foreign, excluded]) attachEvent(socket, info.targetId, `${info.targetId}-session`, undefined, 'page', info.browserContextId);
+    if (command.method === 'Target.setDiscoverTargets') {
+      for (const info of [owned, foreign, excluded]) socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ method: 'Target.targetCreated', params: { targetInfo: info } }) }));
+    }
+    if (command.method === 'Target.autoAttachRelated') {
+      const info = [owned, foreign, excluded].find(candidate => candidate.targetId === command.params.targetId)!;
+      attachEvent(socket, info.targetId, `${info.targetId}-session`, undefined, 'page', info.browserContextId);
     }
     socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: [owned, foreign, excluded] } : command.method === 'Target.createTarget' ? { targetId: 'probe' } : {});
   };
@@ -661,11 +687,15 @@ test('context ownership excludes foreign targets before routes, scripts, auth, o
   assert.deepEqual(initialized, ['owned']);
   assert.deepEqual(hub.sessions().map((session) => session.targetId), ['owned']);
   for (const id of ['foreign', 'excluded']) {
-    assert.deepEqual(socket.commands.filter((command) => command.sessionId === `${id}-session`).map((command) => command.method), ['Runtime.runIfWaitingForDebugger']);
-    assert.equal(socket.commands.some((command) => command.method === 'Target.detachFromTarget' && command.params.sessionId === `${id}-session`), true);
+    assert.equal(socket.commands.some((command) => command.sessionId === `${id}-session` || command.params.targetId === id || command.params.sessionId === `${id}-session`), false);
     await assert.rejects(hub.sessionForTarget(id, operation()), /outside this attempt/);
   }
   assert.equal(socket.commands.some((command) => command.method === 'Target.attachToTarget'), false);
+  assert.deepEqual(socket.commands.filter(command => command.method === 'Target.autoAttachRelated').map(command => command.params.targetId), ['owned']);
+  assert.equal(socket.commands.some((command) => command.method === 'Target.setAutoAttach' && command.sessionId === undefined), false);
+  socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ method: 'Target.targetCreated', params: { targetInfo: target('foreign-new', 'other-context') } }) }));
+  await hub.settle(operation());
+  assert.equal(socket.commands.some((command) => command.params.targetId === 'foreign-new'), false);
   assert.equal(await hub.createProbeTarget(operation()), 'probe');
   assert.deepEqual(socket.commands.find((command) => command.method === 'Target.createTarget')!.params, { url: 'about:blank', background: true, browserContextId: 'attempt-context' });
 });
@@ -674,15 +704,141 @@ test('exclusive default-context filtering never treats a hidden incognito contex
   const { connection, socket } = await transport();
   const hub = new NetworkHub(connection, { operation, resolveUrl: (url) => url, resolvePath: (file) => file, browserContextId: null });
   socket.respondTo = (command) => {
-    if (command.method === 'Target.setAutoAttach' && !command.sessionId) {
+    if (command.method === 'Target.autoAttachRelated') {
+      assert.equal(command.params.targetId, 'default');
       attachEvent(socket, 'default', 'default-session');
-      attachEvent(socket, 'hidden', 'hidden-session', undefined, 'page', 'hidden-context');
     }
-    socket.reply(command, {});
+    socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: [
+      { targetId: 'default', type: 'page', url: 'about:blank' },
+      { targetId: 'hidden', type: 'page', url: 'about:blank', browserContextId: 'hidden-context' },
+    ] } : {});
   };
   await hub.start(operation());
   assert.deepEqual(hub.sessions().map((session) => session.targetId), ['default']);
   assert.equal(socket.commands.some((command) => command.sessionId === 'hidden-session' && command.method === 'Network.enable'), false);
+  assert.equal(socket.commands.some((command) => command.method === 'Target.setAutoAttach' && command.sessionId === undefined), false);
+});
+
+test('a verified concrete default context identity stays exact while default probe creation omits context parameters', async () => {
+  const { connection, socket } = await transport();
+  const configuration = {
+    operation, resolveUrl: (url: string) => url, resolvePath: (file: string) => file,
+    browserContextId: null, defaultBrowserContextId: 'verified-default',
+  };
+  const hub = new NetworkHub(connection, configuration);
+  configuration.defaultBrowserContextId = 'foreign-context';
+  const targets = [
+    { targetId: 'default-page', type: 'page', url: 'about:blank', browserContextId: 'verified-default' },
+    { targetId: 'foreign-page', type: 'page', url: 'about:blank', browserContextId: 'foreign-context' },
+    { targetId: 'unidentified-page', type: 'page', url: 'about:blank' },
+  ];
+  socket.respondTo = command => {
+    if (command.method === 'Target.autoAttachRelated') {
+      assert.equal(command.params.targetId, 'default-page');
+      attachEvent(socket, 'default-page', 'default-session', undefined, 'page', 'verified-default');
+    }
+    socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: targets }
+      : command.method === 'Target.createTarget' ? { targetId: 'probe' } : {});
+  };
+  const initialized: string[] = [];
+  hub.onTarget(target => { initialized.push(target.targetId); });
+  await hub.start(operation());
+  assert.equal(await hub.sessionForTarget('default-page', operation()), 'default-session');
+  for (const target of targets.slice(1)) await assert.rejects(hub.sessionForTarget(target.targetId, operation()), /outside this attempt/);
+  assert.deepEqual(initialized, ['default-page']);
+  assert.deepEqual(socket.commands.filter(command => command.method === 'Target.autoAttachRelated').map(command => command.params.targetId), ['default-page']);
+  assert.equal(await hub.createProbeTarget(operation()), 'probe');
+  assert.deepEqual(socket.commands.find(command => command.method === 'Target.createTarget')!.params, { url: 'about:blank', background: true });
+  assert.equal(socket.commands.some(command => command.method === 'Target.setAutoAttach' && command.sessionId === undefined), false);
+});
+
+test('a concrete default identity cannot broaden an unscoped or incognito scope', async () => {
+  const { connection, socket } = await transport();
+  const base = { operation, resolveUrl: (url: string) => url, resolvePath: (file: string) => file };
+  for (const configuration of [
+    { ...base, defaultBrowserContextId: 'default-id' },
+    { ...base, browserContextId: 'incognito', defaultBrowserContextId: 'default-id' },
+    ...['', 'private default', 'private\0default'].map(defaultBrowserContextId => ({ ...base, browserContextId: null, defaultBrowserContextId })),
+  ]) assert.throws(() => new NetworkHub(connection, configuration), { code: 'INVALID_ARGUMENT' });
+  assert.equal(socket.commands.length, 0);
+});
+
+test('scoped related-target monitoring configures owned popups and frames before resuming', async () => {
+  const { connection, socket } = await transport();
+  const owned = { targetId: 'owned', type: 'page', url: 'about:blank', browserContextId: 'context' };
+  socket.respondTo = command => {
+    if (command.method === 'Target.autoAttachRelated' && command.params.targetId === 'owned') attachEvent(socket, 'owned', 'owned-session', undefined, 'page', 'context');
+    socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: [owned] } : {});
+  };
+  const hub = new NetworkHub(connection, { operation, resolveUrl: url => url, resolvePath: file => file, browserContextId: 'context' });
+  await hub.route('**/api', route => route.abort(), operation());
+  const initialized: string[] = [];
+  await hub.registerSessionInitializer((_session, target) => { initialized.push(target); }, operation());
+  attachEvent(socket, 'popup', 'popup-session', 'owned-session', 'page', 'context');
+  attachEvent(socket, 'frame', 'frame-session', 'owned-session', 'iframe', 'context');
+  await hub.settle(operation());
+  assert.deepEqual(initialized.toSorted(), ['frame', 'owned', 'popup']);
+  for (const session of ['popup-session', 'frame-session']) {
+    const enabled = socket.commands.findIndex(command => command.method === 'Fetch.enable' && command.sessionId === session);
+    const resumed = socket.commands.findIndex(command => command.method === 'Runtime.runIfWaitingForDebugger' && command.sessionId === session);
+    assert.ok(enabled >= 0 && resumed > enabled);
+  }
+  assert.deepEqual(socket.commands.filter(command => command.method === 'Target.autoAttachRelated').map(command => command.params.targetId), ['owned', 'popup']);
+  assert.equal(socket.commands.some(command => command.method === 'Target.setAutoAttach' && command.sessionId === undefined), false);
+});
+
+test('scoped discovery waits for probe identity before attaching any newly discovered root', async () => {
+  const { connection, socket } = await transport();
+  const target = (id: string) => ({ targetId: id, type: 'page', url: 'about:blank', browserContextId: 'context' });
+  const discover = (id: string) => socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ method: 'Target.targetCreated', params: { targetInfo: target(id) } }) }));
+  let finishCreation: (() => void) | undefined;
+  socket.respondTo = command => {
+    if (command.method === 'Target.createTarget') {
+      discover('probe'); discover('independent-page');
+      finishCreation = () => socket.reply(command, { targetId: 'probe' });
+      return;
+    }
+    if (command.method === 'Target.autoAttachRelated') attachEvent(socket, String(command.params.targetId), `${String(command.params.targetId)}-session`, undefined, 'page', 'context');
+    socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: [target('owned')] } : {});
+  };
+  const hub = new NetworkHub(connection, { operation, resolveUrl: url => url, resolvePath: file => file, browserContextId: 'context' });
+  const initialized: string[] = [];
+  hub.onTarget(info => { initialized.push(info.targetId); });
+  await hub.start(operation());
+  const creating = hub.createProbeTarget(operation());
+  await tick();
+  assert.deepEqual(initialized, ['owned']);
+  assert.deepEqual(socket.commands.filter(command => command.method === 'Target.autoAttachRelated').map(command => command.params.targetId), ['owned']);
+  assert.ok(finishCreation); finishCreation();
+  assert.equal(await creating, 'probe');
+  await hub.settle(operation());
+  assert.deepEqual(initialized, ['owned', 'independent-page']);
+  assert.equal(socket.commands.some(command => command.method === 'Target.autoAttachRelated' && command.params.targetId === 'probe'), false);
+  assert.equal(hub.getSession('probe'), undefined);
+});
+
+test('scoped monitoring failure never falls back to browser-wide attachment', async () => {
+  const { connection, socket } = await transport();
+  socket.respondTo = command => {
+    if (command.method === 'Target.autoAttachRelated') { socket.protocolError(command); return; }
+    socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: [{ targetId: 'owned', type: 'page', url: 'about:blank', browserContextId: 'context' }] } : {});
+  };
+  const hub = new NetworkHub(connection, { operation, resolveUrl: url => url, resolvePath: file => file, browserContextId: 'context' });
+  await assert.rejects(hub.start(operation()), { code: 'ENGINE_FAILURE' });
+  assert.equal(socket.commands.some(command => command.method === 'Target.setAutoAttach' || command.method === 'Target.attachToTarget'), false);
+});
+
+test('closing a scoped hub cancels queued discovery before any target attachment', async () => {
+  const { connection, socket } = await transport();
+  socket.respondTo = command => socket.reply(command, command.method === 'Target.getTargets' ? { targetInfos: [] } : {});
+  const hub = new NetworkHub(connection, { operation, resolveUrl: url => url, resolvePath: file => file, browserContextId: 'context' });
+  await hub.start(operation());
+  socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ method: 'Target.targetCreated', params: {
+    targetInfo: { targetId: 'late', type: 'page', url: 'about:blank', browserContextId: 'context' },
+  } }) }));
+  hub.close();
+  await tick();
+  assert.equal(socket.commands.some(command => command.method === 'Target.autoAttachRelated' || command.method === 'Target.attachToTarget'), false);
 });
 
 test('state and pixel readers may attach an additional owned-target session without being detached or reinstrumented', async () => {

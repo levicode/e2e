@@ -6,12 +6,14 @@ This is an implementation checkpoint, not a declaration of complete compatibilit
 
 - Public SPI-only package boundary; no core-to-engine dependency or Playwright runtime import.
 - Adapter TypeScript build and typecheck.
-- 207 unit tests passed after the checkpoint 3 safety follow-up, including real ffmpeg encode/decode validation without Chromium. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, browser-wide routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
+- 233 unit tests passed in the latest workspace follow-up, including real ffmpeg encode/decode validation without Chromium. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, owned-target routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
 - The maintained Rust patch applies to the exact pinned upstream source.
 
 ## Awaiting the required execution environment
 
-- Native Rust compilation/tests and real Chromium fixture suites run in the dedicated GitHub workflow.
+- CI run 39295892553 on commit `134a1826427983c850d8ded7ae38d153d83f6209` passed native compilation and the native suite: 1,470 passed, zero failed, 147 upstream ignored. Adapter build, typecheck, lint and 209 unit tests also passed.
+- Its first real Chromium gate ran all 43 cases: seven passed, 36 failed, zero skipped. Most public-engine tests stopped at a default-context identity mismatch; other failures exposed remote-frame topology, popup initialization and visibility restoration. Follow-up fixes must pass a new exact-commit CI run before these paths are called verified.
+- The seven browser passes cover same-target fulfilment, asynchronous LIFO rewrite, truncated-body rejection, scoped-auth redirect isolation, excluded-frame observation policy, ffmpeg timing, and real Chromium screencast segments. They do not establish glyph/input/state/runner acceptance.
 - The local workspace blocks Chromium sockets; the supported escalation path also fails during sandbox setup. No local real-browser pass is claimed.
 - Private application UAT is separate and has not been run by these synthetic fixtures.
 
@@ -34,6 +36,6 @@ No item above is treated as passing merely because its API or test source exists
 - Automatic reconnect/retry after ambiguous input is intentionally unavailable. A new explicit attempt is required.
 - Real hosted-provider accounts and private application UAT remain separate from the synthetic local-service fixtures.
 - Asynchronous fixture callbacks and input acknowledgements are fenced to their original browser generation. The regressions pass locally, but real-browser restart acceptance still awaits CI.
-- Successful fill/clear, uncheck, hover, explicit scrolling, locator drag/swipe, and coordinate swipe actions need additional real acceptance cases beyond the initial fixture set. Do not treat this development checkpoint as a production release.
+- Successful fill/clear, uncheck, hover, explicit scrolling, locator drag/swipe, and coordinate swipe actions now have mandatory real acceptance cases. They still await execution. Do not treat this development checkpoint as a production release.
 
-- Shared worker endpoints with existing pages are temporarily refused before CLI attachment. Initial agent-browser discovery still needs an explicit context scope; companion filtering alone is insufficient. Provider isolation fixtures remain mandatory and are not skipped.
+- Scoped initial CLI attachment and owned-family companion monitoring have been implemented. Their transparent-proxy provider-isolation fixtures remain mandatory and unverified; they assert no foreign attachment/pause and owned popup interception before application code.
