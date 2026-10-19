@@ -61,7 +61,7 @@ jobs:
           rustup toolchain install 1.93.0 --profile minimal
           rustup default 1.93.0
           rustc --version
-          rustc -vV | grep -Fqx "host: $EXPECTED_RUST_HOST"
+          rustc -vV | grep -Fx "host: $EXPECTED_RUST_HOST"
           bash packages/agent-browser/scripts/build-exact-agent-browser.sh
           BINARY="$PWD/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser"
           test -x "$BINARY"

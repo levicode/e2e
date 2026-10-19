@@ -14,7 +14,7 @@ The script packs both packages, installs the tarballs in a fresh directory outsi
 
 ## Run the real browser smoke
 
-Use the reviewed native `agent-browser 0.39.1-e2e.3` build and a Chromium executable. Stock agent-browser is rejected. The native binary and Chromium are separate prerequisites, not bundled inside the adapter tarball.
+Use the reviewed native `agent-browser 0.39.1-e2e.4` build and a Chromium executable. Stock agent-browser is rejected. The native binary and Chromium are separate prerequisites, not bundled inside the adapter tarball.
 
 ```sh
 export E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/reviewed/agent-browser

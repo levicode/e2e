@@ -6,7 +6,7 @@ This is an implementation checkpoint, not a declaration of complete compatibilit
 
 - Public SPI-only package boundary; no core-to-engine dependency or Playwright runtime import.
 - Adapter TypeScript build and typecheck.
-- 331 unit tests passed in the latest workspace follow-up. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, owned-target routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
+- 332 unit tests passed in the latest workspace follow-up. Unit suites cover CLI subprocess transport, strict error mapping, CDP concurrency, owned-target routing, observation preservation, storage codecs, masking checks, fixtures, and launch cleanup.
 - The maintained Rust patch applies to the exact pinned upstream source.
 - Fresh packaged consumption passed outside the workspace: actual `e2e` and adapter tarballs, offline installation and frozen reinstall, public imports resolving inside the consumer, installed TypeScript declarations, and installed CLI test collection. Its real-browser observation/action/report/trace smoke is a separate mandatory CI gate, not a local browser pass.
 
@@ -28,12 +28,16 @@ Other passing Linux cases cover ordered trusted ASCII events, literal CLI-lookin
 
 The exact-commit repeat (attempt 2) passed 52/53 integration cases and the fresh consumer again, but failed a real password-mask pixel assertion: the returned image contained white where opaque black was required. This blocks release and proves the first green run was insufficient. The follow-up requires decoded-PNG mask attestation, a new privacy/cache epoch (`agent-browser-exact-5`), and a fresh repeated full run.
 
+[The decoded-PNG follow-up at `ffa91805374e2aa05f283877c0daf40c93161bd5`](https://github.com/levicode/e2e/actions/runs/39314268883) passed native 1,498 tests, all 331 then-current adapter units, the icon smoke and fresh consumer. All 12 independent repeated masking captures passed actual opaque-black pixel checks and cleanup assertions. The full matrix was 51/53: two existing native lifecycle timeouts still blocked restart and navigation after a temporary probe. No native binary artifact was uploaded from the failed full gate.
+
+The next candidate gates native version `0.39.1-e2e.4`, with cancellation tied to destroyed probe targets, and adds a separate 12-round public native-observe/open regression. Its real matrix now has 54 mandatory cases. Those source changes and the macOS workflow corrections require new execution evidence; they are not a completed acceptance result.
+
 A second complete green run of the corrected exact commit is required before calling this candidate stable. Test source and isolated unit success do not substitute for a full run.
 
 ## Platform and application boundaries
 
 - Linux full-contract evidence targets GitHub-hosted Ubuntu 24.04 x86_64 and the workflow's pinned Chromium distribution.
-- The separate macOS workflow targets standard macOS 15 ARM64 and Intel runners. Its required scope is native compilation/tests, all adapter units, all seven locator/runner integration cases, and a fresh packaged-consumer browser run. It does **not** run the full Linux 53-case matrix: pixel/state/network/video contracts are not independently validated on macOS by that workflow. A workflow file is not an executed platform pass; check each architecture's successful job and artifact manifest.
+- The separate macOS workflow targets standard macOS 15 ARM64 and Intel runners. Its required scope is native compilation/tests, all adapter units, all seven locator/runner integration cases, and a fresh packaged-consumer browser run. It does **not** run the full Linux integration matrix: pixel/state/network/video contracts are not independently validated on macOS by that workflow. A workflow file is not an executed platform pass; check each architecture's successful job and artifact manifest.
 - The local build workspace blocks Chromium sockets; its supported escalation path also fails during sandbox setup. No local real-browser pass is claimed.
 - Private application UAT and real hosted-service accounts remain separate from these synthetic fixtures. The user's actual desktop environment has not been exercised.
 - Artifacts identify exact source, compiler, OS, architecture and browser version. Older OS releases, other distributions, other browsers, and Windows are not implicitly supported.

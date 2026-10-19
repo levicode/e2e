@@ -5,7 +5,7 @@ diff --git a/cli/Cargo.toml b/cli/Cargo.toml
  [package]
  name = "agent-browser"
 -version = "0.39.1"
-+version = "0.39.1-e2e.3"
++version = "0.39.1-e2e.4"
  edition = "2021"
  description = "Fast browser automation CLI for AI agents"
  license = "Apache-2.0"
@@ -17,7 +17,7 @@ diff --git a/cli/Cargo.lock b/cli/Cargo.lock
  [[package]]
  name = "agent-browser"
 -version = "0.39.1"
-+version = "0.39.1-e2e.3"
++version = "0.39.1-e2e.4"
  dependencies = [
   "aes-gcm",
   "async-trait",
@@ -28,7 +28,7 @@ diff --git a/package.json b/package.json
  {
    "name": "agent-browser",
 -  "version": "0.39.1",
-+  "version": "0.39.1-e2e.3",
++  "version": "0.39.1-e2e.4",
    "description": "Browser automation CLI for AI agents",
    "type": "module",
    "packageManager": "pnpm@11.1.3",
@@ -715,7 +715,18 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
  use super::cdp::chrome::{prepare_nss_home, LaunchOptions};
  use super::cdp::client::CdpClient;
  use super::cdp::types::{
-@@ -253,12 +253,31 @@
+@@ -239,6 +239,10 @@
+ 
+ #[derive(Default)]
+ struct DrainedEvents {
++    // Subscribed before the batch is drained: no destruction event can fall
++    // between collection and an eventual setup await. Other events remain in
++    // the daemon's ordinary receiver for its next drain.
++    lifecycle_events: Option<broadcast::Receiver<CdpEvent>>,
+     pending_acks: Vec<i64>,
+     new_targets: Vec<TargetCreatedEvent>,
+     changed_targets: Vec<TargetInfoChangedEvent>,
+@@ -253,12 +257,31 @@
      /// Attached non-page targets that still need to be resumed when auto-attach
      /// pauses them, even though agent-browser does not track them as tabs.
      attached_other_sessions: Vec<String>,
@@ -747,7 +758,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
  }
  
  fn is_active_iframe_network_event(
-@@ -540,6 +559,7 @@
+@@ -540,6 +563,7 @@
  
  pub struct DaemonState {
      pub browser: Option<BrowserManager>,
@@ -755,7 +766,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      pub appium: Option<AppiumManager>,
      pub safari_driver: Option<safari::SafariDriverProcess>,
      pub webdriver_backend: Option<super::webdriver::backend::WebDriverBackend>,
-@@ -690,6 +710,7 @@
+@@ -690,6 +714,7 @@
              .is_some_and(|b| b.pinned);
          Self {
              browser: None,
@@ -763,7 +774,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              appium: None,
              safari_driver: None,
              webdriver_backend: None,
-@@ -844,6 +865,7 @@
+@@ -844,6 +869,7 @@
          };
  
          let client = browser.client.clone();
@@ -771,7 +782,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          let mut rx = browser.client.subscribe();
          let domain_filter = self.domain_filter.clone();
          let routes = self.routes.clone();
-@@ -854,7 +876,20 @@
+@@ -854,7 +880,20 @@
          self.fetch_handler_task = Some(tokio::spawn(async move {
              loop {
                  match rx.recv().await {
@@ -792,7 +803,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let request_id = event
                              .params
                              .get("requestId")
-@@ -863,6 +898,9 @@
+@@ -863,6 +902,9 @@
                              .to_string();
                          let sid = event.session_id.clone().unwrap_or_default();
                          let creds = proxy_credentials.read().await;
@@ -802,7 +813,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          if let Some((ref user, ref pass)) = *creds {
                              let _ = client
                                  .send_command(
-@@ -905,6 +943,14 @@
+@@ -905,6 +947,14 @@
                          let target_info = event.params.get("targetInfo").and_then(|value| {
                              serde_json::from_value::<TargetInfo>(value.clone()).ok()
                          });
@@ -817,10 +828,14 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          // The recorder's screencast session shares a target
                          // with a page session that already carries the
                          // controls.
-@@ -923,9 +969,15 @@
+@@ -922,10 +972,18 @@
+                         let has_proxy_creds = proxy_credentials.read().await.is_some();
                          let controls_active = df.is_some() || has_proxy_creds;
                          let controls_result = if controls_active && target_needs_controls {
-                             async {
+-                            async {
++                            scope_guard.run_background(&client,
++                                target_info.as_ref().map(|target| target.target_id.as_str()),
++                                Some(&sid), async {
 +                                if !scope_guard.accepts_session(Some(&sid)) {
 +                                    return Ok(());
 +                                }
@@ -834,7 +849,14 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  }
                                  if let Some(ref target) = target_info {
                                      if target_is_worker_like(target) {
-@@ -955,7 +1007,8 @@
+@@ -949,13 +1007,13 @@
+                                 } else {
+                                     Ok(())
+                                 }
+-                            }
+-                            .await
++                            }).await.map(|_| ())
+                         } else {
                              Ok(())
                          };
  
@@ -844,7 +866,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              let _ = client
                                  .send_command_no_wait(
                                      "Runtime.runIfWaitingForDebugger",
-@@ -971,6 +1024,9 @@
+@@ -971,6 +1029,9 @@
                          }
                      }
                      Ok(event) if event.method == "Fetch.requestPaused" => {
@@ -854,7 +876,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let request_id = event
                              .params
                              .get("requestId")
-@@ -1010,10 +1066,17 @@
+@@ -1010,10 +1071,17 @@
                          let rt = routes.read().await;
                          let oh = origin_headers.read().await;
  
@@ -874,7 +896,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      Err(_) => break,
                  }
              }
-@@ -1037,12 +1100,16 @@
+@@ -1037,12 +1105,16 @@
          };
  
          let client = browser.client.clone();
@@ -891,7 +913,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let dialog_type = event
                              .params
                              .get("type")
-@@ -1072,7 +1139,12 @@
+@@ -1072,7 +1144,12 @@
                          }
                      }
                      Ok(_) => continue,
@@ -905,10 +927,14 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      Err(_) => break,
                  }
              }
-@@ -1225,6 +1297,17 @@
+@@ -1224,7 +1301,20 @@
+                 .unwrap_or_default();
      }
  
-     async fn apply_drained_events(&mut self, drained: DrainedEvents) -> Result<(), String> {
+-    async fn apply_drained_events(&mut self, drained: DrainedEvents) -> Result<(), String> {
++    async fn apply_drained_events(&mut self, mut drained: DrainedEvents) -> Result<(), String> {
++        let mut lifecycle_events = drained.lifecycle_events.take()
++            .or_else(|| self.browser.as_ref().map(|browser| browser.client.subscribe()));
 +        let scope_guard = self.browser.as_ref().map(|browser| browser.scope_guard());
 +        if let Some(ref browser) = self.browser {
 +            for (sid, parent_sid) in &drained.rejected_scope_sessions {
@@ -923,7 +949,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          // Popups and externally closed pages can change the active top-level
          // target without changing iframe topology. Refresh after either kind
          // of event so network capture stays scoped to the active page.
-@@ -1234,6 +1317,9 @@
+@@ -1234,6 +1324,9 @@
              if let Some(ref browser) = self.browser {
                  if let Ok(session_id) = browser.active_session_id() {
                      for ack_sid in drained.pending_acks {
@@ -933,7 +959,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          let _ = stream::ack_screencast_frame(&browser.client, session_id, ack_sid)
                              .await;
                      }
-@@ -1250,6 +1336,9 @@
+@@ -1250,13 +1343,20 @@
  
          // Track cross-origin iframe sessions
          for (frame_id, iframe_sid) in &drained.attached_iframe_sessions {
@@ -943,17 +969,29 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              self.iframe_sessions
                  .insert(frame_id.clone(), iframe_sid.clone());
              let filter = self.domain_filter.read().await.clone();
-@@ -1257,6 +1346,9 @@
+             let has_proxy_creds = self.proxy_credentials.read().await.is_some();
              let controls_active = filter.is_some() || has_proxy_creds;
              let setup_result = if let Some(ref mgr) = self.browser {
-                 async {
+-                async {
++                let guard = mgr.scope_guard();
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(frame_id.as_str()), Some(iframe_sid.as_str()), async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(iframe_sid))) {
 +                        return Ok(());
 +                    }
                      mgr.prepare_domains_pub(iframe_sid).await?;
                      let _ = mgr
                          .client
-@@ -1295,11 +1387,17 @@
+@@ -1276,8 +1376,7 @@
+                         .await?;
+                     }
+                     mgr.resume_if_waiting_pub(iframe_sid).await
+-                }
+-                .await
++                }).await.map(|_| ())
+             } else {
+                 Ok(())
+             };
+@@ -1295,11 +1394,18 @@
          // Register top-level pages that browser-level auto-attach paused before
          // their first request. Controls must be installed before resuming.
          for (target_info, page_sid) in &drained.attached_page_sessions {
@@ -964,14 +1002,26 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let has_proxy_creds = self.proxy_credentials.read().await.is_some();
              let controls_active = filter.is_some() || has_proxy_creds;
              let setup_result = if let Some(ref mut mgr) = self.browser {
-                 async {
+-                async {
++                let guard = mgr.scope_guard();
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(target_info.target_id.as_str()), Some(page_sid.as_str()), async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(page_sid))) {
 +                        return Ok(());
 +                    }
                      mgr.prepare_domains_pub(page_sid).await?;
                      if controls_active {
                          install_network_controls_for_session(
-@@ -1366,12 +1464,18 @@
+@@ -1349,8 +1455,7 @@
+                     );
+ 
+                     mgr.resume_if_waiting_pub(page_sid).await
+-                }
+-                .await
++                }).await.map(|_| ())
+             } else {
+                 Ok(())
+             };
+@@ -1366,12 +1471,19 @@
          }
  
          for (target_info, worker_sid) in &drained.attached_worker_sessions {
@@ -982,8 +1032,10 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let has_proxy_creds = self.proxy_credentials.read().await.is_some();
              let controls_active = filter.is_some() || has_proxy_creds;
              let setup_result = if let Some(ref mgr) = self.browser {
-                 async {
+-                async {
 -                    prepare_network_control_target_session(&mgr.client, worker_sid, target_info)
++                let guard = mgr.scope_guard();
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(target_info.target_id.as_str()), Some(worker_sid.as_str()), async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_session(Some(worker_sid))) {
 +                        return Ok(());
 +                    }
@@ -991,7 +1043,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                          .await?;
                      if controls_active {
                          install_worker_network_controls_for_session(
-@@ -1383,14 +1487,9 @@
+@@ -1383,17 +1495,11 @@
                          )
                          .await?;
                      }
@@ -1007,9 +1059,13 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
 +                        mgr.resume_if_waiting_pub(worker_sid).await?;
 +                    }
                      Ok(())
-                 }
-                 .await
-@@ -1409,6 +1508,9 @@
+-                }
+-                .await
++                }).await.map(|_| ())
+             } else {
+                 Ok(())
+             };
+@@ -1409,6 +1515,9 @@
          }
  
          for sid in &drained.attached_other_sessions {
@@ -1019,7 +1075,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              if let Some(ref mgr) = self.browser {
                  let _ = mgr.resume_if_waiting_pub(sid).await;
              }
-@@ -1421,11 +1523,19 @@
+@@ -1421,11 +1530,20 @@
  
          // Attach and register new targets
          for te in &drained.new_targets {
@@ -1032,14 +1088,16 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let has_proxy_creds = self.proxy_credentials.read().await.is_some();
              let controls_active = filter.is_some() || has_proxy_creds;
              let setup_result = if let Some(ref mut mgr) = self.browser {
-                 async {
+-                async {
++                let guard = mgr.scope_guard();
++                guard.run_background_events(lifecycle_events.as_mut().ok_or("Missing background lifecycle stream")?, Some(te.target_info.target_id.as_str()), None, async {
 +                    if scope_guard.as_ref().is_some_and(|guard| !guard.accepts_target(&te.target_info)) {
 +                        return Ok(());
 +                    }
                      let attach: AttachToTargetResult = mgr
                          .client
                          .send_command_typed(
-@@ -1437,6 +1547,13 @@
+@@ -1437,6 +1555,13 @@
                              None,
                          )
                          .await?;
@@ -1053,7 +1111,17 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      mgr.prepare_domains_pub(&attach.session_id).await?;
                      if controls_active {
                          install_network_controls_for_session(
-@@ -1494,6 +1611,9 @@
+@@ -1479,8 +1604,7 @@
+                         te.target_info.target_type.clone(),
+                     );
+                     mgr.resume_if_waiting_pub(&attach.session_id).await
+-                }
+-                .await
++                }).await.map(|_| ())
+             } else {
+                 Ok(())
+             };
+@@ -1494,6 +1618,9 @@
  
          // Update changed targets
          for te in &drained.changed_targets {
@@ -1063,7 +1131,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              if let Some(ref mut mgr) = self.browser {
                  mgr.update_page_target_info(&te.target_info);
              }
-@@ -1534,6 +1654,9 @@
+@@ -1534,6 +1661,9 @@
                      let Some(sid) = event_sid.or_else(|| active_sid.clone()) else {
                          continue;
                      };
@@ -1073,15 +1141,29 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      let Ok(result) = mgr
                          .client
                          .send_command(
-@@ -1606,6 +1729,7 @@
+@@ -1574,6 +1704,12 @@
+             }
+         }
+ 
++        // A target may have disappeared while its setup future was running.
++        // Do not send follow-up topology reads through its cancelled session.
++        if let Some(ref guard) = scope_guard {
++            self.iframe_sessions.retain(|_, sid| guard.accepts_session(Some(sid.as_str())));
++            self.active_iframe_sessions.retain(|sid| guard.accepts_session(Some(sid.as_str())));
++        }
+         if active_frame_scope_changed {
+             self.refresh_active_iframe_sessions().await;
+             if self.recording_state.active && self.recording_state.cursor {
+@@ -1606,6 +1742,8 @@
      }
  
      fn drain_cdp_events(&mut self) -> DrainedEvents {
++        let lifecycle_events = self.browser.as_ref().map(|browser| browser.client.subscribe());
 +        let scope_guard = self.browser.as_ref().map(|browser| browser.scope_guard());
          let rx = match self.event_rx.as_mut() {
              Some(rx) => rx,
              None => return DrainedEvents::default(),
-@@ -1621,6 +1745,7 @@
+@@ -1621,6 +1759,7 @@
          let mut attached_iframe_sessions: Vec<(String, String)> = Vec::new();
          let mut attached_worker_sessions: Vec<(TargetInfo, String)> = Vec::new();
          let mut attached_other_sessions: Vec<String> = Vec::new();
@@ -1089,7 +1171,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          let mut detached_iframe_sessions: Vec<String> = Vec::new();
          let mut har_finished_requests: Vec<(String, Option<String>)> = Vec::new();
  
-@@ -1633,7 +1758,9 @@
+@@ -1633,7 +1772,9 @@
                              if let Ok(te) =
                                  serde_json::from_value::<TargetCreatedEvent>(event.params.clone())
                              {
@@ -1100,7 +1182,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                      let already_tracked = self
                                          .browser
                                          .as_ref()
-@@ -1650,7 +1777,9 @@
+@@ -1650,7 +1791,9 @@
                              if let Ok(te) = serde_json::from_value::<TargetInfoChangedEvent>(
                                  event.params.clone(),
                              ) {
@@ -1111,7 +1193,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                      // If this target is not yet tracked (e.g. it was
                                      // initially filtered because its URL was
                                      // chrome://newtab/), promote it to a new target
-@@ -1677,6 +1806,9 @@
+@@ -1677,6 +1820,9 @@
                              if let Ok(te) =
                                  serde_json::from_value::<TargetDestroyedEvent>(event.params.clone())
                              {
@@ -1121,7 +1203,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  let destroyed_active_target = self
                                      .browser
                                      .as_ref()
-@@ -1706,41 +1838,41 @@
+@@ -1706,41 +1852,41 @@
                              continue;
                          }
                          "Target.attachedToTarget" => {
@@ -1197,7 +1279,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              }
                              continue;
                          }
-@@ -1748,6 +1880,9 @@
+@@ -1748,6 +1894,9 @@
                              if let Some(sid) =
                                  event.params.get("sessionId").and_then(|v| v.as_str())
                              {
@@ -1207,7 +1289,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                                  if let Some(frame_id) =
                                      self.iframe_sessions
                                          .iter()
-@@ -1766,6 +1901,10 @@
+@@ -1766,6 +1915,10 @@
                              continue;
                          }
                          _ => {}
@@ -1218,7 +1300,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      }
  
                      let session_matches = if let Some(ref browser) = self.browser {
-@@ -2156,6 +2295,9 @@
+@@ -2156,6 +2309,9 @@
                  }
                  Err(broadcast::error::TryRecvError::Empty) => break,
                  Err(broadcast::error::TryRecvError::Lagged(n)) => {
@@ -1228,7 +1310,15 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                      eprintln!("[agent-browser] Warning: CDP event buffer overflowed, {} events dropped. Network requests may be missing from HAR output.", n);
                      continue;
                  }
-@@ -2179,6 +2321,7 @@
+@@ -2171,6 +2327,7 @@
+         }
+ 
+         DrainedEvents {
++            lifecycle_events,
+             pending_acks,
+             new_targets,
+             changed_targets,
+@@ -2179,6 +2336,7 @@
              attached_iframe_sessions,
              attached_worker_sessions,
              attached_other_sessions,
@@ -1236,7 +1326,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              detached_iframe_sessions,
              har_finished_requests,
          }
-@@ -2660,6 +2803,33 @@
+@@ -2660,6 +2818,33 @@
  
  pub async fn execute_command(cmd: &Value, state: &mut DaemonState) -> Value {
      let action = cmd.get("action").and_then(|v| v.as_str()).unwrap_or("");
@@ -1270,7 +1360,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      // Unlike normal auth login, no-navigation mode must never launch a
      // browser or manufacture an about:blank page to satisfy the command.
      let auth_login_no_navigate = action == "auth_login"
-@@ -2729,9 +2899,13 @@
+@@ -2729,9 +2914,13 @@
          server.broadcast_command(action, &id, cmd_for_broadcast);
      }
  
@@ -1287,7 +1377,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      // Keep element resolution in sync with the `frame` selection (see
-@@ -2877,6 +3051,17 @@
+@@ -2877,6 +3066,17 @@
          }
      }
  
@@ -1305,7 +1395,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let restore_transition_closed_browser = match async {
          if auth_login_no_navigate && command_changes_restore_key(cmd, state) {
              return Err(
-@@ -3005,6 +3190,7 @@
+@@ -3005,6 +3205,7 @@
          "evaluate" => handle_evaluate(cmd, state).await,
          "close" => handle_close(state).await,
          "snapshot" => handle_snapshot(cmd, state).await,
@@ -1313,7 +1403,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          "screenshot" => handle_screenshot(cmd, state).await,
          "click" => handle_click(cmd, state).await,
          "dblclick" => handle_dblclick(cmd, state).await,
-@@ -3160,6 +3346,7 @@
+@@ -3160,6 +3361,7 @@
          "keydown" => handle_keydown(cmd, state).await,
          "keyup" => handle_keyup(cmd, state).await,
          "inserttext" => handle_inserttext(cmd, state).await,
@@ -1321,7 +1411,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          "mousemove" => handle_mousemove(cmd, state).await,
          "mousedown" => handle_mousedown(cmd, state).await,
          "mouseup" => handle_mouseup(cmd, state).await,
-@@ -3320,7 +3507,26 @@
+@@ -3320,7 +3522,26 @@
  /// re-bound to the persisted target, entered the `tab_gone` state (pin-tab,
  /// bound tab dead), or bound to a fresh tab (pin-tab, no prior binding).
  /// Returns false when no binding existed and the legacy selection stands.
@@ -1348,7 +1438,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let session = state.session_id.clone();
      // A corrupt or unreadable binding file is a recovery error, not a
      // first-time session: it may have carried pinned=true, and silently
-@@ -3684,7 +3890,7 @@
+@@ -3684,7 +3905,7 @@
      None
  }
  
@@ -1357,7 +1447,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      client
          .send_command_no_params("Page.enable", Some(session_id))
          .await?;
-@@ -3699,7 +3905,7 @@
+@@ -3699,7 +3920,7 @@
              "Target.setAutoAttach",
              Some(json!({
                  "autoAttach": true,
@@ -1366,7 +1456,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                  "flatten": true
              })),
              Some(session_id),
-@@ -3727,11 +3933,12 @@
+@@ -3727,11 +3948,12 @@
      client: &CdpClient,
      session_id: &str,
      target: &TargetInfo,
@@ -1380,7 +1470,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  }
  
-@@ -4073,6 +4280,9 @@
+@@ -4073,6 +4295,9 @@
      }
      let engine = env::var("AGENT_BROWSER_ENGINE").ok();
      let cdp = env::var("AGENT_BROWSER_CDP").ok();
@@ -1390,7 +1480,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let auto_connect = env::var("AGENT_BROWSER_AUTO_CONNECT").is_ok();
      let provider = env::var("AGENT_BROWSER_PROVIDER").ok();
      validate_ca_cert_launch_mode(
-@@ -4115,7 +4325,7 @@
+@@ -4115,7 +4340,7 @@
              restore_key: restore_key.as_deref(),
              storage_state,
          })?;
@@ -1399,7 +1489,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          let hash = launch_hash(
              &options,
              &allowed_domains,
-@@ -4132,12 +4342,13 @@
+@@ -4132,12 +4357,13 @@
          state.subscribe_to_browser_events();
          state.start_fetch_handler();
          state.start_dialog_handler();
@@ -1414,7 +1504,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          return Ok(());
      }
  
-@@ -4554,6 +4765,11 @@
+@@ -4554,6 +4780,11 @@
  }
  
  async fn try_auto_restore_state(state: &mut DaemonState) {
@@ -1426,7 +1516,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let session_name = match state.session_name.as_deref() {
          Some(n) if !n.is_empty() => n.to_string(),
          _ => {
-@@ -4719,6 +4935,11 @@
+@@ -4719,6 +4950,11 @@
  pub(crate) async fn auto_save_restore_state(
      state: &mut DaemonState,
  ) -> Result<Option<String>, String> {
@@ -1438,7 +1528,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      validate_restore_if_pending(state).await;
  
      let Some(session_name) = state.session_name.clone() else {
-@@ -4883,6 +5104,9 @@
+@@ -4883,6 +5119,9 @@
          .unwrap_or_else(|| !headed_from_env());
      let cdp_url = cmd.get("cdpUrl").and_then(|v| v.as_str());
      let cdp_port = cmd.get("cdpPort").and_then(|v| v.as_u64());
@@ -1448,7 +1538,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let auto_connect = cmd
          .get("autoConnect")
          .and_then(|v| v.as_bool())
-@@ -4901,6 +5125,9 @@
+@@ -4901,6 +5140,9 @@
          });
      let storage_state = cmd.get("storageState").and_then(|v| v.as_str());
      let storage_state_owned = storage_state.map(|s| s.to_string());
@@ -1458,7 +1548,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let engine = cmd
          .get("engine")
          .and_then(|v| v.as_str())
-@@ -5136,11 +5363,12 @@
+@@ -5136,11 +5378,12 @@
  
      if let Some(url) = cdp_url {
          state.reset_input_state();
@@ -1472,7 +1562,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          apply_tab_binding_on_attach_or_rollback(state).await?;
          state.update_stream_client().await;
          install_network_controls_or_close(state, has_proxy_auth).await?;
-@@ -5153,11 +5381,12 @@
+@@ -5153,11 +5396,12 @@
  
      if let Some(port) = cdp_port {
          state.reset_input_state();
@@ -1486,7 +1576,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          apply_tab_binding_on_attach_or_rollback(state).await?;
          state.update_stream_client().await;
          install_network_controls_or_close(state, has_proxy_auth).await?;
-@@ -5716,6 +5945,91 @@
+@@ -5716,6 +5960,91 @@
  // Phase 2 handlers
  // ---------------------------------------------------------------------------
  
@@ -1578,7 +1668,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
  async fn handle_snapshot(cmd: &Value, state: &mut DaemonState) -> Result<Value, String> {
      let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
      let session_id = mgr.active_session_id()?.to_string();
-@@ -5738,15 +6052,17 @@
+@@ -5738,15 +6067,17 @@
              .and_then(|v| v.as_u64())
              .map(|d| d as usize),
          urls: cmd.get("urls").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -1598,7 +1688,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          state.active_frame_id.as_deref(),
          &state.iframe_sessions,
      )
-@@ -5754,19 +6070,22 @@
+@@ -5754,19 +6085,22 @@
  
      let url = mgr.get_url().await.unwrap_or_default();
  
@@ -1624,7 +1714,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let mut removed_refs = previous_refs
          .difference(&current_refs)
          .map(|ref_id| format!("@{}", ref_id))
-@@ -5780,7 +6099,7 @@
+@@ -5780,7 +6114,7 @@
  
      if !cmd.get("delta").and_then(Value::as_bool).unwrap_or(false) {
          return Ok(
@@ -1633,7 +1723,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          );
      }
  
-@@ -5790,6 +6109,7 @@
+@@ -5790,6 +6124,7 @@
          "compact": options.compact,
          "depth": options.depth,
          "urls": options.urls,
@@ -1641,7 +1731,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }))
      .unwrap_or_default();
      let previous = state.snapshot_revisions.get(&session_id).cloned();
-@@ -6288,13 +6608,14 @@
+@@ -6288,13 +6623,14 @@
          .await?;
      }
  
@@ -1657,7 +1747,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -6319,11 +6640,14 @@
+@@ -6319,11 +6655,14 @@
          .and_then(|v| v.as_str())
          .ok_or("Missing 'selector' parameter")?;
  
@@ -1673,7 +1763,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -6538,6 +6862,7 @@
+@@ -6538,6 +6877,7 @@
          &state.ref_map,
          selector,
          &values,
@@ -1681,7 +1771,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          &state.iframe_sessions,
      )
      .await?;
-@@ -7466,8 +7791,11 @@
+@@ -7466,8 +7806,11 @@
                  .get("text")
                  .and_then(|v| v.as_str())
                  .ok_or("Missing 'text' parameter")?;
@@ -1695,7 +1785,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              return Ok(json!({ "typed": text }));
          }
          Some("insertText") => {
-@@ -7584,6 +7912,11 @@
+@@ -7584,6 +7927,11 @@
          let mgr = state.browser.as_ref().ok_or("Browser not launched")?;
          mgr.resolve_tab_ref(&tab_ref)?
      };
@@ -1707,7 +1797,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      let dialog_session = state
          .pending_dialog
          .as_ref()
-@@ -11057,22 +11390,23 @@
+@@ -11057,22 +11405,23 @@
      let (tab_id, session_id) = {
          let mgr = state.browser.as_mut().ok_or("Browser not launched")?;
  
@@ -1742,7 +1832,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                  None,
              )
              .await?;
-@@ -11089,6 +11423,9 @@
+@@ -11089,6 +11438,9 @@
              )
              .await?;
  
@@ -1752,7 +1842,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          mgr.prepare_domains_pub(&attach.session_id).await?;
  
          let tab_id = mgr.assign_tab_id();
-@@ -13659,7 +13996,15 @@
+@@ -13659,7 +14011,15 @@
      });
      // Machine-readable code for "the bound tab no longer exists" so scripts
      // using --json can match on it instead of parsing the message.
@@ -1769,7 +1859,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
          resp["code"] = json!("tab_gone");
      } else if let Some((code, _)) = error.split_once(": ") {
          if code.starts_with("webmcp_") {
-@@ -13695,7 +14040,7 @@
+@@ -13695,7 +14055,7 @@
          use futures_util::{SinkExt, StreamExt};
          use tokio_tungstenite::tungstenite::Message;
  
@@ -1778,7 +1868,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
              let url = format!("ws://{}", listener.local_addr().unwrap());
              let server = tokio::spawn(async move {
-@@ -13729,12 +14074,15 @@
+@@ -13729,12 +14089,15 @@
                          "DOM.resolveNode" => {
                              json!({ "object": { "type": "object", "objectId": "login-node" } })
                          }
@@ -1796,7 +1886,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
                              response["error"] = json!({ "code": -32000, "message": "CDP failure" });
                              Value::Null
                          }
-@@ -13759,18 +14107,131 @@
+@@ -13759,18 +14122,270 @@
              let filled = element.fill(&client, "session", "test-value").await;
              client.close().await;
              let (attempts, mut releases) = server.await.unwrap();
@@ -1816,6 +1906,145 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
              expected.sort();
              assert_eq!(releases, expected, "{failure}");
          }
++    }
++
++    #[tokio::test]
++    async fn scoped_dead_probe_setup_releases_command_lock_without_late_publication() {
++        use futures_util::{SinkExt, StreamExt};
++        use tokio_tungstenite::tungstenite::Message;
++        for scenario in ["queued-destroy", "between-drain", "attach-destroy", "page-destroy", "runtime-detach", "live-unrelated"] {
++            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let url = format!("ws://{}", listener.local_addr().unwrap());
++            let commands = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
++            let observed = commands.clone();
++            let (stalled_tx, stalled_rx) = oneshot::channel::<()>();
++            let server = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.unwrap();
++                let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
++                let mut stalled_tx = Some(stalled_tx);
++                let mut late: Option<Value> = None;
++                while let Some(Ok(message)) = ws.next().await {
++                    let text = match message {
++                        Message::Text(text) => text,
++                        Message::Close(_) => break,
++                        Message::Ping(payload) => { ws.send(Message::Pong(payload)).await.unwrap(); continue; },
++                        _ => continue,
++                    };
++                    let command: Value = serde_json::from_str(&text).unwrap();
++                    observed.lock().unwrap().push(command.clone());
++                    let method = command["method"].as_str().unwrap();
++                    let probe_attach = method == "Target.attachToTarget" && command["params"]["targetId"] == "probe";
++                    let probe_session = command["sessionId"] == "probe-session";
++                    if method == "Browser.getVersion" && command["params"]["queueDestruction"] == true {
++                        if scenario == "queued-destroy" {
++                            let target = json!({"targetId":"probe","type":"page","url":"about:blank","title":"","browserContextId":"owned"});
++                            for event in [
++                                json!({"method":"Target.targetCreated","params":{"targetInfo":target.clone()}}),
++                                json!({"method":"Target.attachedToTarget","params":{"sessionId":"probe-session","targetInfo":target,"waitingForDebugger":false}}),
++                            ] { ws.send(Message::Text(event.to_string())).await.unwrap(); }
++                        }
++                        ws.send(Message::Text(json!({"method":"Target.targetDestroyed","params":{"targetId":"probe"}}).to_string())).await.unwrap();
++                        stalled_tx.take().unwrap().send(()).unwrap();
++                    }
++                    let trigger = match scenario {
++                        "attach-destroy" => probe_attach,
++                        "runtime-detach" => probe_session && method == "Runtime.enable",
++                        _ => probe_session && method == "Page.enable",
++                    };
++                    if trigger && stalled_tx.is_some() {
++                        // Chromium can drop the renderer command reply when its
++                        // target goes away while the browser socket stays open.
++                        let event = if scenario == "runtime-detach" {
++                            json!({"method":"Target.detachedFromTarget","params":{"sessionId":"probe-session"}})
++                        } else {
++                            json!({"method":"Target.targetDestroyed","params":{"targetId":if scenario == "live-unrelated" { "unrelated" } else { "probe" }}})
++                        };
++                        ws.send(Message::Text(event.to_string())).await.unwrap();
++                        stalled_tx.take().unwrap().send(()).unwrap();
++                        if scenario != "live-unrelated" { late = Some(command); continue; }
++                        // An unrelated target's death must not cancel this setup.
++                    }
++                    if method == "Browser.getVersion" {
++                        if let Some(previous) = late.take() {
++                            let result = if previous["method"] == "Target.attachToTarget" {
++                                json!({"sessionId":"probe-session"})
++                            } else { json!({}) };
++                            ws.send(Message::Text(json!({"id":previous["id"],"result":result}).to_string())).await.unwrap();
++                        }
++                    }
++                    let result = match method {
++                        "Target.getTargets" => json!({"targetInfos":[{"targetId":"selected","type":"page","url":"about:blank","title":"","browserContextId":"owned"}]}),
++                        "Target.attachToTarget" => json!({"sessionId":if probe_attach {"probe-session"} else {"selected-session"}}),
++                        "Runtime.evaluate" => json!({"result":{"type":"number","value":1}}),
++                        "Browser.getVersion" => json!({"product":"independent-response"}),
++                        _ => json!({}),
++                    };
++                    ws.send(Message::Text(json!({"id":command["id"],"result":result}).to_string())).await.unwrap();
++                }
++            });
++            let scope = CdpScope { initial_target:"selected".into(), context_id:Some("owned".into()) };
++            let manager = BrowserManager::connect_cdp_scoped(&url, Some(scope.clone())).await.unwrap();
++            let client = manager.client.clone();
++            let guard = manager.scope_guard();
++            let mut state = DaemonState::new();
++            state.cdp_scope = Some(scope);
++            state.browser = Some(manager);
++            state.subscribe_to_browser_events();
++            // No fetch subscriber: the lifetime watcher must work independently
++            // of consumers which can be blocked preparing the same target.
++            let state = Arc::new(tokio::sync::Mutex::new(state));
++            let background_state = state.clone();
++            let background = tokio::spawn(async move {
++                let mut state = background_state.lock().await;
++                let client = state.browser.as_ref().unwrap().client.clone();
++                if scenario == "queued-destroy" {
++                    client.send_command("Browser.getVersion", Some(json!({"queueDestruction":true})), None).await.unwrap();
++                }
++                let mut drained = state.drain_cdp_events();
++                if scenario != "queued-destroy" {
++                    drained.new_targets.push(serde_json::from_value(json!({"targetInfo":{
++                        "targetId":"probe","type":"page","url":"about:blank","title":"","browserContextId":"owned"
++                    }})).unwrap());
++                }
++                if scenario == "between-drain" {
++                    // Destroyed after the ordinary batch was collected but
++                    // before setup starts: its retained watcher closes the gap.
++                    client.send_command("Browser.getVersion", Some(json!({"queueDestruction":true})), None).await.unwrap();
++                }
++                state.apply_drained_events(drained).await.unwrap();
++            });
++            tokio::time::timeout(std::time::Duration::from_secs(2), stalled_rx).await.unwrap().unwrap();
++            let tabs = tokio::time::timeout(std::time::Duration::from_secs(2), async {
++                let mut state = state.lock().await;
++                execute_command(&json!({"id":"list","action":"tab_list","cdpTarget":"selected","cdpContext":"owned"}), &mut state).await
++            }).await.expect("A dead probe must release the command lock without the 30-second CDP timeout");
++            assert_eq!(tabs["success"], true, "{scenario}: {tabs}");
++            let tabs = tabs["data"]["tabs"].as_array().unwrap();
++            assert!(tabs.iter().any(|tab| tab["targetId"] == "selected" && tab["active"] == true));
++            assert_eq!(tabs.iter().any(|tab| tab["targetId"] == "probe"), scenario == "live-unrelated", "cancelled setup published a page: {scenario}");
++            assert!(guard.accepts_session(Some("selected-session")));
++            assert_eq!(guard.accepts_session(Some("probe-session")), scenario == "live-unrelated");
++            background.await.unwrap();
++            // A delayed reply keeps its old command id and cannot satisfy this
++            // unrelated request or resurrect the cancelled setup future.
++            let result = client.send_command_no_params("Browser.getVersion", None).await.unwrap();
++            assert_eq!(result["product"], "independent-response");
++            let mut state = state.lock().await;
++            assert_eq!(state.browser.as_ref().unwrap().tab_list().iter().any(|tab| tab["targetId"] == "probe"), scenario == "live-unrelated");
++            let close = tokio::time::timeout(std::time::Duration::from_secs(2), execute_command(
++                &json!({"id":"close","action":"close","cdpTarget":"selected","cdpContext":"owned"}), &mut state)).await.unwrap();
++            assert_eq!(close["success"], true, "{scenario}: {close}");
++            drop(state);
++            tokio::time::timeout(std::time::Duration::from_secs(3), server).await.unwrap().unwrap();
++            let observed = commands.lock().unwrap();
++            assert!(!observed.iter().any(|command| command["method"] == "Runtime.runIfWaitingForDebugger"));
++            if scenario != "live-unrelated" {
++                assert!(!observed.iter().any(|command| command["sessionId"] == "probe-session" && command["method"] == "Network.enable"), "cancelled setup continued after detach");
++            }
++            if matches!(scenario, "queued-destroy" | "between-drain") {
++                assert!(!observed.iter().any(|command| command["method"] == "Target.attachToTarget" && command["params"]["targetId"] == "probe"), "already-dead probe was attached");
++            }
++        }
 +    }
 +
 +    #[tokio::test]
@@ -1931,7 +2160,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[tokio::test]
-@@ -14368,6 +14829,136 @@
+@@ -14368,6 +14983,136 @@
              "agent-browser-{label}-{}-{nanos}",
              std::process::id()
          ))
@@ -2068,7 +2297,7 @@ diff --git a/cli/src/native/actions.rs b/cli/src/native/actions.rs
      }
  
      #[test]
-@@ -16240,6 +16831,31 @@
+@@ -16240,6 +16985,31 @@
      }
  
      #[test]
@@ -3755,7 +3984,7 @@ diff --git a/cli/src/main.rs b/cli/src/main.rs
 diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 --- a/cli/src/native/browser.rs
 +++ b/cli/src/native/browser.rs
-@@ -436,8 +436,147 @@
+@@ -436,8 +436,212 @@
      }
  }
  
@@ -3817,6 +4046,71 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
 +    /// A scoped CDP client is a passive participant. The owning companion
 +    /// alone pauses/resumes renderers while installing first-request controls.
 +    pub fn owns_debugger_pause(&self) -> bool { self.scope.is_none() }
++
++    /// Background preparation is advisory and must not hold the daemon command
++    /// mutex after its exact target/session disappears. Listen independently:
++    /// both ordinary event consumers can themselves be awaiting preparation.
++    /// Dropping the future removes its pending CDP request via PendingGuard.
++    pub async fn run_background<T, F>(
++        &self,
++        client: &CdpClient,
++        target: Option<&str>,
++        session: Option<&str>,
++        work: F,
++    ) -> Result<Option<T>, String>
++    where F: Future<Output = Result<T, String>>,
++    {
++        let mut events = client.subscribe();
++        self.run_background_events(&mut events, target, session, work).await
++    }
++
++    pub async fn run_background_events<T, F>(
++        &self,
++        events: &mut broadcast::Receiver<CdpEvent>,
++        target: Option<&str>,
++        session: Option<&str>,
++        work: F,
++    ) -> Result<Option<T>, String>
++    where F: Future<Output = Result<T, String>>,
++    {
++        if self.scope.is_none() { return work.await.map(Some); }
++        let live = || {
++            self.sessions.lock().map(|state| !state.invalidated
++                && target.is_none_or(|id| !state.revoked_targets.contains(id))
++                && session.is_none_or(|id| state.live.contains_key(id))).unwrap_or(false)
++        };
++        if !live() { return Ok(None); }
++        tokio::pin!(work);
++        loop {
++            tokio::select! {
++                biased;
++                event = events.recv() => {
++                    match event {
++                        Ok(event) if event.method == "Target.targetDestroyed" => {
++                            if let Some(id) = event.params.get("targetId").and_then(Value::as_str) {
++                                self.revoke_target(id);
++                            }
++                        }
++                        Ok(event) if event.method == "Target.detachedFromTarget" => {
++                            if let Some(id) = event.params.get("sessionId").and_then(Value::as_str) {
++                                self.revoke_session(id);
++                            }
++                        }
++                        Ok(_) => {},
++                        Err(_) => {
++                            // Missing destruction events cannot grant continued authority.
++                            self.invalidate();
++                            return Err("Scoped background lifecycle stream was lost".to_string());
++                        }
++                    }
++                    if !live() { return Ok(None); }
++                }
++                result = &mut work => {
++                    return if live() { result.map(Some) } else { Ok(None) };
++                }
++            }
++        }
++    }
 +
 +    pub fn accepts_target(&self, target: &TargetInfo) -> bool {
 +        self.scope.as_ref().map_or(true, |scope| should_track_target(target)
@@ -3903,7 +4197,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      browser_process: Option<BrowserProcess>,
      ws_url: String,
      pages: Vec<PageInfo>,
-@@ -610,6 +749,7 @@
+@@ -610,6 +814,7 @@
                  pin_tab: false,
                  bound_target_id: None,
                  bound_target_gone: None,
@@ -3911,7 +4205,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  headless,
              };
              if let Err(error) = manager.discover_and_attach_targets().await {
-@@ -679,26 +819,31 @@
+@@ -679,26 +884,31 @@
      }
  
      pub async fn connect_cdp(url: &str) -> Result<Self, String> {
@@ -3946,7 +4240,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      ) -> Result<Self, String> {
          let ws_url = resolve_cdp_url(url).await?;
          let client = Arc::new(CdpClient::connect_with_headers(&ws_url, headers).await?);
-@@ -717,9 +862,11 @@
+@@ -717,9 +927,11 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -3958,7 +4252,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let initialization = if direct_page {
              let tab_id = manager.assign_tab_id();
              manager.pages.push(PageInfo {
-@@ -750,7 +897,117 @@
+@@ -750,7 +962,117 @@
          Self::connect_cdp(&ws_url).await
      }
  
@@ -4076,7 +4370,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.client
              .send_command_typed::<_, Value>(
                  "Target.setDiscoverTargets",
-@@ -887,6 +1144,8 @@
+@@ -887,6 +1209,8 @@
      }
  
      pub async fn enable_browser_auto_attach_pub(&self) -> Result<(), String> {
@@ -4085,17 +4379,23 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.client
              .send_command(
                  "Target.setAutoAttach",
-@@ -908,6 +1167,9 @@
+@@ -908,6 +1232,15 @@
      }
  
      async fn prepare_domains(&self, session_id: &str) -> Result<(), String> {
++        self.scope_guard.run_background(&self.client, None, Some(session_id),
++            self.prepare_live_domains(session_id)).await?
++            .ok_or_else(|| "Scoped preparation session detached".to_string())
++    }
++
++    async fn prepare_live_domains(&self, session_id: &str) -> Result<(), String> {
 +        if !self.scope_guard.accepts_session(Some(session_id)) {
 +            return Err("CDP session is outside the immutable scope".to_string());
 +        }
          self.client
              .send_command_no_params("Page.enable", Some(session_id))
              .await?;
-@@ -923,8 +1185,8 @@
+@@ -923,8 +1256,8 @@
              .await;
          // Enable auto-attach for cross-origin iframe support.
          // flatten: true gives each iframe its own session_id.
@@ -4106,7 +4406,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          // Ignored on engines that don't support it (e.g. Lightpanda).
          let _ = self
              .client
-@@ -932,7 +1194,7 @@
+@@ -932,7 +1265,7 @@
                  "Target.setAutoAttach",
                  Some(json!({
                      "autoAttach": true,
@@ -4115,7 +4415,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                      "flatten": true
                  })),
                  Some(session_id),
-@@ -980,6 +1242,9 @@
+@@ -980,6 +1313,9 @@
          if dialog_session == Some(session_id) {
              return Ok(RendererState::DialogBlocked);
          }
@@ -4125,7 +4425,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          match tokio::time::timeout(
              Duration::from_millis(REVIVED_RENDERER_TIMEOUT_MS),
              self.client.send_command(
-@@ -1048,6 +1313,14 @@
+@@ -1048,6 +1384,14 @@
      }
  
      async fn resume_if_waiting(&self, session_id: &str) -> Result<(), String> {
@@ -4140,7 +4440,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          // Needed for real browser sessions (Chrome 144+) where targets are
          // paused after attach until explicitly resumed. No-op otherwise.
          let _ = self
-@@ -1065,10 +1338,13 @@
+@@ -1065,10 +1409,13 @@
          self.client
              .send_command_no_params("Runtime.enable", None)
              .await?;
@@ -4158,7 +4458,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.client
              .send_command_no_params("Network.enable", None)
              .await?;
-@@ -1084,7 +1360,8 @@
+@@ -1084,7 +1431,8 @@
          self.pages
              .get(self.active_page_index)
              .map(|p| p.session_id.as_str())
@@ -4168,7 +4468,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      }
  
      // -----------------------------------------------------------------------
-@@ -1096,6 +1373,7 @@
+@@ -1096,6 +1444,7 @@
      /// waiting for a restart to re-derive it. Disabling clears any pending
      /// `tab_gone` state so the session falls back to legacy selection.
      pub fn set_pin_tab(&mut self, pin: bool) {
@@ -4176,7 +4476,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.pin_tab = pin;
          if pin {
              self.bind_active_target();
-@@ -1490,6 +1768,9 @@
+@@ -1490,6 +1839,9 @@
      /// Ensures the browser has at least one page. If `pages` is empty, creates a new
      /// about:blank page and attaches to it.
      pub async fn ensure_page(&mut self) -> Result<(), String> {
@@ -4186,7 +4486,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          if !self.pages.is_empty() {
              return Ok(());
          }
-@@ -1669,9 +1950,7 @@
+@@ -1669,9 +2021,7 @@
              .client
              .send_command_typed(
                  "Target.createTarget",
@@ -4197,7 +4497,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  None,
              )
              .await?;
-@@ -1688,6 +1967,9 @@
+@@ -1688,6 +2038,9 @@
              )
              .await?;
  
@@ -4207,7 +4507,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          self.enable_domains(&attach.session_id).await?;
  
          let tab_id = self.next_tab_id;
-@@ -1888,6 +2170,8 @@
+@@ -1888,6 +2241,8 @@
                  Some(session_id),
              )
              .await?;
@@ -4216,7 +4516,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
  
          // Screencast captures the actual content area, not the emulated CSS
          // viewport, so resize the content area to match.
-@@ -2013,10 +2297,14 @@
+@@ -2013,10 +2368,14 @@
      }
  
      pub async fn grant_permissions(&self, permissions: &[String]) -> Result<(), String> {
@@ -4232,7 +4532,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                  None,
              )
              .await?;
-@@ -2056,6 +2344,12 @@
+@@ -2056,6 +2415,12 @@
              resolve_element_object_id(&self.client, session_id, ref_map, selector, iframe_sessions)
                  .await?;
  
@@ -4245,7 +4545,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let describe: Value = self
              .client
              .send_command(
-@@ -2082,7 +2376,10 @@
+@@ -2082,7 +2447,10 @@
              )
              .await?;
  
@@ -4257,7 +4557,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      }
  
      pub async fn add_script_to_evaluate(&self, source: &str) -> Result<String, String> {
-@@ -2114,6 +2411,16 @@
+@@ -2114,6 +2482,16 @@
          Ok(())
      }
  
@@ -4274,7 +4574,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      pub async fn tab_switch_by_id(
          &mut self,
          tab_id: u32,
-@@ -2165,6 +2472,7 @@
+@@ -2165,6 +2543,7 @@
      }
  
      fn add_page_with_activation(&mut self, page: PageInfo, activate: bool) {
@@ -4282,7 +4582,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          let new_index = self.pages.len();
          // In the tab_gone state, adopting a discovered tab would clear it and
          // re-bind to a tab the session never opened. Recovery stays explicit
-@@ -2197,10 +2505,12 @@
+@@ -2197,10 +2576,12 @@
      }
  
      pub fn update_page_target_info(&mut self, target: &TargetInfo) -> bool {
@@ -4295,7 +4595,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          if let Some(pos) = self.pages.iter().position(|p| p.target_id == target_id) {
              let page = self.pages.remove(pos);
              self.update_active_page_after_removal(pos);
-@@ -2279,19 +2589,43 @@
+@@ -2279,19 +2660,43 @@
  
      pub async fn set_download_behavior(&self, download_path: &str) -> Result<(), String> {
          let session_id = self.active_session_id()?;
@@ -4344,7 +4644,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
  }
  
  /// Core network-idle polling loop, extracted so it can be unit-tested without a
-@@ -2429,6 +2763,7 @@
+@@ -2429,6 +2834,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4352,7 +4652,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
  
-@@ -2538,6 +2873,7 @@
+@@ -2538,6 +2944,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4360,7 +4660,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
  
-@@ -3333,7 +3669,56 @@
+@@ -3333,7 +3740,56 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4417,7 +4717,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          }
      }
  
-@@ -3393,6 +3778,7 @@
+@@ -3393,6 +3849,7 @@
              pin_tab: false,
              bound_target_id: None,
              bound_target_gone: None,
@@ -4425,7 +4725,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
              headless: true,
          };
          manager.close().await.unwrap();
-@@ -3488,14 +3874,14 @@
+@@ -3488,14 +3945,14 @@
          existing: bool,
      ) {
          let (url, server) = initialization_server(fail_method, existing, 2, false).await;
@@ -4442,7 +4742,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          )
          .await
          .expect("retry should succeed after cleanup")
-@@ -4451,6 +4837,11 @@
+@@ -4451,6 +4908,11 @@
      /// never needlessly reactivated.
      async fn start_mock_cdp_browser_responsive(
      ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
@@ -4454,7 +4754,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
          use futures_util::{SinkExt, StreamExt};
          use std::sync::atomic::{AtomicUsize, Ordering};
          use std::sync::Arc;
-@@ -4489,7 +4880,7 @@
+@@ -4489,7 +4951,7 @@
                  let method = cmd["method"].as_str().unwrap_or("");
                  let respond = |result: Value| json!({ "id": id, "result": result }).to_string();
  
@@ -4463,7 +4763,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
                      activations_task.fetch_add(1, Ordering::SeqCst);
                  }
  
-@@ -4523,6 +4914,17 @@
+@@ -4523,6 +4985,17 @@
      /// A responsive tab must not be reactivated: recovery only runs when the
      /// liveness probe gets no answer, so a healthy tab keeps its state and is
      /// never touched by Target.activateTarget (#1528).
@@ -4481,7 +4781,7 @@ diff --git a/cli/src/native/browser.rs b/cli/src/native/browser.rs
      #[tokio::test]
      async fn test_tab_switch_does_not_revive_responsive_tab() {
          let (url, activations) = start_mock_cdp_browser_responsive().await;
-@@ -4996,4 +5398,436 @@
+@@ -4996,4 +5469,436 @@
              "cancelled connect-time probes left orphaned CDP requests in the pending map"
          );
      }

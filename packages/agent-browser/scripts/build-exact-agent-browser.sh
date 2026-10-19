@@ -23,4 +23,9 @@ elif ! git -C "$SOURCE" apply --reverse --check "$PATCH"; then
 fi
 cargo test --locked --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser
 cargo build --locked --profile ci --manifest-path "$SOURCE/cli/Cargo.toml"
-"$SOURCE/cli/target/ci/agent-browser" --version
+VERSION="$("$SOURCE/cli/target/ci/agent-browser" --version)"
+if [[ "$VERSION" != "agent-browser 0.39.1-e2e.4" ]]; then
+  echo "Native executable did not report the required maintained version" >&2
+  exit 1
+fi
+printf '%s\n' "$VERSION"

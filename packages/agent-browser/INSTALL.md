@@ -1,6 +1,6 @@
 # Install the source-pinned candidate
 
-This is a fork build, not an npm release. Use the native binary and the two package tarballs from **the same successful commit**. The package version remains private `0.0.0`; the exact source commit and artifact hashes distinguish candidates. The native version is `0.39.1-e2e.3`, and the engine/cache identity is `agent-browser-exact-5`.
+This is a fork build, not an npm release. Use the native binary and the two package tarballs from **the same successful commit**. The package version remains private `0.0.0`; the exact source commit and artifact hashes distinguish candidates. The native version is `0.39.1-e2e.4`, and the engine/cache identity is `agent-browser-exact-5`.
 
 ## Download the matching artifacts
 
@@ -11,7 +11,7 @@ Open a successful run of [the Linux workflow](https://github.com/levicode/e2e/ac
 
 Platform names are `linux-x64`, `darwin-arm64` (Apple silicon), and `darwin-x64` (Intel). Never use a Linux executable on macOS or assume that one Mac architecture proves the other. `uname -m` prints `arm64` or `x86_64` on a Mac. Artifacts expire after seven days; the pinned source and build script remain the reproducible fallback. A missing or failed native artifact is not a tested binary.
 
-Linux runs the complete 53-case integration matrix. Each Mac architecture runs native tests, all units, seven locator/runner cases and the fresh-consumer browser smoke; pixel/state/network/video parity on macOS requires further platform-specific validation.
+Linux runs the complete required integration matrix. Each Mac architecture runs native tests, all units, seven locator/runner cases and the fresh-consumer browser smoke; pixel/state/network/video parity on macOS requires further platform-specific validation.
 
 The workflow OS targets are Ubuntu 24.04 and macOS 15. The manifest records the actual OS release and, on Linux, the glibc version. Compatibility with older operating systems, other Linux distributions, and Windows is not established by these artifacts.
 
@@ -20,7 +20,7 @@ After extracting the GitHub artifact ZIP, verify and unpack its archive:
 ```sh
 # Run in the extracted native artifact directory.
 shasum -a 256 -c SHA256SUMS
-tar -xzf agent-browser-0.39.1-e2e.3-darwin-arm64.tar.gz
+tar -xzf agent-browser-0.39.1-e2e.4-darwin-arm64.tar.gz
 ./agent-browser --version
 export E2E_AGENT_BROWSER_EXECUTABLE="$PWD/agent-browser"
 ```

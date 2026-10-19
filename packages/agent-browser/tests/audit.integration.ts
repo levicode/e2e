@@ -481,3 +481,30 @@ test('secure observation omits password values and pixels mask main, open-shadow
     }
   });
 });
+
+test('short-lived state and masking probes never stall the next public native observation or navigation', { timeout: 180_000 }, async () => {
+  await withEngine(async (engine, browser) => {
+    await engine.session!.open!(`${origin}/masks`, context());
+    await browser.evaluate('(() => { localStorage.setItem("probe-lifetime-token","retained"); return true; })()');
+    const phase = async <T>(iteration: number, label: string, work: () => Promise<T>): Promise<T> => {
+      try { return await work(); }
+      catch (cause) { throw new Error(`Probe lifetime acceptance round ${iteration}: ${label}`, { cause }); }
+    };
+    // Every round is required. These are separate successful operations, never retries
+    // after an ambiguous action or a refused screenshot. Use native observe/open here:
+    // browser.url/evaluate use the CDP companion and cannot detect a blocked CLI daemon.
+    for (let iteration = 0; iteration < 12; iteration++) {
+      await phase(iteration, 'state capture', () => engine.state!.capture(context()));
+      const observed = await phase(iteration, 'native observation after state capture', () => engine.observe!(context()));
+      assert.ok([...walk(observed.root)].some(node => node.selector === '#password' && node.states?.secure), 'The original live page must remain the native observation target');
+      assert.ok(!JSON.stringify(observed.root).includes(secret));
+      const masked = await phase(iteration, 'masked observation', () => engine.observe!(context(), { pixels: true }));
+      assert.ok(masked.pixels); assert.ok((masked.maskedRegionCount ?? 0) >= 3);
+      for (const [x, y] of [[40, 40], [40, 120], [40, 200]]) assert.deepEqual(pngPixel(masked.pixels.data, x!, y!), [0, 0, 0]);
+      assert.deepEqual(pngPixel(masked.pixels.data, 400, 40), [255, 255, 255]);
+      const next = `${origin}/masks?probe-round=${iteration}`;
+      await phase(iteration, 'native navigation after masked capture', () => engine.session!.open!(next, context()));
+      assert.deepEqual(await browser.evaluate('({url:location.href,token:localStorage.getItem("probe-lifetime-token"),overlays:document.querySelectorAll("[popover]").length})'), { url: next, token: 'retained', overlays: 0 });
+    }
+  });
+});

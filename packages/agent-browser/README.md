@@ -17,7 +17,7 @@ See [installation and source-pinned artifacts](INSTALL.md), [exact validation ev
 
 Stock agent-browser 0.39.1 cannot safely reproduce strict e2e ref identity: its snapshot refs can fall back to a different node with the same role and name. Its checkbox path can also issue a second click after a delayed state update.
 
-`patches/agent-browser-exact-refs.patch` is a maintained public extension against upstream commit `1165952d74ceed98fdc2dd97190ad41f44dd0e24`. It exposes version `0.39.1-e2e.3`, exact refs, authoritative node IDs, public exact-ref registration, immutable initial target/context attachment scope, validated navigation wait options, per-key ASCII typing, read-only checkbox completion checks, and passive scoped attachment that leaves debugger pause/resume exclusively to the companion. This adapter refuses the stock binary rather than claiming unsupported safety.
+`patches/agent-browser-exact-refs.patch` is a maintained public extension against upstream commit `1165952d74ceed98fdc2dd97190ad41f44dd0e24`. It exposes version `0.39.1-e2e.4`, exact refs, authoritative node IDs, public exact-ref registration, immutable initial target/context attachment scope, validated navigation wait options, per-key ASCII typing, read-only checkbox completion checks, passive scoped attachment that leaves debugger pause/resume exclusively to the companion, and lifetime-cancelled background setup for destroyed targets. This adapter refuses the stock binary rather than claiming unsupported safety.
 
 Build the pinned extension from this repository:
 
