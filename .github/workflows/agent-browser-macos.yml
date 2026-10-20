@@ -58,10 +58,13 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       # Fast platform-local unit feedback precedes expensive native compilation.
       - run: pnpm --filter e2e build
+      - run: pnpm --filter @e2e-dev/web build
+      - run: pnpm --filter e2e typecheck
+      - run: pnpm --filter e2e test:unit
       - id: adapter-build
         run: pnpm --filter @e2e-dev/agent-browser build
       - run: pnpm --filter @e2e-dev/agent-browser typecheck
-      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
+      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests packages/e2e/src packages/e2e/tests
       - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Validate source lock and checkout refusal cases
         run: node --test packages/agent-browser/tests/native-source.test.ts

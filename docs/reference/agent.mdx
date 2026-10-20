@@ -318,6 +318,12 @@ that brings the matched node into view. Replay follows the same rule.
 - Every refusal and the final allow is a `policy` event named `upload.path`
   on the step. Nothing reaches the engine until every path passes.
 
+The model and custom executors receive short node references such as `#n1`.
+These references are scoped to the current invocation and are not reusable
+across runs. Use references returned by observations and hit tests, never
+engine-native IDs. The runner preserves the full engine identity internally
+and applies the existing stale-target and relocation checks after decoding.
+
 On engines with a keyboard, including the browser and device engines, `type`
 and `press` can omit `target` to act on the focused field. `type` then
 inserts at the caret; `replace: true` clears first. The browser engine

@@ -11,6 +11,7 @@
  * - model-call accounting and a step transcript for `--debug`.
  */
 
+import { nodeRefRequest, scopeNodeRefTools } from './node-refs.ts';
 import type { StepTurn } from '../run/steps.ts';
 import type { AssistantModelMessage, ModelMessage, StepResult, ToolCallPart, ToolSet } from 'ai';
 import { asSdkLanguageModel, loadAiSdk, type AiSdk, type SdkLanguageModel } from './ai-sdk.ts';
@@ -270,10 +271,10 @@ class LoopRun {
 
   async run(): Promise<StepVerdict> {
     const helpers = this.helpers();
-    const tools: ToolSet = {
+    const tools: ToolSet = scopeNodeRefTools(this.context, {
       ...this.options.tools(this.context, helpers),
       complete_step: this.conclusion.tool,
-    };
+    });
     const tracker = trackModelCalls(
       this.context,
       this.model as { provider?: string; modelId?: string },
@@ -383,7 +384,7 @@ class LoopRun {
         ({ steps }) => this.turnOffset + steps.length >= this.maxTurns,
       ],
       prepareStep: ({ messages, stepNumber, steps }) =>
-        this.prepareTurn(messages, this.turnOffset + stepNumber, steps.at(-1)),
+        this.prepareTurn(messages, this.turnOffset + stepNumber, steps.at(-1)).then((turn) => ({ ...turn, toolsContext: nodeRefRequest(this.context, tools) })),
     });
   }
 

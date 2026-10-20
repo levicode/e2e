@@ -107,6 +107,7 @@ export function nodeLine(observation: Pick<AgentObservation, 'text'>, id: string
 /** How a point result names what it found: by the observation's own line, which the model holds. */
 export interface PointProse {
   readonly observation: Pick<AgentObservation, 'text'>;
+  readonly nodeId?: (id: string) => string;
 }
 
 /**
@@ -153,5 +154,5 @@ export function describePointHit(
 
 /** A node as prose: its observation line, which the model holds. */
 function describeNode(prose: PointProse, node: RedactedNode): string {
-  return nodeLine(prose.observation, node.ref.id);
+  return nodeLine(prose.observation, prose.nodeId?.(node.ref.id) ?? node.ref.id);
 }

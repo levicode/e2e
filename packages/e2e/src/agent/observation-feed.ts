@@ -8,6 +8,7 @@
  * the engine; the dispatcher and the pixel tier ask the feed.
  */
 
+import { NodeRefs } from './node-refs.ts';
 import type { SemanticNode } from '../engine/surface.ts';
 import { relocateDescriptor } from '../cache/relocate.ts';
 import { TestError } from '../internal/errors.ts';
@@ -75,6 +76,7 @@ export interface ObservationFeedOptions {
 }
 
 export class ObservationFeed {
+  readonly refs = new NodeRefs();
   private newest: AgentObservation | undefined;
   /** A cache probe may supply the executor's first look, once, before any action. */
   private opening: AgentObservation | undefined;
@@ -186,12 +188,19 @@ export class ObservationFeed {
     if (observation.kind === 'pixels') {
       return { ...metadata, text: observation.text, treeUnavailable: true, truncated: true, ...pixels };
     }
+    for (const line of observation.text.split('\n')) {
+      const alias = /^\s*#(n[0-9a-z]+)(?:\s|$)/u.exec(line)?.[1];
+      if (alias !== undefined) this.refs.expose(alias);
+    }
+    if (options.tree === true) {
+      for (const id of observation.nodes.keys()) this.refs.expose(this.refs.encode(id));
+    }
     return {
       ...metadata,
       text: observation.text,
       truncated: observation.truncated,
       ...(observation.keyboardVisible === undefined ? {} : { keyboardVisible: observation.keyboardVisible }),
-      ...(options.tree === true ? { tree: projectTree(observation.tree, this.runtime.app.base?.origin) } : {}),
+      ...(options.tree === true ? { tree: projectTree(observation.tree, this.runtime.app.base?.origin, this.refs.encode) } : {}),
       ...pixels,
     };
   }
@@ -355,6 +364,7 @@ export class ObservationFeed {
     if (observation.kind === 'pixels') this.recent.length = 0;
     else this.recent.push(observation);
     if (this.recent.length > MAX_RECENT_OBSERVATIONS) this.recent.shift();
+    this.refs.retain(new Set(this.recent.flatMap((item) => [...item.nodes.keys()])));
     if (observation.kind === 'semantic') this.noteShown(observation);
     const metrics = this.accounting.metrics;
     metrics.observationBytes = Math.max(metrics.observationBytes, observation.bytes);
@@ -399,6 +409,7 @@ export class ObservationFeed {
     const prepared = prepareObservation(raw, {
       redact: this.runtime.redact,
       redactCut: this.runtime.redactCut,
+      nodeId: this.refs.encode,
       maxBytes: this.byteBudget(pixels || raw.kind === 'pixels'),
       pixelsAllowed: !this.runtime.exposure.withholdsModelPixels,
       appOrigin: this.runtime.app.base?.origin,

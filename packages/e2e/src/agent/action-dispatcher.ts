@@ -291,7 +291,7 @@ export class ActionDispatcher {
 
   /** How point results name nodes: by the line of the observation the model holds. */
   private prose(observation: AgentObservation): PointProse {
-    return { observation };
+    return { observation, nodeId: this.feed.refs.encode };
   }
 
   private get verbs() {

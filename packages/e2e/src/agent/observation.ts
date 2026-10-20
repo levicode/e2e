@@ -73,6 +73,8 @@ export function prepareObservation(
     /** `redact` for a field cut at its observed limit (`SecretLedger.redactCut`). */
     redactCut: (text: string) => string;
     maxBytes: number;
+    /** Model-facing identity; internal node references remain opaque. */
+    nodeId?: (id: string) => string;
     /** Grants pixel-only evidence; omit when this consumer cannot use it. */
     pixelsAllowed?: boolean;
     /** The app base URL's origin: link targets on it render as paths, which navigation resolves against it. */
@@ -120,7 +122,7 @@ export function prepareObservation(
 
   const emit = (node: RedactedNode, depth: number): void => {
     if (cutByBudget) return;
-    const line = formatNode(node, depth, options.appOrigin);
+    const line = formatNode(node, depth, options.appOrigin, options.nodeId);
     const size = encoder.encode(`${line}\n`).byteLength;
     if (lines.length > 0 && bytes + size > budget) {
       cutByBudget = true;
@@ -387,7 +389,7 @@ export function interactiveNodeCount(observation: Pick<ExecutorObservation, 'tex
  * its path than the line does. Selectors stay behind — they are relocation
  * material for the trace cache, not something a brain reasons about.
  */
-export function projectTree(node: RedactedNode, appOrigin?: string): ExecutorNode {
+export function projectTree(node: RedactedNode, appOrigin?: string, nodeId: (id: string) => string = (id) => id): ExecutorNode {
   const attributes =
     node.attributes === undefined
       ? undefined
@@ -395,7 +397,7 @@ export function projectTree(node: RedactedNode, appOrigin?: string): ExecutorNod
           Object.entries(node.attributes).map(([key, value]) => [key, key === 'href' ? treeHref(value, appOrigin) : value]),
         );
   return {
-    id: node.ref.id,
+    id: nodeId(node.ref.id),
     ...(node.role === undefined ? {} : { role: node.role }),
     ...(node.name === undefined ? {} : { name: node.name }),
     ...(node.text === undefined ? {} : { text: node.text }),
@@ -406,7 +408,7 @@ export function projectTree(node: RedactedNode, appOrigin?: string): ExecutorNod
     ...(attributes === undefined ? {} : { attributes }),
     ...(node.rect === undefined ? {} : { rect: node.rect }),
     ...(node.framePath === undefined ? {} : { framePath: node.framePath }),
-    ...(node.children === undefined ? {} : { children: node.children.map((child) => projectTree(child, appOrigin)) }),
+    ...(node.children === undefined ? {} : { children: node.children.map((child) => projectTree(child, appOrigin, nodeId)) }),
   };
 }
 
@@ -422,9 +424,9 @@ const MAX_HREF_LENGTH = 256;
  * lines, and the model needs their text, not a filler word. A link target on
  * `appOrigin`, the app base URL's, renders as its path.
  */
-export function formatNode(node: RedactedNode, depth: number, appOrigin?: string): string {
+export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, nodeId: (id: string) => string = (id) => id): string {
   const description = describeNode(node, appOrigin);
-  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}#${node.ref.id}${description === '' ? '' : ` ${description}`}`;
+  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}#${nodeId(node.ref.id)}${description === '' ? '' : ` ${description}`}`;
 }
 
 /**

@@ -17,12 +17,21 @@ export interface PixelCapture {
   readonly maskingProven: true;
 }
 type PngFailureReason = Extract<ReturnType<typeof verifyPngMaskProof>, { ok: false }>['reason'];
-type PixelPhase = 'operation' | 'inventory-main' | 'inventory-remote' | 'inventory-stability' | 'world' | 'closed-shadow' | 'mask-install' | 'freeze'
+type OwnerFailure = 'unsupported-owner-type' | 'unsupported-owner-document' | 'transformed-owner' | 'owner-viewport-mismatch';
+type PixelPhase = OwnerFailure | `geometry-before-${OwnerFailure}` | `geometry-after-${OwnerFailure}` | 'operation' | 'inventory-main' | 'inventory-remote' | 'inventory-stability' | 'world' | 'closed-shadow' | 'mask-install' | 'freeze'
   | 'verify-before-owners' | 'verify-before-shadows' | 'verify-before-documents' | 'verify-before-trees' | 'verify-before-masks'
   | 'verify-after-owners' | 'verify-after-shadows' | 'verify-after-documents' | 'verify-after-trees' | 'verify-after-masks'
   | 'paint' | 'geometry-before' | 'geometry-after' | `pixel-proof-${PngFailureReason}` | 'pixel-proof' | 'viewport' | 'capture' | 'png' | 'cleanup-masks' | 'cleanup-objects' | 'cleanup-active' | 'cleanup-visible' | 'cleanup-tasks' | 'cleanup-detach';
 const denied = (phase: PixelPhase = 'operation'): TestError => new TestError('POLICY_DENIED', `Screenshot masking could not be proven for every frame and editable field (${phase})`);
 class InventoryNotReady extends Error {}
+class OwnerProofFailure extends Error {
+  readonly reason: OwnerFailure;
+  constructor(reason: OwnerFailure) { super(reason); this.reason = reason; }
+}
+// One allowlist governs inventory and the function executed on each resolved owner.
+const SUPPORTED_DOCUMENT_OWNERS = ['IFRAME', 'FRAME', 'OBJECT'] as const;
+type DocumentOwnerKind = typeof SUPPORTED_DOCUMENT_OWNERS[number];
+const DOCUMENT_OWNER_ELEMENTS = new Set<string>([...SUPPORTED_DOCUMENT_OWNERS, 'FENCEDFRAME', 'EMBED', 'PORTAL']);
 function frameIds(tree: FrameTree): string[] { return [tree.frame.id, ...(tree.childFrames ?? []).flatMap(frameIds)]; }
 
 interface ClosedShadow { frameId: string; backendNodeId: number }
@@ -140,15 +149,16 @@ const MASK_GEOMETRY = `(key) => {
   const viewport = globalThis.visualViewport;
   if (viewport && (viewport.scale !== 1 || viewport.offsetLeft !== 0 || viewport.offsetTop !== 0)) return null;
   // Cover the verification tolerance too; never narrow proof to a center sample.
-  return { width: innerWidth, height: innerHeight, rectangles: state.masks.map(entry => ({ x: entry.rect[0] - 0.02, y: entry.rect[1] - 0.02, width: entry.rect[2] + 0.04, height: entry.rect[3] + 0.04 })) };
+  return { contentType: document.contentType, width: innerWidth, height: innerHeight, rectangles: state.masks.map(entry => ({ x: entry.rect[0] - 0.02, y: entry.rect[1] - 0.02, width: entry.rect[2] + 0.04, height: entry.rect[3] + 0.04 })) };
 }`;
 // A frame's content viewport is translated into its parent's viewport. More complex
 // transforms require a separately proven projection; never guess screen coordinates.
 const FRAME_GEOMETRY = `function() {
-  if (!this.isConnected || !['IFRAME','FRAME'].includes(this.tagName)) return null;
+  if (!this.isConnected) return null;
+  if (!${JSON.stringify(SUPPORTED_DOCUMENT_OWNERS)}.includes(this.tagName)) return { reason: 'unsupported-owner-type' };
   for (let node = this; node; node = node.parentElement ?? node.getRootNode().host) {
     const style = getComputedStyle(node);
-    if (style.transform !== 'none' || style.perspective !== 'none' || style.rotate !== 'none' || style.scale !== 'none' || style.translate !== 'none' || Number(style.zoom) !== 1) return null;
+    if (style.transform !== 'none' || style.perspective !== 'none' || style.rotate !== 'none' || style.scale !== 'none' || style.translate !== 'none' || Number(style.zoom) !== 1) return { reason: 'transformed-owner' };
   }
   const box = this.getBoundingClientRect(); const style = getComputedStyle(this);
   const left = parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
@@ -158,7 +168,7 @@ const FRAME_GEOMETRY = `function() {
   return { x: box.left + left, y: box.top + top, width: box.width - left - right, height: box.height - top - bottom };
 }`;
 interface MaskRectangle { x: number; y: number; width: number; height: number }
-interface MaskGeometry { width: number; height: number; rectangles: MaskRectangle[] }
+interface MaskGeometry { contentType: string; width: number; height: number; rectangles: MaskRectangle[] }
 function validRectangle(value: MaskRectangle): boolean {
   return value !== null && typeof value === 'object' && [value.x, value.y, value.width, value.height].every(Number.isFinite) && value.width > 0 && value.height > 0;
 }
@@ -192,6 +202,7 @@ interface FrameSession {
   closedRoots: readonly ClosedShadow[];
 }
 interface FrameOwner {
+  kind: DocumentOwnerKind;
   parentFrameId: string;
   frameId: string;
   backendNodeId: number;
@@ -203,17 +214,19 @@ function frameOwners(root: DomNode, mainFrame: string): FrameOwner[] {
   const visit = (node: DomNode, parentFrame: string, parentIsDocument = false): void => {
     const frame = node.nodeType === 9 ? node.frameId ?? parentFrame : parentFrame;
     const name = node.nodeName?.toUpperCase() ?? '';
-    const ownerElement = ['IFRAME', 'FRAME', 'FENCEDFRAME'].includes(name);
+    const ownerElement = DOCUMENT_OWNER_ELEMENTS.has(name);
     // Chromium also puts the containing frame's id on the document element.
     // Only that exact direct-child marker is non-owning; all other frame ids
     // still require a separately inspected child document.
     const documentElement = node.nodeType === 1 && parentIsDocument && node.frameId !== undefined;
-    if (documentElement && (node.frameId !== frame || ownerElement || ['OBJECT', 'EMBED', 'PORTAL'].includes(name) || node.contentDocument !== undefined)) throw denied();
+    if (documentElement && (node.frameId !== frame || ownerElement || node.contentDocument !== undefined)) throw denied();
     const isOwner = node.nodeType !== 9 && !documentElement && (node.frameId !== undefined || node.contentDocument !== undefined || ownerElement);
     if (isOwner) {
+      if (!(SUPPORTED_DOCUMENT_OWNERS as readonly string[]).includes(name)) throw new OwnerProofFailure('unsupported-owner-type');
+      if (name === 'OBJECT' && !node.frameId) throw new OwnerProofFailure('unsupported-owner-document');
       if (!node.frameId || node.frameId === frame || !Number.isSafeInteger(node.backendNodeId) || node.backendNodeId! <= 0 || found.some(owner => owner.frameId === node.frameId)) throw denied();
       if (node.contentDocument && (node.contentDocument.nodeType !== 9 || (node.contentDocument.frameId !== undefined && node.contentDocument.frameId !== node.frameId))) throw denied();
-      found.push({ parentFrameId: frame, frameId: node.frameId, backendNodeId: node.backendNodeId!, localDocument: node.contentDocument !== undefined });
+      found.push({ kind: name as DocumentOwnerKind, parentFrameId: frame, frameId: node.frameId, backendNodeId: node.backendNodeId!, localDocument: node.contentDocument !== undefined });
     }
     if (node.contentDocument) visit(node.contentDocument, node.frameId ?? frame);
     for (const child of node.children ?? []) visit(child, frame, node.nodeType === 9);
@@ -374,6 +387,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
         const visible = await evaluate<boolean>(cdp, frameSessionId, executionContextId, 'document.visibilityState === "visible"', current());
         if (typeof visible !== 'boolean') throw denied(); restoreVisibility = visible; mainContextId = executionContextId;
       }
+      if (ownership.get(frameId)?.kind === 'OBJECT' && !await evaluate<boolean>(cdp, frameSessionId, executionContextId, `document.contentType === 'text/html'`, current())) throw new OwnerProofFailure('unsupported-owner-document');
       phase = 'closed-shadow';
       for (const shadow of frameSession.closedRoots.filter((entry) => entry.frameId === frameId)) {
         const { object } = await cdp.send<{ object: { objectId?: string } }>('DOM.resolveNode', {
@@ -407,11 +421,19 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       for (const [frameId, owner] of ownership) {
         const parent = installed.find(item => item.frameId === owner.parentFrameId && item.session === owner.session);
         const child = frames.get(frameId); if (!parent || !child) throw denied();
+        // A plugin, PDF, image or SVG is not the proven HTML browsing-context geometry.
+        if (owner.kind === 'OBJECT' && child.contentType !== 'text/html') throw new OwnerProofFailure('unsupported-owner-document');
         const { object } = await cdp.send<{ object: { objectId?: string } }>('DOM.resolveNode', { backendNodeId: owner.backendNodeId, executionContextId: parent.contextId, objectGroup: key }, current(), parent.session);
         if (!object.objectId) throw denied();
-        const answer = await cdp.send<Evaluation<MaskRectangle>>('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: FRAME_GEOMETRY, returnByValue: true }, current(), parent.session);
+        const answer = await cdp.send<Evaluation<MaskRectangle | { reason: OwnerFailure }>>('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: FRAME_GEOMETRY, returnByValue: true }, current(), parent.session);
         const rectangle = answer.result.value;
-        if (answer.exceptionDetails || !rectangle || !validRectangle(rectangle) || rectangle.width !== child.width || rectangle.height !== child.height) throw denied();
+        if (answer.exceptionDetails || !rectangle) throw denied();
+        if ('reason' in rectangle) {
+          if (rectangle.reason === 'unsupported-owner-type' || rectangle.reason === 'transformed-owner') throw new OwnerProofFailure(rectangle.reason);
+          throw denied();
+        }
+        if (!validRectangle(rectangle)) throw denied();
+        if (rectangle.width !== child.width || rectangle.height !== child.height) throw new OwnerProofFailure('owner-viewport-mismatch');
         offsets.set(frameId, rectangle);
       }
       const mainFrame = sessions[0]!.documents[0]!; const rectangles: MaskRectangle[] = [];
@@ -456,6 +478,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
     if (!proof.ok) { phase = `pixel-proof-${proof.reason}`; throw denied(); }
     output = { pixels: { data, mediaType: 'image/png', ...size, scale: size.width / viewport.clientWidth }, maskedRegionCount: count, maskingProven: true };
   } catch (error) {
+    if (error instanceof OwnerProofFailure) phase = phase === 'geometry-before' || phase === 'geometry-after' ? `${phase}-${error.reason}` : error.reason;
     failure = error instanceof EngineError && (error.code === 'CANCELLED' || error.code === 'OPERATION_TIMEOUT') ? error : denied(phase);
   } finally {
     // Cleanup is intentionally independent of an expired/cancelled observation budget.

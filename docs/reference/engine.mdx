@@ -862,6 +862,11 @@ export interface EngineDisposeContext extends EngineCleanupContext {
 
 ### Observation
 
+Keep `NodeRef.id` opaque and complete. Core assigns compact references at the
+model and executor boundary before budgeting the observation text. Engines
+continue to receive their original refs, and replay stores target descriptors
+rather than these invocation-local aliases.
+
 `observe` returns one fresh semantic snapshot of the surface under test.
 
 | Field | Type |
