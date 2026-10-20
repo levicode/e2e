@@ -15,7 +15,10 @@ jobs:
     # Standard GitHub-hosted runners; no custom paid runner or user Mac required.
     # https://docs.github.com/en/actions/reference/runners/github-hosted-runners
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # Exact native rebuilds plus the independent official oracle need more than
+    # 60 minutes on standard Intel runners. This is a whole-job resource budget;
+    # test assertions and individual command timeouts remain unchanged.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
