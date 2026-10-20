@@ -21,7 +21,7 @@ The [maintained agent-browser fork](https://github.com/levicode/agent-browser) o
 
 The fork keeps one implementation. Precise command options select exact snapshot refs or `keyboard type --physical`; there is no stock/strict daemon profile or old patch execution path. Normal fill uses browser insertion for text controls and contenteditable selections. Direct native setters are limited to validated date/time-family inputs. Replay epoch 6 prevents reuse of recordings from the previously distributed synthetic-fill epoch 5.
 
-Build the pinned fork from this repository. The lock selects reviewed candidate commit `4008e17969474e6ff9e9744fe80265489478e05a` and its exact tree. Source hashes and the actual Rust 1.99.1 compiler are checked before building; distributing it still requires this candidate’s workflows to pass:
+Build the pinned fork from this repository. The lock selects reviewed candidate commit `c893c3d00d17e747bab9d2694a75397bfdb3df03` and its exact tree. Source hashes and the actual Rust 1.99.1 compiler are checked before building; distributing it still requires this candidate’s workflows to pass:
 
 ```sh
 bash packages/agent-browser/scripts/build-exact-agent-browser.sh
