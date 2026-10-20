@@ -30,6 +30,7 @@ jobs:
       # Fast platform-local unit feedback precedes expensive native compilation.
       - run: pnpm --filter e2e build
       - run: pnpm --filter @e2e-dev/web build
+      - run: pnpm --filter @e2e-dev/mobile build
       - run: pnpm --filter e2e typecheck
       - run: pnpm --filter e2e test:unit
       - id: adapter-build
@@ -39,6 +40,14 @@ jobs:
       - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Validate source lock and checkout refusal cases
         run: node --test packages/agent-browser/tests/native-source.test.ts
+      - name: Install pinned browser for fixtures
+        run: |
+          pnpm --filter @e2e-dev/web exec playwright-core install --with-deps chromium
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux*/chrome' | head -1)
+          test -x "$CHROME"
+          echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+      - name: Core cross-engine integration regressions
+        run: pnpm --filter e2e exec vitest run --project integration
       - name: Compute isolated Rust dependency cache identity
         id: rust-cache-key
         run: node -e 'const fs=require("node:fs");const l=JSON.parse(fs.readFileSync("packages/agent-browser/native-source.lock.json","utf8"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`key=rust-${l.rustToolchain}-${l.tree}-${l.upstreamBase}\n`);'
@@ -74,14 +83,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git/db
             .validation-tools/native-dependency-cache
-      - name: Install pinned browser for fixtures
-        run: |
-          pnpm --filter @e2e-dev/web exec playwright-core install --with-deps chromium
-          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux*/chrome' | head -1)
-          test -x "$CHROME"
-          echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
-      - name: Core cross-engine integration regressions
-        run: pnpm --filter e2e exec vitest run --project integration
       - name: Install artifact video encoder
         run: |
           sudo apt-get update

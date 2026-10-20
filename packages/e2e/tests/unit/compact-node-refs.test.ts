@@ -61,6 +61,47 @@ const dense: SemanticNode[] = Array.from({ length: 706 }, (_, index) => ({
 function observe(refs: NodeRefs, ...nodes: SemanticNode[]): void { refs.observe(tree(nodes)); }
 
 describe('native model node references', () => {
+  it('preserves current-screen diagnostics without dispatching unissued generic or native refs', async () => {
+    const refs = new NodeRefs(); observe(refs, node('known'), node('opaque-known', '@e1'));
+    refs.expose('known'); refs.expose('@e1');
+    const tap = vi.fn(); const actions = refs.actions({ tap } as unknown as ExecutorActions);
+    await expect(actions.tap({ id: 'n9999' })).rejects.toThrow(/^node #n9999 is not on the current screen.*re-observe/);
+    await expect(actions.tap({ id: '@e9999' })).rejects.toThrow(/^node @e9999 is not on the current screen.*not issued for this request/);
+    expect(tap).not.toHaveBeenCalled();
+  });
+
+  it('preserves screenshot-only guidance and never dispatches previous node ids after semantic loss', async () => {
+    const refs = new NodeRefs(); observe(refs, node('save')); refs.expose('save');
+    const request = refs.scope(); refs.invalidate();
+    const tap = vi.fn(); const actions = refs.actions({ tap } as unknown as ExecutorActions);
+    await expect(actions.tap({ id: 'save' })).rejects.toThrow('previous node ids are no longer valid');
+    await refs.run(request, async () => {
+      await expect(actions.tap({ id: 'save' })).rejects.toThrow('use the current screenshot');
+    });
+    observe(refs, node('save')); refs.expose('save');
+    await refs.run(request, async () => {
+      await expect(actions.tap({ id: 'save' })).rejects.toThrow('expired');
+    });
+    expect(tap).not.toHaveBeenCalled();
+  });
+
+  it('allows current screenshot point and keyboard actions while rejecting expired requests', async () => {
+    const refs = new NodeRefs(); observe(refs, node('save')); refs.expose('save');
+    const oldRequest = refs.scope(); refs.invalidate();
+    const performed: string[] = [];
+    const actions = refs.actions({
+      tapAt: async () => { refs.assertCurrent(); performed.push('point'); return { summary: 'Tapped point' }; },
+      typeText: async () => { refs.assertCurrent(); performed.push('text'); },
+    } as unknown as ExecutorActions);
+    await actions.tapAt({ x: 10, y: 20 });
+    await actions.typeText('hello');
+    await refs.run(oldRequest, async () => {
+      await expect(actions.tapAt({ x: 10, y: 20 })).rejects.toThrow('expired');
+      await expect(actions.typeText('hello')).rejects.toThrow('expired');
+    });
+    expect(performed).toEqual(['point', 'text']);
+  });
+
   it('fits 707 nodes with the late native @e221 control without raising the byte budget', () => {
     const root = tree(dense);
     const raw = { kind: 'semantic' as const, tree: root, root: root.ref, capturedAt: '', truncated: false, redaction: { secureNodeCount: 0, maskedRegionCount: 0 }, revision: '1', viewport: { width: 1280, height: 720 } };

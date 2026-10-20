@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { createProject, type FixtureProject } from '../helpers/run-project.ts';
 
@@ -118,17 +118,27 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
   let client: Client;
   let transport: StdioClientTransport;
   let stderr = '';
+  const openSessions = new Set<string>();
 
   const invoke = async (name: string, args: Record<string, unknown> = {}): Promise<ToolText> => {
     const result = (await client.callTool({ name, arguments: args }, { timeout: 110_000 })) as {
       content: { type: string; text?: string }[];
       isError?: boolean;
     };
-    return {
+    const output = {
       text: result.content.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n'),
       isError: result.isError === true,
       images: result.content.filter((part) => part.type === 'image').length,
     };
+    if (!output.isError && name === 'open_session') {
+      const id = /^Session (\S+) open/.exec(output.text)?.[1];
+      if (id !== undefined) openSessions.add(id);
+    }
+    if (!output.isError && name === 'close_session') {
+      if (typeof args.session === 'string') openSessions.delete(args.session);
+      else if (openSessions.size === 1) openSessions.clear();
+    }
+    return output;
   };
 
   /** A catalog tool through the server's `call` tool. */
@@ -167,6 +177,14 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     client = new Client({ name: 'e2e-mcp-test', version: '0.0.0' });
     await client.connect(transport);
   }, 60_000);
+
+  afterEach(async () => {
+    // A failed assertion must not leave a browser session behind and mask later cases.
+    for (const session of openSessions) {
+      const closed = await invoke('close_session', { session });
+      expect(closed.isError, closed.text).toBe(false);
+    }
+  });
 
   afterAll(async () => {
     await client?.close().catch(() => undefined);

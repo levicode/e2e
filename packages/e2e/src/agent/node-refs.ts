@@ -18,6 +18,7 @@ export class NodeRefs {
   private readonly request = new AsyncLocalStorage<{ bindings: Map<string, string>; epoch: symbol }>();
   private epoch = Symbol();
   private engineScope: string | undefined;
+  private semanticUnavailable = false;
 
   /** Validates the whole capture before updating any display-to-identity binding. */
   observe(tree: SemanticNode): boolean {
@@ -42,6 +43,7 @@ export class NodeRefs {
       this.epoch = Symbol();
     }
     this.engineScope = scope;
+    this.semanticUnavailable = false;
     for (const [alias, id] of current) {
       this.byId.set(id, alias);
       this.byAlias.set(alias, id);
@@ -54,12 +56,16 @@ export class NodeRefs {
 
   /** Rejects unknown or foreign input before the ordinary historical resolution runs. */
   decode(target: ExecutorTarget): ExecutorTarget {
+    if (this.semanticUnavailable) throw new AgentError('LOCATOR_NOT_FOUND', 'semantic capture is unavailable; previous node ids are no longer valid, so use the current screenshot');
     const alias = typeof target?.id === 'string' ? target.id : '';
     const request = this.request.getStore();
     this.assertCurrent();
     const scope = request?.bindings ?? this.issued;
     const id = scope.get(alias) ?? (!alias.startsWith('#@') && alias.startsWith('#') ? scope.get(alias.slice(1)) : undefined);
-    if (id === undefined) throw new AgentError('LOCATOR_NOT_FOUND', 'node reference was not issued for this request or has expired; observe and use a listed id');
+    if (id === undefined) {
+      const label = modelRefLabel(alias.replace(/^#/, ''));
+      throw new AgentError('LOCATOR_NOT_FOUND', `node ${label} is not on the current screen; node reference was not issued for this request or has expired; re-observe and use a listed id`);
+    }
     return { id };
   }
 
@@ -78,6 +84,7 @@ export class NodeRefs {
 
   /** Missing semantic evidence invalidates outstanding requests, even if the same spelling returns later. */
   invalidate(): void {
+    this.semanticUnavailable = true;
     this.byId.clear(); this.byAlias.clear(); this.issued.clear();
     this.epoch = Symbol();
   }
