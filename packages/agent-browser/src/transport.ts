@@ -6,9 +6,10 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { EngineError, type EngineErrorCode, type OperationContext } from 'e2e/engine';
+import { AGENT_BROWSER_CONTRACT, AGENT_BROWSER_VERSION, supportsNativeContract } from './native-contract.ts';
 
 /** The reviewed CLI build enforces exact node identity and immutable attachment scope. */
-export const AGENT_BROWSER_VERSION = '0.39.1-e2e.4';
+export { AGENT_BROWSER_VERSION } from './native-contract.ts';
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const PRE_DISPATCH_REF_COMMANDS = new Set(['click', 'dblclick', 'fill', 'type', 'focus', 'hover', 'check', 'uncheck', 'select', 'upload']);
 // The public CLI applies Darwin's sun_path[104] limit on every Unix platform.
@@ -111,6 +112,18 @@ function preDispatchError(value: unknown): EngineError | undefined {
   }
 }
 
+/** Contract mismatch is attested before dispatch for every command, not just ref input. */
+function contractMismatch(value: unknown): EngineError | undefined {
+  if (typeof value !== 'object' || value === null || !('success' in value) || value.success !== false
+    || !('code' in value) || value.code !== 'contract_mismatch' || !('data' in value)
+    || typeof value.data !== 'object' || value.data === null || !('dispatched' in value.data) || value.data.dispatched !== false) return undefined;
+  return failure('ENGINE_FAILURE', `agent-browser contract ${AGENT_BROWSER_CONTRACT} is required; the command was not dispatched`);
+}
+
+function contractMismatchResponse(output: string): EngineError | undefined {
+  try { return contractMismatch(JSON.parse(output)); } catch { return undefined; }
+}
+
 /** Nonzero CLI exits can still carry a validated pre-input error envelope. */
 function preDispatchResponse(output: string): EngineError | undefined {
   let value: unknown;
@@ -138,11 +151,11 @@ const GLOBAL_FLAGS = new Set([
   '--annotate', '--content-boundaries', '--confirm-interactive', '--no-auto-dialog',
   '-v', '--verbose', '-q', '--quiet', '--offline', '--quick', '--fix', '--session',
   '--restore', '--restore-save', '--restore-check-url', '--restore-check-text',
-  '--restore-check-fn', '--namespace', '--headers', '--executable-path', '--cdp', '--cdp-target', '--cdp-context',
+  '--restore-check-fn', '--namespace', '--headers', '--executable-path', '--cdp', '--cdp-target', '--cdp-context', '--cdp-dedicated',
   '--extension', '--init-script', '--enable', '--profile', '--state', '--proxy',
   '--proxy-bypass', '--args', '--user-agent', '-p', '--provider', '--device',
   '--session-name', '--color-scheme', '--download-path', '--max-output',
-  '--allowed-domains', '--action-policy', '--confirm-actions', '--config', '--engine',
+  '--allowed-domains', '--action-policy', '--confirm-actions', '--config', '--engine', '--expect-contract',
   '--input-mode', '--screenshot-dir', '--screenshot-quality', '--screenshot-format',
   '--idle-timeout', '--ca-cert', '--model',
 ]);
@@ -152,7 +165,8 @@ function literalShape(args: readonly string[], marker: number): boolean {
   switch (args[0]) {
     case 'fill': return marker === 2 && args.length === 4;
     case 'eval': return marker === 1 && args.length === 3;
-    case 'keyboard': return marker === 2 && args.length === 4 && ['type', 'inserttext', 'insertText'].includes(args[1] ?? '');
+    case 'keyboard': return (marker === 2 && args.length === 4 && ['type', 'inserttext', 'insertText'].includes(args[1] ?? ''))
+      || (args[1] === 'type' && args[2] === '--physical' && marker === 3 && args.length === 5);
     case 'select': return marker === 3 && args.length >= 5 && ['--value', '--label', '--index'].includes(args[2] ?? '');
     case 'type': {
       if (marker < 2 || args.length !== marker + 2) return false;
@@ -202,7 +216,7 @@ function scopeFlags(options: CliTransportOptions): readonly string[] {
     || (options.cdpContext !== null && (!scopeValue(options.cdpContext) || options.cdpContext === 'default'))) {
     throw failure('INVALID_STATE', 'CDP scope requires an endpoint, an exact target, and a context ID or explicit null default context');
   }
-  return ['--cdp-target', options.cdpTarget, '--cdp-context', options.cdpContext ?? 'default'];
+  return ['--cdp-target', options.cdpTarget, '--cdp-context', options.cdpContext ?? 'default', '--cdp-dedicated'];
 }
 
 /** Bound an entire operation, including its first version check, by one budget. */
@@ -251,6 +265,7 @@ export class CliTransport {
     this.flags = [
       '--config', join(this.directory, 'config.json'), '--session', this.session,
       '--json', '--engine', 'chrome', '--no-webmcp', '--no-auto-dialog', '--input-mode', 'instant',
+      '--expect-contract', AGENT_BROWSER_CONTRACT,
       ...(options.executablePath === undefined ? [] : ['--executable-path', options.executablePath]),
       ...(options.cdp === undefined ? [] : ['--cdp', options.cdp]),
       ...scope,
@@ -266,7 +281,7 @@ export class CliTransport {
   /** An unanswered request leaves the daemon unsafe to reuse, even for reads. */
   get poisoned(): boolean { return this.uncertain; }
 
-  /** Validate the exact public CLI version, once per transport. */
+  /** Validate the native version and browser-free capability bundle, once per transport. */
   async version(context: OperationContext): Promise<string> {
     const reservation = this.reserve();
     try {
@@ -347,9 +362,17 @@ export class CliTransport {
       throw failure('OPERATION_TIMEOUT', 'agent-browser command timed out before dispatch');
     }
     if (this.verified) return;
+    const startedAt = performance.now();
     const output = await this.execute([...this.flags, '--version'], context, false, false);
     if (output.trim() !== `agent-browser ${AGENT_BROWSER_VERSION}`) {
       throw failure('ENGINE_FAILURE', `agent-browser ${AGENT_BROWSER_VERSION} is required; configure the reviewed exact-ref CLI build`);
+    }
+    const capabilities = await this.execute([...this.flags, 'capabilities'], remaining(context, startedAt), false, false);
+    let envelope: unknown;
+    try { envelope = JSON.parse(capabilities); } catch { /* Reject without echoing untrusted output. */ }
+    if (typeof envelope !== 'object' || envelope === null || !('success' in envelope) || envelope.success !== true
+      || !('data' in envelope) || !supportsNativeContract(envelope.data)) {
+      throw failure('ENGINE_FAILURE', `agent-browser must provide the complete ${AGENT_BROWSER_CONTRACT} capability bundle before browser use`);
     }
     this.verified = true;
   }
@@ -403,6 +426,8 @@ export class CliTransport {
     try { envelope = JSON.parse(output); } catch {
       throw this.unanswered(mutating, 'agent-browser returned an invalid JSON response');
     }
+    const mismatch = contractMismatch(envelope);
+    if (mismatch) throw mismatch;
     const preflight = allowPreflight ? preDispatchError(envelope) : undefined;
     if (preflight) throw preflight;
     if (batchCount !== undefined) {
@@ -489,6 +514,8 @@ export class CliTransport {
       child.once('close', (code) => {
         if (settled) return;
         if (code !== 0) {
+          const mismatch = contractMismatchResponse(output);
+          if (mismatch) { finish(mismatch); return; }
           const preflight = allowPreflight ? preDispatchResponse(output) : undefined;
           if (preflight) { finish(preflight); return; }
           // A process exit can follow dispatched input; its stderr is not a safe diagnostic.

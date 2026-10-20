@@ -1,7 +1,7 @@
 name: agent-browser macOS
 on:
   push:
-    branches: [main, feat/agent-browser-engine]
+    branches: [main, feat/agent-browser-engine, feat/maintained-native-contract]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -15,7 +15,7 @@ jobs:
     # Standard GitHub-hosted runners; no custom paid runner or user Mac required.
     # https://docs.github.com/en/actions/reference/runners/github-hosted-runners
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -56,10 +56,12 @@ jobs:
           pnpm --version
           echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/agent-browser-chromium" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build and test pinned exact-ref native CLI
+      - name: Validate source lock and checkout refusal cases
+        run: node --test packages/agent-browser/tests/native-source.test.ts
+      - name: Build and test exact maintained fork commit
         run: |
-          rustup toolchain install 1.93.0 --profile minimal
-          rustup default 1.93.0
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
           rustc --version
           rustc -vV | grep -Fx "host: $EXPECTED_RUST_HOST"
           bash packages/agent-browser/scripts/build-exact-agent-browser.sh
@@ -67,6 +69,10 @@ jobs:
           test -x "$BINARY"
           file "$BINARY"
           echo "E2E_AGENT_BROWSER_EXECUTABLE=$BINARY" >> "$GITHUB_ENV"
+      - name: Verify browser-free native protocol bundle
+        run: node --test packages/agent-browser/tests/native-contract.integration.ts
+      - name: Build the separate unmodified official baseline
+        run: bash packages/agent-browser/scripts/build-upstream-agent-browser.sh
       - name: Download pinned Chromium for native macOS fixtures
         run: |
           # Playwright is only the pinned browser downloader, never the execution engine.
@@ -75,11 +81,21 @@ jobs:
           test -x "$CHROME"
           "$CHROME" --version
           echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+      - name: Exercise native exact refs and browser editing against real Chromium
+        env:
+          AGENT_BROWSER_EXECUTABLE_PATH: ${{ env.E2E_CHROMIUM_EXECUTABLE }}
+        run: |
+          cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_shared_fill_preserves_browser_editing_and_clears_rich_content -- --ignored --exact --test-threads=1
+          cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_exact_snapshot_ref_never_rebinds_ordinary_ref_keeps_fallback -- --ignored --exact --test-threads=1
       - run: pnpm --filter e2e build
       - run: pnpm --filter @e2e-dev/agent-browser build
       - run: pnpm --filter @e2e-dev/agent-browser typecheck
       - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
       - run: pnpm --filter @e2e-dev/agent-browser test
+      - name: Compare ordinary behavior with the separate official build
+        run: node --test packages/agent-browser/tests/upstream-baseline.integration.ts
+      - name: Native browser-insertion and exact-action acceptance
+        run: node --test packages/agent-browser/tests/actions.integration.ts
       - name: Real default unnamed-glyph snapshot and locator acceptance
         run: node --test packages/agent-browser/tests/locators.integration.ts
       - name: Real public runner action, report, trace and strict replay

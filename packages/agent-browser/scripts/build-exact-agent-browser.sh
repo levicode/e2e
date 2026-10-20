@@ -1,42 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Public maintained extension; never patches the user's global installation.
+# Build the reviewed fork commit; never patch a checkout or a global installation.
+if [[ "$#" -gt 1 ]]; then
+  echo 'Usage: build-exact-agent-browser.sh [source-directory]' >&2
+  exit 1
+fi
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SOURCE="${1:-$ROOT/.validation-tools/agent-browser-exact}"
-PIN=1165952d74ceed98fdc2dd97190ad41f44dd0e24
-if [[ ! -d "$SOURCE/.git" ]]; then
+VALIDATOR="$ROOT/packages/agent-browser/scripts/native-source.ts"
+LOCK_VALUES="$(node "$VALIDATOR" lock-values)"
+read -r REPOSITORY PIN VERSION RUSTUP_TOOLCHAIN <<< "$LOCK_VALUES"
+if [[ ! -e "$SOURCE/.git" ]]; then
+  if [[ -e "$SOURCE" && ( ! -d "$SOURCE" || -n "$(ls -A "$SOURCE")" ) ]]; then
+    echo 'Refusing to initialize native source in a nonempty directory' >&2
+    exit 1
+  fi
   mkdir -p "$SOURCE"
   git -C "$SOURCE" init
-  git -C "$SOURCE" remote add origin https://github.com/vercel-labs/agent-browser.git
+  git -C "$SOURCE" remote add origin "$REPOSITORY"
   git -C "$SOURCE" fetch --depth=1 origin "$PIN"
-  git -C "$SOURCE" checkout --detach FETCH_HEAD
-elif [[ "$(git -C "$SOURCE" rev-parse HEAD)" != "$PIN" ]]; then
-  echo 'Refusing to patch a different agent-browser checkout' >&2
-  exit 1
+  git -C "$SOURCE" checkout --detach "$PIN"
 fi
-PATCH="$ROOT/patches/agent-browser-exact-refs.patch"
-if git -C "$SOURCE" apply --check "$PATCH"; then
-  git -C "$SOURCE" apply "$PATCH"
-elif ! git -C "$SOURCE" apply --reverse --check "$PATCH"; then
-  echo 'Patch does not apply cleanly; inspect the pinned upstream contract' >&2
-  exit 1
-fi
+node "$VALIDATOR" verify "$SOURCE"
+export RUSTUP_TOOLCHAIN
+node "$VALIDATOR" toolchain
+# Do not retain a success stamp if any subsequent test or build fails.
+rm -f "$SOURCE/cli/target/ci/e2e-native-build.json"
 # Keep the isolated inherited-CDP launch-safety assertion visible even if a later
 # test aborts the harness. The complete suite still runs after a focused failure.
 focused_status=0
-cargo test --locked --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser \
+cargo test --profile ci --locked --target-dir "$SOURCE/cli/target" --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser \
   native::e2e_tests::test_obscura_e2e_unlaunchable_binary_does_not_attach_to_inherited_cdp \
   -- --exact --nocapture || focused_status=$?
 suite_status=0
-cargo test --locked --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser || suite_status=$?
+cargo test --profile ci --locked --target-dir "$SOURCE/cli/target" --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser || suite_status=$?
 if [[ "$focused_status" != 0 || "$suite_status" != 0 ]]; then
   echo 'Native launch-safety or complete-suite validation failed' >&2
   exit 1
 fi
-cargo build --locked --profile ci --manifest-path "$SOURCE/cli/Cargo.toml"
-VERSION="$("$SOURCE/cli/target/ci/agent-browser" --version)"
-if [[ "$VERSION" != "agent-browser 0.39.1-e2e.4" ]]; then
+rm -f "$SOURCE/cli/target/ci/agent-browser"
+cargo build --locked --profile ci --target-dir "$SOURCE/cli/target" --manifest-path "$SOURCE/cli/Cargo.toml"
+ACTUAL_VERSION="$("$SOURCE/cli/target/ci/agent-browser" --version)"
+if [[ "$ACTUAL_VERSION" != "agent-browser $VERSION" ]]; then
   echo "Native executable did not report the required maintained version" >&2
   exit 1
 fi
-printf '%s\n' "$VERSION"
+node "$VALIDATOR" stamp "$SOURCE"
+printf '%s\n' "$ACTUAL_VERSION"

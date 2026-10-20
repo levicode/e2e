@@ -1,17 +1,17 @@
 # Install the source-pinned candidate
 
-This is a fork build, not an npm release. Use the native binary and the two package tarballs from **the same successful commit**. The package version remains private `0.0.0`; the exact source commit and artifact hashes distinguish candidates. The native version is `0.39.1-e2e.4`, and the engine/cache identity is `agent-browser-exact-5`.
+This is a fork build, not an npm release. The source-lock migration is a preparation branch until its exact native commit/tree are selected and its own workflows pass. Earlier `0.39.1-e2e.4` artifacts do not validate this candidate. Use the native binary and the two package tarballs from **the same successful commit**. The package version remains private `0.0.0`; the exact source commit and artifact hashes distinguish candidates. The native version is `0.39.1-e2e.5`, and the engine/cache identity is `agent-browser-exact-6`.
 
 ## Download the matching artifacts
 
 Open a successful run of [the Linux workflow](https://github.com/levicode/e2e/actions/workflows/agent-browser-adapter.yml) or [the macOS workflow](https://github.com/levicode/e2e/actions/workflows/agent-browser-macos.yml). Check its commit and every required job before downloading:
 
 - `agent-browser-packaged-consumer-<commit>` on Linux, or `agent-browser-packaged-consumer-darwin-<architecture>-<commit>` on macOS: contains `tarballs/e2e-0.21.2.tgz`, `tarballs/e2e-dev-agent-browser-0.0.0.tgz`, and hashed execution evidence.
-- `agent-browser-native-<platform>-<architecture>-<commit>`: contains the patched executable in a mode-preserving `.tar.gz`, `SHA256SUMS`, and `manifest.json` with the executable hash, source/patch pins, architecture, compiler and tested Chromium version.
+- `agent-browser-native-<platform>-<architecture>-<commit>`: contains the maintained-fork executable in a mode-preserving `.tar.gz`, `SHA256SUMS`, and `manifest.json` with the executable hash, native fork commit/tree, upstream base, e2e commit/tree, architecture, compiler and tested Chromium version.
 
 Platform names are `linux-x64`, `darwin-arm64` (Apple silicon), and `darwin-x64` (Intel). Never use a Linux executable on macOS or assume that one Mac architecture proves the other. `uname -m` prints `arm64` or `x86_64` on a Mac. Artifacts expire after seven days; the pinned source and build script remain the reproducible fallback. A missing or failed native artifact is not a tested binary.
 
-Linux runs the complete required integration matrix. Each Mac architecture runs native tests, all units, seven locator/runner cases and the fresh-consumer browser smoke; pixel/state/network/video parity on macOS requires further platform-specific validation.
+Linux runs the complete required integration matrix. Each Mac architecture runs native tests, all units, the ordinary official-baseline comparison, action/locator/runner cases and the fresh-consumer browser smoke. Pixel/state/network/video parity on macOS requires further platform-specific validation.
 
 The workflow OS targets are Ubuntu 24.04 and macOS 15. The manifest records the actual OS release and, on Linux, the glibc version. Compatibility with older operating systems, other Linux distributions, and Windows is not established by these artifacts.
 
@@ -20,7 +20,7 @@ After extracting the GitHub artifact ZIP, verify and unpack its archive:
 ```sh
 # Run in the extracted native artifact directory.
 shasum -a 256 -c SHA256SUMS
-tar -xzf agent-browser-0.39.1-e2e.4-darwin-arm64.tar.gz
+tar -xzf agent-browser-0.39.1-e2e.5-darwin-arm64.tar.gz
 ./agent-browser --version
 export E2E_AGENT_BROWSER_EXECUTABLE="$PWD/agent-browser"
 ```
@@ -71,7 +71,7 @@ pnpm run list
 pnpm smoke
 ```
 
-Both executable environment variables must be set. Success proves a real observed action, exactly one external fixture mutation, public report/trace output and zero model calls. It does not prove access to the user's private application.
+Both executable environment variables must be set. Success proves trusted browser fill/clear on text, textarea and contenteditable controls, a real exact-ref observed action, exactly one external fixture commit, public report/trace output and zero model calls. It does not prove access to the user's private application.
 
 ## Build instead of downloading a native artifact
 
@@ -82,15 +82,15 @@ git clone https://github.com/levicode/e2e.git
 cd e2e
 git checkout <reviewed-commit>
 pnpm install --frozen-lockfile --ignore-scripts
-rustup toolchain install 1.93.0 --profile minimal
-rustup default 1.93.0
+rustup toolchain install 1.99.1 --profile minimal
+rustup default 1.99.1
 bash packages/agent-browser/scripts/build-exact-agent-browser.sh
 export E2E_AGENT_BROWSER_EXECUTABLE="$PWD/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser"
 pnpm --filter e2e build
 pnpm --filter @e2e-dev/agent-browser build
 ```
 
-The script fetches the exact public upstream commit, applies the maintained patch, runs native tests, builds the CLI and checks its version. It never patches a global installation. Build tools and network access to the official GitHub/Cargo/package sources are required. To reproduce the fresh-consumer proof after selecting Chromium:
+The script reads `packages/agent-browser/native-source.lock.json`, fetches that exact commit from the public `levicode/agent-browser` fork, and checks its tree, upstream metadata, native version and protocol contract. It runs native tests, builds the CLI, checks its reported version and complete browser-free capability bundle, and writes a binary-hash build stamp. No patch is applied. An existing checkout with local changes, the wrong commit/tree or a different origin is refused without resetting it. Preserve the old directory and choose a fresh one with the optional first script argument; the default CI and packaging location is `.validation-tools/agent-browser-exact`. A migration placeholder in the lock is not buildable. Build tools and network access to the official GitHub/Cargo/package sources are required. To reproduce the fresh-consumer proof after selecting Chromium:
 
 ```sh
 node packages/agent-browser/scripts/consumer-smoke.ts --browser --artifacts /tmp/agent-browser-proof

@@ -1,7 +1,7 @@
 name: agent-browser adapter
 on:
   push:
-    branches: [main, feat/agent-browser-engine]
+    branches: [main, feat/agent-browser-engine, feat/maintained-native-contract]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -13,7 +13,7 @@ jobs:
   verify:
     # Fork-portable: no paid runner, credentials, LLM, publish, or deploy access.
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 60
     env:
       E2E_TELEMETRY_DISABLED: '1'
       E2E_CHROMIUM_NO_SANDBOX: '1'
@@ -27,12 +27,18 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build pinned exact-ref public CLI extension
+      - name: Validate source lock and checkout refusal cases
+        run: node --test packages/agent-browser/tests/native-source.test.ts
+      - name: Build exact maintained fork commit
         run: |
-          rustup toolchain install 1.93.0 --profile minimal
-          rustup default 1.93.0
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
           bash packages/agent-browser/scripts/build-exact-agent-browser.sh
           echo "E2E_AGENT_BROWSER_EXECUTABLE=$PWD/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser" >> "$GITHUB_ENV"
+      - name: Verify browser-free native protocol bundle
+        run: node --test packages/agent-browser/tests/native-contract.integration.ts
+      - name: Build the separate unmodified official baseline
+        run: bash packages/agent-browser/scripts/build-upstream-agent-browser.sh
       - name: Install pinned browser for fixtures
         run: |
           pnpm --filter @e2e-dev/web exec playwright-core install --with-deps chromium
@@ -44,6 +50,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           ffmpeg -version
+      - name: Exercise native exact refs and browser editing against real Chromium
+        env:
+          AGENT_BROWSER_EXECUTABLE_PATH: ${{ env.E2E_CHROMIUM_EXECUTABLE }}
+        run: |
+          cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_shared_fill_preserves_browser_editing_and_clears_rich_content -- --ignored --exact --test-threads=1
+          cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_exact_snapshot_ref_never_rebinds_ordinary_ref_keeps_fallback -- --ignored --exact --test-threads=1
       - run: pnpm --filter e2e build
       - id: adapter-build
         run: pnpm --filter @e2e-dev/agent-browser build

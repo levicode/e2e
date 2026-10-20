@@ -6,20 +6,22 @@ See [installation and source-pinned artifacts](INSTALL.md), [exact validation ev
 
 ## Architecture
 
-- agent-browser owns default accessibility snapshots, refs, and primary node actions. No interactive-only, compact, depth, viewport, accessible-name, or cursor filtering is added. Unnamed font-icon controls stay in the observation.
-- A documented public Chromium CDP companion uses the exact browser and target reported by agent-browser's public tab listing. It supplements metadata, deterministic locators, async network handlers, response events, state, and masked screenshots. It never starts a second browser or uses Playwright execution.
+- agent-browser owns full accessibility snapshots, refs, and primary node actions. The adapter requests `snapshot --exact-refs` to bind those refs to exact nodes without changing which content the snapshot includes. No interactive-only, compact, depth, viewport, accessible-name, or cursor filtering is added. Unnamed font-icon controls stay in the observation.
+- A documented public Chromium CDP companion uses the exact browser and target reported by agent-browser's public tab listing. It owns browser-wide auto-attachment, Fetch/auth interception and target pause/resume. It also supplies metadata, deterministic locators, response events, state, and masked screenshots. Native scoped attachments are passive and cannot take over those lifecycle responsibilities. It never starts a second browser or uses Playwright execution.
 - Each local attempt owns a new Chromium process and disposable profile. Cancellation with uncertain mutation outcomes poisons that attempt. The adapter does not equate killing a CLI client with cancelling the daemon.
 - Engine-owned ref IDs are unique across attempts and workers. The runner owns revisions; sequential locator resolutions retain their exact native identities so a drag destination cannot erase its source.
 - Optional trace capture uses a second isolated agent-browser CLI session attached to the same browser and exact target. Its non-activating tab binding and separate ref namespace cannot replace action refs; a failed optional read disables trace capture without retrying input.
-- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-5`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
+- Trace/report/replay remain e2e's own. The engine cache identity is `agent-browser-exact-6`. Core keys include the engine name and SPI, not its package version; incompatible observation/action changes require incrementing this name's semantic epoch.
 
-## Required CLI extension
+## Required maintained native fork
 
 Stock agent-browser 0.39.1 cannot safely reproduce strict e2e ref identity: its snapshot refs can fall back to a different node with the same role and name. Its checkbox path can also issue a second click after a delayed state update.
 
-`patches/agent-browser-exact-refs.patch` is a maintained public extension against upstream commit `1165952d74ceed98fdc2dd97190ad41f44dd0e24`. It exposes version `0.39.1-e2e.4`, exact refs, authoritative node IDs, public exact-ref registration, immutable initial target/context attachment scope, validated navigation wait options, per-key ASCII typing, read-only checkbox completion checks, passive scoped attachment that leaves debugger pause/resume exclusively to the companion, and lifetime-cancelled background setup for destroyed targets. This adapter refuses the stock binary rather than claiming unsupported safety.
+The [maintained agent-browser fork](https://github.com/levicode/agent-browser) owns the native changes as source commits. `native-source.lock.json` records the exact fork commit/tree, upstream base, native version `0.39.1-e2e.5`, protocol contract `e2e-exact-1` and engine/cache epoch `agent-browser-exact-6`. The native fork supplies exact refs, authoritative node IDs, public exact-ref registration, immutable initial target/context attachment scope, validated navigation wait options, per-key ASCII typing, read-only checkbox completion checks, passive scoped attachment that leaves debugger pause/resume exclusively to the companion, and lifetime-cancelled background setup for destroyed targets. This adapter refuses the stock binary rather than claiming unsupported safety. Its browser-free preflight requires the complete capability bundle, not just a matching version string; every daemon command carries `--expect-contract e2e-exact-1`. Scoped clients also declare `--cdp-dedicated` after the adapter acquires an exclusively owned endpoint. This assertion does not turn a shared browser into an isolated one.
 
-Build the pinned extension from this repository:
+The fork keeps one implementation. Precise command options select exact snapshot refs or `keyboard type --physical`; there is no stock/strict daemon profile or old patch execution path. Normal fill uses browser insertion for text controls and contenteditable selections. Direct native setters are limited to validated date/time-family inputs. Replay epoch 6 prevents reuse of recordings from the previously distributed synthetic-fill epoch 5.
+
+Build the pinned fork from this repository. The lock selects reviewed candidate commit `fb65ca3d5a390708cb1d9e61f244ed182c0d4e5b` and its exact tree. Source hashes and the actual Rust 1.99.1 compiler are checked before building; distributing it still requires this candidate’s workflows to pass:
 
 ```sh
 bash packages/agent-browser/scripts/build-exact-agent-browser.sh
@@ -28,7 +30,7 @@ pnpm --filter e2e build
 pnpm --filter @e2e-dev/agent-browser build
 ```
 
-Requires Node 24.8+, a Rust toolchain compatible with the pinned lockfile, and Chromium. CI uses Rust 1.93.0 and the Chromium distribution pinned by the existing workspace browser dependency. The adapter itself has no Playwright runtime dependency. Set `E2E_CHROMIUM_EXECUTABLE` or `executablePath` to the browser executable.
+Requires Node 24.8+, a Rust toolchain compatible with the pinned lockfile, and Chromium. CI uses Rust 1.99.1 and the Chromium distribution pinned by the existing workspace browser dependency. The adapter itself has no Playwright runtime dependency. Set `E2E_CHROMIUM_EXECUTABLE` or `executablePath` to the browser executable.
 
 ## Migration
 
@@ -79,13 +81,15 @@ pnpm --filter @e2e-dev/agent-browser test
 pnpm --filter @e2e-dev/agent-browser test:browser
 ```
 
-Browser tests require the patched binary and a runnable Chromium. They use local synthetic HTTP fixtures and no model, account, private service, or credentials. Integration tests deliberately fail if prerequisites are missing; a skipped real-browser check must never be reported as proof.
+Browser tests require the maintained-fork binary and a runnable Chromium. They use local synthetic HTTP fixtures and no model, account, private service, or credentials. Integration tests deliberately fail if prerequisites are missing; a skipped real-browser check must never be reported as proof.
 
 The [packaged-consumer example](examples/packaged-consumer/README.md) includes a complete config, deterministic test, fresh tarball installation checks, and a runnable browser smoke with hashed CI artifacts.
 
 ## Upstream maintenance
 
-Keep `@e2e-dev/web`, `e2e` core, mobile engines, and service integrations unchanged. Upgrade the e2e pin and agent-browser pin independently. For an agent-browser upgrade, apply the patch to the new clean source, review the public JSON schemas and exact-ref dispatch paths, run native tests, then run all integration suites. A clean patch application alone is not compatibility evidence.
+Keep `@e2e-dev/web`, `e2e` core, mobile engines, and service integrations unchanged. Upgrade the e2e pin and agent-browser pin independently. For an agent-browser upgrade, review and merge upstream changes in the native fork first. Run its native tests, then propose an e2e source-lock update and run all integration suites against that exact commit. A clean merge alone is not compatibility evidence. The old patch remains available in Git history; it is no longer a build input or a second implementation to maintain.
+
+CI compares ordinary behavior against a separately built, pristine official source checkout at the locked upstream base. That comparison is a test oracle, not a second distributed runtime. The Linux and both macOS jobs exercise real native editing/exact-ref regressions, the protocol handshake, ordinary baseline behavior, and an installed-tarball consumer.
 
 The single-node semantic reader is vendored from e2e commit `97f453fbcfd99b73faa0177ba60e489df9625b86`, under Apache-2.0. It is used only to read already-bound DOM nodes. Its old filtered tree walk is never used as an agent observation. Compare that file with upstream on every e2e upgrade.
 

@@ -6,6 +6,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { git, readNativeSourceLock, verifyBuildStamp } from './native-source.ts';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const example = fileURLToPath(new URL('../examples/packaged-consumer/', import.meta.url));
@@ -24,6 +25,14 @@ for (let index = 0; index < args.length; index++) {
     else if (arg === '--store-dir') store = path.resolve(value);
     else cache = path.resolve(value);
   } else throw new Error('Usage: consumer-smoke.ts [--browser] [--offline] [--store-dir path] [--cache-dir path] [--artifacts path] [--keep]');
+}
+const nativeSource = readNativeSourceLock();
+const sourceCommit = git(repository, 'rev-parse', 'HEAD');
+const sourceDirty = git(repository, 'status', '--porcelain=v1', '--untracked-files=all') !== '';
+if (process.env.GITHUB_SHA) assert.equal(sourceCommit, process.env.GITHUB_SHA, 'CI commit differs from the actual e2e checkout');
+if (browser) {
+  assert.ok(process.env.E2E_AGENT_BROWSER_EXECUTABLE, 'Browser acceptance requires the verified native executable');
+  verifyBuildStamp(path.join(repository, '.validation-tools/agent-browser-exact'), process.env.E2E_AGENT_BROWSER_EXECUTABLE, nativeSource);
 }
 if (artifacts) {
   assert.ok(!existsSync(artifacts) || readdirSync(artifacts).length === 0, 'Artifact directory must be new or empty');
@@ -107,7 +116,9 @@ try {
       status: passed ? 'passed' : 'failed',
       browser: !browser ? 'not-run' : checks.some(check => check.name === 'consumer-browser' && check.status === 'passed') ? 'passed' : 'not-passed',
       offline, node: process.version, pnpm: packageManager,
-      sourceRevision: process.env.GITHUB_SHA ?? 'working-tree',
+      sourceRevision: sourceCommit,
+      sourceDirty,
+      nativeSource,
       checks, files: inventory(artifacts),
     }, null, 2)}\n`);
   }

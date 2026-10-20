@@ -6,7 +6,8 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { release, tmpdir, version as operatingSystemVersion } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_BROWSER_VERSION } from '../src/transport.ts';
+import { AGENT_BROWSER_VERSION } from '../src/native-contract.ts';
+import { git, readNativeSourceLock, verifyBuildStamp, verifyRustToolchain } from './native-source.ts';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const args = process.argv.slice(2);
@@ -19,6 +20,12 @@ const executable = process.env.E2E_AGENT_BROWSER_EXECUTABLE;
 const browser = process.env.E2E_CHROMIUM_EXECUTABLE;
 const commit = process.env.GITHUB_SHA;
 assert.ok(executable && browser && commit && /^[a-f0-9]{40}$/.test(commit), 'CI executable, Chromium, and exact source commit are required');
+assert.equal(git(repository, 'rev-parse', 'HEAD'), commit, 'CI source commit differs from the actual e2e checkout');
+assert.equal(git(repository, 'status', '--porcelain=v1', '--untracked-files=all'), '', 'Native artifacts require a clean e2e checkout');
+const e2eTree = git(repository, 'rev-parse', 'HEAD^{tree}');
+const nativeSource = path.join(repository, '.validation-tools/agent-browser-exact');
+const nativeLock = readNativeSourceLock();
+const binary = verifyBuildStamp(nativeSource, executable, nativeLock);
 
 function command(commandPath: string, argv: string[]): string {
   const result = spawnSync(commandPath, argv, { encoding: 'utf8', timeout: 30_000, maxBuffer: 2 * 1024 * 1024, shell: false });
@@ -29,7 +36,6 @@ function hash(bytes: Uint8Array): string { return createHash('sha256').update(by
 
 const version = command(executable, ['--version']);
 assert.equal(version, `agent-browser ${AGENT_BROWSER_VERSION}`, 'Unexpected native CLI version');
-const binary = readFileSync(executable);
 assert.ok(binary.length > 32, 'Native executable is empty');
 if (process.platform === 'linux') {
   assert.equal(binary.subarray(0, 4).toString('hex'), '7f454c46', 'Expected ELF binary');
@@ -40,10 +46,6 @@ if (process.platform === 'linux') {
   assert.equal(binary.readUInt32LE(0), 0xfeedfacf, 'Expected a 64-bit Mach-O binary');
   assert.equal(binary.readUInt32LE(4), process.arch === 'x64' ? 0x01000007 : 0x0100000c, 'Binary architecture differs from the tested runner');
 }
-const nativeSource = path.join(repository, '.validation-tools/agent-browser-exact');
-const upstreamCommit = command('git', ['-C', nativeSource, 'rev-parse', 'HEAD']);
-assert.equal(upstreamCommit, '1165952d74ceed98fdc2dd97190ad41f44dd0e24', 'Native source pin differs from the reviewed extension');
-const patchSha256 = hash(readFileSync(path.join(repository, 'patches/agent-browser-exact-refs.patch')));
 const testedOperatingSystem = process.platform === 'darwin' ? command('sw_vers', ['-productVersion'])
   : /^PRETTY_NAME="([^"]+)"$/m.exec(readFileSync('/etc/os-release', 'utf8'))?.[1];
 assert.ok(testedOperatingSystem, 'The tested OS release must be recorded');
@@ -52,19 +54,18 @@ const archiveName = `agent-browser-${AGENT_BROWSER_VERSION}-${platform}.tar.gz`;
 const staging = mkdtempSync(path.join(tmpdir(), 'agent-browser-native-artifact-'));
 mkdirSync(output, { recursive: true });
 try {
-  copyFileSync(executable, path.join(staging, 'agent-browser'));
+  writeFileSync(path.join(staging, 'agent-browser'), binary);
   chmodSync(path.join(staging, 'agent-browser'), 0o755);
   copyFileSync(path.join(nativeSource, 'LICENSE'), path.join(staging, 'LICENSE'));
-  writeFileSync(path.join(staging, 'NOTICE'), `agent-browser, maintained e2e extension\nUpstream: https://github.com/vercel-labs/agent-browser/tree/${upstreamCommit}\nSource: https://github.com/levicode/e2e/tree/${commit}\nThis binary includes the maintained public patch, SHA-256 ${patchSha256}.\n`);
+  writeFileSync(path.join(staging, 'NOTICE'), `agent-browser, maintained e2e fork\nNative source: ${nativeLock.repository.replace(/\.git$/, '')}/tree/${nativeLock.commit}\nNative Git tree: ${nativeLock.tree}\nUpstream base: ${nativeLock.upstreamRepository.replace(/\.git$/, '')}/tree/${nativeLock.upstreamBase}\ne2e consumer/build source: https://github.com/levicode/e2e/tree/${commit}\nNative contract: ${nativeLock.contractVersion}\nConsumer engine epoch: ${nativeLock.engineEpoch}\n`);
   // tar retains the executable mode that a raw GitHub Actions artifact would discard.
   command('tar', ['-czf', path.join(output, archiveName), '-C', staging, 'agent-browser', 'LICENSE', 'NOTICE']);
   const archive = readFileSync(path.join(output, archiveName));
   const manifest = {
-    schemaVersion: 1,
-    sourceCommit: commit,
-    sourceRepository: 'https://github.com/levicode/e2e',
-    upstreamCommit,
-    patchSha256,
+    schemaVersion: 2,
+    e2eSource: { repository: 'https://github.com/levicode/e2e', commit, tree: e2eTree },
+    nativeSource: nativeLock,
+    sourceLockSha256: hash(readFileSync(path.join(repository, 'packages/agent-browser/native-source.lock.json'))),
     cliVersion: AGENT_BROWSER_VERSION,
     platform: process.platform,
     architecture: process.arch,
@@ -76,7 +77,7 @@ try {
     runnerImageVersion: process.env.ImageVersion,
     runnerMachine: command('uname', ['-m']),
     nodeVersion: process.version,
-    rustVersion: command('rustc', ['--version']),
+    rustVersion: verifyRustToolchain(nativeLock),
     chromiumVersion: command(browser, ['--version']),
     workflowRun: process.env.GITHUB_RUN_ID,
     workflowAttempt: process.env.GITHUB_RUN_ATTEMPT,

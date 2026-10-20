@@ -165,7 +165,7 @@ test('public run records/replays the real icon action and refuses incompatible e
   try {
     // Identity simulation only: production browser hooks record under both incompatible names.
     // This proves core's strict identity boundary, not provenance from a historical implementation.
-    const incompatibleNames = ['web', 'agent-browser-exact-4'];
+    const incompatibleNames = ['web', 'agent-browser-exact-4', 'agent-browser-exact-5'];
     assert.ok(!incompatibleNames.includes(ENGINE_NAME));
     for (const [index, name] of incompatibleNames.entries()) {
       const legacy = defineEngine(Object.create(engine(), { name: { value: name, enumerable: true } }) as Engine);

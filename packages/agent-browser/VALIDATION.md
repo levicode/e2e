@@ -1,5 +1,7 @@
 # Verified validation status
 
+The evidence below belongs to the pre-migration `0.39.1-e2e.4` delivery. It does not validate the prepared `0.39.1-e2e.5` fork-source migration. That candidate needs a reviewed source lock and new Linux/macOS runs before these claims can apply to it.
+
 Updated October 19, 2026. The tested runtime is **`e1c7458d44a6ce0d7b7cb12bfdd727271898ae72`**, native **`0.39.1-e2e.4`**, engine/cache identity **`agent-browser-exact-5`**, engine version **`0.0.0-ab.0.39.1-exact.4-cdp.5`**.
 
 The documented synthetic acceptance gates pass. Private-application UAT and the user's actual computer have not been exercised. This is a source-pinned fork candidate, not an npm release or a claim of unrestricted Web/Playwright compatibility.
@@ -56,6 +58,6 @@ Artifacts record Node 24.19.0, Rust 1.93.0 and Chrome for Testing 156.0.8078.4. 
 - Ambiguous input is not automatically retried or reconnected. A new explicit attempt is required. Lifetime guards cannot undo already-dispatched commands.
 - Real hosted Kernel/smol accounts, private UAT, actual user desktops, Windows and other OS/browser versions remain untested. The local build workspace's Chromium socket restriction was respected; local units are not represented as local browser proof.
 
-A previous privacy epoch failed a repeated real pixel assertion. The current epoch adds decoded-PNG attestation, preserves that assertion, and rejects old cache identities. Transient native target-lifetime stalls were fixed without raising stack or operation limits. Both complete final-source Linux runs pass the added stress regressions. See `UPSTREAM_SYNC.md` before changing either upstream pin or the maintained native patch.
+A previous privacy epoch failed a repeated real pixel assertion. The current epoch adds decoded-PNG attestation, preserves that assertion, and rejects old cache identities. Transient native target-lifetime stalls were fixed without raising stack or operation limits. Both complete final-source Linux runs pass the added stress regressions. See `UPSTREAM_SYNC.md` before changing either upstream pin or the maintained native source.
 
 Later documentation-only commits do not represent new runtime test runs. The evidence above always names the exact tested runtime commit. No npm release, GitHub Release, deployment or main-branch merge is performed by these validation workflows.

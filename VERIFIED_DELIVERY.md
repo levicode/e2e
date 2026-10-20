@@ -1,5 +1,7 @@
 # Verified agent-browser delivery / 已验证交付
 
+Historical delivery evidence for `0.39.1-e2e.4`, not validation of the prepared `0.39.1-e2e.5` source-lock migration.
+
 **Verified October 19, 2026 UTC / 北京时间 2026 年 10 月 20 日**
 
 Tested runtime / 已测试代码：[`e1c7458d44a6ce0d7b7cb12bfdd727271898ae72`](https://github.com/levicode/e2e/tree/e1c7458d44a6ce0d7b7cb12bfdd727271898ae72). Git tree: `b8ffe49922ff2bae9615cc629067f250ab342ebf`.

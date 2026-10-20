@@ -14,7 +14,7 @@ The script packs both packages, installs the tarballs in a fresh directory outsi
 
 ## Run the real browser smoke
 
-Use the reviewed native `agent-browser 0.39.1-e2e.4` build and a Chromium executable. Stock agent-browser is rejected. The native binary and Chromium are separate prerequisites, not bundled inside the adapter tarball.
+Use the reviewed native `agent-browser 0.39.1-e2e.5` build and a Chromium executable. Stock agent-browser is rejected. The native binary and Chromium are separate prerequisites, not bundled inside the adapter tarball.
 
 ```sh
 export E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/reviewed/agent-browser
@@ -40,3 +40,5 @@ pnpm smoke
 ```
 
 `e2e.config.ts` is the complete configuration. `tests/consumer.e2e.ts` shows the typed browser fixture and an agent action driven by the deterministic executor. `run-smoke.ts` starts the synthetic app and checks the report. For an existing app, set `CONSUMER_FIXTURE_URL`, replace the fixture-specific executor and test, then use `pnpm exec e2e run`.
+
+The browser smoke also verifies replacement and clearing for input, textarea and contenteditable controls, including trusted insertion events. It uses the installed package's single native protocol path; old engine epochs cannot supply its replay entries.
