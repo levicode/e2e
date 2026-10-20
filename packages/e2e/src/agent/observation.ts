@@ -74,7 +74,7 @@ export function prepareObservation(
     redactCut: (text: string) => string;
     maxBytes: number;
     /** Model-facing identity; internal node references remain opaque. */
-    nodeId?: (id: string) => string;
+    nodeId?: (id: string) => string | undefined;
     /** Grants pixel-only evidence; omit when this consumer cannot use it. */
     pixelsAllowed?: boolean;
     /** The app base URL's origin: link targets on it render as paths, which navigation resolves against it. */
@@ -376,7 +376,7 @@ export const INTERACTIVE_ROLES: ReadonlySet<string> = new Set([
 export function interactiveNodeCount(observation: Pick<ExecutorObservation, 'text'>): number {
   let count = 0;
   for (const line of observation.text.split('\n')) {
-    const role = /^\s*#\S+ (\S+)/.exec(line)?.[1];
+    const role = /^\s*(?:#\S+|@\S+) (\S+)/.exec(line)?.[1];
     if (role !== undefined && INTERACTIVE_ROLES.has(role)) count += 1;
   }
   return count;
@@ -389,7 +389,7 @@ export function interactiveNodeCount(observation: Pick<ExecutorObservation, 'tex
  * its path than the line does. Selectors stay behind — they are relocation
  * material for the trace cache, not something a brain reasons about.
  */
-export function projectTree(node: RedactedNode, appOrigin?: string, nodeId: (id: string) => string = (id) => id): ExecutorNode {
+export function projectTree(node: RedactedNode, appOrigin?: string): ExecutorNode {
   const attributes =
     node.attributes === undefined
       ? undefined
@@ -397,7 +397,7 @@ export function projectTree(node: RedactedNode, appOrigin?: string, nodeId: (id:
           Object.entries(node.attributes).map(([key, value]) => [key, key === 'href' ? treeHref(value, appOrigin) : value]),
         );
   return {
-    id: nodeId(node.ref.id),
+    id: node.ref.id,
     ...(node.role === undefined ? {} : { role: node.role }),
     ...(node.name === undefined ? {} : { name: node.name }),
     ...(node.text === undefined ? {} : { text: node.text }),
@@ -408,7 +408,7 @@ export function projectTree(node: RedactedNode, appOrigin?: string, nodeId: (id:
     ...(attributes === undefined ? {} : { attributes }),
     ...(node.rect === undefined ? {} : { rect: node.rect }),
     ...(node.framePath === undefined ? {} : { framePath: node.framePath }),
-    ...(node.children === undefined ? {} : { children: node.children.map((child) => projectTree(child, appOrigin, nodeId)) }),
+    ...(node.children === undefined ? {} : { children: node.children.map((child) => projectTree(child, appOrigin)) }),
   };
 }
 
@@ -424,9 +424,16 @@ const MAX_HREF_LENGTH = 256;
  * lines, and the model needs their text, not a filler word. A link target on
  * `appOrigin`, the app base URL's, renders as its path.
  */
-export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, nodeId: (id: string) => string = (id) => id): string {
+export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, nodeId: (id: string) => string | undefined = (id) => id): string {
   const description = describeNode(node, appOrigin);
-  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}#${nodeId(node.ref.id)}${description === '' ? '' : ` ${description}`}`;
+  const id = nodeId(node.ref.id);
+  const prefix = id === undefined ? '' : modelRefLabel(id);
+  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}${prefix}${prefix === '' || description === '' ? '' : ' '}${description}`;
+}
+
+/** The rendered reference token, preserving a native @ prefix exactly. */
+export function modelRefLabel(id: string): string {
+  return id.startsWith('@') ? id : `#${id}`;
 }
 
 /**
@@ -519,7 +526,7 @@ function boundHref(href: string): string {
 export function observationShape(observation: AgentObservation): string | undefined {
   if (observation.kind === 'pixels') return undefined;
   const text = observation.text
-    .replaceAll(/(^|\n)(\s*)#\S+/g, '$1$2')
+    .replaceAll(/(^|\n)(\s*)(?:#\S+|@\S+)/g, '$1$2')
     .replaceAll(/ \[([^\]]*)\]/g, (_match, states: string) => {
       const stable = states.split(' ').filter((state) => state !== 'focused');
       return stable.length === 0 ? '' : ` [${stable.join(' ')}]`;

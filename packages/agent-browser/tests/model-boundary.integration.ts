@@ -60,7 +60,7 @@ function pixelAt(png: Uint8Array, x: number, y: number): number[] {
   return [...previous.subarray(x * channels, x * channels + 3)];
 }
 
-test('HTML OBJECT masked PNG reaches model request and compact alias returns to the real action', { timeout: 180_000 }, async () => {
+test('HTML OBJECT masked PNG reaches model request and native reference returns to the real action', { timeout: 180_000 }, async () => {
   assert.ok(process.env.E2E_AGENT_BROWSER_EXECUTABLE, 'A verified native executable is required');
   let clicks = 0;
   const server = createServer((request, response) => {
@@ -94,8 +94,8 @@ test('HTML OBJECT masked PNG reaches model request and compact alias returns to 
         const lines = text.replaceAll('\\n', '\n').replaceAll('\\"', '"').split('\n');
         const line = lines.findLast(value => value.includes('button "Commit fixture"'));
         assert.ok(line, 'The button must be present in the actual model request');
-        sentAlias = /#(n[0-9a-z]+)\b/.exec(line)?.[1] ?? '';
-        assert.ok(sentAlias && sentAlias.length < 12, 'The model must receive a compact core reference');
+        sentAlias = /(@e\d+)\b/.exec(line)?.[1] ?? '';
+        assert.ok(sentAlias && sentAlias.length < 12, 'The model must receive a native agent-browser reference');
         toolName = 'tap'; input = { target: sentAlias };
       } else {
         assert.equal(calls, 3, 'A screenshot, one action, and one conclusion suffice');

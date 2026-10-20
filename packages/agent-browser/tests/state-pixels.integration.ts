@@ -286,7 +286,8 @@ test('HTML OBJECT screenshot proof rejects transforms and mutations without retu
       await navigate(cdp, target, `${origin}/`);
       await evaluate(cdp, target, `document.querySelector('#outer').style.cssText+=';${declaration}';true`);
       const previous = captures;
-      await assert.rejects(captureMaskedPixels(cdp, target, operation()), /transformed-owner/);
+      // macOS may reject transformed masks before reaching the owner geometry proof.
+      await assert.rejects(captureMaskedPixels(cdp, target, operation()), /(?:transformed-owner|verify-before-masks)/);
       assert.equal(captures, previous, 'Unproven geometry must fail before capture');
       assert.equal(await evaluate(cdp, target, `document.querySelector('#outer').contentDocument.querySelectorAll('[popover]').length`), 0);
     }

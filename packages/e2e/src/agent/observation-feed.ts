@@ -189,18 +189,19 @@ export class ObservationFeed {
       return { ...metadata, text: observation.text, treeUnavailable: true, truncated: true, ...pixels };
     }
     for (const line of observation.text.split('\n')) {
-      const alias = /^\s*#(n[0-9a-z]+)(?:\s|$)/u.exec(line)?.[1];
+      const match = /^\s*(?:#(\S+)|(@\S+))(?:\s|$)/u.exec(line);
+      const alias = match?.[1] ?? match?.[2];
       if (alias !== undefined) this.refs.expose(alias);
     }
     if (options.tree === true) {
-      for (const id of observation.nodes.keys()) this.refs.expose(this.refs.encode(id));
+      for (const id of observation.nodes.keys()) this.refs.exposeOpaque(id);
     }
     return {
       ...metadata,
       text: observation.text,
       truncated: observation.truncated,
       ...(observation.keyboardVisible === undefined ? {} : { keyboardVisible: observation.keyboardVisible }),
-      ...(options.tree === true ? { tree: projectTree(observation.tree, this.runtime.app.base?.origin, this.refs.encode) } : {}),
+      ...(options.tree === true ? { tree: projectTree(observation.tree, this.runtime.app.base?.origin) } : {}),
       ...pixels,
     };
   }
@@ -402,10 +403,12 @@ export class ObservationFeed {
       tainted: () => this.runtime.exposure.withholdsModelPixels,
     });
     if (raw.kind === 'pixels') {
+      this.refs.invalidate();
       this.semanticHistory = false;
       this.newest = undefined;
       this.recent.length = 0;
     }
+    if (raw.kind === 'semantic' && this.refs.observe(raw.tree)) this.recent.length = 0;
     const prepared = prepareObservation(raw, {
       redact: this.runtime.redact,
       redactCut: this.runtime.redactCut,

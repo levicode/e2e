@@ -103,5 +103,5 @@ jobs:
           echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
           if [[ "$RUNNER_OS" == Linux ]]; then echo 'E2E_CHROMIUM_NO_SANDBOX=1' >> "$GITHUB_ENV"; fi
-      - name: Run focused HTML OBJECT geometry regressions
-        run: node --test --test-name-pattern "^HTML OBJECT" packages/agent-browser/tests/state-pixels.integration.ts
+      - name: Run focused HTML OBJECT and native model reference regressions
+        run: node --test --test-name-pattern "^HTML OBJECT" packages/agent-browser/tests/state-pixels.integration.ts packages/agent-browser/tests/model-boundary.integration.ts

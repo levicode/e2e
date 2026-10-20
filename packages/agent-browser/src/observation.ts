@@ -137,7 +137,7 @@ export class SnapshotAdapter {
     this.selectors.clear();
     const revision = `${this.identity}:${this.preserveRefs ? 'trace:' : ''}${++this.generation}`;
     const raw = await this.snapshot(context);
-    const parsed = parseSnapshot(raw, revision);
+    const parsed = parseSnapshot(raw, revision, this.identity);
     const surface = await this.surface(context);
     if (this.readMetadata === undefined) await this.enrich(parsed, context);
     else {
@@ -162,7 +162,7 @@ export class SnapshotAdapter {
       if (mutable.selection !== undefined) mutable.selection = mutable.selection.slice(0, OBSERVED_TEXT_LIMIT);
     }
     const root: SemanticNode = {
-      ref: { id: ROOT_ID, revision }, role: 'document',
+      ref: { id: ROOT_ID, revision, modelRef: null, modelRefScope: this.identity }, role: 'document',
       rect: { x: 0, y: 0, width: surface.width, height: surface.height },
       children: parsed.roots,
     };
@@ -185,7 +185,7 @@ export class SnapshotAdapter {
     const revision = `${this.identity}:${this.preserveRefs ? 'trace:' : ''}located:${++this.generation}`;
     const result = entries.map(({ nativeRef, node }) => {
       if (!REF_ID.test(nativeRef)) throw malformed();
-      const projected: MutableNode = { ...node, ref: { id: `${revision}:${nativeRef}`, revision }, children: [] };
+      const projected: MutableNode = { ...node, ref: { id: `${revision}:${nativeRef}`, revision, modelRef: `@${nativeRef}`, modelRefScope: this.identity }, children: [] };
       if (projected.states?.secure === true) { delete projected.value; delete projected.selection; delete projected.text; }
       this.located.set(projected.ref.id, `@${nativeRef}`);
       return projected;
@@ -205,10 +205,10 @@ export class SnapshotAdapter {
       const ids = new Set<string>();
       for (const path of paths) {
         const raw = await this.snapshot(context, path);
-        const parsed = parseSnapshot(raw, 'selector-probe');
+        const parsed = parseSnapshot(raw, 'selector-probe', this.identity);
         const first = parsed.roots[0];
         // A descendant ref is never substituted for an unreferenced target.
-        const id = first?.ref.id.split(':').at(-1);
+        const id = first?.ref.modelRef?.match(/^@(e\d+)$/)?.[1];
         if (id === undefined || !REF_ID.test(id) || !Object.hasOwn(raw.refs, id)) {
           this.invalidate();
           throw new EngineError('UNSUPPORTED_CAPABILITY', 'The CSS target has no agent-browser element ref; it cannot be bound safely', { retryable: false });
@@ -358,7 +358,7 @@ export class SnapshotAdapter {
 }
 
 /** Parses only structural syntax; raw value suffixes never enter a semantic node. */
-function parseSnapshot(raw: RawSnapshot, revision: string): ParsedTree {
+function parseSnapshot(raw: RawSnapshot, revision: string, modelRefScope: string): ParsedTree {
   const roots: MutableNode[] = [];
   const refs = new Map<string, MutableNode>();
   const parents = new Map<MutableNode, MutableNode>();
@@ -385,7 +385,7 @@ function parseSnapshot(raw: RawSnapshot, revision: string): ParsedTree {
       } catch { throw malformed(); }
     }
     const node: MutableNode = {
-      ref: { id: `${revision}:${ref ?? `text:${++synthetic}`}`, revision },
+      ref: { id: `${revision}:${ref ?? `text:${++synthetic}`}`, revision, modelRef: ref === undefined ? null : `@${ref}`, modelRefScope },
       role: normalizeRole(authoritative?.role ?? role), children: [],
       ...(name === undefined ? {} : { name: name.slice(0, OBSERVED_NAME_LIMIT) }),
       ...((role === 'StaticText' || role === 'text') && name !== undefined ? { text: name.slice(0, OBSERVED_TEXT_LIMIT) } : {}),
@@ -416,7 +416,7 @@ function parseSnapshot(raw: RawSnapshot, revision: string): ParsedTree {
   // ref-bearing node. Keeping it is critical for unnamed pointer/font icons.
   for (const [id, rawNode] of Object.entries(raw.refs)) {
     if (refs.has(id)) continue;
-    const node: MutableNode = { ref: { id: `${revision}:${id}`, revision }, role: normalizeRole(rawNode.role), name: rawNode.name.slice(0, OBSERVED_NAME_LIMIT), children: [] };
+    const node: MutableNode = { ref: { id: `${revision}:${id}`, revision, modelRef: `@${id}`, modelRefScope }, role: normalizeRole(rawNode.role), name: rawNode.name.slice(0, OBSERVED_NAME_LIMIT), children: [] };
     roots.push(node);
     refs.set(id, node);
   }

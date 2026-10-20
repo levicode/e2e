@@ -232,6 +232,8 @@ export class Invocation {
       { kind: 'observation', phase: 'agent.observe' },
       async () => {
         const raw = await this.captureObservation(pixels);
+        if (raw.kind === 'semantic') this.nodeRefs.observe(raw.tree);
+        else this.nodeRefs.invalidate();
         const prepared = prepareObservation(raw, {
           nodeId: this.nodeRefs.encode,
           redact: this.runtime.redact,

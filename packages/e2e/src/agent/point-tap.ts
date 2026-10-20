@@ -1,3 +1,4 @@
+import { modelRefLabel } from './observation.ts';
 /**
  * Point taps: how a viewport point an executor names is routed onto the
  * tree, and how the result reads back. A point that a listed, enabled
@@ -52,7 +53,7 @@ export interface HitTest {
 export function hitTest(observation: AgentObservation, point: ViewportPoint): HitTest {
   if (observation.kind === 'pixels') return { control: undefined, under: undefined };
   return {
-    control: innermostAt(observation, point, (node) => INTERACTIVE_ROLES.has(node.role ?? '') && node.states?.disabled !== true),
+    control: innermostAt(observation, point, (node) => node.ref.modelRef !== null && INTERACTIVE_ROLES.has(node.role ?? '') && node.states?.disabled !== true),
     under: innermostAt(observation, point),
   };
 }
@@ -99,15 +100,16 @@ function depthOf(id: string, parents: ReadonlyMap<string, string>): number {
 export function nodeLine(observation: Pick<AgentObservation, 'text'>, id: string): string {
   for (const line of observation.text.split('\n')) {
     const trimmed = line.trimStart();
-    if (trimmed.startsWith(`#${id} `) || trimmed === `#${id}`) return trimmed;
+    const marker = modelRefLabel(id);
+    if (trimmed.startsWith(`${marker} `) || trimmed === marker) return trimmed;
   }
-  return `#${id}`;
+  return modelRefLabel(id);
 }
 
 /** How a point result names what it found: by the observation's own line, which the model holds. */
 export interface PointProse {
   readonly observation: Pick<AgentObservation, 'text'>;
-  readonly nodeId?: (id: string) => string;
+  readonly nodeId?: (id: string) => string | undefined;
 }
 
 /**
@@ -154,5 +156,6 @@ export function describePointHit(
 
 /** A node as prose: its observation line, which the model holds. */
 function describeNode(prose: PointProse, node: RedactedNode): string {
-  return nodeLine(prose.observation, prose.nodeId?.(node.ref.id) ?? node.ref.id);
+  const id = prose.nodeId === undefined ? node.ref.id : prose.nodeId(node.ref.id);
+  return id === undefined ? 'a structural node with no action reference' : nodeLine(prose.observation, id);
 }

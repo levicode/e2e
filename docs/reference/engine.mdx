@@ -862,10 +862,13 @@ export interface EngineDisposeContext extends EngineCleanupContext {
 
 ### Observation
 
-Keep `NodeRef.id` opaque and complete. Core assigns compact references at the
-model and executor boundary before budgeting the observation text. Engines
-continue to receive their original refs, and replay stores target descriptors
-rather than these invocation-local aliases.
+Keep `NodeRef.id` opaque and complete. An engine may set `modelRef` to its
+canonical model-facing reference, or `null` for structural nodes that have no
+action reference. Omit it to preserve the existing `id` presentation. References
+must be unique within a capture. `modelRefScope` identifies the engine instance
+internally; changing it invalidates outstanding model requests. Neither field
+changes dispatch identity or the descriptors stored for replay. Custom executor
+node trees retain the existing opaque `id` field.
 
 `observe` returns one fresh semantic snapshot of the surface under test.
 

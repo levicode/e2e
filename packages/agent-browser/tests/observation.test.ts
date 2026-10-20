@@ -74,6 +74,9 @@ test('preserves every default ref, including unnamed offscreen generic and font-
   const result = await adapter.observe(context);
   const all = nodes(result.root);
   assert.deepEqual(all.filter((node) => /:e\d+$/.test(node.ref.id)).map((node) => node.ref.id.split(':').at(-1)).toSorted(), ['e1', 'e2', 'e3', 'e4']);
+  assert.deepEqual(all.flatMap(node => node.ref.modelRef == null ? [] : [node.ref.modelRef]).toSorted(), ['@e1', '@e2', '@e3', '@e4']);
+  assert.equal(result.root.ref.modelRef, null, 'The structural root must not fabricate a native element reference');
+  assert.equal(all.find(node => node.text === 'Status ready')?.ref.modelRef, null, 'Unreferenced native text remains visible but has no model action target');
   const offscreen = all.find((node) => node.ref.id.endsWith(':e2'))!;
   assert.equal(offscreen.name, '');
   assert.equal(offscreen.attributes?.['agent-browser:interaction'], 'clickable');
@@ -114,6 +117,9 @@ test('latest observed identity resolves with harness revisions, while root survi
   assert.throws(() => adapter.resolve(first.root.children![0]!.ref), errorCode('NODE_STALE'));
   assert.equal(adapter.resolve({ ...second.root.children![0]!.ref, revision: 'observe:7' }), '@e1');
   assert.notEqual(first.root.children![0]!.ref.id, second.root.children![0]!.ref.id);
+  assert.equal(first.root.children![0]!.ref.modelRef, '@e1');
+  assert.equal(first.root.ref.modelRefScope, second.root.ref.modelRefScope, 'Ordinary observation generations share one native instance scope');
+  assert.equal(second.root.children![0]!.ref.modelRef, '@e1', 'Native e1 is preserved while internal generation identity changes');
   adapter.invalidate();
   assert.equal(adapter.isRoot(first.root.ref), true);
   assert.equal(adapter.resolve(first.root.ref), 'html');
@@ -200,9 +206,11 @@ test('sequential locator resolves retain exact source and destination across har
   const adapter = new SnapshotAdapter(transport);
   const [first] = adapter.adopt([{ nativeRef: 'e100', node: { role: 'textbox', name: 'Imported', states: { secure: true }, value: 'never-keep' } }]);
   assert.equal(adapter.resolve(first!.ref), '@e100');
+  assert.equal(first!.ref.modelRef, '@e100');
   assert.equal(first!.value, undefined);
   const [second] = adapter.adopt([{ nativeRef: 'e101', node: { role: 'button', name: 'Next' } }]);
   assert.equal(adapter.resolve(second!.ref), '@e101');
+  assert.equal(second!.ref.modelRef, '@e101');
   assert.equal(adapter.resolve({ ...first!.ref, revision: 'locate:1' }), '@e100');
   assert.equal(adapter.resolve({ ...second!.ref, revision: 'locate:2' }), '@e101');
   await adapter.observe(context);
@@ -278,4 +286,16 @@ test('exact snapshot receipt is required for every observation', async () => {
     assert.equal(transport.calls.length, 1);
     assert.ok(transport.calls[0]?.args.includes('--exact-refs'));
   }
+});
+
+
+test('native presentation stays identical across adapters but internal scopes never do', async () => {
+  const fixture = { snapshot: '- button "Save" [ref=e1]', refs: { e1: { role: 'button', name: 'Save' } } };
+  const first = await new SnapshotAdapter(new FakeTransport(fixture)).observe(context);
+  const next = await new SnapshotAdapter(new FakeTransport(fixture)).observe(context);
+  assert.equal(first.root.children![0]!.ref.modelRef, '@e1');
+  assert.equal(next.root.children![0]!.ref.modelRef, '@e1');
+  assert.ok(first.root.ref.modelRefScope);
+  assert.notEqual(first.root.ref.modelRefScope, next.root.ref.modelRefScope);
+  assert.equal(next.root.ref.modelRefScope, next.root.children![0]!.ref.modelRefScope);
 });

@@ -170,7 +170,7 @@ export class ActionDispatcher {
       throw new TestError('INVALID_ARGUMENT', 'typeText value must be a string');
     }
     return this.runAction('typeText', async () => {
-      await this.session.keyboard.type(value, { replace }, this.accounting.actionOperation());
+      await this.session.keyboard.type(value, { replace }, this.actionOperation());
       return { name: 'typeText', value, replace };
     });
   }
@@ -178,14 +178,14 @@ export class ActionDispatcher {
   private pressKey(key: string): Promise<void> {
     requireKey(key);
     return this.runAction('pressKey', async () => {
-      await this.session.keyboard.press(key, this.accounting.actionOperation());
+      await this.session.keyboard.press(key, this.actionOperation());
       return { name: 'pressKey', key };
     });
   }
 
   private dismissKeyboard(): Promise<void> {
     return this.runAction('dismissKeyboard', async () => {
-      await this.session.keyboard.dismiss(this.accounting.actionOperation());
+      await this.session.keyboard.dismiss(this.actionOperation());
       return { name: 'dismissKeyboard' };
     });
   }
@@ -253,7 +253,7 @@ export class ActionDispatcher {
       // the tree's root is the page itself and follows no layout shift.
       const under = hit.under === undefined || (observation.kind === 'semantic' && hit.under.ref.id === observation.tree.ref.id) ? undefined : hit.under;
       await this.runActionNow(verb, async () => {
-        await this.session.performAt(clamped, { kind: nodeVerb }, this.accounting.actionOperation());
+        await this.session.performAt(clamped, { kind: nodeVerb }, this.actionOperation());
         return {
           name: verb,
           point: clamped,
@@ -285,6 +285,12 @@ export class ActionDispatcher {
     return call.mutates ? this.queue.run(run) : run();
   }
 
+  /** Rechecks request identity immediately before every engine mutation and stale retry. */
+  private actionOperation() {
+    this.feed.refs.assertCurrent();
+    return this.accounting.actionOperation();
+  }
+
   private get session() {
     return this.runtime.engine.session;
   }
@@ -301,7 +307,7 @@ export class ActionDispatcher {
   private async performNode(name: NodeActionName, node: RedactedNode, modifiers?: readonly KeyModifier[]): Promise<RecordableAction> {
     const kind = NODE_ACTION_KINDS[name];
     const action: LocatorAction = modifiers !== undefined && isTapActionName(kind) ? { kind, modifiers } : { kind };
-    await this.session.perform(node.ref, action, this.accounting.actionOperation());
+    await this.session.perform(node.ref, action, this.actionOperation());
     return { name, node, ...(modifiers === undefined ? {} : { modifiers }) };
   }
 
@@ -316,7 +322,7 @@ export class ActionDispatcher {
     }
     const kind = checked ? 'check' : 'uncheck';
     return this.commitTargeted(kind, target, async (node) => {
-      await this.session.perform(node.ref, { kind }, this.accounting.actionOperation());
+      await this.session.perform(node.ref, { kind }, this.actionOperation());
       return { name: 'check', node, checked };
     });
   }
@@ -330,7 +336,7 @@ export class ActionDispatcher {
   private drag(source: ExecutorTarget, destination: ExecutorTarget): Promise<void> {
     return this.commitTargeted('dragTo', source, async (node) => {
       const dropped = this.feed.resolve(destination);
-      await this.session.perform(node.ref, { kind: 'dragTo', target: dropped.node.ref }, this.accounting.actionOperation());
+      await this.session.perform(node.ref, { kind: 'dragTo', target: dropped.node.ref }, this.actionOperation());
       return { name: 'drag', node, destination: { node: dropped.node, ...this.placementOf(dropped) } };
     });
   }
@@ -343,7 +349,7 @@ export class ActionDispatcher {
   private upload(target: ExecutorTarget, paths: readonly string[]): Promise<void> {
     const authorized = authorizeUploadPaths(this.policyHost(), paths, this.runtime.config.projectRoot);
     return this.commitTargeted('setInputFiles', target, async (node) => {
-      await this.session.perform(node.ref, { kind: 'setInputFiles', paths: authorized.resolved }, this.accounting.actionOperation());
+      await this.session.perform(node.ref, { kind: 'setInputFiles', paths: authorized.resolved }, this.actionOperation());
       return { name: 'upload', node, paths: authorized.given };
     });
   }
@@ -361,7 +367,7 @@ export class ActionDispatcher {
       throw new TestError('INVALID_ARGUMENT', 'type value must be a string');
     }
     return this.commitTargeted('type', target, async (node) => {
-      await this.session.perform(node.ref, { kind: 'fill', value, sensitive: false }, this.accounting.actionOperation());
+      await this.session.perform(node.ref, { kind: 'fill', value, sensitive: false }, this.actionOperation());
       return { name: 'type', node, value };
     });
   }
@@ -371,7 +377,7 @@ export class ActionDispatcher {
     // bad argument is INVALID_ARGUMENT to the executor and never a failed action.
     requireKey(key);
     return this.commitTargeted('press', target, async (node) => {
-      await this.session.perform(node.ref, { kind: 'press', key }, this.accounting.actionOperation());
+      await this.session.perform(node.ref, { kind: 'press', key }, this.actionOperation());
       return { name: 'press', node, key };
     });
   }
@@ -381,7 +387,7 @@ export class ActionDispatcher {
       throw new TestError('INVALID_ARGUMENT', 'select value must be a non-empty option label');
     }
     return this.commitTargeted('selectOption', target, async (node) => {
-      await this.session.perform(node.ref, { kind: 'selectOption', value }, this.accounting.actionOperation());
+      await this.session.perform(node.ref, { kind: 'selectOption', value }, this.actionOperation());
       return { name: 'select', node, value };
     });
   }
@@ -391,7 +397,7 @@ export class ActionDispatcher {
       throw new TestError('INVALID_ARGUMENT', `invalid scroll direction "${String(direction)}"`);
     }
     const viewport = async (): Promise<RecordableAction> => {
-      await this.session.swipe(direction, SCROLL_MOMENTUM, this.accounting.actionOperation());
+      await this.session.swipe(direction, SCROLL_MOMENTUM, this.actionOperation());
       return { name: 'scroll', direction };
     };
     if (target === undefined) return this.runAction('scroll', viewport);
@@ -404,7 +410,7 @@ export class ActionDispatcher {
         await this.session.perform(
           node.ref,
           { kind: 'swipe', direction, momentum: SCROLL_MOMENTUM },
-          this.accounting.actionOperation(),
+          this.actionOperation(),
         );
         // How much of the screen the list covered decides, on replay, whether
         // a list that cannot be re-found scrolls as the viewport.
@@ -462,7 +468,7 @@ export class ActionDispatcher {
           // that cannot, a device lists what it draws, takes one more page
           // for a row still past the edge.
           if (this.verbs.has('scrollTo')) {
-            await this.session.perform(found.ref, { kind: 'scrollIntoView' }, this.accounting.actionOperation());
+            await this.session.perform(found.ref, { kind: 'scrollIntoView' }, this.actionOperation());
             return { name: 'scrollUntil', text, direction, screens, ...paged };
           }
           if (isInViewport(found.rect, observation.viewport)) return { name: 'scrollUntil', text, direction, screens, ...paged };
@@ -497,11 +503,11 @@ export class ActionDispatcher {
   ): Promise<{ paged: Pick<Extract<RecordableAction, { name: 'scrollUntil' }>, 'node' | 'spans'>; within: ExecutorTarget | undefined }> {
     const resolved = list === undefined ? undefined : this.scrollTargetOrLost(list);
     if (resolved === undefined) {
-      await this.session.swipe(direction, SCROLL_MOMENTUM, this.accounting.actionOperation());
+      await this.session.swipe(direction, SCROLL_MOMENTUM, this.actionOperation());
       return { paged: {}, within: undefined };
     }
     const { node, observation } = resolved;
-    await this.session.perform(node.ref, { kind: 'swipe', direction, momentum: SCROLL_MOMENTUM }, this.accounting.actionOperation());
+    await this.session.perform(node.ref, { kind: 'swipe', direction, momentum: SCROLL_MOMENTUM }, this.actionOperation());
     return { paged: { node, ...(node.rect === undefined ? {} : { spans: viewportShare(node.rect, observation.viewport) }) }, within: list };
   }
 
@@ -550,7 +556,7 @@ export class ActionDispatcher {
       await this.session.perform(
         node.ref,
         { kind: 'fill', value: plaintext, sensitive: true },
-        this.accounting.actionOperation(),
+        this.actionOperation(),
       );
       // Recorded by stable name only; replay re-runs the full authorization.
       return { name: 'typeSecret', node, secret: name };
@@ -569,6 +575,7 @@ export class ActionDispatcher {
   }
 
   private async runActionNow(name: GrammarActionName, body: () => Promise<RecordableAction>): Promise<void> {
+    this.feed.refs.assertCurrent();
     this.accounting.reserveAction();
     const redaction = { redact: this.runtime.redact, redactCut: this.runtime.redactCut };
     let action: RecordableAction;

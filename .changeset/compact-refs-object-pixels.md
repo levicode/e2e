@@ -3,4 +3,4 @@
 "@e2e-dev/agent-browser": patch
 ---
 
-Use compact invocation-scoped node references at the model boundary while preserving complete engine identities and stale-target checks. Prove safe HTML OBJECT document geometry before returning masked screenshots; reject unsupported embedded content without returning image bytes.
+Preserve engine-native model references such as agent-browser @e221 while keeping complete engine identities, request scopes, and stale-target checks internal. Prove safe HTML OBJECT document geometry before returning masked screenshots; reject unsupported embedded content without returning image bytes.

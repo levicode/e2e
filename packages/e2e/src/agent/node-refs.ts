@@ -1,62 +1,109 @@
 /** Short executor references, isolated from the engine's opaque node identities. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ToolSet, ToolExecutionOptions } from 'ai';
+import type { SemanticNode } from '../engine/surface.ts';
+import { modelRefLabel } from './observation.ts';
 import { AgentError } from './error.ts';
 import type { ExecutorActions, ExecutorTarget, StepExecutorContext } from './executor.ts';
 
-type RefScope = ReadonlyMap<string, string>;
+interface RefScope { readonly bindings: ReadonlyMap<string, string>; readonly epoch: symbol }
 const contexts = new WeakMap<StepExecutorContext, NodeRefs>();
 const REQUEST_REFS = Symbol('request node references');
 
-/** One invocation's monotonically allocated references; an expired alias is never recycled. */
+/** One invocation's engine-provided display references and immutable request bindings. */
 export class NodeRefs {
-  private next = 0;
   private readonly byId = new Map<string, string>();
   private readonly byAlias = new Map<string, string>();
   private readonly issued = new Map<string, string>();
-  private readonly request = new AsyncLocalStorage<Map<string, string>>();
+  private readonly request = new AsyncLocalStorage<{ bindings: Map<string, string>; epoch: symbol }>();
+  private epoch = Symbol();
+  private engineScope: string | undefined;
 
-  /** Encodes the complete opaque identity, without interpreting any of its components. */
-  encode = (id: string): string => {
-    let alias = this.byId.get(id);
-    if (alias === undefined) {
-      alias = `n${(++this.next).toString(36)}`;
+  /** Validates the whole capture before updating any display-to-identity binding. */
+  observe(tree: SemanticNode): boolean {
+    const scopes = new Set<string>();
+    const current = new Map<string, string>();
+    const visit = (node: SemanticNode): void => {
+      if (node.ref.modelRefScope !== undefined) scopes.add(node.ref.modelRefScope);
+      const alias = node.ref.modelRef === undefined ? node.ref.id : node.ref.modelRef;
+      if (alias !== null) {
+        if (typeof alias !== 'string' || alias === '' || /\s/u.test(alias)) throw new AgentError('ACTION_FAILED', 'engine supplied an invalid model reference');
+        const previous = current.get(alias);
+        if (previous !== undefined && previous !== node.ref.id) throw new AgentError('ACTION_FAILED', 'engine supplied duplicate model references in one observation');
+        current.set(alias, node.ref.id);
+      }
+      for (const child of node.children ?? []) visit(child);
+    };
+    visit(tree);
+    const scope = JSON.stringify([...scopes].toSorted());
+    const changed = this.engineScope !== undefined && this.engineScope !== scope;
+    if (changed) {
+      this.byId.clear(); this.byAlias.clear(); this.issued.clear();
+      this.epoch = Symbol();
+    }
+    this.engineScope = scope;
+    for (const [alias, id] of current) {
       this.byId.set(id, alias);
       this.byAlias.set(alias, id);
     }
-    return alias;
-  };
+    return changed;
+  }
+
+  /** Looks up an explicit engine display identity; structural nodes have none. */
+  encode = (id: string): string | undefined => this.byId.get(id);
 
   /** Rejects unknown or foreign input before the ordinary historical resolution runs. */
   decode(target: ExecutorTarget): ExecutorTarget {
-    const alias = typeof target?.id === 'string' ? target.id.replace(/^#/, '') : '';
-    const id = (this.request.getStore() ?? this.issued).get(alias);
+    const alias = typeof target?.id === 'string' ? target.id : '';
+    const request = this.request.getStore();
+    this.assertCurrent();
+    const scope = request?.bindings ?? this.issued;
+    const id = scope.get(alias) ?? (!alias.startsWith('#@') && alias.startsWith('#') ? scope.get(alias.slice(1)) : undefined);
     if (id === undefined) throw new AgentError('LOCATOR_NOT_FOUND', 'node reference was not issued for this request or has expired; observe and use a listed id');
     return { id };
   }
 
+  /** Checks again at each actual dispatch, including retries after a relocation capture. */
+  assertCurrent(): void {
+    const request = this.request.getStore();
+    if (request !== undefined && request.epoch !== this.epoch) throw new AgentError('LOCATOR_NOT_FOUND', 'the engine reference scope changed; this model request has expired');
+  }
+
   /** Makes only references actually handed to an executor addressable. */
-  expose(alias: string): void {
+  expose(alias: string | undefined): void {
+    if (alias === undefined) return;
     const id = this.byAlias.get(alias);
     if (id !== undefined) this.issued.set(alias, id);
   }
 
-  /** Drops identities no retained observation can resolve, without resetting the counter. */
+  /** Missing semantic evidence invalidates outstanding requests, even if the same spelling returns later. */
+  invalidate(): void {
+    this.byId.clear(); this.byAlias.clear(); this.issued.clear();
+    this.epoch = Symbol();
+  }
+
+  /** Raw tree IDs are granted only to trusted executors that explicitly requested that tree. */
+  exposeOpaque(id: string): void { this.issued.set(id, id); }
+
+  /** Drops only retired bindings; an older capture must not remove a newer binding of the same native ref. */
   retain(ids: ReadonlySet<string>): void {
+    for (const [key, id] of this.issued) if (!ids.has(id)) this.issued.delete(key);
     for (const [id, alias] of this.byId) {
       if (ids.has(id)) continue;
       this.byId.delete(id);
-      this.byAlias.delete(alias);
-      this.issued.delete(alias);
+      if (this.byAlias.get(alias) === id) this.byAlias.delete(alias);
+      if (this.issued.get(alias) === id) this.issued.delete(alias);
     }
   }
 
   /** Rewrites diagnostic references only; application text is not an identifier protocol. */
   prose(text: string): string {
-    return text.replace(/#([^\s,;()]+)(?=$|[\s,;()])/g, (whole, id: string) => {
-      const alias = this.byId.get(id);
-      return alias === undefined ? whole : `#${alias}`;
-    });
+    const aliases = new Map(this.byId);
+    for (const [alias, id] of this.request.getStore()?.bindings ?? []) aliases.set(id, alias);
+    const ids = [...aliases.keys()].toSorted((a, b) => b.length - a.length);
+    if (ids.length === 0) return text;
+    const pattern = ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    return text.replace(new RegExp(`#(${pattern})(?=$|[\\s.,;!?()\\[\\]{}"'])`, 'g'), (_whole, id: string) => modelRefLabel(aliases.get(id)!));
   }
 
   /** Wraps every public action; replay continues to use the unwrapped dispatcher. */
@@ -85,10 +132,12 @@ export class NodeRefs {
       pressKey: (k) => raw.pressKey(k),
       dismissKeyboard: () => raw.dismissKeyboard(),
       hitTest: async (p) => {
-        const hit = await raw.hitTest(p);
-        return { ...hit, summary: this.prose(hit.summary),
-          ...(hit.control === undefined ? {} : { control: { id: this.output(hit.control.id) } }),
-          ...(hit.under === undefined ? {} : { under: { id: this.output(hit.under.id) } }),
+        const { control: rawControl, under: rawUnder, ...hit } = await raw.hitTest(p);
+        const control = this.output(rawControl?.id);
+        const under = this.output(rawUnder?.id);
+        return { ...hit,
+          ...(control === undefined ? {} : { control: { id: control } }),
+          ...(under === undefined ? {} : { under: { id: under } }),
         };
       },
       tapAt: async (p) => this.point(await raw.tapAt(p)),
@@ -96,30 +145,39 @@ export class NodeRefs {
     };
     for (const name of Object.keys(actions) as (keyof ExecutorActions)[]) {
       const action = actions[name];
-      Object.assign(actions, { [name]: async (...args: never[]) => {
-        try { return await (action as (...args: never[]) => Promise<unknown>)(...args); }
-        catch (error) {
-          if (error instanceof Error) error.message = this.prose(error.message);
-          throw error;
-        }
+      Object.assign(actions, { [name]: (...args: never[]) => {
+        const run = async () => {
+          try { return await (action as (...args: never[]) => Promise<unknown>)(...args); }
+          catch (error) {
+            if (error instanceof Error) {
+              error.message = this.prose(error.message);
+              if (error instanceof AgentError) Object.assign(error, { explanation: error.message });
+            }
+            throw error;
+          }
+        };
+        return this.request.getStore() === undefined ? this.run(this.scope(), run) : run();
       } });
     }
     return actions;
   }
 
   /** Publishes an explicit point lookup result to the executor that requested it. */
-  private output(id: string): string {
+  private output(id: string | undefined): string | undefined {
+    if (id === undefined) return undefined;
+    this.assertCurrent();
     const alias = this.encode(id);
+    if (alias === undefined) return undefined;
     this.expose(alias);
-    this.request.getStore()?.set(alias, id);
+    this.request.getStore()?.bindings.set(alias, id);
     return alias;
   }
 
   /** Converts the point result without changing what the dispatcher actually acted on. */
   private point(result: Awaited<ReturnType<ExecutorActions['tapAt']>>) {
-    return { ...result, summary: this.prose(result.summary),
-      ...(result.target === undefined ? {} : { target: { id: this.output(result.target.id) } }),
-    };
+    const { target: rawTarget, ...rest } = result;
+    const target = this.output(rawTarget?.id);
+    return { ...rest, ...(target === undefined ? {} : { target: { id: target } }) };
   }
 
   /** Associates a context with its private identity map without expanding the public API. */
@@ -129,10 +187,10 @@ export class NodeRefs {
   }
 
   /** Freezes the aliases that existed when one model request was assembled. */
-  scope(): RefScope { return new Map(this.issued); }
+  scope(): RefScope { return { bindings: new Map(this.issued), epoch: this.epoch }; }
 
   /** Runs a tool against the immutable scope of the request that produced it. */
-  run<T>(scope: RefScope, body: () => T): T { return this.request.run(new Map(scope), body); }
+  run<T>(scope: RefScope, body: () => T): T { return this.request.run({ bindings: new Map(scope.bindings), epoch: scope.epoch }, body); }
 }
 
 /** Tool context is request-local and is never part of the provider payload. */

@@ -35,6 +35,7 @@ export const FULL_SCREEN_PATTERN = /Current screen \(revision /;
 /** The screen as the model last received it, indexed for comparison. */
 interface ShownScreen {
   readonly revision: string;
+  readonly unaddressed: string;
   /** Node lines in document order, without indentation or focus; the truncation marker is not a node. */
   readonly order: readonly string[];
   readonly byId: ReadonlyMap<string, string>;
@@ -46,7 +47,7 @@ interface ShownScreen {
 }
 
 /** A node line whose role is the on-screen keyboard, as device trees list it. */
-const KEYBOARD_LINE = /^#\S+ keyboard\b/;
+const KEYBOARD_LINE = /^(?:#\S+|@\S+) keyboard\b/;
 
 /**
  * What the model needs to hear when an action closed the keyboard: on a
@@ -157,6 +158,7 @@ export class ScreenPresenter {
     this.shown = next;
     if (previous === undefined) return `${lead}${renderFull(observation)}`;
     const closed = options.keyboardNote === false || options.lead === undefined ? '' : keyboardClosedNote(previous, next);
+    if (previous.unaddressed !== next.unaddressed) return `${lead}${renderFull(observation)}${closed}`;
     const diff = diffScreens(previous, next);
     const changes = diff.length;
     // A truncated screen is never called unchanged: what it left out is unknown.
@@ -320,7 +322,8 @@ function describeLocation(observation: ExecutorObservation): string {
 
 /** Node id at the head of one rendered line, or undefined for a marker line. */
 function lineId(line: string): string | undefined {
-  return /^\s*#(\S+)/.exec(line)?.[1];
+  const match = /^\s*(?:#(\S+)|(@\S+))/.exec(line);
+  return match?.[1] ?? match?.[2];
 }
 
 /**
@@ -339,9 +342,10 @@ function withoutFocus(line: string): string {
 function indexScreen(observation: ExecutorObservation): ShownScreen {
   const order: string[] = [];
   const byId = new Map<string, string>();
+  const unaddressed: string[] = [];
   for (const raw of observation.text.split('\n')) {
     const id = lineId(raw);
-    if (id === undefined) continue;
+    if (id === undefined) { unaddressed.push(raw); continue; }
     // Without indentation: a node that only moved to another depth reads the
     // same, and reporting it as changed would show identical text twice.
     const line = withoutFocus(raw).trimStart();
@@ -350,6 +354,7 @@ function indexScreen(observation: ExecutorObservation): ShownScreen {
   }
   return {
     revision: observation.revision,
+    unaddressed: unaddressed.join('\n'),
     order,
     byId,
     nodes: byId.size,

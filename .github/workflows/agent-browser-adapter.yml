@@ -80,6 +80,8 @@ jobs:
           CHROME=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux*/chrome' | head -1)
           test -x "$CHROME"
           echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+      - name: Core cross-engine integration regressions
+        run: pnpm --filter e2e exec vitest run --project integration
       - name: Install artifact video encoder
         run: |
           sudo apt-get update
