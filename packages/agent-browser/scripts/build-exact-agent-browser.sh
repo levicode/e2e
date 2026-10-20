@@ -22,6 +22,9 @@ if [[ ! -e "$SOURCE/.git" ]]; then
   git -C "$SOURCE" checkout --detach "$PIN"
 fi
 node "$VALIDATOR" verify "$SOURCE"
+if [[ "$SOURCE" == "$ROOT/.validation-tools/agent-browser-exact" ]]; then
+  bash "$ROOT/packages/agent-browser/scripts/cache-native-dependencies.sh" restore maintained
+fi
 export RUSTUP_TOOLCHAIN
 node "$VALIDATOR" toolchain
 # Do not retain a success stamp if any subsequent test or build fails.

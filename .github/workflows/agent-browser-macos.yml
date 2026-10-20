@@ -58,6 +58,18 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate source lock and checkout refusal cases
         run: node --test packages/agent-browser/tests/native-source.test.ts
+      - name: Compute isolated Rust dependency cache identity
+        id: rust-cache-key
+        run: node -e 'const fs=require("node:fs");const l=JSON.parse(fs.readFileSync("packages/agent-browser/native-source.lock.json","utf8"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`key=rust-${l.rustToolchain}-${l.tree}-${l.upstreamBase}\n`);'
+      - name: Restore Rust compilation dependencies only
+        id: rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: native-deps-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-cache-key.outputs.key }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            .validation-tools/native-dependency-cache
       - name: Build and test exact maintained fork commit
         run: |
           rustup toolchain install 1.99.1 --profile minimal
@@ -73,6 +85,19 @@ jobs:
         run: node --test packages/agent-browser/tests/native-contract.integration.ts
       - name: Build the separate unmodified official baseline
         run: bash packages/agent-browser/scripts/build-upstream-agent-browser.sh
+      - name: Stage verified compilation dependencies outside source checkouts
+        run: |
+          bash packages/agent-browser/scripts/cache-native-dependencies.sh save maintained
+          bash packages/agent-browser/scripts/cache-native-dependencies.sh save upstream
+      - name: Save compilation dependencies before browser verification
+        if: ${{ steps.rust-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            .validation-tools/native-dependency-cache
       - name: Download pinned Chromium for native macOS fixtures
         run: |
           # Playwright is only the pinned browser downloader, never the execution engine.
@@ -88,20 +113,25 @@ jobs:
           cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_shared_fill_preserves_browser_editing_and_clears_rich_content -- --ignored --exact --test-threads=1
           cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_exact_snapshot_ref_never_rebinds_ordinary_ref_keeps_fallback -- --ignored --exact --test-threads=1
       - run: pnpm --filter e2e build
-      - run: pnpm --filter @e2e-dev/agent-browser build
+      - id: adapter-build
+        run: pnpm --filter @e2e-dev/agent-browser build
       - run: pnpm --filter @e2e-dev/agent-browser typecheck
       - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
       - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Compare ordinary behavior with the separate official build
         run: node --test packages/agent-browser/tests/upstream-baseline.integration.ts
       - name: Native browser-insertion and exact-action acceptance
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
         run: node --test packages/agent-browser/tests/actions.integration.ts
       - name: Real default unnamed-glyph snapshot and locator acceptance
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
         run: node --test packages/agent-browser/tests/locators.integration.ts
       - name: Real public runner action, report, trace and strict replay
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
         run: node --test packages/agent-browser/tests/runner.integration.ts
       - name: Fresh packaged consumer with real Chromium
         id: packaged-consumer
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
         run: node packages/agent-browser/scripts/consumer-smoke.ts --browser --artifacts "$RUNNER_TEMP/agent-browser-consumer-artifacts"
       - name: Preserve packaged consumer evidence
         if: ${{ always() && (steps.packaged-consumer.outcome == 'success' || steps.packaged-consumer.outcome == 'failure') }}

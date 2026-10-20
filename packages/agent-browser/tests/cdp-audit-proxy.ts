@@ -6,6 +6,7 @@ import type { Duplex } from 'node:stream';
 
 export interface WireCommand {
   readonly connection: number;
+  readonly id: number;
   readonly method: string;
   readonly params: Record<string, unknown>;
   readonly targetId?: string;
@@ -44,6 +45,7 @@ export function auditConnectionLifecycle(connection: number, errors: string[]) {
 export async function cdpAuditProxy(upstreamEndpoint: string) {
   const commands: WireCommand[] = [];
   const attachments: WireAttachment[] = [];
+  const replies: { connection: number; id: number; method: string; error: boolean }[] = [];
   const createdContexts = new Set<string>();
   const errors: string[] = [];
   const sockets = new Set<Duplex>();
@@ -77,7 +79,7 @@ export async function cdpAuditProxy(upstreamEndpoint: string) {
       pending.set(value.id, { method: value.method, params });
       const targetId = typeof params.targetId === 'string' ? params.targetId
         : sessions.get(value.sessionId ?? (typeof params.sessionId === 'string' ? params.sessionId : ''));
-      commands.push({ connection, method: value.method, params,
+      commands.push({ connection, id: value.id, method: value.method, params,
         ...(value.sessionId === undefined ? {} : { sessionId: value.sessionId }),
         ...(targetId === undefined ? {} : { targetId }),
       });
@@ -132,7 +134,7 @@ export async function cdpAuditProxy(upstreamEndpoint: string) {
       if (lifecycle.closing) return;
       try {
         if (typeof event.data !== 'string' || !open) throw new Error('Invalid upstream CDP message');
-        const value = JSON.parse(event.data) as { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> };
+        const value = JSON.parse(event.data) as { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown>; error?: unknown };
         if (value.method === 'Target.attachedToTarget') {
           const params = value.params!;
           const info = params.targetInfo as { targetId: string };
@@ -142,6 +144,7 @@ export async function cdpAuditProxy(upstreamEndpoint: string) {
         }
         if (value.id !== undefined) {
           const original = pending.get(value.id); pending.delete(value.id);
+          if (original) replies.push({ connection, id: value.id, method: original.method, error: value.error !== undefined });
           if (original?.method === 'Target.attachToTarget' && typeof value.result?.sessionId === 'string' && typeof original.params.targetId === 'string') sessions.set(value.result.sessionId, original.params.targetId);
           if (original?.method === 'Target.createBrowserContext' && typeof value.result?.browserContextId === 'string') createdContexts.add(value.result.browserContextId);
         }
@@ -157,7 +160,7 @@ export async function cdpAuditProxy(upstreamEndpoint: string) {
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   return {
     endpoint: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/devtools/browser/audit`,
-    commands, attachments, createdContexts, errors,
+    commands, replies, attachments, createdContexts, errors,
     async close() {
       stopping = true;
       for (const lifecycle of lifecycles) lifecycle.close();

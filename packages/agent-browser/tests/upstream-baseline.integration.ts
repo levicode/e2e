@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import type { OperationContext } from 'e2e/engine';
 import { CdpConnection } from '../src/cdp.ts';
 import { launchChromium, type OwnedBrowser } from '../src/launch.ts';
+import { cdpAuditProxy } from './cdp-audit-proxy.ts';
 import { AGENT_BROWSER_CONTRACT, AGENT_BROWSER_VERSION } from '../src/native-contract.ts';
 
 const execute = promisify(execFile);
@@ -78,7 +79,7 @@ function operation(): OperationContext {
 /** Strip inherited agent configuration so each executable owns only its disposable session. */
 function isolatedEnvironment(directory: string): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('AGENT_BROWSER_')));
-  return { ...env, HOME: directory, USERPROFILE: directory, XDG_CONFIG_HOME: directory, AGENT_BROWSER_SOCKET_DIR: directory };
+  return { ...env, HOME: directory, USERPROFILE: directory, XDG_CONFIG_HOME: directory, AGENT_BROWSER_SOCKET_DIR: directory, AGENT_BROWSER_DEBUG: '1' };
 }
 
 /** Reject relabeled, edited, or stale upstream binaries before launching any browser. */
@@ -142,7 +143,10 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
   const errors: unknown[] = [];
   let owned: OwnedBrowser | undefined;
   let observer: CdpConnection | undefined;
+  let audit: Awaited<ReturnType<typeof cdpAuditProxy>> | undefined;
+  let observerSession: string | undefined;
   let cliStarted = false;
+  let lastCommand = 'not-started';
   let result: T | undefined;
   let command: BrowserRun['command'] | undefined;
   try {
@@ -156,10 +160,13 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
     const targets = (await observer.listTargets(operation())).filter((entry) => entry.type === 'page');
     assert.equal(targets.length, 1, 'Each CLI must own one fresh exclusive browser endpoint');
     const sessionId = await observer.attachTarget(targets[0]!.targetId, operation());
+    observerSession = sessionId;
     const connection = observer;
-    const endpoint = owned.endpoint;
+    audit = await cdpAuditProxy(owned.endpoint);
+    const endpoint = audit.endpoint;
     command = async (...args) => {
       cliStarted = true;
+      lastCommand = args[0] === 'get' ? `get ${args[1] ?? ''}` : args[0] ?? 'missing-command';
       const { stdout } = await execute(executable, [
         '--config', config, '--session', 'ordinary', '--engine', 'chrome', '--cdp', endpoint, '--json',
         ...(maintained ? ['--expect-contract', AGENT_BROWSER_CONTRACT] : []), ...args,
@@ -175,8 +182,37 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
       assert.equal(value.exceptionDetails, undefined, 'The independent fixture observer must not throw');
       return value.result.value;
     };
+    // Isolate bounded CDP attachment from the subsequent navigation command.
+    await command('get', 'url');
     result = await body({ command, evaluate, observe: () => evaluate<Observation>('window.observe()') });
-  } catch (error) { errors.push(error); }
+  } catch (error) {
+    // Capture before close/removal, for both executables with identical policy.
+    const readDiagnostic = async (name: string) => {
+      try { return (await readFile(path.join(directory, name), 'utf8')).slice(-16_384); }
+      catch (cause) { return `unavailable: ${(cause as NodeJS.ErrnoException).code ?? 'unknown'}`; }
+    };
+    const pid = await readDiagnostic('ordinary.pid');
+    let daemonAlive = false;
+    if (/^\d+\s*$/.test(pid)) {
+      try { process.kill(Number(pid.trim()), 0); daemonAlive = true; } catch { /* Exited or inaccessible. */ }
+    }
+    let socketPresent = false;
+    try { await access(path.join(directory, 'ordinary.sock')); socketPresent = true; } catch { /* Diagnostic only. */ }
+    let pageState: unknown = 'observer unavailable';
+    if (observer && observerSession) {
+      try {
+        pageState = await observer.send('Runtime.evaluate', {
+          expression: '({url:location.href,readyState:document.readyState})', returnByValue: true,
+        }, { ...operation(), timeoutMs: 2_000 }, observerSession);
+      } catch { pageState = 'observer probe failed within 2 seconds'; }
+    }
+    const diagnostics = { executable: maintained ? 'maintained' : 'unmodified official', command: lastCommand, timeoutMs: 30_000, socketPresent,
+      daemonPid: pid.trim(), daemonAlive, daemonStderr: await readDiagnostic('ordinary.log'), pageState,
+      // Deliberately omit params, response bodies and evaluated expressions.
+      cdpCommands: audit?.commands.slice(-50).map(({ connection, id, method, sessionId }) => ({ connection, id, method, sessionId })),
+      cdpReplies: audit?.replies.slice(-50), forwardingErrors: audit?.errors };
+    errors.push(new Error(`Baseline failure diagnostics: ${JSON.stringify(diagnostics)}`, { cause: error }));
+  }
   if (cliStarted && command) {
     try {
       await command('close');
@@ -192,6 +228,7 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
       }
     } catch (error) { errors.push(error); }
   }
+  try { await audit?.close(); } catch (error) { errors.push(error); }
   observer?.close();
   try { await owned?.close(); } catch (error) { errors.push(error); }
   try { await rm(directory, { recursive: true, force: true }); } catch (error) { errors.push(error); }
@@ -363,13 +400,21 @@ test('ordinary maintained CLI matches separately built unmodified official upstr
   const { upstream, maintained } = await verifyExecutables();
   const { server, origin } = await startFixture();
   try {
-    const official = await withBrowser(upstream, false, (run) => exerciseOrdinaryBehavior(run, origin));
-    const downstream = await withBrowser(maintained, true, async (run) => {
-      const observation = await exerciseOrdinaryBehavior(run, origin);
-      await exerciseRichEditing(run, origin);
-      await exercisePhysicalTyping(run);
-      return observation;
-    });
+    const failures: unknown[] = [];
+    let official: Record<string, unknown> | undefined;
+    let downstream: Record<string, unknown> | undefined;
+    try { official = await withBrowser(upstream, false, (run) => exerciseOrdinaryBehavior(run, origin)); }
+    catch (error) { failures.push(error); }
+    // A failed oracle must not hide whether the single maintained runtime also fails.
+    try {
+      downstream = await withBrowser(maintained, true, async (run) => {
+        const observation = await exerciseOrdinaryBehavior(run, origin);
+        await exerciseRichEditing(run, origin);
+        await exercisePhysicalTyping(run);
+        return observation;
+      });
+    } catch (error) { failures.push(error); }
+    if (failures.length > 0) throw new AggregateError(failures, 'Official and maintained baseline outcomes');
     assert.deepEqual(downstream, official, 'One maintained runtime must preserve ordinary upstream UI semantics and event delivery');
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

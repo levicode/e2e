@@ -55,6 +55,7 @@ assert.equal(git('status', '--porcelain=v1', '--untracked-files=all'), '', 'Upst
 NODE
 }
 verify_source
+bash "$ROOT/packages/agent-browser/scripts/cache-native-dependencies.sh" restore upstream
 EXECUTABLE="$SOURCE/cli/target/ci/agent-browser"
 STAMP="$SOURCE/cli/target/ci/e2e-upstream-build.json"
 rm -f "$STAMP" "$EXECUTABLE"

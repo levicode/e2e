@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,7 @@ function fixture() {
   mkdirSync(path.join(remote, 'cli'), { recursive: true });
   mkdirSync(path.join(remote, 'maintainer'));
   mkdirSync(tools);
-  for (const file of ['scripts/build-exact-agent-browser.sh', 'scripts/native-source.ts', 'src/native-contract.ts']) {
+  for (const file of ['scripts/build-exact-agent-browser.sh', 'scripts/cache-native-dependencies.sh', 'scripts/native-source.ts', 'src/native-contract.ts']) {
     copyFileSync(path.join(packageRoot, file), path.join(packageDirectory, file));
   }
   writeFileSync(path.join(repository, 'package.json'), '{"type":"module"}\n');
@@ -269,5 +269,30 @@ test('source validator CLI runs through a symlinked directory on macOS-style pat
     const result = spawnSync(process.execPath, [path.join(alias, 'scripts/native-source.ts'), 'lock-values'], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), `${forkRepository} ${f.lock.commit} ${AGENT_BROWSER_VERSION} 1.99.1`);
+  } finally { f.cleanup(); }
+});
+
+
+test('dependency cache stays outside checkout and excludes project binaries and fingerprints', () => {
+  const f = fixture();
+  try {
+    const cache = path.join(f.repository, '.validation-tools/native-dependency-cache/maintained');
+    for (const part of ['deps', 'build', '.fingerprint']) {
+      mkdirSync(path.join(cache, part), { recursive: true });
+      writeFileSync(path.join(cache, part, 'thirdparty-hash'), 'dependency fixture');
+      writeFileSync(path.join(cache, part, 'agent_browser-stale'), 'must not restore');
+      writeFileSync(path.join(cache, part, 'agent-browser-stale'), 'must not restore');
+    }
+    assert.equal(existsSync(f.source), false, 'Cache restoration must not prepopulate the checkout');
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    for (const part of ['deps', 'build', '.fingerprint']) {
+      const target = path.join(f.source, 'cli/target/ci', part);
+      assert.equal(readFileSync(path.join(target, 'thirdparty-hash'), 'utf8'), 'dependency fixture');
+      assert.equal(existsSync(path.join(target, 'agent_browser-stale')), false);
+      assert.equal(existsSync(path.join(target, 'agent-browser-stale')), false);
+    }
+    const missingBuild = f.run({ MOCK_NO_BUILD_OUTPUT: '1' });
+    assert.notEqual(missingBuild.status, 0, 'A dependency cache cannot replace building the final executable');
   } finally { f.cleanup(); }
 });
