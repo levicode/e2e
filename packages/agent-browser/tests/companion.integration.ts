@@ -78,13 +78,17 @@ async function withCompanion(run: (value: {
       executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', env: process.env,
       args: ['--site-per-process', ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])],
     }, operation());
-    cli = new CliTransport({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE, cdp: owned.endpoint });
+    cdp = await CdpConnection.connect(owned.endpoint, operation());
+    await cdp.verifyChromium(operation());
+    const initial = (await cdp.listTargets(operation())).find(target => target.type === 'page');
+    assert.ok(initial, 'The dedicated browser must expose its initial target');
+    cli = new CliTransport({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE, cdp: owned.endpoint,
+      cdpTarget: initial.targetId, cdpContext: initial.browserContextId ?? null });
     await cli.run(['open', fixture.origin], operation(), { mutating: true });
     const { tabs } = await cli.run<{ tabs: { targetId: string; active: boolean }[] }>(['tab', 'list'], operation());
     const active = tabs.find((tab) => tab.active);
-    assert.ok(active, 'agent-browser must identify its exact active target');
-    cdp = await CdpConnection.connect(owned.endpoint, operation());
-    await cdp.verifyChromium(operation());
+    assert.equal(active?.targetId, initial.targetId, 'Native scope must remain bound to the selected target');
+    assert.ok(active);
     hub = new NetworkHub(cdp, { operation, resolveUrl: (url) => new URL(url, fixture.origin).href, resolvePath: (path) => path, ...configuration?.(fixture.origin) });
     await hub.start(operation());
     const sessionId = await hub.useTarget(active.targetId, operation());
@@ -108,6 +112,12 @@ async function until(predicate: () => boolean): Promise<void> {
     assert.ok(Date.now() < deadline, 'Expected target network event did not arrive');
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+/** Constant fixture stages locate failures without exposing command payloads. */
+async function fixtureStep<T>(stage: string, work: Promise<T>): Promise<T> {
+  try { return await work; }
+  catch (cause) { throw new Error(`Companion fixture stage failed: ${stage}`, { cause }); }
 }
 
 /** A real input event grants popup activation; plain eval must not bypass Chromium's popup policy. */
@@ -235,16 +245,19 @@ test('diagnostics capture actual main-tab and popup console, runtime, HTTP error
 });
 
 test('an exclusively owned browser routes the selected context and its first popup navigation', { timeout: 60_000 }, async () => {
-  await withCompanion(async ({ cli, cdp: previousConnection, hub, targetId: originalTarget, origin, endpoint }) => {
+  await withCompanion(async ({ cli: initialCli, cdp: previousConnection, hub, targetId: originalTarget, origin, endpoint }) => {
     // This low-level fixture owns the entire disposable browser, including its original tab.
     // Browser-wide attachment is necessary to pause a popup before its first navigation.
     hub.close();
     previousConnection.close();
+    await initialCli.close(operation());
     const cdp = await CdpConnection.connect(endpoint, operation());
     const { browserContextId } = await cdp.send<{ browserContextId: string }>('Target.createBrowserContext', {}, operation());
     let scoped: NetworkHub | undefined;
+    let cli: CliTransport | undefined;
     try {
       const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', browserContextId }, operation());
+      cli = new CliTransport({ executable: process.env.E2E_AGENT_BROWSER_EXECUTABLE!, cdp: endpoint, cdpTarget: targetId, cdpContext: browserContextId });
       const initialized: string[] = [];
       scoped = new NetworkHub(cdp, {
         operation, resolveUrl: (url) => new URL(url, origin).href, resolvePath: (file) => file, browserContextId, browserExclusive: true,
@@ -254,11 +267,11 @@ test('an exclusively owned browser routes the selected context and its first pop
       const scopedSession = await scoped.useTarget(targetId, operation());
       let interceptions = 0;
       await scoped.route('**/scoped-api', (route) => { interceptions += 1; return route.fulfill({ json: { scoped: true } }); }, operation());
-      await cli.run(['tab', targetId], operation(), { mutating: true });
-      await cli.run(['open', origin], operation(), { mutating: true });
-      const selected = await cli.run<{ tabs: { targetId: string; active: boolean }[] }>(['tab', 'list'], operation());
+      await fixtureStep('bind scoped tab', cli.run(['tab', targetId], operation(), { mutating: true }));
+      await fixtureStep('navigate scoped tab', cli.run(['open', origin], operation(), { mutating: true }));
+      const selected = await fixtureStep('read scoped tab identity', cli.run<{ tabs: { targetId: string; active: boolean }[] }>(['tab', 'list'], operation()));
       assert.equal(selected.tabs.find((target) => target.active)?.targetId, targetId);
-      const response = await cli.run<{ result: unknown }>(['eval', `fetch('${origin}/scoped-api').then(response=>response.json())`], operation(), { mutating: true });
+      const response = await fixtureStep('fetch scoped route', cli.run<{ result: unknown }>(['eval', `fetch('${origin}/scoped-api').then(response=>response.json())`], operation(), { mutating: true }));
       assert.deepEqual(response.result, { scoped: true });
       assert.equal(interceptions, 1);
       assert.equal(initialized.includes(originalTarget), false);
@@ -271,12 +284,13 @@ test('an exclusively owned browser routes the selected context and its first pop
         assert.match(foreign.result.value, /Network fixture/);
         assert.equal(interceptions, 1, 'Other owned context requests must not enter this attempt route registry');
       } finally { foreignObserver.close(); }
-      await clickPopup(cli, cdp, scopedSession, `${origin}/scoped-api`);
+      await fixtureStep('first popup input', clickPopup(cli, cdp, scopedSession, `${origin}/scoped-api`));
       await until(() => interceptions === 2);
       await scoped.settle(operation());
       assert.ok(scoped.sessions().every((session) => session.targetId !== originalTarget));
     } finally {
       scoped?.close();
+      await cli?.close(operation());
       try {
         await cdp.send('Target.disposeBrowserContext', { browserContextId }, operation());
         assert.ok((await cdp.listTargets(operation())).some((target) => target.targetId === originalTarget), 'Context disposal must preserve the other owned original context');
