@@ -1,0 +1,89 @@
+name: Focused ordinary baseline diagnostic
+on:
+  push:
+    branches: [diagnostic/owned-baseline]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  baseline:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: 12249051144
+            digest: 515698825c076062be56637986e7702c0fbb4f5cc4639f828b2d85809c2ddd5e
+          - os: macos-15
+            artifact: 12248748306
+            digest: 4c5d43f6b4c185f24b263b8a096c6cf4f2c40d2cf8afd73959db4d699fe4e4d4
+          - os: macos-15-intel
+            artifact: 12248809373
+            digest: 8e78a110d986c59efb74bf2760d22844b063d11e81dda7a9468fa279852b025b
+    defaults:
+      run:
+        shell: bash
+    env:
+      E2E_TELEMETRY_DISABLED: '1'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.19.0
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Download immutable public native CI artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ matrix.artifact }}
+          ARTIFACT_DIGEST: ${{ matrix.digest }}
+        run: |
+          mkdir -p .validation-tools/focused-native
+          curl --fail --location --retry 2 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/levicode/agent-browser/actions/artifacts/$ARTIFACT_ID/zip" -o .validation-tools/native.zip
+          node -e 'const fs=require("node:fs"),c=require("node:crypto"),a=require("node:assert/strict");a.equal(c.createHash("sha256").update(fs.readFileSync(".validation-tools/native.zip")).digest("hex"),process.env.ARTIFACT_DIGEST)'
+          unzip -q .validation-tools/native.zip -d .validation-tools/focused-native
+      - name: Verify exact provenance and binary before execution
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,appendFileSync,chmodSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          import path from 'node:path';
+          const dir=path.resolve('.validation-tools/focused-native');
+          const m=JSON.parse(readFileSync(path.join(dir,'manifest.json')));
+          const l=JSON.parse(readFileSync('packages/agent-browser/native-source.lock.json'));
+          assert.equal(m.schemaVersion,1);assert.equal(m.sourceCommit,l.commit);assert.equal(m.sourceTree,l.tree);
+          assert.equal(m.repository,'https://github.com/levicode/agent-browser');
+          assert.equal(m.upstreamRepository,'https://github.com/vercel-labs/agent-browser');assert.equal(m.upstreamCommit,l.upstreamBase);assert.equal(m.nativeVersion,l.nativeVersion);
+          assert.equal(m.adapterContract,l.contractVersion);assert.equal(m.platform,process.platform);assert.equal(m.architecture,process.arch);
+          assert.equal(m.workflowRun,'39388021304');assert.match(m.rustVersion,/^rustc 1\.99\.1 /);
+          assert.equal(m.archive,path.basename(m.archive));
+          const hash=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
+          assert.equal(hash(path.join(dir,m.archive)),m.archiveSha256);
+          execFileSync('tar',['-xzf',path.join(dir,m.archive),'-C',dir]);
+          const binary=path.join(dir,'agent-browser');assert.equal(hash(binary),m.binarySha256);chmodSync(binary,0o755);
+          appendFileSync(process.env.GITHUB_ENV,`E2E_AGENT_BROWSER_EXECUTABLE=${binary}\n`);
+          NODE
+      - name: Build untouched pinned official oracle
+        run: |
+          RUST=$(node -p 'require("./packages/agent-browser/native-source.lock.json").rustToolchain')
+          rustup toolchain install "$RUST" --profile minimal
+          bash packages/agent-browser/scripts/build-upstream-agent-browser.sh
+          echo "E2E_AGENT_BROWSER_UPSTREAM_EXECUTABLE=$PWD/.validation-tools/agent-browser-upstream/cli/target/ci/agent-browser" >> "$GITHUB_ENV"
+      - name: Install pinned Chromium
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/focused-chromium"
+          pnpm --filter @e2e-dev/web exec playwright-core install --with-deps chromium
+          CHROME=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f \( -path '*/chrome-linux*/chrome' -o -path '*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing' \))
+          test -x "$CHROME"
+          echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+          if [[ "$RUNNER_OS" == Linux ]]; then echo 'E2E_CHROMIUM_NO_SANDBOX=1' >> "$GITHUB_ENV"; fi
+      - run: pnpm --filter e2e build
+      - name: Run exact ordinary baseline fixture only
+        run: node --test packages/agent-browser/tests/upstream-baseline.integration.ts

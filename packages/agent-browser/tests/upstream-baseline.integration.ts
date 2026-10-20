@@ -167,8 +167,14 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
     assert.match(metadata.cdpUrl, /^ws:\/\//);
     observer = await CdpConnection.connect(metadata.cdpUrl, operation());
     await observer.verifyChromium(operation());
-    const targets = (await observer.listTargets(operation())).filter(entry => entry.type === 'page');
-    assert.equal(targets.length, 1, 'Each CLI must own one fresh exclusive browser endpoint');
+    // Chrome can expose a startup page as well as the CLI's working page.
+    // Resolve the CLI's actual active target, never whichever CDP lists first.
+    const tabList = await command('tab', 'list') as { tabs: Array<{ targetId: string; active: boolean }> };
+    const activeTabs = tabList.tabs.filter(tab => tab.active);
+    assert.equal(activeTabs.length, 1, 'Each CLI must report exactly one active target');
+    const targets = (await observer.listTargets(operation())).filter(entry =>
+      entry.type === 'page' && entry.targetId === activeTabs[0]!.targetId);
+    assert.equal(targets.length, 1, 'The active CLI target must exist exactly once in its owned browser');
     const sessionId = await observer.attachTarget(targets[0]!.targetId, operation());
     observerSession = sessionId;
     const connection = observer;
