@@ -43,19 +43,18 @@ workflows:
         script: |
           set -euo pipefail
           export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
+          export PATH="$HOME/.cargo/bin:$(brew --prefix)/opt/rustup/bin:$PATH"
           if ! command -v rustup >/dev/null; then
-            brew install rustup
-            rustup-init -y --profile minimal --default-toolchain 1.99.1 --no-modify-path
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install rustup
           fi
-          export PATH="$HOME/.cargo/bin:$PATH"
           rustup toolchain install 1.99.1 --profile minimal
-          rustup default 1.99.1
           bash packages/agent-browser/scripts/build-exact-agent-browser.sh
           bash packages/agent-browser/scripts/cache-native-dependencies.sh save maintained
       - name: Prove the native model boundary with real Chromium
         script: |
           set -euo pipefail
           export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
+          export PATH="$HOME/.cargo/bin:$(brew --prefix)/opt/rustup/bin:$PATH"
           export E2E_AGENT_BROWSER_EXECUTABLE="$CM_BUILD_DIR/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser"
           export PLAYWRIGHT_BROWSERS_PATH="$CM_BUILD_DIR/.validation-tools/chromium"
           mkdir -p .validation-tools/codemagic-evidence

@@ -97,3 +97,11 @@ node packages/agent-browser/scripts/consumer-smoke.ts --browser --artifacts /tmp
 ```
 
 Read `ADAPTER_COMPATIBILITY.md` for dedicated-provider ownership, Chromium-only scope, emulation conflicts, storage exclusions and artifact video privacy. Private-application UAT remains a separate acceptance step.
+
+## Optional manual macOS ARM validation with Codemagic
+
+The repository's `codemagic.yaml` provides `agent-browser-arm64-focused` as an optional personal-account validation workflow. Select the reviewed branch and this workflow manually. It uses `mac_mini_m2`, the Xcode 16.4 image (macOS 15.5), pinned Node/pnpm/Rust versions, and a 30-minute whole-build limit. There are no automatic triggers, signing steps, publishing steps, or API-secret requirements. Repository access must be granted separately and limited to the intended repository.
+
+The workflow reuses the existing native source-validation/build scripts and tests: fast type/unit/lint gates, the exact maintained native suite, three real HTML OBJECT/model-boundary regressions, and the full core integration suite. It does not replace the full GitHub platform matrix or the separate official-native comparison. Dependency caches exclude native binaries and build stamps; every run rebuilds and verifies the locked source. Generic platform/source/test evidence is retained as build artifacts.
+
+Check the personal account's remaining free build allowance before starting; a 30-minute limit is a resource budget, not a promise that a cold build finishes in that time. This configuration does not select a paid plan or establish free eligibility for team accounts. See [Codemagic's pricing](https://codemagic.io/pricing/) and [the selected image specification](https://docs.codemagic.io/specs-macos/xcode-16-4/).
