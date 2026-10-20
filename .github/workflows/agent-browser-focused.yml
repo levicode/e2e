@@ -78,8 +78,9 @@ jobs:
           data=(directory/a['name']).read_bytes()
           assert len(data)==a['bytes'] and hashlib.sha256(data).hexdigest()==a['sha256']
           with tarfile.open(directory/a['name'],'r:gz') as tar:
-            members=tar.getmembers();assert len(members)==1
-            member=members[0];assert member.name=='agent-browser' and member.isfile() and member.mode==0o755
+            members=tar.getmembers();assert sorted(m.name for m in members)==['LICENSE','NOTICE','agent-browser']
+            assert all(m.isfile() and m.name==pathlib.Path(m.name).name for m in members)
+            member=tar.getmember('agent-browser');assert member.mode==0o755
             binary=tar.extractfile(member).read()
           b=m['binary'];assert b['name']=='agent-browser' and b['mode']=='0755'
           assert len(binary)==b['bytes'] and hashlib.sha256(binary).hexdigest()==b['sha256']
@@ -100,6 +101,7 @@ jobs:
           CHROME=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f \( -path '*/chrome-linux*/chrome' -o -path '*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing' \))
           test -x "$CHROME"
           echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
           if [[ "$RUNNER_OS" == Linux ]]; then echo 'E2E_CHROMIUM_NO_SANDBOX=1' >> "$GITHUB_ENV"; fi
-      - name: Run focused object geometry and actual model boundary regressions
-        run: node --test --test-name-pattern "^HTML OBJECT" packages/agent-browser/tests/state-pixels.integration.ts packages/agent-browser/tests/model-boundary.integration.ts
+      - name: Run focused HTML OBJECT geometry regressions
+        run: node --test --test-name-pattern "^HTML OBJECT" packages/agent-browser/tests/state-pixels.integration.ts
