@@ -19,13 +19,7 @@ jobs:
         with:
           node-version: 24.19.0
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm --filter e2e build && pnpm --filter @e2e-dev/web build
+      - run: pnpm --filter e2e build && pnpm --filter @e2e-dev/web build && pnpm --filter @e2e-dev/mobile build
       - run: pnpm --filter @e2e-dev/web exec playwright-core install --with-deps chromium
-      - name: Independent focused repetitions without changing assertions
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4 5; do
-            echo "Independent worker timeout run $attempt"
-            pnpm --filter e2e exec vitest run --project integration tests/integration/parallel-workers.test.ts -t 'times out a test that blocks its worker'
-          done
+      - name: Full core integration with original concurrency and error diagnostics
+        run: pnpm --filter e2e exec vitest run --project integration
