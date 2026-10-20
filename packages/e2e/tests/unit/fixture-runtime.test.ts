@@ -459,14 +459,14 @@ describe('project tool dispatch', () => {
       perform: async () => { order.push('tap'); },
     });
     const { fixtures, steps } = runtime(engine, { agents: { default: { executor: { name: 'test', async runStep(context) {
-      await context.observe();
+      const observed = await context.observe({ tree: true });
       const tool = context.budgets.runTool({ name: 'mutation', mutates: true }, async () => {
         order.push('start');
         await new Promise((resolve) => setTimeout(resolve, 5));
         order.push('end');
         throw new Error('failed mutation');
       });
-      const tap = context.actions.tap({ id: 'button' });
+      const tap = context.actions.tap({ id: observed.tree!.id });
       await expect(tool).rejects.toThrow('failed mutation');
       await tap;
       return { status: 'passed', summary: 'checked' };
@@ -551,13 +551,13 @@ describe('press key grammar', () => {
     const { engine, performed } = keyboard();
     let rejected: unknown;
     const { fixtures } = runtime(engine, { agents: { default: { executor: { name: 'test', async runStep(context) {
-      await context.observe();
+      const observed = await context.observe({ tree: true });
       try {
-        await context.actions.press({ id: 'field' }, 'Ctrl+a');
+        await context.actions.press({ id: observed.tree!.id }, 'Ctrl+a');
       } catch (cause) {
         rejected = cause;
       }
-      await context.actions.press({ id: 'field' }, 'Shift+Tab');
+      await context.actions.press({ id: observed.tree!.id }, 'Shift+Tab');
       return { status: 'passed', summary: 'pressed' };
     } } } } });
     await fixtures.agent.act('press keys');

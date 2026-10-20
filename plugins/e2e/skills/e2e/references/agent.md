@@ -262,6 +262,10 @@ a warning, a judgment needs `vision: true`, and no control may be inferred
 absent nor old node ids reused. Nothing the model returns runs as code or
 selectors: the runner validates and authorizes every tool call first.
 
+Engine-native references stay native, such as agent-browser `@e221`. Copy the
+listed reference into a tool target. Internal session identities stay out of
+the model text, and structural text without a reference is not an action target.
+
 ## Budgets and cost
 
 | Call | Model calls | Default timeout |

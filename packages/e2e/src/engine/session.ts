@@ -151,7 +151,7 @@ const SCREEN_REVISION_PREFIX = 's';
 function stampRevision(node: SemanticNode, revision: string): SemanticNode {
   return {
     ...node,
-    ref: { id: node.ref.id, revision },
+    ref: { ...node.ref, revision },
     ...(node.children === undefined
       ? {}
       : { children: node.children.map((child) => stampRevision(child, revision)) }),

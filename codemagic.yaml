@@ -1,0 +1,73 @@
+# Manual ARM validation only. No webhook, signing, publishing, or paid machine.
+# Xcode 16.4 selects macOS 15.5: https://docs.codemagic.io/specs-macos/xcode-16-4/
+workflows:
+  agent-browser-arm64-focused:
+    name: agent-browser macOS 15 ARM focused regression
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      node: 24.19.0
+      xcode: '16.4'
+      vars:
+        E2E_TELEMETRY_DISABLED: '1'
+    cache:
+      cache_paths:
+        - $HOME/.cargo/registry
+        - $HOME/.cargo/git/db
+        - $CM_BUILD_DIR/.validation-tools/native-dependency-cache
+    scripts:
+      - name: Verify platform and build the existing packages
+        script: |
+          set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
+          test "$(uname -m)" = arm64
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 15
+          test "$(node --version)" = v24.19.0
+          npm install --global --prefix "$CM_BUILD_DIR/.validation-tools/pnpm" pnpm@12.3.4
+          test "$(pnpm --version)" = 12.3.4
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter e2e build
+          pnpm --filter @e2e-dev/web build
+          pnpm --filter @e2e-dev/mobile build
+          pnpm --filter @e2e-dev/agent-browser build
+      - name: Type, unit, and lint gates before native compilation
+        script: |
+          set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
+          pnpm --filter e2e typecheck
+          pnpm --filter @e2e-dev/agent-browser typecheck
+          pnpm exec oxlint packages/e2e/src packages/e2e/tests packages/agent-browser/src packages/agent-browser/tests
+          pnpm --filter e2e test:unit
+          pnpm --filter @e2e-dev/agent-browser test
+      - name: Build the exact maintained native source
+        script: |
+          set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
+          export PATH="$HOME/.cargo/bin:$(brew --prefix)/opt/rustup/bin:$PATH"
+          if ! command -v rustup >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install rustup
+          fi
+          rustup toolchain install 1.99.1 --profile minimal
+          bash packages/agent-browser/scripts/build-exact-agent-browser.sh
+          bash packages/agent-browser/scripts/cache-native-dependencies.sh save maintained
+      - name: Prove the native model boundary with real Chromium
+        script: |
+          set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
+          export PATH="$HOME/.cargo/bin:$(brew --prefix)/opt/rustup/bin:$PATH"
+          export E2E_AGENT_BROWSER_EXECUTABLE="$CM_BUILD_DIR/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser"
+          export PLAYWRIGHT_BROWSERS_PATH="$CM_BUILD_DIR/.validation-tools/chromium"
+          mkdir -p .validation-tools/codemagic-evidence
+          git rev-parse HEAD | tee .validation-tools/codemagic-evidence/source-commit.txt
+          sw_vers | tee .validation-tools/codemagic-evidence/platform.txt
+          uname -m >> .validation-tools/codemagic-evidence/platform.txt
+          cp packages/agent-browser/native-source.lock.json .validation-tools/codemagic-evidence/
+          node --test packages/agent-browser/tests/native-contract.integration.ts
+          pnpm --filter @e2e-dev/web exec playwright-core install chromium
+          E2E_CHROMIUM_EXECUTABLE=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f -path '*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')
+          export E2E_CHROMIUM_EXECUTABLE
+          test -x "$E2E_CHROMIUM_EXECUTABLE"
+          node --test --test-name-pattern '^HTML OBJECT' packages/agent-browser/tests/state-pixels.integration.ts packages/agent-browser/tests/model-boundary.integration.ts 2>&1 | tee .validation-tools/codemagic-evidence/model-boundary.log
+          pnpm --filter e2e exec vitest run --project integration 2>&1 | tee .validation-tools/codemagic-evidence/core-integration.log
+    artifacts:
+      - .validation-tools/codemagic-evidence/**

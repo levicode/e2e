@@ -112,7 +112,12 @@ export type LocatorExpression =
     };
 
 export interface NodeRef {
+  /** Opaque engine identity, never shortened for dispatch or relocation. */
   readonly id: string;
+  /** Model-facing reference, unique in a capture. Null marks a structural node; absent preserves id. */
+  readonly modelRef?: string | null;
+  /** Internal engine epoch for modelRef; changing it invalidates outstanding model requests. */
+  readonly modelRefScope?: string;
   readonly revision: string;
 }
 

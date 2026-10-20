@@ -206,3 +206,106 @@ test('storage probes never run user init scripts or routes, while a concurrent p
     await new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());});
   }
 });
+
+test('HTML OBJECT screenshots prove nested content-box geometry, real OOPIF pixels and cleanup at both DPRs', { timeout: 120_000 }, async () => {
+  let origin = '';
+  const leaf = '<!doctype html><style>html,body{margin:0;background:white}input{position:absolute;left:20px;top:20px;width:100px;height:30px;box-sizing:border-box;border:0;padding:0;background:red}</style><input id="secret" type="password" value="generic-fixture-secret">';
+  const owner = (tag: string, id: string, url: string, style: string): string => `<${tag} id="${id}" ${tag === 'object' ? `type="text/html" data="${url}"` : `src="${url}"`} style="${style}"></${tag}>`;
+  const server = createServer((request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    const url = new URL(request.url!, origin || 'http://127.0.0.1');
+    if (url.pathname === '/leaf') { response.end(leaf); return; }
+    const remote = origin.replace('127.0.0.1', 'localhost');
+    if (url.pathname === '/middle') {
+      response.end(`<!doctype html><style>body{margin:0}</style>${owner(url.searchParams.get('tag') ?? 'iframe', 'inner', `${url.searchParams.has('cross') ? remote : origin}/leaf`, 'position:absolute;left:10px;top:10px;width:180px;height:100px;border:3px solid blue;padding:4px')}`); return;
+    }
+    const nested = url.searchParams.get('nested');
+    const childUrl = nested ? `${origin}/middle?tag=${nested}${url.searchParams.has('cross') ? '&cross=1' : ''}` : `${url.searchParams.has('cross') ? remote : origin}/leaf`;
+    response.end(`<!doctype html><style>html,body{margin:0;background:white}</style>${owner(url.searchParams.get('tag') ?? 'object', 'outer', childUrl, `position:absolute;left:${url.searchParams.has('scroll') ? -15 : 40}px;top:${url.searchParams.has('scroll') ? 700 : 60}px;width:240px;height:160px;border:5px solid blue;padding:7px`)}<div style="height:2000px"></div>`);
+  });
+  origin = await listen(server);
+  let browser: OwnedBrowser | undefined; let connection: CdpConnection | undefined;
+  try {
+    browser = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', args: ['--site-per-process', ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [])], env: process.env }, operation());
+    const cdp = await CdpConnection.connect(browser.endpoint, operation()); connection = cdp;
+    const target = (await cdp.listTargets(operation())).find(item => item.type === 'page')!.targetId;
+    const metricsSession = await cdp.attachTarget(target, operation());
+    try {
+      for (const deviceScaleFactor of [1, 2]) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: 800, height: 600, deviceScaleFactor, mobile: false }, operation(), metricsSession);
+        for (const query of ['', '?nested=iframe', '?tag=iframe&nested=object', '?cross=1', '?nested=object&cross=1', '?scroll=1']) {
+          await navigate(cdp, target, `${origin}/${query}`);
+          if (query.includes('scroll')) await evaluate(cdp, target, 'scrollTo(0,650); true');
+          if (query.includes('cross')) {
+            const remote = (await cdp.listTargets(operation())).find(item => item.type === 'iframe' && item.url === `${origin.replace('127.0.0.1', 'localhost')}/leaf`);
+            assert.ok(remote, 'Cross-origin OBJECT fixture must be a real out-of-process child');
+          }
+          // The fixture oracle reads DOM geometry independently from captureMaskedPixels.
+          // It does not access the final child's document, so cross-origin children are included.
+          const center = await evaluate<number[]>(cdp, target, `(() => {let x=70,y=35;let doc=document;for(const id of ${JSON.stringify(query.includes('nested') ? ['outer', 'inner'] : ['outer'])}){const node=doc.getElementById(id);const r=node.getBoundingClientRect(),s=getComputedStyle(node);x+=r.left+parseFloat(s.borderLeftWidth)+parseFloat(s.paddingLeft);y+=r.top+parseFloat(s.borderTopWidth)+parseFloat(s.paddingTop);doc=node.contentDocument}return [x,y]})()`);
+          for (let iteration = 0; iteration < 2; iteration++) {
+            const captured = await captureMaskedPixels(cdp, target, operation());
+            assert.equal(captured.maskedRegionCount, 1, `${query}: the nested sensitive control is inspected exactly once`);
+            assert.equal(captured.maskingProven, true);
+            assert.deepEqual(pixelAt(captured.pixels.data, Math.floor(center[0]! * captured.pixels.scale), Math.floor(center[1]! * captured.pixels.scale)), [0, 0, 0], `${query}: actual child password pixels are black at DPR ${deviceScaleFactor}`);
+            assert.deepEqual(pixelAt(captured.pixels.data, captured.pixels.width - 10, 10), [255, 255, 255], 'The image still contains useful unmasked source pixels');
+            assert.equal(await evaluate(cdp, target, 'document.querySelectorAll("[popover]").length'), 0);
+            assert.equal(await evaluate(cdp, target, 'new Promise(resolve => setTimeout(() => resolve(true), 0))'), true);
+          }
+        }
+      }
+    } finally { await cdp.send('Emulation.clearDeviceMetricsOverride', {}, operation(), metricsSession); await cdp.send('Target.detachFromTarget', { sessionId: metricsSession }, operation()); }
+  } finally { connection?.close(); await browser?.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test('HTML OBJECT screenshot proof rejects transforms and mutations without returning bytes', { timeout: 90_000 }, async () => {
+  const server = createServer((request, response) => {
+    if (request.url === '/vector') { response.setHeader('Content-Type', 'image/svg+xml'); response.end('<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="red"/></svg>'); return; }
+    response.setHeader('Content-Type', 'text/html');
+    if (request.url === '/embed') { response.end('<!doctype html><embed type="text/html" src="/leaf">'); return; }
+    if (request.url === '/svg-object') { response.end('<!doctype html><object type="image/svg+xml" data="/vector"></object>'); return; }
+    response.end(request.url === '/leaf' ? '<!doctype html><input type="password" value="generic-fixture-secret">' : '<!doctype html><object id="outer" type="text/html" data="/leaf" style="width:240px;height:160px"></object>');
+  });
+  const origin = await listen(server); let browser: OwnedBrowser | undefined; let connection: CdpConnection | undefined;
+  try {
+    browser = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [], env: process.env }, operation());
+    const cdp = await CdpConnection.connect(browser.endpoint, operation()); connection = cdp;
+    const target = (await cdp.listTargets(operation())).find(item => item.type === 'page')!.targetId;
+    const send = cdp.send.bind(cdp); let captures = 0; let mutateAfterCapture: string | undefined;
+    cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+      const answer = await send<T>(method, params, context, session);
+      if (method === 'Page.captureScreenshot') { captures++; if (mutateAfterCapture) await evaluate(cdp, target, mutateAfterCapture); }
+      return answer;
+    };
+    for (const path of ['/embed', '/svg-object']) {
+      await navigate(cdp, target, `${origin}${path}`);
+      await assert.rejects(captureMaskedPixels(cdp, target, operation()), /unsupported-owner-(type|document)/);
+      assert.equal(captures, 0, 'Unsupported rendering contexts never request screenshot bytes');
+    }
+    for (const declaration of ['transform:translateX(1px)', 'zoom:1.1', 'rotate:1deg']) {
+      await navigate(cdp, target, `${origin}/`);
+      await evaluate(cdp, target, `document.querySelector('#outer').style.cssText+=';${declaration}';true`);
+      const previous = captures;
+      // macOS may reject transformed masks before reaching the owner geometry proof.
+      await assert.rejects(captureMaskedPixels(cdp, target, operation()), /(?:transformed-owner|verify-before-masks)/);
+      assert.equal(captures, previous, 'Unproven geometry must fail before capture');
+      assert.equal(await evaluate(cdp, target, `document.querySelector('#outer').contentDocument.querySelectorAll('[popover]').length`), 0);
+    }
+    for (const mutation of [
+      `document.querySelector('#outer').style.width='250px';true`,
+      `document.querySelector('#outer').style.left='20px';document.querySelector('#outer').style.position='relative';true`,
+      `document.querySelector('#outer').replaceWith(document.querySelector('#outer').cloneNode());true`,
+      `document.querySelector('#outer').remove();true`,
+      `(()=>{const doc=document.querySelector('#outer').contentDocument;doc.open();doc.write('<!doctype html><input type=password value=replacement>');doc.close();return true})()`,
+    ]) {
+      await navigate(cdp, target, `${origin}/`); mutateAfterCapture = mutation;
+      const previous = captures;
+      await assert.rejects(captureMaskedPixels(cdp, target, operation()), /masking could not be proven/);
+      assert.equal(captures, previous + 1, 'Post-capture failure discards the single captured image, without retries');
+      mutateAfterCapture = undefined;
+      assert.equal(await evaluate(cdp, target, 'document.querySelectorAll("[popover]").length'), 0);
+    }
+    await navigate(cdp, target, `${origin}/`);
+    assert.equal((await captureMaskedPixels(cdp, target, operation())).maskingProven, true, 'A failed proof must leave the owned renderer usable');
+  } finally { connection?.close(); await browser?.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});

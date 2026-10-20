@@ -15,7 +15,10 @@ jobs:
     # Standard GitHub-hosted runners; no custom paid runner or user Mac required.
     # https://docs.github.com/en/actions/reference/runners/github-hosted-runners
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # Exact native rebuilds plus the independent official oracle need more than
+    # 60 minutes on standard Intel runners. This is a whole-job resource budget;
+    # test assertions and individual command timeouts remain unchanged.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -58,10 +61,13 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       # Fast platform-local unit feedback precedes expensive native compilation.
       - run: pnpm --filter e2e build
+      - run: pnpm --filter @e2e-dev/web build
+      - run: pnpm --filter e2e typecheck
+      - run: pnpm --filter e2e test:unit
       - id: adapter-build
         run: pnpm --filter @e2e-dev/agent-browser build
       - run: pnpm --filter @e2e-dev/agent-browser typecheck
-      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
+      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests packages/e2e/src packages/e2e/tests
       - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Validate source lock and checkout refusal cases
         run: node --test packages/agent-browser/tests/native-source.test.ts

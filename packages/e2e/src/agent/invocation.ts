@@ -1,3 +1,4 @@
+import { NodeRefs } from './node-refs.ts';
 /**
  * One bounded agent invocation.
  *
@@ -150,6 +151,7 @@ const MAX_OUTPUT_TOKENS = 8192;
 
 /** Model-call accounting plus observation metrics for one invocation; a judgment carries no ledger. */
 export class Invocation {
+  private readonly nodeRefs = new NodeRefs();
   readonly deadline: Deadline;
 
   private readonly metrics: StepMetrics = {
@@ -230,13 +232,17 @@ export class Invocation {
       { kind: 'observation', phase: 'agent.observe' },
       async () => {
         const raw = await this.captureObservation(pixels);
+        if (raw.kind === 'semantic') this.nodeRefs.observe(raw.tree);
+        else this.nodeRefs.invalidate();
         const prepared = prepareObservation(raw, {
+          nodeId: this.nodeRefs.encode,
           redact: this.runtime.redact,
           redactCut: this.runtime.redactCut,
           maxBytes: this.observationByteBudget(),
           pixelsAllowed: this.options.vision !== false && !this.runtime.exposure.withholdsModelPixels,
           appOrigin: this.runtime.app.base?.origin,
         });
+        this.nodeRefs.retain(new Set(prepared.kind === 'semantic' ? prepared.nodes.keys() : []));
         return prepared;
       },
       observationDetail,

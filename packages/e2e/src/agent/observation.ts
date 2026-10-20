@@ -73,6 +73,8 @@ export function prepareObservation(
     /** `redact` for a field cut at its observed limit (`SecretLedger.redactCut`). */
     redactCut: (text: string) => string;
     maxBytes: number;
+    /** Model-facing identity; internal node references remain opaque. */
+    nodeId?: (id: string) => string | undefined;
     /** Grants pixel-only evidence; omit when this consumer cannot use it. */
     pixelsAllowed?: boolean;
     /** The app base URL's origin: link targets on it render as paths, which navigation resolves against it. */
@@ -120,7 +122,7 @@ export function prepareObservation(
 
   const emit = (node: RedactedNode, depth: number): void => {
     if (cutByBudget) return;
-    const line = formatNode(node, depth, options.appOrigin);
+    const line = formatNode(node, depth, options.appOrigin, options.nodeId);
     const size = encoder.encode(`${line}\n`).byteLength;
     if (lines.length > 0 && bytes + size > budget) {
       cutByBudget = true;
@@ -374,7 +376,7 @@ export const INTERACTIVE_ROLES: ReadonlySet<string> = new Set([
 export function interactiveNodeCount(observation: Pick<ExecutorObservation, 'text'>): number {
   let count = 0;
   for (const line of observation.text.split('\n')) {
-    const role = /^\s*#\S+ (\S+)/.exec(line)?.[1];
+    const role = /^\s*(?:#\S+|@\S+) (\S+)/.exec(line)?.[1];
     if (role !== undefined && INTERACTIVE_ROLES.has(role)) count += 1;
   }
   return count;
@@ -422,9 +424,16 @@ const MAX_HREF_LENGTH = 256;
  * lines, and the model needs their text, not a filler word. A link target on
  * `appOrigin`, the app base URL's, renders as its path.
  */
-export function formatNode(node: RedactedNode, depth: number, appOrigin?: string): string {
+export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, nodeId: (id: string) => string | undefined = (id) => id): string {
   const description = describeNode(node, appOrigin);
-  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}#${node.ref.id}${description === '' ? '' : ` ${description}`}`;
+  const id = nodeId(node.ref.id);
+  const prefix = id === undefined ? '' : modelRefLabel(id);
+  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}${prefix}${prefix === '' || description === '' ? '' : ' '}${description}`;
+}
+
+/** The rendered reference token, preserving a native @ prefix exactly. */
+export function modelRefLabel(id: string): string {
+  return id.startsWith('@') ? id : `#${id}`;
 }
 
 /**
@@ -517,7 +526,7 @@ function boundHref(href: string): string {
 export function observationShape(observation: AgentObservation): string | undefined {
   if (observation.kind === 'pixels') return undefined;
   const text = observation.text
-    .replaceAll(/(^|\n)(\s*)#\S+/g, '$1$2')
+    .replaceAll(/(^|\n)(\s*)(?:#\S+|@\S+)/g, '$1$2')
     .replaceAll(/ \[([^\]]*)\]/g, (_match, states: string) => {
       const stable = states.split(' ').filter((state) => state !== 'focused');
       return stable.length === 0 ? '' : ` [${stable.join(' ')}]`;

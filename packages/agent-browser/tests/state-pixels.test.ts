@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import { crc32, deflateSync } from 'node:zlib';
 import { EngineError, type EngineState, type OperationContext } from 'e2e/engine';
@@ -104,7 +105,7 @@ function pixelFixture(white?: { x: number; y: number }, size = { width: 100, hei
   return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 
-function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nestedOopif?: boolean; unavailableOopif?: boolean; mismatchedOopif?: boolean; ownerInClosedShadow?: boolean; missingOwnerIdentity?: boolean; ownerChangesAt?: 'before' | 'after'; ownerChangeKind?: 'replace' | 'add' | 'remove'; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
+function mockPixels(options: { ownerTag?: string; childContentType?: string; ownerStyle?: Record<string, string>; ownerDisconnected?: boolean; inaccessibleFrame?: boolean; oopif?: boolean; nestedOopif?: boolean; unavailableOopif?: boolean; mismatchedOopif?: boolean; ownerInClosedShadow?: boolean; missingOwnerIdentity?: boolean; ownerChangesAt?: 'before' | 'after'; ownerChangeKind?: 'replace' | 'add' | 'remove'; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
   const calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] = [];
   const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
   let visible = true; let switchedAway = false;
@@ -131,7 +132,7 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
     if (method === 'Page.getFrameTree') value = { frameTree: { frame: { id: session === 'grandchild-session' ? 'grandchild' : session === 'child-session' ? options.mismatchedOopif ? 'foreign-frame' : 'child' : 'top' }, ...(options.inaccessibleFrame && session === 'top-session' ? { childFrames: [{ frame: { id: 'child' } }] } : {}) } };
     if (method === 'DOM.getDocument') {
       const changed = options.ownerChangesAt === 'before' ? masksInstalled : options.ownerChangesAt === 'after' && screenshotRequested;
-      const owner = { nodeType: 1, nodeName: 'IFRAME', ...(options.missingOwnerIdentity ? {} : { frameId: session === 'child-session' ? 'grandchild' : 'child' }), backendNodeId: changed && (options.ownerChangeKind ?? 'replace') === 'replace' ? 23 : 22 };
+      const owner = { nodeType: 1, nodeName: options.ownerTag ?? 'IFRAME', ...(options.missingOwnerIdentity ? {} : { frameId: session === 'child-session' ? 'grandchild' : 'child' }), backendNodeId: changed && (options.ownerChangeKind ?? 'replace') === 'replace' ? 23 : 22 };
       const hasOwner = (options.oopif && session === 'top-session') || (options.nestedOopif && session === 'child-session');
       const owners = changed && options.ownerChangeKind === 'remove' ? [] : changed && options.ownerChangeKind === 'add' ? [owner, { nodeType: 1, nodeName: 'IFRAME', frameId: 'new-child', backendNodeId: 24 }] : [owner];
       const frameId = session === 'grandchild-session' ? 'grandchild' : session === 'child-session' ? 'child' : 'top';
@@ -140,12 +141,19 @@ function mockPixels(options: { inaccessibleFrame?: boolean; oopif?: boolean; nes
     if (method === 'Target.attachToTarget') value = { sessionId: `${String(params.targetId)}-session` };
     if (method === 'Page.createIsolatedWorld') value = { executionContextId: session === 'grandchild-session' ? 3 : session === 'child-session' ? 2 : 1 };
     if (method === 'DOM.resolveNode') value = { object: { objectId: 'closed-root' } };
-    if (method === 'Runtime.callFunctionOn') value = { result: { value: String(params.functionDeclaration).includes('this.isConnected') ? session === 'child-session' ? { x: 5, y: 5, width: 20, height: 10 } : { x: 20, y: 30, width: 60, height: 40 } : true } };
+    if (method === 'Runtime.callFunctionOn') {
+      // Execute the production owner function. Returning a canned rectangle hid the OBJECT rejection.
+      const rectangle = session === 'child-session' ? { left: 5, top: 5, width: 20, height: 10 } : { left: 20, top: 30, width: 60, height: 40 };
+      const owner = { isConnected: !options.ownerDisconnected, tagName: options.ownerTag ?? 'IFRAME', parentElement: null, getRootNode: () => ({}), getBoundingClientRect: () => rectangle };
+      const style = { transform: 'none', perspective: 'none', rotate: 'none', scale: 'none', translate: 'none', zoom: '1', borderLeftWidth: '0', borderTopWidth: '0', borderRightWidth: '0', borderBottomWidth: '0', paddingLeft: '0', paddingTop: '0', paddingRight: '0', paddingBottom: '0', ...options.ownerStyle };
+      value = { result: { value: String(params.functionDeclaration).includes('this.isConnected') ? runInNewContext(`(${String(params.functionDeclaration)}).call(owner)`, { owner, getComputedStyle: () => style }) : true } };
+    }
     if (method === 'Runtime.evaluate') {
       const expression = String(params.expression);
-      if (expression === 'document.visibilityState === "visible"') value = { result: { value: visible } };
+      if (expression === `document.contentType === 'text/html'`) value = { result: { value: (options.childContentType ?? 'text/html') === 'text/html' } };
+      else if (expression === 'document.visibilityState === "visible"') value = { result: { value: visible } };
       else if (expression.includes('requestAnimationFrame')) value = { result: { value: true } };
-      else if (expression.includes('rectangles: state.masks.map')) value = { result: { value: { width: session === 'grandchild-session' ? 20 : session === 'child-session' ? 60 : 100, height: session === 'grandchild-session' ? 10 : session === 'child-session' ? 40 : 80, rectangles: [{ x: 5, y: 5, width: 10, height: 5 }] } } };
+      else if (expression.includes('rectangles: state.masks.map')) value = { result: { value: { contentType: options.childContentType ?? 'text/html', width: session === 'grandchild-session' ? 20 : session === 'child-session' ? 60 : 100, height: session === 'grandchild-session' ? 10 : session === 'child-session' ? 40 : 80, rectangles: [{ x: 5, y: 5, width: 10, height: 5 }] } } };
       else if (expression.includes('mask state already exists')) { masksInstalled = true; value = { result: { value: 1 } }; }
       else if (expression.includes("delete globalThis[key + '_closed']")) {
         if (options.cleanupFails) throw new Error('cleanup failure');
@@ -178,6 +186,43 @@ test('pixel capture independently masks the verified OOPIF renderer and releases
   assert.equal(calls.filter(call=>call.method==='Page.createIsolatedWorld').length, 2);
   assert.deepEqual(calls.filter(call=>call.method==='Target.detachFromTarget').map(call=>call.params.sessionId).toSorted(), ['child-session','top-session']);
   assert.deepEqual(calls.filter(call=>call.method==='Target.attachToTarget').map(call=>call.params.targetId), ['child'], 'Unrelated iframe targets must never be inspected');
+});
+
+test('HTML OBJECT owners use the executed content-box projection and exact child viewport', async () => {
+  const { cdp, calls } = mockPixels({ oopif: true, ownerTag: 'OBJECT' });
+  assert.equal((await captureMaskedPixels(cdp, 'top', operation())).maskedRegionCount, 2);
+  assert.equal(calls.filter(call => call.method === 'Page.captureScreenshot').length, 1);
+  assert.equal(calls.filter(call => call.method === 'Runtime.callFunctionOn').length, 2, 'Execute the owner function before and after capture');
+});
+
+test('unsupported owner types, non-HTML OBJECT documents and transformed owners fail closed with fixed reasons', async () => {
+  const cases = [
+    ...['EMBED', 'FENCEDFRAME', 'PORTAL', 'DIV'].map(ownerTag => ({ options: { ownerTag }, reason: 'unsupported-owner-type' })),
+    ...['application/pdf', 'image/svg+xml', 'image/png', 'application/xhtml+xml'].map(childContentType => ({ options: { ownerTag: 'OBJECT', childContentType }, reason: 'unsupported-owner-document' })),
+    ...['transform', 'perspective', 'rotate', 'scale', 'translate', 'zoom'].map(property => ({ options: { ownerTag: 'OBJECT', ownerStyle: { [property]: property === 'zoom' ? '2' : 'invalid-transform' } }, reason: 'transformed-owner' })),
+    { options: { ownerTag: 'OBJECT', ownerStyle: { paddingLeft: '1' } }, reason: 'owner-viewport-mismatch' },
+  ];
+  for (const { options, reason } of cases) {
+    const { cdp, calls } = mockPixels({ oopif: true, ...options });
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), new RegExp(reason));
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
+    assert.equal(calls.some(call => call.method === 'Target.detachFromTarget'), true);
+  }
+});
+
+test('HTML OBJECT rejection never depends on whether sensitive controls were found', async () => {
+  const { cdp, calls } = mockPixels({ oopif: true, ownerTag: 'OBJECT', ownerDisconnected: true });
+  const send = cdp.send.bind(cdp);
+  cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+    const result = await send<T>(method, params, context, session);
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('mask state already exists')) return { result: { value: 0 } } as T;
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('rectangles: state.masks.map')) {
+      const geometry = result as { result: { value: { rectangles: unknown[] } } }; geometry.result.value.rectangles = [];
+    }
+    return result;
+  };
+  await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /geometry-before/);
+  assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
 });
 
 test('Chromium document-element frame markers are not mistaken for child frame owners', async () => {
@@ -227,8 +272,8 @@ test('missing or mismatched remote target or owner identity prevents screenshot 
 });
 
 test('new, disappearing or replaced frame owners invalidate both pre-capture and post-capture proof', async () => {
-  for (const ownerChangesAt of ['before', 'after'] as const) for (const ownerChangeKind of ['replace', 'add', 'remove'] as const) {
-    const { cdp, calls } = mockPixels({ oopif: true, ownerChangesAt, ownerChangeKind });
+  for (const ownerTag of ['IFRAME', 'OBJECT']) for (const ownerChangesAt of ['before', 'after'] as const) for (const ownerChangeKind of ['replace', 'add', 'remove'] as const) {
+    const { cdp, calls } = mockPixels({ oopif: true, ownerTag, ownerChangesAt, ownerChangeKind });
     await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /masking could not be proven/);
     assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), ownerChangesAt === 'after');
     assert.deepEqual(calls.filter(call => call.method === 'Target.detachFromTarget').map(call => call.params.sessionId).toSorted(), ['child-session', 'top-session']);
@@ -341,7 +386,7 @@ test('same-process child rectangles receive the same root-space byte proof as re
     const result = await send<T>(method, params, context, session);
     if (method === 'DOM.getDocument') return { root: { nodeType: 9, children: [{ nodeType: 1, nodeName: 'HTML', frameId: 'top', backendNodeId: 10, children: [{ nodeType: 1, nodeName: 'IFRAME', frameId: 'child', backendNodeId: 22, contentDocument: { nodeType: 9, children: [{ nodeType: 1, nodeName: 'HTML', frameId: 'child', backendNodeId: 12 }] } }] }] } } as T;
     if (method === 'Page.createIsolatedWorld') return { executionContextId: params.frameId === 'child' ? 2 : 1 } as T;
-    if (method === 'Runtime.evaluate' && params.contextId === 2 && String(params.expression).includes('rectangles: state.masks.map')) return { result: { value: { width: 60, height: 40, rectangles: [{ x: 5, y: 5, width: 10, height: 5 }] } } } as T;
+    if (method === 'Runtime.evaluate' && params.contextId === 2 && String(params.expression).includes('rectangles: state.masks.map')) return { result: { value: { contentType: 'text/html', width: 60, height: 40, rectangles: [{ x: 5, y: 5, width: 10, height: 5 }] } } } as T;
     if (method === 'Page.captureScreenshot') return { data: pixelFixture({ x: 25, y: 35 }).toString('base64') } as T;
     return result;
   };

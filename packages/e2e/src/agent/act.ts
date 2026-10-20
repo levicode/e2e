@@ -279,7 +279,7 @@ class ActDispatch {
     );
     this.accounting.metrics.ledgerBytes = ledger.bytes;
     const replayedPrefix = this.stepCache?.replayedPrefix;
-    return {
+    return this.feed.refs.bind({
       step: {
         kind: this.spec.kind,
         index: this.stepIndex,
@@ -331,8 +331,8 @@ class ActDispatch {
         }));
       },
       attachScreenshot: (pixels, label) => this.attachScreenshot(pixels, label),
-      actions: this.dispatcher.actions,
-    };
+      actions: this.feed.refs.actions(this.dispatcher.actions),
+    });
   }
 
   /**

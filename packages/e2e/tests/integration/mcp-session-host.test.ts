@@ -11,6 +11,7 @@
  */
 
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { get } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -32,6 +33,23 @@ const agentModule = new URL('../../dist/agent/public.js', import.meta.url).href;
 const { defineTool } = (await import(agentModule)) as typeof import('../../src/agent/public.ts');
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Probe process reachability over a fresh connection, not pooled fetch lifecycle. */
+function probeApp(url: string): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const request = get(url, { agent: false }, (response) => {
+      response.setEncoding('utf8');
+      let text = '';
+      response.on('data', (chunk: string) => { text += chunk; });
+      response.once('error', reject);
+      response.once('aborted', () => reject(new Error('App probe response aborted')));
+      response.once('end', () => resolve({ status: response.statusCode ?? 0, text }));
+    });
+    const timer = setTimeout(() => request.destroy(new Error('App probe timed out')), 5000);
+    request.once('error', reject);
+    request.once('close', () => clearTimeout(timer));
+  });
+}
 
 /**
  * Fake engines made one per loaded config, as a config file loaded afresh
@@ -326,9 +344,9 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     const [first, second] = (await Promise.all([shared.open({}), shared.open({})])).map(sessionId) as [string, string];
     expect(startupLog(dir)).toBe('app\n');
     await shared.close('done', first);
-    expect(await (await fetch(url)).text()).toBe('ready');
+    expect(await probeApp(url)).toEqual({ status: 200, text: 'ready' });
     await shared.close('done', second);
-    await expect(fetch(url)).rejects.toThrow();
+    await expect(probeApp(url)).rejects.toThrow();
   });
 
   it('cancels a session still opening when it shuts down, waits for it, and admits none meanwhile', async () => {
@@ -361,10 +379,10 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     });
     const request = new AbortController();
     const opening = cancelling.open({}, request.signal);
-    await expect.poll(() => fetch(url).then((response) => response.ok, () => false)).toBe(true);
+    await expect.poll(() => probeApp(url).then((response) => response.status === 200, () => false)).toBe(true);
     request.abort();
     await expect(opening).rejects.toMatchObject({ code: 'CANCELLED' });
-    await expect(fetch(url)).rejects.toThrow();
+    await expect(probeApp(url)).rejects.toThrow();
     expect(cancelling.isOpen).toBe(false);
   });
 

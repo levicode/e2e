@@ -5,12 +5,14 @@ import { SUPPORTED_NODE_RANGE, unsupportedRuntimeMessage } from '../../src/inter
 const unsupportedNodeMessage = (node: string): string | undefined => unsupportedRuntimeMessage({ node }, true);
 
 describe('unsupportedRuntimeMessage', () => {
-  it('mirrors the engines field of every published package', () => {
+  it('mirrors the shared runtime floor and preserves the narrower native adapter floor', () => {
     expect(SUPPORTED_NODE_RANGE).toBe('^22.22.3 || >=24.8.0');
     const packages = new URL('../../../', import.meta.url);
     for (const dir of readdirSync(packages).filter((name) => existsSync(new URL(`${name}/package.json`, packages)))) {
       const manifest = JSON.parse(readFileSync(new URL(`${dir}/package.json`, packages), 'utf8')) as { name: string; engines: { node: string } };
-      expect({ name: manifest.name, node: manifest.engines.node }).toEqual({ name: manifest.name, node: SUPPORTED_NODE_RANGE });
+      // The maintained native adapter is validated on Node 24, not Node 22.
+      const expected = manifest.name === '@e2e-dev/agent-browser' ? '>=24.8.0' : SUPPORTED_NODE_RANGE;
+      expect({ name: manifest.name, node: manifest.engines.node }).toEqual({ name: manifest.name, node: expected });
     }
   });
 

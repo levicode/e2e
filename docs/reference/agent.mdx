@@ -318,6 +318,13 @@ that brings the matched node into view. Replay follows the same rule.
 - Every refusal and the final allow is a `policy` event named `upload.path`
   on the step. Nothing reaches the engine until every path passes.
 
+The model uses the references the engine exposes, such as native `@e221`
+references from agent-browser. Copy the listed reference into tool targets.
+The runner binds each model request to the complete internal identities behind
+those references, then applies the existing stale-target and relocation checks.
+Structural nodes without a reference remain visible but cannot be targeted.
+Custom executors requesting a node tree keep the existing opaque `id` contract.
+
 On engines with a keyboard, including the browser and device engines, `type`
 and `press` can omit `target` to act on the focused field. `type` then
 inserts at the caret; `replace: true` clears first. The browser engine
