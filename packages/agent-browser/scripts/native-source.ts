@@ -121,7 +121,7 @@ export function verifyBuildStamp(source: string, executable: string, lock = read
   return binary;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [action, source, extra] = process.argv.slice(2);
   assert.equal(extra, undefined, 'Unexpected native source argument');
   if (action === 'lock-values' && source === undefined) {

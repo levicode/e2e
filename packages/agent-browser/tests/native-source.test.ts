@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -257,5 +257,17 @@ test('build rejects actual compiler drift before Cargo', () => {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Actual Rust compiler differs/);
     assert.deepEqual(f.cargoCalls(), []);
+  } finally { f.cleanup(); }
+});
+
+
+test('source validator CLI runs through a symlinked directory on macOS-style paths', () => {
+  const f = fixture();
+  try {
+    const alias = path.join(f.root, 'aliased-package');
+    symlinkSync(path.join(f.repository, 'packages/agent-browser'), alias, 'dir');
+    const result = spawnSync(process.execPath, [path.join(alias, 'scripts/native-source.ts'), 'lock-values'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), `${forkRepository} ${f.lock.commit} ${AGENT_BROWSER_VERSION} 1.99.1`);
   } finally { f.cleanup(); }
 });
