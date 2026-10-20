@@ -14,6 +14,7 @@ interface Fixture {
   boxes?: Record<string, { x: number; y: number; width: number; height: number }>;
   frames?: boolean;
   complete?: boolean;
+  exactRefs?: boolean | null;
 }
 
 /** Simulates public CLI data responses, including the batch transport's unwrapped results. */
@@ -28,7 +29,7 @@ class FakeTransport {
     this.calls.push({ args, sensitive: options?.sensitive === true });
     if (args[0] === 'snapshot') {
       const value = args.includes('--selector') ? this.scoped ?? this.fixture : this.fixture;
-      return { snapshot: value.snapshot, refs: value.refs, origin: 'https://fixture.test/', ...(value.complete === undefined ? {} : { complete: value.complete }) } as T;
+      return { ...(value.exactRefs === null ? {} : { exactRefs: value.exactRefs ?? true }), snapshot: value.snapshot, refs: value.refs, origin: 'https://fixture.test/', ...(value.complete === undefined ? {} : { complete: value.complete }) } as T;
     }
     if (args[0] === 'eval') {
       const script = args[1] ?? '';
@@ -81,7 +82,7 @@ test('preserves every default ref, including unnamed offscreen generic and font-
   assert.equal(offscreen.states?.hidden, false);
   assert.equal(adapter.resolve(offscreen.ref), '@e2');
   assert.ok(all.some((node) => node.text === 'Status ready'));
-  assert.deepEqual(transport.calls[0]?.args, ['snapshot']);
+  assert.deepEqual(transport.calls[0]?.args, ['snapshot', '--exact-refs']);
   assert.ok(transport.calls.every((call) => call.sensitive));
 });
 
@@ -206,7 +207,7 @@ test('sequential locator resolves retain exact source and destination across har
   assert.equal(adapter.resolve({ ...second!.ref, revision: 'locate:2' }), '@e101');
   await adapter.observe(context);
   assert.equal(adapter.resolve(first!.ref), '@e100');
-  assert.ok(transport.calls.some(call => call.args.join(' ') === 'snapshot --preserve-refs'));
+  assert.ok(transport.calls.some(call => call.args.join(' ') === 'snapshot --exact-refs --preserve-refs'));
   adapter.invalidate();
   assert.throws(() => adapter.resolve(first!.ref), errorCode('NODE_STALE'));
 });
@@ -230,7 +231,7 @@ test('trace-only adapters use public preserve mode and a separate revision names
   const initial = await active.observe(context);
   const trace = new SnapshotAdapter(transport, { preserveRefs: true, snapshotArgs: async () => ['--allowed-frame-documents', '{"frame":"loader"}'] });
   const snapshot = await trace.observe(context);
-  assert.ok(transport.calls.some(call => call.args.join(' ') === 'snapshot --preserve-refs --allowed-frame-documents {"frame":"loader"}'));
+  assert.ok(transport.calls.some(call => call.args.join(' ') === 'snapshot --exact-refs --preserve-refs --allowed-frame-documents {"frame":"loader"}'));
   assert.equal(active.resolve(initial.root.children![0]!.ref), '@e1');
   assert.notEqual(snapshot.root.ref.revision, initial.root.ref.revision);
   assert.throws(() => active.resolve(snapshot.root.children![0]!.ref), errorCode('NODE_STALE'));
@@ -267,4 +268,14 @@ test('new adapter instances never reuse old attempt or foreign worker identities
   const [fresh] = two.adopt([{ nativeRef: 'e1', node: { role: 'button' } }]);
   assert.notEqual(old!.ref.id, fresh!.ref.id);
   assert.throws(() => two.resolve(old!.ref), errorCode('NODE_STALE'));
+});
+
+
+test('exact snapshot receipt is required for every observation', async () => {
+  for (const exactRefs of [false, null]) {
+    const transport = new FakeTransport({ snapshot: '(empty page)', refs: {}, exactRefs });
+    await assert.rejects(new SnapshotAdapter(transport).observe(context));
+    assert.equal(transport.calls.length, 1);
+    assert.ok(transport.calls[0]?.args.includes('--exact-refs'));
+  }
 });

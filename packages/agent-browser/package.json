@@ -18,7 +18,8 @@
     "ADAPTER_COMPATIBILITY.md",
     "INSTALL.md",
     "UPSTREAM_SYNC.md",
-    "NOTICE"
+    "NOTICE",
+    "native-source.lock.json"
   ],
   "scripts": {
     "build": "tsc --project tsconfig.build.json",

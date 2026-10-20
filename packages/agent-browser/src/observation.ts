@@ -15,7 +15,7 @@ interface SnapshotTransport {
   run<T>(args: readonly string[], context: OperationContext, options?: { mutating?: boolean; sensitive?: boolean }): Promise<T>;
 }
 
-/** Authoritative identity exported by the maintained public CLI patch. */
+/** Authoritative identity exported by the maintained public CLI contract. */
 export interface SnapshotRef {
   readonly role: string;
   readonly name: string;
@@ -232,9 +232,9 @@ export class SnapshotAdapter {
   }
 
   private async snapshot(context: OperationContext, selector?: string): Promise<RawSnapshot> {
-    const args = ['snapshot', ...(this.preserveRefs || this.located.size > 0 ? ['--preserve-refs'] : []), ...(await this.snapshotArgs?.(context) ?? []), ...(selector === undefined ? [] : ['--selector', selector])];
+    const args = ['snapshot', '--exact-refs', ...(this.preserveRefs || this.located.size > 0 ? ['--preserve-refs'] : []), ...(await this.snapshotArgs?.(context) ?? []), ...(selector === undefined ? [] : ['--selector', selector])];
     const raw = await this.transport.run<unknown>(args, context, { sensitive: true });
-    if (!isRecord(raw) || typeof raw['snapshot'] !== 'string' || !isRecord(raw['refs'])) throw malformed();
+    if (!isRecord(raw) || raw['exactRefs'] !== true || typeof raw['snapshot'] !== 'string' || !isRecord(raw['refs'])) throw malformed();
     const refs: Record<string, SnapshotRef> = {};
     for (const [ref, value] of Object.entries(raw['refs'])) {
       if (!REF_ID.test(ref) || !isRecord(value) || typeof value['role'] !== 'string' || typeof value['name'] !== 'string') throw malformed();

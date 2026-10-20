@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/levicode/agent-browser.git",
+  "upstreamRepository": "https://github.com/vercel-labs/agent-browser.git",
+  "upstreamBase": "5ee8691339a5a002e4d7454eec95250253bc7419",
+  "commit": "a4cd9f8c728d590e6d5c3c5546f961874aa715be",
+  "tree": "4f52f3e35fc26bee9f2a9ad29e75467e9c9907f8",
+  "nativeVersion": "0.39.1-e2e.5",
+  "contractVersion": "e2e-exact-1",
+  "engineEpoch": "agent-browser-exact-6",
+  "rustToolchain": "1.99.1"
+}

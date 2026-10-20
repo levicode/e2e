@@ -11,8 +11,16 @@ const server = createServer((request, response) => {
   if (request.url === '/commit') { commits++; response.end('ok'); return; }
   response.setHeader('content-type', 'text/html; charset=utf-8');
   response.end(`<!doctype html><meta charset="utf-8"><title>Packaged consumer</title>
+    <label>Text<input data-testid="text" value="old text"></label>
+    <label>Area<textarea data-testid="area">old area</textarea></label>
+    <div role="textbox" aria-label="Editable" contenteditable data-testid="editable">old editable</div>
     <button id="consumer-commit">Commit once</button><p data-testid="result">waiting</p>
-    <script>globalThis.commitCount=0;document.getElementById('consumer-commit').onclick=()=>{
+    <script>globalThis.commitCount=0;globalThis.fillEvents=[];
+    document.addEventListener('input',event=>globalThis.fillEvents.push({
+      id:event.target.dataset.testid,trusted:event.isTrusted,
+      value:'value' in event.target?event.target.value:event.target.textContent
+    }));
+    document.getElementById('consumer-commit').onclick=()=>{
       globalThis.commitCount++;document.querySelector('[data-testid="result"]').textContent='committed once';
       navigator.sendBeacon('/commit');
     };</script>`);
@@ -44,8 +52,8 @@ try {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) { if (commits > 0) break; await new Promise(resolve => setTimeout(resolve, 10)); }
   assert.equal(commits, 1, 'One observed action must produce exactly one fixture-side commit');
-  await writeFile('consumer-results/browser-summary.json', `${JSON.stringify({ status: 'passed', commits, modelTokens: 0, engine: ENGINE_NAME, version: ENGINE_VERSION }, null, 2)}\n`);
-  process.stdout.write('Installed package observation, native click, report, and trace passed with zero model calls.\n');
+  await writeFile('consumer-results/browser-summary.json', `${JSON.stringify({ status: 'passed', commits, modelTokens: 0, engine: ENGINE_NAME, version: ENGINE_VERSION, fillContracts: ['input', 'textarea', 'contenteditable'], nativeCapabilities: 'required-before-browser-use' }, null, 2)}\n`);
+  process.stdout.write('Installed package browser fill/clear, exact observation, native click, report, and trace passed with zero model calls.\n');
 } finally {
   server.closeAllConnections();
   await new Promise<void>(resolve => server.close(() => resolve()));

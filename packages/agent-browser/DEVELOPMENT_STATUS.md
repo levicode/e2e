@@ -1,5 +1,7 @@
 # Source-pinned agent-browser delivery
 
+This dated status describes the pre-migration `0.39.1-e2e.4` delivery. The prepared `0.39.1-e2e.5` source-lock migration requires separate review and validation; see `VALIDATION.md`.
+
 Updated October 19, 2026. Tested runtime: **`e1c7458d44a6ce0d7b7cb12bfdd727271898ae72`**.
 
 The final runtime passes two complete Linux runs: 1,501 native tests, all 333 units, default unnamed-icon smoke, all 54 integration cases with zero skips, and fresh installed-package execution. Both macOS 15 ARM64 and Intel pass their native/unit/static gates, five locator cases, two public runner/replay cases and fresh installed consumer. The 147 existing upstream native ignored tests remain explicitly reported.

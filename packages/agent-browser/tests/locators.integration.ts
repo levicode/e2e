@@ -76,7 +76,7 @@ async function withLocators(run: (fixture: {
 
 test('unnamed icon smoke retains the native default snapshot ref and clicks it exactly once without a locator', { timeout: 120_000 }, async () => {
   await withLocators(async ({ cli, adapter }) => {
-    const native = await cli.run<{ snapshot: string; refs: Record<string, SnapshotRef> }>(['snapshot'], operation());
+    const native = await cli.run<{ snapshot: string; refs: Record<string, SnapshotRef> }>(['snapshot', '--exact-refs'], operation());
     const clickableLines = native.snapshot.split('\n').filter(line => line.includes('clickable [cursor:pointer]'));
     assert.equal(clickableLines.length, 1, 'The unfiltered public snapshot must expose the cursor-only font icon');
     const nativeId = /\[ref=(e\d+)\]/.exec(clickableLines[0]!)?.[1];

@@ -9,6 +9,13 @@ import { PassThrough } from 'node:stream';
 import test, { type TestContext } from 'node:test';
 import { EngineError, type OperationContext } from 'e2e/engine';
 import { AGENT_BROWSER_VERSION, CliTransport, type CliTransportOptions } from '../src/transport.ts';
+import { AGENT_BROWSER_CONTRACT, REQUIRED_NATIVE_CAPABILITIES } from '../src/native-contract.ts';
+
+const nativeCapabilities = {
+  contractVersion: AGENT_BROWSER_CONTRACT, nativeVersion: AGENT_BROWSER_VERSION,
+  capabilities: [...REQUIRED_NATIVE_CAPABILITIES], refModes: ['semantic', 'exact'],
+  passiveScope: { requiresDedicatedEndpoint: true, requiresTargetAndContext: true, ownsDebuggerPause: false, ownsFetch: false },
+};
 
 function context(timeoutMs = 2_000, signal = new AbortController().signal): OperationContext {
   return { signal, timeoutMs, runId: 'run', attemptId: 'attempt', origin: 'test' };
@@ -25,7 +32,9 @@ const globals = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;
 appendFileSync(process.env.TEST_LOG, JSON.stringify({ args, env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('AGENT_BROWSER_'))), config: readFileSync(args[args.indexOf('--config') + 1], 'utf8') }) + '\\n');
 const emit = (data) => process.stdout.write(JSON.stringify({success:true,data}));
 if (globals.includes('--version')) {
-  setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser 0.39.1-e2e.4'), Number(process.env.TEST_VERSION_DELAY || 0));
+  setTimeout(() => console.log(process.env.TEST_VERSION || 'agent-browser ${AGENT_BROWSER_VERSION}'), Number(process.env.TEST_VERSION_DELAY || 0));
+} else if (args.at(-1) === 'capabilities') {
+  setTimeout(() => console.log(process.env.TEST_CAPABILITIES || ${JSON.stringify(JSON.stringify({ success: true, data: nativeCapabilities }))}), Number(process.env.TEST_CAPABILITIES_DELAY || 0));
 } else if (args.at(-1) === '--all' && args.includes('--cdp-target')) {
   console.log(JSON.stringify({success:false,error:'Cannot use close --all with scoped flags'}));
   process.exitCode = 1;
@@ -35,6 +44,9 @@ if (globals.includes('--version')) {
   const marker = process.env.TEST_CLOSE_MARKER;
   if (marker && !existsSync(marker)) { writeFileSync(marker, '1'); emit({closed:false}); }
   else setTimeout(() => emit({closed:true}), Number(process.env.TEST_CLOSE_DELAY || 0));
+} else if (process.env.TEST_CONTRACT_MISMATCH) {
+  console.log(JSON.stringify({success:false,code:'contract_mismatch',error:'private-token',data:{dispatched:process.env.TEST_MISMATCH_DISPATCHED === 'true'}}));
+  process.exitCode = Number(process.env.TEST_MISMATCH_EXIT || 0);
 } else if (args.includes('hang')) {
   if (process.env.TEST_STARTED) writeFileSync(process.env.TEST_STARTED, 'started');
   setInterval(() => {}, 1000);
@@ -288,8 +300,9 @@ test('uses exact argv, JSON, a unique session, and an isolated config/environmen
   const result = await transport.run<{ args: string[] }>(['fill', '@e1', payload], context(), { mutating: true, sensitive: true });
   assert.deepEqual(result.args.slice(-3), ['fill', '@e1', payload]);
   const observed = await calls(log);
-  assert.equal(observed.length, 2);
+  assert.equal(observed.length, 3);
   assert.equal(observed[0]?.args.at(-1), '--version');
+  assert.equal(observed[1]?.args.at(-1), 'capabilities');
   assert.ok(observed[1]?.args.includes('--json'));
   assert.equal(observed[1]?.config, '{}');
   assert.deepEqual(Object.keys(observed[1]?.env ?? {}), ['AGENT_BROWSER_SOCKET_DIR']);
@@ -297,6 +310,7 @@ test('uses exact argv, JSON, a unique session, and an isolated config/environmen
   assert.notEqual(transport.session, other.transport.session);
   await transport.run(['get', 'title'], context());
   assert.equal((await calls(log)).filter((call) => call.args.at(-1) === '--version').length, 1);
+  assert.equal((await calls(log)).filter((call) => call.args.at(-1) === 'capabilities').length, 1);
 });
 
 test('CDP scope stays immutable on every command, version check, and cleanup invocation', async (t) => {
@@ -311,10 +325,13 @@ test('CDP scope stays immutable on every command, version check, and cleanup inv
     await transport.run(['get', 'title'], context());
     await transport.close(context());
     const observed = await calls(log);
-    assert.equal(observed.length, 3);
+    assert.equal(observed.length, 4);
     for (const call of observed) {
       assert.equal(call.args.filter(arg => arg === '--cdp-target').length, 1);
       assert.equal(call.args.filter(arg => arg === '--cdp-context').length, 1);
+      assert.equal(call.args.filter(arg => arg === '--cdp-dedicated').length, 1);
+      assert.equal(call.args.filter(arg => arg === '--expect-contract').length, 1);
+      assert.equal(call.args[call.args.indexOf('--expect-contract') + 1], AGENT_BROWSER_CONTRACT);
       assert.equal(call.args[call.args.indexOf('--cdp-target') + 1], 'provider.target:one');
       assert.equal(call.args[call.args.indexOf('--cdp-context') + 1], cdpContext ?? 'default');
       assert.equal(call.args[call.args.indexOf('--session') + 1], transport.session);
@@ -337,7 +354,7 @@ test('incomplete and malformed CDP scope is rejected before configuration or pro
 
 test('command arguments cannot override scope, including equals-form flags', async (t) => {
   const { transport, log } = await fake(t, {}, { cdp: '9222', cdpTarget: 'owned', cdpContext: null });
-  for (const token of ['--cdp-target', '--cdp-context', '--cdp-target=foreign', '--cdp-context=default']) {
+  for (const token of ['--cdp-target', '--cdp-context', '--cdp-target=foreign', '--cdp-context=default', '--cdp-dedicated', '--expect-contract', '--expect-contract=other']) {
     await assert.rejects(transport.run(['fill', '@e1', token], context(), { mutating: true }), classified('UNSUPPORTED_CAPABILITY'));
   }
   await assert.rejects(access(log));
@@ -353,14 +370,67 @@ test('rejects the wrong version before dispatch and never echoes it', async (t) 
   assert.equal(transport.poisoned, false);
 });
 
-for (const prior of ['0.39.1-e2e.1', '0.39.1-e2e.2', '0.39.1-e2e.3']) test(`rejects earlier exact-ref build ${prior} before any scoped CDP command or cleanup dispatch`, async (t) => {
+test('the version alone cannot authorize browser use without the full capability and ownership bundle', async (t) => {
+  const payloads: unknown[] = [
+    null, {}, { ...nativeCapabilities, contractVersion: 'private-token' },
+    { ...nativeCapabilities, nativeVersion: '0.39.1' },
+    ...REQUIRED_NATIVE_CAPABILITIES.map(missing => ({ ...nativeCapabilities, capabilities: nativeCapabilities.capabilities.filter(value => value !== missing) })),
+    { ...nativeCapabilities, capabilities: [...nativeCapabilities.capabilities, null] },
+    { ...nativeCapabilities, refModes: ['semantic'] },
+    { ...nativeCapabilities, refModes: ['exact'] },
+    ...Object.keys(nativeCapabilities.passiveScope).map(key => ({
+      ...nativeCapabilities, passiveScope: { ...nativeCapabilities.passiveScope, [key]: !nativeCapabilities.passiveScope[key as keyof typeof nativeCapabilities.passiveScope] },
+    })),
+  ];
+  for (const data of payloads) {
+    const { transport, log } = await fake(t, { TEST_CAPABILITIES: JSON.stringify({ success: true, data }) });
+    await assert.rejects(transport.run(['click', '@e1'], context(), { mutating: true }), classified('ENGINE_FAILURE', 'private-token'));
+    assert.equal(transport.poisoned, false, 'A browser-free descriptor mismatch has no uncertain browser effects');
+    await transport.close(context());
+    const observed = await calls(log);
+    assert.deepEqual(observed.map(call => call.args.at(-1)), ['--version', 'capabilities']);
+  }
+});
+
+test('malformed or failed capability envelopes fail before any daemon command', async (t) => {
+  for (const output of ['private-token not JSON', JSON.stringify({ success: false, data: nativeCapabilities }), JSON.stringify(nativeCapabilities)]) {
+    const { transport, log } = await fake(t, { TEST_CAPABILITIES: output });
+    await assert.rejects(transport.version(context()), classified('ENGINE_FAILURE', 'private-token'));
+    assert.equal(transport.poisoned, false);
+    await transport.close(context());
+    assert.equal((await calls(log)).length, 2);
+  }
+});
+
+test('daemon contract mismatch is a non-dispatched refusal for every mutation class', async (t) => {
+  for (const args of [['open', 'https://example.test'], ['keyboard', 'type', 'hello'], ['tab', 'target'], ['click', '@e1']]) {
+    for (const status of ['0', '1']) {
+      const { transport, log } = await fake(t, { TEST_CONTRACT_MISMATCH: '1', TEST_MISMATCH_EXIT: status });
+      await assert.rejects(transport.run(args, context(), { mutating: true }), (error: unknown) => {
+        assert.ok(classified('ENGINE_FAILURE', 'private-token')(error));
+        assert.ok(error instanceof EngineError && error.message.includes('was not dispatched'));
+        return true;
+      });
+      assert.equal(transport.poisoned, false);
+      assert.equal((await calls(log)).length, 3, 'No fallback input or reconnect may run after a contract refusal');
+    }
+  }
+});
+
+test('a contract error without explicit non-dispatch proof still means uncertain mutation', async (t) => {
+  const { transport } = await fake(t, { TEST_CONTRACT_MISMATCH: '1', TEST_MISMATCH_DISPATCHED: 'true' });
+  await assert.rejects(transport.run(['open', 'https://example.test'], context(), { mutating: true }), classified('ACTION_MAY_HAVE_COMMITTED', 'private-token'));
+  assert.equal(transport.poisoned, true);
+});
+
+for (const prior of ['0.39.1-e2e.1', '0.39.1-e2e.2', '0.39.1-e2e.3', '0.39.1-e2e.4']) test(`rejects earlier exact-ref build ${prior} before any scoped CDP command or cleanup dispatch`, async (t) => {
   const { transport, log } = await fake(t, { TEST_VERSION: `agent-browser ${prior}` }, {
     cdp: 'ws://127.0.0.1:9222/devtools/browser/shared', cdpTarget: 'owned-target', cdpContext: 'owned-context',
   });
   await assert.rejects(transport.run(['click', '@e1'], context(), { mutating: true }), (error: unknown) => {
     assert.ok(classified('ENGINE_FAILURE')(error));
     assert.ok(error instanceof EngineError);
-    assert.match(error.message, /0\.39\.1-e2e\.4 is required/);
+    assert.ok(error.message.includes(`${AGENT_BROWSER_VERSION} is required`));
     return true;
   });
   assert.equal(transport.poisoned, false);
@@ -465,7 +535,7 @@ test('scoped cleanup keeps the binding and uses the full caller budget without c
   await transport.run(['get', 'title'], context());
   await transport.close(context(3_000));
   const observed = await calls(log);
-  assert.equal(observed.length, 3);
+  assert.equal(observed.length, 4);
   assert.equal(observed.at(-1)?.args.at(-1), 'close');
   assert.ok(observed.at(-1)?.args.includes('--cdp-target'));
   assert.ok(!observed.some(call => call.args.includes('--all')));
@@ -484,7 +554,7 @@ test('unacknowledged scoped close retains files and never broadens scope to forc
   await assert.rejects(transport.close(context()), classified('ENGINE_FAILURE'));
   assert.equal(transport.poisoned, true);
   const observed = await calls(log);
-  assert.equal(observed.length, 3);
+  assert.equal(observed.length, 4);
   assert.ok(!observed.some(call => call.args.includes('--all')));
   const stateDirectory = observed[0]?.env.AGENT_BROWSER_SOCKET_DIR;
   assert.ok(stateDirectory);
@@ -582,7 +652,10 @@ test('version and mutation share one shrinking deadline, with uncertainty only a
   assert.equal(version.args.at(-1), '--version');
   gate.advance(100);
   gate.reply(version, `agent-browser ${AGENT_BROWSER_VERSION}`);
-  const mutation = await gate.spawned(1);
+  const capabilities = await gate.spawned(1);
+  assert.equal(capabilities.args.at(-1), 'capabilities');
+  gate.reply(capabilities, JSON.stringify({ success: true, data: nativeCapabilities }));
+  const mutation = await gate.spawned(2);
   assert.deepEqual(mutation.args.slice(-3), ['fill', 'hang', 'value']);
   gate.advance(79);
   await Promise.resolve();
@@ -592,9 +665,28 @@ test('version and mutation share one shrinking deadline, with uncertainty only a
   await rejected;
   assert.equal(gate.transport.poisoned, true);
   assert.deepEqual(gate.killed, [mutation.child.pid]);
-  assert.equal(gate.calls.length, 2, 'Exactly one version check and one mutation were spawned');
+  assert.equal(gate.calls.length, 3, 'Exactly one version check, one capability check and one mutation were spawned');
   await assert.rejects(gate.transport.run(['fill', 'hang', 'value'], context(), { mutating: true }), classified('INVALID_STATE'));
-  assert.equal(gate.calls.length, 2, 'An uncertain mutation is never dispatched twice');
+  assert.equal(gate.calls.length, 3, 'An uncertain mutation is never dispatched twice');
+});
+
+test('a capability check shares the version deadline and never starts a daemon on timeout', { timeout: 5_000 }, async (t) => {
+  const gate = deadlineProcesses(t);
+  const pending = gate.transport.run(['fill', '@e1', 'value'], context(180), { mutating: true });
+  const rejected = assert.rejects(pending, classified('OPERATION_TIMEOUT'));
+  const version = await gate.spawned(0);
+  gate.advance(100);
+  gate.reply(version, `agent-browser ${AGENT_BROWSER_VERSION}`);
+  const capabilities = await gate.spawned(1);
+  assert.equal(capabilities.args.at(-1), 'capabilities');
+  gate.advance(80);
+  await rejected;
+  assert.equal(gate.transport.poisoned, false);
+  assert.equal(gate.calls.length, 2);
+  assert.deepEqual(gate.killed, [capabilities.child.pid]);
+  gate.reply(capabilities, JSON.stringify({ success: true, data: nativeCapabilities }));
+  await Promise.resolve();
+  assert.equal(gate.calls.length, 2);
 });
 
 test('spawn errors are sanitized and do not poison a session that never started', async () => {
@@ -692,6 +784,7 @@ test('reviewed literal-data markers preserve global-looking fill/type/select/eva
     ['select', '@e1', '--label', '--', '--value'], ['select', '@e1', '--value', '--', '--session', '--config'],
     ['select', '@e1', '--index', '--', '2'], ['eval', '--', '--help'],
     ['keyboard', 'type', '--', '--session'], ['keyboard', 'inserttext', '--', '--version'], ['keyboard', 'insertText', '--', '--restore=other-session'],
+    ['keyboard', 'type', '--physical', '--', '--session'],
   ]) {
     const result = await transport.run<{ args: string[] }>(args, context(), { mutating: true });
     assert.deepEqual(result.args.slice(-args.length), args);
@@ -706,6 +799,7 @@ test('literal markers cannot hide transport controls, unknown branches, or batch
     ['fill', '--', '@e1', '--session'], ['fill', '@e1', '--session', '--', 'value'],
     ['type', '@e1', '--delay', '--', 'value'], ['type', '@e1', '--clear', '--clear', '--', 'value'],
     ['select', '@e1', '--', 'value'], ['eval', 'script', '--', '--version'],
+    ['keyboard', 'inserttext', '--physical', '--', 'value'], ['keyboard', 'type', '--physical', '--physical', '--', 'value'],
   ]) await assert.rejects(transport.run(args, context(), { mutating: true }), classified('UNSUPPORTED_CAPABILITY'));
   await assert.rejects(access(log));
 });

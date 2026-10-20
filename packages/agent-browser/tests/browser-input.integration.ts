@@ -43,8 +43,9 @@ before(async () => {
       <iframe id="cross" src="${crossOrigin}/frame?tag=cross" style="position:absolute;left:300px;top:260px;width:250px;height:70px"></iframe>
       <a id="download" href="/download">Download</a>
       <script>
-        window.keyEvents=[];window.pointerEvents=[];window.mouseEvents=[];window.messages={};
+        window.keyEvents=[];window.physicalKeyEvents=[];window.pointerEvents=[];window.mouseEvents=[];window.messages={};
         document.addEventListener('keydown',e=>window.keyEvents.push({key:e.key,code:e.code,shift:e.shiftKey,control:e.ctrlKey,repeat:e.repeat,trusted:e.isTrusted}));
+        for(const type of ['keydown','keyup'])document.addEventListener(type,e=>window.physicalKeyEvents.push({type,key:e.key,code:e.code,trusted:e.isTrusted}));
         for(const type of ['pointerdown','pointermove','pointerup'])document.addEventListener(type,e=>window.pointerEvents.push({type,x:e.clientX,y:e.clientY,buttons:e.buttons,control:e.ctrlKey,trusted:e.isTrusted}));
         document.getElementById('drag').addEventListener('pointerdown',e=>e.target.setPointerCapture(e.pointerId));
         for(const type of ['mousedown','mouseup','click','dblclick','contextmenu'])document.addEventListener(type,e=>{window.mouseEvents.push({type,button:e.button,detail:e.detail,time:performance.now(),trusted:e.isTrusted});if(type==='contextmenu')e.preventDefault()});
@@ -120,6 +121,14 @@ test('public browser keyboard emits held modifiers and repeat, and native type p
     await browser.evaluate(() => { (document.getElementById('field') as HTMLInputElement).value = ''; return null; });
     await browser.keyboard.type('汉字🙂é');
     assert.equal(await browser.evaluate(() => (document.getElementById('field') as HTMLInputElement).value), '汉字🙂é');
+    await browser.evaluate(() => { (document.getElementById('field') as HTMLInputElement).value = ''; (window as unknown as { physicalKeyEvents: unknown[] }).physicalKeyEvents = []; return null; });
+    await browser.keyboard.type('Az');
+    assert.equal(await browser.evaluate(() => (document.getElementById('field') as HTMLInputElement).value), 'Az');
+    const typed = await browser.evaluate('window.physicalKeyEvents') as Array<{ type: string; key: string; code: string; trusted: boolean }>;
+    for (const key of ['A', 'z']) {
+      assert.equal(typed.filter(event => event.type === 'keydown' && event.key === key && event.trusted).length, 1);
+      assert.equal(typed.filter(event => event.type === 'keyup' && event.key === key && event.trusted).length, 1);
+    }
   });
 });
 

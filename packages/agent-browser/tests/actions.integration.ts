@@ -25,7 +25,7 @@ before(async () => {
     <div id="source">Source</div><div id="destination">Destination</div><div id="scroller"><div style="height:1800px">Scroll content</div></div>
     <button id="below">Below viewport</button><div id="tail"></div><script>
       window.changed=[];window.checkedClicks=0;window.hovered=false;window.pointerLog=[];window.wheels=[];
-      for(const id of ['text','area','editable'])document.getElementById(id).addEventListener('input',event=>window.changed.push({id,type:event.type}));
+      for(const id of ['text','area','editable'])document.getElementById(id).addEventListener('input',event=>window.changed.push({id,type:event.type,trusted:event.isTrusted,value:'value' in event.target?event.target.value:event.target.textContent}));
       document.getElementById('checked').addEventListener('click',()=>window.checkedClicks++);
       document.getElementById('hover').addEventListener('pointerenter',()=>window.hovered=true);
       for(const type of ['pointerdown','pointermove','pointerup','pointercancel','dragstart','dragend'])document.addEventListener(type,event=>window.pointerLog.push({type,x:event.clientX,y:event.clientY,buttons:event.buttons,trusted:event.isTrusted}));
@@ -73,10 +73,14 @@ test('fill, clear, uncheck, hover, focus, press and explicit scroll act through 
       const target = await ref(engine, selector);
       await engine.perform!(target, { kind: 'fill', value: 'literal --session 汉字', sensitive: false }, operation());
       assert.equal(await browser.evaluate(id => { const node = document.querySelector(id)!; return 'value' in node ? String(node.value) : node.textContent; }, selector), 'literal --session 汉字');
+      assert.equal(await browser.evaluate(id => (window as unknown as { changed: { id: string; trusted: boolean; value: string }[] }).changed
+        .some(event => event.id === id.slice(1) && event.trusted && event.value === 'literal --session 汉字'), selector), true, 'Normal text filling must use browser insertion, not only a synthetic DOM setter');
       await engine.perform!(target, { kind: 'clear' }, operation());
       assert.equal(await browser.evaluate(id => { const node = document.querySelector(id)!; return 'value' in node ? String(node.value) : node.textContent; }, selector), '');
     }
-    assert.equal((await browser.evaluate('window.changed') as unknown[]).length, 6);
+    for (const id of ['text', 'area', 'editable']) {
+      assert.ok((await browser.evaluate('window.changed') as { id: string; value: string }[]).some(event => event.id === id && event.value === ''), `Clear must notify the application for ${id}`);
+    }
     const checkbox = await ref(engine, '#checked');
     await engine.perform!(checkbox, { kind: 'uncheck' }, operation());
     await engine.perform!(checkbox, { kind: 'uncheck' }, operation());

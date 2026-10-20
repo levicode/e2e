@@ -469,7 +469,7 @@ export class AgentBrowserSurface {
     await this.input.assertTextFocus(context);
     try {
     if (replace) { await this.pressKey('ControlOrMeta+a', context); dispatched = true; await this.pressKey('Backspace', context); }
-    await this.command(['keyboard', 'type', '--', text], context, true);
+    await this.command(['keyboard', 'type', '--physical', '--', text], context, true);
     } catch (error) { if (dispatched) this.markUncertain(context); throw error; }
   }
 
