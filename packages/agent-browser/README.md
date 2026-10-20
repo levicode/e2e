@@ -1,6 +1,6 @@
 # Agent-browser engine for e2e
 
-Development candidate for a separate `@e2e-dev/agent-browser` package. This package is not published and does not replace or modify `@e2e-dev/web`. It implements the public `e2e/engine` SPI version 1 with a distinct engine/cache identity.
+Maintained fork build of the separate `@e2e-dev/agent-browser` package. This package is not published and does not replace or modify `@e2e-dev/web`. It implements the public `e2e/engine` SPI version 1 with a distinct engine/cache identity.
 
 See [installation and source-pinned artifacts](INSTALL.md), [exact validation evidence](VALIDATION.md), and the [upstream synchronization checklist](UPSTREAM_SYNC.md). Native artifacts identify their tested OS and CPU architecture; a Linux pass is not macOS or private-application UAT proof.
 
@@ -21,7 +21,7 @@ The [maintained agent-browser fork](https://github.com/levicode/agent-browser) o
 
 The fork keeps one implementation. Precise command options select exact snapshot refs or `keyboard type --physical`; there is no stock/strict daemon profile or old patch execution path. Normal fill uses browser insertion for text controls and contenteditable selections. Direct native setters are limited to validated date/time-family inputs. Replay epoch 6 prevents reuse of recordings from the previously distributed synthetic-fill epoch 5.
 
-Build the pinned fork from this repository. The lock selects reviewed candidate commit `e1b6063839e5e33f556713655b296a2dc0ff5ca3` and its exact tree. Source hashes and the actual Rust 1.99.1 compiler are checked before building; distributing it still requires this candidate’s workflows to pass:
+Build the pinned fork from this repository. The lock selects stable native commit `a4cd9f8c728d590e6d5c3c5546f961874aa715be` and its exact reviewed tree. Source hashes and the actual Rust 1.99.1 compiler are checked before building; distribute only artifacts from this integration commit’s successful workflows:
 
 ```sh
 bash packages/agent-browser/scripts/build-exact-agent-browser.sh
@@ -46,7 +46,7 @@ const engine = agentBrowser({
 });
 ```
 
-Tests use `test` from the new package for its `browser` fixture, and `expect` from `e2e`. The factory supports Chromium, not Firefox or WebKit. Read `VALIDATION.md` before treating this development candidate as a complete Web-engine replacement.
+Tests use `test` from the new package for its `browser` fixture, and `expect` from `e2e`. The factory supports Chromium, not Firefox or WebKit. Read `VALIDATION.md` before treating this maintained adapter as a complete Web-engine replacement.
 
 ## Dedicated remote endpoints
 

@@ -1,7 +1,7 @@
 name: agent-browser adapter
 on:
   push:
-    branches: [main, feat/agent-browser-engine, feat/maintained-native-contract]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:

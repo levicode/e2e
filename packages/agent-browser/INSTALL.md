@@ -1,6 +1,6 @@
 # Install the source-pinned candidate
 
-This is a fork build, not an npm release. The source-lock migration is a preparation branch until its exact native commit/tree are selected and its own workflows pass. Earlier `0.39.1-e2e.4` artifacts do not validate this candidate. Use the native binary and the two package tarballs from **the same successful commit**. The package version remains private `0.0.0`; the exact source commit and artifact hashes distinguish candidates. The native version is `0.39.1-e2e.5`, and the engine/cache identity is `agent-browser-exact-6`.
+This is a fork build, not an npm release. The source lock selects the stable maintained native commit and exact tree. Install only after the matching integration workflows pass; earlier `0.39.1-e2e.4` artifacts are incompatible. Use the native binary and the two package tarballs from **the same successful commit**. The package version remains private `0.0.0`; the exact source commit and artifact hashes distinguish candidates. The native version is `0.39.1-e2e.5`, and the engine/cache identity is `agent-browser-exact-6`.
 
 ## Download the matching artifacts
 
@@ -90,7 +90,7 @@ pnpm --filter e2e build
 pnpm --filter @e2e-dev/agent-browser build
 ```
 
-The script reads `packages/agent-browser/native-source.lock.json`, fetches that exact commit from the public `levicode/agent-browser` fork, and checks its tree, upstream metadata, native version and protocol contract. It runs native tests, builds the CLI, checks its reported version and complete browser-free capability bundle, and writes a binary-hash build stamp. No patch is applied. An existing checkout with local changes, the wrong commit/tree or a different origin is refused without resetting it. Preserve the old directory and choose a fresh one with the optional first script argument; the default CI and packaging location is `.validation-tools/agent-browser-exact`. A migration placeholder in the lock is not buildable. Build tools and network access to the official GitHub/Cargo/package sources are required. To reproduce the fresh-consumer proof after selecting Chromium:
+The script reads `packages/agent-browser/native-source.lock.json`, fetches that exact commit from the public `levicode/agent-browser` fork, and checks its tree, upstream metadata, native version and protocol contract. It runs native tests, builds the CLI, checks its reported version and complete browser-free capability bundle, and writes a binary-hash build stamp. No patch is applied. An existing checkout with local changes, the wrong commit/tree or a different origin is refused without resetting it. Preserve the old directory and choose a fresh one with the optional first script argument; the default CI and packaging location is `.validation-tools/agent-browser-exact`. Build tools and network access to the official GitHub/Cargo/package sources are required. To reproduce the fresh-consumer proof after selecting Chromium:
 
 ```sh
 node packages/agent-browser/scripts/consumer-smoke.ts --browser --artifacts /tmp/agent-browser-proof
