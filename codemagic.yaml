@@ -19,10 +19,12 @@ workflows:
       - name: Verify platform and build the existing packages
         script: |
           set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
           test "$(uname -m)" = arm64
           test "$(sw_vers -productVersion | cut -d. -f1)" = 15
           test "$(node --version)" = v24.19.0
-          npm install --global pnpm@12.3.4
+          npm install --global --prefix "$CM_BUILD_DIR/.validation-tools/pnpm" pnpm@12.3.4
+          test "$(pnpm --version)" = 12.3.4
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm --filter e2e build
           pnpm --filter @e2e-dev/web build
@@ -31,6 +33,7 @@ workflows:
       - name: Type, unit, and lint gates before native compilation
         script: |
           set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
           pnpm --filter e2e typecheck
           pnpm --filter @e2e-dev/agent-browser typecheck
           pnpm exec oxlint packages/e2e/src packages/e2e/tests packages/agent-browser/src packages/agent-browser/tests
@@ -39,6 +42,7 @@ workflows:
       - name: Build the exact maintained native source
         script: |
           set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
           if ! command -v rustup >/dev/null; then
             brew install rustup
             rustup-init -y --profile minimal --default-toolchain 1.99.1 --no-modify-path
@@ -51,6 +55,7 @@ workflows:
       - name: Prove the native model boundary with real Chromium
         script: |
           set -euo pipefail
+          export PATH="$CM_BUILD_DIR/.validation-tools/pnpm/bin:$PATH"
           export E2E_AGENT_BROWSER_EXECUTABLE="$CM_BUILD_DIR/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser"
           export PLAYWRIGHT_BROWSERS_PATH="$CM_BUILD_DIR/.validation-tools/chromium"
           mkdir -p .validation-tools/codemagic-evidence
