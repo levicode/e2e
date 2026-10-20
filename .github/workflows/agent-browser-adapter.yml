@@ -1,0 +1,80 @@
+name: agent-browser adapter
+on:
+  push:
+    branches: [main, feat/agent-browser-engine]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agent-browser-adapter-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    # Fork-portable: no paid runner, credentials, LLM, publish, or deploy access.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_CHROMIUM_NO_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build pinned exact-ref public CLI extension
+        run: |
+          rustup toolchain install 1.93.0 --profile minimal
+          rustup default 1.93.0
+          bash packages/agent-browser/scripts/build-exact-agent-browser.sh
+          echo "E2E_AGENT_BROWSER_EXECUTABLE=$PWD/.validation-tools/agent-browser-exact/cli/target/ci/agent-browser" >> "$GITHUB_ENV"
+      - name: Install pinned browser for fixtures
+        run: |
+          pnpm --filter @e2e-dev/web exec playwright-core install --with-deps chromium
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux*/chrome' | head -1)
+          test -x "$CHROME"
+          echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+      - name: Install artifact video encoder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+      - run: pnpm --filter e2e build
+      - id: adapter-build
+        run: pnpm --filter @e2e-dev/agent-browser build
+      - run: pnpm --filter @e2e-dev/agent-browser typecheck
+      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
+      - run: pnpm --filter @e2e-dev/agent-browser test
+      - name: Focused native default unnamed-icon smoke
+        run: node --test --test-name-pattern '^unnamed icon smoke ' packages/agent-browser/tests/locators.integration.ts
+      - name: Real Chromium contract and independent acceptance tests
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
+        run: node --test packages/agent-browser/tests/*.integration.ts
+      - name: Fresh packaged consumer with real Chromium
+        id: packaged-consumer
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
+        run: node packages/agent-browser/scripts/consumer-smoke.ts --browser --artifacts "$RUNNER_TEMP/agent-browser-consumer-artifacts"
+      - name: Preserve packaged consumer evidence
+        if: ${{ always() && (steps.packaged-consumer.outcome == 'success' || steps.packaged-consumer.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-browser-packaged-consumer-${{ github.sha }}
+          path: ${{ runner.temp }}/agent-browser-consumer-artifacts
+          if-no-files-found: error
+          retention-days: 7
+      - name: Package verified native executable
+        run: |
+          node --input-type=module -e 'import assert from "node:assert/strict"; assert.equal(process.platform, "linux"); assert.equal(process.arch, "x64");'
+          node packages/agent-browser/scripts/native-artifact.ts --output "$RUNNER_TEMP/agent-browser-native-artifact"
+      - name: Preserve verified native executable
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-browser-native-linux-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/agent-browser-native-artifact
+          if-no-files-found: error
+          retention-days: 7
