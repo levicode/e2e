@@ -608,6 +608,7 @@ test('runs after the blocked tests', async ({ app }) => {
         expect(blocked.attempts[0]?.error?.code).toBe('TEST_TIMEOUT');
       }
       expect(resultByTitle(outcome, 'runs after the blocked tests').status).toBe('passed');
+      console.log('BUSY_WORKER_DIAGNOSTIC', JSON.stringify({ exitCode: outcome.exitCode, errors: outcome.report.run.errors }));
       expect(outcome.exitCode).toBe(1);
       expect(outcome.report.run.errors).toEqual([]);
       assertValidReport(outcome.report);
