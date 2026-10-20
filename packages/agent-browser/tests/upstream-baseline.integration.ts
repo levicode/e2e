@@ -11,8 +11,6 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import type { OperationContext } from 'e2e/engine';
 import { CdpConnection } from '../src/cdp.ts';
-import { launchChromium, type OwnedBrowser } from '../src/launch.ts';
-import { cdpAuditProxy } from './cdp-audit-proxy.ts';
 import { AGENT_BROWSER_CONTRACT, AGENT_BROWSER_VERSION } from '../src/native-contract.ts';
 
 const execute = promisify(execFile);
@@ -141,9 +139,7 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
   const env = isolatedEnvironment(directory);
   const config = path.join(directory, 'config.json');
   const errors: unknown[] = [];
-  let owned: OwnedBrowser | undefined;
   let observer: CdpConnection | undefined;
-  let audit: Awaited<ReturnType<typeof cdpAuditProxy>> | undefined;
   let observerSession: string | undefined;
   let cliStarted = false;
   let lastCommand = 'not-started';
@@ -151,30 +147,31 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
   let command: BrowserRun['command'] | undefined;
   try {
     await writeFile(config, '{}\n');
-    owned = await launchChromium({
-      executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', env,
-      args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [],
-    }, operation());
-    observer = await CdpConnection.connect(owned.endpoint, operation());
-    await observer.verifyChromium(operation());
-    const targets = (await observer.listTargets(operation())).filter((entry) => entry.type === 'page');
-    assert.equal(targets.length, 1, 'Each CLI must own one fresh exclusive browser endpoint');
-    const sessionId = await observer.attachTarget(targets[0]!.targetId, operation());
-    observerSession = sessionId;
-    const connection = observer;
-    audit = await cdpAuditProxy(owned.endpoint);
-    const endpoint = audit.endpoint;
+    const chromium = process.env.E2E_CHROMIUM_EXECUTABLE;
+    assert.ok(chromium, 'Ordinary baseline requires the same pinned Chromium executable');
     command = async (...args) => {
       cliStarted = true;
       lastCommand = args[0] === 'get' ? `get ${args[1] ?? ''}` : args[0] ?? 'missing-command';
       const { stdout } = await execute(executable, [
-        '--config', config, '--session', 'ordinary', '--engine', 'chrome', '--cdp', endpoint, '--json',
+        '--config', config, '--session', 'ordinary', '--engine', 'chrome', '--executable-path', chromium, '--json',
+        ...(process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--args', '--no-sandbox'] : []),
         ...(maintained ? ['--expect-contract', AGENT_BROWSER_CONTRACT] : []), ...args,
       ], { cwd: directory, env, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
       const envelope = JSON.parse(stdout) as { success: boolean; data: unknown };
       assert.equal(envelope.success, true, `Ordinary ${args[0]} must succeed`);
       return envelope.data;
     };
+    // Compare the ordinary CLI-owned lifecycle on both sides. The adapter's
+    // dedicated passive external attachment is covered in separate contracts.
+    const metadata = await command('get', 'cdp-url') as { cdpUrl: string };
+    assert.match(metadata.cdpUrl, /^ws:\/\//);
+    observer = await CdpConnection.connect(metadata.cdpUrl, operation());
+    await observer.verifyChromium(operation());
+    const targets = (await observer.listTargets(operation())).filter(entry => entry.type === 'page');
+    assert.equal(targets.length, 1, 'Each CLI must own one fresh exclusive browser endpoint');
+    const sessionId = await observer.attachTarget(targets[0]!.targetId, operation());
+    observerSession = sessionId;
+    const connection = observer;
     const evaluate = async <Value>(expression: string): Promise<Value> => {
       const value = await connection.send<{ result: { value: Value }; exceptionDetails?: unknown }>('Runtime.evaluate', {
         expression, returnByValue: true, awaitPromise: true,
@@ -182,7 +179,7 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
       assert.equal(value.exceptionDetails, undefined, 'The independent fixture observer must not throw');
       return value.result.value;
     };
-    // Isolate bounded CDP attachment from the subsequent navigation command.
+    // Confirm startup independently of the first fixture navigation.
     await command('get', 'url');
     result = await body({ command, evaluate, observe: () => evaluate<Observation>('window.observe()') });
   } catch (error) {
@@ -207,10 +204,7 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
       } catch { pageState = 'observer probe failed within 2 seconds'; }
     }
     const diagnostics = { executable: maintained ? 'maintained' : 'unmodified official', command: lastCommand, timeoutMs: 30_000, socketPresent,
-      daemonPid: pid.trim(), daemonAlive, daemonStderr: await readDiagnostic('ordinary.log'), pageState,
-      // Deliberately omit params, response bodies and evaluated expressions.
-      cdpCommands: audit?.commands.slice(-50).map(({ connection, id, method, sessionId }) => ({ connection, id, method, sessionId })),
-      cdpReplies: audit?.replies.slice(-50), forwardingErrors: audit?.errors };
+      daemonPid: pid.trim(), daemonAlive, daemonStderr: await readDiagnostic('ordinary.log'), pageState };
     errors.push(new Error(`Baseline failure diagnostics: ${JSON.stringify(diagnostics)}`, { cause: error }));
   }
   if (cliStarted && command) {
@@ -226,11 +220,13 @@ async function withBrowser<T>(executable: string, maintained: boolean, body: (ru
         assert.ok(Date.now() < deadline, 'The exact CLI session must remove its daemon files during cleanup');
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
-    } catch (error) { errors.push(error); }
+    } catch (error) {
+      errors.push(error);
+      // The CLI created this exclusive browser; terminate it if daemon cleanup failed.
+      try { await observer?.send('Browser.close', {}, { ...operation(), timeoutMs: 2_000 }); } catch { /* Original cleanup failure is retained. */ }
+    }
   }
-  try { await audit?.close(); } catch (error) { errors.push(error); }
   observer?.close();
-  try { await owned?.close(); } catch (error) { errors.push(error); }
   try { await rm(directory, { recursive: true, force: true }); } catch (error) { errors.push(error); }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, 'Baseline comparison and owned-resource cleanup failed');
