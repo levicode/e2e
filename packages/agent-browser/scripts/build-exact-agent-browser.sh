@@ -31,9 +31,10 @@ rm -f "$SOURCE/cli/target/ci/e2e-native-build.json"
 focused_status=0
 cargo test --profile ci --locked --target-dir "$SOURCE/cli/target" --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser \
   native::e2e_tests::test_obscura_e2e_unlaunchable_binary_does_not_attach_to_inherited_cdp \
-  -- --exact --nocapture || focused_status=$?
+  -- --exact --nocapture --test-threads=1 || focused_status=$?
+# Inherited tests share process-global environment; concurrency within each test remains intact.
 suite_status=0
-cargo test --profile ci --locked --target-dir "$SOURCE/cli/target" --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser || suite_status=$?
+cargo test --profile ci --locked --target-dir "$SOURCE/cli/target" --manifest-path "$SOURCE/cli/Cargo.toml" --bin agent-browser -- --test-threads=1 || suite_status=$?
 if [[ "$focused_status" != 0 || "$suite_status" != 0 ]]; then
   echo 'Native launch-safety or complete-suite validation failed' >&2
   exit 1
