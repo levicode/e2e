@@ -49,7 +49,7 @@ import {
   beforeEach,
   describe,
 } from '../../src/index.ts';
-import type { Engine, EngineAttemptContext, EngineCleanupContext, EngineDisposeContext, EngineHandle, EngineObserveOptions, EngineSnapshot } from '../../src/engine/index.ts';
+import type { Engine, EngineAttemptContext, EngineCleanupContext, EngineDisposeContext, EngineHandle, EngineObserveOptions, EngineSnapshot, NodeRef } from '../../src/engine/index.ts';
 import { createToolLoopExecutor, defineTool } from '../../src/agent/public.ts';
 import type { Report } from '../../src/index.ts';
 import type { LanguageModelV2, LanguageModelV3, LanguageModelV4 } from '@ai-sdk/provider';
@@ -797,3 +797,9 @@ session.steps().push({} as StepRecord);
 session.tracePath = '/tmp/trace.md';
 // @ts-expect-error closing returns a read-only list of failures
 (await session.close()).push({} as SerializedError);
+
+// Model presentation metadata is additive; engine identity remains required and opaque.
+const ordinaryEngineRef: NodeRef = { id: 'existing-id', revision: '1' };
+const nativeEngineRef: NodeRef = { id: 'opaque-internal-id', revision: '1', modelRef: '@e221', modelRefScope: 'engine-instance' };
+const structuralEngineRef: NodeRef = { id: 'structural-id', revision: '1', modelRef: null };
+void [ordinaryEngineRef, nativeEngineRef, structuralEngineRef];
