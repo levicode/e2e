@@ -27,6 +27,13 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      # Fast platform-local unit feedback precedes expensive native compilation.
+      - run: pnpm --filter e2e build
+      - id: adapter-build
+        run: pnpm --filter @e2e-dev/agent-browser build
+      - run: pnpm --filter @e2e-dev/agent-browser typecheck
+      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
+      - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Validate source lock and checkout refusal cases
         run: node --test packages/agent-browser/tests/native-source.test.ts
       - name: Compute isolated Rust dependency cache identity
@@ -76,17 +83,12 @@ jobs:
           sudo apt-get install -y ffmpeg
           ffmpeg -version
       - name: Exercise native exact refs and browser editing against real Chromium
+        id: native-browser
         env:
           AGENT_BROWSER_EXECUTABLE_PATH: ${{ env.E2E_CHROMIUM_EXECUTABLE }}
         run: |
           cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_shared_fill_preserves_browser_editing_and_clears_rich_content -- --ignored --exact --test-threads=1
           cargo test --profile ci --locked --manifest-path "$PWD/.validation-tools/agent-browser-exact/cli/Cargo.toml" --bin agent-browser native::e2e_tests::e2e_exact_snapshot_ref_never_rebinds_ordinary_ref_keeps_fallback -- --ignored --exact --test-threads=1
-      - run: pnpm --filter e2e build
-      - id: adapter-build
-        run: pnpm --filter @e2e-dev/agent-browser build
-      - run: pnpm --filter @e2e-dev/agent-browser typecheck
-      - run: pnpm exec oxlint packages/agent-browser/src packages/agent-browser/tests
-      - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Focused native default unnamed-icon smoke
         run: node --test --test-name-pattern '^unnamed icon smoke ' packages/agent-browser/tests/locators.integration.ts
       - name: Repeat scoped popup ownership regression with fresh browsers
@@ -97,11 +99,11 @@ jobs:
             node --test --test-name-pattern '^an exclusively owned browser routes' packages/agent-browser/tests/companion.integration.ts
           done
       - name: Real Chromium contract and independent acceptance tests
-        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' && steps.native-browser.outcome == 'success' }}
         run: node --test packages/agent-browser/tests/*.integration.ts
       - name: Fresh packaged consumer with real Chromium
         id: packaged-consumer
-        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.adapter-build.outcome == 'success' && steps.native-browser.outcome == 'success' }}
         run: node packages/agent-browser/scripts/consumer-smoke.ts --browser --artifacts "$RUNNER_TEMP/agent-browser-consumer-artifacts"
       - name: Preserve packaged consumer evidence
         if: ${{ always() && (steps.packaged-consumer.outcome == 'success' || steps.packaged-consumer.outcome == 'failure') }}

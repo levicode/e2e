@@ -292,7 +292,24 @@ test('a completed download cannot hide a trigger that never returns', async (t) 
 
 test('a download in an unrelated tab does not satisfy the active-document wait', async (t) => {
   const fixture = await setup(t);
-  await assert.rejects(fixture.browser.waitForDownload(() => fixture.completeDownload('wrong.txt', 'unrelated-frame'), { timeout: 40 }), { code: 'ACTION_FAILED' });
+  let elapsed = 0;
+  t.mock.method(performance, 'now', () => elapsed);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let triggerReturned!: () => void;
+  const triggered = new Promise<void>(resolve => { triggerReturned = resolve; });
+  const pending = fixture.browser.waitForDownload(async () => {
+    // Keep the real file and both CDP events: accepting the foreign frame must
+    // still resolve incorrectly and fail this test, not merely fail rename.
+    try { await fixture.completeDownload('wrong.txt', 'unrelated-frame'); }
+    finally { triggerReturned(); }
+  }, { timeout: 40 });
+  const rejected = assert.rejects(pending, { code: 'ACTION_FAILED' });
+  await triggered;
+  // Drain the trigger's finally chain before advancing the controlled deadline.
+  await new Promise<void>(resolve => setImmediate(resolve));
+  elapsed = 40;
+  t.mock.timers.tick(40);
+  await rejected;
   assert.equal(fixture.artifacts.length, 0);
   assert.equal(fixture.poisoned, false);
 });
