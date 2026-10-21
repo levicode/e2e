@@ -45,3 +45,57 @@ test('reset cannot replace the browser during an in-flight UI sequence', async (
   holding.resolve();
   await current;
 });
+
+// A denied screenshot must not replace refs that were never published to the
+// caller. Use the real snapshot adapter and pixel inventory, not a mocked
+// capture function, so the ordering regression remains observable.
+test('a refused pixel observation does not replace the last published exact refs', async () => {
+  const { SnapshotAdapter } = await import('../src/observation.ts');
+  const { EngineError } = await import('e2e/engine');
+  let snapshots = 0;
+  let connected = true;
+  const transport = {
+    poisoned: false,
+    async run<T>(args: readonly string[]): Promise<T> {
+      if (args[0] === 'snapshot') {
+        snapshots++;
+        return { exactRefs: true, complete: true, snapshot: '- button "Save" [ref=e1]', refs: { e1: { role: 'button', name: 'Save', backendNodeId: 1 } } } as T;
+      }
+      if (args[0] === 'eval') return { result: { width: 800, height: 600, frames: false, location: 'https://fixture.test/' } } as T;
+      if (args[0] === 'get') {
+        if (!connected) throw new EngineError('NODE_STALE', 'Detached exact node', { retryable: true });
+        assert.equal(args[2], '@e1');
+        return { value: null } as T;
+      }
+      throw new Error(`Unexpected command: ${args[0]}`);
+    },
+  };
+  const adapter = new SnapshotAdapter(transport, { readMetadata: async () => ({ e1: { rect: { x: 0, y: 0, width: 40, height: 20 } } }) });
+  const connection = {
+    attachTarget: async () => 'capture',
+    async send(method: string) {
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'top' } } };
+      if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 };
+      if (method === 'DOM.resolveNode') return { object: { objectId: 'owner' } };
+      if (method === 'Runtime.callFunctionOn') return { result: { value: false } };
+      if (method === 'DOM.getDocument') return { root: { nodeType: 9, children: [{ nodeType: 1, nodeName: 'OBJECT', backendNodeId: 9 }] } };
+      if (['DOM.enable', 'Runtime.releaseObjectGroup', 'Target.detachFromTarget'].includes(method)) return {};
+      throw new Error(`Unexpected CDP method: ${method}`);
+    },
+  };
+  const surface = new AgentBrowserSurface({});
+  Object.assign(surface, { info: { runId: 'run' }, attempt: { attemptId: 'attempt' }, transport, snapshots: adapter, connection, targetId: 'page', network: {} });
+  const before = await surface.observe(context());
+  const ref = before.root.children![0]!.ref;
+  await assert.rejects(surface.observe(context(), { pixels: true }), /unsupported-owner-document/);
+  assert.equal(snapshots, 1, 'a rejected screenshot must not invoke native snapshot');
+  assert.equal(adapter.resolve(ref), '@e1');
+  await adapter.verify(ref, context());
+  connected = false;
+  await assert.rejects(adapter.verify(ref, context()), { code: 'NODE_STALE' });
+  connected = true;
+  const refreshed = await surface.observe(context());
+  assert.notEqual(refreshed.root.children![0]!.ref.id, ref.id);
+  assert.throws(() => adapter.resolve(ref), { code: 'NODE_STALE' });
+  assert.equal(adapter.resolve(refreshed.root.children![0]!.ref), '@e1');
+});

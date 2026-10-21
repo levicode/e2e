@@ -309,3 +309,40 @@ test('HTML OBJECT screenshot proof rejects transforms and mutations without retu
     assert.equal((await captureMaskedPixels(cdp, target, operation())).maskingProven, true, 'A failed proof must leave the owned renderer usable');
   } finally { connection?.close(); await browser?.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });
+
+test('HTML OBJECT without a browsing context is safe only under a proven display:none subtree', { timeout: 120_000 }, async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<!doctype html><style>html,body{margin:0;background:white}#hidden{display:none}object{display:block;opacity:0;pointer-events:none;width:200px;height:80px}input{position:absolute;left:20px;top:20px;width:100px;height:30px}</style><input type="password" value="generic-fixture-secret"><section id="hidden"><object id="dormant" type="text/html" data="about:blank"><input value="fallback-secret"></object></section>');
+  });
+  const origin = await listen(server); let browser: OwnedBrowser | undefined; let connection: CdpConnection | undefined;
+  try {
+    browser = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [], env: process.env }, operation());
+    const cdp = await CdpConnection.connect(browser.endpoint, operation()); connection = cdp;
+    const target = (await cdp.listTargets(operation())).find(item => item.type === 'page')!.targetId;
+    await navigate(cdp, target, origin);
+    assert.equal(await evaluate(cdp, target, 'document.querySelector("#dormant").contentDocument === null'), true, 'The fixture must exercise an uninstantiated object');
+    const captured = await captureMaskedPixels(cdp, target, operation());
+    assert.equal(captured.maskingProven, true);
+    assert.deepEqual(pixelAt(captured.pixels.data, Math.floor(50 * captured.pixels.scale), Math.floor(30 * captured.pixels.scale)), [0, 0, 0]);
+    assert.deepEqual(pixelAt(captured.pixels.data, captured.pixels.width - 10, 10), [255, 255, 255]);
+    assert.equal(await evaluate(cdp, target, 'document.querySelectorAll("[popover]").length'), 0);
+    const send = cdp.send.bind(cdp);
+    for (const transition of ['reveal', 'replace', 'remove'] as const) {
+      await navigate(cdp, target, origin + '/' + transition);
+      let changed = false;
+      cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+        const result = await send<T>(method, params, context, session);
+        if (method === 'Page.captureScreenshot' && !changed) {
+          changed = true;
+          await send('Runtime.evaluate', { expression: transition === 'reveal' ? 'document.querySelector("#hidden").style.display="block"' : transition === 'remove' ? 'document.querySelector("#dormant").remove()' : 'document.querySelector("#dormant").replaceWith(document.querySelector("#dormant").cloneNode(true))' }, operation(), session);
+        }
+        return result;
+      };
+      await assert.rejects(captureMaskedPixels(cdp, target, operation()), /masking could not be proven/, transition);
+      assert.equal(changed, true);
+      assert.equal(await evaluate(cdp, target, 'document.querySelectorAll("[popover]").length'), 0);
+      cdp.send = send;
+    }
+  } finally { connection?.close(); await browser?.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
