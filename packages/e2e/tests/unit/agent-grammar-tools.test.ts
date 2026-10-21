@@ -6,10 +6,13 @@
 
 import type { ToolSet } from 'ai';
 import { z } from 'zod';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { aiSdk, loadAiSdk } from '../../src/agent/ai-sdk.ts';
 import { GRAMMAR_TOOL_NAMES } from '../../src/agent/action-names.ts';
+import type { ExecutorActions, ExecutorObservation, StepExecutorContext } from '../../src/agent/executor.ts';
 import { createGrammarTools, createVerdictTool } from '../../src/agent/primitives.ts';
+import { ScreenPresenter } from '../../src/agent/screen-update.ts';
+import { TestError } from '../../src/internal/errors.ts';
 import { fakeExecutorContext } from '../helpers/fake-executor-context.ts';
 
 /** An input each tool accepts; a tool added to the grammar without one fails the vocabulary check. */
@@ -169,6 +172,86 @@ describe('the grammar tools have closed schemas', () => {
     expect(conclusion.concluded()).toBe(false);
     expect(await conclusion.tool.execute!({ status: 'blocked', summary: 'no login', errorCode: 'AUTH_CREDENTIAL_UNAVAILABLE' }, options)).toBe('Step concluded.');
     expect(conclusion.verdict()).toEqual({ status: 'blocked', summary: 'no login', errorCode: 'AUTH_CREDENTIAL_UNAVAILABLE' });
+  });
+});
+
+describe('scroll result evidence', () => {
+  const initial: ExecutorObservation = {
+    revision: 'r1',
+    text: '@e1 list "Rows"\n @e2 button "Item"',
+    truncated: false,
+    viewport: { width: 1280, height: 720 },
+  };
+  const options = { toolCallId: 'scroll', messages: [], context: undefined };
+
+  it.each([undefined, '@e1'])('reports a request, not verified movement, with an unchanged tree and target %s', async (target) => {
+    const fake = fakeExecutorContext({ verbs: target === undefined ? ['scroll'] : ['tap', 'scroll'] });
+    const scroll = vi.fn<ExecutorActions['scroll']>().mockResolvedValue(undefined);
+    const observe = vi.fn<StepExecutorContext['observe']>().mockResolvedValue({ ...initial, revision: 'r2' });
+    const presenter = new ScreenPresenter();
+    presenter.open(initial);
+    const tools = createGrammarTools({ ...fake.context, actions: { ...fake.context.actions, scroll }, observe }, { screen: presenter });
+
+    const result = await tools['scroll']!.execute!({ direction: 'down', ...(target === undefined ? {} : { target }) }, options);
+
+    expect(result).toMatch(/^Requested scroll down\./);
+    expect(result).not.toContain('Scrolled');
+    expect(result).not.toContain('had no visible effect');
+    expect(result).not.toContain('did not scroll');
+    expect(scroll.mock.calls).toEqual([['down', target === undefined ? undefined : { id: target }]]);
+    expect(observe).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts requested repeats rather than screens moved, keeping one action per repeat and looks between them', async () => {
+    const fake = fakeExecutorContext({ verbs: ['tap', 'scroll'] });
+    const calls: string[] = [];
+    const scroll = vi.fn<ExecutorActions['scroll']>(async () => { calls.push('scroll'); });
+    const observe = vi.fn<StepExecutorContext['observe']>(async () => {
+      calls.push('observe');
+      return initial;
+    });
+    const tools = createGrammarTools({ ...fake.context, actions: { ...fake.context.actions, scroll }, observe });
+
+    const result = await tools['scroll']!.execute!({ direction: 'up', target: '@e1', times: 8 }, options);
+
+    expect(result).toMatch(/^Requested scroll up 8 times\./);
+    expect(result).not.toContain('8 screens');
+    expect(scroll.mock.calls).toEqual(Array.from({ length: 8 }, () => ['up', { id: '@e1' }]));
+    expect(calls).toEqual(Array.from({ length: 8 }, () => ['scroll', 'observe']).flat());
+  });
+
+  it('keeps changed screenshot evidence without deriving displacement from an unchanged tree', async () => {
+    const fake = fakeExecutorContext({ verbs: ['scroll'] });
+    const pixels = { data: new Uint8Array([1]), mediaType: 'image/png' as const, width: 1, height: 1, scale: 1, maskedRegionCount: 0 };
+    const nextPixels = { ...pixels, data: new Uint8Array([2]) };
+    const scroll = vi.fn<ExecutorActions['scroll']>().mockResolvedValue(undefined);
+    const observe = vi.fn<StepExecutorContext['observe']>().mockResolvedValue({ ...initial, revision: 'r2', pixels: nextPixels });
+    const presenter = new ScreenPresenter();
+    presenter.open({ ...initial, pixels });
+    const tools = createGrammarTools({ ...fake.context, actions: { ...fake.context.actions, scroll }, observe }, { screen: presenter });
+
+    const result = await tools['scroll']!.execute!({ direction: 'right' }, options);
+
+    expect(result).toMatchObject({ text: expect.stringMatching(/^Requested scroll right\./), pixels: nextPixels });
+    expect(result).toMatchObject({ text: expect.stringContaining('listed nodes unchanged; the screenshot changed') });
+    expect(result).toMatchObject({ text: expect.not.stringContaining('had no visible effect') });
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the native target and engine diagnostic, aborting repeats without claiming success or retrying', async () => {
+    const fake = fakeExecutorContext({ verbs: ['tap', 'scroll'] });
+    const scroll = vi.fn<ExecutorActions['scroll']>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValue(new TestError('ACTION_FAILED', 'native swipe rejected'));
+    const observe = vi.fn<StepExecutorContext['observe']>().mockResolvedValue(initial);
+    const tools = createGrammarTools({ ...fake.context, actions: { ...fake.context.actions, scroll }, observe });
+
+    const result = await tools['scroll']!.execute!({ direction: 'down', target: '@e1', times: 8 }, options);
+
+    expect(result).toMatch(/^scroll down @e1 failed: ACTION_FAILED: native swipe rejected/);
+    expect(result).not.toContain('Requested scroll');
+    expect(scroll.mock.calls).toEqual([['down', { id: '@e1' }], ['down', { id: '@e1' }]]);
+    expect(observe).toHaveBeenCalledTimes(2);
   });
 });
 

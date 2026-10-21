@@ -48,7 +48,7 @@ const MODEL_ERROR_CODES = [
  */
 const MAX_VERDICT_SUMMARY_CHARS = 2_000;
 
-/** Screens one scroll call may move; a windowed list of thousands of rows still needs a better verb. */
+/** Scroll requests one call may issue; a windowed list of thousands of rows still needs a better verb. */
 const MAX_SCROLL_TIMES = 20;
 /** Longest text `scroll_to` pages toward; a row label, never a paragraph. */
 const MAX_SCROLL_TO_TEXT_CHARS = 200;
@@ -73,6 +73,8 @@ const MODEL_BLOCKABLE_CODES = MODEL_ERROR_CODES.filter((code) => BLOCKABLE_CODES
 export const VERDICT_RULES = `Verdict rules:
 - When the step's goal is achieved, or you are certain it cannot be, call complete_step exactly once.
 - Conclude from the newest screen and changes already in this conversation; never guess success. Observe again before concluding only when the newest result shows work still in progress (a spinner, "Saving…", a pending state).
+- Distinguish staged selections from persisted results. An inner picker confirmation may only update an outer editor; finish the required save and verify the resulting saved state before claiming the step succeeded.
+- An empty filtered choice list does not prove SEED_DATA_MISSING: selected items may be excluded, an ID may appear under a display name, or a search may not have been submitted. Use that code only with evidence that required seed data is absent, not merely because time or tool attempts ran out.
 - "passed" means the application behaved as the step required. "failed" means it did not. "blocked" means credentials, the environment, or test setup prevented a product verdict — blocked says nothing about the product and requires an errorCode.`;
 
 /**
@@ -526,9 +528,10 @@ export function createGrammarTools(
       .min(1)
       .max(MAX_SCROLL_TIMES)
       .optional()
-      .describe(`How many screens to scroll in this one call, 1 to ${String(MAX_SCROLL_TIMES)}; default 1. Use more to move far down a long list or feed.`);
-    const scrolled = (way: string, count: number, id?: string) => ({
-      done: count === 1 ? `Scrolled ${way}.` : `Scrolled ${way} ${String(count)} screens.`,
+      .describe(`How many scrolls to request in this one call, 1 to ${String(MAX_SCROLL_TIMES)}; default 1. This count is not verified displacement.`);
+    // The engine resolves dispatch, not displacement; even a changed tree does not prove how far it moved.
+    const requestedScroll = (way: string, count: number, id?: string) => ({
+      done: count === 1 ? `Requested scroll ${way}.` : `Requested scroll ${way} ${String(count)} times.`,
       attempt: `scroll ${way}${id === undefined ? '' : ` ${modelRefLabel(id)}`}`,
     });
     // Each repeat is one recorded action against the budget, paced like a
@@ -546,13 +549,13 @@ export function createGrammarTools(
             'Scroll the viewport, or one scrollable node when target is given, by a screen or a few. The result reports the rows that came into or left the tree. For a row far down a long or windowed list, prefer scroll_to with the row\'s text: it pages until the row shows, as one action.',
           inputSchema: z.object({ direction, target: target.optional(), times }),
           execute: ({ direction: way, target: id, times: count }) =>
-            acting(scrolled(way, count ?? 1, id), () => scrolling(way, id, count ?? 1), { expectChange: false }),
+            acting(requestedScroll(way, count ?? 1, id), () => scrolling(way, id, count ?? 1), { expectChange: false }),
         })
       : screenTool({
           description: 'Scroll the viewport by a screen or a few. The result reports the rows that came into or left the tree. For a row far down a long list, prefer scroll_to with the row\'s text: it pages until the row shows, as one action.',
           inputSchema: z.object({ direction, times }),
           execute: ({ direction: way, times: count }) =>
-            acting(scrolled(way, count ?? 1), () => scrolling(way, undefined, count ?? 1), { expectChange: false }),
+            acting(requestedScroll(way, count ?? 1), () => scrolling(way, undefined, count ?? 1), { expectChange: false }),
         });
   }
   if (verbs.has('navigate')) {

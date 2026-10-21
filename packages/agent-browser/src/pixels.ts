@@ -167,6 +167,15 @@ const FRAME_GEOMETRY = `function() {
   const bottom = parseFloat(style.borderBottomWidth) + parseFloat(style.paddingBottom);
   return { x: box.left + left, y: box.top + top, width: box.width - left - right, height: box.height - top - bottom };
 }`;
+// A top-layer descendant cannot escape a display:none shadow-including ancestor.
+// Checking display, not opacity/visibility or bounds, also covers fallback content.
+const DORMANT_OWNER_HIDDEN = `function() {
+  if (!this.isConnected || this.tagName !== 'OBJECT' || this.getClientRects().length !== 0) return false;
+  for (let node = this; node; node = node.parentElement ?? node.getRootNode().host) {
+    if (getComputedStyle(node).display === 'none') return true;
+  }
+  return false;
+}`;
 interface MaskRectangle { x: number; y: number; width: number; height: number }
 interface MaskGeometry { contentType: string; width: number; height: number; rectangles: MaskRectangle[] }
 function validRectangle(value: MaskRectangle): boolean {
@@ -199,8 +208,10 @@ interface FrameSession {
   treeFrames: readonly string[];
   documents: readonly string[];
   owners: readonly FrameOwner[];
+  dormantOwners: readonly DormantOwner[];
   closedRoots: readonly ClosedShadow[];
 }
+interface DormantOwner { parentFrameId: string; backendNodeId: number }
 interface FrameOwner {
   kind: DocumentOwnerKind;
   parentFrameId: string;
@@ -209,8 +220,9 @@ interface FrameOwner {
   localDocument: boolean;
 }
 /** Page.getFrameTree omits remote children; the owning DOM node is the ownership proof. */
-function frameOwners(root: DomNode, mainFrame: string): FrameOwner[] {
+function frameOwners(root: DomNode, mainFrame: string): { owners: FrameOwner[]; dormantOwners: DormantOwner[] } {
   const found: FrameOwner[] = [];
+  const dormantOwners: DormantOwner[] = [];
   const visit = (node: DomNode, parentFrame: string, parentIsDocument = false): void => {
     const frame = node.nodeType === 9 ? node.frameId ?? parentFrame : parentFrame;
     const name = node.nodeName?.toUpperCase() ?? '';
@@ -223,17 +235,21 @@ function frameOwners(root: DomNode, mainFrame: string): FrameOwner[] {
     const isOwner = node.nodeType !== 9 && !documentElement && (node.frameId !== undefined || node.contentDocument !== undefined || ownerElement);
     if (isOwner) {
       if (!(SUPPORTED_DOCUMENT_OWNERS as readonly string[]).includes(name)) throw new OwnerProofFailure('unsupported-owner-type');
-      if (name === 'OBJECT' && !node.frameId) throw new OwnerProofFailure('unsupported-owner-document');
-      if (!node.frameId || node.frameId === frame || !Number.isSafeInteger(node.backendNodeId) || node.backendNodeId! <= 0 || found.some(owner => owner.frameId === node.frameId)) throw denied();
-      if (node.contentDocument && (node.contentDocument.nodeType !== 9 || (node.contentDocument.frameId !== undefined && node.contentDocument.frameId !== node.frameId))) throw denied();
-      found.push({ kind: name as DocumentOwnerKind, parentFrameId: frame, frameId: node.frameId, backendNodeId: node.backendNodeId!, localDocument: node.contentDocument !== undefined });
+      if (name === 'OBJECT' && !node.frameId) {
+        if (node.contentDocument || !Number.isSafeInteger(node.backendNodeId) || node.backendNodeId! <= 0) throw new OwnerProofFailure('unsupported-owner-document');
+        dormantOwners.push({ parentFrameId: frame, backendNodeId: node.backendNodeId! });
+      } else {
+        if (!node.frameId || node.frameId === frame || !Number.isSafeInteger(node.backendNodeId) || node.backendNodeId! <= 0 || found.some(owner => owner.frameId === node.frameId)) throw denied();
+        if (node.contentDocument && (node.contentDocument.nodeType !== 9 || (node.contentDocument.frameId !== undefined && node.contentDocument.frameId !== node.frameId))) throw denied();
+        found.push({ kind: name as DocumentOwnerKind, parentFrameId: frame, frameId: node.frameId, backendNodeId: node.backendNodeId!, localDocument: node.contentDocument !== undefined });
+      }
     }
     if (node.contentDocument) visit(node.contentDocument, node.frameId ?? frame);
     for (const child of node.children ?? []) visit(child, frame, node.nodeType === 9);
     for (const shadow of node.shadowRoots ?? []) visit(shadow, frame);
   };
   visit(root, mainFrame);
-  return found;
+  return { owners: found, dormantOwners };
 }
 function documentFrames(root: DomNode, mainFrame: string): string[] {
   const found: string[] = [];
@@ -309,6 +325,24 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
     const ownership = new Map<string, FrameOwner & { session: string }>();
     const frameSessions = new Map<string, string>();
     const enabled = new Set<string>();
+    // A non-instantiated OBJECT is safe only when CSS suppresses its entire
+    // shadow-including subtree. Keep exact identities in every inventory pass;
+    // opacity, MIME declarations and empty rectangles alone are not proofs.
+    const verifyDormantOwners = async (sessionId: string, owners: readonly DormantOwner[]): Promise<void> => {
+      for (const owner of owners) {
+        const { executionContextId } = await cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
+          frameId: owner.parentFrameId, worldName: key, grantUniveralAccess: false,
+        }, current(), sessionId);
+        const { object } = await cdp.send<{ object: { objectId?: string } }>('DOM.resolveNode', {
+          backendNodeId: owner.backendNodeId, executionContextId, objectGroup: key,
+        }, current(), sessionId);
+        if (!object.objectId) throw new OwnerProofFailure('unsupported-owner-document');
+        const result = await cdp.send<Evaluation<boolean>>('Runtime.callFunctionOn', {
+          objectId: object.objectId, functionDeclaration: DORMANT_OWNER_HIDDEN, returnByValue: true,
+        }, current(), sessionId);
+        if (result.exceptionDetails || result.result.value !== true) throw new OwnerProofFailure('unsupported-owner-document');
+      }
+    };
     const readSession = async (sessionId: string, expectedRoot?: string): Promise<void> => {
       if (!enabled.has(sessionId)) { await cdp.send('DOM.enable', {}, current(), sessionId); enabled.add(sessionId); }
       const { frameTree } = await cdp.send<{ frameTree: FrameTree }>('Page.getFrameTree', {}, current(), sessionId);
@@ -316,7 +350,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       const treeFrames = frameIds(frameTree); for (const id of treeFrames) expected.add(id);
       const { root } = await cdp.send<{ root: DomNode }>('DOM.getDocument', { depth: -1, pierce: true }, current(), sessionId);
       const documents = documentFrames(root, frameTree.frame.id);
-      const owners = frameOwners(root, frameTree.frame.id);
+      const { owners, dormantOwners } = frameOwners(root, frameTree.frame.id);
       if (documents[0] !== frameTree.frame.id || new Set(documents).size !== documents.length) throw denied();
       for (const owner of owners) {
         if (!documents.includes(owner.parentFrameId) || ownership.has(owner.frameId)) throw denied();
@@ -326,12 +360,14 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
       if (documents.slice(1).some(id => !owners.some(owner => owner.frameId === id && owner.localDocument))) throw denied();
       const closedRoots = verifyMaskableDom(root, documents, true);
       for (const id of documents) covered.add(id);
-      sessions.push({ session: sessionId, treeFrames, documents, owners, closedRoots });
+      await verifyDormantOwners(sessionId, dormantOwners);
+      sessions.push({ session: sessionId, treeFrames, documents, owners, dormantOwners, closedRoots });
     };
     const inventoryMatches = async (frameSession: FrameSession, stage: 'inventory-stability' | 'verify-before' | 'verify-after'): Promise<boolean> => {
       phase = stage === 'inventory-stability' ? stage : `${stage}-owners`;
       const { root } = await cdp.send<{ root: DomNode }>('DOM.getDocument', { depth: -1, pierce: true }, current(), frameSession.session);
-      if (JSON.stringify(frameOwners(root, frameSession.documents[0]!)) !== JSON.stringify(frameSession.owners)) return false;
+      if (JSON.stringify(frameOwners(root, frameSession.documents[0]!)) !== JSON.stringify({ owners: frameSession.owners, dormantOwners: frameSession.dormantOwners })) return false;
+      await verifyDormantOwners(frameSession.session, frameSession.dormantOwners);
       phase = stage === 'inventory-stability' ? stage : `${stage}-shadows`;
       if (JSON.stringify(verifyMaskableDom(root, frameSession.documents, true)) !== JSON.stringify(frameSession.closedRoots)) return false;
       phase = stage === 'inventory-stability' ? stage : `${stage}-documents`;
@@ -413,6 +449,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
     }));
     const collectGeometry = async (): Promise<{ frames: [string, MaskGeometry][]; offsets: [string, MaskRectangle][]; rectangles: MaskRectangle[] }> => {
       const frames = new Map<string, MaskGeometry>(); const offsets = new Map<string, MaskRectangle>();
+      const roundedOwners = new Set<string>();
       for (const item of installed) {
         const geometry = await evaluate<MaskGeometry>(cdp, item.session, item.contextId, `(${MASK_GEOMETRY})(${JSON.stringify(key)})`, current());
         if (!geometry || !Number.isFinite(geometry.width) || !Number.isFinite(geometry.height) || geometry.width <= 0 || geometry.height <= 0 || !Array.isArray(geometry.rectangles) || !geometry.rectangles.every(validRectangle)) throw denied();
@@ -433,10 +470,25 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
           throw denied();
         }
         if (!validRectangle(rectangle)) throw denied();
-        if (rectangle.width !== child.width || rectangle.height !== child.height) throw new OwnerProofFailure('owner-viewport-mismatch');
+        // Chromium pre-snaps embedded content size independently of its origin.
+        // Keep raw geometry for stability checks; do not invent a scaled projection.
+        if (Math.round(rectangle.width) !== child.width || Math.round(rectangle.height) !== child.height) throw new OwnerProofFailure('owner-viewport-mismatch');
+        if (rectangle.width !== child.width || rectangle.height !== child.height) roundedOwners.add(frameId);
         offsets.set(frameId, rectangle);
       }
       const mainFrame = sessions[0]!.documents[0]!; const rectangles: MaskRectangle[] = [];
+      // Prove the whole sensitive subtree before any clipping can discard a
+      // rectangle. Fractional auxiliary frames are accepted only when no
+      // descendant has a source-sensitive rectangle requiring projection.
+      for (const [frameId, geometry] of frames) if (geometry.rectangles.length > 0) {
+        let frame = frameId; const visited = new Set<string>();
+        while (frame !== mainFrame) {
+          if (visited.has(frame)) throw denied(); visited.add(frame);
+          if (roundedOwners.has(frame)) throw new OwnerProofFailure('owner-viewport-mismatch');
+          const owner = ownership.get(frame); if (!owner) throw denied();
+          frame = owner.parentFrameId;
+        }
+      }
       for (const [frameId, geometry] of frames) for (const rectangle of geometry.rectangles) {
         let visible = clipRectangle(rectangle, geometry.width, geometry.height); let frame = frameId; const visited = new Set<string>();
         while (visible && frame !== mainFrame) {

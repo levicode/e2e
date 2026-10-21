@@ -105,7 +105,7 @@ function pixelFixture(white?: { x: number; y: number }, size = { width: 100, hei
   return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 
-function mockPixels(options: { ownerTag?: string; childContentType?: string; ownerStyle?: Record<string, string>; ownerDisconnected?: boolean; inaccessibleFrame?: boolean; oopif?: boolean; nestedOopif?: boolean; unavailableOopif?: boolean; mismatchedOopif?: boolean; ownerInClosedShadow?: boolean; missingOwnerIdentity?: boolean; ownerChangesAt?: 'before' | 'after'; ownerChangeKind?: 'replace' | 'add' | 'remove'; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
+function mockPixels(options: { innerLeft?: number; ownerHeight?: number; childHeight?: number; emptyChild?: boolean; dormant?: 'self' | 'ancestor' | 'shadow' | 'slot' | 'opacity' | 'visible'; revealAt?: 'before' | 'after'; ownerTag?: string; childContentType?: string; ownerStyle?: Record<string, string>; ownerDisconnected?: boolean; inaccessibleFrame?: boolean; oopif?: boolean; nestedOopif?: boolean; unavailableOopif?: boolean; mismatchedOopif?: boolean; ownerInClosedShadow?: boolean; missingOwnerIdentity?: boolean; ownerChangesAt?: 'before' | 'after'; ownerChangeKind?: 'replace' | 'add' | 'remove'; verificationFails?: boolean; cleanupFails?: boolean; cancelCapture?: AbortController; hidesOnFreeze?: boolean; visibilityFails?: boolean; browserContextId?: string; explicitContexts?: string[] } = {}): { cdp: CdpConnection; calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] } {
   const calls: { method: string; params: Record<string, unknown>; context: OperationContext; session?: string }[] = [];
   const cdp = Object.create(CdpConnection.prototype) as CdpConnection;
   let visible = true; let switchedAway = false;
@@ -136,14 +136,23 @@ function mockPixels(options: { ownerTag?: string; childContentType?: string; own
       const hasOwner = (options.oopif && session === 'top-session') || (options.nestedOopif && session === 'child-session');
       const owners = changed && options.ownerChangeKind === 'remove' ? [] : changed && options.ownerChangeKind === 'add' ? [owner, { nodeType: 1, nodeName: 'IFRAME', frameId: 'new-child', backendNodeId: 24 }] : [owner];
       const frameId = session === 'grandchild-session' ? 'grandchild' : session === 'child-session' ? 'child' : 'top';
-      value = { root: { nodeType: 9, children: [{ nodeType: 1, nodeName: 'HTML', frameId, backendNodeId: 10, ...(hasOwner ? { children: options.ownerInClosedShadow ? [{ nodeType: 1, nodeName: 'DIV', shadowRoots: [{ nodeType: 11, shadowRootType: 'closed', backendNodeId: 77, children: owners }] }] : owners } : {}) }] } };
+      value = { root: { nodeType: 9, children: [{ nodeType: 1, nodeName: 'HTML', frameId, backendNodeId: 10, ...(options.dormant ? { children: [{ nodeType: 1, nodeName: 'OBJECT', backendNodeId: 99 }] } : hasOwner ? { children: options.ownerInClosedShadow ? [{ nodeType: 1, nodeName: 'DIV', shadowRoots: [{ nodeType: 11, shadowRootType: 'closed', backendNodeId: 77, children: owners }] }] : owners } : {}) }] } };
     }
     if (method === 'Target.attachToTarget') value = { sessionId: `${String(params.targetId)}-session` };
     if (method === 'Page.createIsolatedWorld') value = { executionContextId: session === 'grandchild-session' ? 3 : session === 'child-session' ? 2 : 1 };
     if (method === 'DOM.resolveNode') value = { object: { objectId: 'closed-root' } };
     if (method === 'Runtime.callFunctionOn') {
       // Execute the production owner function. Returning a canned rectangle hid the OBJECT rejection.
-      const rectangle = session === 'child-session' ? { left: 5, top: 5, width: 20, height: 10 } : { left: 20, top: 30, width: 60, height: 40 };
+      if (String(params.functionDeclaration).includes('this.getClientRects().length')) {
+        const revealed = options.revealAt === 'before' ? masksInstalled : options.revealAt === 'after' && screenshotRequested;
+        const ancestor = { parentElement: null, getRootNode: () => ({}) };
+        const owner = { isConnected: true, tagName: 'OBJECT', parentElement: options.dormant === 'ancestor' ? ancestor : null,
+          assignedSlot: options.dormant === 'slot' ? ancestor : undefined,
+          getRootNode: () => options.dormant === 'shadow' ? { host: ancestor } : {}, getClientRects: () => [] };
+        const getComputedStyle = (node: unknown) => ({ display: !revealed && ((node === owner && options.dormant === 'self') || (node === ancestor && ['ancestor', 'shadow', 'slot'].includes(options.dormant ?? ''))) ? 'none' : 'block', opacity: '0', visibility: 'hidden' });
+        return { result: { value: runInNewContext(`(${String(params.functionDeclaration)}).call(owner)`, { owner, getComputedStyle }) } } as T;
+      }
+      const rectangle = session === 'child-session' ? { left: options.innerLeft ?? 5, top: 5, width: 20, height: 10 } : { left: 20, top: 30, width: 60, height: options.ownerHeight ?? 40 };
       const owner = { isConnected: !options.ownerDisconnected, tagName: options.ownerTag ?? 'IFRAME', parentElement: null, getRootNode: () => ({}), getBoundingClientRect: () => rectangle };
       const style = { transform: 'none', perspective: 'none', rotate: 'none', scale: 'none', translate: 'none', zoom: '1', borderLeftWidth: '0', borderTopWidth: '0', borderRightWidth: '0', borderBottomWidth: '0', paddingLeft: '0', paddingTop: '0', paddingRight: '0', paddingBottom: '0', ...options.ownerStyle };
       value = { result: { value: String(params.functionDeclaration).includes('this.isConnected') ? runInNewContext(`(${String(params.functionDeclaration)}).call(owner)`, { owner, getComputedStyle: () => style }) : true } };
@@ -153,7 +162,7 @@ function mockPixels(options: { ownerTag?: string; childContentType?: string; own
       if (expression === `document.contentType === 'text/html'`) value = { result: { value: (options.childContentType ?? 'text/html') === 'text/html' } };
       else if (expression === 'document.visibilityState === "visible"') value = { result: { value: visible } };
       else if (expression.includes('requestAnimationFrame')) value = { result: { value: true } };
-      else if (expression.includes('rectangles: state.masks.map')) value = { result: { value: { contentType: options.childContentType ?? 'text/html', width: session === 'grandchild-session' ? 20 : session === 'child-session' ? 60 : 100, height: session === 'grandchild-session' ? 10 : session === 'child-session' ? 40 : 80, rectangles: [{ x: 5, y: 5, width: 10, height: 5 }] } } };
+      else if (expression.includes('rectangles: state.masks.map')) value = { result: { value: { contentType: options.childContentType ?? 'text/html', width: session === 'grandchild-session' ? 20 : session === 'child-session' ? 60 : 100, height: session === 'grandchild-session' ? 10 : session === 'child-session' ? options.childHeight ?? 40 : 80, rectangles: options.emptyChild && session === 'child-session' ? [] : [{ x: 5, y: 5, width: 10, height: 5 }] } } };
       else if (expression.includes('mask state already exists')) { masksInstalled = true; value = { result: { value: 1 } }; }
       else if (expression.includes("delete globalThis[key + '_closed']")) {
         if (options.cleanupFails) throw new Error('cleanup failure');
@@ -658,4 +667,111 @@ test('failed visibility recovery discards pixels and still closes the owned reco
   await assert.rejects(captureMaskedPixels(cdp, 'top', operation(), { create: async () => 'excluded-probe', release: async id => { released.push(id); } }), /masking could not be proven/);
   assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), true);
   assert.deepEqual(released, ['excluded-probe']);
+});
+
+test('pixel observation publishes only after cleanup and unchanged attempt identity', async () => {
+  const { AgentBrowserSurface } = await import('../src/surface.ts');
+  for (const change of ['none', 'connection', 'target', 'adapter', 'taint', 'snapshot-taint', 'snapshot-failure'] as const) {
+    const { cdp, calls } = mockPixels();
+    let observations = 0;
+    const surface = new AgentBrowserSurface({});
+    const snapshot = { root: { ref: { id: 'root' }, role: 'document' }, viewport: { width: 100, height: 80 } };
+    const adapter = { observe: async () => {
+      observations++;
+      assert.ok(calls.some(call => call.method === 'Target.detachFromTarget'), 'pixel cleanup precedes native snapshot');
+      if (change === 'snapshot-taint') Object.assign(surface, { tainted: true });
+      if (change === 'snapshot-failure') throw new EngineError('NODE_STALE', 'Snapshot failed', { retryable: true });
+      return snapshot;
+    } };
+    Object.assign(surface, { info: { runId: 'test' }, attempt: { attemptId: 'test' }, transport: { poisoned: false }, snapshots: adapter, connection: cdp, targetId: 'top', network: {} });
+    const send = cdp.send.bind(cdp);
+    cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+      const result = await send<T>(method, params, context, session);
+      if (method === 'Target.detachFromTarget') {
+        if (change === 'connection') Object.assign(surface, { connection: {} });
+        if (change === 'target') Object.assign(surface, { targetId: 'other' });
+        if (change === 'adapter') Object.assign(surface, { snapshots: {} });
+        if (change === 'taint') Object.assign(surface, { tainted: true });
+      }
+      return result;
+    };
+    if (change === 'none') {
+      const result = await surface.observe(operation(), { pixels: true });
+      assert.equal(result.root, snapshot.root);
+      assert.equal(result.pixels?.mediaType, 'image/png');
+      assert.equal(observations, 1);
+    } else {
+      await assert.rejects(surface.observe(operation(), { pixels: true }), { code: change.includes('taint') ? 'POLICY_DENIED' : change === 'snapshot-failure' ? 'NODE_STALE' : 'INVALID_STATE' });
+      assert.equal(observations, change.startsWith('snapshot-') ? 1 : 0);
+    }
+  }
+});
+
+
+test('uninstantiated OBJECT requires repeated display:none subtree proof, not opacity or empty bounds', async () => {
+  for (const dormant of ['self', 'ancestor', 'shadow'] as const) {
+    const { cdp, calls } = mockPixels({ dormant });
+    assert.equal((await captureMaskedPixels(cdp, 'top', operation())).maskingProven, true);
+    assert.equal(calls.filter(call => call.method === 'Runtime.callFunctionOn' && String(call.params.functionDeclaration).includes('this.getClientRects().length')).length, 4);
+  }
+  for (const dormant of ['opacity', 'visible', 'slot'] as const) {
+    const { cdp, calls } = mockPixels({ dormant });
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /unsupported-owner-document/);
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
+  }
+  for (const revealAt of ['before', 'after'] as const) {
+    const { cdp, calls } = mockPixels({ dormant: 'ancestor', revealAt });
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /unsupported-owner-document/);
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), revealAt === 'after');
+    assert.ok(calls.some(call => call.method === 'Target.detachFromTarget'));
+  }
+});
+
+
+test('fractional embedded sizes accept only exact Chromium rounding without sensitive descendant projection', async () => {
+  for (const [ownerHeight, childHeight] of [[76.625, 77], [76.375, 76], [76.5, 77]] as const) {
+    const { cdp } = mockPixels({ oopif: true, ownerTag: 'OBJECT', ownerHeight, childHeight, emptyChild: true });
+    assert.equal((await captureMaskedPixels(cdp, 'top', operation())).maskingProven, true);
+  }
+  for (const options of [
+    { ownerHeight: 76.5, childHeight: 76, emptyChild: true },
+    { ownerHeight: 76.625, childHeight: 78, emptyChild: true },
+    { ownerHeight: 76.625, childHeight: 77 },
+    { ownerHeight: 76.625, childHeight: 77, emptyChild: true, nestedOopif: true },
+    { ownerHeight: 76.625, childHeight: 77, emptyChild: true, nestedOopif: true, innerLeft: 500 },
+  ]) {
+    const { cdp, calls } = mockPixels({ oopif: true, ownerTag: 'OBJECT', ...options });
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /owner-viewport-mismatch/);
+    assert.equal(calls.some(call => call.method === 'Page.captureScreenshot'), false);
+  }
+});
+
+test('dormant OBJECT gaining a frame or document invalidates the capture inventory', async () => {
+  for (const document of [false, true]) {
+    const { cdp } = mockPixels({ dormant: 'ancestor' });
+    const send = cdp.send.bind(cdp); let captured = false;
+    cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+      const result = await send<T>(method, params, context, session);
+      if (method === 'Page.captureScreenshot') captured = true;
+      if (method === 'DOM.getDocument' && captured) {
+        const owner = (result as { root: { children: { children: Record<string, unknown>[] }[] } }).root.children[0]!.children[0]!;
+        owner.frameId = 'new-document';
+        if (document) owner.contentDocument = { nodeType: 9 };
+      }
+      return result;
+    };
+    await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /verify-after-owners/);
+    assert.equal(captured, true);
+  }
+});
+
+test('fractional size changes are rejected even when rounded viewport size stays identical', async () => {
+  const options = { oopif: true, ownerTag: 'OBJECT', ownerHeight: 76.625, childHeight: 77, emptyChild: true };
+  const { cdp } = mockPixels(options); const send = cdp.send.bind(cdp);
+  cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
+    const result = await send<T>(method, params, context, session);
+    if (method === 'Page.captureScreenshot') options.ownerHeight = 76.75;
+    return result;
+  };
+  await assert.rejects(captureMaskedPixels(cdp, 'top', operation()), /geometry-after/);
 });

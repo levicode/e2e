@@ -341,10 +341,24 @@ export class AgentBrowserSurface {
   async observe(context: OperationContext, options?: EngineObserveOptions): Promise<EngineSnapshot> {
     this.guardOperation(context);
     context = bounded(context);
-    const snapshot = await (this.snapshots ?? invalidState()).observe(context);
-    if (!options?.pixels) return snapshot;
-    if (this.tainted) throw new TestError('POLICY_DENIED', 'Pixels are unavailable after sensitive input');
-    const masked = await captureMaskedPixels(this.cdp, this.activeTarget, context, this.probeTargets());
+    if (!options?.pixels) return (this.snapshots ?? invalidState()).observe(context);
+    const connection = this.cdp;
+    const target = this.activeTarget;
+    const snapshots = this.snapshots ?? invalidState();
+    const check = (): void => {
+      this.guardOperation(context);
+      if (this.connection !== connection || this.targetId !== target || this.snapshots !== snapshots) {
+        throw new EngineError('INVALID_STATE', 'The browser changed during pixel observation', { retryable: false });
+      }
+      if (this.tainted) throw new TestError('POLICY_DENIED', 'Pixels are unavailable after sensitive input');
+    };
+    check();
+    // A denied pixel proof must not replace exact refs with an observation the
+    // caller never receives. Complete masking and cleanup before refreshing refs.
+    const masked = await captureMaskedPixels(connection, target, context, this.probeTargets());
+    check();
+    const snapshot = await snapshots.observe(context);
+    check();
     return { ...snapshot, pixels: masked.pixels, maskedRegionCount: masked.maskedRegionCount };
   }
 

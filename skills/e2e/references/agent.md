@@ -138,7 +138,7 @@ The tools, one per engine action. Name the target as the screen names it
 - `press`: one key to a node or, on browser/device, to focus; `times` up to 20.
 - `select`: one option by visible label.
 - `check`: set a checkbox, switch, or radio to a state, not flip it.
-- `scroll`: viewport or one scrollable node, a screen or a few.
+- `scroll`: request viewport or node scrolling, optionally repeated; the count does not attest actual displacement.
 - `scroll_to`: a listed node into view, or by `text` page a list to a row.
 - `drag`: one node onto another.
 - `upload`: project-root files to a file input; outside it or hidden (`.env`)
