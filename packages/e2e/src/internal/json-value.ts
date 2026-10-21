@@ -23,50 +23,65 @@ export function validateJsonValue(value: unknown, label: string, rules: JsonValu
     ((at: string): never => {
       throw new ConfigurationError('POLICY_DENIED', `${at} must not contain a Secret`);
     });
-  // The ancestor path of the value being visited. Only an object that
-  // contains itself is a cycle; the same object reachable twice by different
-  // paths is an ordinary, serializable DAG.
-  const ancestors = new Set<unknown>();
-  const visit = (item: unknown, depth = 0): void => {
-    if (rules.maxDepth !== undefined && depth > rules.maxDepth) {
-      throw new TestError(
-        'INVALID_ARGUMENT',
-        `${label} exceeds ${rules.maxDepth} levels of nesting`,
-      );
-    }
-    if (item === null) return;
+  const problem = jsonValueProblem(value, rules.maxDepth, item => {
+    if (isSecret(item)) onSecret(label);
+  });
+  if (problem === undefined) return;
+  const detail = problem === 'depth' ? `exceeds ${rules.maxDepth} levels of nesting`
+    : problem === 'non-finite' ? 'contains a non-finite number'
+    : problem === 'cycle' ? 'contains a cycle'
+    : problem === 'prototype' ? 'must be JSON-safe'
+    : `must be JSON-safe, found ${problem}`;
+  throw new TestError('INVALID_ARGUMENT', `${label} ${detail}`);
+}
+
+/**
+ * Portable traversal shared with page-side result validation. When requested,
+ * snapshot receives only values inspected in this walk, never live accessors.
+ */
+export function jsonValueProblem(
+  value: unknown,
+  maxDepth?: number,
+  onObject?: (item: object) => void,
+  snapshot?: { value: unknown },
+): 'depth' | 'non-finite' | 'cycle' | 'prototype' | 'undefined' | 'function' | 'symbol' | 'bigint' | undefined {
+  if (value === undefined) {
+    if (snapshot !== undefined) snapshot.value = undefined;
+    return;
+  }
+  const ancestors = new Set<object>();
+  const visit = (item: unknown, depth: number, write?: (value: unknown) => void): ReturnType<typeof jsonValueProblem> => {
+    if (maxDepth !== undefined && depth > maxDepth) return 'depth';
+    if (item === null) { write?.(null); return; }
     switch (typeof item) {
       case 'string':
-      case 'boolean':
-        return;
+      case 'boolean': write?.(item); return;
       case 'number':
-        if (!Number.isFinite(item)) {
-          throw new TestError('INVALID_ARGUMENT', `${label} contains a non-finite number`);
-        }
-        return;
+        if (!Number.isFinite(item)) return 'non-finite';
+        write?.(item); return;
       case 'object': {
-        if (isSecret(item)) {
-          onSecret(label);
-        }
-        if (ancestors.has(item)) {
-          throw new TestError('INVALID_ARGUMENT', `${label} contains a cycle`);
-        }
-        if (
-          !Array.isArray(item) &&
-          Object.getPrototypeOf(item) !== Object.prototype &&
-          Object.getPrototypeOf(item) !== null
-        ) {
-          throw new TestError('INVALID_ARGUMENT', `${label} must be JSON-safe`);
-        }
+        onObject?.(item);
+        if (ancestors.has(item)) return 'cycle';
+        if (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype && Object.getPrototypeOf(item) !== null) return 'prototype';
         ancestors.add(item);
-        const entries = Array.isArray(item) ? item : Object.values(item);
-        for (const entry of entries) visit(entry, depth + 1);
+        const copy = write === undefined ? undefined : Array.isArray(item) ? [] : Object.create(null) as object;
+        const indexed = function* (items: unknown[]): Generator<readonly [string, unknown]> {
+          let index = 0;
+          for (const entry of items) yield [String(index++), entry];
+        };
+        const entries = Array.isArray(item) ? indexed(item) : Object.entries(item);
+        for (const [key, entry] of entries) {
+          const problem = visit(entry, depth + 1, copy === undefined ? undefined : copied => {
+            Object.defineProperty(copy, key, { value: copied, enumerable: true, configurable: true, writable: true });
+          });
+          if (problem !== undefined) return problem;
+        }
         ancestors.delete(item);
+        write?.(copy);
         return;
       }
-      default:
-        throw new TestError('INVALID_ARGUMENT', `${label} must be JSON-safe, found ${typeof item}`);
+      default: return typeof item as 'undefined' | 'function' | 'symbol' | 'bigint';
     }
   };
-  visit(value);
+  return visit(value, 0, snapshot === undefined ? undefined : copied => { snapshot.value = copied; });
 }

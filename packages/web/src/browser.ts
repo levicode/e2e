@@ -454,6 +454,10 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
       const envelope = value as { readonly [key: string]: JsonValue };
       if (typeof envelope['ok'] !== 'boolean') throw surface.invalidate();
       if (!envelope['ok']) {
+        if ('invalidResult' in envelope) {
+          if (envelope['invalidResult'] !== true || Object.keys(envelope).length !== 2) throw surface.invalidate();
+          throw new TestError('INVALID_ARGUMENT', 'evaluate result must be JSON-safe');
+        }
         if (typeof envelope['message'] !== 'string') throw surface.invalidate();
         throw new TestError('EVALUATE_FAILED', envelope['message']);
       }

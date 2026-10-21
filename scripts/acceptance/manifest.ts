@@ -24,7 +24,7 @@ export type AcceptanceSuite = (typeof WEB_ACCEPTANCE)[number];
 export const NATIVE_BROWSER_CONTRACTS = [
   'native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup',
   'native::client_observation::tests::chromium_native_observation_query_exact_and_secure_contract',
-  'native::client_protected_read::tests::chromium_frozen_page_keeps_native_read_lane_and_restores',
+  'native::client_protected_read::tests::chromium_animation_stabilization_preserves_visibility_and_native_reads',
   'native::client_page::tests::e2e_client_page_input_context_and_evaluate',
   'native::client_actions::tests::chromium_exact_actions_fill_select_check_document_and_stale_ref',
   'native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script',

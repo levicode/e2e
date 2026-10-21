@@ -533,3 +533,35 @@ describe('closed native receive diagnostics', () => {
     expect(fixture.dispose).toHaveBeenCalledOnce();
   });
 });
+
+describe('instrumented settlement diagnostics', () => {
+  it.each([false, true])('limits diagnostics to instrumented readiness=%s', async instrumented => {
+    vi.useFakeTimers();
+    try {
+      const f = harness(); const connecting = f.connect();
+      f.send(f.ready({ capabilities: instrumented ? ['acceptance.faults/1'] : [] }));
+      const client = await connecting; const controller = new AbortController();
+      const request = client.request('private-command', {}, context(controller.signal));
+      const original = f.requests.at(-1)!;
+      const failure = request.catch(cause => cause as Error);
+      controller.abort();
+      f.send(f.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await failure).toMatchObject({ code: 'CANCELLED', message: 'The native browser operation ended without a settled outcome' + (instrumented ? ' (settlement:result-seen=true;cancel-ack-seen=false)' : '') });
+      expect(f.dispose).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+  it('reports a settled cancel ACK without inventing an original result', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = harness(); const connecting = f.connect(); f.send(f.ready({ capabilities: ['acceptance.faults/1'] }));
+      const client = await connecting; const controller = new AbortController();
+      const request = client.request('private-command', {}, context(controller.signal)); const failure = request.catch(cause => cause as Error);
+      controller.abort(); const cancel = f.requests.at(-1)!;
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await failure).toMatchObject({ code: 'CANCELLED', message: 'The native browser operation ended without a settled outcome (settlement:result-seen=false;cancel-ack-seen=true)' });
+      expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+    } finally { vi.useRealTimers(); }
+  });
+});

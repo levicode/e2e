@@ -237,7 +237,13 @@ export class NativeClient {
         cancellation = code; pending.draining = true; this.settlingRequests++;
         clearTimeout(timer); context.signal.removeEventListener('abort', abort);
         // Cleanup/settlement only: the original native deadline is never extended.
-        settlementTimer = setTimeout(() => this.fail('The native browser operation ended without a settled outcome', code), 5000);
+        settlementTimer = setTimeout(() => {
+          // Instrumented acceptance binary only: closed booleans, never frames,
+          // commands, operation identities, token values, or native error text.
+          const diagnostic = this.ready?.capabilities.includes('acceptance.faults/1')
+            ? ` (settlement:result-seen=${settled !== undefined};cancel-ack-seen=${cancelAcknowledged})` : '';
+          this.fail(`The native browser operation ended without a settled outcome${diagnostic}`, code);
+        }, 5000);
         void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, { ...context, signal: new AbortController().signal, timeoutMs: 5000 }).then(() => {
           cancelAcknowledged = true; complete();
         }).catch(() => { if (!finished) this.fail('The native browser cancellation did not settle', code); });

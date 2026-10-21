@@ -31,7 +31,7 @@ import { engineBrand } from '../internal/brands.ts';
 // config options get.
 export { ConfigurationError, InfrastructureError, TestError } from '../internal/errors.ts';
 export { rejectUnknownKeys, rejectUnknownOptions } from '../internal/options.ts';
-export { validateJsonValue, type JsonValueRules } from '../internal/json-value.ts';
+export { validateJsonValue, jsonValueProblem, type JsonValueRules } from '../internal/json-value.ts';
 export { describePattern, matchesText, toTextPattern } from '../internal/text.ts';
 export { resolveExpression, type ResolveExpressionOptions } from './resolve.ts';
 export type { TextMatch } from '../types.ts';

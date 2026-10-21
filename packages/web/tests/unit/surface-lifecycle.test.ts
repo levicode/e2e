@@ -2,7 +2,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Browser, Dialog } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { secrets } from 'e2e';
 import type { EngineFixtureContext, OperationContext } from 'e2e/engine';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -71,17 +71,43 @@ afterEach(async () => {
   rmSync(artifactsDir, { recursive: true, force: true });
 });
 
+// These cases exercise adapter-owned lifecycle through the actual framed client.
+// A synthetic peer acknowledges ownership; it does not prove remote browser cleanup.
+async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurface>[0] = {}) {
+  let peer!: NativeProtocolPeer; let scopes = 0;
+  vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
+    peer = new NativeProtocolPeer(config.capabilities, request => {
+      if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
+      if (request.command === 'page.title') return { data: { title: 'clean' } };
+      return { data: null };
+    });
+    return peer.connect(context, onEvent);
+  });
+  const native = new NativeSurface(options);
+  await native.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: operation().signal, log: () => undefined });
+  return { native, peer };
+}
+
 it('keeps a late dialog failure on the attempt that registered it', async () => {
-  let release!: () => void;
-  const waiting = new Promise<void>((resolve) => { release = resolve; });
-  const oldLatch = surface.latch;
-  surface.dialogs.add(async () => { await waiting; throw new Error('old handler failed'); });
-  const pending = surface.dialogs.dispatch({ type: () => 'confirm', message: () => 'old', dismiss: async () => undefined } as unknown as Dialog);
-  await surface.endAttempt(cleanup());
-  await surface.startAttempt({ attemptId: 'a2', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
-  release(); await pending;
-  expect(() => oldLatch.throwPending()).toThrow(/old handler failed/);
-  await expect(surface.guard(operation(), 'next attempt', async () => 'clean')).resolves.toBe('clean');
+  const { native, peer } = await nativeLifecycle();
+  let release!: () => void; let entered!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    await native.startAttempt({ attemptId: 'a1', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    const oldLatch = native.latch;
+    const fixture = createBrowserFixture(native.fixtureSurface(), {
+      operation, fixture: (_name: string, value: unknown) => value, expectable: (value: unknown) => value,
+      app: { resolveUrl: (url: string) => url },
+    } as unknown as EngineFixtureContext);
+    await fixture.onDialog(async () => { entered(); await waiting; throw new Error('old handler failed'); });
+    const pending = peer.event('dialog.opened', { identityScope: 'scope-1', type: 'confirm', message: 'old' }, { token: 'old-dialog', timeoutMs: 1000 });
+    await reached; await native.endAttempt(cleanup());
+    await native.startAttempt({ attemptId: 'a2', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    release(); await pending;
+    expect(() => oldLatch.throwPending()).toThrow(/old handler failed/);
+    await expect(native.command('page.title', {}, operation())).resolves.toEqual({ title: 'clean' });
+  } finally { release(); await native.dispose(cleanup()); }
 });
 
 it('keeps a late route failure on the attempt that registered it', async () => {
@@ -178,21 +204,21 @@ it('rejects a focus read from a context replaced before typing dispatches', asyn
 });
 
 it('opens no session for an attempt the runner gave up on while its basic-auth password resolved', async () => {
-  const protectedSurface = new PlaywrightSurface({ basicAuth: { username: 'ada', password: secrets.get('stagingPassword') } });
-  await protectedSurface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
+  const { native, peer } = await nativeLifecycle({ basicAuth: { username: 'ada', password: secrets.get('stagingPassword') } });
   try {
     let resolvePassword!: (value: string) => void;
-    const slow = new Promise<string>((resolve) => { resolvePassword = resolve; });
+    const slow = new Promise<string>(resolve => { resolvePassword = resolve; });
     const controller = new AbortController();
-    const starting = protectedSurface.startAttempt({ attemptId: 'slow', artifactsDir, signal: controller.signal, resolveSecret: () => slow, ...ignoreTrace });
+    const starting = native.startAttempt({ attemptId: 'slow', artifactsDir, signal: controller.signal, resolveSecret: () => slow, ...ignoreTrace });
     controller.abort();
     await expect(starting).rejects.toMatchObject({ code: 'CANCELLED' });
-    await protectedSurface.endAttempt(cleanup());
+    await native.endAttempt(cleanup());
     resolvePassword('late-password');
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    await protectedSurface.startAttempt({ attemptId: 'next', artifactsDir, signal: new AbortController().signal, resolveSecret: async () => 'next-password', ...ignoreTrace });
-    expect(vi.mocked(browser.newContext).mock.lastCall?.[0]).toMatchObject({ httpCredentials: { username: 'ada', password: 'next-password' } });
-  } finally {
-    await protectedSurface.dispose(cleanup());
-  }
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(peer.requests).toHaveLength(0);
+    await native.startAttempt({ attemptId: 'next', artifactsDir, signal: operation().signal, resolveSecret: async () => 'next-password', ...ignoreTrace });
+    expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(1);
+    expect(peer.requests.find(request => request.command === 'scope.configure')?.args).toMatchObject({ requestPolicy: { basicAuth: { username: 'ada', password: 'next-password' } } });
+    expect(JSON.stringify(peer.frames)).not.toContain('late-password');
+  } finally { await native.dispose(cleanup()); }
 });

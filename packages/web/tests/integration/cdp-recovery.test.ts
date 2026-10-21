@@ -762,6 +762,39 @@ describe('CDP session recovery', () => {
     }
   });
 
+  it('captures masked pixels from a borrowed background page without changing either tab focus or visibility', async () => {
+    const remote = await host();
+    const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
+    await fixtureOf(engine).evaluate(() => {
+      document.body.style.background = 'blue';
+      document.body.innerHTML = '<input id="private-field" type="password" value="private" style="position:fixed;left:20px;top:20px;width:180px;height:40px">';
+      return null;
+    });
+    const original = await witness(engine, remote);
+    const other = await original.page.context().newPage();
+    try {
+      await other.setContent(`<button id="host-button" onclick="this.textContent='usable'">other tab</button>`);
+      await other.bringToFront(); // Host setup only, never capture restoration.
+      const state = () => ({ visibility: document.visibilityState, focused: document.hasFocus(), active: document.activeElement?.tagName ?? null, activeId: document.activeElement?.id ?? null });
+      const before = await Promise.all([original.page.evaluate(state), other.evaluate(state)]);
+      expect(before[0]?.visibility).toBe('hidden');
+      expect(before[1]?.visibility).toBe('visible');
+      const snapshot = await engine.observe!(operation(), { pixels: true });
+      expect(snapshot.pixels).toBeDefined();
+      expect(snapshot.maskedRegionCount).toBe(1);
+      const image = decodePng(snapshot.pixels!.data);
+      expect(image.pixelAt(40, 40)).toEqual([0, 0, 0, 255]);
+      expect(image.pixelAt(300, 160)).toEqual([0, 0, 255, 255]);
+      expect(await Promise.all([original.page.evaluate(state), other.evaluate(state)])).toEqual(before);
+      expect(await original.page.locator('#private-field').evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+      await other.getByRole('button', { name: 'other tab' }).click({ timeout: 2_000 });
+      expect(await other.getByRole('button').textContent()).toBe('usable');
+      expect(await fixtureOf(engine).evaluate(() => document.querySelector<HTMLInputElement>('#private-field')?.value ?? null)).toBe('private');
+    } finally {
+      await other.close();
+    }
+  });
+
   it('masks a new closed root after disconnected navigation without relying on a JavaScript tracking hook', async () => {
     const remote = await host();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });

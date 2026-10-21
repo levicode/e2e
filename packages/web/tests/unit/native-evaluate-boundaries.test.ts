@@ -58,10 +58,47 @@ async function transport() {
     send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false,
       error: { code }, effects, scopeState });
   };
-  return { browser, output, requests, failure, destroy };
+  const evaluateAndSerialize = async (override?: unknown) => {
+    const request = requests.at(-1)!;
+    const args = request['args'] as { source: string; argument: unknown };
+    const evaluate = new Function(`return (${args.source});`)() as (arg: unknown) => Promise<unknown>;
+    const value = JSON.parse(JSON.stringify({ value: override ?? await evaluate(args.argument) }));
+    send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: true,
+      data: value, effects: 'completed', scopeState: 'usable' });
+  };
+  return { browser, output, requests, failure, destroy, evaluateAndSerialize };
 }
 
 describe('native evaluate infrastructure fault classification', () => {
+  it('rejects non-finite results before lossy JSON serialization without poisoning the channel', async () => {
+    const fixture = await transport();
+    try {
+      const pending = fixture.browser.evaluate('() => Infinity');
+      const rejected = expect(pending).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await fixture.evaluateAndSerialize();
+      await rejected;
+      const next = fixture.browser.evaluate('() => ({ valid: 42 })');
+      await fixture.evaluateAndSerialize();
+      await expect(next).resolves.toEqual({ valid: 42 });
+    } finally { fixture.destroy(); }
+  });
+
+  it.each([
+    { ok: false, invalidResult: true, message: 'mixed' },
+    { ok: false, invalidResult: true, value: null },
+    { ok: false, invalidResult: false },
+  ])('rejects malformed invalid-result envelopes: %j', async envelope => {
+    const fixture = await transport();
+    try {
+      const pending = fixture.browser.evaluate('() => 1');
+      const rejected = expect(pending).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      await fixture.evaluateAndSerialize(envelope);
+      await rejected;
+      await expect(fixture.browser.evaluate('() => 2')).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(fixture.requests).toHaveLength(2);
+    } finally { fixture.destroy(); }
+  });
+
   // These replace the two old message-based Playwright rejection injections.
   it.each(['target closed', 'execution context destroyed'])('keeps native browser-failure for %s out of EVALUATE_FAILED', async () => {
     const fixture = await transport();
