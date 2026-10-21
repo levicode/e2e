@@ -24,8 +24,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/native-candidate-target
-      CARGO_HOME: ${{ runner.temp }}/native-candidate-cargo
       CARGO_BUILD_JOBS: '2'
       RUSTUP_TOOLCHAIN: stable
       E2E_TELEMETRY_DISABLED: '1'
@@ -48,6 +46,8 @@ jobs:
           set -euo pipefail
           mkdir -p .artifacts/native-candidate "$RUNNER_TEMP/native-candidate-home" "$RUNNER_TEMP/native-candidate-bin"
           node scripts/acceptance/candidate-revision.ts
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/native-candidate-target" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$RUNNER_TEMP/native-candidate-cargo" >> "$GITHUB_ENV"
           echo "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}" >> "$GITHUB_ENV"
           echo "HOME=$RUNNER_TEMP/native-candidate-home" >> "$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/native-candidate-playwright" >> "$GITHUB_ENV"
