@@ -5,16 +5,22 @@ import { bounded, beforeDispatch } from '../src/budget.ts';
 
 const context = (timeoutMs: number, signal = new AbortController().signal): OperationContext => ({ timeoutMs, signal, runId: 'budget', attemptId: 'budget', origin: 'test' });
 
-test('composite contexts monotonically consume one deadline', async () => {
+test('composite contexts monotonically consume one deadline', (t) => {
+  // Advance the monotonic clock explicitly: busy CI scheduling must not turn
+  // the intermediate positive-budget assertion into an expiry assertion.
+  let now = 1_000;
+  t.mock.method(performance, 'now', () => now);
   const operation = bounded(context(80));
   const first = operation.timeoutMs;
-  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(first, 80);
+  now += 15;
   const second = operation.timeoutMs;
+  assert.equal(second, 65);
   assert.ok(second < first);
   assert.ok(second > 0);
   const nested = bounded(operation);
-  assert.ok(nested.timeoutMs <= second);
-  await new Promise((resolve) => setTimeout(resolve, 85));
+  assert.equal(nested.timeoutMs, second);
+  now += 85;
   assert.equal(operation.timeoutMs, 0);
   assert.equal(nested.timeoutMs, 0);
   assert.throws(() => beforeDispatch(operation), { code: 'OPERATION_TIMEOUT', retryable: false });

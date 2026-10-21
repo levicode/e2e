@@ -21,6 +21,7 @@ const ITEM_ID = 9001;
 interface Request { prompt: Array<{ role: string; content: unknown }>; }
 interface ToolCall { toolName: string; input: Record<string, unknown>; }
 interface Scenario { existing: boolean; refusedScreenshot: boolean; }
+type FixtureEvent = { type: string; target: string; isTrusted: boolean; value: string | null; checked: boolean | null };
 type FixtureState = {
   items: Array<{ id: number; name: string }>;
   selected: number[];
@@ -34,8 +35,39 @@ type FixtureState = {
   editorCancels: number;
   persistedAtInnerConfirm: number[][];
   queries: string[];
-  trusted: boolean[];
+  events: FixtureEvent[];
 };
+
+/** Verifies real native pointer/text input, allowing only the pinned fill's explicit empty-input preparation. */
+function assertNativeEvents(events: readonly FixtureEvent[], scenario: Scenario): void {
+  const evidence = `Synthetic input event audit: ${JSON.stringify(events)}`;
+  const clicks = new Map([
+    ['open', 2], ['choose', 2], ['confirm', 1], ['cancel', 1], ['save', 1], ['close', 1], [`item-${ITEM_ID}`, 1],
+    ...(!scenario.existing ? [['edit', 1], ['add', 1]] as const : []),
+  ]);
+  for (const [target, count] of clicks) {
+    for (const type of ['pointerdown', 'pointerup', 'click']) {
+      const matching = events.filter(event => event.target === target && event.type === type);
+      assert.equal(matching.length, count, `Expected ${count} native ${type} events on ${target}. ${evidence}`);
+      assert.ok(matching.every(event => event.isTrusted), `Pointer/click events must be trusted on ${target}. ${evidence}`);
+    }
+  }
+  const checkboxChanges = events.filter(event => event.target === `item-${ITEM_ID}` && event.type === 'change');
+  assert.equal(checkboxChanges.length, 1, `The checkbox must change exactly once. ${evidence}`);
+  assert.ok(checkboxChanges.every(event => event.isTrusted && event.checked === true), `Native check must produce a trusted checked change. ${evidence}`);
+
+  const fills = new Map([['search', String(ITEM_ID)], ...(!scenario.existing ? [['new-id', String(ITEM_ID)], ['new-name', ITEM]] as const : [])]);
+  for (const [target, value] of fills) {
+    assert.ok(events.some(event => event.type === 'input' && event.target === target && event.isTrusted && event.value === value),
+      `Native text insertion must deliver the requested value to ${target}. ${evidence}`);
+  }
+  // Pinned native interaction.rs PREPARE_FILL_JS clears text/search fields and
+  // dispatches an empty input before Input.insertText supplies trusted editing.
+  for (const event of events.filter(candidate => !candidate.isTrusted)) {
+    assert.ok(event.type === 'input' && fills.has(event.target) && event.value === '' && event.checked === null,
+      `Only the native fill's empty-input preparation may be untrusted. ${evidence}`);
+  }
+}
 
 /** Extracts SDK text parts without treating model arguments or image bytes as evidence. */
 function textParts(value: unknown): string[] {
@@ -168,7 +200,7 @@ function fixturePage(scenario: Scenario): string {
       const key='synthetic-modal-fixture';
       const state=JSON.parse(localStorage.getItem(key)||'null')||{
         items:${JSON.stringify(items)},selected:[],edits:0,adds:0,innerConfirmations:0,outerSaves:0,
-        outerOpens:0,pickerOpens:0,pickerCancels:0,editorCancels:0,persistedAtInnerConfirm:[],queries:[],trusted:[]
+        outerOpens:0,pickerOpens:0,pickerCancels:0,editorCancels:0,persistedAtInnerConfirm:[],queries:[],events:[]
       };
       window.fixtureState=state;
       const outer=document.getElementById('outer');
@@ -180,7 +212,13 @@ function fixturePage(scenario: Scenario): string {
       const search=document.getElementById('search');
       let draft=new Set(state.selected);let pending=new Set();
       const save=()=>localStorage.setItem(key,JSON.stringify(state));
-      const audit=event=>{state.trusted.push(event.isTrusted);save()};
+      const audit=event=>{
+        const target=event.target;
+        state.events.push({type:event.type,target:target.id||target.localName,isTrusted:event.isTrusted,
+          value:'value' in target?String(target.value):null,checked:target.type==='checkbox'?target.checked:null});
+        save();
+      };
+      for(const type of ['pointerdown','pointerup'])document.addEventListener(type,audit,true);
       const names=ids=>ids.map(id=>state.items.find(item=>item.id===id)?.name||'unknown');
       const summary=()=>document.getElementById('summary').textContent='Saved selection: '+(names(state.selected).join(', ')||'none');
       const renderDraft=()=>{
@@ -204,7 +242,8 @@ function fixturePage(scenario: Scenario): string {
           const group=document.createElement('div');group.setAttribute('role','group');
           group.setAttribute('aria-label','Item ID '+item.id+': '+item.name);
           const label=document.createElement('label');
-          const input=document.createElement('input');input.type='checkbox';input.checked=pending.has(item.id);
+          const input=document.createElement('input');input.type='checkbox';input.id='item-'+item.id;input.checked=pending.has(item.id);
+          input.addEventListener('click',audit);
           input.addEventListener('change',event=>{if(input.checked)pending.add(item.id);else pending.delete(item.id);audit(event)});
           label.append(input,document.createTextNode(item.name));group.append(label);list.append(group);
         }
@@ -397,7 +436,6 @@ async function runScenario(scenario: Scenario): Promise<void> {
       assert.equal(state.pickerCancels, 1);
       assert.equal(state.editorCancels, 1);
       assert.equal(state.queries.at(-1), String(ITEM_ID));
-      assert.ok(state.trusted.length > 0 && state.trusted.every(Boolean), 'The browser must deliver real native user input, not synthetic DOM events');
       assert.equal(brain.calls(), brain.expectedCalls);
       assert.equal(brain.refusalSeen(), scenario.refusedScreenshot);
       assert.ok(brain.screen.largestCheckboxCount >= ROW_COUNT);
@@ -416,12 +454,33 @@ async function runScenario(scenario: Scenario): Promise<void> {
         assert.ok(steps[0]!.events.some(event => event.kind === 'observation' && event.status === 'failed' && event.code === 'POLICY_DENIED'),
           'The structured observation event must retain the policy code without requiring it in public model prose');
       }
+      assertNativeEvents(state.events, scenario);
     } finally { await session.close(); }
   } finally {
     try { await host?.close(); }
     finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(cwd, { recursive: true, force: true }); }
   }
 }
+
+test('native event audit permits only fill preparation and still requires trusted pointer and final text input', () => {
+  for (const existing of [false, true]) {
+    const scenario = { existing, refusedScreenshot: false };
+    const targets = ['open', 'choose', ...(!existing ? ['edit', 'add'] : []), `item-${ITEM_ID}`, 'confirm', 'choose', 'cancel', 'save', 'open', 'close'];
+    const events: FixtureEvent[] = targets.flatMap(target => ['pointerdown', 'pointerup', 'click'].map(type => ({ type, target, isTrusted: true, value: null, checked: null })));
+    events.push({ type: 'change', target: `item-${ITEM_ID}`, isTrusted: true, value: 'on', checked: true });
+    for (const [target, value] of [['search', String(ITEM_ID)], ...(!existing ? [['new-id', String(ITEM_ID)], ['new-name', ITEM]] : [])]) {
+      assert.ok(target && value);
+      events.push({ type: 'input', target, isTrusted: false, value: '', checked: null });
+      events.push({ type: 'input', target, isTrusted: true, value, checked: null });
+    }
+    assert.doesNotThrow(() => assertNativeEvents(events, scenario));
+    assert.throws(() => assertNativeEvents(events.map(event => event.type === 'click' && event.target === 'save' ? { ...event, isTrusted: false } : event), scenario), /Pointer\/click events must be trusted/);
+    assert.throws(() => assertNativeEvents(events.filter(event => !(event.type === 'input' && event.target === 'search' && event.isTrusted)), scenario), /Native text insertion must deliver/);
+    assert.throws(() => assertNativeEvents(events.map(event => !event.isTrusted ? { ...event, value: 'synthetic replacement' } : event), scenario), /Only the native fill's empty-input preparation/);
+    assert.throws(() => assertNativeEvents(events.map(event => event.type === 'change' ? { ...event, isTrusted: false } : event), scenario), /Native check must produce a trusted checked change/);
+    assert.throws(() => assertNativeEvents([...events, { type: 'input', target: 'unrelated', isTrusted: false, value: '', checked: null }], scenario), /Only the native fill's empty-input preparation/);
+  }
+});
 
 test('model screen parser preserves unaddressed semantics without inventing native refs', () => {
   const screen = new ModelScreen();
