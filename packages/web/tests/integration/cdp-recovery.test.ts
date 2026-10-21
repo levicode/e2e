@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chromium, type Browser as HostBrowser } from 'playwright-core';
+import { chromium, type Browser as HostBrowser, type ConnectOverCDPOptions } from 'playwright-core';
 import type { EngineHandle, OperationContext } from 'e2e/engine';
 import { web as webEngine, type WebConnectOptions, type WebOptions, type Browser } from '../../src/index.ts';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
@@ -109,7 +109,7 @@ describe('CDP session recovery', () => {
   let artifactsDir: string;
   const activeEngines = new Set<EngineHandle>();
   const activeHosts = new Set<RecoveryHost>();
-  const hostControls = new Map<RecoveryHost, HostBrowser>();
+  const hostControls = new Map<RecoveryHost, { browser: HostBrowser; noDefaults: boolean }>();
   const fixtures = new Map<EngineHandle, { browser: Browser; timeoutMs: number }>();
   let disconnectEvents = 0;
 
@@ -147,7 +147,7 @@ describe('CDP session recovery', () => {
       for (const result of await Promise.allSettled(work)) if (result.status === 'rejected') failures.push(result.reason);
     };
     await settle([...activeEngines].map(engine => engine.dispose!(cleanup())));
-    await settle([...hostControls.values()].map(control => control.close()));
+    await settle([...hostControls.values()].map(control => control.browser.close()));
     await settle([...activeHosts].flatMap(remote => [remote.closeRelay(), closeRemoteChrome(remote)]));
     activeEngines.clear(); activeHosts.clear(); hostControls.clear(); fixtures.clear();
     vi.restoreAllMocks();
@@ -174,13 +174,28 @@ describe('CDP session recovery', () => {
   }
 
   /** A separate direct host connection is an oracle/fault injector, never the engine's adapter. */
-  async function hostControl(remote: RecoveryHost): Promise<HostBrowser> {
+  async function hostControl(remote: RecoveryHost, options: Pick<ConnectOverCDPOptions, 'noDefaults'> = {}): Promise<HostBrowser> {
     const existing = hostControls.get(remote);
-    if (existing !== undefined) return existing;
-    const control = await chromium.connectOverCDP(remote.directEndpoint);
-    hostControls.set(remote, control);
+    if (existing !== undefined) {
+      if (options.noDefaults !== undefined && options.noDefaults !== existing.noDefaults) throw new Error('Host oracle defaults must be chosen before its first connection');
+      return existing.browser;
+    }
+    const control = await chromium.connectOverCDP(remote.directEndpoint, options);
+    hostControls.set(remote, { browser: control, noDefaults: options.noDefaults ?? false });
     return control;
   }
+
+  it.each([false, true])('fixes host oracle defaults before its first attachment (noDefaults: %s)', async (noDefaults) => {
+    const remote = { directEndpoint: 'ws://oracle.test/devtools/browser/synthetic' } as RecoveryHost;
+    const control = { close: vi.fn().mockResolvedValue(undefined) } as unknown as HostBrowser;
+    const connect = vi.spyOn(chromium, 'connectOverCDP').mockResolvedValue(control);
+    expect(await hostControl(remote, { noDefaults })).toBe(control);
+    expect(connect).toHaveBeenCalledExactlyOnceWith(remote.directEndpoint, { noDefaults });
+    expect(await hostControl(remote)).toBe(control);
+    expect(await hostControl(remote, { noDefaults })).toBe(control);
+    await expect(hostControl(remote, { noDefaults: !noDefaults })).rejects.toThrow('Host oracle defaults must be chosen before its first connection');
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
 
   /** Resolve the actual active target through a unique page marker, not a matching URL. */
   async function witness(engine: EngineHandle, remote: RecoveryHost) {
@@ -770,6 +785,9 @@ describe('CDP session recovery', () => {
       document.body.innerHTML = '<input id="private-field" type="password" value="private" style="position:fixed;left:20px;top:20px;width:180px;height:40px">';
       return null;
     });
+    // Playwright otherwise emulates every attached page as focused and visible.
+    // Disable that default before witness attaches, not from another CDP session.
+    await hostControl(remote, { noDefaults: true });
     const original = await witness(engine, remote);
     const other = await original.page.context().newPage();
     try {

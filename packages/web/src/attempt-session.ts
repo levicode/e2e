@@ -1,11 +1,9 @@
 /** Owns one attempt's live binding, recovery, references, and recordings. */
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from 'playwright-core';
 import { EngineError, raceAbort, withinCleanupBudget, type EngineCleanupContext, type OperationContext, type VideoSegment, type ViewportSize } from 'e2e/engine';
-import { attachPersistent, recoveryFailed, targetIdentity, type CdpEndpointResolver, type SessionBinding } from './cdp-recovery.ts';
+import { attachPersistent, recoveryFailed, targetIdentity, type CdpEndpointResolver, type CdpConnector, type SessionBinding } from './cdp-recovery.ts';
 import { connectionAbort, withConnectionBudget, withOperationDeadline, type ConnectionBudget, type OperationBound } from './operation-budget.ts';
 import { RefRegistry } from './refs.ts';
-import type { LeaseRecording } from './provider.ts';
-import { ProviderVideo } from './provider-video.ts';
 import type { WebMedia } from './media.ts';
 import { invalidState, translatePwError } from './support.ts';
 import type { WebScreencastOptions } from './web-options.ts';
@@ -23,9 +21,9 @@ interface SessionOptions {
   readonly media: WebMedia;
   readonly contextOptions: BrowserContextOptions;
   readonly acquire: (signal: AbortSignal) => Promise<Browser>;
+  /** Required test-owned transport, with no fallback browser backend. */
+  readonly connectCdp: CdpConnector;
   readonly configure: (context: BrowserContext) => Promise<void>;
-  /** Starts the browser provider's own recording of the attempt's browser, when it records; the attempt records the screencast otherwise. */
-  readonly record?: ((signal: AbortSignal) => Promise<LeaseRecording>) | undefined;
   readonly persistent?: {
     readonly provision: CdpEndpointResolver;
     readonly reconnect: CdpEndpointResolver;
@@ -64,9 +62,7 @@ export class AttemptSession {
 
   constructor(private readonly options: SessionOptions) {
     this.media = options.media;
-    this.video = options.record === undefined
-      ? new VideoRecorder(options.artifactsDir, options.screencast)
-      : new ProviderVideo(options.record, options.artifactsDir);
+    this.video = new VideoRecorder(options.artifactsDir, options.screencast);
   }
 
   /** Captures an immutable connection generation for publication after asynchronous reads. */
@@ -114,7 +110,7 @@ export class AttemptSession {
           const context = await browser.newContext(this.options.contextOptions);
           return { browser, context, page: null };
         }
-        const binding = await attachPersistent(persistent.provision, remaining());
+        const binding = await attachPersistent(persistent.provision, remaining(), this.options.connectCdp);
         const { usedContexts } = persistent;
         if (usedContexts === undefined) return binding;
         const contextId = binding.identity.contextId;
@@ -153,7 +149,7 @@ export class AttemptSession {
         this.observed = false;
         await this.transition(previous, remaining(), async () => {
           await this.video.pageClosing();
-          return attachPersistent(persistent.reconnect, remaining(), previous.identity);
+          return attachPersistent(persistent.reconnect, remaining(), this.options.connectCdp, previous.identity);
         }, true);
       });
     }

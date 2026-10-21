@@ -4,7 +4,7 @@ import type { Browser, ElementHandle, Page } from 'playwright-core';
 import { EngineError, TestError, type OperationContext } from 'e2e/engine';
 import { captureDocument, ROOT_NODE_ID } from '../../src/observation.ts';
 import { PlaywrightSurface } from '../../src/surface.ts';
-import { BrowserConnection } from '../../src/browser-connection.ts';
+import { scriptedConnection } from '../helpers/scripted-connection.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 vi.mock('../../src/observation.ts', async (original) => ({
@@ -44,8 +44,7 @@ async function setup() {
       close: async () => undefined,
     }),
   } as unknown as Browser;
-  vi.spyOn(BrowserConnection.prototype, 'acquire').mockResolvedValue(browser);
-  const surface = new PlaywrightSurface({});
+  const surface = new PlaywrightSurface({}, scriptedConnection(async () => browser));
   surfaces.add(surface);
   const signal = new AbortController().signal;
   await surface.init({

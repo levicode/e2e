@@ -10,17 +10,14 @@ import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 import { PlaywrightSurface } from '../../src/surface.ts';
+import { scriptedConnection } from '../helpers/scripted-connection.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 
-const acquire = vi.hoisted(() => vi.fn());
-vi.mock('../../src/browser-connection.ts', () => ({
-  BrowserConnection: class { acquire = acquire; dispose = async () => undefined; },
-  connectCdp: vi.fn(),
-}));
+const acquire = vi.fn<() => Promise<Browser>>();
 
 const operation = (): OperationContext => ({ timeoutMs: 1_000, signal: new AbortController().signal, runId: 'run', attemptId: 'a1', origin: 'test' });
 const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal });
@@ -61,7 +58,7 @@ beforeEach(async () => {
     })),
   } as unknown as Browser;
   acquire.mockResolvedValue(browser);
-  surface = new PlaywrightSurface({});
+  surface = new PlaywrightSurface({}, scriptedConnection(acquire));
   await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
   await surface.startAttempt({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
 });

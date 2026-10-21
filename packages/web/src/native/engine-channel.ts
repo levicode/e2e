@@ -18,6 +18,8 @@ export class EngineChannel {
     this.assertOwner(owns);
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
+    // Validated uncertainty survives owner retirement; it never authorizes publication.
+    if (!result.ok && result.effects === 'unknown') throw resultError(result);
     try { this.assertOwner(owns); } catch (cause) {
       // A completed transition cannot leave a publication barrier pending after its owner retires.
       if (callbackTransition !== undefined) this.client.invalidate();
@@ -100,6 +102,8 @@ export class EngineChannel {
   private async browserCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, expectedScope: string): Promise<BrowserCommandMap[K]['result']> {
     const owns = this.captureScope(expectedScope); this.assertOwner(owns);
     const result = await this.client.request(name, { ...args, identityScope: expectedScope } as Readonly<Record<string, JsonValue>>, operation);
+    // NativeClient has already quarantined a validated unknown outcome.
+    if (!result.ok && result.effects === 'unknown') throw resultError(result);
     this.assertOwner(owns);
     if (!result.ok) throw resultError(result);
     try { return decodeBrowserResult(name, result.data); } catch { throw this.client.invalidate(); }

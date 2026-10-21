@@ -1,11 +1,11 @@
 /** Validates a persistent CDP binding without publishing or retaining it. */
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { EngineError } from 'e2e/engine';
-import { connectCdp } from './browser-connection.ts';
-import { registerCdpSelectors, requireCdpShadowTracking } from './cdp-selectors.ts';
 import { connectionAbort, type ConnectionBudget } from './operation-budget.ts';
 
 export type CdpEndpointResolver = (signal: AbortSignal) => string | Promise<string>;
+/** A test-owned dial function; the retained assertions cannot launch another backend. */
+export type CdpConnector = (endpoint: string, timeoutMs: number) => Promise<Browser>;
 
 interface TargetIdentity {
   readonly targetId: string;
@@ -43,6 +43,7 @@ export async function targetIdentity(page: Page): Promise<TargetIdentity> {
 export async function attachPersistent(
   resolve: CdpEndpointResolver,
   budget: ConnectionBudget,
+  connectCdp: CdpConnector,
   previous?: PersistentIdentity,
 ): Promise<SessionBinding & { readonly identity: PersistentIdentity }> {
   const { signal } = budget;
@@ -77,7 +78,6 @@ export async function attachPersistent(
     if (previous !== undefined && contextId !== previous.contextId) {
       throw recoveryFailed('reconnectEndpoint returned a different browser');
     }
-    await registerCdpSelectors(context, { signal, timeoutMs: deadline - Date.now() });
     check();
     if (previous?.target === undefined) return { browser, context, page: null, identity: { contextId } };
     for (const page of context.pages()) {
@@ -87,7 +87,6 @@ export async function attachPersistent(
       if (target.browserContextId !== previous.target.browserContextId) {
         throw recoveryFailed('the original page belongs to a different context');
       }
-      await requireCdpShadowTracking(page, { signal, timeoutMs: deadline - Date.now() });
       return { browser, context, page, identity: { contextId, target } };
     }
     throw recoveryFailed('the original page no longer exists');

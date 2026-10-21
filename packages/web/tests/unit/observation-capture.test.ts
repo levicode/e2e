@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OperationContext } from 'e2e/engine';
 import type { RawObservedNode } from '../../src/read-node.ts';
 import { PlaywrightSurface } from '../../src/surface.ts';
-import { BrowserConnection } from '../../src/browser-connection.ts';
+import { scriptedConnection } from '../helpers/scripted-connection.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 type ReadStage = 'evaluation' | 'metadata' | 'elements' | 'properties' | 'frame';
@@ -77,12 +77,11 @@ async function setup(stalled?: ReadStage) {
     isConnected: () => true,
     newContext: async () => context,
   } as unknown as Browser;
-  vi.spyOn(BrowserConnection.prototype, 'acquire').mockResolvedValue(browser);
   const controller = new AbortController();
   const operation: OperationContext = {
     signal: controller.signal, timeoutMs: 80, runId: 'run', attemptId: 'attempt', origin: 'agent',
   };
-  const surface = new PlaywrightSurface({});
+  const surface = new PlaywrightSurface({}, scriptedConnection(async () => browser));
   surfaces.add(surface);
   await surface.init({
     runId: 'run', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: {},

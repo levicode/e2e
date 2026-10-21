@@ -1,10 +1,8 @@
 /**
- * The Playwright surface: one browser per worker, one browser context per
- * attempt, and the page every engine member delegates to. This is the closure
- * state behind `web()`; the engine hooks in `engine.ts` and the `browser`
- * fixture in `browser.ts` are thin delegates onto it. Action dispatch lives in
- * `actions.ts` and tree capture in `observation.ts`. `AttemptSession` owns
- * the attempt's live binding, recovery, references, and recordings.
+ * Remaining legacy assertion implementation, unreachable from the native public
+ * entries. Capture, input interruption, and attempt ownership tests still use
+ * this class until their equivalent native paths are proven. Retired logging,
+ * dialog, installation, and trace capabilities live only on the native path.
  */
 
 import { mkdirSync } from 'node:fs';
@@ -21,9 +19,6 @@ import {
   type EngineCleanupContext,
   type EngineInitInfo,
   type EngineObserveOptions,
-  type EnginePrepareInfo,
-  type EnginePrepareResult,
-  type EngineFinishInfo,
   type EngineSnapshot,
   type EngineState,
   type LocatorAction,
@@ -39,14 +34,10 @@ import {
 } from 'e2e/engine';
 import { matchesText } from 'e2e/engine';
 import { classifyActionError, classifyInputError, dispatchLocatorAction, dispatchPointerAction } from './actions.ts';
-import { BrowserConnection, connectCdp, type BrowserName } from './browser-connection.ts';
+import type { BrowserName } from './web-options.ts';
 import { AttemptSession, type StorageState } from './attempt-session.ts';
-import type { CdpEndpointResolver } from './cdp-recovery.ts';
+import type { CdpEndpointResolver, CdpConnector } from './cdp-recovery.ts';
 import { LeasedBrowsers, type BrowserProvider, type LeaseDownloads } from './provider.ts';
-import { installAppLog } from './app-log.ts';
-import { TraceFeed } from './trace-feed.ts';
-import { DialogRouter } from './dialogs.ts';
-import { ensureBrowsersInstalled } from './install.ts';
 import { applyPostSteps, frameSelectors, projectExpression } from './locators.ts';
 import { contentBox, frameContentInset, placeRectInFrame, ROOT_NODE_ID, toSemanticNode } from './observation.ts';
 import { captureObservation } from './observation-capture.ts';
@@ -71,6 +62,13 @@ import {
   staleOr,
   translatePwError,
 } from './support.ts';
+
+/** Required test-owned transport. This legacy assertion surface has no browser launcher. */
+interface BrowserConnection {
+  acquire(name: BrowserName, headed: boolean, timeoutMs: number, connect?: () => Promise<Browser>): Promise<Browser>;
+  dispose(): Promise<void>;
+  readonly connectCdp: CdpConnector;
+}
 
 /** Browser launch budget when the harness init budget is not otherwise expressed. */
 const BROWSER_LAUNCH_TIMEOUT_MS = 60_000;
@@ -266,10 +264,8 @@ export class PlaywrightSurface {
    * wait here and fail the next step that enters the surface.
    */
   latch = new ErrorLatch();
-  dialogs = new DialogRouter(this.latch);
 
   private readonly browserName: BrowserName;
-  private readonly connection = new BrowserConnection();
   private readonly connect: WebConnectOptions | undefined;
   /** The provider's browsers, when `browser` names one; the runner and worker halves of the lease bookkeeping. */
   private readonly leases: LeasedBrowsers | undefined;
@@ -293,10 +289,6 @@ export class PlaywrightSurface {
   private projectRoot = '';
   private headed = false;
   private artifactsDir = '';
-  /** Navigations the engine has in flight, which the app log leaves to the step that started them. */
-  private ownNavigations = 0;
-  /** What the attempt tells its trace beside the app log; absent between attempts. */
-  private trace: TraceFeed | undefined;
   private artifactCounter = 0;
   /**
    * Attempt-scoped network routes. Registered on the
@@ -306,7 +298,7 @@ export class PlaywrightSurface {
    */
   private routes: StoredRoute[] = [];
 
-  constructor(options: WebOptions) {
+  constructor(options: WebOptions, private readonly connection: BrowserConnection) {
     this.browserName = typeof options.browser === 'string' ? options.browser : 'chromium';
     this.leases = typeof options.browser === 'object' && options.browser !== null ? new LeasedBrowsers(options.browser) : undefined;
     this.connect = options.connect;
@@ -324,36 +316,14 @@ export class PlaywrightSurface {
 
   // --- lifecycle ---
 
-  /**
-   * Installs the browser on first run, once per run before any worker, or
-   * leases the run's browsers from a provider. A CDP attach uses the
-   * remote's browser, so only a local launch needs the browser here. The
-   * download narrates through `info.log` and is bounded by the run's
-   * interrupt alone, never by a launch budget. Init scripts are read first
-   * so a missing file fails the run before any worker starts.
-   */
-  async prepare(info: EnginePrepareInfo): Promise<EnginePrepareResult | void> {
-    await this.configuredInitScripts.load(info.projectRoot);
-    if (this.leases !== undefined) return this.leases.prepare(info);
-    if (this.connect !== undefined) return;
-    await ensureBrowsersInstalled([this.browserName], { env: info.env, signal: info.signal, log: info.log, headed: info.headed });
-  }
-
-  /** Releases the browsers `prepare` leased; a local launch or a `connect` has nothing to release. */
-  async finish(info: EngineFinishInfo): Promise<void> {
-    await this.leases?.finish(info);
-  }
-
   /** Provisions the shared browser once per worker: a local launch, or a CDP attach. */
   async init(info: EngineInitInfo): Promise<void> {
     this.app = info.app;
     this.projectRoot = info.projectRoot;
     this.headed = info.headed;
     this.leases?.init(info);
-    // The browser was installed in `prepare`; a launch or attach is the one
-    // boot step left that can outlive a launch budget, and it honours the
-    // init signal. A failed init-script read throws only after the launch
-    // settles, so `dispose` owns the browser.
+    // These tests provide the connection. Pending initialization still belongs
+    // to this owner, so disposal must retain failed or abandoned setup.
     const settled = await Promise.allSettled([
       this.configuredInitScripts.load(info.projectRoot),
       this.persistent ? undefined : this.acquireBrowser(info.signal),
@@ -408,7 +378,7 @@ export class PlaywrightSurface {
           retryable: false,
         });
       }
-      const browser = await connectCdp(endpoint, BROWSER_LAUNCH_TIMEOUT_MS);
+      const browser = await this.connection.connectCdp(endpoint, BROWSER_LAUNCH_TIMEOUT_MS);
       if (signal.aborted) {
         await browser.close().catch(() => undefined);
         throw cancelled('browser connect cancelled');
@@ -466,20 +436,18 @@ export class PlaywrightSurface {
     const persistent = await this.persistentBinding(context);
     this.artifactsDir = context.artifactsDir;
     this.artifactCounter = 0;
-    this.trace = new TraceFeed(context, () => this.openPage(), () => this.session?.refs, { testIdAttribute: this.testIdAttribute, site: this.app.site });
     const routes: StoredRoute[] = [];
     const initScripts = this.configuredInitScripts.forAttempt();
     this.latch = new ErrorLatch();
-    const dialogs = new DialogRouter(this.latch);
     this.routes = routes;
     this.initScripts = initScripts;
-    this.dialogs = dialogs;
     const session = new AttemptSession({
       artifactsDir: context.artifactsDir,
       viewport: this.viewport,
       screencast: this.screencast,
       media: this.media,
       acquire: (signal) => this.acquireBrowser(signal),
+      connectCdp: this.connection.connectCdp,
       contextOptions: {
         viewport: this.viewport,
         acceptDownloads: true,
@@ -495,17 +463,10 @@ export class PlaywrightSurface {
         await target.addInitScript(CLOSED_SHADOW_ROOTS_INIT_SCRIPT);
         for (const script of initScripts) await target.addInitScript(script);
         target.setDefaultTimeout(CONTEXT_DEFAULT_TIMEOUT_MS);
-        target.on('dialog', (dialog) => { void dialogs.dispatch(dialog); });
-        installAppLog(target, context.appLog, {
-          navigated: context.navigation,
-          ownNavigation: () => this.ownNavigations > 0,
-          testPage: () => this.openPage(),
-        });
         await installSiteHeaders(target, this.app.site, this.headers);
         for (const stored of routes) await target.route(stored.predicate, stored.handler);
       },
       ...(persistent === undefined ? {} : { persistent }),
-      record: this.leases?.recorder(context.attemptId),
     });
     this.session = session;
     await session.start(context.signal);
@@ -604,20 +565,6 @@ export class PlaywrightSurface {
 
   // --- page access shared with the browser fixture ---
 
-  /**
-   * The attempt's open page, or undefined, for a reader beside the test (the
-   * trace): unlike `requirePage`, it leaves an error a handler latched for
-   * the test's next operation to throw.
-   */
-  private openPage(): Page | undefined {
-    try {
-      const page = this.session?.current().page ?? null;
-      return page === null || page.isClosed() ? undefined : page;
-    } catch {
-      return undefined;
-    }
-  }
-
   requirePage(): Page {
     this.latch.throwPending();
     const page = this.requireSession().current().page;
@@ -691,39 +638,16 @@ export class PlaywrightSurface {
 
   /** Opens one URL the harness resolved; the attempt's page is created on first use. */
   open(url: string, operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(operation, 'navigation', (currentOperation) =>
-      this.navigating(async () => {
-        const page = await this.ensurePage();
-        await page.goto(url, { waitUntil: 'load', timeout: currentOperation.timeoutMs });
-      }),
-    ));
+    return this.guard(operation, 'navigation', async (currentOperation) => {
+      const page = await this.ensurePage();
+      await page.goto(url, { waitUntil: 'load', timeout: currentOperation.timeoutMs });
+    });
   }
 
   back(operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(operation, 'navigation', (currentOperation) =>
-      this.navigating(async () => {
-        await this.requirePage().goBack({ waitUntil: 'load', timeout: currentOperation.timeoutMs });
-      }),
-    ));
-  }
-
-  /** Runs one navigation the engine itself makes, so the app log leaves it to the step that asked for it. */
-  async navigating<T>(work: () => Promise<T>): Promise<T> {
-    this.ownNavigations += 1;
-    try {
-      const result = await work();
-      this.trace?.tellEnvironment();
-      return result;
-    } finally {
-      this.ownNavigations -= 1;
-    }
-  }
-
-  /** Resolves with what an action resolved with once the trace has the screen it left (`TraceFeed.screenAfterAction`); an action that failed leaves none. */
-  private async acted<T>(operation: OperationContext, work: Promise<T>): Promise<T> {
-    const result = await work;
-    await this.trace?.screenAfterAction(operation);
-    return result;
+    return this.guard(operation, 'navigation', async (currentOperation) => {
+      await this.requirePage().goBack({ waitUntil: 'load', timeout: currentOperation.timeoutMs });
+    });
   }
 
   /** Restarts the document while retaining this attempt's context and storage. */
@@ -855,7 +779,7 @@ export class PlaywrightSurface {
    * on the root acts on the document element the root stands for.
    */
   perform(ref: NodeRef, action: LocatorAction, operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(
+    return this.guard(
       operation,
       action.kind,
       (currentOperation) => {
@@ -869,15 +793,15 @@ export class PlaywrightSurface {
         );
       },
       (cause) => classifyActionError(cause, action),
-    ));
+    );
   }
 
   /** One pointer action at a viewport point in CSS pixels, with nothing resolved behind it; see `dispatchPointerAction`. */
   performAt(point: ViewportPoint, action: PointerAction, operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(operation, `${action.kind} at point`, (currentOperation) => {
+    return this.guard(operation, `${action.kind} at point`, (currentOperation) => {
       this.requireSession().requireObservation();
       return dispatchPointerAction(this.requirePage(), point, action, currentOperation.signal);
-    }, classifyInputError));
+    }, classifyInputError);
   }
 
   /**
@@ -888,7 +812,7 @@ export class PlaywrightSurface {
    * scoped by the browser to the whole editing host, so it is opt-in.
    */
   typeText(text: string, options: { readonly replace: boolean }, operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(operation, 'keyboard.type', async (currentOperation) => {
+    return this.guard(operation, 'keyboard.type', async (currentOperation) => {
       const session = this.requireSession();
       session.requireObservation();
       const token = session.token();
@@ -907,15 +831,15 @@ export class PlaywrightSurface {
         checkpoint();
       }
       await page.keyboard.type(text);
-    }, classifyInputError));
+    }, classifyInputError);
   }
 
   /** Sends one key to whatever holds focus, in the contract's key grammar Playwright shares. */
   pressKey(key: string, operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(operation, 'keyboard.press', () => {
+    return this.guard(operation, 'keyboard.press', () => {
       this.requireSession().requireObservation();
       return this.requirePage().keyboard.press(key);
-    }, classifyInputError));
+    }, classifyInputError);
   }
 
   /**

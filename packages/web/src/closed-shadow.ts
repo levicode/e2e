@@ -142,7 +142,7 @@ const SEARCH_ROOTS_SELECTOR_ENGINE_SOURCE = `() => {${CLOSED_SHADOW_HELPERS_SOUR
   return { queryAll, query: (root, selector) => queryAll(root, selector)[0] ?? null };
 }`;
 
-/** The two closed-root selector engines; `selector-engines.ts` lists them with the label engine for registration. */
+/** The two closed-root selector engines retained for behavioral assertions. */
 export const CLOSED_SHADOW_SELECTOR_ENGINES: readonly { readonly name: string; readonly source: string }[] = [
   { name: CLOSED_SHADOW_SELECTOR_ENGINE, source: CLOSED_SHADOW_SELECTOR_ENGINE_SOURCE },
   { name: SEARCH_ROOTS_SELECTOR_ENGINE, source: SEARCH_ROOTS_SELECTOR_ENGINE_SOURCE },

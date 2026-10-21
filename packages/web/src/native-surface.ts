@@ -440,7 +440,11 @@ export class NativeSurface implements NativeWebSurface {
       if (metadata.source === 'local') return undefined;
       const downloads = this.leases?.downloads();
       if (downloads === undefined) throw invalidState('Native download requires a configured provider reader');
-      const paths = path.win32.isAbsolute(downloads.dir) ? path.win32 : path.posix;
+      // win32.isAbsolute also accepts POSIX roots, so require an explicit Windows root.
+      const windowsPath = downloads.dir.startsWith('\\')
+        || /^[A-Za-z]:[\\/]/.test(downloads.dir)
+        || /^[\\/]{2}[^\\/]+[\\/][^\\/]+(?:[\\/]|$)/.test(downloads.dir);
+      const paths = windowsPath ? path.win32 : path.posix;
       const file = paths.join(downloads.dir, metadata.basename);
       const bytes = await downloads.read(file, remaining().signal);
       this.assertAttempt(attempt);

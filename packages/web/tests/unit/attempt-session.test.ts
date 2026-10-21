@@ -4,11 +4,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Browser, Page } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectCdp } from '../../src/browser-connection.ts';
 import { AttemptSession } from '../../src/attempt-session.ts';
 import type { WebMedia } from '../../src/media.ts';
 
-vi.mock('../../src/browser-connection.ts', () => ({ connectCdp: vi.fn() }));
+const connectCdp = vi.fn<(endpoint: string, timeoutMs: number) => Promise<Browser>>();
 
 /** A deferred protocol response or endpoint. */
 function deferred<T>() {
@@ -67,6 +66,7 @@ function session(options: {
   media?: WebMedia;
 } = {}) {
   return new AttemptSession({
+    connectCdp,
     artifactsDir: options.artifactsDir ?? tmpdir(), viewport: options.viewport === undefined ? { width: 320, height: 200 } : options.viewport, contextOptions: {}, screencast: {},
     media: options.media ?? {},
     acquire: async () => { throw new Error('persistent attempts never acquire the shared browser'); },
@@ -144,6 +144,7 @@ describe('AttemptSession', () => {
     const newPage = vi.fn(async () => opened);
     const context = { pages: () => [existing], newPage, on: () => undefined, close: async () => undefined };
     const owner = new AttemptSession({
+      connectCdp,
       artifactsDir: tmpdir(), viewport: { width: 320, height: 200 }, contextOptions: {}, screencast: {}, media: {},
       acquire: async () => ({ newContext: async () => context }) as unknown as Browser,
       configure: async () => undefined,
@@ -160,6 +161,7 @@ describe('AttemptSession', () => {
     const newPage = vi.fn(() => pending.promise);
     const context = { pages: () => [], newPage, on: () => undefined, close: async () => undefined };
     const owner = new AttemptSession({
+      connectCdp,
       artifactsDir: tmpdir(), viewport: { width: 320, height: 200 }, contextOptions: {}, screencast: {},
       media: {},
       acquire: async () => ({ newContext: async () => context }) as unknown as Browser,

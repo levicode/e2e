@@ -30,6 +30,7 @@ function context(attemptId: string, attemptSignal = signal): EngineAttemptContex
 let frames: Record<string, unknown>[];
 let currentScope: string;
 let queryNodes: unknown[] = [];
+let downloadBasename: string;
 let recordingSegments: Record<string, unknown>[] = [];
 let recordingMissing: number | undefined;
 const recordingBytes = Buffer.from('synthetic-finalized-segment');
@@ -44,7 +45,7 @@ let rejectScopeOpen: 'not-dispatched' | 'unknown' | undefined;
 let releaseScopeEnd: (() => void) | undefined;
 let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { token: string; timeoutMs: number }) => Promise<void>;
 beforeEach(() => {
-  recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
+  downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, connectOperation, onEvent) => {
     const output = new PassThrough();
     const send = (message: unknown) => queueMicrotask(() => output.write(JSON.stringify(message) + '\n'));
@@ -65,6 +66,7 @@ beforeEach(() => {
         if (command === 'scope.open') { currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, recoveryIdentity: { browser: 'browser-owner', context: repeatContextIdentity ? 'snapshot-default-context' : `context-${scopes}`, page: `page-${scopes}` } }; }
         else if (command === 'scope.reset' || command === 'scope.restart' || command === 'scope.reconnect') { if (!(command === 'scope.restart' && preserveRestartScope)) currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, ...(command === 'scope.restart' ? { recoveryIdentity: { browser: 'browser-owner', context: 'context-1', page: 'restarted-page' } } : {}) }; }
         else if (command === 'fixture.query' || command === 'browser.query') data = { identityScope: currentScope, revision: '1', nodes: queryNodes };
+        else if (command === 'download.metadata') data = { identityScope: currentScope, source: 'provider', basename: downloadBasename };
         else if (command === 'blob.release') data = { released: true };
         else if (command === 'recording.stop') {
           data = recordingMissing === undefined ? { identityScope: currentScope, segments: recordingSegments } : { identityScope: currentScope, missingSegment: recordingMissing };
@@ -662,6 +664,53 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(segments.map(segment => 'path' in segment ? segment.path : undefined)).toEqual(['video/video.webm', 'video/video-part2.webm']);
       expect(await readFile(path.join(directory, 'video/video.webm'), 'utf8')).toBe('synthetic-path-fixture-not-a-video');
     } finally { read.mockRestore(); await surface.dispose(cleanup()); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  describe.each(['worker', 'attempt'] as const)('provider download paths in %s scope', scope => {
+    it.each([
+      ['/tmp/browser-downloads', '/tmp/browser-downloads/download-id_1'],
+      ['/', '/download-id_1'],
+      ['///tmp/browser-downloads', '/tmp/browser-downloads/download-id_1'],
+      ['//browser', '/browser/download-id_1'],
+      [String.raw`C:\browser-downloads`, String.raw`C:\browser-downloads\download-id_1`],
+      ['D:/browser-downloads', String.raw`D:\browser-downloads\download-id_1`],
+      [String.raw`\\browser\share\downloads`, String.raw`\\browser\share\downloads\download-id_1`],
+      ['//browser/share/downloads', String.raw`\\browser\share\downloads\download-id_1`],
+      ['//browser/share', String.raw`\\browser\share\download-id_1`],
+      [String.raw`\\?\C:\browser-downloads`, String.raw`\\?\C:\browser-downloads\download-id_1`],
+      [String.raw`\browser-downloads`, String.raw`\browser-downloads\download-id_1`],
+    ])('reads %s using the remote path syntax, not the runner platform', async (dir, expected) => {
+      const bytes = Buffer.from('provider download');
+      const read = vi.fn(async () => bytes);
+      const surface = new NativeSurface({ browser: {
+        name: 'synthetic-downloads', scope,
+        acquire: async () => ({ id: 'download-lease', cdpEndpoint: 'ws://synthetic.test/browser' }),
+        release: async () => {}, downloads: { dir, read },
+      } });
+      await start(surface);
+      try {
+        await expect(surface.command('download.read', { handle: 'download-1', offset: 0, maxBytes: 9 }, operation())).resolves.toEqual({ base64: bytes.subarray(0, 9).toString('base64'), nextOffset: 9, eof: false });
+        await expect(surface.command('download.read', { handle: 'download-1', offset: 9, maxBytes: 100 }, operation())).resolves.toEqual({ base64: bytes.subarray(9).toString('base64'), nextOffset: bytes.length, eof: true });
+        expect(read).toHaveBeenCalledExactlyOnceWith({ id: 'download-lease', cdpEndpoint: 'ws://synthetic.test/browser' }, expected, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+        expect(frames.filter(frame => frame['command'] === 'download.metadata').map(frame => frame['args'])).toEqual([{ identityScope: currentScope, handle: 'download-1' }]);
+        expect(frames.filter(frame => frame['command'] === 'download.read')).toHaveLength(0);
+      } finally { await surface.dispose(cleanup()); }
+    });
+  });
+
+  it.each(['', '.', '..', '../escape', String.raw`..\escape`, '/absolute', String.raw`C:\absolute`, 'file.txt'])('rejects an unsafe provider download basename %j before calling its reader', async basename => {
+    downloadBasename = basename;
+    const read = vi.fn(async () => Buffer.from('must not be read'));
+    const surface = new NativeSurface({ browser: {
+      name: 'synthetic-downloads', scope: 'attempt',
+      acquire: async () => ({ id: 'download-lease', cdpEndpoint: 'ws://synthetic.test/browser' }),
+      release: async () => {}, downloads: { dir: '/tmp/browser-downloads', read },
+    } });
+    await start(surface);
+    try {
+      await expect(surface.command('download.read', { handle: 'download-1', offset: 0, maxBytes: 100 }, operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(read).not.toHaveBeenCalled();
+    } finally { await expect(surface.dispose(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' }); }
   });
 
   it('trusts new attempt-provider leases despite a repeated default context identity', async () => {

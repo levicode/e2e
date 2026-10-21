@@ -32,6 +32,8 @@ export class BrowserChannel {
     this.assertScope();
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
     const result = await this.client.request(name, { ...args, identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
+    // Validated uncertainty survives scope retirement; it never authorizes publication.
+    if (!result.ok && result.effects === 'unknown') throw resultError(result);
     this.assertScope();
     if (!result.ok) throw resultError(result);
     try { return decodeBrowserResult(name, result.data); }
