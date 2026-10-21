@@ -28,7 +28,8 @@ export const NATIVE_BROWSER_CONTRACTS = [
   'native::client_page::tests::e2e_client_page_input_context_and_evaluate',
   'native::client_actions::tests::chromium_exact_actions_fill_select_check_document_and_stale_ref',
   'native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script',
-  'native::client_enrollment::tests::e2e_enrollment_configuration_failure_contains_owned_first_request',
+  'native::client_enrollment::tests::e2e_managed_blank_initialization_failure_prevents_navigation_request',
+  'native::client_enrollment::tests::e2e_popup_initial_request_is_contained_when_configuration_fails',
   'native::client_capture::tests::chromium_static_mask_preserves_public_pixels_and_restores_state',
   'native::client_observation::tests::chromium_native_same_process_frame_coordinate_convention',
 ] as const;
