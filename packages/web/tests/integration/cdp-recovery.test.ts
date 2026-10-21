@@ -201,14 +201,14 @@ describe('CDP session recovery', () => {
   }
 
   /** Starts the engine's attempt against a host-provisioned browser. */
-  async function start(connect: WebConnectOptions, options: Omit<WebOptions, 'connect'> = {}, open = true): Promise<EngineHandle> {
-    const engine = webEngine({ ...options, connect });
+  async function start(connect: WebConnectOptions | undefined, options: Omit<WebOptions, 'connect'> = {}, open = true): Promise<EngineHandle> {
+    const engine = webEngine({ ...options, ...(connect === undefined ? {} : { connect }) });
     activeEngines.add(engine);
-    await engine.init!({
-      runId: 'run-recovery', targetName: 'web', projectRoot: process.cwd(),
+    const info = { runId: 'run-recovery', targetName: 'web', projectRoot: process.cwd(),
       app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
-      workerSlot: 0, signal: new AbortController().signal, log: () => undefined,
-    });
+      signal: new AbortController().signal, log: () => undefined };
+    const prepared = await engine.prepare!({ ...info, slots: 1 });
+    await engine.init!({ ...info, env: prepared?.env ?? info.env, workerSlot: 0 });
     await engine.startAttempt!({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
     if (open) await engine.session!.open!(`${app.url}/login`, operation());
     return engine;
@@ -246,11 +246,28 @@ describe('CDP session recovery', () => {
     expect(await page.locator('#activate-beforeunload').count()).toBe(0);
   });
 
-  it('dismisses an unhandled activated beforeunload on first open instead of silently accepting it', async () => {
+  it('activates the borrowed first page through the registered dialog handler before provider recording', async () => {
+    const remote = await host(); const page = await activatedHost(remote); const url = page.url();
+    const events: string[] = [];
+    const record = vi.fn(async () => {
+      events.push('record'); expect(page.url()).toBe('about:blank');
+      expect(await page.locator('#activate-beforeunload').count()).toBe(0);
+      return { startedAt: '2026-10-21T00:00:00.000Z', stop: async () => ({ url: 'https://synthetic.test/recording.mp4', mediaType: 'video/mp4' }) };
+    });
+    const engine = await start(undefined, { browser: { name: 'activation-fixture', scope: 'attempt', acquire: async () => ({ id: 'activation-lease', cdpEndpoint: remote.endpoint }), release: async () => {}, record } }, false);
+    expect(page.url()).toBe(url); expect(record).not.toHaveBeenCalled();
+    await fixtureOf(engine).onDialog(async dialog => { events.push(dialog.type); await dialog.accept(); });
+    await engine.artifacts!.startVideo!(operation());
+    expect(events).toEqual(['beforeunload', 'record']); expect(record).toHaveBeenCalledTimes(1);
+    await engine.artifacts!.stopVideo!(operation());
+  });
+
+  it.each(['open', 'video'] as const)('dismisses an unhandled activated beforeunload on first %s instead of silently accepting it', async first => {
     const remote = await host(); const page = await activatedHost(remote); const url = page.url();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint }, {}, false);
     expect(page.url()).toBe(url);
-    await expect(engine.session!.open!(`${app.url}/login`, operation())).rejects.toBeDefined();
+    const activating = first === 'open' ? engine.session!.open!(`${app.url}/login`, operation()) : engine.artifacts!.startVideo!(operation());
+    await expect(activating).rejects.toBeDefined();
     expect(page.url()).toBe(url);
     expect(await page.locator('#activate-beforeunload').count()).toBe(1);
   });

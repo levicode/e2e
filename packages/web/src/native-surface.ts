@@ -33,6 +33,7 @@ import { isNativeProcessCleanupUnresolved } from './native/process-cleanup.ts';
 import { REQUIRED_CAPABILITIES } from './native/capabilities.ts';
 const SECURE_FIELD_SELECTOR = 'input[type="password" i]';
 const LIFECYCLE_TIMEOUT_MS = 3_600_000;
+const LATE_RECORDING_STOP_MS = 10_000;
 interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEventMap]) => void | Promise<void>; unsubscribe?: (() => void) | undefined }
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
 interface Attempt {
@@ -44,6 +45,10 @@ interface Attempt {
   credentials?: { readonly username: string; readonly password: string } | undefined;
   recording?: LeaseRecording | undefined;
   recordingStart?: Promise<void> | undefined;
+  recordingStartSignal?: AbortSignal | undefined;
+  readonly recordingStarts: Set<Promise<void>>;
+  readonly lateRecordings: Set<LeaseRecording>;
+  readonly lateRecordingStops: Map<LeaseRecording, Promise<void>>;
   recordingStop?: Promise<readonly VideoSegment[]> | undefined;
   environmentTold?: boolean;
   traceRef?: { scope: string; ref: NodeRef };
@@ -141,7 +146,7 @@ export class NativeSurface implements NativeWebSurface {
   }
   async startAttempt(context: EngineAttemptContext): Promise<void> {
     if (this.workerRetirement.signal.aborted || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, context, retirement: new AbortController(), scope: '', counter: 0, videoCounter: 0, downloads: new Map() };
+    const attempt: Attempt = { epoch: 0, context, retirement: new AbortController(), scope: '', counter: 0, videoCounter: 0, downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
     const operation = this.operation(startupSignal);
@@ -215,9 +220,13 @@ export class NativeSurface implements NativeWebSurface {
       if (connecting.cleanupFailure !== undefined) throw connecting.cleanupFailure;
     }
     // Do not release the provider lease while its asynchronous recorder may still arrive.
-    if (attempt?.recordingStart !== undefined) {
+    if (attempt !== undefined && attempt.recordingStarts.size > 0) {
       const signal = AbortSignal.any([context.signal, AbortSignal.timeout(context.timeoutMs)]);
-      await raceAbort(() => attempt.recordingStart!.catch(() => undefined), signal, 'retiring provider recording start');
+      await raceAbort(() => Promise.allSettled(attempt.recordingStarts), signal, 'retiring provider recording starts');
+    }
+    if (attempt !== undefined) for (const recording of attempt.lateRecordings) {
+      const signal = AbortSignal.any([context.signal, AbortSignal.timeout(context.timeoutMs)]);
+      await raceAbort(() => this.stopLateProviderRecording(attempt, recording, signal), signal, 'retiring late provider recording');
     }
     if (attempt?.recording !== undefined) {
       const signal = AbortSignal.any([context.signal, AbortSignal.timeout(context.timeoutMs)]);
@@ -555,15 +564,45 @@ export class NativeSurface implements NativeWebSurface {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const recorder = this.leases?.recorder(attempt.context.attemptId);
     if (recorder !== undefined) {
+      await this.requireEngine().command('page.activate', { identityScope: admitted.scope }, operation);
+      this.assertScope(attempt, admitted.scope); this.assertBudget(operation);
       if (attempt.recording !== undefined) return;
-      attempt.recordingStart ??= (async () => {
-        const recording = await recorder(operation.signal);
-        attempt.recording = recording;
-        if (this.attempt !== attempt || operation.signal.aborted) throw new EngineError('CANCELLED', 'Browser recording started after its attempt retired', { retryable: false });
-      })().finally(() => { attempt.recordingStart = undefined; });
-      await raceAbort(() => attempt.recordingStart!, operation.signal, 'starting provider recording'); return;
+      if (attempt.recordingStart === undefined) {
+        if (attempt.recordingStarts.size + attempt.lateRecordings.size >= 64) throw invalidState('Too many provider recording starts remain unsettled');
+        const latch = this.latch;
+        const work = (async () => {
+          const recording = await recorder(operation.signal);
+          if (this.attempt !== attempt || operation.signal.aborted) {
+            attempt.lateRecordings.add(recording);
+            try {
+              await this.stopLateProviderRecording(attempt, recording, AbortSignal.timeout(LATE_RECORDING_STOP_MS));
+            } catch (cause) { latch.latch(cause instanceof Error ? cause : invalidState('Late provider recording cleanup failed')); }
+            throw new EngineError('CANCELLED', 'Browser recording started after its operation retired', { retryable: false });
+          }
+          attempt.recording = recording;
+        })().finally(() => {
+          attempt.recordingStarts.delete(work);
+          if (attempt.recordingStart === work) { attempt.recordingStart = undefined; attempt.recordingStartSignal = undefined; }
+        });
+        attempt.recordingStarts.add(work); attempt.recordingStart = work; attempt.recordingStartSignal = operation.signal;
+        void work.catch(() => undefined);
+      }
+      const work = attempt.recordingStart;
+      try { await raceAbort(() => work, operation.signal, 'starting provider recording'); }
+      finally { if (operation.signal.aborted && attempt.recordingStart === work && attempt.recordingStartSignal === operation.signal) { attempt.recordingStart = undefined; attempt.recordingStartSignal = undefined; } }
+      return;
     }
     await this.engineCommand('recording.start', { identityScope: attempt.scope, ...this.options.screencast }, operation);
+  }
+  /** Retains one exact late stop, including after a cleanup waiter times out. */
+  private stopLateProviderRecording(attempt: Attempt, recording: LeaseRecording, signal: AbortSignal): Promise<void> {
+    const pending = attempt.lateRecordingStops.get(recording);
+    if (pending !== undefined) return pending;
+    const work = stopProviderRecording(recording.recording, { artifactsDir: attempt.context.artifactsDir, provider: recording.provider, leaseId: recording.leaseId, signal }).then(() => {
+      attempt.lateRecordings.delete(recording);
+    }).finally(() => { attempt.lateRecordingStops.delete(recording); });
+    attempt.lateRecordingStops.set(recording, work);
+    return work;
   }
   private stopProviderVideo(attempt: Attempt, signal: AbortSignal): Promise<readonly VideoSegment[]> {
     const record = attempt.recording;

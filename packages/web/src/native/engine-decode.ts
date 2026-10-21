@@ -66,6 +66,7 @@ const empty = (value: unknown): null => value === null ? null : invalid();
 const recoveryScope = (value: unknown) => { const item = record(value); const recovery = record(item['recoveryIdentity']); return { ...scoped(item), recoveryIdentity: { browser: identity(recovery['browser']), context: identity(recovery['context']), page: identity(recovery['page']) } }; };
 const decoders = {
   'scope.open': recoveryScope,
+  'page.activate': (value: unknown): { activated: true } => { const item = record(value); if (Object.keys(item).length !== 1 || item['activated'] !== true) invalid(); return { activated: true }; },
   'scope.configure': empty, 'scope.end': empty, 'scope.restart': recoveryScope, 'scope.reset': scoped, 'scope.reconnect': scoped,
   'browser.observe': observation,
   'fixture.query': (value: unknown) => { const item = record(value); return { ...scoped(item), revision: text(item['revision']), nodes: list(item['nodes']).map(child => node(child)) }; },

@@ -54,6 +54,7 @@ export interface EngineCommandMap {
     | { readonly source: 'reuse'; readonly context: 'isolated' }
   ); result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
   'scope.configure': { args: Scoped & ReadPolicy & { readonly requestPolicy: { readonly site?: string; readonly headers?: Readonly<Record<string, string>>; readonly basicAuth?: { readonly username: string; readonly password: string } }; readonly downloads: { readonly source: 'local' } | { readonly source: 'provider'; readonly remoteDirectory: string } }; result: null };
+  'page.activate': { args: Scoped; result: { readonly activated: true } };
   'scope.end': { args: Scoped; result: null };
 
   'browser.observe': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };

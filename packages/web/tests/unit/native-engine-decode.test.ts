@@ -33,4 +33,9 @@ describe('native engine result boundary', () => {
     expect(decodeEngineResult('recording.stop', { identityScope: 'scope-1', segments: [{ ...segment, mediaType: 'video/webm' }] })).toMatchObject({ segments: [{ mediaType: 'video/webm' }] });
   });
 
+  it('requires exact successful activation proof without a permissive truthy value', () => {
+    expect(decodeEngineResult('page.activate', { activated: true })).toEqual({ activated: true });
+    for (const value of [null, {}, { activated: false }, { activated: 'true' }, { activated: true, extra: 1 }]) expect(() => decodeEngineResult('page.activate', value)).toThrow();
+  });
+
 });

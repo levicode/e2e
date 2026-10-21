@@ -65,7 +65,7 @@ export class NativeClient {
     const client = new NativeClient(channel, capabilities, onEvent);
     const message = await client.exchange('hello', { type: 'hello', protocol: NATIVE_PROTOCOL, requiredCapabilities: capabilities }, context);
     if (message.type !== 'ready' || message.scopeState !== 'usable' || capabilities.some(item => !message.capabilities.includes(item))) {
-      client.fail('The native browser does not satisfy the requested protocol capabilities');
+      client.fail('The native browser does not satisfy the requested protocol capabilities', 'UNSUPPORTED_CAPABILITY');
       throw client.failure!;
     }
     client.ready = message;
@@ -230,7 +230,8 @@ export class NativeClient {
     const expected = pending.kind === 'hello' ? 'ready' : pending.kind === 'request' ? 'result' : pending.kind === 'close' ? 'closed' : 'control-result';
     if (message.type !== expected || (message.type === 'result' && message.operationSeq !== pending.operationSeq)) throw new Error('response kind');
     if (message.type === 'ready') {
-      if (message.scopeState !== 'usable' || this.requiredCapabilities.some(item => !message.capabilities.includes(item))) throw new Error('capabilities');
+      if (message.scopeState !== 'usable') throw new Error('capability scope');
+      if (this.requiredCapabilities.some(item => !message.capabilities.includes(item))) { this.fail('The native browser does not satisfy the requested protocol capabilities', 'UNSUPPORTED_CAPABILITY'); return; }
       this.frames.limit(Math.min(MAX_FRAME_BYTES, message.limits.maxFrameBytes));
       this.ready = message;
     }
@@ -297,7 +298,7 @@ export class NativeClient {
     try { this.channel.dispose(); } catch { /* The scope remains unusable; never interpret proxy failure as browser settlement. */ }
   }
 
-  private fail(message: string, code: 'ENGINE_FAILURE' | 'CANCELLED' | 'OPERATION_TIMEOUT' = 'ENGINE_FAILURE'): EngineError {
+  private fail(message: string, code: 'ENGINE_FAILURE' | 'CANCELLED' | 'OPERATION_TIMEOUT' | 'UNSUPPORTED_CAPABILITY' = 'ENGINE_FAILURE'): EngineError {
     this.failure ??= new EngineError(code, message, { retryable: false });
     this.stagedEvents.length = 0; this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
     for (const pending of this.pending.values()) { pending.clear(); pending.reject(this.failure); }

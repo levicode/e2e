@@ -52,6 +52,7 @@ function installNativePeers(): void {
         return { data: { identityScope: owner.scope, recoveryIdentity: { browser: `browser-${nextScope}`, context: repeatedContext ?? `context-${nextScope}`, page: `page-${nextScope}` } } };
       }
       if (command === 'scope.reconnect') { owner.scope = `scope-${++nextScope}`; return { data: { identityScope: owner.scope } }; }
+      if (command === 'page.activate') return { data: { activated: true } };
       if (['scope.configure', 'scope.end', 'network.routes.replace', 'recording.start'].includes(command)) return { data: null };
       if (command === 'blob.release') return { data: { released: true } };
       if (command === 'page.title') return { data: { title: 'reattached' } };

@@ -63,6 +63,7 @@ beforeEach(() => {
         else if (command === 'capture.screenshot') data = { identityScope: currentScope, handle: 'synthetic-image', size: 1, sha256: '0'.repeat(64), mediaType: 'image/png', width: 100, height: 80, scale: 1, maskedRegionCount: 0 };
         else if (command === 'session.environment') data = { identityScope: currentScope, browser: 'Synthetic Chromium', userAgent: 'synthetic-agent' };
         else if (command === 'browser.observe') data = { identityScope: currentScope, revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' } };
+        else if (command === 'page.activate') data = { activated: true };
         else if (command === 'page.title') data = { title: 'Synthetic page' };
         const respond = () => {
           const result = { type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, data, effects: 'completed', scopeState: 'usable' };
