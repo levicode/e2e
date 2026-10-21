@@ -48,7 +48,8 @@ jobs:
       - name: Check format before native compilation
         working-directory: native-source/cli
         run: cargo +stable fmt -- --check
-      - name: Compile and run the upstream default test inventory
+      - name: Compile the reviewed native binary
+        id: native-build
         working-directory: native-source/cli
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/native-target
@@ -62,9 +63,25 @@ jobs:
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
           export HOME="$RUNNER_TEMP/native-home"
           cargo clippy --locked --profile ci --tests -- -D warnings
-          cargo test --locked --profile ci -- --test-threads=1 2>&1 | tee "$GITHUB_WORKSPACE/native-evidence/tests.log"
           cargo build --locked --profile ci
-      - name: Install official Chromium and run explicit native browser contracts
+      - name: Run the upstream default test inventory
+        id: native-units
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        working-directory: native-source/cli
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/native-target
+          CARGO_BUILD_JOBS: '2'
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          set -euo pipefail
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export CARGO_HOME="$RUNNER_TEMP/native-cargo"
+          export HOME="$RUNNER_TEMP/native-home"
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          cargo test --locked --profile ci -- --test-threads=1 2>&1 | tee "$GITHUB_WORKSPACE/native-evidence/tests.log"
+      - name: Install official Chromium
+        id: chromium-install
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/native-target
           CARGO_BUILD_JOBS: '2'
@@ -76,8 +93,22 @@ jobs:
           export HOME="$RUNNER_TEMP/native-home"
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
           "$RUNNER_TEMP/native-target/ci/agent-browser" install --with-deps
+      - name: Run explicit native browser contracts
+        id: native-browser
+        if: ${{ !cancelled() && steps.chromium-install.outcome == 'success' }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/native-target
+          CARGO_BUILD_JOBS: '2'
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export CARGO_HOME="$RUNNER_TEMP/native-cargo"
+          export HOME="$RUNNER_TEMP/native-home"
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
           node scripts/acceptance/run-native-browser.ts native-source native-evidence
       - name: Exercise the production native process wrapper
+        id: native-proxy
+        if: ${{ !cancelled() && steps.chromium-install.outcome == 'success' }}
         run: |
           set -euo pipefail
           mapfile -t CHROME < <(find "$RUNNER_TEMP/native-home/.agent-browser/browsers" -type f -path '*/chrome-linux64/chrome')
@@ -86,6 +117,17 @@ jobs:
           export NATIVE_PROCESS_MODULE="$GITHUB_WORKSPACE/.artifacts/native-client/native/process.js"
           node --input-type=module -e "import { FOUNDATION_CAPABILITIES } from './scripts/acceptance/manifest.ts'; process.stdout.write(JSON.stringify(FOUNDATION_CAPABILITIES))" > native-evidence/required-capabilities.json
           node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-target/ci/agent-browser" native-evidence/required-capabilities.json native-evidence/negotiation.json
+      # Independent diagnostics still run after a unit failure, but no failed
+      # or skipped gate can produce a reusable successful producer artifact.
+      - name: Require every foundation gate
+        if: ${{ !cancelled() }}
+        env:
+          BUILD: ${{ steps.native-build.outcome }}
+          UNITS: ${{ steps.native-units.outcome }}
+          BROWSER: ${{ steps.native-browser.outcome }}
+          PROXY: ${{ steps.native-proxy.outcome }}
+        run: |
+          [ "$BUILD" = success ] && [ "$UNITS" = success ] && [ "$BROWSER" = success ] && [ "$PROXY" = success ]
       - name: Seal exact producer identity (not runtime capability approval)
         env:
           NATIVE_SHA: ${{ steps.native-source.outputs.sha }}
