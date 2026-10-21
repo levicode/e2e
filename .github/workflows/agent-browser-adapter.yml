@@ -46,6 +46,8 @@ jobs:
           CHROME=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux*/chrome' | head -1)
           test -x "$CHROME"
           echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+      - name: Prove synthetic OBJECT screenshots before native compilation
+        run: node --test --test-name-pattern '^HTML OBJECT' packages/agent-browser/tests/state-pixels.integration.ts
       - name: Core cross-engine integration regressions
         run: pnpm --filter e2e exec vitest run --project integration
       - name: Compute isolated Rust dependency cache identity

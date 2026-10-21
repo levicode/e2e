@@ -71,6 +71,16 @@ jobs:
       - run: pnpm --filter @e2e-dev/agent-browser test
       - name: Validate source lock and checkout refusal cases
         run: node --test packages/agent-browser/tests/native-source.test.ts
+      - name: Download pinned Chromium for native macOS fixtures
+        run: |
+          # Playwright is only the pinned browser downloader, never the execution engine.
+          pnpm --filter @e2e-dev/web exec playwright-core install --no-shell chromium
+          CHROME=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f -path '*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')
+          test -x "$CHROME"
+          "$CHROME" --version
+          echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
+      - name: Prove synthetic OBJECT screenshots before native compilation
+        run: node --test --test-name-pattern '^HTML OBJECT' packages/agent-browser/tests/state-pixels.integration.ts
       - name: Compute isolated Rust dependency cache identity
         id: rust-cache-key
         run: node -e 'const fs=require("node:fs");const l=JSON.parse(fs.readFileSync("packages/agent-browser/native-source.lock.json","utf8"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`key=rust-${l.rustToolchain}-${l.tree}-${l.upstreamBase}\n`);'
@@ -96,6 +106,8 @@ jobs:
           echo "E2E_AGENT_BROWSER_EXECUTABLE=$BINARY" >> "$GITHUB_ENV"
       - name: Verify browser-free native protocol bundle
         run: node --test packages/agent-browser/tests/native-contract.integration.ts
+      - name: Native model-boundary and nested-modal regressions
+        run: node --test packages/agent-browser/tests/model-boundary.integration.ts packages/agent-browser/tests/modal-flow.integration.ts
       - name: Build the separate unmodified official baseline
         run: bash packages/agent-browser/scripts/build-upstream-agent-browser.sh
       - name: Stage verified compilation dependencies outside source checkouts
@@ -111,14 +123,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git/db
             .validation-tools/native-dependency-cache
-      - name: Download pinned Chromium for native macOS fixtures
-        run: |
-          # Playwright is only the pinned browser downloader, never the execution engine.
-          pnpm --filter @e2e-dev/web exec playwright-core install --no-shell chromium
-          CHROME=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f -path '*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')
-          test -x "$CHROME"
-          "$CHROME" --version
-          echo "E2E_CHROMIUM_EXECUTABLE=$CHROME" >> "$GITHUB_ENV"
       - name: Exercise native exact refs and browser editing against real Chromium
         id: native-browser
         env:
