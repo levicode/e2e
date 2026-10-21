@@ -66,6 +66,9 @@ class ModelScreen {
   /** Reconstructs current evidence even when a later observation reports an unchanged screen. */
   get text(): string { return [...this.unaddressed, ...this.nodes.values()].join('\n'); }
 
+  /** Includes only this fixture's synthetic observations when a contract assertion fails. */
+  get diagnostic(): string { return `\nLatest synthetic model evidence:\n${this.latest}\nReconstructed synthetic screen:\n${this.text}`; }
+
   /** Ingests the newest tool result, or the opening user message on the first turn. */
   read(request: Request): void {
     const message = request.prompt.findLast(part => part.role === 'tool')
@@ -90,7 +93,7 @@ class ModelScreen {
   ref(role: string, name: string): string {
     const prefix = `${role} ${JSON.stringify(name)}`;
     const matches = [...this.nodes].filter(([, description]) => description === prefix || description.startsWith(`${prefix} `));
-    assert.equal(matches.length, 1, `The model must see exactly one ${prefix}`);
+    assert.equal(matches.length, 1, `The model must see exactly one addressable ${prefix}${this.diagnostic}`);
     const ref = matches[0]![0];
     assert.match(ref, /^@e\d+$/, 'The provider must return the native reference unchanged');
     return ref;
@@ -98,6 +101,20 @@ class ModelScreen {
 
   /** Reads the states and value associated with a model-visible control. */
   description(role: string, name: string): string { return this.nodes.get(this.ref(role, name))!; }
+
+  /** Structural descriptions can carry no ref; only actionable targets require a native @ref. */
+  semanticDescription(role: string, name: string): string {
+    const prefix = `${role} ${JSON.stringify(name)}`;
+    const matches = [...this.unaddressed.map(line => line.trim()), ...this.nodes.values()]
+      .filter(description => description === prefix || description.startsWith(`${prefix} `));
+    assert.equal(matches.length, 1, `The model must see exactly one semantic ${prefix}${this.diagnostic}`);
+    return matches[0]!;
+  }
+
+  /** Checks text from both addressed controls and unaddressed structural/static nodes. */
+  requireText(text: string, message = 'The model must receive the expected semantic text'): void {
+    assert.ok(this.text.includes(text), `${message}: ${JSON.stringify(text)}${this.diagnostic}`);
+  }
 
   /** Counts controls in the screen the model actually received, including below-fold rows. */
   count(role: string): number { return [...this.nodes.values()].filter(description => description.startsWith(`${role} `)).length; }
@@ -114,7 +131,7 @@ class ModelScreen {
     this.ref('button', 'Edit items');
     this.ref('button', 'Confirm choices');
     assert.equal(this.has('checkbox', ITEM), existing);
-    if (existing) this.ref('group', `Item ID ${ITEM_ID}: ${ITEM}`);
+    if (existing) this.semanticDescription('group', `Item ID ${ITEM_ID}: ${ITEM}`);
   }
 }
 
@@ -225,7 +242,7 @@ function deterministicModel(scenario: Scenario) {
   const dispatched: ToolCall[] = [];
   const tap = (name: string): ToolCall => ({ toolName: 'tap', input: { target: screen.ref('button', name) } });
   const decisions: Array<() => ToolCall> = [() => tap('Edit selection'), () => {
-    assert.ok(screen.text.includes('Saved IDs: none'));
+    screen.requireText('Saved IDs: none');
     assert.equal(screen.has('button', `Remove ${ITEM}`), false);
     return tap('Choose items');
   }];
@@ -240,8 +257,7 @@ function deterministicModel(scenario: Scenario) {
     decisions.push(() => {
       screen.inventory(false);
       if (!scenario.refusedScreenshot) return tap('Edit items');
-      assert.match(screen.latest, /POLICY_DENIED/);
-      assert.match(screen.latest, /Screenshot masking could not be proven/);
+      assert.equal(screen.latest, 'Action failed: Screenshot masking could not be proven for every frame and editable field (unsupported-owner-document)', screen.diagnostic);
       refusalSeen = true;
       assert.equal(screen.ref('button', 'Edit items'), beforeRefusal);
       return { toolName: 'tap', input: { target: beforeRefusal } };
@@ -256,7 +272,7 @@ function deterministicModel(scenario: Scenario) {
   decisions.push(() => {
     if (scenario.existing) screen.inventory(true);
     else assert.equal(screen.count('checkbox'), ROW_COUNT + 1);
-    screen.ref('group', `Item ID ${ITEM_ID}: ${ITEM}`);
+    screen.semanticDescription('group', `Item ID ${ITEM_ID}: ${ITEM}`);
     assert.doesNotMatch(screen.description('checkbox', ITEM), /\[[^\]]*\bchecked\b/);
     return { toolName: 'check', input: { target: screen.ref('checkbox', ITEM), checked: true } };
   }, () => {
@@ -264,36 +280,36 @@ function deterministicModel(scenario: Scenario) {
     return tap('Confirm choices');
   }, () => {
     screen.ref('button', `Remove ${ITEM}`);
-    assert.ok(screen.text.includes(`${ITEM} (ID ${ITEM_ID})`), 'Inner confirmation must produce a draft chip with its ID/name mapping');
-    assert.ok(screen.text.includes('Saved IDs: none'), 'Inner confirmation must not be mistaken for the outer Save');
+    screen.requireText(`${ITEM} (ID ${ITEM_ID})`, 'Inner confirmation must produce a draft chip with its ID/name mapping');
+    screen.requireText('Saved IDs: none', 'Inner confirmation must not be mistaken for the outer Save');
     return tap('Choose items');
   }, () => {
     assert.equal(screen.count('checkbox'), ROW_COUNT - (scenario.existing ? 1 : 0));
     assert.equal(screen.has('checkbox', ITEM), false, 'The picker excludes an already staged item');
-    assert.ok(screen.text.includes(`Already chosen: ${ITEM} (ID ${ITEM_ID})`));
+    screen.requireText(`Already chosen: ${ITEM} (ID ${ITEM_ID})`);
     return { toolName: 'type', input: { target: screen.ref('searchbox', 'Search items'), value: String(ITEM_ID) } };
   }, () => {
     assert.equal(screen.count('checkbox'), 0);
-    assert.ok(screen.text.includes('No available matches'));
+    screen.requireText('No available matches');
     assert.equal(screen.has('checkbox', ITEM), false);
     return tap('Cancel choices');
   }, () => {
     screen.ref('button', `Remove ${ITEM}`);
-    assert.ok(screen.text.includes('Saved IDs: none'));
+    screen.requireText('Saved IDs: none');
     return tap('Save selection');
   }, () => {
-    assert.ok(screen.text.includes(`Saved selection: ${ITEM}`), 'Only the outer Save commits the selection');
+    screen.requireText(`Saved selection: ${ITEM}`, 'Only the outer Save commits the selection');
     return { toolName: 'navigate', input: { url: '/' } };
   }, () => {
-    assert.ok(screen.text.includes(`Saved selection: ${ITEM}`), 'Reload must reread the persisted selection');
+    screen.requireText(`Saved selection: ${ITEM}`, 'Reload must reread the persisted selection');
     return tap('Edit selection');
   }, () => {
     screen.ref('button', `Remove ${ITEM}`);
-    assert.ok(screen.text.includes(`Saved IDs: ${ITEM_ID}`), 'Reopened editor must retain the committed numeric ID');
-    assert.ok(screen.text.includes(`${ITEM} (ID ${ITEM_ID})`), 'The numeric ID must read back as the display-name chip');
+    screen.requireText(`Saved IDs: ${ITEM_ID}`, 'Reopened editor must retain the committed numeric ID');
+    screen.requireText(`${ITEM} (ID ${ITEM_ID})`, 'The numeric ID must read back as the display-name chip');
     return tap('Cancel editing');
   }, () => {
-    assert.ok(screen.text.includes(`Saved selection: ${ITEM}`));
+    screen.requireText(`Saved selection: ${ITEM}`);
     return { toolName: 'complete_step', input: { status: 'passed', summary: 'Staged one synthetic item, saved the outer editor and reread its numeric ID/display name without duplicating it' } };
   });
   const model = {
@@ -396,12 +412,49 @@ async function runScenario(scenario: Scenario): Promise<void> {
       assert.ok((steps[0]!.metrics?.observationBytes ?? 0) > 8_000, 'The fixture must exercise a dense real observation');
       assert.notEqual(steps[0]!.visionInput, true);
       assert.equal(steps[0]!.metrics?.pixelBytes ?? 0, 0);
+      if (scenario.refusedScreenshot) {
+        assert.ok(steps[0]!.events.some(event => event.kind === 'observation' && event.status === 'failed' && event.code === 'POLICY_DENIED'),
+          'The structured observation event must retain the policy code without requiring it in public model prose');
+      }
     } finally { await session.close(); }
   } finally {
     try { await host?.close(); }
     finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(cwd, { recursive: true, force: true }); }
   }
 }
+
+test('model screen parser preserves unaddressed semantics without inventing native refs', () => {
+  const screen = new ModelScreen();
+  // SnapshotAdapter.parseSnapshot assigns modelRef:null to structural nodes
+  // without native refs; core formatNode emits their role/name without a prefix.
+  screen.read({ prompt: [{ role: 'user', content: 'Current screen (revision 1):\ndocument\n group "Item ID 9001: Sample item"\n  @e7 checkbox "Sample item"\n text "Saved IDs: none"\n @e8 button "Edit items"' }] });
+  assert.equal(screen.semanticDescription('group', 'Item ID 9001: Sample item'), 'group "Item ID 9001: Sample item"');
+  assert.throws(() => screen.ref('group', 'Item ID 9001: Sample item'), /exactly one addressable group/);
+  assert.equal(screen.ref('checkbox', 'Sample item'), '@e7');
+  screen.requireText('Saved IDs: none');
+
+  // ToolLoop.helpers.guard reports the error's message, not its structured code.
+  screen.read({ prompt: [{ role: 'tool', content: [{ type: 'tool-result', output: { type: 'text', value: 'Action failed: Screenshot masking could not be proven for every frame and editable field (unsupported-owner-document)' } }] }] });
+  assert.equal(screen.latest, 'Action failed: Screenshot masking could not be proven for every frame and editable field (unsupported-owner-document)');
+  assert.doesNotMatch(screen.latest, /POLICY_DENIED/);
+  assert.equal(screen.ref('button', 'Edit items'), '@e8');
+  screen.semanticDescription('group', 'Item ID 9001: Sample item');
+  screen.requireText('Saved IDs: none');
+
+  screen.read({ prompt: [{ role: 'tool', content: [{ type: 'tool-result', output: { type: 'text', value: 'Screen changes since revision 1 (now revision 2):\nchanged @e7 checkbox "Sample item" [checked] (was: @e7 checkbox "Sample item")\nremoved @e8 button "Edit items"' } }] }] });
+  assert.equal(screen.description('checkbox', 'Sample item'), 'checkbox "Sample item" [checked]');
+  assert.equal(screen.has('button', 'Edit items'), false);
+  screen.requireText('Saved IDs: none');
+
+  // A changed unaddressed/static node makes ScreenPresenter send a full screen.
+  screen.read({ prompt: [{ role: 'tool', content: [{ type: 'tool-result', output: { type: 'text', value: 'Current screen (revision 3):\ndocument\n @e9 group "Draft selection"\n text "Sample item (ID 9001)"\n text "Saved IDs: 9001"\n @e10 button "Remove Sample item"' } }] }] });
+  assert.equal(screen.semanticDescription('group', 'Draft selection'), 'group "Draft selection"');
+  assert.equal(screen.ref('button', 'Remove Sample item'), '@e10');
+  assert.equal(screen.has('checkbox', 'Sample item'), false);
+  assert.doesNotMatch(screen.text, /Saved IDs: none|Item ID 9001: Sample item/);
+  screen.requireText('Sample item (ID 9001)');
+  screen.requireText('Saved IDs: 9001');
+});
 
 test('deterministic model boundary: dense missing-item picker adds, stages, saves outer dialog and rereads IDs', { timeout: 240_000 }, () => runScenario({ existing: false, refusedScreenshot: false }));
 test('deterministic model boundary: existing and staged items are never duplicated by a picker miss', { timeout: 240_000 }, () => runScenario({ existing: true, refusedScreenshot: false }));
