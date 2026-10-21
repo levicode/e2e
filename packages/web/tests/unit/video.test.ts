@@ -5,12 +5,11 @@
  * the lifecycle integration test.
  */
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { afterEach, describe, expect, it } from 'vitest';
-import { EngineError } from 'e2e/engine';
 import { VideoRecorder } from '../../src/video.ts';
 
 const VIEWPORT = { width: 320, height: 200 };
@@ -118,36 +117,10 @@ describe('VideoRecorder', () => {
     expect((await video.stop()).map((segment) => segment.path)).toEqual(['video/video.webm']);
   });
 
-  it('reports a segment whose stop failed and left no file, once', async () => {
-    const video = recorder();
-    const broken = fakePage({ writes: false, stopError: new Error('screencast stop failed') });
-    await video.arm(broken.page);
-    let caught: unknown;
-    try {
-      await video.stop();
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(EngineError);
-    expect(String((caught as Error).message)).toContain('video/video.webm');
-    expect(String((caught as Error).message)).toContain('screencast stop failed');
-    expect(video.isArmed).toBe(false);
-    // Reported, then forgotten: the next stop has nothing to say.
-    expect(await video.stop()).toEqual([]);
-    expect(existsSync(path.join(dir, 'video', 'video.webm'))).toBe(false);
-  });
-
-  it('hands the segments that finalized to the stop after one that reported a lost segment', async () => {
-    const video = recorder();
-    const kept = fakePage();
-    const broken = fakePage({ writes: false, stopError: new Error('screencast stop failed') });
-    await video.arm(kept.page);
-    await video.pageClosing();
-    await video.pageOpened(broken.page);
-    await expect(video.stop()).rejects.toThrow('video/video-part2.webm');
-    // A host that retries the stop gets what did finalize, so nothing on disk goes unreported.
-    expect((await video.stop()).map((segment) => segment.path)).toEqual(['video/video.webm']);
-  });
+  // Missing-output once/retry assertions now run through public web() and the real
+  // NativeClient in native-surface.test.ts ("reports finalized missing segment").
+  // Native recording_failed_stop_keeps_valid_file_and_reports_missing_once owns
+  // producer disarm/retention; peer responses alone do not prove that bookkeeping.
 
   it('starts no segment for a page opened after the attempt abandoned its recording', async () => {
     const video = recorder();

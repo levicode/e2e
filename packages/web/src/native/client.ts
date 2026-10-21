@@ -25,6 +25,12 @@ interface Pending {
   draining?: boolean;
 }
 
+type ReceiveFailureKind = 'event-order' | 'response-correlation' | 'response-kind' | 'callback-proof' | 'capacity' | 'native-refusal';
+/** Local closed classification only. Native refusal codes have already passed serverMessage validation. */
+class ReceiveFailure extends Error {
+  constructor(readonly kind: ReceiveFailureKind, readonly code?: string) { super(kind); }
+}
+
 /** One negotiated native client. No automatic reconnect, command replay, or engine-specific browser calls. */
 export class NativeClient {
   private readonly frames = new NativeFrames(MAX_FRAME_BYTES);
@@ -51,8 +57,17 @@ export class NativeClient {
   private constructor(private readonly channel: NativeChannel, private readonly requiredCapabilities: readonly string[], private readonly onEvent: (event: NativeEvent) => void | Promise<void>) {
     channel.readable.on('data', (chunk: Buffer) => {
       try {
-        for (const frame of this.frames.read(chunk)) this.receive(serverMessage(frame));
-      } catch { this.fail('The native browser protocol became invalid'); }
+        for (const frame of this.frames.read(chunk)) {
+          let message: ServerMessage;
+          try { message = serverMessage(frame); }
+          catch { this.fail('The native browser protocol became invalid (schema)'); return; }
+          try { this.receive(message); }
+          catch (cause) {
+            const reason = cause instanceof ReceiveFailure ? `${cause.kind}${cause.code === undefined ? '' : `:${cause.code}`}` : 'receive';
+            this.fail(`The native browser protocol became invalid (${reason})`); return;
+          }
+        }
+      } catch { this.fail('The native browser protocol became invalid (frame)'); }
     });
     channel.readable.on('end', () => {
       try { this.frames.end(); } catch { this.fail('The native browser response was incomplete'); }
@@ -231,7 +246,7 @@ export class NativeClient {
       const timer = setTimeout(() => abandon('OPERATION_TIMEOUT'), timeout);
       const clear = () => { clearTimeout(timer); if (settlementTimer !== undefined) clearTimeout(settlementTimer); context.signal.removeEventListener('abort', abort); };
       const accept = (reply: ServerMessage) => {
-        if (settled !== undefined) throw new Error('duplicate operation result');
+        if (settled !== undefined) throw new ReceiveFailure('response-correlation');
         settled = reply; complete();
       };
       this.pending.set(id, { kind, ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
@@ -244,24 +259,24 @@ export class NativeClient {
   private receive(message: ServerMessage): void {
     if (this.failure !== undefined || this.closed) return;
     if (message.type === 'event') {
-      if (this.ready === undefined || message.generation !== this.ready.generation || message.sequence !== this.eventSequence + 1) throw new Error('event order');
+      if (this.ready === undefined || message.generation !== this.ready.generation || message.sequence !== this.eventSequence + 1) throw new ReceiveFailure('event-order');
       this.eventSequence = message.sequence;
       if (message.event === 'scope.callbacks-retired') { this.retireProvenCallbacks(message); return; }
       const bytes = Buffer.byteLength(JSON.stringify(message));
-      if (++this.activeEvents > Math.min(this.ready.limits.maxPendingDecisions, 256) || this.eventBytes + bytes > 4 * MAX_FRAME_BYTES) throw new Error('event capacity');
+      if (++this.activeEvents > Math.min(this.ready.limits.maxPendingDecisions, 256) || this.eventBytes + bytes > 4 * MAX_FRAME_BYTES) throw new ReceiveFailure('capacity');
       this.eventBytes += bytes;
       const arrived = performance.now();
       if (this.publishingEpoch !== undefined) this.stagedEvents.push({ event: message, bytes, arrived });
       else this.dispatchEvent(message, bytes, arrived);
       return;
     }
-    if (message.type === 'error') throw new Error('native protocol refusal');
+    if (message.type === 'error') throw new ReceiveFailure('native-refusal', message.error.code);
     const pending = this.pending.get(message.id);
-    if (pending === undefined || (pending.generation !== undefined && message.generation !== pending.generation)) throw new Error('response correlation');
+    if (pending === undefined || (pending.generation !== undefined && message.generation !== pending.generation)) throw new ReceiveFailure('response-correlation');
     const expected = pending.kind === 'hello' ? 'ready' : pending.kind === 'request' ? 'result' : pending.kind === 'close' ? 'closed' : 'control-result';
-    if (message.type !== expected || (message.type === 'result' && message.operationSeq !== pending.operationSeq)) throw new Error('response kind');
+    if (message.type !== expected || (message.type === 'result' && message.operationSeq !== pending.operationSeq)) throw new ReceiveFailure('response-kind');
     if (message.type === 'ready') {
-      if (message.scopeState !== 'usable') throw new Error('capability scope');
+      if (message.scopeState !== 'usable') throw new ReceiveFailure('response-kind');
       if (this.requiredCapabilities.some(item => !message.capabilities.includes(item))) { this.fail('The native browser does not satisfy the requested protocol capabilities', 'UNSUPPORTED_CAPABILITY'); return; }
       this.frames.limit(Math.min(MAX_FRAME_BYTES, message.limits.maxFrameBytes));
       this.ready = message;
@@ -285,9 +300,9 @@ export class NativeClient {
     const payload = message.payload;
     if (message.decision !== undefined || payload === null || typeof payload !== 'object' || Array.isArray(payload)
       || Object.keys(payload).length !== 2 || !('identityScope' in payload) || !('throughEventSequence' in payload) || typeof payload['identityScope'] !== 'string' || payload['identityScope'].length === 0 || Buffer.byteLength(payload['identityScope']) > 128
-      || !Number.isSafeInteger(payload['throughEventSequence']) || payload['throughEventSequence'] !== message.sequence - 1) throw new Error('invalid callback retirement proof');
+      || !Number.isSafeInteger(payload['throughEventSequence']) || payload['throughEventSequence'] !== message.sequence - 1) throw new ReceiveFailure('callback-proof');
     const scope = payload['identityScope']; const through = message.sequence - 1;
-    if (this.retiredCallbackScopes.has(scope) || this.retiredCallbackScopes.size >= 4096) throw new Error('callback retirement capacity or duplicate');
+    if (this.retiredCallbackScopes.has(scope) || this.retiredCallbackScopes.size >= 4096) throw new ReceiveFailure('callback-proof');
     this.retiredCallbackScopes.set(scope, through);
     for (const owner of this.callbacks) {
       if (owner.generation !== message.generation || owner.identityScope !== scope || owner.sequence > through) continue;

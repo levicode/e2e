@@ -33,12 +33,12 @@ function processFixture(exitOn: 'SIGTERM' | 'SIGKILL' | 'never' | 'already', can
 describe('failed native startup retains bounded process cleanup', () => {
   it('preserves the primary failure after an already exited child without signals', async () => {
     const f = processFixture('already'); const { failure } = await f.result;
-    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid' });
+    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (frame)' });
     expect(f.child.kill).not.toHaveBeenCalled(); expect(isNativeProcessCleanupUnresolved(failure)).toBe(false);
   });
   it('waits for TERM-confirmed exit and preserves the original negotiation failure', async () => {
     const f = processFixture('SIGTERM'); const { failure } = await f.result;
-    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid' });
+    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (frame)' });
     expect(f.child.kill.mock.calls).toEqual([['SIGTERM']]); expect(isNativeProcessCleanupUnresolved(failure)).toBe(false);
   });
   it('does not reject startup before KILL-confirmed exit after the TERM grace period', async () => {
@@ -47,7 +47,7 @@ describe('failed native startup retains bounded process cleanup', () => {
       const f = processFixture('SIGKILL'); let settled = false; void f.result.then(() => { settled = true; });
       await vi.advanceTimersByTimeAsync(1999); expect(settled).toBe(false);
       await vi.advanceTimersByTimeAsync(1); const { failure } = await f.result;
-      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid' });
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (frame)' });
       expect(f.child.kill.mock.calls).toEqual([['SIGTERM'], ['SIGKILL']]); expect(isNativeProcessCleanupUnresolved(failure)).toBe(false);
     } finally { vi.useRealTimers(); }
   });
@@ -68,7 +68,7 @@ describe('failed native startup retains bounded process cleanup', () => {
       const f = processFixture('never'); let settled = false; void f.result.then(() => { settled = true; });
       await vi.advanceTimersByTimeAsync(2999); expect(settled).toBe(false);
       await vi.advanceTimersByTimeAsync(1); const { failure } = await f.result;
-      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid', retryable: false });
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (frame)', retryable: false });
       expect(isNativeProcessCleanupUnresolved(failure)).toBe(true);
       expect(failure.cause).toBeInstanceOf(AggregateError);
       expect(failure.cause.errors[1]).toMatchObject({ message: 'The failed native browser proxy could not be confirmed stopped' });

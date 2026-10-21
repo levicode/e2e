@@ -34,12 +34,15 @@ test('dedicated push is source-locked; manual selection needs an explicit immuta
 test('full native manifest extends foundation without weakening the foundation list', () => {
   for (const name of NATIVE_BROWSER_CONTRACTS) assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
   assert.equal(new Set(CANDIDATE_NATIVE_CONTRACTS).size, CANDIDATE_NATIVE_CONTRACTS.length);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 31);
+  assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query'));
   for (const family of ['equivalence_tests', 'client_geometry', 'client_state', 'recording', 'borrowed_capture', 'borrowed_host']) assert.ok(CANDIDATE_NATIVE_CONTRACTS.some(name => name.includes(family)), family);
 });
 test('native discovery rejects missing, duplicated and unreviewed hosted tests', () => {
   const list = [...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS].map(name => `${name}: test`).join('\n');
   assert.equal(verifyNativeInventory(list).length, CANDIDATE_NATIVE_CONTRACTS.length + CANDIDATE_NATIVE_DIAGNOSTICS.length);
   assert.throws(() => verifyNativeInventory(list.replace(`${CANDIDATE_NATIVE_CONTRACTS[0]}: test`, '')), /Missing required/);
+  assert.throws(() => verifyNativeInventory(list.replace('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(`${list}\n${CANDIDATE_NATIVE_CONTRACTS[0]}: test`), /Duplicate/);
   assert.throws(() => verifyNativeInventory(`${list}\nnative::client_new::tests::hosted: test`), /Unclassified/);
 });
@@ -133,10 +136,10 @@ test('hosted workflow has narrow opt-in triggers, isolates features, preserves i
   assert.match(workflow, /candidate-web.ts semantic-faults "\$RUNNER_TEMP\/native-candidate-bin\/acceptance-faults"/);
   assert.match(workflow, /id: public-callbacks\n\s+if: \$\{\{ !cancelled\(\) && steps.native-proxy.outcome == 'success' }}/);
   assert.match(workflow, /steps.candidate-gate.outcome == 'success'/);
-  const fixture = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
-  assert.match(fixture, /from 'e2e\/runner'/); assert.match(fixture, /from '@e2e-dev\/web'/);
-  assert.match(fixture, /E2E_AGENT_BROWSER_EXECUTABLE, undefined/);
-  assert.match(fixture, /readFileSync\(resolve\(session.artifactsDir, await app.screenshot/);
+  const installedFixture = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
+  assert.match(installedFixture, /from 'e2e\/runner'/); assert.match(installedFixture, /from '@e2e-dev\/web'/);
+  assert.match(installedFixture, /E2E_AGENT_BROWSER_EXECUTABLE, undefined/);
+  assert.match(installedFixture, /readFileSync\(resolve\(session.artifactsDir, await app.screenshot/);
 });
 
 test('fake-harness orchestration continues all exact contracts after failure and never seals success', t => {

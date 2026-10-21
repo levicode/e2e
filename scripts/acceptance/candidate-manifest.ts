@@ -26,6 +26,7 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_enrollment::tests::e2e_borrowed_capture_observed_origins_and_native_bootstrap_lifetime',
   'native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page',
   'native::client_state::tests::chromium_duplicate_state_records_fail_instead_of_overwriting',
+  'native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query',
   'native::client_capture::tests::chromium_static_mask_preserves_public_pixels_and_restores_state',
   'native::client_capture::tests::chromium_shared_geometry_masks_transformed_frame_passwords',
   'native::client_capture::equivalence_tests::chromium_capture_retirement_races_publish_no_pixels_and_keep_typed_reason',

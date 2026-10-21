@@ -955,9 +955,9 @@ describe('web engine lifecycle', () => {
     const engine = web({ viewport: null });
     const openedViewport: unknown[] = [];
     const command = EngineChannel.prototype.command;
-    const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context) {
+    const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context, transition) {
       if (name === 'scope.open') openedViewport.push('viewport' in args ? args.viewport : undefined);
-      return command.call(this, name, args, context);
+      return command.call(this, name, args, context, transition);
     });
     try {
       await withAttempt(engine, app, artifactsDir, 'w1', async () => {
@@ -1098,9 +1098,9 @@ describe('web engine lifecycle', () => {
         await engine.session!.open!(`${app.url}/`, operation('v4'));
         const browser = fixtureOf(engine, 'v4');
         const command = EngineChannel.prototype.command;
-        const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context) {
+        const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context, transition) {
           if (name === 'recording.start') return Promise.reject(new Error('screencast unavailable'));
-          return command.call(this, name, args, context);
+          return command.call(this, name, args, context, transition);
         });
         try {
           await expect(engine.artifacts!.startVideo!(operation('v4'))).rejects.toThrow('screencast unavailable');

@@ -494,3 +494,42 @@ describe('native session client', () => {
     await expect(second.client.request('status', {}, context())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
   });
 });
+
+describe('closed native receive diagnostics', () => {
+  it.each([
+    ['schema', { type: 'private-secret-value' }],
+    ['event-order', { type: 'event', generation: 1, sequence: 2, event: 'test', payload: {} }],
+    ['response-correlation', { type: 'control-result', id: 'unknown-private-id', generation: 1, accepted: true, scopeState: 'usable' }],
+    ['response-kind', { type: 'control-result', id: 'c2', generation: 1, accepted: true, scopeState: 'usable' }],
+    ['callback-proof', { type: 'event', generation: 1, sequence: 1, event: 'scope.callbacks-retired', payload: { identityScope: 'private-scope', throughEventSequence: 9 } }],
+    ['native-refusal:invalid-arguments', { type: 'error', error: { code: 'invalid-arguments' }, scopeState: 'quarantined' }],
+    ['schema', { type: 'error', error: { code: 'private-secret-value' }, scopeState: 'quarantined' }],
+  ])('reports only %s and preserves failure/quarantine', async (reason, message) => {
+    const fixture = await opened();
+    const pending = fixture.client.request('page.title', {}, context());
+    fixture.send(message);
+    await expect(pending).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: `The native browser protocol became invalid (${reason})` });
+    expect(fixture.dispose).toHaveBeenCalledOnce();
+    await expect(fixture.client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: `The native browser protocol became invalid (${reason})` });
+    expect(fixture.requests).toHaveLength(2);
+  });
+
+  it('distinguishes invalid framing without exposing its bytes', async () => {
+    const fixture = await opened();
+    const pending = fixture.client.request('page.title', {}, context());
+    fixture.output.write('private-secret-value\n');
+    await expect(pending).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (frame)' });
+    expect(fixture.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('reports bounded event capacity without exposing event data', async () => {
+    const fixture = harness();
+    const connecting = fixture.connect();
+    fixture.send(fixture.ready({ limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 1, maxTimeoutMs: 3600000 } }));
+    const client = await connecting;
+    const pending = client.request('page.title', {}, context());
+    fixture.send(...[1, 2].map(sequence => ({ type: 'event', generation: 1, sequence, event: 'test', payload: { value: 'private-secret-value' } })));
+    await expect(pending).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (capacity)' });
+    expect(fixture.dispose).toHaveBeenCalledOnce();
+  });
+});

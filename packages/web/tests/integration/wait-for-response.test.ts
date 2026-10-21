@@ -94,9 +94,9 @@ describe('browser.waitForResponse bodies', () => {
   beforeEach(async () => {
     openedScopes.length = 0;
     const command = EngineChannel.prototype.command;
-    vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, operation) {
+    vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, operation, transition) {
       if (name === 'scope.open') openedScopes.push(name);
-      return command.call(this, name, args, operation);
+      return command.call(this, name, args, operation, transition);
     });
     await surface.startAttempt({ attemptId: 'responses', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
     operationBudgetMs = 2_000;

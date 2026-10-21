@@ -1,5 +1,6 @@
 /** Real protocol client over an in-memory native peer; no browser success is implied. */
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -635,7 +636,11 @@ describe('native surface ownership and fixed policy binding', () => {
       recordingMissing = ordinal;
       recordingSegments = ordinal === 1 ? [] : [{ identityScope: currentScope, handle: 'kept-video', size: recordingBytes.length, sha256: createHash('sha256').update(recordingBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-10-21T00:00:01.000Z' }];
       const missing = `video/${ordinal === 1 ? 'video' : 'video-part2'}.webm`;
-      await expect(engine.artifacts!.stopVideo!(operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: expect.stringContaining(missing) });
+      const failure = await engine.artifacts!.stopVideo!(operation()).catch((cause: unknown) => cause);
+      expect(failure).toBeInstanceOf(EngineError);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: expect.stringContaining(missing) });
+      expect((failure as EngineError).message).toContain('screencast stop failed');
+      expect(existsSync(path.join(directory, missing))).toBe(false);
       expect(frames.filter(frame => frame['command'] === 'blob.read')).toHaveLength(0);
       const kept = await engine.artifacts!.stopVideo!(operation());
       expect(kept).toEqual(ordinal === 1 ? [] : [{ path: 'video/video.webm', startedAt: '2026-10-21T00:00:01.000Z' }]);
