@@ -17,6 +17,8 @@ describe('held keyboard input', () => {
   });
   beforeEach(async () => {
     await surface.startAttempt({ attemptId: 'held', artifactsDir: projectRoot, signal, resolveSecret: noSecrets, ...ignoreTrace });
+    // These cases test an opened page, not the separate lazy-activation refusal contract.
+    await surface.open('about:blank', { signal, timeoutMs: 5_000, runId: 'held', attemptId: 'held', origin: 'test' });
     browser = createBrowserFixture(surface.fixtureSurface(), {
       app: { resolveUrl: (url: string) => url },
       operation: (timeoutMs = 5000) => ({ signal, timeoutMs, runId: 'held', attemptId: 'held', origin: 'test' }),

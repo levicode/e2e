@@ -93,7 +93,13 @@ export class BrowserChannel {
     // must neither release into nor invalidate the replacement scope.
     if (this.retired) return;
     try { await this.command(name, { handle }, this.context.operation()); }
-    catch { const failure = this.client.invalidate(); if (!failed) throw failure; }
+    catch {
+      // A release admitted while live may settle after disposal or scope replacement.
+      // Its post-await scope check must not invalidate the shared replacement client.
+      if (this.retired || this.context.identityScope() !== this.scope) return;
+      const failure = this.client.invalidate();
+      if (!failed) throw failure;
+    }
   }
 
   private assertScope(): void {

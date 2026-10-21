@@ -165,6 +165,42 @@ describe('typed native browser channel', () => {
   });
 
   it.each([
+    ['success', 'dispose'], ['failure', 'dispose'],
+    ['success', 'scope-change'], ['failure', 'scope-change'],
+  ] as const)('does not invalidate a replacement when an in-flight release settles with %s after %s', async (outcome, retirement) => {
+    const fixture = await opened();
+    const dispatch = fixture.channel.dispatch(responseEvent());
+    const settled = expect(dispatch).resolves.toBeUndefined();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(fixture.requests.at(-1)?.['command']).toBe('network.body.release');
+    if (retirement === 'dispose') fixture.channel.dispose();
+    fixture.reset();
+    if (outcome === 'success') fixture.result(null);
+    else {
+      const request = fixture.requests.at(-1)!;
+      fixture.send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'usable' });
+    }
+    await settled;
+    const replacement = new BrowserChannel(fixture.client, { identityScope: () => 'scope-2', operation });
+    const title = replacement.command('page.title', {}, operation());
+    fixture.result({ title: 'Replacement' });
+    await expect(title).resolves.toEqual({ title: 'Replacement' });
+    expect(fixture.requests.filter(request => request['command'] === 'network.body.release')).toHaveLength(1);
+    await fixture.close();
+  });
+
+  it('still invalidates an active scope when its release fails', async () => {
+    const fixture = await opened();
+    const dispatch = fixture.channel.dispatch(responseEvent());
+    const rejected = expect(dispatch).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    await new Promise(resolve => setImmediate(resolve));
+    const request = fixture.requests.at(-1)!;
+    fixture.send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'usable' });
+    await rejected;
+    await expect(fixture.channel.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  });
+
+  it.each([
     ['content-length-mismatch', 'net::ERR_CONTENT_LENGTH_MISMATCH'],
     ['redirect-body-unavailable', 'Response body is unavailable for redirect responses'],
   ])('preserves a fixed actionable response-body reason for %s without raw backend text', async (code, message) => {

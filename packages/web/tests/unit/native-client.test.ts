@@ -356,15 +356,94 @@ describe('native session client', () => {
     expect(fixture.dispose).toHaveBeenCalledOnce(); resume();
   });
 
-  it('fences the connection on cancellation and never retries uncertain input', async () => {
-    const fixture = await opened();
-    const controller = new AbortController();
-    const action = fixture.client.request('click', { ref: '@e7' }, context(controller.signal));
-    controller.abort();
-    await expect(action).rejects.toMatchObject({ code: 'CANCELLED', retryable: false });
-    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request', 'cancel']);
-    await expect(fixture.client.request('click', { ref: '@e7' }, context())).rejects.toMatchObject({ code: 'CANCELLED' });
-    expect(fixture.dispose).toHaveBeenCalledOnce();
+  it.each(['ack-first', 'result-first'] as const)('retains cancellation settlement in %s order before reuse', async (order) => {
+    const fixture = await opened(); const controller = new AbortController();
+    const request = fixture.client.request('browser.observe', {}, context(controller.signal));
+    const original = fixture.requests.at(-1)!; controller.abort();
+    const cancel = fixture.requests.at(-1)!;
+    const ack = { type: 'control-result', id: cancel['id'], generation: 1, accepted: order === 'ack-first', ...(order === 'ack-first' ? {} : { error: { code: 'invalid-arguments' } }), scopeState: 'usable' };
+    const result = fixture.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' });
+    let done = false; void request.then(() => { done = true; });
+    fixture.send(order === 'ack-first' ? ack : result); await Promise.resolve();
+    expect(done).toBe(false);
+    await expect(fixture.client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    fixture.send(order === 'ack-first' ? result : ack);
+    expect(await request).toMatchObject({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched' });
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+    await close(fixture);
+  });
+
+  it.each(['result', 'ack'] as const)('quarantines when cancellation settlement loses its %s', async (missing) => {
+    vi.useFakeTimers();
+    try {
+      const fixture = await opened(); const controller = new AbortController();
+      const request = fixture.client.request('click', {}, context(controller.signal));
+      const failed = expect(request).rejects.toMatchObject({ retryable: false });
+      const original = fixture.requests.at(-1)!; controller.abort(); const cancel = fixture.requests.at(-1)!;
+      fixture.send(missing === 'result'
+        ? { type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' }
+        : fixture.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      await vi.advanceTimersByTimeAsync(5000); await failed;
+      expect(fixture.dispose).toHaveBeenCalledOnce();
+      await expect(fixture.client.request('click', {}, context())).rejects.toMatchObject({ retryable: false });
+      expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps control callbacks live while an expired request settles without extending work', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = harness(); let client: NativeClient;
+      const connecting = fixture.connect(async event => { await client.decide(event.decision!.token, { kind: 'abort' }, context()); });
+      fixture.send(fixture.ready()); client = await connecting;
+      const request = client.request('browser.observe', {}, { ...context(), timeoutMs: 20 });
+      const original = fixture.requests.at(-1)!;
+      await vi.advanceTimersByTimeAsync(20); const cancel = fixture.requests.at(-1)!;
+      fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'cleanup-token', timeoutMs: 500 } });
+      await Promise.resolve(); const decision = fixture.requests.at(-1)!;
+      expect(decision['type']).toBe('decision');
+      fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      fixture.send(fixture.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await request).toMatchObject({ error: { code: 'deadline-exceeded' } });
+      expect(original['timeoutMs']).toBe(20); expect(fixture.dispose).not.toHaveBeenCalled();
+      await close({ ...fixture, client });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(['completed', 'unknown'] as const)('preserves %s effects when cancellation races a mutation result', async (effects) => {
+    const fixture = await opened(); const controller = new AbortController();
+    const request = fixture.client.request('click', {}, context(controller.signal));
+    const original = fixture.requests.at(-1)!; controller.abort(); const cancel = fixture.requests.at(-1)!;
+    if (effects === 'completed') fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
+    fixture.send(fixture.result(original, effects === 'completed' ? {} : { ok: false, data: undefined, error: { code: 'cancelled' }, effects, scopeState: 'quarantined' }));
+    expect(await request).toMatchObject({ effects });
+    if (effects === 'completed') await close(fixture);
+    else expect(fixture.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each(['id', 'generation'] as const)('rejects a cancellation ACK with unrelated %s', async (field) => {
+    const fixture = await opened(); const controller = new AbortController();
+    const request = fixture.client.request('browser.observe', {}, context(controller.signal));
+    const failure = expect(request).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    controller.abort(); const cancel = fixture.requests.at(-1)!;
+    fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable', [field]: field === 'id' ? 'unrelated' : 2 });
+    await failure; expect(fixture.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('retains lifecycle event publication until a cancelled transition has actually settled', async () => {
+    const fixture = harness(); const events: NativeEvent[] = [];
+    const connecting = fixture.connect(event => { events.push(event); }); fixture.send(fixture.ready()); const client = await connecting;
+    const epoch = client.callbackCheckpoint(); const controller = new AbortController();
+    const transition = client.request('scope.reset', {}, context(controller.signal), epoch);
+    const original = fixture.requests.at(-1)!; controller.abort(); const cancel = fixture.requests.at(-1)!;
+    fixture.send(fixture.result(original), { type: 'event', generation: 1, sequence: 1, event: 'navigation', payload: { identityScope: 'replacement' } });
+    await Promise.resolve(); expect(events).toEqual([]);
+    fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
+    expect((await transition).ok).toBe(true);
+    expect(events).toEqual([]); client.retireCallbacks(epoch); await Promise.resolve();
+    expect(events).toHaveLength(1); await close({ ...fixture, client });
   });
 
   it('refuses an already aborted request before writing it', async () => {

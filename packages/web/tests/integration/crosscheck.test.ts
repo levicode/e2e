@@ -67,7 +67,13 @@ describe('cross-check', () => {
     }
     const { unexpected, stale } = diffExpectations(expected, seen, pages);
     const todo = [...expected].filter(([key, reason]) => pages.has(key.slice(0, key.indexOf(' | '))) && reason === TODO_REASON).map(([key]) => key);
-    expect({ unexpected, stale, todo }, 'rerun with E2E_CROSSCHECK_UPDATE=1 and review the diff of tests/crosscheck/expected.txt').toEqual({
+    // Preserve bounded synthetic-fixture diagnostics in Vitest's JSON failure message.
+    const details = JSON.stringify({
+      unexpected: unexpected.filter(key => key.startsWith('fixture: ')),
+      stale: stale.filter(key => key.startsWith('fixture: ')),
+      todo: todo.filter(key => key.startsWith('fixture: ')),
+    }).slice(0, 16_384);
+    expect({ unexpected, stale, todo }, `review tests/crosscheck/expected.txt without rewriting expectations; fixture differences: ${details}`).toEqual({
       unexpected: [],
       stale: [],
       todo: [],

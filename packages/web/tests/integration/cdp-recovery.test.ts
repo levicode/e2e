@@ -119,7 +119,7 @@ describe('CDP session recovery', () => {
     vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) =>
       connect(channel, capabilities, context, async event => {
         await onEvent(event);
-        if (event.event === 'scope.disconnected') disconnectEvents += 1;
+        if (event.event === 'browser.disconnected') disconnectEvents += 1;
       }),
     );
   });
@@ -208,7 +208,7 @@ describe('CDP session recovery', () => {
       app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
       signal: new AbortController().signal, log: () => undefined };
     const prepared = await engine.prepare!({ ...info, slots: 1 });
-    await engine.init!({ ...info, env: prepared?.env ?? info.env, workerSlot: 0 });
+    await engine.init!({ ...info, env: { ...prepared?.env, ...info.env }, workerSlot: 0 });
     await engine.startAttempt!({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
     if (open) await engine.session!.open!(`${app.url}/login`, operation());
     return engine;

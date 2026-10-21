@@ -26,6 +26,8 @@ describe('browser.evaluate error boundaries', () => {
 
   beforeEach(async () => {
     await surface.startAttempt({ attemptId: 'evaluate', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+    // These cases test an opened page, not the separate lazy-activation refusal contract.
+    await surface.open('about:blank', { signal, timeoutMs: 5_000, runId: 'evaluate', attemptId: 'evaluate', origin: 'test' });
     browser = createBrowserFixture(surface.fixtureSurface(), {
       operation: () => ({ signal, timeoutMs: 1_000, runId: 'evaluate', attemptId: 'evaluate', origin: 'test' }),
       expectable: (target: object) => target,

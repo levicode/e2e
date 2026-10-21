@@ -35,18 +35,18 @@ function lines(nodes: readonly SemanticNode[]): string[] {
 
 it('reads a sentence with an inline link whole and keeps the link as its own node under it', async () => {
   const nodes = await observe('<p>Read our <a href="/privacy">privacy policy</a> for details.</p>');
-  expect(lines(nodes)).toEqual(['Read our privacy policy for details.', 'link "privacy policy" privacy policy']);
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual(['Read our privacy policy for details.', 'link "privacy policy" privacy policy']);
   expect(nodes[0]!.children?.map((child) => child.role)).toEqual(['link']);
 });
 
 it('reads emphasis, code, and spans in place and lists none of them again', async () => {
   const nodes = await observe('<p>Use <strong>bold</strong>, <em>italic <b>nested</b></em>, <code>npx e2e</code>, and a <span>span</span>.</p>');
-  expect(lines(nodes)).toEqual(['Use bold, italic nested, npx e2e, and a span.']);
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual(['Use bold, italic nested, npx e2e, and a span.']);
 });
 
 it('keeps an inline node named by a test id while its words stay in the sentence', async () => {
   const nodes = await observe('<p>Total <span data-testid="total">$10</span> due today</p>');
-  expect(lines(nodes)).toEqual(['Total $10 due today', '$10']);
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual(['Total $10 due today', '$10']);
   expect(nodes[1]!.testId).toBe('total');
 });
 
@@ -59,7 +59,7 @@ it('keeps an inline element that offers an action listed, its words still in the
     <div tabindex="-1"><span>Outside</span> <span tabindex="0"><b>any</b></span></div>
     <script>document.getElementById('wired').onclick = () => undefined;</script>
   `);
-  expect(lines(nodes)).toEqual([
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual([
     'Text change here',
     'change',
     'Or resend the code',
@@ -75,7 +75,7 @@ it('keeps an inline element that offers an action listed, its words still in the
 
 it('lists the children of a wrapper with no text of its own, as before', async () => {
   const nodes = await observe('<div><span>One</span><span>Two</span></div><button><span>Save</span></button>');
-  expect(lines(nodes)).toEqual(['One', 'Two', 'button "Save"', 'Save']);
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual(['One', 'Two', 'button "Save"', 'Save']);
 });
 
 it('separates words at block children, line breaks, and form controls, and reads no hidden inline text', async () => {
@@ -108,7 +108,7 @@ it('reads the shadow tree an inline custom element renders, open or closed, and 
       });
     </script>
   `);
-  expect(lines(nodes)).toEqual([
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual([
     'Signed in as Ada Lovelace, welcome back.',
     'link "Lovelace" Lovelace',
     'Your plan: Pro until May.',
@@ -125,7 +125,7 @@ it('reads no slotted text a hidden slot hides, and lists a slotted child that sh
       });
     </script>
   `);
-  expect(lines(nodes)).toEqual(['Status end', 'shown']);
+  expect(lines(nodes), `actual synthetic lines: ${JSON.stringify(lines(nodes)).slice(0, 16_384)}`).toEqual(['Status end', 'shown']);
   expect(await fixture!.browser.evaluate(() => document.querySelector('p')!.innerText)).toBe('Status shown end');
 });
 

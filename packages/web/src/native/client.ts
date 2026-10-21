@@ -14,7 +14,7 @@ export interface NativeChannel {
 }
 interface CallbackOwner { generation: number; identityScope: string | undefined; sequence: number; revoked: boolean; token: string; active: boolean; selected: boolean; expiresAt: number; epoch: number; timer?: ReturnType<typeof setTimeout> }
 interface Pending {
-  readonly kind: 'hello' | 'request' | 'decision' | 'close';
+  readonly kind: 'hello' | 'request' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
   readonly callbackTransition?: number;
   readonly command?: string;
@@ -22,6 +22,7 @@ interface Pending {
   readonly resolve: (message: ServerMessage) => void;
   readonly reject: (error: EngineError) => void;
   readonly clear: () => void;
+  draining?: boolean;
 }
 
 /** One negotiated native client. No automatic reconnect, command replay, or engine-specific browser calls. */
@@ -45,6 +46,7 @@ export class NativeClient {
   private eventSequence = 0;
   private activeEvents = 0;
   private eventBytes = 0;
+  private settlingRequests = 0;
 
   private constructor(private readonly channel: NativeChannel, private readonly requiredCapabilities: readonly string[], private readonly onEvent: (event: NativeEvent) => void | Promise<void>) {
     channel.readable.on('data', (chunk: Buffer) => {
@@ -112,6 +114,7 @@ export class NativeClient {
   /** Dispatches exactly once; a transport timeout cannot turn an uncertain effect into a retry. */
   async request(command: string, args: Readonly<Record<string, JsonValue>>, context: OperationContext, callbackTransition?: number): Promise<NativeResult> {
     this.assertUsable();
+    if (this.settlingRequests > 0) throw new EngineError('INVALID_STATE', 'The native browser is settling a cancelled operation', { retryable: false });
     if (this.pending.size >= Math.min(this.ready!.limits.maxPendingOperations, 64)) throw new EngineError('ENGINE_FAILURE', 'The native browser operation capacity was exceeded', { retryable: false });
     if (this.operationSeq === Number.MAX_SAFE_INTEGER) {
       this.fail('The native browser operation sequence was exhausted');
@@ -193,17 +196,45 @@ export class NativeClient {
       return Promise.reject(cause instanceof EngineError ? cause : new EngineError('ENGINE_FAILURE', 'The native browser request exceeded its protocol bounds', { retryable: false }));
     }
     return new Promise((resolve, reject) => {
-      const abandon = (code: 'CANCELLED' | 'OPERATION_TIMEOUT') => {
-        if (!this.pending.has(id)) return;
-        if (operationSeq !== undefined && this.ready !== undefined) {
-          try { this.channel.writable.write(`${JSON.stringify({ type: 'cancel', id: `c${++this.nextId}`, generation: this.ready.generation, operationSeq })}\n`); } catch { /* EOF settlement remains mandatory even if cancel cannot be delivered. */ }
+      let settlementTimer: ReturnType<typeof setTimeout> | undefined;
+      let cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined;
+      let settled: ServerMessage | undefined;
+      let cancelAcknowledged = false;
+      let finished = false;
+      const complete = () => {
+        if (finished || settled === undefined || (cancellation !== undefined && !cancelAcknowledged && !(settled.type === 'result' && settled.effects === 'unknown'))) return;
+        finished = true;
+        this.pending.delete(id); clear();
+        if (cancellation !== undefined) this.settlingRequests--;
+        // A local deadline may race the native cancellation signal. Only a reusable,
+        // definitive failure can preserve the caller's original timeout reason.
+        if (cancellation === 'OPERATION_TIMEOUT' && settled.type === 'result' && !settled.ok && settled.effects !== 'unknown' && settled.scopeState === 'usable' && (settled.error?.code === 'cancelled' || settled.error?.code === 'deadline-exceeded')) {
+          settled = { ...settled, error: { code: 'deadline-exceeded' } };
         }
-        this.fail('The native browser operation ended without a settled outcome', code);
+        resolve(settled);
+      };
+      const abandon = (code: 'CANCELLED' | 'OPERATION_TIMEOUT') => {
+        const pending = this.pending.get(id);
+        if (pending === undefined || cancellation !== undefined) return;
+        if (kind !== 'request' || operationSeq === undefined || this.ready === undefined) {
+          this.fail('The native browser operation ended without a settled outcome', code); return;
+        }
+        cancellation = code; pending.draining = true; this.settlingRequests++;
+        clearTimeout(timer); context.signal.removeEventListener('abort', abort);
+        // Cleanup/settlement only: the original native deadline is never extended.
+        settlementTimer = setTimeout(() => this.fail('The native browser operation ended without a settled outcome', code), 5000);
+        void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, { ...context, signal: new AbortController().signal, timeoutMs: 5000 }).then(() => {
+          cancelAcknowledged = true; complete();
+        }).catch(() => { if (!finished) this.fail('The native browser cancellation did not settle', code); });
       };
       const abort = () => abandon('CANCELLED');
       const timer = setTimeout(() => abandon('OPERATION_TIMEOUT'), timeout);
-      const clear = () => { clearTimeout(timer); context.signal.removeEventListener('abort', abort); };
-      this.pending.set(id, { kind, ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve, reject, clear });
+      const clear = () => { clearTimeout(timer); if (settlementTimer !== undefined) clearTimeout(settlementTimer); context.signal.removeEventListener('abort', abort); };
+      const accept = (reply: ServerMessage) => {
+        if (settled !== undefined) throw new Error('duplicate operation result');
+        settled = reply; complete();
+      };
+      this.pending.set(id, { kind, ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
       context.signal.addEventListener('abort', abort, { once: true });
       if (context.signal.aborted) { abort(); return; }
       try { this.channel.writable.write(bytes); } catch { this.fail('The native browser request could not be delivered'); }
@@ -235,8 +266,7 @@ export class NativeClient {
       this.frames.limit(Math.min(MAX_FRAME_BYTES, message.limits.maxFrameBytes));
       this.ready = message;
     }
-    this.pending.delete(message.id);
-    pending.clear();
+    if (!pending.draining) { this.pending.delete(message.id); pending.clear(); }
     if (message.type === 'closed') {
       this.closed = true;
       for (const other of this.pending.values()) { other.clear(); other.reject(new EngineError('CANCELLED', 'The native browser scope closed', { retryable: false })); }
