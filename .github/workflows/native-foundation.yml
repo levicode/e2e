@@ -1,0 +1,103 @@
+name: native foundation (not release acceptance)
+
+# Explicit coordinator-selected native revision. No publishing and no PR caches.
+on:
+  push:
+    branches: [implement/native-first-ci]
+  workflow_dispatch:
+    inputs:
+      native_sha:
+        description: Full reviewed commit SHA in levicode/agent-browser
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: native-foundation-${{ github.ref }}-${{ inputs.native_sha }}
+  cancel-in-progress: false
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Resolve reviewed immutable native revision
+        id: native-source
+        env:
+          INPUT_NATIVE_SHA: ${{ inputs.native_sha }}
+        run: node scripts/acceptance/foundation-source.ts
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: levicode/agent-browser
+          ref: ${{ steps.native-source.outputs.sha }}
+          path: native-source
+          persist-credentials: false
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - name: Prepare the production TypeScript native client
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter e2e run build
+          pnpm exec tsc --project scripts/acceptance/tsconfig.native-client.json
+      - name: Official stable Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Check format before native compilation
+        working-directory: native-source/cli
+        run: cargo +stable fmt -- --check
+      - name: Compile and run the upstream default test inventory
+        working-directory: native-source/cli
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/native-target
+          CARGO_BUILD_JOBS: '2'
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-home" "$GITHUB_WORKSPACE/native-evidence"
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export CARGO_HOME="$RUNNER_TEMP/native-cargo"
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          export HOME="$RUNNER_TEMP/native-home"
+          cargo clippy --locked --profile ci --tests -- -D warnings
+          cargo test --locked --profile ci -- --test-threads=1 2>&1 | tee "$GITHUB_WORKSPACE/native-evidence/tests.log"
+          cargo build --locked --profile ci
+      - name: Install official Chromium and run explicit native browser contracts
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/native-target
+          CARGO_BUILD_JOBS: '2'
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          set -euo pipefail
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export CARGO_HOME="$RUNNER_TEMP/native-cargo"
+          export HOME="$RUNNER_TEMP/native-home"
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          "$RUNNER_TEMP/native-target/ci/agent-browser" install --with-deps
+          node scripts/acceptance/run-native-browser.ts native-source native-evidence
+      - name: Exercise the production native process wrapper
+        run: |
+          set -euo pipefail
+          mapfile -t CHROME < <(find "$RUNNER_TEMP/native-home/.agent-browser/browsers" -type f -path '*/chrome-linux64/chrome')
+          [ "${#CHROME[@]}" -eq 1 ] || { echo 'Expected exactly one installed Chromium executable'; exit 1; }
+          export E2E_CHROMIUM_EXECUTABLE="${CHROME[0]}"
+          export NATIVE_PROCESS_MODULE="$GITHUB_WORKSPACE/.artifacts/native-client/native/process.js"
+          node --input-type=module -e "import { FOUNDATION_CAPABILITIES } from './scripts/acceptance/manifest.ts'; process.stdout.write(JSON.stringify(FOUNDATION_CAPABILITIES))" > native-evidence/required-capabilities.json
+          node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-target/ci/agent-browser" native-evidence/required-capabilities.json native-evidence/negotiation.json
+      - name: Seal exact producer identity (not runtime capability approval)
+        env:
+          NATIVE_SHA: ${{ steps.native-source.outputs.sha }}
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          node scripts/acceptance/native-producer.ts native-source "$RUNNER_TEMP/native-target/ci/agent-browser" native-evidence/tests.log native-evidence/producer.json "$NATIVE_SHA"
+          cp "$RUNNER_TEMP/native-target/ci/agent-browser" native-evidence/agent-browser
+          tar -C native-evidence -czf "$RUNNER_TEMP/producer.tar.gz" .
+          mv "$RUNNER_TEMP/producer.tar.gz" native-evidence/producer.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: native-foundation-${{ steps.native-source.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}
+          path: native-evidence/
+          if-no-files-found: error

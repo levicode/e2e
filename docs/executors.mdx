@@ -43,7 +43,7 @@ export default {
         buildPrompt: (ctx) => ctx.step.instruction,
         tools: (ctx, { guard }) => ({
           read_screen: tool({
-            description: 'Read the screen as text, one node per line as #id role "name"',
+            description: 'Read the screen as text, one node per line as reference role "name"',
             inputSchema: z.object({}),
             execute: () => guard(async () => (await ctx.observe()).text),
           }),
@@ -144,6 +144,10 @@ without acting. Engines with a keyboard add `typeText`, `pressKey`, and
 path outside the project root or a hidden one with `POLICY_DENIED`, and a
 missing file with `INVALID_ARGUMENT`.
 
+Treat node IDs as opaque: pass the tree's `id` unchanged to actions. Screen text
+keeps canonical `@` references intact and prefixes other engine IDs with `#`.
+Do not add a prefix, parse a numeric suffix, or reuse an ID after its scope ends.
+
 The observation's `keyboardVisible` says whether an on-screen keyboard is
 showing, and is absent when the engine can't tell.
 
@@ -192,38 +196,68 @@ executor keeps its entries.
 
 ## Driving the page yourself
 
-On the web engine, `surfaceOf(handle)` from `@e2e-dev/web` gives you the
-current attempt's `Page` and `BrowserContext`. Both accessors throw
-`INVALID_STATE` outside an active attempt, and `page()` also when no page is
-open.
+Use `ctx.observe` and `ctx.actions` inside an executor. They retain action
+checks, deadlines, recording, and the engine's node references. Use the typed
+`browser` fixture in test code for Web-specific operations such as routes,
+responses, downloads, cookies, and trusted JavaScript evaluation.
+
+The native Web engine does not expose a Playwright `Page` or `BrowserContext`.
+Migrate `surfaceOf(handle)` consumers to these contracts; arbitrary helpers
+that require Playwright objects are not compatible with this engine.
 
 ```ts
-import type { E2EConfig, StepExecutor } from 'e2e';
-import { web, surfaceOf } from '@e2e-dev/web';
+import type { E2EConfig, ExecutorNode, StepExecutor } from 'e2e';
+import { web } from '@e2e-dev/web';
 
-const engine = web();
+function saveButtons(node: ExecutorNode): ExecutorNode[] {
+  return [
+    ...(node.role === 'button' && node.name === 'Save' ? [node] : []),
+    ...(node.children ?? []).flatMap(saveButtons),
+  ];
+}
+
 const own: StepExecutor = {
-  name: 'own-tools',
+  name: 'save-form',
   version: '1',
   cache: 'off',
   async runStep(ctx) {
-    const page = surfaceOf(engine)!.page();   // the page app.open() navigated
-    await ctx.budgets.runTool({ name: 'click', mutates: true }, () =>
-      page.getByRole('button', { name: 'Save' }).click(),
-    );
-    return { status: 'passed', summary: 'saved' };
+    if (ctx.step.kind !== 'act' || ctx.step.instruction !== 'Save the form') {
+      return { status: 'blocked', errorCode: 'AUTOMATION_UNSUPPORTED', summary: 'Only Save the form is supported.' };
+    }
+    const observation = await ctx.observe({ tree: true });
+    const matches = observation.tree === undefined ? [] : saveButtons(observation.tree);
+    const save = matches.length === 1 ? matches[0] : undefined;
+    if (save === undefined) {
+      return { status: 'failed', errorCode: 'LOCATOR_NOT_FOUND', summary: 'Expected one visible Save button.' };
+    }
+    await ctx.actions.tap({ id: save.id });
+    return { status: 'passed', summary: 'Tapped Save. The test checks the response.' };
   },
 };
 
 export default {
-  targets: [{ engine, app: { url: 'http://localhost:3000' } }],
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
   agents: { default: { executor: own } },
 } satisfies E2EConfig;
 ```
 
-Direct Playwright calls skip action authorization and the replay cache,
-and leave no artifacts. The step deadline and the verdict record still
-apply.
+The test subscribes before triggering the action and checks the actual result:
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('saves the form', async ({ app, agent, browser }) => {
+  await app.open('/form');
+  const response = browser.waitForResponse('**/api/save');
+  await agent.act('Save the form');
+  expect((await response).status).toBe(200);
+});
+```
+
+Do not put `ctx.actions` or `ctx.observe` inside `ctx.budgets.runTool`: they
+already use the action queue. A tool that calls an external test API directly
+can use `runTool`, but must verify that API's result before reporting success.
 
 ## Next
 

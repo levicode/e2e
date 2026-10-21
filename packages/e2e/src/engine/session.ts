@@ -338,6 +338,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
           revision: minted,
           capturedAt: new Date().toISOString(),
           ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
+          ...(snapshot.identityScope === undefined ? {} : { identityScope: snapshot.identityScope }),
           viewport: snapshot.viewport,
           redaction: { secureNodeCount: countSecure(snapshot.root), maskedRegionCount: 0 },
           tree: stampRevision(snapshot.root, minted),
@@ -370,6 +371,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         revision: minted,
         capturedAt: new Date().toISOString(),
         ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
+        ...(snapshot.identityScope === undefined ? {} : { identityScope: snapshot.identityScope }),
         viewport: snapshot.viewport,
         redaction: {
           secureNodeCount: countSecure(snapshot.root),

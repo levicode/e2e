@@ -7,6 +7,7 @@
  * screenshot are scaled into the observation's CSS pixels first.
  */
 
+import { referenceText } from './reference-text.ts';
 import type { PointActionName } from '../cache/trace.ts';
 import type { ViewportPoint, ViewportSize } from '../engine/surface.ts';
 import { clamp, clampToViewport, containsPoint } from '../internal/geometry.ts';
@@ -99,9 +100,9 @@ function depthOf(id: string, parents: ReadonlyMap<string, string>): number {
 export function nodeLine(observation: Pick<AgentObservation, 'text'>, id: string): string {
   for (const line of observation.text.split('\n')) {
     const trimmed = line.trimStart();
-    if (trimmed.startsWith(`#${id} `) || trimmed === `#${id}`) return trimmed;
+    if (trimmed.startsWith(`${referenceText(id)} `) || trimmed === `${referenceText(id)}`) return trimmed;
   }
-  return `#${id}`;
+  return `${referenceText(id)}`;
 }
 
 /** How a point result names what it found: by the observation's own line, which the model holds. */

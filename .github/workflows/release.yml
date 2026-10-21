@@ -20,9 +20,11 @@ env:
 permissions:
   contents: read
 
+# Upstream publishing, MCP registration and deployment are never fork defaults.
+# A fork bundle is a separate explicit delivery, not an npm nightly release.
 jobs:
   release:
-    if: ${{ github.event_name == 'push' }}
+    if: ${{ github.repository == 'tester-army/e2e' && github.event_name == 'push' }}
     # GitHub-hosted, not Blacksmith: npm Trusted Publishing rejects OIDC
     # tokens from self-hosted runners, and Blacksmith registers as one.
     runs-on: ubuntu-latest
@@ -77,7 +79,7 @@ jobs:
   # Lists the e2e release that just published in the MCP Registry.
   mcp-registry:
     needs: release
-    if: ${{ needs.release.outputs.e2e-version != '' }}
+    if: ${{ github.repository == 'tester-army/e2e' && needs.release.outputs.e2e-version != '' }}
     permissions:
       contents: read
       id-token: write
@@ -88,7 +90,7 @@ jobs:
   # Rebuilds the docs at e2e.tester.army, so they follow each e2e release.
   site:
     needs: release
-    if: ${{ needs.release.outputs.e2e-version != '' }}
+    if: ${{ github.repository == 'tester-army/e2e' && needs.release.outputs.e2e-version != '' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions: {}
@@ -106,7 +108,7 @@ jobs:
   # workflow file. Nothing is committed; the version bump and the pinned peer
   # ranges stay in the job's checkout.
   nightly:
-    if: ${{ github.event_name != 'push' }}
+    if: ${{ github.repository == 'tester-army/e2e' && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

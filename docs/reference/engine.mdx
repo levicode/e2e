@@ -867,6 +867,7 @@ export interface EngineDisposeContext extends EngineCleanupContext {
 | Field | Type |
 | --- | --- |
 | `location` | `string` |
+| `identityScope` | `string` |
 | `root` | `SemanticNode` |
 | `viewport` | `ViewportSize` |
 | [`truncated`](#truncated-trees) | `boolean` |
@@ -874,6 +875,17 @@ export interface EngineDisposeContext extends EngineCleanupContext {
 | [`treeUnavailable`](#pixel-fallback) | `true` |
 | `pixels` | `ObservationPixels` |
 | `maskedRegionCount` | `number` |
+
+An optional `identityScope` is an opaque namespace for live element identity.
+Keep it stable while recovering a stale element by its descriptor is valid.
+Change it when resetting or replacing the context makes prior elements unrelated.
+The runner then discards live target history and refuses to relocate an earlier
+reference into the new scope, even when an element has the same name. The value
+is not model input. Element ids must not be reused for unrelated elements within
+an attempt, even across scope changes, because executor targets contain only an id.
+Engines that omit it keep their existing recovery behavior;
+the stable viewport root remains usable across resets. Changing scope does not
+clear secret exposure, pixel taint, or attempt accounting.
 
 Return the surface as it is right now. The runner mints the revision and
 stamps it onto every ref. When `pixels` are present, it checks that
@@ -887,6 +899,8 @@ childless root and include `pixels`.
  * observation byte budget apply to every engine equally.
  */
 export interface EngineSnapshot {
+  /** Opaque live-element namespace; changes prevent cross-scope relocation. */
+  readonly identityScope?: string;
   /**
    * Where the surface is, as an opaque address the platform understands: a
    * URL on a document platform, the foreground screen or activity on a

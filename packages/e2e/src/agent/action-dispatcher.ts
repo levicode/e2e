@@ -447,11 +447,13 @@ export class ActionDispatcher {
     const notFound = (why: string) => new TestError('LOCATOR_NOT_FOUND', `nothing reading ${JSON.stringify(text)} came into view ${why}`);
     await this.runAction('scrollUntil', async () => {
       let observation = this.feed.requireLatest();
+      const identityScope = observation.identityScope;
       let paged: Pick<Extract<RecordableAction, { name: 'scrollUntil' }>, 'node' | 'spans'> = {};
       let previous: string | undefined;
       let still = 0;
       let within = list;
       for (let screens = 0; ; screens += 1) {
+        if (observation.identityScope !== identityScope) throw notFound('before the surface identity changed');
         // Only the list being paged is read while it is on screen; once it is
         // gone the whole screen is, as the paging itself falls back to the viewport.
         const scope = within === undefined || observation.kind !== 'semantic' ? undefined : observation.nodes.get(within.id);
@@ -510,7 +512,7 @@ export class ActionDispatcher {
     try {
       return resolveScrollTarget(this.feed, list);
     } catch (cause) {
-      if (cause instanceof AgentError && cause.code === 'LOCATOR_NOT_FOUND') return undefined;
+      if (cause instanceof AgentError && cause.code === 'LOCATOR_NOT_FOUND' && this.feed.lastSeen(list.id.replace(/^#/, '')) !== undefined) return undefined;
       throw cause;
     }
   }
@@ -686,7 +688,7 @@ export class ActionDispatcher {
         return { ...(await perform(node, observation)), ...placement };
       } catch (cause) {
         if (asEngineError(cause)?.code !== 'NODE_STALE') throw cause;
-        const relocated = relocations < MAX_STALE_RELOCATIONS ? await this.feed.relocate(node) : undefined;
+        const relocated = relocations < MAX_STALE_RELOCATIONS ? await this.feed.relocate({ node, observation }) : undefined;
         if (relocated === undefined) {
           throw new AgentError('LOCATOR_NOT_FOUND', 'the target node left the screen before the action reached it', {
             cause,

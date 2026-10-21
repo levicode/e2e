@@ -81,6 +81,8 @@ export type Observation = ObservationMetadata & (
 
 /** Capture identity and geometry, independent of whether semantic evidence exists. */
 interface ObservationMetadata {
+  /** Opaque live-element namespace, not rendered or sent to the model. */
+  readonly identityScope?: string;
   /** Stable viewport action reference; it is not evidence that semantic nodes were captured. */
   readonly root: NodeRef;
   /** Where the surface was when captured, when the platform has a location. */

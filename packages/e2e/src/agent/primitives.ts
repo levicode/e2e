@@ -9,6 +9,7 @@
  * the module is safe to import from a config that never calls a model.
  */
 
+import { referenceText } from './reference-text.ts';
 import type { StepResult, Tool, ToolSet } from 'ai';
 import { z } from 'zod';
 import { isTapActionName, type NodeActionName, type PointActionName } from '../cache/trace.ts';
@@ -323,7 +324,7 @@ export function createGrammarTools(
   const target = z
     .string()
     .min(1)
-    .describe('Node id from any screen in this conversation that is still present, e.g. "n42"');
+    .describe('Node id from any screen in this conversation that is still present, e.g. "n42" or "@e42"');
 
   const tools: ToolSet = {
     observe: screenTool({
@@ -349,7 +350,7 @@ export function createGrammarTools(
         const { target: id, modifiers: held } = input;
         const run = (): Promise<void> =>
           isTapActionName(verb) && held !== undefined ? context.actions[verb]({ id }, { modifiers: held }) : context.actions[verb]({ id });
-        return acting({ done: `${lead} #${id}.`, attempt: `${tool} #${id}` }, run, expectChange === undefined ? {} : { expectChange });
+        return acting({ done: `${lead} ${referenceText(id)}.`, attempt: `${tool} ${referenceText(id)}` }, run, expectChange === undefined ? {} : { expectChange });
       },
     });
   }
@@ -395,7 +396,7 @@ export function createGrammarTools(
             { expectChange: false },
           );
         }
-        if (id !== undefined) return acting({ done: `Scrolled into view #${id}.`, attempt: `scroll_to #${id}` }, () => context.actions.scrollTo({ id }), { expectChange: false });
+        if (id !== undefined) return acting({ done: `Scrolled into view ${referenceText(id)}.`, attempt: `scroll_to ${referenceText(id)}` }, () => context.actions.scrollTo({ id }), { expectChange: false });
         throw new TestError('INVALID_ARGUMENT', 'scroll_to takes a listed node id as target, a text to reach, or both');
       },
     });
@@ -420,7 +421,7 @@ export function createGrammarTools(
           ? acting({ done: 'Typed into the focused field.', attempt: 'type into the focused field' }, () =>
               context.actions.typeText(value, { replace: (rest as { replace?: boolean }).replace === true }),
             )
-          : acting({ done: `Typed into #${id}.`, attempt: `type #${id}` }, () => typeIntoNode(context, { id }, value, `#${id}`)),
+          : acting({ done: `Typed into ${referenceText(id)}.`, attempt: `type ${referenceText(id)}` }, () => typeIntoNode(context, { id }, value, `${referenceText(id)}`)),
     });
   }
   if (verbs.has('press') || verbs.has('pressKey')) {
@@ -461,8 +462,8 @@ export function createGrammarTools(
       execute: ({ target: id, key, times: count }) =>
         acting(
           {
-            done: pressed(key, count ?? 1, id === undefined ? 'on the focused field' : `on #${id}`),
-            attempt: `press ${key} ${id === undefined ? 'on the focused field' : `on #${id}`}`,
+            done: pressed(key, count ?? 1, id === undefined ? 'on the focused field' : `on ${referenceText(id)}`),
+            attempt: `press ${key} ${id === undefined ? 'on the focused field' : `on ${referenceText(id)}`}`,
           },
           () => pressing(key, id, count ?? 1),
           { expectChange: !movesFocusOnly(key) },
@@ -482,7 +483,7 @@ export function createGrammarTools(
       description: 'Pick one option from a select-like control by its visible label.',
       inputSchema: z.object({ target, value: z.string().min(1) }),
       execute: ({ target: id, value }) =>
-        acting({ done: `Selected "${value}" in #${id}.`, attempt: `select "${value}" in #${id}` }, () => context.actions.select({ id }, value)),
+        acting({ done: `Selected "${value}" in ${referenceText(id)}.`, attempt: `select "${value}" in ${referenceText(id)}` }, () => context.actions.select({ id }, value)),
     });
   }
   if (verbs.has('check')) {
@@ -492,7 +493,7 @@ export function createGrammarTools(
       inputSchema: z.object({ target, checked: z.boolean().optional().describe('The state to end in; default true') }),
       execute: ({ target: id, checked }) =>
         acting(
-          { done: `${checked === false ? 'Unchecked' : 'Checked'} #${id}.`, attempt: `check #${id}` },
+          { done: `${checked === false ? 'Unchecked' : 'Checked'} ${referenceText(id)}.`, attempt: `check ${referenceText(id)}` },
           () => context.actions.check({ id }, checked !== false),
         ),
     });
@@ -502,7 +503,7 @@ export function createGrammarTools(
       description:
         'Drag one node and drop it on another: reorder a list, move a card to a column, drop an item into a zone. The result reports what moved.',
       inputSchema: z.object({ target, to: target.describe('Node id of the drop target') }),
-      execute: ({ target: id, to }) => acting({ done: `Dragged #${id} to #${to}.`, attempt: `drag #${id} to #${to}` }, () => context.actions.drag({ id }, { id: to })),
+      execute: ({ target: id, to }) => acting({ done: `Dragged ${referenceText(id)} to ${referenceText(to)}.`, attempt: `drag ${referenceText(id)} to ${referenceText(to)}` }, () => context.actions.drag({ id }, { id: to })),
     });
   }
   if (verbs.has('upload')) {
@@ -512,7 +513,7 @@ export function createGrammarTools(
       inputSchema: z.object({ target, files: z.array(z.string().min(1)).min(1) }),
       execute: ({ target: id, files }) =>
         acting(
-          { done: `Uploaded ${listed(files)} to #${id}.`, attempt: `upload ${listed(files)} to #${id}` },
+          { done: `Uploaded ${listed(files)} to ${referenceText(id)}.`, attempt: `upload ${listed(files)} to ${referenceText(id)}` },
           () => context.actions.upload({ id }, files),
         ),
     });
@@ -528,7 +529,7 @@ export function createGrammarTools(
       .describe(`How many screens to scroll in this one call, 1 to ${String(MAX_SCROLL_TIMES)}; default 1. Use more to move far down a long list or feed.`);
     const scrolled = (way: string, count: number, id?: string) => ({
       done: count === 1 ? `Scrolled ${way}.` : `Scrolled ${way} ${String(count)} screens.`,
-      attempt: `scroll ${way}${id === undefined ? '' : ` #${id}`}`,
+      attempt: `scroll ${way}${id === undefined ? '' : ` ${referenceText(id)}`}`,
     });
     // Each repeat is one recorded action against the budget, paced like a
     // separate call, so a lazy list gets to render between screens.
@@ -596,7 +597,7 @@ export function createGrammarTools(
       inputSchema: z.object({ target, name: z.string().min(1) }),
       execute: ({ target: id, name }) =>
         acting(
-          { done: `Filled secret "${name}" into #${id}; its value is masked in every observation.`, attempt: `type_secret "${name}" into #${id}` },
+          { done: `Filled secret "${name}" into ${referenceText(id)}; its value is masked in every observation.`, attempt: `type_secret "${name}" into ${referenceText(id)}` },
           () => context.actions.typeSecret({ id }, name),
           { expectChange: false },
         ),

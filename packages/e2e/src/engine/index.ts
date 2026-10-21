@@ -620,6 +620,16 @@ export interface EngineObserveOptions {
  */
 export interface EngineSnapshot {
   /**
+   * Opaque identity namespace for live element references. Keep it stable while
+   * descriptor-based recovery is valid; change it when a reset or replacement
+   * makes earlier elements unrelated, even if their names are identical.
+   * Element ids must not be reused for unrelated elements within an attempt,
+   * including after a scope change: executor targets contain only the id.
+   * This is internal routing metadata, never model input. Omission preserves
+   * legacy recovery. The stable viewport root is not an element handle.
+   */
+  readonly identityScope?: string;
+  /**
    * Where the surface is, as an opaque address the platform understands: a
    * URL on a document platform, the foreground screen or activity on a
    * device, the front window on a desktop. The harness shows it to the model

@@ -126,7 +126,7 @@ export interface ExecutorObservation {
   /** Semantic capture failed; use the accompanying pixels, never this listing as absence evidence. */
   readonly treeUnavailable?: true;
   readonly revision: string;
-  /** One node per line as `#id role "name" ...`; already secret-redacted. */
+  /** One node per line as `reference role "name" ...`; canonical `@` references stay intact, other IDs display with `#`. Already secret-redacted. */
   readonly text: string;
   readonly truncated: boolean;
   readonly viewport: ViewportSize;
