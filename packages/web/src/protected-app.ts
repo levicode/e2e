@@ -5,12 +5,11 @@
  * context it creates; nothing here holds state.
  */
 
-import type { BrowserContext } from 'playwright-core';
 import { sameSite, type ResolveSecretOptions, type Secret } from 'e2e/engine';
-import type { WebBasicAuth } from './surface.ts';
+import type { WebBasicAuth } from './web-options.ts';
 
 /** The credentials Playwright answers an HTTP authentication challenge with. */
-export interface PlaywrightHttpCredential {
+export interface HttpCredential {
   readonly username: string;
   readonly password: string;
 }
@@ -54,30 +53,6 @@ export function siteHeadersFor(
 }
 
 /**
- * Adds the configured headers to every request bound for the app's site,
- * via a context route that falls back to the network. A request for any
- * other site is not routed at all; without a site there is no policy and
- * nothing is routed. Registered before any test route, so it runs last: a
- * test route's `fallback` reaches it, and a `continue`, which skips it,
- * merges the same headers itself (`siteHeadersFor`). Nothing awaits a route
- * handler, so a fallback that fails (the page closed under the request) is
- * dropped rather than left to surface as an unhandled rejection.
- */
-export async function installSiteHeaders(
-  context: BrowserContext,
-  site: string | undefined,
-  headers: Readonly<Record<string, string>> | undefined,
-): Promise<void> {
-  if (headers === undefined || site === undefined) return;
-  await context.route(
-    (url) => siteHeadersFor(url, site, headers) !== undefined,
-    async (route) => {
-      await route.fallback({ headers: { ...route.request().headers(), ...headers } }).catch(() => undefined);
-    },
-  );
-}
-
-/**
  * The basic-auth credentials a context answers a challenge with, as
  * Playwright's own `httpCredentials` does: on a 401 from any origin. A site
  * cannot be enumerated into the exact origins Playwright scopes by, and a
@@ -89,7 +64,7 @@ export async function installSiteHeaders(
 export async function httpCredentials(
   basicAuth: WebBasicAuth,
   resolveSecret: (secret: Secret, options?: ResolveSecretOptions) => Promise<string>,
-): Promise<PlaywrightHttpCredential> {
+): Promise<HttpCredential> {
   const { username, password } = basicAuth;
   if (typeof password === 'string') return { username, password };
   return { username, password: await resolveSecret(password, { derived: (plaintext) => basicCredentials(username, plaintext) }) };

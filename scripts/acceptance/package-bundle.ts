@@ -2,8 +2,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, chmodSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { writeBundleInstaller } from './bundle-installer.ts';
+import { packageInventory } from './package-inventory.ts';
 import { REPO_ROOT } from '../public-packages.ts';
-import { sha256, type BundleFile, type BundleManifest } from './bundle.ts';
+import { assertProductionCapabilities, sha256, type BundleFile, type BundleManifest } from './bundle.ts';
 
 const [binaryArg, producerArg, probeArg, outputArg] = process.argv.slice(2);
 if (!binaryArg || !producerArg || !probeArg || !outputArg) throw new Error('usage: package-bundle.ts native-binary producer.json negotiation.json NEW-output-directory');
@@ -15,6 +17,7 @@ const producer = JSON.parse(readFileSync(producerArg, 'utf8')) as { source: { co
 const probe = JSON.parse(readFileSync(probeArg, 'utf8')) as { status: string; binarySha256: string; negotiation?: { protocol: string; capabilities: string[] }; cleanupConfirmed: boolean; scopeExercisePassed: boolean };
 const binaryHash = sha256(readFileSync(binary));
 if (producer.binary.sha256 !== binaryHash || probe.binarySha256 !== binaryHash || probe.status !== 'passed' || !probe.scopeExercisePassed || !probe.cleanupConfirmed || !probe.negotiation?.protocol || !probe.negotiation.capabilities.length) throw new Error('Native binary, producer and live handshake must agree');
+assertProductionCapabilities(probe.negotiation.capabilities);
 if (producer.producer.platform !== process.platform || producer.producer.architecture !== process.arch) throw new Error('Cannot assemble a bundle for a different platform');
 const output = resolve(outputArg);
 const rel = relative(REPO_ROOT, output);
@@ -47,6 +50,8 @@ chmodSync(join(output, native.path), 0o755);
 const producerFile = copy(producerArg, 'producer.json');
 const negotiationFile = copy(probeArg, 'negotiation.json');
 const manifest: BundleManifest = { schemaVersion: 1, source, nativeSource: producer.source, platform: process.platform, architecture: process.arch, protocol: probe.negotiation.protocol, packages, native, producer: producerFile, negotiation: negotiationFile };
+manifest.installation = { schemaVersion: 1, packages: { core: await packageInventory(join(output, packages.core.path)), web: await packageInventory(join(output, packages.web.path)) } };
+manifest.installation.installerFiles = writeBundleInstaller(output, join(REPO_ROOT, 'packages/web'));
 const bytes = Buffer.from(JSON.stringify(manifest, null, 2));
 writeFileSync(join(output, 'manifest.json'), bytes);
 writeFileSync(join(output, 'manifest.sha256'), `${sha256(bytes)}\n`);

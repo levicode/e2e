@@ -45,11 +45,11 @@ export function withOperationDeadline<T>(
   bound: OperationBound = 'deadline',
 ): Promise<T> {
   if (bound === 'test-code') {
-    const endsAt = Date.now() + budget.timeoutMs;
+    const endsAt = performance.now() + budget.timeoutMs;
     return raceAbort(
       () => work(() => {
         if (budget.signal.aborted) throw connectionAbort(budget.signal, label);
-        return { signal: budget.signal, timeoutMs: Math.max(1, endsAt - Date.now()) };
+        return { signal: budget.signal, timeoutMs: Math.max(1, endsAt - performance.now()) };
       }),
       budget.signal,
       label,
@@ -72,12 +72,12 @@ export async function withConnectionBudget<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const signal = AbortSignal.any([budget.signal, controller.signal]);
-  const endsAt = Date.now() + budget.timeoutMs;
+  const endsAt = performance.now() + budget.timeoutMs;
   const timeout = () => new EngineError('OPERATION_TIMEOUT', `${label} timed out`, { retryable: false });
   const timer = setTimeout(() => controller.abort(timeout()), Math.max(0, budget.timeoutMs));
   const remaining = (): ConnectionBudget => {
     if (signal.aborted) throw connectionAbort(signal, label);
-    const timeoutMs = endsAt - Date.now();
+    const timeoutMs = endsAt - performance.now();
     if (timeoutMs <= 0) {
       controller.abort(timeout());
       throw connectionAbort(signal, label);

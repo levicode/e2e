@@ -600,6 +600,12 @@ export interface EngineDisposeContext extends EngineCleanupContext {
   readonly reuseSignal?: AbortSignal;
 }
 
+/** Runner-selected projection boundary, never a model-supplied locator option. */
+export interface EngineLocateOptions {
+  /** Protected is the default. Fixture reads retain deterministic API semantics. */
+  readonly purpose: 'protected' | 'fixture';
+}
+
 export interface EngineObserveOptions {
   /** Requests masked viewport pixels for the same revision as the tree. */
   readonly pixels?: boolean;
@@ -639,15 +645,21 @@ export interface EngineSnapshot {
    */
   readonly location?: string;
   /**
-   * The observation tree under one root the engine minted. The root's id MUST
-   * be stable for the surface across observations: `perform(root, swipe)` is
-   * the viewport swipe, and the harness addresses it from an earlier
-   * observation, possibly one taken before a `restart` or `reset`, so the
-   * root swipe MUST NOT depend on a live handle from that observation. A
-   * platform with several top-level elements (a device's windows) wraps them
-   * in a root of its own.
+   * The semantic tree under its actual root. Without `viewportRef`, the root
+   * id must remain stable across observations, restart, and reset because
+   * `perform(root, swipe)` is also the legacy viewport operation. With an
+   * explicit `viewportRef`, the tree root is an ordinary exact element ref:
+   * it may change with the document and must never rebind to a replacement.
    */
   readonly root: SemanticNode;
+  /**
+   * Optional stable viewport-operation capability, separate from the tree's
+   * exact element root. Its id survives restart/reset, may only receive a
+   * viewport swipe, and is not a DOM target for read, click, drag, or query.
+   * Omission preserves legacy root-as-viewport behavior. This routing metadata
+   * is not a semantic node and must not be rendered as an actionable element.
+   */
+  readonly viewportRef?: NodeRef;
   /** The viewport `SemanticNode.rect` and `ViewportPoint` are measured in. */
   readonly viewport: ViewportSize;
   /**
@@ -751,6 +763,7 @@ export interface Engine {
   locate?(
     expression: LocatorExpression,
     context: OperationContext,
+    options?: EngineLocateOptions,
   ): Promise<readonly SemanticNode[]>;
   /**
    * capability: pointer - requires observation. Performs one pointer action
@@ -780,6 +793,9 @@ export interface Engine {
    * that predates the field never drops one silently.
    */
   readonly tapModifiers?: boolean;
+  /** Opt in to receiving exact engine-produced ref revisions, privately preserved
+   * across harness presentation revisions. Omitted keeps legacy revision inputs. */
+  readonly referenceRevisions?: 'engine';
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**

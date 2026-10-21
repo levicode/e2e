@@ -1,8 +1,9 @@
 /** Next.js App Router's route announcer is never observed; an app's own alert still is. */
 
-import { chromium } from 'playwright-core';
 import { expect, it } from 'vitest';
-import { captureTagged } from '../crosscheck/crosscheck.ts';
+import type { SemanticNode } from 'e2e/engine';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeFixture } from '../helpers/native-fixture.ts';
 
 const PAGE = `<!doctype html><html lang="en"><head><title>Acme Notes</title></head><body>
   <div role="alert" data-testid="app-alert">Acme Notes</div>
@@ -13,25 +14,25 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Acme Notes</title></he
   </script>
 </body></html>`;
 
+/** Flatten only the protected observation. */
+function flatten(node: SemanticNode): SemanticNode[] {
+  return [node, ...(node.children ?? []).flatMap(flatten)];
+}
+
 it('omits the announcer empty or populated and keeps the app alert', async () => {
-  const browser = await chromium.launch();
+  const fixture = await startNativeFixture('route-announcer');
   try {
-    const page = await browser.newPage();
-    await page.setContent(PAGE);
-    const announcer = page.locator('next-route-announcer').locator('#__next-route-announcer__');
+    await nativeDocument(fixture.browser, PAGE);
     for (const text of ['', 'Acme Notes']) {
-      await announcer.evaluate((el, value) => {
-        el.textContent = value;
+      await fixture.browser.evaluate((value) => {
+        document.querySelector('next-route-announcer')!.shadowRoot!.querySelector('#__next-route-announcer__')!.textContent = value;
+        return null;
       }, text);
-      const { nodes, elements } = await captureTagged(page);
-      try {
-        expect(nodes.filter((node) => node.role === 'alert')).toMatchObject([{ name: 'Acme Notes', testId: 'app-alert' }]);
-      } finally {
-        await Promise.all([...elements.values()].map((element) => element.dispose()));
-      }
+      const snapshot = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent' });
+      expect(flatten(snapshot.root).filter((node) => node.role === 'alert')).toMatchObject([{ name: 'Acme Notes', testId: 'app-alert' }]);
     }
-    expect(await announcer.innerText()).toBe('Acme Notes');
+    expect(await fixture.browser.evaluate(() => document.querySelector('next-route-announcer')!.shadowRoot!.querySelector<HTMLElement>('#__next-route-announcer__')!.innerText)).toBe('Acme Notes');
   } finally {
-    await browser.close();
+    await fixture.close();
   }
 });

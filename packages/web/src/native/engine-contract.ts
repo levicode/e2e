@@ -1,0 +1,76 @@
+/** Engine hooks over the same native command lane as the public Browser fixture. */
+import type {
+  EngineObserveOptions, LocatorAction, LocatorExpression, NodeRef, PointerAction,
+  SemanticNode, ViewportPoint, ViewportSize,
+} from 'e2e/engine';
+
+export interface Scoped { readonly identityScope: string }
+export interface NativeBlob extends Scoped {
+  readonly handle: string;
+  readonly size: number;
+  readonly sha256: string;
+}
+export interface NativeImage extends NativeBlob {
+  readonly mediaType: 'image/png';
+  readonly width: number;
+  readonly height: number;
+  readonly scale: number;
+  readonly maskedRegionCount: number;
+}
+export interface NativeObservation extends Scoped {
+  readonly revision: string;
+  readonly location?: string;
+  readonly root: SemanticNode;
+  readonly viewportRef?: NodeRef;
+  readonly viewport: ViewportSize;
+  readonly truncated?: boolean;
+  readonly treeUnavailable?: boolean;
+  readonly pixels?: NativeImage;
+  readonly maskedRegionCount?: number;
+}
+export type NativeLocatorAction = Exclude<LocatorAction, { kind: 'setInputFiles' }> | {
+  readonly kind: 'setInputFiles';
+  readonly directoryName?: string;
+  readonly files: readonly { readonly name: string; readonly mimeType: string; readonly bodyHandle: string; readonly relativePath?: string }[];
+};
+interface ReadPolicy {
+  readonly testIdAttribute: string;
+  readonly secureFieldSelector: string;
+}
+export interface ScopeCreationOptions {
+  readonly blockServiceWorkers: boolean;
+  readonly viewport: ViewportSize | null;
+  readonly userAgent?: string;
+  readonly locale?: string;
+  readonly timezoneId?: string;
+  readonly media: { readonly colorScheme?: 'light' | 'dark' | 'no-preference'; readonly reducedMotion?: 'reduce' | 'no-preference' };
+  readonly initScripts: readonly string[];
+}
+export interface RecoveryIdentity { readonly browser: string; readonly context: string; readonly page: string }
+export interface EngineCommandMap {
+  'scope.open': { args: ScopeCreationOptions & (
+    | { readonly source: 'launch'; readonly context: 'isolated'; readonly executablePath?: string; readonly headless: boolean }
+    | { readonly source: 'connect'; readonly context: 'isolated' | 'persistent'; readonly endpoint: string }
+    | { readonly source: 'reuse'; readonly context: 'isolated' }
+  ); result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
+  'scope.configure': { args: Scoped & ReadPolicy & { readonly requestPolicy: { readonly site?: string; readonly headers?: Readonly<Record<string, string>>; readonly basicAuth?: { readonly username: string; readonly password: string } }; readonly downloads: { readonly source: 'local' } | { readonly source: 'provider'; readonly remoteDirectory: string } }; result: null };
+  'scope.end': { args: Scoped; result: null };
+
+  'browser.observe': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };
+  'fixture.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };
+  'browser.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };
+  'browser.perform': { args: Scoped & { readonly ref: NodeRef; readonly action: NativeLocatorAction }; result: null };
+  'browser.pointer': { args: Scoped & { readonly point: ViewportPoint; readonly action: PointerAction }; result: null };
+  'browser.keyboard.type': { args: Scoped & { readonly text: string; readonly replace: boolean }; result: null };
+  'browser.keyboard.press': { args: Scoped & { readonly key: string }; result: null };
+  'capture.screenshot': { args: Scoped & { readonly secureFieldSelector: string }; result: NativeImage };
+  'state.capture': { args: Scoped; result: NativeBlob & { readonly format: 'agent-browser-storage-state'; readonly version: 1 } };
+  'state.restore': { args: Scoped & { readonly format: 'agent-browser-storage-state' | 'playwright-storage-state'; readonly version: 1; readonly bodyHandle: string }; result: Scoped };
+  'recording.start': { args: Scoped & { readonly size?: ViewportSize; readonly quality?: number }; result: null };
+  'recording.stop': { args: Scoped; result: Scoped & { readonly segments: readonly (NativeBlob & { readonly mediaType: 'video/webm'; readonly startedAt: string })[] } };
+  'session.environment': { args: Scoped; result: Scoped & { readonly browser: string; readonly userAgent?: string } };
+  'scope.restart': { args: Scoped; result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
+  'scope.reset': { args: Scoped; result: Scoped };
+  'scope.reconnect': { args: Scoped & { readonly endpoint: string; readonly expectedBrowserIdentity: string; readonly expectedContextIdentity: string; readonly expectedPageIdentity: string }; result: Scoped };
+  'blob.read': { args: Scoped & { readonly handle: string; readonly offset: number; readonly maxBytes: number }; result: { readonly base64: string; readonly nextOffset: number; readonly eof: boolean } };
+}

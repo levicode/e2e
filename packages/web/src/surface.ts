@@ -57,7 +57,7 @@ import { ConfiguredInitScripts, type WebInitScript } from './init-scripts.ts';
 import type { WebMedia } from './media.ts';
 import { SECURE_FIELD_SELECTOR, type RawNodeData } from './read-node.ts';
 import { readSelector, takeReadsFunction } from './read-selector.ts';
-import { httpCredentials, installSiteHeaders, lowercaseNames, siteHeadersFor } from './protected-app.ts';
+import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app.ts';
 import { RefRegistry } from './refs.ts';
 import {
   cancelled,
@@ -1139,4 +1139,28 @@ function inFrame(node: SemanticNode, frame: Rect | null | undefined): SemanticNo
   const { rect, ...rest } = node;
   const placed = frame === null ? undefined : placeRectInFrame(rect, frame);
   return placed === undefined ? rest : { ...rest, rect: placed };
+}
+
+/**
+ * Adds the configured headers to every request bound for the app's site,
+ * via a context route that falls back to the network. A request for any
+ * other site is not routed at all; without a site there is no policy and
+ * nothing is routed. Registered before any test route, so it runs last: a
+ * test route's `fallback` reaches it, and a `continue`, which skips it,
+ * merges the same headers itself (`siteHeadersFor`). Nothing awaits a route
+ * handler, so a fallback that fails (the page closed under the request) is
+ * dropped rather than left to surface as an unhandled rejection.
+ */
+async function installSiteHeaders(
+  context: BrowserContext,
+  site: string | undefined,
+  headers: Readonly<Record<string, string>> | undefined,
+): Promise<void> {
+  if (headers === undefined || site === undefined) return;
+  await context.route(
+    (url) => siteHeadersFor(url, site, headers) !== undefined,
+    async (route) => {
+      await route.fallback({ headers: { ...route.request().headers(), ...headers } }).catch(() => undefined);
+    },
+  );
 }

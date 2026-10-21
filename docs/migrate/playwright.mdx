@@ -426,9 +426,10 @@ context.
 - Sessions are per run. `test.setup` saves state under a name, one time per
   run and target, and `{ session }` restores it. The file is encrypted and
   deleted at cleanup, so there is no `.auth/user.json` to reuse across runs.
-- No raw `Page` in tests. Nothing on a raw page is recorded, redacted, or
-  masked. `surfaceOf(engine)` is for
-  [custom executors](/executors#driving-the-page-yourself), not test code.
+- No raw `Page` is exposed by the native Web engine. Tests use the typed
+  `Browser` fixture; [custom executors](/executors#driving-the-page-yourself)
+  use its operations plus the executor observation/actions contract. Existing
+  `surfaceOf(engine)` consumers need an explicit migration, not a fake Page shim.
 
 ## Defaults that differ
 

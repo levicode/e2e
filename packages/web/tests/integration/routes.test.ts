@@ -14,9 +14,8 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { Page } from 'playwright-core';
 import { TestError, type EngineFixtureContext } from 'e2e/engine';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
 import { createBrowserFixture, type Browser, type WebRoute } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -58,14 +57,13 @@ function startCountingServer(hits: Map<string, number>): Promise<{ server: Serve
 }
 
 describe('browser.route decisions', () => {
-  const surface = new PlaywrightSurface({ headers: { 'X-Gate': 'open-sesame' } });
+  const surface = new NativeSurface({ headers: { 'X-Gate': 'open-sesame' } });
   const projectRoot = mkdtempSync(path.join(tmpdir(), 'e2e-routes-'));
   const signal = new AbortController().signal;
   const hits = new Map<string, number>();
   let server: Server;
   let origin: string;
   let otherSite: string;
-  let page: Page;
   let browser: Browser;
 
   /** The harness's navigation rule: relative to the base, only http(s) and the exact `about:blank` admitted. */
@@ -85,20 +83,20 @@ describe('browser.route decisions', () => {
     otherSite = `http://localhost:${started.port}`;
     writeFileSync(path.join(projectRoot, 'quote.json'), '{"cents":4200}\n');
     await surface.init({ runId: 'routes', targetName: 'web', projectRoot, app: { site: '127.0.0.1' },
-      env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+      env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
   });
 
   beforeEach(async () => {
     hits.clear();
     await surface.startAttempt({ attemptId: 'routes', artifactsDir: projectRoot, signal, resolveSecret: noSecrets, ...ignoreTrace });
-    page = await surface.ensurePage();
-    await page.goto(`${origin}/`);
-    browser = createBrowserFixture(surface, {
+    browser = createBrowserFixture(surface.fixtureSurface(), {
       app: { site: '127.0.0.1', resolveUrl },
+      timeouts: { test: 5_000, assertion: 5_000 },
       operation: (timeoutMs = 5_000) => ({ signal, timeoutMs, runId: 'routes', attemptId: 'routes', origin: 'test' }),
       expectable: (target: object) => target,
       fixture: (_name: string, target: object) => target,
     } as unknown as EngineFixtureContext);
+    await browser.goto(`${origin}/`);
   });
 
   afterEach(async () => {
@@ -113,11 +111,11 @@ describe('browser.route decisions', () => {
 
   /** Fetches `url` from the page; a failed fetch reads as `failed`. */
   const fetchText = (url: string): Promise<string> =>
-    page.evaluate((target) => fetch(target).then((reply) => reply.text(), () => 'failed'), url);
+    browser.evaluate((target) => fetch(target).then((reply) => reply.text(), () => 'failed'), url);
 
   /** Fetches `url` from the page and returns its response headers and body. */
   const fetchReply = (url: string): Promise<{ contentType: string | null; body: string }> =>
-    page.evaluate(async (target) => {
+    browser.evaluate(async (target) => {
       const reply = await fetch(target);
       return { contentType: reply.headers.get('content-type'), body: await reply.text() };
     }, url);
@@ -125,7 +123,7 @@ describe('browser.route decisions', () => {
   /** Fetches `url` from the page and parses what `/echo` received. */
   const fetchEcho = async (url: string, init?: { method: string; body: string }): Promise<Echo> =>
     JSON.parse(
-      await page.evaluate(([target, options]) => fetch(target!, options).then((reply) => reply.text()), [url, init] as const),
+      await browser.evaluate(({ target, options }) => fetch(target, options ?? undefined).then((reply) => reply.text()), { target: url, options: init ?? null }),
     ) as Echo;
 
   /** Calls a decision the way a JavaScript caller can: any argument, typed or not. */

@@ -23,11 +23,11 @@ import type {
   ViewportPoint,
   ViewportSize,
 } from './contract.ts';
-import type { AppLogEntry, EngineObserveOptions, EngineSnapshot, EngineState, VideoSegment } from './index.ts';
+import type { AppLogEntry, EngineLocateOptions, EngineObserveOptions, EngineSnapshot, EngineState, VideoSegment } from './index.ts';
 
 export type * from './contract.ts';
 export { EngineError } from './contract.ts';
-export type { EngineObserveOptions, EngineState, VideoSegment } from './index.ts';
+export type { EngineLocateOptions, EngineObserveOptions, EngineState, VideoSegment } from './index.ts';
 
 /**
  * The agent's action grammar, by verb. A session derives which verbs its
@@ -83,8 +83,10 @@ export type Observation = ObservationMetadata & (
 interface ObservationMetadata {
   /** Opaque live-element namespace, not rendered or sent to the model. */
   readonly identityScope?: string;
-  /** Stable viewport action reference; it is not evidence that semantic nodes were captured. */
+  /** The captured semantic root, or the legacy viewport reference for pixel-only evidence. */
   readonly root: NodeRef;
+  /** Separate stable viewport capability when the engine supplies one; never semantic evidence. */
+  readonly viewportRef?: NodeRef;
   /** Where the surface was when captured, when the platform has a location. */
   readonly location?: string;
   readonly revision: string;
@@ -172,7 +174,7 @@ export interface TargetSession {
   /** Captures one atomic agent observation; the harness redacts it downstream. */
   observe(operation: OperationContext, options?: EngineObserveOptions): Promise<Observation>;
   /** Resolves immediately; the runner owns query polling and strictness. */
-  locate(expression: LocatorExpression, operation: OperationContext): Promise<readonly NodeRef[]>;
+  locate(expression: LocatorExpression, operation: OperationContext, options?: EngineLocateOptions): Promise<readonly NodeRef[]>;
   /** Reads one node from the resolution that minted its ref. */
   read(ref: NodeRef, operation: OperationContext): Promise<SemanticNode>;
   /** Performs exactly one action on a located or observed node. */

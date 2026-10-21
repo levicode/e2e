@@ -2,6 +2,7 @@
 
 import {
   type TargetSession,
+  type EngineLocateOptions,
   type LocatorAction,
   type LocatorExpression,
   type NodeRef,
@@ -62,6 +63,8 @@ export function denySecureRead(nodes: readonly SemanticNode[], label: string): v
 type MissingFrame = 'wait' | 'empty';
 
 interface LocatorEngineOptions {
+  /** Bound by the runner, never read from a model locator or tool arguments. */
+  readonly readPurpose?: EngineLocateOptions['purpose'];
   readonly session: TargetSession;
   /** The running phase's signal and deadline, read per operation. */
   readonly budget: AttemptBudget;
@@ -181,12 +184,13 @@ export class LocatorEngine {
     expression: LocatorExpression,
     deadline: Deadline,
     missingFrame: MissingFrame = 'wait',
+    purpose: EngineLocateOptions['purpose'] = this.options.readPurpose ?? 'protected',
   ): Promise<readonly NodeRef[]> {
     let retried: unknown;
     for (;;) {
       const startedWithMs = deadline.remaining();
       try {
-        return await this.session.locate(expression, this.operationWithin(deadline));
+        return await this.session.locate(expression, this.operationWithin(deadline), { purpose });
       } catch (cause) {
         // A retry the deadline cut off saw nothing new: the wait ends on the failure it was retrying.
         if (retried !== undefined && cutOffAtDeadline(cause, startedWithMs)) throw translateLocatorError(retried, expression);
@@ -257,8 +261,8 @@ export class LocatorEngine {
    * still retried within the action timeout, as every resolve does: that
    * repairs a race with a navigation, it does not wait for a match.
    */
-  async resolveNow(expression: LocatorExpression): Promise<readonly NodeRef[]> {
-    return this.resolveOnce(expression, this.deadline(this.options.actionTimeout), 'empty');
+  async resolveNow(expression: LocatorExpression, options?: { readonly purpose: 'protected' }): Promise<readonly NodeRef[]> {
+    return this.resolveOnce(expression, this.deadline(this.options.actionTimeout), 'empty', options?.purpose);
   }
 
   /**

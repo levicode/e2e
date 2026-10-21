@@ -14,7 +14,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { secrets } from 'e2e';
 import type { EngineCleanupContext, EngineFixtureContext, OperationContext } from 'e2e/engine';
 import { createBrowserFixture, type Browser } from '../../src/browser.ts';
-import { PlaywrightSurface, type WebOptions } from '../../src/surface.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
+import type { WebOptions } from '../../src/web-options.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 declare global {
@@ -24,7 +25,12 @@ declare global {
   }
 }
 
-const BOOT = '<script>window.seenAtBoot = [...(window.trail ?? [])];</script>';
+const BOOT = `<script>
+  window.seenAtBoot = [...(window.trail ?? [])];
+  window.addEventListener('load', () => {
+    window.opener?.postMessage({ kind: 'init-script-boot', trail: window.seenAtBoot }, location.origin);
+  });
+</script>`;
 const PAGES: Record<string, string> = {
   '/': `<!doctype html><html><head>${BOOT}</head><body><h1>Home</h1></body></html>`,
   '/framed': `<!doctype html><html><head>${BOOT}</head><body><iframe src="/"></iframe></body></html>`,
@@ -56,14 +62,14 @@ describe('init scripts', () => {
   });
 
   /** Boots one worker of a surface with `options` and runs `body` in one attempt with its `browser` fixture. */
-  async function attempt(options: WebOptions, body: (browser: Browser, surface: PlaywrightSurface) => Promise<void>): Promise<void> {
-    const surface = new PlaywrightSurface(options);
+  async function attempt(options: WebOptions, body: (browser: Browser, surface: NativeSurface) => Promise<void>): Promise<void> {
+    const surface = new NativeSurface(options);
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-init-scripts-artifacts-'));
     try {
       await surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: { site: '127.0.0.1' },
-        env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+        env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
       await surface.startAttempt({ attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
-      const browser = createBrowserFixture(surface, {
+      const browser = createBrowserFixture(surface.fixtureSurface(), {
         operation,
         app: { resolveUrl: (target: string) => new URL(target, url).href },
         timeouts: { test: 30_000, assertion: 5_000 },
@@ -91,15 +97,27 @@ describe('init scripts', () => {
       const expected = ['source', 'file', 'function', 'method'];
       await browser.goto('/framed');
       expect(await seenAtBoot(browser)).toEqual(expected);
-      const frame = surface.requirePage().frames()[1]!;
-      await frame.waitForLoadState();
-      expect(await frame.evaluate(() => window.seenAtBoot)).toEqual(expected);
+      await expect.poll(() => browser.evaluate(() =>
+        document.querySelector('iframe')?.contentWindow?.seenAtBoot ?? null,
+      )).toEqual(expected);
 
-      const opened = surface.requireContext().waitForEvent('page');
-      await browser.evaluate((target) => { window.open(target); return null; }, `${url}/`);
-      const tab = await opened;
-      await tab.waitForLoadState();
-      expect(await tab.evaluate(() => window.seenAtBoot)).toEqual(expected);
+      const tabTrail = await browser.evaluate((target) => new Promise<string[]>((resolve, reject) => {
+        let tab: Window | null = null;
+        const loaded = (event: MessageEvent) => {
+          if (event.origin !== location.origin || event.source !== tab) return;
+          const data = event.data as { kind?: unknown; trail?: unknown } | null;
+          if (data?.kind !== 'init-script-boot' || !Array.isArray(data.trail) || !data.trail.every(item => typeof item === 'string')) return;
+          window.removeEventListener('message', loaded);
+          resolve(data.trail);
+        };
+        window.addEventListener('message', loaded);
+        tab = window.open(target);
+        if (tab === null) {
+          window.removeEventListener('message', loaded);
+          reject(new Error('The init-script fixture popup did not open'));
+        }
+      }), `${url}/`);
+      expect(tabTrail).toEqual(expected);
 
       await surface.reset(operation());
       await browser.goto('/');
@@ -142,10 +160,10 @@ describe('init scripts', () => {
   });
 
   it('fails the run, and a worker, with INVALID_CONFIG when a configured file cannot be read', async () => {
-    const surface = new PlaywrightSurface({ initScripts: [{ path: 'nope.js' }] });
-    await expect(surface.prepare({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, slots: 1, env: {},
+    const surface = new NativeSurface({ initScripts: [{ path: 'nope.js' }] });
+    await expect(surface.prepare({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, slots: 1, env: process.env,
       signal, headed: false, log: () => undefined })).rejects.toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringMatching(/nope\.js \(ENOENT\)/) });
-    await expect(surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, env: {}, headed: false,
+    await expect(surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, env: process.env, headed: false,
       workerSlot: 0, signal, log: () => undefined })).rejects.toMatchObject({
       code: 'INVALID_CONFIG',
       message: expect.stringMatching(/web\(\{ initScripts \}\)\[0\] path cannot be read: .*nope\.js \(ENOENT\)/),

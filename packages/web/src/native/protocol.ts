@@ -39,7 +39,7 @@ export type ServerMessage = NativeReady | NativeResult | NativeControlResult | N
 const ERROR_CODES = new Set([
   'invalid-frame', 'unsupported-protocol', 'unsupported-capability', 'stale-generation', 'scope-unavailable',
   'sequence-reused', 'invalid-sequence', 'invalid-timeout', 'capacity-exceeded', 'operation-missing',
-  'unsupported-command', 'deadline-exceeded', 'cancelled', 'invalid-arguments', 'browser-failure', 'stale-scope', 'cleanup-failed', 'stale-reference', 'policy-denied', 'not-actionable', 'locator-not-found', 'content-length-mismatch', 'redirect-body-unavailable', 'decision-missing', 'decision-expired', 'decision-kind-mismatch', 'registry-missing', 'registry-in-use', 'identifier-exhausted',
+  'content-length-mismatch', 'redirect-body-unavailable', 'unsupported-command', 'deadline-exceeded', 'cancelled', 'invalid-arguments', 'browser-failure', 'stale-scope', 'cleanup-failed', 'stale-reference', 'policy-denied', 'not-actionable', 'intercepted-pointer', 'checked-state-unchanged', 'checked-control-replaced', 'locator-not-found', 'decision-missing', 'decision-expired', 'decision-kind-mismatch', 'registry-missing', 'registry-in-use', 'identifier-exhausted',
 ]);
 const STATES = new Set(['usable', 'quarantined', 'closed']);
 const EFFECTS = new Set(['not-dispatched', 'completed', 'unknown']);

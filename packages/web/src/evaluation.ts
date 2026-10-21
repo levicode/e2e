@@ -1,6 +1,6 @@
 /** Separates exceptions thrown by trusted page code from failures of the evaluation transport. */
 import { TestError } from 'e2e/engine';
-import { message } from './support.ts';
+import { message } from './runtime-support.ts';
 
 type EvaluationResult =
   | { ok: true; value: unknown }

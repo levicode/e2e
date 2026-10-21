@@ -2,13 +2,19 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Browser, Dialog, Route } from 'playwright-core';
+import type { Browser, Dialog } from 'playwright-core';
 import { secrets } from 'e2e';
 import type { EngineFixtureContext, OperationContext } from 'e2e/engine';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { NativeSurface } from '../../src/native-surface.ts';
+import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 import { PlaywrightSurface } from '../../src/surface.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+
+vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
+vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 
 const acquire = vi.hoisted(() => vi.fn());
 vi.mock('../../src/browser-connection.ts', () => ({
@@ -20,7 +26,6 @@ const operation = (): OperationContext => ({ timeoutMs: 1_000, signal: new Abort
 const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal });
 let artifactsDir: string;
 let surface: PlaywrightSurface;
-let registered: ((route: Route) => Promise<void>) | undefined;
 let browser: Browser;
 let focus: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
 let press: ReturnType<typeof vi.fn<(key: string) => Promise<void>>>;
@@ -28,7 +33,6 @@ let type: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
 
 beforeEach(async () => {
   artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-surface-lifecycle-'));
-  registered = undefined;
   focus = vi.fn(async () => true);
   press = vi.fn(async (_key: string) => undefined);
   type = vi.fn(async (_text: string) => undefined);
@@ -51,7 +55,7 @@ beforeEach(async () => {
       pages: () => [],
       setDefaultTimeout: () => undefined,
       on: () => undefined,
-      route: async (_predicate: unknown, handler: (route: Route) => Promise<void>) => { registered = handler; },
+      route: async () => undefined,
       close: async () => undefined,
       newPage: async () => page,
     })),
@@ -67,33 +71,50 @@ afterEach(async () => {
   rmSync(artifactsDir, { recursive: true, force: true });
 });
 
-it.each(['dialog', 'route'] as const)('keeps a late %s failure on the attempt that registered it', async (kind) => {
+it('keeps a late dialog failure on the attempt that registered it', async () => {
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => { release = resolve; });
   const oldLatch = surface.latch;
-  let pending: Promise<void>;
-  if (kind === 'dialog') {
-    surface.dialogs.add(async () => { await waiting; throw new Error('old handler failed'); });
-    pending = surface.dialogs.dispatch({ type: () => 'confirm', message: () => 'old', dismiss: async () => undefined } as unknown as Dialog);
-  } else {
-    const fixture = createBrowserFixture(surface, {
-      operation,
-      fixture: (_name: string, value: unknown) => value,
-      expectable: (value: unknown) => value,
-      app: { resolveUrl: (url: string) => url },
-    } as unknown as EngineFixtureContext);
-    await fixture.route('**/*', async () => { await waiting; throw new Error('old handler failed'); });
-    pending = registered!({
-      request: () => ({ postData: () => null, url: () => 'https://example.test/', method: () => 'GET', headers: () => ({}) }),
-      abort: async () => undefined,
-    } as unknown as Route);
-  }
+  surface.dialogs.add(async () => { await waiting; throw new Error('old handler failed'); });
+  const pending = surface.dialogs.dispatch({ type: () => 'confirm', message: () => 'old', dismiss: async () => undefined } as unknown as Dialog);
   await surface.endAttempt(cleanup());
   await surface.startAttempt({ attemptId: 'a2', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
-  release();
-  await pending;
+  release(); await pending;
   expect(() => oldLatch.throwPending()).toThrow(/old handler failed/);
   await expect(surface.guard(operation(), 'next attempt', async () => 'clean')).resolves.toBe('clean');
+});
+
+it('keeps a late route failure on the attempt that registered it', async () => {
+  let peer!: NativeProtocolPeer; let scopes = 0;
+  vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, context, onEvent) => {
+    peer = new NativeProtocolPeer(options.capabilities, request => {
+      if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
+      if (request.command === 'page.title') return { data: { title: 'clean' } };
+      return { data: null };
+    });
+    return peer.connect(context, onEvent);
+  });
+  const native = new NativeSurface({});
+  await native.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: operation().signal, log: () => undefined });
+  await native.startAttempt({ attemptId: 'a1', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+  let release!: () => void; let entered!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  const oldLatch = native.latch;
+  const fixture = createBrowserFixture(native.fixtureSurface(), {
+    operation, fixture: (_name: string, value: unknown) => value, expectable: (value: unknown) => value,
+    app: { resolveUrl: (url: string) => url },
+  } as unknown as EngineFixtureContext);
+  try {
+    await fixture.route('**/*', async () => { entered(); await waiting; throw new Error('old handler failed'); });
+    const registry = peer.requests.findLast(request => request.command === 'network.routes.replace')!.args;
+    const pending = peer.event('network.request', { identityScope: 'scope-1', version: registry['version']!, registrationIds: registry['registrationIds']!, request: { url: 'https://example.test/', method: 'GET', headers: {} } }, { token: 'old-request', timeoutMs: 1000 });
+    await reached; await native.endAttempt(cleanup());
+    await native.startAttempt({ attemptId: 'a2', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    release(); await pending;
+    expect(() => oldLatch.throwPending()).toThrow(/old handler failed/);
+    await expect(native.command('page.title', {}, operation())).resolves.toEqual({ title: 'clean' });
+  } finally { release(); await native.dispose(cleanup()); }
 });
 
 it('collects saved video segments after ordinary context replacement fails', async () => {

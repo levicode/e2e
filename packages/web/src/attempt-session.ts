@@ -8,7 +8,7 @@ import type { LeaseRecording } from './provider.ts';
 import { ProviderVideo } from './provider-video.ts';
 import type { WebMedia } from './media.ts';
 import { invalidState, translatePwError } from './support.ts';
-import type { WebScreencastOptions } from './surface.ts';
+import type { WebScreencastOptions } from './web-options.ts';
 import { VideoRecorder, type AttemptVideo } from './video.ts';
 
 export type StorageState = Exclude<NonNullable<BrowserContextOptions['storageState']>, string>;

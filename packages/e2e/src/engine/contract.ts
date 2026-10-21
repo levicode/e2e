@@ -243,8 +243,9 @@ export interface ObservationPixels {
 
 /**
  * One deterministic action `perform` carries out on a node. The `swipe`
- * kind on the observation's root node is the viewport swipe: the agent's
- * `scroll` verb and `screen.swipe()` both arrive as `perform(root, swipe)`,
+ * kind on the observation's viewportRef (or root when omitted) is the viewport
+ * swipe: the agent's `scroll` verb and `screen.swipe()` both arrive as
+ * `perform(viewportRef ?? root, swipe)`,
  * so a surface implements scrolling once.
  *
  * `press` takes one key in the `Key` grammar below.

@@ -1,39 +1,19 @@
 /** The real reader maps explicit ARIA roles, implicit HTML semantics, and contenteditable hosts onto the vocabulary. */
 
-import { chromium, type Browser, type ElementHandle, type Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
-import { captureDocument } from '../../src/observation.ts';
-import { CLOSED_SHADOW_ROOTS_INIT_SCRIPT } from '../../src/closed-shadow.ts';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeOracle, type NativeOracle } from '../helpers/native-oracle.ts';
 
-let browser: Browser;
-let page: Page;
+let fixture: NativeOracle | undefined;
 
-beforeAll(async () => {
-  browser = await chromium.launch();
-  page = await browser.newPage();
-});
-
-afterAll(async () => {
-  await browser.close();
-});
+beforeAll(async () => { fixture = await startNativeOracle('read-node-roles'); });
+afterAll(async () => { await fixture?.close(); });
 
 /** One observation of the page through the same capture the engine uses. */
 async function capture() {
-  let nextId = 1;
-  const published = new Map<string, ElementHandle<Element>>();
-  const captured = await captureDocument(
-    {
-      testIdAttribute: 'data-testid',
-      site: undefined,
-      reserveIds: (count) => { const first = nextId; nextId += count; return first; },
-      commit: (id, element) => { published.set(id, element); },
-    },
-    page,
-    { framePath: [], budget: 200, deadline: Date.now() + 10_000, signal: new AbortController().signal },
-  );
-  await Promise.all([...published.values()].map((element) => element.dispose()));
-  return captured;
+  const snapshot = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
+  return { tree: snapshot.root };
 }
 
 function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
@@ -48,6 +28,13 @@ async function rolesByTestId(): Promise<Map<string, SemanticNode>> {
   return new Map(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId!, node]));
 }
 
+/** Fill the same exact element whose native identity the reader returned. */
+async function fill(testId: string, value: string): Promise<void> {
+  const nodes = await fixture!.engine.locate!({ kind: 'selector', selector: `[data-testid="${testId}"]` }, fixture!.operation());
+  expect(nodes).toHaveLength(1);
+  await fixture!.engine.perform!(nodes[0]!.ref, { kind: 'fill', value, sensitive: false }, fixture!.operation());
+}
+
 const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAA7';
 
 /**
@@ -59,7 +46,7 @@ const EMPTY_BOXES = '[data-testid]:empty { min-width: 1px; min-height: 1px }';
 
 describe('role mapping', () => {
   it('uses the first recognized role token and falls back to native semantics', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <button role="unknown button" data-testid="fallback">Save</button>
       <button role="unknown widget" data-testid="native">Submit</button>
       <a href="/next" role="unknown button link" data-testid="first">Continue</a>
@@ -75,20 +62,20 @@ describe('role mapping', () => {
     expect(nodes.get('grid-cell')).toMatchObject({ role: 'gridcell', name: 'Cell' });
     expect(nodes.has('nbsp')).toBe(true);
     expect(nodes.get('nbsp')?.role).toBeUndefined();
-    expect(await page.getByRole('button').allTextContents()).toEqual(['Save', 'Submit', 'Continue']);
-    expect(await page.getByRole('gridcell').allTextContents()).toEqual(['Cell']);
+    expect(await fixture!.oracle.getByRole('button').allTextContents()).toEqual(['Save', 'Submit', 'Continue']);
+    expect(await fixture!.oracle.getByRole('gridcell').allTextContents()).toEqual(['Cell']);
   });
 
   it.each(['open', 'closed'] as const)('scopes nested shadow landmarks to their outer article (%s)', async (mode) => {
-    await page.setContent('<article><div id="card"></div></article><div id="page"></div>');
-    await page.evaluate(CLOSED_SHADOW_ROOTS_INIT_SCRIPT);
-    await page.evaluate((shadowMode) => {
+    await nativeDocument(fixture!.browser, '<article><div id="card"></div></article><div id="page"></div>');
+    await fixture!.browser.evaluate((shadowMode) => {
       const card = document.querySelector('#card')!.attachShadow({ mode: shadowMode });
       card.innerHTML = '<div id="nested"></div>';
       card.querySelector('#nested')!.attachShadow({ mode: shadowMode }).innerHTML =
         '<header aria-label="Card" data-testid="card-header">Card</header><footer aria-label="Card footer" data-testid="card-footer">Foot</footer>';
       document.querySelector('#page')!.attachShadow({ mode: shadowMode }).innerHTML =
         '<header aria-label="Page" data-testid="page-header">Page</header><footer aria-label="Page footer" data-testid="page-footer">Legal</footer>';
+      return null;
     }, mode);
     const nodes = await rolesByTestId();
     expect(nodes.get('card-header')).toBeDefined();
@@ -98,13 +85,13 @@ describe('role mapping', () => {
     expect(nodes.get('page-header')?.role).toBe('banner');
     expect(nodes.get('page-footer')?.role).toBe('contentinfo');
     if (mode === 'open') {
-      expect(await page.getByRole('banner').count()).toBe(1);
-      expect(await page.getByRole('contentinfo').count()).toBe(1);
+      expect(await fixture!.oracle.getByRole('banner').count()).toBe(1);
+      expect(await fixture!.oracle.getByRole('contentinfo').count()).toBe(1);
     }
   });
 
   it('reports ARIA img as image, alongside the img element', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <style>${EMPTY_BOXES}</style>
       <img src="${PIXEL}" alt="Logo" data-testid="picture">
       <div role="img" aria-label="Chart" data-testid="drawn"></div>
@@ -122,7 +109,7 @@ describe('role mapping', () => {
   });
 
   it('infers row headers from data-cell neighbors and respects explicit scopes', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <table><tr><th data-testid="row">Item</th><td>Value</td></tr></table>
       <table><tr><td>Value</td><th data-testid="last-row">Item</th></tr></table>
       <table><tr><th data-testid="column">Item</th><th>Value</th></tr></table>
@@ -139,12 +126,12 @@ describe('role mapping', () => {
       'scoped-column': 'columnheader', 'scoped-row': 'rowheader', 'empty-data': 'columnheader',
       'child-data': 'rowheader', single: undefined, 'single-column': 'columnheader',
     });
-    expect(await page.getByRole('rowheader').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid'))))
+    expect(await fixture!.oracle.getByRole('rowheader').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid'))))
       .toEqual(['row', 'last-row', 'scoped-row', 'child-data']);
   });
 
   it('reports an inline svg as an image, named by its title child, as Playwright does', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <input aria-label="Message">
       <div class="send-btn"><svg viewBox="0 0 24 24" width="24" height="24" data-testid="bare"><path d="M2 3 L22 12 L2 21 Z"/></svg></div>
       <svg width="10" height="10" data-testid="titled"><title>Close</title></svg>
@@ -162,13 +149,13 @@ describe('role mapping', () => {
     expect(nodes.get('home')).toMatchObject({ role: 'link', name: 'Home' });
     const { tree } = await capture();
     expect(flatten(tree).filter((node) => node.role === 'presentation' || node.role === 'none')).toEqual([]);
-    expect(await page.getByRole('img').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid'))))
+    expect(await fixture!.oracle.getByRole('img').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid'))))
       .toEqual(['bare', 'titled', 'labelled']);
-    expect(await page.getByRole('img', { name: 'Close', exact: true }).getAttribute('data-testid')).toBe('titled');
+    expect(await fixture!.oracle.getByRole('img', { name: 'Close', exact: true }).getAttribute('data-testid')).toBe('titled');
   });
 
   it('passes the composite widget roles through from role attributes and names their items from content', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <style>${EMPTY_BOXES}</style>
       <div role="tablist" aria-label="Filter" data-testid="tablist">
         <button role="tab" aria-selected="true" data-testid="tab">All</button>
@@ -235,7 +222,7 @@ describe('role mapping', () => {
   });
 
   it('derives the vocabulary roles from HTML semantics the way HTML-AAM does', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <style>${EMPTY_BOXES}</style>
       <header data-testid="page-header">Site</header>
       <nav data-testid="nav"></nav>
@@ -307,7 +294,7 @@ describe('role mapping', () => {
 
 describe('contenteditable editing hosts', () => {
   it('reports the host as a textbox named by aria-label, aria-placeholder, or the editor placeholder, with its document as the value', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <div contenteditable aria-label="Notes" data-testid="labelled"><p data-testid="block">Hello</p><p>World</p></div>
       <div contenteditable aria-placeholder="Write here" data-testid="aria-placeholder"><p><br></p></div>
       <div contenteditable class="tiptap ProseMirror" tabindex="0" data-testid="tiptap">
@@ -335,11 +322,11 @@ describe('contenteditable editing hosts', () => {
     expect(nodes.get('island')?.role).toBeUndefined();
     expect(nodes.get('nested')).toMatchObject({ role: 'textbox', name: 'Nested', value: 'Inner' });
     // Playwright's role selector knows a textbox only through an explicit role; where it has a rule, the two agree.
-    expect(await page.getByRole('textbox', { name: 'Message' }).getAttribute('data-testid')).toBe('explicit');
+    expect(await fixture!.oracle.getByRole('textbox', { name: 'Message' }).getAttribute('data-testid')).toBe('explicit');
   });
 
   it('keeps the whitespace an editor renders as its value, and reads an empty editor as an empty value', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <div contenteditable style="white-space: pre-wrap" aria-label="Code" data-testid="pre">  keep spaces  </div>
       <div contenteditable style="white-space: pre-wrap" aria-label="Lines" data-testid="lines"><p>line1</p><p>  line2</p></div>
       <div contenteditable aria-label="Prose" data-testid="prose">  collapsed   text  </div>
@@ -366,7 +353,7 @@ describe('contenteditable editing hosts', () => {
   });
 
   it('makes an editing host a textbox whatever role its tag carries, and leaves a native control its own', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <article contenteditable data-testid="article"><p>Post</p></article>
       <h2 contenteditable data-testid="heading">Title</h2>
       <ul><li contenteditable data-testid="item">Item</li></ul>
@@ -393,13 +380,13 @@ describe('contenteditable editing hosts', () => {
   });
 
   it('never makes a drawn or embedded surface a textbox, whatever its contenteditable says', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <canvas contenteditable tabindex="0" width="120" height="60" data-testid="canvas"></canvas>
       <svg contenteditable width="20" height="20" data-testid="svg"></svg>
       <iframe contenteditable srcdoc="<p>Framed</p>" data-testid="frame"></iframe>
       <div contenteditable data-testid="host"><canvas width="20" height="20"></canvas><p>Caption</p></div>
     `);
-    await page.frames()[1]?.waitForLoadState('domcontentloaded');
+    await fixture!.oracle.frames()[1]?.waitForLoadState('domcontentloaded');
     const { tree } = await capture();
     const roles = Object.fromEntries(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId, node.role]));
     // A canvas, with no role, name, or text, is not a node at all; an svg has the image role, so it is listed.
@@ -407,7 +394,7 @@ describe('contenteditable editing hosts', () => {
   });
 
   it('drops a name taken from a block placeholder once the editor has content, and keeps one from the host', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <div contenteditable class="tiptap ProseMirror" data-testid="tiptap">
         <p class="is-empty is-editor-empty" data-placeholder="Write something"><br></p>
       </div>
@@ -425,15 +412,16 @@ describe('contenteditable editing hosts', () => {
     expect(before.get('labelled')).toMatchObject({ role: 'textbox', name: 'Notes', value: '' });
 
     for (const testId of ['tiptap', 'quill', 'aria-placeholder', 'labelled']) {
-      await page.getByTestId(testId).fill('Hello');
+      await fill(testId, 'Hello');
     }
     // TipTap's Placeholder extension paints the hint as a decoration on the
     // empty block and removes it, class and attribute, once the block has text.
-    await page.evaluate(() => {
+    await fixture!.browser.evaluate(() => {
       for (const block of document.querySelectorAll('.tiptap [data-placeholder]')) {
         block.removeAttribute('data-placeholder');
         block.classList.remove('is-empty', 'is-editor-empty');
       }
+      return null;
     });
     const after = await rolesByTestId();
     expect(after.get('tiptap')).toMatchObject({ role: 'textbox', value: 'Hello' });
@@ -444,12 +432,12 @@ describe('contenteditable editing hosts', () => {
   });
 
   it('follows the document as it is edited and focused, as a textarea value does', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <div contenteditable aria-label="Notes" data-testid="editor"><p><br></p></div>
       <textarea aria-label="Plain" data-testid="plain"></textarea>
     `);
-    await page.getByTestId('plain').fill('Typed');
-    await page.getByTestId('editor').fill('Typed');
+    await fill('plain', 'Typed');
+    await fill('editor', 'Typed');
     const nodes = await rolesByTestId();
     expect(nodes.get('editor')).toMatchObject({ role: 'textbox', name: 'Notes', value: 'Typed', states: { focused: true } });
     expect(nodes.get('plain')).toMatchObject({ role: 'textbox', name: 'Plain', value: 'Typed' });

@@ -16,7 +16,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AppLogEntry, EngineCleanupContext, EngineFixtureContext, EngineSnapshot, OperationContext } from 'e2e/engine';
 import { createBrowserFixture } from '../../src/browser.ts';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 const PAGE = `<!doctype html><html><body><h1>Todos</h1><script>
@@ -80,14 +80,14 @@ describe('app log', () => {
   });
 
   it('reports console output, uncaught exceptions, and error responses, one line each', async () => {
-    const surface = new PlaywrightSurface({});
+    const surface = new NativeSurface({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
     const entries: AppLogEntry[] = [];
     try {
       await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
-        env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+        env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
       await surface.startAttempt({ attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace, appLog: (entry) => entries.push(entry) });
-      const browser = createBrowserFixture(surface, {
+      const browser = createBrowserFixture(surface.fixtureSurface(), {
         operation,
         app: { resolveUrl: (target: string) => new URL(target, url).href },
         timeouts: { test: 30_000, assertion: 5_000 },
@@ -115,7 +115,7 @@ describe('app log', () => {
   });
 
   it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async () => {
-    const surface = new PlaywrightSurface({});
+    const surface = new NativeSurface({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
     const entries: AppLogEntry[] = [];
     const went: string[] = [];
@@ -123,7 +123,7 @@ describe('app log', () => {
     const facts: Record<string, string>[] = [];
     try {
       await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
-        env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+        env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
       await surface.startAttempt({
         attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
         appLog: (entry) => entries.push(entry),

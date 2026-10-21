@@ -9,6 +9,26 @@ icon: "globe"
 `@e2e-dev/web` runs tests in a browser against your app's URL. For routes,
 cookies, dialogs, and downloads, see [Working with the browser](/browser).
 
+## Matching native runtime
+
+The migrated Web engine uses one matched core/Web/native bundle, not an
+additional adapter package. The explicit bundle installer writes
+`.e2e/native-runtime.json` only after verifying an externally trusted manifest
+digest and the actual installed package files. From an independently trusted matching source checkout, run `node scripts/acceptance/install-bundle.ts /absolute/bundle EXTERNAL_MANIFEST_SHA256 /absolute/project`.
+Do not use the bundle's own checksum file as independent proof of origin. The generated `install.mjs` is not a trust bootstrap: it imports bundled code before verification. Run it only after independently verifying the entire installer inventory with a trusted verifier. Passing a digest to untrusted installer code cannot authenticate code already executing.
+
+Startup verifies the descriptor, platform, native binary and producer evidence,
+and the installed core/Web inventories, including the core resolved by Web.
+The descriptor is trusted project configuration; these inventories do not
+certify transitive dependencies. There is no PATH lookup or automatic download
+fallback. The explicit `E2E_AGENT_BROWSER_EXECUTABLE` override remains available
+for a trusted development build, without a release-provenance claim.
+
+The installer requires Node and pnpm and does not acquire Chromium. Run the existing explicit browser
+installation command after installing the matched runtime. Full native
+capability negotiation and real-browser acceptance remain separate gates from
+bundle integrity.
+
 ## Starting your app
 
 Set your app's URL in the target's `app`. `app.open('/path')` resolves
@@ -191,7 +211,7 @@ export default {
   targets: [
     { name: 'desktop', engine: web(), app },
     { name: 'tablet', engine: web({ viewport: { width: 820, height: 1180 } }), app },
-    { name: 'phone', engine: web({ browser: 'webkit', viewport: { width: 390, height: 844 } }), app },
+    { name: 'phone', engine: web({ viewport: { width: 390, height: 844 } }), app },
   ],
 } satisfies E2EConfig;
 ```

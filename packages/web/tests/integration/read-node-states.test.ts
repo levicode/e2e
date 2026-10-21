@@ -1,38 +1,19 @@
 /** The real reader's `disabled` state is the effective one: a control inherits it from a disabled fieldset and from an `aria-disabled` ancestor, as the browser and Playwright report it. */
 
-import { chromium, type Browser, type ElementHandle, type Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
-import { captureDocument } from '../../src/observation.ts';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeOracle, type NativeOracle } from '../helpers/native-oracle.ts';
 
-let browser: Browser;
-let page: Page;
+let fixture: NativeOracle | undefined;
 
-beforeAll(async () => {
-  browser = await chromium.launch();
-  page = await browser.newPage();
-});
-
-afterAll(async () => {
-  await browser.close();
-});
+beforeAll(async () => { fixture = await startNativeOracle('read-node-states'); });
+afterAll(async () => { await fixture?.close(); });
 
 /** One observation of the page through the same capture the engine uses. */
 async function capture() {
-  let nextId = 1;
-  const published = new Map<string, ElementHandle<Element>>();
-  const captured = await captureDocument(
-    {
-      testIdAttribute: 'data-testid',
-      site: undefined,
-      reserveIds: (count) => { const first = nextId; nextId += count; return first; },
-      commit: (id, element) => { published.set(id, element); },
-    },
-    page,
-    { framePath: [], budget: 200, deadline: Date.now() + 10_000, signal: new AbortController().signal },
-  );
-  await Promise.all([...published.values()].map((element) => element.dispose()));
-  return captured;
+  const snapshot = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
+  return { tree: snapshot.root };
 }
 
 function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
@@ -54,13 +35,13 @@ async function disabledByTestId(): Promise<Map<string, boolean>> {
 /** Playwright's answer for the same elements, the reference the reader must agree with. */
 async function expectAgreesWithPlaywright(states: Map<string, boolean>): Promise<void> {
   for (const [testId, disabled] of states) {
-    expect(await page.getByTestId(testId).isDisabled(), testId).toBe(disabled);
+    expect(await fixture!.oracle.getByTestId(testId).isDisabled(), testId).toBe(disabled);
   }
 }
 
 describe('disabled state', () => {
   it('inherits from a disabled fieldset, except inside its first legend', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <fieldset disabled>
         <legend>Billing <button data-testid="legend-action">Edit</button></legend>
         <label>Card <input data-testid="fenced-input"></label>
@@ -92,7 +73,7 @@ describe('disabled state', () => {
   });
 
   it('follows nested fieldsets: an inner legend frees nothing from an outer disabled fieldset', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <fieldset disabled>
         <legend>Outer</legend>
         <fieldset data-testid="inner-fieldset">
@@ -120,7 +101,7 @@ describe('disabled state', () => {
   });
 
   it('inherits aria-disabled from an ancestor, across a shadow root, until an aria-disabled="false" cuts the chain', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <div aria-disabled="true">
         <button data-testid="under-aria">Save</button>
         <div role="group" aria-disabled="false">

@@ -8,36 +8,70 @@
  * `visibility: hidden` one a child shows again.
  */
 
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { randomUUID } from 'node:crypto';
+import { chromium, type Browser as OracleBrowser, type Page as OraclePage } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
-import { captureDocument } from '../../src/observation.ts';
-import { readSemanticsFunction } from '../../src/in-page/read-semantics.ts';
-import { SECURE_FIELD_SELECTOR } from '../../src/read-node.ts';
+import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 
-let browser: Browser;
-let page: Page;
+let remote: RemoteChrome | undefined;
+let fixture: NativeFixture | undefined;
+let oracle: OracleBrowser | undefined;
+let oraclePage: OraclePage;
 
 beforeAll(async () => {
-  browser = await chromium.launch();
-  page = await browser.newPage();
+  remote = await launchRemoteChrome();
+  const endpoint = remote.endpoint;
+  fixture = await startNativeFixture('visibility', { connect: { cdpEndpoint: () => endpoint } });
+  const marker = randomUUID();
+  await fixture.browser.evaluate((value) => {
+    (window as unknown as { visibilityWitness: string }).visibilityWitness = value;
+    return null;
+  }, marker);
+  // Temporary migration oracle only. All setup, node reads, and observations use the native engine.
+  oracle = await chromium.connectOverCDP(endpoint);
+  const matches: OraclePage[] = [];
+  for (const page of oracle.contexts().flatMap(context => context.pages())) {
+    const value = await page.evaluate(() => (window as unknown as { visibilityWitness?: string }).visibilityWitness);
+    if (value === marker) matches.push(page);
+  }
+  expect(matches).toHaveLength(1);
+  oraclePage = matches[0]!;
 });
 
 afterAll(async () => {
-  await browser.close();
+  const failures: unknown[] = [];
+  for (const close of [() => fixture?.close(), () => oracle?.close(), () => remote === undefined ? undefined : closeRemoteChrome(remote)]) {
+    try { await close(); } catch (cause) { failures.push(cause); }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, 'Visibility fixture cleanup failed');
 });
 
-const READ_OPTIONS = {
-  testIdAttribute: 'data-testid',
-  secureFieldSelector: SECURE_FIELD_SELECTOR,
-  mode: { kind: 'node' as const },
-};
+/** Trusted fixture reads retain hidden elements; they never supply the model tree. */
+async function readNode(selector: string): Promise<SemanticNode> {
+  const nodes = await fixture!.engine.locate!(
+    { kind: 'selector', selector }, fixture!.operation(), { purpose: 'fixture' },
+  );
+  expect(nodes).toHaveLength(1);
+  return nodes[0]!;
+}
 
-/** The reader's `hidden` state for one element next to what Playwright says of the same element. */
+/** The reader's hidden state beside the independent oracle for the same element. */
 async function hiddenOf(selector: string): Promise<{ reader: boolean; playwright: boolean }> {
-  const locator = page.locator(selector);
-  const raw = await locator.evaluate(readSemanticsFunction<typeof READ_OPTIONS.mode>, READ_OPTIONS);
-  return { reader: raw.states.hidden, playwright: await locator.isHidden() };
+  const node = await readNode(selector);
+  return { reader: node.states?.hidden ?? false, playwright: await oraclePage.locator(selector).isHidden() };
+}
+
+/** Both frame fixtures have a button, so initial about:blank is not mistaken for loaded srcdoc. */
+async function waitForFrameDocuments(): Promise<void> {
+  await expect.poll(() => fixture!.browser.evaluate(() => {
+    const frames = [...document.querySelectorAll('iframe')];
+    return frames.length > 0 && frames.every(frame =>
+      frame.contentDocument?.readyState === 'complete' && frame.contentDocument.body.querySelector('button') !== null,
+    );
+  }), { timeout: 10_000 }).toBe(true);
 }
 
 const PAGE = `
@@ -68,7 +102,7 @@ const PAGE = `
 
 describe('visibility agrees with Playwright', () => {
   beforeAll(async () => {
-    await page.setContent(PAGE);
+    await nativeDocument(fixture!.browser, PAGE);
   });
 
   it.each([
@@ -103,7 +137,7 @@ describe('visibility agrees with Playwright', () => {
 
 describe('visibility where Playwright reads a range box alone', () => {
   it('hides text under a display: contents element whose visibility is hidden, which Playwright calls visible', async () => {
-    await page.setContent('<div id="contents-hidden-text" style="display:contents;visibility:hidden">Invisible text</div>');
+    await nativeDocument(fixture!.browser, '<div id="contents-hidden-text" style="display:contents;visibility:hidden">Invisible text</div>');
     expect(await hiddenOf('#contents-hidden-text')).toEqual({ reader: true, playwright: false });
   });
 });
@@ -111,9 +145,8 @@ describe('visibility where Playwright reads a range box alone', () => {
 describe('the bounding box', () => {
   /** The reader's rect for one element next to Playwright's `boundingBox()`. */
   async function boxOf(selector: string) {
-    const locator = page.locator(selector);
-    const raw = await locator.evaluate(readSemanticsFunction<typeof READ_OPTIONS.mode>, READ_OPTIONS);
-    return { reader: raw.rect, playwright: await locator.boundingBox() };
+    const node = await readNode(selector);
+    return { reader: node.rect ?? null, playwright: await oraclePage.locator(selector).boundingBox() };
   }
 
   it.each([
@@ -124,7 +157,7 @@ describe('the bounding box', () => {
     ['visibility: hidden, which keeps its box', '<div id="box" style="visibility:hidden;width:30px;height:20px"></div>', { width: 30, height: 20 }],
     ['a zero-size box', '<div id="box" style="width:0;height:0"></div>', { width: 0, height: 0 }],
   ])('%s', async (_case, html, size) => {
-    await page.setContent(`<body style="margin:0">${html}</body>`);
+    await nativeDocument(fixture!.browser, `<body style="margin:0">${html}</body>`);
     const { reader, playwright } = await boxOf('#box');
     expect(reader).toEqual(playwright);
     expect(reader === null ? null : { width: reader.width, height: reader.height }).toEqual(size);
@@ -137,25 +170,15 @@ function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
   return out;
 }
 
-/** One observation of the page through the same capture the engine uses, frames included. */
+/** Model-visible nodes come only from the protected public observation, frames included. */
 async function captureTree(): Promise<SemanticNode[]> {
-  let nextId = 1;
-  const { tree } = await captureDocument(
-    {
-      testIdAttribute: 'data-testid',
-      site: undefined,
-      reserveIds: (count) => { const first = nextId; nextId += count; return first; },
-      commit: () => undefined,
-    },
-    page,
-    { framePath: [], budget: 100, deadline: Date.now() + 10_000, signal: new AbortController().signal },
-  );
-  return flatten(tree);
+  const { root } = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
+  return flatten(root);
 }
 
 describe('the tree walk through a box with no size', () => {
   it('lists the fixed controls under a zero-height page and wrapper, and neither the wrapper nor the root as hidden', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <nav aria-label="Floating" data-testid="wrapper">
         <button style="position:fixed;left:0;top:0;width:100px;height:30px">Reset</button>
       </nav>
@@ -167,13 +190,13 @@ describe('the tree walk through a box with no size', () => {
   });
 
   it('lists neither the document of a frame with no box nor the options of a select with none', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <iframe style="width:0;height:0;border:0" srcdoc="<button>Pay</button>"></iframe>
       <iframe style="width:200px;height:100px" srcdoc="<button>Shown pay</button>"></iframe>
       <select aria-label="Folded" style="width:0;height:0;padding:0;border:0"><option>plain</option><option>warm</option></select>
       <select aria-label="Shown"><option>cool</option></select>
     `);
-    await Promise.all(page.frames().slice(1).map((frame) => frame.waitForLoadState()));
+    await waitForFrameDocuments();
     const nodes = await captureTree();
     const buttons = nodes.filter((node) => node.role === 'button').map((node) => node.name);
     const options = nodes.filter((node) => node.role === 'option').map((node) => node.name);
@@ -185,17 +208,17 @@ describe('the tree walk through a box with no size', () => {
 
 describe('a frame\'s document', () => {
   it('places its boxes past the frame\'s border and padding, where Playwright measures them', async () => {
-    await page.setContent('<iframe style="margin:13px;border:7px solid;padding:5px;width:200px;height:100px" srcdoc="<button>Framed</button>"></iframe>');
-    await Promise.all(page.frames().slice(1).map((frame) => frame.waitForLoadState()));
+    await nativeDocument(fixture!.browser, '<iframe style="margin:13px;border:7px solid;padding:5px;width:200px;height:100px" srcdoc="<button>Framed</button>"></iframe>');
+    await waitForFrameDocuments();
     const node = (await captureTree()).find((candidate) => candidate.name === 'Framed')!;
-    const expected = (await page.frameLocator('iframe').getByRole('button').boundingBox())!;
+    const expected = (await oraclePage.frameLocator('iframe').getByRole('button').boundingBox())!;
     for (const key of ['x', 'y', 'width', 'height'] as const) expect(node.rect![key]).toBeCloseTo(expected[key], 3);
   });
 });
 
 describe('an inert subtree', () => {
   it('leaves the tree, as Chrome drops it, while Playwright still calls it visible', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <main inert><h2>Behind the drawer</h2><button id="inert-save">Save</button></main>
       <button>Close drawer</button>
     `);
@@ -207,9 +230,9 @@ describe('an inert subtree', () => {
   });
 
   it('lists nothing under an inert document root, and nothing slotted into an inert slot of a closed root', async () => {
-    await page.setContent('<!doctype html><html inert><body><button>Whole page</button></body></html>');
+    await nativeDocument(fixture!.browser, '<!doctype html><html inert><body><button>Whole page</button></body></html>');
     expect((await captureTree()).filter((node) => node.role === 'button')).toEqual([]);
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <inert-slot><button>Slotted</button></inert-slot>
       <button>Outside</button>
       <script>
@@ -225,7 +248,7 @@ describe('an inert subtree', () => {
 
 describe('the tree walk through hidden content', () => {
   it('walks into a visibility: hidden subtree for a child that shows again, and stops at aria-hidden and skipped content', async () => {
-    await page.setContent(`
+    await nativeDocument(fixture!.browser, `
       <div style="visibility:hidden"><button>Hidden parent</button><div><button style="visibility:visible">Shown child</button></div></div>
       <div aria-hidden="true"><button>Decorative</button></div>
       <div style="content-visibility:hidden;width:50px;height:50px" data-testid="skipping">Skipped text<button>Skipped</button></div>
@@ -238,6 +261,6 @@ describe('the tree walk through hidden content', () => {
     expect(skipping?.states?.hidden).toBeUndefined();
     // The container keeps its box and paints none of its text, which innerText reads empty too.
     expect(skipping?.text).toBe('');
-    expect(await page.getByTestId('skipping').innerText()).toBe('');
+    expect(await fixture!.browser.evaluate(() => document.querySelector<HTMLElement>('[data-testid=skipping]')!.innerText)).toBe('');
   });
 });

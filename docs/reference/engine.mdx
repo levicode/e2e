@@ -94,6 +94,7 @@ rules:
 | `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
+| `referenceRevisions` | Present with a value other than `'engine'`. |
 | `keyboard`, `state`, `artifacts`, `session` | An unknown key or a non-function member. `keyboard` without `type` and `press`; `state` without both `capture` and `restore`; `artifacts` without `screenshot`; `startVideo` without `stopVideo`, or the reverse. |
 | `secrets` | Not an array of `secrets.get()` handles. |
 | `fixtures` | Not an object, a fixture that is not a factory function, or a fixture name that is not a lower-camel identifier or shadows `agent`, `app`, `screen`, `platform`, or `session`. |
@@ -122,6 +123,7 @@ The body of one target. Every member but `name`, `version`, and
 | [`locate`](#capabilities) | method |
 | [`performAt`, `pointerActions`](#pointer-actions) | method, kinds |
 | [`tapModifiers`](#capabilities) | `boolean` |
+| `referenceRevisions` | `'engine'` (optional) |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | factories |
 | [`state`](#state) | `EngineStateCapability` |
@@ -192,6 +194,7 @@ export interface Engine {
   locate?(
     expression: LocatorExpression,
     context: OperationContext,
+    options?: { readonly purpose: 'protected' | 'fixture' },
   ): Promise<readonly SemanticNode[]>;
   /**
    * capability: pointer - requires observation. Performs one pointer action
@@ -220,6 +223,7 @@ export interface Engine {
    * reaches the engine.
    */
   readonly tapModifiers?: boolean;
+  readonly referenceRevisions?: 'engine';
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -869,6 +873,7 @@ export interface EngineDisposeContext extends EngineCleanupContext {
 | `location` | `string` |
 | `identityScope` | `string` |
 | `root` | `SemanticNode` |
+| `viewportRef` | `NodeRef` (optional) |
 | `viewport` | `ViewportSize` |
 | [`truncated`](#truncated-trees) | `boolean` |
 | `keyboardVisible` | `boolean` |
@@ -884,8 +889,46 @@ reference into the new scope, even when an element has the same name. The value
 is not model input. Element ids must not be reused for unrelated elements within
 an attempt, even across scope changes, because executor targets contain only an id.
 Engines that omit it keep their existing recovery behavior;
-the stable viewport root remains usable across resets. Changing scope does not
+the stable viewport capability remains usable across resets. Changing scope does not
 clear secret exposure, pixel taint, or attempt accounting.
+
+The runner selects a locator read purpose through the optional third `locate`
+argument. Omission means `protected`: model-facing MCP locate must meet the same
+privacy guarantees as protected observations. Deterministic test fixtures explicitly
+use `fixture`, retaining their existing reads and callback behavior. This is not a
+model tool argument. Both paths keep secure fields masked; a protected read failure
+must never retry through the fixture path. Engines with a two-argument `locate`
+remain source-compatible and may apply their existing stricter policy to both.
+
+An optional `viewportRef` separates viewport scrolling from the actual document
+root. `screen.swipe()` and untargeted agent scrolling use it, while direct root
+clicks, reads, and drags continue to address the exact document root. Its id must
+remain stable across restart/reset, and it accepts only viewport swipe operations.
+Do not put this capability into the semantic tree or expose invented DOM metadata.
+Without this field, existing engines keep using the root for viewport scrolling.
+
+An engine that validates its own reference revisions opts into
+`referenceRevisions: 'engine'`. The runner still mints presentation revisions
+for observations and locator reads, but privately retains the exact
+original reference and identity scope. Before an action, including both ends
+of a drag and viewport swipes, it restores only that exact provenance. It does
+not allocate new element IDs, look up the newest revision by ID, or semantically
+rebind a stale element. Missing or evicted presentation references fail with
+`NODE_STALE`. The bridge atomically admits a complete batch of at most 16,384 references
+(including any viewport capability), with a maximum tree depth of 256. An
+oversized batch fails before publishing; older retained batches may be evicted.
+Scope transitions and
+attempt retirement invalidate old evidence. Reset, restart, and state restore
+also retire pending acquisitions before dispatch. Engines omitting the opt-in
+continue to receive the existing runner revision format unchanged. Trace-only `s<number>` references are never actionable. Pixel-only trace
+snapshots do not advance semantic reference authority or replace the model's
+observation. Native Web uses protected screenshot capture for optional action
+traces, without an independent semantic observation; before it has an exact
+native reference for a trace anchor, it omits that optional trace.
+
+Core
+presentation revisions use the reserved `b<number>`, `l<number>`, and
+`s<number>` namespaces; undecorated engine refs remain engine-validated.
 
 Return the surface as it is right now. The runner mints the revision and
 stamps it onto every ref. When `pixels` are present, it checks that
@@ -911,15 +954,14 @@ export interface EngineSnapshot {
    */
   readonly location?: string;
   /**
-   * The observation tree under one root the engine minted. The root's id MUST
-   * be stable for the surface across observations: `perform(root, swipe)` is
-   * the viewport swipe, and the harness addresses it from an earlier
-   * observation, possibly one taken before a `restart` or `reset`, so the
-   * root swipe MUST NOT depend on a live handle from that observation. A
-   * platform with several top-level elements (a device's windows) wraps them
-   * in a root of its own.
+   * The actual semantic root. Without viewportRef its id remains stable
+   * across observations/reset, preserving legacy perform(root, swipe).
+   * With viewportRef it is an exact element ref and can change with the
+   * document; old element refs must not rebind to replacements.
    */
   readonly root: SemanticNode;
+  /** Stable viewport-only operation capability, never a semantic DOM node. */
+  readonly viewportRef?: NodeRef;
   /** The viewport `SemanticNode.rect` and `ViewportPoint` are measured in, in CSS pixels. */
   readonly viewport: ViewportSize;
   /**

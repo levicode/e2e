@@ -1,8 +1,7 @@
 /**
  * Reaching an app behind a gate: configured request headers reach the app's
  * site on every context the attempt opens, and never another site; basic-auth
- * credentials answer a challenge wherever one is issued, as Playwright's own
- * do. Driven through the engine hooks, as the attempt executor drives them; a
+ * credentials answer a challenge wherever one is issued. Driven through the engine hooks, as the attempt executor drives them; a
  * second fixture instance reached as `localhost` rather than `127.0.0.1`
  * stands in for a third-party site.
  */
@@ -12,8 +11,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { secrets } from 'e2e';
-import type { EngineCleanupContext, EngineHandle, OperationContext, Secret } from 'e2e/engine';
-import { web, surfaceOf } from '../../src/index.ts';
+import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, OperationContext, Secret } from 'e2e/engine';
+import { web, type Browser } from '../../src/index.ts';
 import { PROTECTED_CREDENTIAL, startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -37,7 +36,7 @@ async function boot(
     targetName: 'web',
     projectRoot: process.cwd(),
     app: { site: new URL(app.url).hostname },
-    env: {},
+    env: process.env,
     headed: false,
     workerSlot: 0,
     log: () => undefined,
@@ -49,6 +48,22 @@ async function boot(
 async function shutdown(engine: EngineHandle): Promise<void> {
   await engine.endAttempt!(cleanup());
   await engine.dispose!(cleanup());
+}
+
+const fixtures = new WeakMap<EngineHandle, { attemptId: string; browser: Browser }>();
+
+/** Build the public browser fixture for the current attempt without a backend handle. */
+function fixtureOf(engine: EngineHandle, app: FixtureApp, attemptId: string): Browser {
+  const existing = fixtures.get(engine);
+  if (existing?.attemptId === attemptId) return existing.browser;
+  const browser = engine.fixtures!['browser']!({
+    operation: () => operation(attemptId),
+    app: { resolveUrl: (url: string) => new URL(url, app.url).href },
+    expectable: (target: object) => target,
+    fixture: (_name: string, target: object) => target,
+  } as unknown as EngineFixtureContext) as Browser;
+  fixtures.set(engine, { attemptId, browser });
+  return browser;
 }
 
 /** Navigates and reads the page's one heading. */
@@ -99,8 +114,8 @@ describe('web({ headers, basicAuth })', () => {
     try {
       await boot(engine, app, artifactsDir, 'h2');
       let routed = 0;
-      // Registered after the header route, so it runs first, as a `browser.route` handler does.
-      await surfaceOf(engine)!.context().route('**/headers', async (route) => {
+      // The public route still has to preserve the configured request policy.
+      await fixtureOf(engine, app, 'h2').route('**/headers', async (route) => {
         routed += 1;
         await route.fallback();
       });
@@ -123,7 +138,7 @@ describe('web({ headers, basicAuth })', () => {
       await boot(plain, app, artifactsDir, 's0');
       await headingAt(plain, 's0', `${app.url}/`);
       // The fixture itself can register one: 127.0.0.1 is a secure context.
-      expect(await surfaceOf(plain)!.page().evaluate(registrations)).toBe(1);
+      expect(await fixtureOf(plain, app, 's0').evaluate(registrations)).toBe(1);
     } finally {
       await shutdown(plain);
     }
@@ -131,7 +146,7 @@ describe('web({ headers, basicAuth })', () => {
     try {
       await boot(engine, app, artifactsDir, 's1');
       await headingAt(engine, 's1', `${app.url}/`);
-      expect(await surfaceOf(engine)!.page().evaluate(registrations)).toBe(0);
+      expect(await fixtureOf(engine, app, 's1').evaluate(registrations)).toBe(0);
     } finally {
       await shutdown(engine);
     }
@@ -175,11 +190,11 @@ describe('web({ headers, basicAuth })', () => {
     try {
       await boot(engine, app, artifactsDir, 'u0');
       await engine.session!.open!(app.url, operation('u0'));
-      const page = () => surfaceOf(engine)!.page();
-      expect(await page().evaluate(() => navigator.userAgent)).toBe('Mozilla/5.0 e2e-probe playwright');
+      const browser = fixtureOf(engine, app, 'u0');
+      expect(await browser.evaluate(() => navigator.userAgent)).toBe('Mozilla/5.0 e2e-probe playwright');
       await engine.session!.reset!(operation('u0'));
       await engine.session!.open!(app.url, operation('u0'));
-      expect(await page().evaluate(() => navigator.userAgent)).toBe('Mozilla/5.0 e2e-probe playwright');
+      expect(await browser.evaluate(() => navigator.userAgent)).toBe('Mozilla/5.0 e2e-probe playwright');
     } finally {
       await shutdown(engine);
     }
@@ -188,7 +203,7 @@ describe('web({ headers, basicAuth })', () => {
   it('runs the page in the configured locale and time zone, after a context reset too', async () => {
     const engine = web({ locale: 'de-DE', timezoneId: 'Asia/Tokyo' });
     const read = () =>
-      surfaceOf(engine)!.page().evaluate(() => ({
+      fixtureOf(engine, app, 'l0').evaluate(() => ({
         language: navigator.language,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         offset: new Date('2026-01-01T00:00:00Z').getTimezoneOffset(),

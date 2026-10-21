@@ -94,6 +94,7 @@ export interface AttemptFixtures {
 
 export function createFixtures(environment: AttemptEnvironment): AttemptFixtures {
   const engine = new LocatorEngine({
+    readPurpose: 'fixture',
     session: environment.session,
     budget: environment.budget,
     runId: environment.runId,

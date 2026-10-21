@@ -14,7 +14,7 @@ import { runAgentStepsOnFakeTime } from '../helpers/agent-fake-time.ts';
 runAgentStepsOnFakeTime();
 
 /** Exercise the real fixture, session, feed, and action dispatcher with synthetic snapshots. */
-async function exercise(scopes: readonly (string | undefined)[], staleDuringAction: boolean, scroll?: 'during' | 'after') {
+async function exercise(scopes: readonly (string | undefined)[], staleDuringAction: boolean, scroll?: 'during' | 'after' | 'viewport') {
   let phase = 0;
   const actions: string[] = [];
   const engine = defineEngine({
@@ -23,7 +23,8 @@ async function exercise(scopes: readonly (string | undefined)[], staleDuringActi
       const identityScope = scopes[phase];
       return {
         ...(identityScope === undefined ? {} : { identityScope }),
-        root: { ref: { id: 'root', revision: '' }, role: 'document', children: [
+        ...(scroll === 'viewport' ? { viewportRef: { id: 'viewport-only', revision: '' } } : {}),
+        root: { ref: { id: scroll === 'viewport' ? `document-${phase}` : 'root', revision: '' }, role: 'document', children: [
           { ref: { id: phase === 0 ? 'old' : 'new', revision: '' }, role: 'button', name: 'Save' },
         ] }, viewport: { width: 800, height: 600 },
       };
@@ -44,10 +45,13 @@ async function exercise(scopes: readonly (string | undefined)[], staleDuringActi
     async runStep(ctx) {
       const first = await ctx.observe();
       expect(first).not.toHaveProperty('identityScope');
+      expect(first).not.toHaveProperty('viewportRef');
+      expect(first.text).not.toContain('viewport-only');
       expect(first.text).not.toContain('identityScope');
       if (!staleDuringAction && scroll !== 'during') { phase = 1; await ctx.observe(); }
       try {
-        if (scroll === undefined) await ctx.actions.tap({ id: 'old' });
+        if (scroll === 'viewport') { await ctx.actions.scroll('down'); await ctx.actions.scrollUntil('Missing row', 'down'); }
+        else if (scroll === undefined) await ctx.actions.tap({ id: 'old' });
         else await ctx.actions.scrollUntil('Missing row', 'down', { id: 'old' });
       } catch (cause) { failure = cause; }
       return { status: 'passed', summary: 'checked scope boundary' };
@@ -68,6 +72,11 @@ async function exercise(scopes: readonly (string | undefined)[], staleDuringActi
 }
 
 describe('engine identity scopes', () => {
+  it('routes untargeted scroll and scrollUntil through the separate viewport capability', async () => {
+    const result = await exercise(['a', 'b'], false, 'viewport');
+    expect(result.actions.length).toBeGreaterThanOrEqual(2);
+    expect(result.actions.every(id => id === 'viewport-only')).toBe(true);
+  });
   it('stops multi-page scrolling when the context changes', async () => {
     const result = await exercise(['a', 'b'], false, 'during');
     expect(result.actions).toEqual(['old']);

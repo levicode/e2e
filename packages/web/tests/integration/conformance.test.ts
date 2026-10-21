@@ -9,10 +9,11 @@
 
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { chromium, type Browser, type Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CLOSED_SHADOW_ROOTS_INIT_SCRIPT } from '../../src/closed-shadow.ts';
-import { captureTagged, MARKER, type Disagreement } from '../crosscheck/crosscheck.ts';
+import type { SemanticNode } from 'e2e/engine';
+import type { Disagreement } from '../crosscheck/crosscheck.ts';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 import { diffExpectations, keyOf, readExpectations, TODO_REASON, writeExpectations } from '../crosscheck/expectations.ts';
 
 interface AxeCase {
@@ -54,21 +55,17 @@ const SHADOW_TEMPLATES = `<script>
 const AS_ARIA: Readonly<Record<string, string>> = { image: 'img' };
 const NO_ROLE = new Set(['generic', 'none', 'presentation', 'text']);
 
-let browser: Browser;
-let page: Page;
+let fixture: NativeFixture | undefined;
 const seen = new Set<string>();
 const pages = new Set<string>();
 
-beforeAll(async () => {
-  browser = await chromium.launch();
-  const context = await browser.newContext();
-  await context.addInitScript(CLOSED_SHADOW_ROOTS_INIT_SCRIPT);
-  page = await context.newPage();
-});
+beforeAll(async () => { fixture = await startNativeFixture('conformance'); });
+afterAll(async () => { await fixture?.close(); });
 
-afterAll(async () => {
-  await browser?.close();
-});
+/** Flatten only the protected model tree, never the fixture-query result. */
+function flatten(node: SemanticNode): SemanticNode[] {
+  return [node, ...(node.children ?? []).flatMap(flatten)];
+}
 
 const asList = <T,>(value: T | readonly T[]): readonly T[] => (Array.isArray(value) ? value : [value as T]);
 
@@ -80,39 +77,37 @@ describe('axe-core conformance', () => {
       let checked = 0;
       let targets = 0;
       for (const [index, entry] of cases.entries()) {
-        await page.setContent(`<!doctype html><html lang="en"><head>${EMPTY_BOXES}</head><body>${entry.html}${SHADOW_TEMPLATES}</body></html>`);
-        const { nodes, elements } = await captureTagged(page);
-        try {
-          const byId = new Map(nodes.map((node) => [node.ref.id, node]));
-          const selectors = asList(entry.target);
-          const texts = entry.accessibleText === undefined ? undefined : asList(entry.accessibleText);
-          for (const [position, selector] of selectors.entries()) {
-            targets += 1;
-            const target = page.locator(selector).first();
-            expect(await target.count(), `${table} #${index}: ${selector} matches nothing`).toBe(1);
-            const id = await target.getAttribute(MARKER);
-            const node = id === null ? undefined : byId.get(id);
-            const label = `#${index} ${selector}`;
-            const push = (field: string, ours: string, theirs: string) => {
-              const disagreement: Disagreement = { oracle: 'axe', field, ours, theirs, node: label };
-              seen.add(keyOf(name, disagreement));
-            };
-            if (entry.role !== undefined) {
-              // A node the tree does not list has no role to the model either.
-              const ours = node?.role === undefined || NO_ROLE.has(node.role) ? 'none' : (AS_ARIA[node.role] ?? node.role);
-              const theirs = entry.role === null || entry.role === undefined || NO_ROLE.has(entry.role) ? 'none' : entry.role;
-              if (ours !== theirs) push('role', ours, theirs);
-              checked += 1;
-            }
-            if (texts !== undefined) {
-              const ours = node === undefined ? '(not in tree)' : (node.name ?? '').replace(/\s+/g, ' ').trim();
-              const theirs = (texts[position] ?? '').replace(/\s+/g, ' ').trim();
-              if (ours !== theirs) push('name', ours, theirs);
-              checked += 1;
-            }
+        await nativeDocument(fixture!.browser, `<!doctype html><html lang="en"><head>${EMPTY_BOXES}</head><body>${entry.html}${SHADOW_TEMPLATES}</body></html>`);
+        const snapshot = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
+        const byId = new Map(flatten(snapshot.root).map((node) => [node.ref.id, node]));
+        const selectors = asList(entry.target);
+        const texts = entry.accessibleText === undefined ? undefined : asList(entry.accessibleText);
+        for (const [position, selector] of selectors.entries()) {
+          targets += 1;
+          // Fixture queries correlate the target's exact identity, not its model-visible metadata.
+          const matches = await fixture!.engine.locate!({
+            kind: 'index', source: { kind: 'selector', selector }, index: 'first',
+          }, fixture!.operation(), { purpose: 'fixture' });
+          expect(matches.length, `${table} #${index}: ${selector} matches nothing`).toBe(1);
+          const node = byId.get(matches[0]!.ref.id);
+          const label = `#${index} ${selector}`;
+          const push = (field: string, ours: string, theirs: string) => {
+            const disagreement: Disagreement = { oracle: 'axe', field, ours, theirs, node: label };
+            seen.add(keyOf(name, disagreement));
+          };
+          if (entry.role !== undefined) {
+            // A node the tree does not list has no role to the model either.
+            const ours = node?.role === undefined || NO_ROLE.has(node.role) ? 'none' : (AS_ARIA[node.role] ?? node.role);
+            const theirs = entry.role === null || entry.role === undefined || NO_ROLE.has(entry.role) ? 'none' : entry.role;
+            if (ours !== theirs) push('role', ours, theirs);
+            checked += 1;
           }
-        } finally {
-          await Promise.all([...elements.values()].map((element) => element.dispose()));
+          if (texts !== undefined) {
+            const ours = node === undefined ? '(not in tree)' : (node.name ?? '').replace(/\s+/g, ' ').trim();
+            const theirs = (texts[position] ?? '').replace(/\s+/g, ' ').trim();
+            if (ours !== theirs) push('name', ours, theirs);
+            checked += 1;
+          }
         }
       }
       expect(checked, `${table} checked nothing`).toBeGreaterThan(0);

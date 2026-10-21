@@ -301,6 +301,7 @@ export class SessionHost {
         redaction: { redact: attempt.agentRuntime.redact, redactCut: attempt.agentRuntime.redactCut },
         recorder,
         locator: new LocatorEngine({
+          readPurpose: 'protected',
           session: attempt.session,
           budget: attempt.budget,
           runId: attempt.runId,

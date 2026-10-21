@@ -1,17 +1,17 @@
 /**
  * A `frameLocator` chain resolves each frame inside the one before it: the
  * inner selector is looked up in the outer frame's document, never in the
- * page, so validation and Playwright's own `frameLocator` chain agree. A
+ * page. The page's DOM geometry supplies an independent box oracle. A
  * located node's box is in the top-level viewport, as the contract asks.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { LocatorExpression } from 'e2e/engine';
-import { surfaceOf, web } from '../../src/index.ts';
+import { web, type Browser } from '../../src/index.ts';
+import { nativeBrowser, nativeDocument } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 /** Escapes HTML for a double-quoted attribute value, so a document can carry a nested `srcdoc`. */
@@ -62,20 +62,20 @@ describe('nested frame locators', () => {
   const signal = new AbortController().signal;
   const operation = { signal, timeoutMs: 5_000, runId: 'frames', attemptId: 'attempt', origin: 'test' as const };
   const cleanup = { signal, timeoutMs: 30_000 };
-  let page: Page;
+  let browser: Browser;
 
   beforeAll(async () => {
-    await engine.init!({ runId: 'frames', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+    await engine.init!({ runId: 'frames', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
     await engine.startAttempt!({ attemptId: 'attempt', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
     await engine.session!.open!('about:blank', operation);
-    page = surfaceOf(engine)!.page();
-    await page.setContent(HOST_DOCUMENT);
-    await page
-      .frameLocator('#outer')
-      .frameLocator('#inner')
-      .frameLocator('#deep')
-      .getByRole('button', { name: 'Deep button' })
-      .waitFor();
+    browser = nativeBrowser(engine, () => operation);
+    await nativeDocument(browser, HOST_DOCUMENT);
+    await expect.poll(() => browser.evaluate(() => {
+      const outer = document.querySelector<HTMLIFrameElement>('#outer')?.contentDocument;
+      const inner = outer?.querySelector<HTMLIFrameElement>('#inner')?.contentDocument;
+      const deep = inner?.querySelector<HTMLIFrameElement>('#deep')?.contentDocument;
+      return deep?.querySelector('button')?.textContent ?? null;
+    })).toBe('Deep button');
   });
 
   afterAll(async () => {
@@ -88,15 +88,30 @@ describe('nested frame locators', () => {
     const matches = await engine.locate!(withinFrames(['#outer', '#inner'], INNER_BUTTON), operation);
     expect(matches.map((node) => node.name)).toEqual(['Inner button']);
     await engine.perform!(matches[0]!.ref, { kind: 'tap' }, operation);
-    expect(await page.frameLocator('#outer').frameLocator('#inner').getByRole('button').innerText()).toBe('Inner clicked');
+    expect(await browser.evaluate(() => document.querySelector<HTMLIFrameElement>('#outer')!.contentDocument!
+      .querySelector<HTMLIFrameElement>('#inner')!.contentDocument!.querySelector('button')!.textContent)).toBe('Inner clicked');
   });
 
   it('reports a located node\'s box in the top-level viewport, past each frame\'s border and padding', async () => {
     // The inner document's one button, whatever an earlier test renamed it to.
     const button: LocatorExpression = { kind: 'query', query: { kind: 'role', value: { kind: 'string', value: 'button', exact: true } } };
     const [node] = await engine.locate!(withinFrames(['#outer', '#inner'], button), operation);
-    // Playwright's own box for the same element, measured through both frames' borders and padding.
-    const expected = (await page.frameLocator('#outer').frameLocator('#inner').getByRole('button').boundingBox())!;
+    // DOM rectangles and computed frame insets are independent of the native query projection.
+    const expected = await browser.evaluate(() => {
+      const outer = document.querySelector<HTMLIFrameElement>('#outer')!;
+      const inner = outer.contentDocument!.querySelector<HTMLIFrameElement>('#inner')!;
+      const element = inner.contentDocument!.querySelector('button')!;
+      const bounds = element.getBoundingClientRect();
+      const inset = (frame: HTMLIFrameElement) => {
+        const rect = frame.getBoundingClientRect();
+        const style = frame.ownerDocument.defaultView!.getComputedStyle(frame);
+        return { x: rect.x + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft),
+          y: rect.y + parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop) };
+      };
+      const outside = inset(outer);
+      const inside = inset(inner);
+      return { x: outside.x + inside.x + bounds.x, y: outside.y + inside.y + bounds.y, width: bounds.width, height: bounds.height };
+    });
     for (const key of ['x', 'y', 'width', 'height'] as const) expect(node!.rect![key]).toBeCloseTo(expected[key], 3);
   });
 
@@ -118,7 +133,7 @@ describe('nested frame locators', () => {
   });
 
   it('reports two matching frames inside the outer document as ambiguous, though the page holds one', async () => {
-    expect(await page.locator('.twin').count()).toBe(1);
+    expect(await browser.evaluate(() => document.querySelectorAll('.twin').length)).toBe(1);
     await expect(engine.locate!(withinFrames(['#outer', '.twin'], INNER_BUTTON), operation)).rejects.toMatchObject({
       code: 'FRAME_AMBIGUOUS',
       message: '2 frames match .twin',

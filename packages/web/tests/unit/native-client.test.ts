@@ -144,6 +144,218 @@ describe('native session client', () => {
     await close({ ...fixture, client });
   });
 
+  it('stages coalesced post-ACK callbacks until the replacement scope is published', async () => {
+    const fixture = harness(); let client: NativeClient; let published = false;
+    const observed: boolean[] = [];
+    const connecting = fixture.connect(async event => { observed.push(published); await client.decide(event.decision!.token, { kind: 'continue' }, context()); });
+    fixture.send(fixture.ready()); client = await connecting;
+    const epoch = client.callbackCheckpoint();
+    const transition = client.request('scope.reset', {}, context(), epoch);
+    const request = fixture.requests.at(-1)!;
+    fixture.send(fixture.result(request), { type: 'event', generation: 1, sequence: 1, event: 'request', payload: { identityScope: 'new-scope' }, decision: { token: 'new-token', timeoutMs: 1000 } });
+    await transition; await Promise.resolve();
+    expect(observed).toEqual([]);
+    client.retireCallbacks(epoch); published = true;
+    await Promise.resolve();
+    expect(observed).toEqual([true]);
+    const decision = fixture.requests.at(-1)!;
+    fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
+    await Promise.resolve(); await Promise.resolve();
+    await close({ ...fixture, client });
+  });
+
+  it('does not invoke a staged callback whose deadline expired before publication', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = harness(); const handler = vi.fn(); const connecting = fixture.connect(handler);
+      fixture.send(fixture.ready()); const client = await connecting; const epoch = client.callbackCheckpoint();
+      const transition = client.request('scope.reset', {}, context(), epoch);
+      fixture.send(fixture.result(fixture.requests.at(-1)!), { type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'expired-staged', timeoutMs: 100 } });
+      await transition; await vi.advanceTimersByTimeAsync(101);
+      client.retireCallbacks(epoch); await Promise.resolve();
+      expect(handler).not.toHaveBeenCalled();
+      await expect(client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each([['scope.end', 'scope-ended'], ['scope.reconnect', 'scope-reconnected']] as const)('requires successful %s ACK for callback revocation proof', async (command, proof) => {
+    const fixture = await opened(); const epoch = fixture.client.callbackCheckpoint();
+    const ending = fixture.client.request(command, {}, context(), epoch);
+    fixture.send(fixture.result(fixture.requests.at(-1)!, { ok: false, data: undefined, error: { code: 'invalid-arguments' }, effects: 'not-dispatched' }));
+    expect((await ending).ok).toBe(false);
+    expect(() => fixture.client.retireCallbacks(epoch, proof)).toThrow();
+  });
+
+  it('consumes a coalesced terminal proof before invoking the retired callback', async () => {
+    const fixture = harness(); const handler = vi.fn(); const connecting = fixture.connect(handler);
+    fixture.send(fixture.ready()); const client = await connecting; const epoch = client.callbackCheckpoint();
+    fixture.send(
+      { type: 'event', generation: 1, sequence: 1, event: 'request', payload: { identityScope: 'old' }, decision: { token: 'queued', timeoutMs: 1000 } },
+      { type: 'event', generation: 1, sequence: 2, event: 'scope.callbacks-retired', payload: { identityScope: 'old', throughEventSequence: 1 } },
+    );
+    await Promise.resolve(); await Promise.resolve();
+    expect(handler).not.toHaveBeenCalled(); expect(client.callbackCheckpoint()).toBe(epoch);
+    await close({ ...fixture, client });
+  });
+
+  it.each([false, true])('retires only proven callbacks, including selected=%s, without releasing live closure quota', async selected => {
+    vi.useFakeTimers(); let resume!: () => void;
+    try {
+      const hold = new Promise<void>(resolve => { resume = resolve; }); const fixture = harness(); let client: NativeClient;
+      const connecting = fixture.connect(async event => { if (selected) await client.decide(event.decision!.token, { kind: 'continue' }, context()); await hold; throw new Error('late revoked error'); });
+      fixture.send(fixture.ready({ limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 1, maxTimeoutMs: 3600000 } })); client = await connecting;
+      fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: { identityScope: 'old' }, decision: { token: 'old-token', timeoutMs: 50 } }); await Promise.resolve();
+      if (selected) { fixture.send({ type: 'control-result', id: fixture.requests.at(-1)!['id'], generation: 1, accepted: true, scopeState: 'usable' }); await Promise.resolve(); }
+      fixture.send({ type: 'event', generation: 1, sequence: 2, event: 'scope.callbacks-retired', payload: { identityScope: 'old', throughEventSequence: 1 } });
+      await vi.advanceTimersByTimeAsync(60); expect(client.callbackCheckpoint()).toBe(0); expect(fixture.dispose).not.toHaveBeenCalled();
+      // A revoked but still-running JS closure must continue charging the bounded queue.
+      fixture.send({ type: 'event', generation: 1, sequence: 3, event: 'request', payload: { identityScope: 'other' }, decision: { token: 'new-token', timeoutMs: 50 } });
+      expect(fixture.dispose).toHaveBeenCalledTimes(1);
+    } finally { resume?.(); vi.useRealTimers(); }
+  });
+
+  it('does not deliver later callbacks from a scope whose producers were sealed', async () => {
+    const fixture = harness(); const handler = vi.fn(); const connecting = fixture.connect(handler);
+    fixture.send(fixture.ready()); const client = await connecting;
+    fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'scope.callbacks-retired', payload: { identityScope: 'old', throughEventSequence: 0 } });
+    fixture.send({ type: 'event', generation: 1, sequence: 2, event: 'request', payload: { identityScope: 'old' }, decision: { token: 'impossible-late', timeoutMs: 1000 } });
+    await Promise.resolve(); expect(handler).not.toHaveBeenCalled();
+    await expect(client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  });
+
+  it('does not retire an unrelated scope or suppress its live deadline', async () => {
+    vi.useFakeTimers(); let resume!: () => void;
+    try {
+      const hold = new Promise<void>(resolve => { resume = resolve; }); const fixture = harness(); const connecting = fixture.connect(async () => { await hold; });
+      fixture.send(fixture.ready()); await connecting;
+      fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: { identityScope: 'live' }, decision: { token: 'live-token', timeoutMs: 50 } }); await Promise.resolve();
+      fixture.send({ type: 'event', generation: 1, sequence: 2, event: 'scope.callbacks-retired', payload: { identityScope: 'other', throughEventSequence: 1 } });
+      await vi.advanceTimersByTimeAsync(51); expect(fixture.dispose).toHaveBeenCalledTimes(1);
+    } finally { resume?.(); vi.useRealTimers(); }
+  });
+
+  it.each([
+    { generation: 2, payload: { identityScope: 'old', throughEventSequence: 0 } },
+    { generation: 1, payload: { identityScope: 'old', throughEventSequence: 1 } },
+    { generation: 1, payload: { identityScope: 'old', throughEventSequence: -1 } },
+    { generation: 1, payload: { identityScope: '', throughEventSequence: 0 } },
+    { generation: 1, payload: { identityScope: 'x'.repeat(129), throughEventSequence: 0 } },
+    { generation: 1, payload: { identityScope: 'old', throughEventSequence: 0, extra: true } },
+  ])('rejects malformed terminal callback proof %#', async proof => {
+    const fixture = await opened();
+    fixture.send({ type: 'event', sequence: 1, event: 'scope.callbacks-retired', ...proof });
+    await expect(fixture.client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  });
+
+  it('does not suspend an undecided callback deadline merely because reconnect is pending', async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    try {
+      const hold = new Promise<void>(resolve => { finish = resolve; });
+      const fixture = harness(); const connecting = fixture.connect(async () => { await hold; });
+      fixture.send(fixture.ready()); const client = await connecting;
+      fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'undecided-before-reconnect', timeoutMs: 50 } });
+      await Promise.resolve();
+      const epoch = client.callbackCheckpoint();
+      const reconnect = client.request('scope.reconnect', {}, context(), epoch).catch((cause: unknown) => cause);
+      await vi.advanceTimersByTimeAsync(51);
+      expect(await reconnect).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      expect(() => client.retireCallbacks(epoch, 'scope-reconnected')).toThrow();
+      expect(fixture.dispose).toHaveBeenCalledTimes(1);
+    } finally { finish?.(); vi.useRealTimers(); }
+  });
+
+  it('does not grant reconnect revocation authority from another successful lifecycle ACK', async () => {
+    const fixture = await opened(); const epoch = fixture.client.callbackCheckpoint();
+    const restarting = fixture.client.request('scope.restart', {}, context(), epoch);
+    fixture.send(fixture.result(fixture.requests.at(-1)!)); await restarting;
+    expect(() => fixture.client.retireCallbacks(epoch, 'scope-reconnected')).toThrow();
+  });
+
+  it('fails closed when the bounded post-ACK event buffer overflows', async () => {
+    const fixture = harness(); const handler = vi.fn(); const connecting = fixture.connect(handler);
+    fixture.send(fixture.ready({ limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 2, maxTimeoutMs: 3600000 } }));
+    const client = await connecting;
+    const transition = client.request('scope.reset', {}, context(), client.callbackCheckpoint());
+    const request = fixture.requests.at(-1)!;
+    fixture.send(fixture.result(request), ...[1, 2, 3].map(sequence => ({ type: 'event', generation: 1, sequence, event: 'diagnostic', payload: {} })));
+    await transition; await Promise.resolve();
+    expect(handler).not.toHaveBeenCalled(); expect(fixture.dispose).toHaveBeenCalledOnce();
+    await expect(client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  });
+
+  it('keeps pre-ACK decisions dispatchable and does not stage after a rejected transition', async () => {
+    const fixture = harness(); let client: NativeClient; const seen: string[] = [];
+    const connecting = fixture.connect(async event => { seen.push(event.decision!.token); await client.decide(event.decision!.token, { kind: 'continue' }, context()); });
+    fixture.send(fixture.ready()); client = await connecting;
+    const transition = client.request('scope.reset', {}, context(), client.callbackCheckpoint());
+    const request = fixture.requests.at(-1)!;
+    fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'old-token', timeoutMs: 1000 } });
+    await Promise.resolve(); expect(seen).toEqual(['old-token']);
+    fixture.send({ type: 'control-result', id: fixture.requests.at(-1)!['id'], generation: 1, accepted: true, scopeState: 'usable' });
+    fixture.send(fixture.result(request, { ok: false, data: undefined, error: { code: 'invalid-arguments' }, effects: 'not-dispatched' }));
+    expect((await transition).ok).toBe(false);
+    fixture.send({ type: 'event', generation: 1, sequence: 2, event: 'request', payload: {}, decision: { token: 'still-old-token', timeoutMs: 1000 } });
+    await Promise.resolve(); expect(seen).toEqual(['old-token', 'still-old-token']);
+    fixture.send({ type: 'control-result', id: fixture.requests.at(-1)!['id'], generation: 1, accepted: true, scopeState: 'usable' });
+    await Promise.resolve(); await Promise.resolve(); await close({ ...fixture, client });
+  });
+
+  it('retires only settled transition callbacks without poisoning the reused client', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = harness(); let client: NativeClient; let resume!: () => void;
+      const hold = new Promise<void>(resolve => { resume = resolve; });
+      let rejected: unknown;
+      const connecting = fixture.connect(async event => {
+        await client.decide(event.decision!.token, { kind: 'continue' }, context());
+        await hold;
+        try { await client.request('page.title', {}, context()); } catch (error) { rejected = error; }
+        throw new Error('Retired callback failure must not poison replacement');
+      });
+      fixture.send(fixture.ready()); client = await connecting;
+      const epoch = client.callbackCheckpoint();
+      fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'retiring-token', timeoutMs: 100 } });
+      await Promise.resolve();
+      fixture.send({ type: 'control-result', id: fixture.requests.at(-1)!['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      await Promise.resolve(); await Promise.resolve();
+      client.retireCallbacks(epoch);
+      await vi.advanceTimersByTimeAsync(200);
+      resume(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(rejected).toMatchObject({ code: 'INVALID_STATE' });
+      expect(fixture.requests.some(frame => frame['command'] === 'page.title')).toBe(false);
+      expect(fixture.dispose).not.toHaveBeenCalled();
+      const ordinary = client.request('page.url', {}, context());
+      fixture.send(fixture.result(fixture.requests.at(-1)!)); await ordinary;
+      await close({ ...fixture, client });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps the next epoch live callback deadline authoritative after retirement', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = harness(); let resume!: () => void;
+      const hold = new Promise<void>(resolve => { resume = resolve; });
+      const connecting = fixture.connect(() => hold); fixture.send(fixture.ready()); const client = await connecting;
+      client.retireCallbacks(client.callbackCheckpoint());
+      fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'new-epoch-token', timeoutMs: 100 } });
+      await Promise.resolve(); await vi.advanceTimersByTimeAsync(101);
+      await expect(client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      expect(fixture.dispose).toHaveBeenCalledOnce(); resume();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('refuses transition retirement while a native decision remains undecided', async () => {
+    const fixture = harness(); let resume!: () => void;
+    const hold = new Promise<void>(resolve => { resume = resolve; });
+    const connecting = fixture.connect(() => hold); fixture.send(fixture.ready()); const client = await connecting;
+    fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'undecided-token', timeoutMs: 1000 } });
+    await Promise.resolve();
+    expect(() => client.retireCallbacks(client.callbackCheckpoint())).toThrow();
+    expect(fixture.requests.some(frame => frame['type'] === 'decision')).toBe(false);
+    expect(fixture.dispose).toHaveBeenCalledOnce(); resume();
+  });
+
   it('fences the connection on cancellation and never retries uncertain input', async () => {
     const fixture = await opened();
     const controller = new AbortController();

@@ -2,7 +2,7 @@
 
 import { referenceText } from './reference-text.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../engine/contract.ts';
-import type { Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
+import type { NodeRef, Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
 import type { SecretLedger } from '../internal/redact.ts';
 import { collapseText } from '../internal/text.ts';
 import { sleep } from '../internal/time.ts';
@@ -45,6 +45,8 @@ export type SemanticAgentObservation = Extract<AgentObservation, { kind: 'semant
 
 /** Identity, geometry, and redacted prose shared by both evidence variants. */
 interface AgentObservationMetadata {
+  /** Internal stable viewport capability; omitted from executor/model observations. */
+  readonly viewportRef?: NodeRef;
   /** Opaque live-element namespace, not rendered or sent to the model. */
   readonly identityScope?: string;
   /** Where the surface was when captured, when the platform has a location. */
@@ -86,6 +88,7 @@ export function prepareObservation(
   const path = location === undefined ? undefined : observationPath(location);
   const metadata = {
     revision: observation.revision,
+    ...(observation.viewportRef === undefined ? {} : { viewportRef: observation.viewportRef }),
     ...(observation.identityScope === undefined ? {} : { identityScope: observation.identityScope }),
     ...(location === undefined ? {} : { location }),
     ...(path === undefined ? {} : { path }),

@@ -26,7 +26,7 @@ import {
   type ProviderRecording,
 } from 'e2e/engine';
 import { connectionAbort } from './operation-budget.ts';
-import { invalidState, message } from './support.ts';
+import { invalidState, message } from './runtime-support.ts';
 
 /**
  * How long a lease lives. `worker` (the default) is one browser per worker

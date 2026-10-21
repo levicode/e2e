@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, OperationContext } from 'e2e/engine';
-import { web, surfaceOf, type Browser, type WebMedia, type WebOptions } from '../../src/index.ts';
+import { web, type Browser, type WebMedia, type WebOptions } from '../../src/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -49,12 +49,12 @@ describe('media emulation', () => {
     rmSync(artifactsDir, { recursive: true, force: true });
   });
 
-  /** Boots one engine into a running attempt, with no page open yet. */
+  /** Boots one engine into a running attempt, before the first navigation. */
   async function boot(options: WebOptions): Promise<EngineHandle> {
     const engine = web(options);
     await engine.init!({
       runId: 'run-media', targetName: 'web', projectRoot: process.cwd(),
-      app: { site: new URL(app.url).hostname }, env: {}, headed: false,
+      app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
       workerSlot: 0, log: () => undefined, signal: new AbortController().signal,
     });
     await engine.startAttempt!({ attemptId: 'm1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
@@ -66,15 +66,21 @@ describe('media emulation', () => {
     await engine.dispose!(cleanup());
   }
 
+  const fixtures = new WeakMap<EngineHandle, Browser>();
+
   /** The engine's `browser` fixture, with the harness parts it reaches stubbed. */
   function fixtureOf(engine: EngineHandle): Browser {
-    return engine.fixtures!['browser']!({
+    const existing = fixtures.get(engine);
+    if (existing !== undefined) return existing;
+    const browser = engine.fixtures!['browser']!({
       operation,
       app: { resolveUrl: (url: string) => new URL(url, app.url).href },
       expectable: (target: object) => target,
       fixture: (_name: string, target: object) => target,
       attachArtifact: () => undefined,
     } as unknown as EngineFixtureContext) as Browser;
+    fixtures.set(engine, browser);
+    return browser;
   }
 
   async function openMedia(engine: EngineHandle): Promise<MediaReading> {
@@ -83,7 +89,7 @@ describe('media emulation', () => {
   }
 
   function read(engine: EngineHandle): Promise<MediaReading> {
-    return surfaceOf(engine)!.page().evaluate(() => {
+    return fixtureOf(engine).evaluate(() => {
       const style = getComputedStyle(document.querySelector('p')!);
       return {
         color: style.color,
@@ -149,16 +155,22 @@ describe('media emulation', () => {
     try {
       await fixtureOf(engine).emulateMedia({ colorScheme: 'light' });
       expect(await openMedia(engine)).toEqual(loadedWith({ dark: false, reduce: false }));
-      const live = surfaceOf(engine)!;
-      const [popup] = await Promise.all([
-        live.context().waitForEvent('page'),
-        live.page().evaluate(() => { window.open('/media'); }),
-      ]);
-      await popup.waitForLoadState('load');
-      const now = () => popup.evaluate(() => ({
-        dark: matchMedia('(prefers-color-scheme: dark)').matches,
-        reduce: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      }));
+      const browser = fixtureOf(engine);
+      await browser.evaluate(() => {
+        (window as unknown as { mediaPopup: Window | null }).mediaPopup = window.open('/media');
+        return null;
+      });
+      await expect.poll(() => browser.evaluate(() => {
+        const popup = (window as unknown as { mediaPopup: Window | null }).mediaPopup;
+        return popup !== null && popup.location.pathname === '/media' && popup.document.readyState === 'complete';
+      })).toBe(true);
+      const now = () => browser.evaluate(() => {
+        const popup = (window as unknown as { mediaPopup: Window }).mediaPopup;
+        return {
+          dark: popup.matchMedia('(prefers-color-scheme: dark)').matches,
+          reduce: popup.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        };
+      });
       expect(await now()).toEqual({ dark: false, reduce: false });
       await fixtureOf(engine).emulateMedia({ reducedMotion: 'reduce' });
       expect(await now()).toEqual({ dark: false, reduce: true });

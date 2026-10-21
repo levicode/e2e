@@ -1,29 +1,32 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Page } from 'playwright-core';
-import type { EngineFixtureContext } from 'e2e/engine';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { chromium, type Browser as HostBrowser } from 'playwright-core';
+import type { EngineFixtureContext, EngineHandle } from 'e2e/engine';
+import { web } from '../../src/index.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
+import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
 import { createBrowserFixture, type Browser } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 describe('browser.evaluate error boundaries', () => {
-  const surface = new PlaywrightSurface({});
+  const surface = new NativeSurface({});
   const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-evaluate-'));
   const signal = new AbortController().signal;
-  let page: Page;
   let browser: Browser;
 
   beforeAll(async () => {
     await surface.init({ runId: 'evaluate', targetName: 'web', projectRoot: process.cwd(),
-      app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+      app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
   });
 
   beforeEach(async () => {
     await surface.startAttempt({ attemptId: 'evaluate', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
-    page = await surface.ensurePage();
-    browser = createBrowserFixture(surface, {
+    browser = createBrowserFixture(surface.fixtureSurface(), {
       operation: () => ({ signal, timeoutMs: 1_000, runId: 'evaluate', attemptId: 'evaluate', origin: 'test' }),
       expectable: (target: object) => target,
       // The recorder is the harness's concern; these tests exercise evaluate's error boundaries only.
@@ -32,7 +35,6 @@ describe('browser.evaluate error boundaries', () => {
   });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
     await surface.endAttempt({ signal, timeoutMs: 5_000 });
   });
 
@@ -52,33 +54,6 @@ describe('browser.evaluate error boundaries', () => {
     await expect(browser.evaluate(source)).rejects.toMatchObject({ code: 'EVALUATE_FAILED', message });
   });
 
-  it.each([
-    'page.evaluate: Target page, context or browser has been closed',
-    'page.evaluate: Execution context was destroyed, most likely because of a navigation.',
-  ])('keeps a Playwright rejection as infrastructure: %s', async (message) => {
-    vi.spyOn(page, 'evaluate').mockRejectedValueOnce(new Error(message));
-    await expect(browser.evaluate('() => 1')).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
-  });
-
-  it('keeps a Playwright timeout as OPERATION_TIMEOUT', async () => {
-    const error = new Error('page.evaluate: Timeout 1000ms exceeded.');
-    error.name = 'TimeoutError';
-    vi.spyOn(page, 'evaluate').mockRejectedValueOnce(error);
-    await expect(browser.evaluate('() => 1')).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
-  });
-
-  it.each(['page', 'context'] as const)('keeps a real %s closure during evaluation as infrastructure', async (target) => {
-    let ready!: () => void;
-    const started = new Promise<void>((resolve) => { ready = resolve; });
-    await page.exposeFunction('__e2eReady', ready);
-    const pending = browser.evaluate('async () => { await globalThis.__e2eReady(); await new Promise(() => {}); }');
-    const rejected = pending.catch((cause: unknown) => cause);
-    await started;
-    if (target === 'page') await page.close();
-    else await page.context().close();
-    expect(await rejected).toMatchObject({ code: 'ENGINE_FAILURE' });
-  });
-
   it('preserves JSON results, explicit arguments, and zero-argument invocation', async () => {
     await expect(browser.evaluate((value: { count: number }) => ({ count: value.count + 1 }), { count: 4 }))
       .resolves.toEqual({ count: 5 });
@@ -89,7 +64,7 @@ describe('browser.evaluate error boundaries', () => {
   });
 
   it('evaluates a string as an expression and calls a function it evaluates to', async () => {
-    await page.setContent('<title>Cart</title>');
+    await browser.evaluate(() => { document.title = 'Cart'; return null; });
     await expect(browser.evaluate('document.title')).resolves.toBe('Cart');
     await expect(browser.evaluate('(() => document.title)()')).resolves.toBe('Cart');
     await expect(browser.evaluate('fetch("data:text/plain,ok").then((response) => response.text())')).resolves.toBe('ok');
@@ -100,5 +75,83 @@ describe('browser.evaluate error boundaries', () => {
     await expect(browser.evaluate('() => Infinity')).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     await expect(browser.evaluate('() => {')).rejects.toMatchObject({ code: 'EVALUATE_FAILED' });
     await expect(browser.evaluate('() => {', null)).rejects.toMatchObject({ code: 'EVALUATE_FAILED' });
+  });
+});
+
+
+describe('native evaluation interrupted by external target loss', () => {
+  it.each(['page closure', 'owned browser termination'] as const)('reports the uncertain outcome after %s without replaying evaluation', async (fault) => {
+    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-evaluate-loss-'));
+    const signal = new AbortController().signal;
+    const operation = { signal, timeoutMs: 10_000, runId: 'evaluate-loss', attemptId: 'loss', origin: 'test' as const };
+    const cleanup = { signal, timeoutMs: 5_000 };
+    let remote: RemoteChrome | undefined;
+    let control: HostBrowser | undefined;
+    let engine: EngineHandle | undefined;
+    const failures: unknown[] = [];
+    const settle = async (work: readonly Promise<unknown>[]) => {
+      for (const result of await Promise.allSettled(work)) if (result.status === 'rejected') failures.push(result.reason);
+    };
+    let faultInjected = false;
+    let evaluations = 0;
+    const request = NativeClient.prototype.request;
+    const commands = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, name, args, context) {
+      if (name === 'page.evaluate') evaluations += 1;
+      return request.call(this, name, args, context);
+    });
+    try {
+      remote = await launchRemoteChrome();
+      const endpoint = remote.endpoint;
+      engine = web({ connect: { cdpEndpoint: () => endpoint } });
+      await engine.init!({ runId: operation.runId, targetName: 'web', projectRoot: process.cwd(),
+        app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+      await engine.startAttempt!({ attemptId: operation.attemptId, artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+      await engine.session!.open!('about:blank', operation);
+      const browser = nativeBrowser(engine, () => operation);
+      const identity = randomUUID();
+      await browser.evaluate(value => { document.body.dataset.evaluationTarget = value; return null; }, identity);
+      // This connection only locates and destroys the actual target; all app operations use Browser.
+      control = await chromium.connectOverCDP(endpoint);
+      const pages = control.contexts().flatMap(context => context.pages());
+      const matches = [];
+      for (const page of pages) {
+        if (await page.evaluate(() => document.body?.dataset.evaluationTarget).catch(() => undefined) === identity) matches.push(page);
+      }
+      expect(matches).toHaveLength(1);
+      const original = matches[0]!;
+      const before = evaluations;
+      const rejected = browser.evaluate(async value => {
+        document.body.dataset.evaluationCount = String(Number(document.body.dataset.evaluationCount ?? 0) + 1);
+        document.body.dataset.evaluationReady = value;
+        return await new Promise<null>(() => {});
+      }, identity).catch((cause: unknown) => cause);
+      await original.waitForFunction(value => document.body.dataset.evaluationReady === value, identity, { timeout: 5_000 });
+      expect(await original.getAttribute('body', 'data-evaluation-count')).toBe('1');
+      faultInjected = true;
+      if (fault === 'page closure') {
+        await original.close();
+        expect(original.isClosed()).toBe(true);
+        expect(remote.proc.exitCode).toBeNull();
+        expect(remote.proc.signalCode).toBeNull();
+      } else {
+        // Host termination destroys the context too; this is not isolated context.close conformance.
+        await closeRemoteChrome(remote);
+        expect(remote.proc.exitCode !== null || remote.proc.signalCode !== null).toBe(true);
+      }
+      // Arbitrary evaluation has already mutated the page. A lost result cannot prove it did not commit.
+      expect(await rejected).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+      expect(evaluations).toBe(before + 1);
+      await expect(engine.endAttempt!(cleanup)).rejects.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+    } catch (cause) { failures.push(cause); } finally {
+      commands.mockRestore();
+      if (engine !== undefined) await settle([engine.dispose!(cleanup).catch((cause: unknown) => {
+        if (!faultInjected) throw cause;
+        expect(cause).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+      })]);
+      if (control !== undefined) await settle([control.close()]);
+      if (remote !== undefined) await settle([closeRemoteChrome(remote)]);
+      rmSync(artifactsDir, { recursive: true, force: true });
+    }
+    if (failures.length > 0) throw new AggregateError(failures, 'External evaluation fault test failed');
   });
 });

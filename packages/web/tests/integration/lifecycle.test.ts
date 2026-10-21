@@ -1,5 +1,5 @@
 /**
- * The playwright engine's lifecycle through the public contract: one shared
+ * The native engine's lifecycle through the public contract: one shared
  * browser per engine, one context per attempt, and honest idempotent
  * teardown. No runner involved - the hooks are driven directly, the way the
  * attempt executor drives them.
@@ -8,18 +8,19 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { BrowserContext, Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type {
   VideoFile,
   VideoSegment,
   EngineCleanupContext,
+  EngineFixtureContext,
   EngineHandle,
   LocatorExpression,
   OperationContext,
   SemanticNode,
 } from 'e2e/engine';
-import { web, surfaceOf } from '../../src/index.ts';
+import { web, type Browser } from '../../src/index.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
@@ -54,17 +55,16 @@ function* walk(node: SemanticNode): Generator<SemanticNode> {
   for (const child of node.children ?? []) yield* walk(child);
 }
 
-/** Runs one attempt on a booted engine and always tears it down. */
 /**
  * Decodes a recording inside the page and reads its last frame: the frame's
  * size, how much of it is the grey a screencast pads a smaller frame with,
  * and how much of it is content.
  */
 async function lastFrame(
-  page: Page,
+  browser: Browser,
   webm: Buffer,
 ): Promise<{ width: number; height: number; padded: number; inked: number }> {
-  return page.evaluate(async (bytes) => {
+  return browser.evaluate(async (bytes) => {
     const video = document.createElement('video');
     video.muted = true;
     video.src = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'video/webm' }));
@@ -97,59 +97,56 @@ async function lastFrame(
   }, [...webm]);
 }
 
-/**
- * Watches the frames the engine's screencast delivers, so a test can hold a
- * video segment open until it received a painted one: Playwright writes a
- * white frame for a segment stopped before its first frame arrived.
- */
-function watchPaint() {
-  const painted = new WeakSet<Page>();
-  const restores: (() => void)[] = [];
-  const watchPage = (page: Page): void => {
-    const start = page.screencast.start.bind(page.screencast);
-    const spy = vi.spyOn(page.screencast, 'start').mockImplementation((options) => start({
-      ...options,
-      onFrame: async (frame) => {
-        const hasPaint = await page.evaluate(async (bytes) => {
-          const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }));
-          const canvas = document.createElement('canvas');
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          const context = canvas.getContext('2d')!;
-          context.drawImage(bitmap, 0, 0);
-          bitmap.close();
-          const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-          for (let index = 0; index < data.length; index += 4) {
-            if (data[index]! < 200 || data[index + 1]! < 200 || data[index + 2]! < 200) return true;
-          }
-          return false;
-        }, [...frame.data]).catch(() => false);
-        if (hasPaint) painted.add(page);
-        await options?.onFrame?.(frame);
-      },
-    }));
-    restores.push(() => spy.mockRestore());
-  };
-  return {
-    /** Observes the context's pages, including those it opens later, before their recording starts. */
-    watchContext(context: BrowserContext): void {
-      context.on('page', watchPage);
-      for (const page of context.pages()) watchPage(page);
-    },
-    /** Waits for a painted frame delivered after this call, so a page that painted for an earlier segment cannot pass for this one. */
-    async settle(page: Page): Promise<void> {
-      painted.delete(page);
-      // A static page may not repaint after navigation overtakes its first screencast frame.
-      await page.screenshot();
-      await expect.poll(() => painted.has(page), { timeout: 5_000, message: 'the recorder received a painted frame' }).toBe(true);
-    },
-    /** Removes every observer, so none reaches the next test. */
-    restore(): void {
-      while (restores.length > 0) restores.pop()!();
-    },
-  };
+const fixtures = new WeakMap<EngineHandle, { attemptId: string; browser: Browser }>();
+
+/** Build the public browser fixture for the current attempt without exposing a backend handle. */
+function fixtureOf(engine: EngineHandle, attemptId: string): Browser {
+  const existing = fixtures.get(engine);
+  if (existing?.attemptId === attemptId) return existing.browser;
+  const browser = engine.fixtures!['browser']!({
+    operation: () => operation(attemptId),
+    expectable: (target: object) => target,
+    fixture: (_name: string, target: object) => target,
+  } as unknown as EngineFixtureContext) as Browser;
+  fixtures.set(engine, { attemptId, browser });
+  return browser;
 }
 
+/** Install a synthetic document through trusted evaluation, including its inline scripts. */
+async function replaceDocument(browser: Browser, html: string): Promise<void> {
+  await browser.evaluate((content) => {
+    document.open();
+    document.write(content);
+    document.close();
+    return null;
+  }, html);
+}
+
+/** Keep this segment painting for a bounded interval; decoding its final frame proves capture. */
+async function paintSegment(browser: Browser): Promise<void> {
+  await browser.evaluate(async () => {
+    const marker = document.createElement('div');
+    marker.setAttribute('aria-hidden', 'true');
+    marker.style.cssText = 'position:fixed;bottom:0;right:0;width:4px;height:4px;pointer-events:none;z-index:2147483647';
+    document.body.append(marker);
+    const started = performance.now();
+    let frame = 0;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('The recording fixture did not paint within 5 seconds')), 5_000);
+        const paint = () => {
+          marker.style.backgroundColor = frame++ % 2 === 0 ? '#000' : '#f00';
+          if (performance.now() - started >= 1_000) { clearTimeout(timeout); resolve(); }
+          else requestAnimationFrame(paint);
+        };
+        requestAnimationFrame(paint);
+      });
+    } finally { marker.remove(); }
+    return null;
+  });
+}
+
+/** Runs one attempt on a booted engine and always tears it down. */
 async function withAttempt(
   engine: EngineHandle,
   app: FixtureApp,
@@ -173,7 +170,7 @@ async function boot(engine: EngineHandle, app: FixtureApp): Promise<void> {
     targetName: 'web',
     projectRoot: process.cwd(),
     app: { site: new URL(app.url).hostname },
-    env: {},
+    env: process.env,
     headed: false,
     workerSlot: 0,
     log: () => undefined,
@@ -283,7 +280,7 @@ describe('web engine lifecycle', () => {
         await engine.session!.open!(`${app.url}/form`, operation('d1'));
 
         const snapshot = await engine.observe!(operation('d1'));
-        expect(snapshot.root.ref.id).toBe('root');
+        expect(snapshot.root.ref.id).toMatch(/^@e[1-9][0-9]*$/);
         expect(snapshot.root.role).toBe('document');
         expect(snapshot.root.children?.length ?? 0).toBeGreaterThan(0);
         expect(snapshot.location).toBe(`${app.url}/form`);
@@ -709,24 +706,24 @@ describe('web engine lifecycle', () => {
     it('reports a located ref stale once a second element matches it, and acts on neither', async () => {
       await inAttempt('amb1', async () => {
         await engine.session!.open!(`${app.url}/`, operation('amb1'));
-        const page = surfaceOf(engine)!.page();
-        await page.setContent('<script>window.taps = 0</script><button onclick="taps++">Go</button>');
+        const browser = fixtureOf(engine, 'amb1');
+        await replaceDocument(browser, '<script>window.taps = 0</script><button onclick="taps++">Go</button>');
         const [go] = await engine.locate!(byRole('button'), operation('amb1'));
-        await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<button onclick="taps++">Go</button>'));
+        await browser.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<button onclick="taps++">Go</button>'); return null; });
 
         await expect(engine.perform!(go!.ref, { kind: 'tap' }, operation('amb1'))).rejects.toMatchObject({
           code: 'NODE_STALE',
           retryable: true,
         });
-        expect(await page.evaluate(() => (window as unknown as { taps: number }).taps)).toBe(0);
+        expect(await browser.evaluate(() => (window as unknown as { taps: number }).taps)).toBe(0);
       });
     });
 
     it('reports a drag whose drop target turns ambiguous after the press as possibly committed', async () => {
       await inAttempt('amb2', async () => {
         await engine.session!.open!(`${app.url}/`, operation('amb2'));
-        const page = surfaceOf(engine)!.page();
-        await page.setContent(`
+        const browser = fixtureOf(engine, 'amb2');
+        await replaceDocument(browser, `
           <script>window.downs = 0</script>
           <button onmousedown="downs++; document.body.insertAdjacentHTML('beforeend', '<div role=region>Drop</div>')">Card</button>
           <div role="region">Drop</div>`);
@@ -736,42 +733,46 @@ describe('web engine lifecycle', () => {
         await expect(
           engine.perform!(card!.ref, { kind: 'dragTo', target: zone!.ref }, operation('amb2')),
         ).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
-        expect(await page.evaluate(() => (window as unknown as { downs: number }).downs)).toBe(1);
+        expect(await browser.evaluate(() => (window as unknown as { downs: number }).downs)).toBe(1);
       });
     });
 
-    it('mints one root id that survives navigation, and swipes the viewport when it is the target', async () => {
+    it('mints native document ids and keeps a separate viewport ref across navigation for swipes', async () => {
       await inAttempt('r1', async () => {
         await engine.session!.open!(`${app.url}/form`, operation('r1'));
         const first = await engine.observe!(operation('r1'));
-        expect(first.root.ref.id).toBe('root');
+        expect(first.root.ref.id).toMatch(/^@e[1-9][0-9]*$/);
+        expect(first.viewportRef?.id).toMatch(/^@e[1-9][0-9]*$/);
+        expect(first.viewportRef?.id).not.toBe(first.root.ref.id);
         expect(first.root.name).toBe('Fixture Form');
-        // The element ids under the root are stamped in the page; the root's is the engine's.
-        expect([...walk(first.root)].slice(1).every((node) => /^n\d+$/.test(node.ref.id))).toBe(true);
+        // Document and element ids come from the same native identity registry.
+        expect([...walk(first.root)].every((node) => /^@e[1-9][0-9]*$/.test(node.ref.id))).toBe(true);
 
-        // A new document stamps new numbers; the root keeps its id.
+        // A new document gets new ids while the viewport target survives navigation.
         await engine.session!.open!(`${app.url}/`, operation('r1'));
         const second = await engine.observe!(operation('r1'));
-        expect(second.root.ref.id).toBe('root');
+        expect(second.root.ref.id).toMatch(/^@e[1-9][0-9]*$/);
+        expect(second.root.ref.id).not.toBe(first.root.ref.id);
+        expect(second.viewportRef).toEqual(first.viewportRef);
         expect(second.root.name).toBe('Fixture Home');
         expect(second.location).toBe(`${app.url}/`);
 
-        // The viewport swipe arrives as a swipe on the root, addressed from an earlier observation.
-        const page = surfaceOf(engine)!.page();
-        await page.setContent('<div style="height: 5000px">tall</div>');
-        await engine.perform!(first.root.ref, { kind: 'swipe', direction: 'down' }, operation('r1'));
-        await page.waitForFunction(() => window.scrollY > 0);
-        expect(await page.evaluate(() => window.scrollY)).toBe(360);
-        await engine.perform!(first.root.ref, { kind: 'swipe', direction: 'up', momentum: 'fast' }, operation('r1'));
-        await page.waitForFunction(() => window.scrollY === 0);
+        // The viewport swipe uses its own ref from the earlier observation, never the document ref.
+        const browser = fixtureOf(engine, 'r1');
+        await replaceDocument(browser, '<div style="height: 5000px">tall</div>');
+        await engine.perform!(first.viewportRef!, { kind: 'swipe', direction: 'down' }, operation('r1'));
+        await expect.poll(() => browser.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+        expect(await browser.evaluate(() => window.scrollY)).toBe(360);
+        await engine.perform!(first.viewportRef!, { kind: 'swipe', direction: 'up', momentum: 'fast' }, operation('r1'));
+        await expect.poll(() => browser.evaluate(() => window.scrollY)).toBe(0);
       });
     });
 
     it('refuses to swipe a node with no box even when its child is under aim', async () => {
       await inAttempt('dc2', async () => {
         await engine.session!.open!(`${app.url}/`, operation('dc2'));
-        const page = surfaceOf(engine)!.page();
-        await page.setContent(`
+        const browser = fixtureOf(engine, 'dc2');
+        await replaceDocument(browser, `
           <body style="margin: 0"><ul aria-label="Feed" style="display: contents"><li style="display: block; height: 400px">Item</li></ul></body>`);
         const [feed] = await engine.locate!(byRole('list'), operation('dc2'));
         await expect(
@@ -823,11 +824,14 @@ describe('web engine lifecycle', () => {
       try {
         await inAttempt('fm1', async () => {
           await engine.session!.open!(`${app.url}/`, operation('fm1'));
-          const page = surfaceOf(engine)!.page();
-          await page.setContent(
+          const browser = fixtureOf(engine, 'fm1');
+          await replaceDocument(browser,
             `<body style="margin:0"><iframe srcdoc='${frame}' style="position:absolute;left:0;top:0;width:400px;height:200px;border:0"></iframe></body>`,
           );
-          await page.frameLocator('iframe').locator('input[type=password]').waitFor();
+          await expect.poll(() => browser.evaluate(() =>
+            document.querySelector('iframe')?.contentDocument?.querySelector('input[type=password]') != null
+            && document.querySelector('iframe')?.contentDocument?.readyState === 'complete',
+          )).toBe(true);
 
           const relative = await engine.artifacts!.screenshot('framed', operation('fm1'));
           const shot = decodePng(new Uint8Array(readFileSync(path.join(shotDir, relative))));
@@ -901,7 +905,7 @@ describe('web engine lifecycle', () => {
     }
   });
 
-  it('cancels an in-flight operation when its signal aborts instead of waiting out Playwright', async () => {
+  it('cancels an in-flight native operation when its signal aborts', async () => {
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 'h1', async () => {
       const controller = new AbortController();
@@ -923,7 +927,8 @@ describe('web engine lifecycle', () => {
       await engine.session!.open!(`${app.url}/state?set=abc`, operation('s1'));
       expect(await token()).toBe('abc');
       const state = await engine.state!.capture(operation('s1'));
-      expect(state.format).toBe('playwright-storage-state');
+      expect(state.format).toBe('agent-browser-storage-state');
+      expect(state.version).toBe(1);
 
       await engine.session!.reset!(operation('s1'));
       await engine.session!.open!(`${app.url}/state`, operation('s1'));
@@ -935,7 +940,7 @@ describe('web engine lifecycle', () => {
 
       // A restart keeps the persisted state and shows nothing until the harness reopens the app.
       await engine.session!.restart!(operation('s1'));
-      expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+      expect(await fixtureOf(engine, 's1').url()).toBe('about:blank');
       expect((await engine.observe!(operation('s1'))).location).toBe('about:blank');
       await engine.session!.open!(`${app.url}/state`, operation('s1'));
       expect(await token()).toBe('abc');
@@ -948,21 +953,30 @@ describe('web engine lifecycle', () => {
 
   it('follows the window under viewport: null, reports the measured size, and swipes by it', async () => {
     const engine = web({ viewport: null });
-    await withAttempt(engine, app, artifactsDir, 'w1', async () => {
-      await engine.session!.open!(`${app.url}/form`, operation('w1'));
-      const page = surfaceOf(engine)!.page();
-      expect(page.viewportSize()).toBeNull();
-      const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-      expect(measured.width).toBeGreaterThan(0);
-      const snapshot = await engine.observe!(operation('w1'), { pixels: true });
-      expect(snapshot.viewport).toEqual(measured);
-      expect(snapshot.pixels).toBeDefined();
-
-      await page.setContent('<div style="height: 5000px">tall</div>');
-      await engine.perform!(snapshot.root.ref, { kind: 'swipe', direction: 'down' }, operation('w1'));
-      await page.waitForFunction(() => window.scrollY > 0);
-      expect(await page.evaluate(() => window.scrollY)).toBe(Math.round(measured.height / 2));
+    const openedViewport: unknown[] = [];
+    const command = EngineChannel.prototype.command;
+    const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context) {
+      if (name === 'scope.open') openedViewport.push('viewport' in args ? args.viewport : undefined);
+      return command.call(this, name, args, context);
     });
+    try {
+      await withAttempt(engine, app, artifactsDir, 'w1', async () => {
+        await engine.session!.open!(`${app.url}/form`, operation('w1'));
+        const browser = fixtureOf(engine, 'w1');
+        expect(openedViewport).toEqual([null]);
+        const measured = await browser.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+        expect(measured.width).toBeGreaterThan(0);
+        const snapshot = await engine.observe!(operation('w1'), { pixels: true });
+        expect(snapshot.viewport).toEqual(measured);
+        expect(snapshot.pixels).toBeDefined();
+
+        await replaceDocument(browser, '<div style="height: 5000px">tall</div>');
+        expect(snapshot.viewportRef).toBeDefined();
+        await engine.perform!(snapshot.viewportRef!, { kind: 'swipe', direction: 'down' }, operation('w1'));
+        await expect.poll(() => browser.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+        expect(await browser.evaluate(() => window.scrollY)).toBe(Math.round(measured.height / 2));
+      });
+    } finally { spy.mockRestore(); }
   });
 
   it('reports the configured test-id attribute as testId, on observed and located nodes alike', async () => {
@@ -973,7 +987,7 @@ describe('web engine lifecycle', () => {
     });
     await withAttempt(engine, app, artifactsDir, 'tid1', async () => {
       await engine.session!.open!(`${app.url}/`, operation('tid1'));
-      await surfaceOf(engine)!.page().setContent(
+      await replaceDocument(fixtureOf(engine, 'tid1'),
         '<button data-qa="go">Go</button><button data-testid="stop">Stop</button>',
       );
       const observed = [...walk((await engine.observe!(operation('tid1'))).root)];
@@ -994,49 +1008,38 @@ describe('web engine lifecycle', () => {
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
     const nodesOf = (snapshot: { root: SemanticNode }) => [...walk(snapshot.root)];
-    const paint = watchPaint();
-    const restores: (() => void)[] = [];
     try {
       await withAttempt(engine, app, videoDir, 'v1', async () => {
         await engine.session!.open!(`${app.url}/form`, operation('v1'));
-        const context = surfaceOf(engine)!.context();
-        paint.watchContext(context);
-        const browser = context.browser()!;
-        const newContext = browser.newContext.bind(browser);
-        const contextSpy = vi.spyOn(browser, 'newContext').mockImplementation(async (options) => {
-          const next = await newContext(options);
-          paint.watchContext(next);
-          return next;
-        });
-        restores.push(() => contextSpy.mockRestore());
+        const browser = fixtureOf(engine, 'v1');
         await engine.artifacts!.startVideo!(operation('v1'));
-        const page = surfaceOf(engine)!.page();
-        const viewport = page.viewportSize()!;
+        const initialDocument = (await engine.observe!(operation('v1'))).root.ref;
+        const viewport = await browser.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         // Observations, actions, and captures run as they would without a recording.
         const observed = nodesOf(await engine.observe!(operation('v1'), { pixels: true }));
         const textbox = observed.find((node) => node.role === 'textbox' && node.name === 'First');
         await engine.perform!(textbox!.ref, { kind: 'fill', value: 'recorded', sensitive: false }, operation('v1'));
         await engine.artifacts!.screenshot('shot', operation('v1'));
-        await paint.settle(surfaceOf(engine)!.page());
+        await paintSegment(browser);
         // A restart closes the page and opens another, blank until the harness
         // reopens the app: the recording continues in a second segment.
         await engine.session!.restart!(operation('v1'));
-        expect(surfaceOf(engine)!.page()).not.toBe(page);
-        expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+        expect((await engine.observe!(operation('v1'))).root.ref.id).not.toBe(initialDocument.id);
+        expect(await fixtureOf(engine, 'v1').url()).toBe('about:blank');
         await engine.session!.open!(`${app.url}/form`, operation('v1'));
-        await paint.settle(surfaceOf(engine)!.page());
+        await paintSegment(browser);
         // A state reset recreates the context; the recording continues in a third.
         await engine.session!.reset!(operation('v1'));
-        expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+        expect(await fixtureOf(engine, 'v1').url()).toBe('about:blank');
         await engine.session!.open!(`${app.url}/`, operation('v1'));
-        await paint.settle(surfaceOf(engine)!.page());
+        await paintSegment(browser);
         const segments = videoFiles(await engine.artifacts!.stopVideo!(operation('v1')));
         expect(segments.map((segment) => segment.path)).toEqual([
           'video/video.webm',
           'video/video-part2.webm',
           'video/video-part3.webm',
         ]);
-        const viewer = surfaceOf(engine)!.page();
+        const viewer = fixtureOf(engine, 'v1');
         for (const segment of segments) {
           const absolute = path.join(videoDir, segment.path);
           expect(existsSync(absolute), segment.path).toBe(true);
@@ -1054,8 +1057,6 @@ describe('web engine lifecycle', () => {
         }
       });
     } finally {
-      for (const restore of restores) restore();
-      paint.restore();
       rmSync(videoDir, { recursive: true, force: true });
     }
   });
@@ -1063,19 +1064,17 @@ describe('web engine lifecycle', () => {
   it('records a video started mid-attempt at the viewport size, each time it starts', async () => {
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
-    const paint = watchPaint();
     try {
       await withAttempt(engine, app, videoDir, 'v3', async () => {
         // A host that records on demand, after the page is open.
         await engine.session!.open!(`${app.url}/`, operation('v3'));
-        paint.watchContext(surfaceOf(engine)!.context());
-        const viewer = surfaceOf(engine)!.page();
-        const viewport = viewer.viewportSize()!;
+        const viewer = fixtureOf(engine, 'v3');
+        const viewport = await viewer.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         const segments: VideoFile[] = [];
         for (const url of [`${app.url}/form`, `${app.url}/`]) {
           await engine.artifacts!.startVideo!(operation('v3'));
           await engine.session!.open!(url, operation('v3'));
-          await paint.settle(viewer);
+          await paintSegment(viewer);
           segments.push(...videoFiles(await engine.artifacts!.stopVideo!(operation('v3'))));
         }
         expect(segments.map((segment) => segment.path)).toEqual(['video/video.webm', 'video/video-part2.webm']);
@@ -1087,7 +1086,6 @@ describe('web engine lifecycle', () => {
         }
       });
     } finally {
-      paint.restore();
       rmSync(videoDir, { recursive: true, force: true });
     }
   });
@@ -1098,15 +1096,19 @@ describe('web engine lifecycle', () => {
     try {
       await withAttempt(engine, app, videoDir, 'v4', async () => {
         await engine.session!.open!(`${app.url}/`, operation('v4'));
-        const page = surfaceOf(engine)!.page();
-        const spy = vi.spyOn(page.screencast, 'start').mockRejectedValueOnce(new Error('screencast unavailable'));
+        const browser = fixtureOf(engine, 'v4');
+        const command = EngineChannel.prototype.command;
+        const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context) {
+          if (name === 'recording.start') return Promise.reject(new Error('screencast unavailable'));
+          return command.call(this, name, args, context);
+        });
         try {
           await expect(engine.artifacts!.startVideo!(operation('v4'))).rejects.toThrow('screencast unavailable');
         } finally {
           spy.mockRestore();
         }
         await engine.session!.open!(`${app.url}/form`, operation('v4'));
-        expect(surfaceOf(engine)!.page().url()).toBe(`${app.url}/form`);
+        expect(await browser.url()).toBe(`${app.url}/form`);
       });
     } finally {
       rmSync(videoDir, { recursive: true, force: true });
@@ -1120,7 +1122,7 @@ describe('web engine lifecycle', () => {
       await withAttempt(engine, app, videoDir, 'v2', async () => {
         await engine.artifacts!.startVideo!(operation('v2'));
         // The page exists before any navigation: the recording owns its screencast.
-        expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+        expect(await fixtureOf(engine, 'v2').url()).toBe('about:blank');
         await engine.session!.open!(`${app.url}/`, operation('v2'));
         const segments = videoFiles(await engine.artifacts!.stopVideo!(operation('v2')));
         expect(segments.map((segment) => segment.path)).toEqual(['video/video.webm']);

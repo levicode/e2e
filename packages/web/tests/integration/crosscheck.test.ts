@@ -7,9 +7,9 @@
  */
 
 import path from 'node:path';
-import { chromium, type Browser, type Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CLOSED_SHADOW_ROOTS_INIT_SCRIPT } from '../../src/closed-shadow.ts';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeOracle, type NativeOracle } from '../helpers/native-oracle.ts';
 import { crossCheck } from '../crosscheck/crosscheck.ts';
 import { diffExpectations, keyOf, readExpectations, TODO_REASON, writeExpectations } from '../crosscheck/expectations.ts';
 import { FIXTURE_PAGES } from '../crosscheck/fixtures.ts';
@@ -23,46 +23,37 @@ const HEADER = [
 const BENCHMARK = process.env['CROSSCHECK_BENCHMARK_URL'];
 const UPDATE = process.env['E2E_CROSSCHECK_UPDATE'] === '1';
 
-let browser: Browser;
-let page: Page;
+let fixture: NativeOracle | undefined;
 const seen = new Set<string>();
 const pages = new Set<string>();
 
-beforeAll(async () => {
-  browser = await chromium.launch();
-  const context = await browser.newContext();
-  await context.addInitScript(CLOSED_SHADOW_ROOTS_INIT_SCRIPT);
-  page = await context.newPage();
-});
-
-afterAll(async () => {
-  await browser?.close();
-});
+beforeAll(async () => { fixture = await startNativeOracle('crosscheck'); });
+afterAll(async () => { await fixture?.close(); });
 
 /** Checks the page as loaded and records its disagreements under `name`. */
 async function check(name: string): Promise<void> {
-  const result = await crossCheck(page);
+  const result = await crossCheck(fixture!);
   expect(result.compared, `${name} compared no node`).toBeGreaterThan(0);
   pages.add(name);
   for (const disagreement of result.disagreements) seen.add(keyOf(name, disagreement));
 }
 
 describe('cross-check', () => {
-  for (const fixture of FIXTURE_PAGES) {
-    it(`fixture: ${fixture.name}`, async () => {
-      await page.setContent(`<!doctype html><html lang="en"><body>${fixture.html}</body></html>`);
-      await check(`fixture: ${fixture.name}`);
+  for (const fixturePage of FIXTURE_PAGES) {
+    it(`fixture: ${fixturePage.name}`, async () => {
+      await nativeDocument(fixture!.browser, `<!doctype html><html lang="en"><body>${fixturePage.html}</body></html>`);
+      await check(`fixture: ${fixturePage.name}`);
     });
   }
 
   describe.skipIf(BENCHMARK === undefined)('web-benchmark scenarios', () => {
     it('every scenario', { timeout: 600_000 }, async () => {
-      await page.goto(BENCHMARK!);
-      const slugs = await page.locator('a[href^="/e/"]').evaluateAll((links) =>
-        [...new Set(links.map((link) => new URL((link as HTMLAnchorElement).href).pathname.slice('/e/'.length)))]);
+      await fixture!.browser.goto(BENCHMARK!);
+      const slugs = await fixture!.browser.evaluate(() =>
+        [...new Set([...document.querySelectorAll<HTMLAnchorElement>('a[href^="/e/"]')].map(link => new URL(link.href).pathname.slice('/e/'.length)))]);
       expect(slugs.length).toBeGreaterThan(0);
       for (const slug of slugs.toSorted()) {
-        await page.goto(new URL(`/e/${slug}`, BENCHMARK).href, { waitUntil: 'networkidle' });
+        await fixture!.browser.goto(new URL(`/e/${slug}`, BENCHMARK).href, { waitUntil: 'networkidle' });
         await check(`benchmark: ${slug}`);
       }
     });
