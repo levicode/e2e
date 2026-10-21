@@ -43,6 +43,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter e2e run build
           pnpm exec tsc --project scripts/acceptance/tsconfig.native-client.json
+          node --input-type=module -e "const m = await import('./packages/web/.artifacts/native-client/native/process.js'); if (typeof m.connectNativeProcess !== 'function') throw new Error('Missing production native process entry')"
       - name: Official stable Rust toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - name: Check format before native compilation
@@ -113,7 +114,7 @@ jobs:
           set -euo pipefail
           E2E_CHROMIUM_EXECUTABLE="$(node scripts/acceptance/installed-chromium.ts "$RUNNER_TEMP/native-home/.agent-browser/browsers" native-evidence/chromium-executable.json)"
           export E2E_CHROMIUM_EXECUTABLE
-          export NATIVE_PROCESS_MODULE="$GITHUB_WORKSPACE/.artifacts/native-client/native/process.js"
+          export NATIVE_PROCESS_MODULE="$GITHUB_WORKSPACE/packages/web/.artifacts/native-client/native/process.js"
           node --input-type=module -e "import { FOUNDATION_CAPABILITIES } from './scripts/acceptance/manifest.ts'; process.stdout.write(JSON.stringify(FOUNDATION_CAPABILITIES))" > native-evidence/required-capabilities.json
           node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-target/ci/agent-browser" native-evidence/required-capabilities.json native-evidence/negotiation.json
       # Independent diagnostics still run after a unit failure, but no failed

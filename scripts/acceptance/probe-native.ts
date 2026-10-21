@@ -22,6 +22,7 @@ if (!binaryArg || !capabilitiesFile || !outputArg) throw new Error('usage: probe
 const output = resolve(outputArg);
 mkdirSync(dirname(output), { recursive: true });
 let status: 'blocked' | 'passed' | 'failed' = 'blocked';
+let stage = 'preflight';
 let problem: string | undefined;
 let negotiation: ReturnType<ProbeClient['negotiation']> | undefined;
 let binarySha256: string | undefined;
@@ -42,8 +43,10 @@ try {
   if (!Array.isArray(capabilities) || capabilities.length === 0 || capabilities.length > 64 || capabilities.some((item) => typeof item !== 'string' || !item)) throw new Error('Full browser acceptance requires a nonempty reviewed capability set');
   const binary = resolve(binaryArg);
   binarySha256 = sha256(readFileSync(binary));
+  stage = 'production-module-import';
   const module = await import(pathToFileURL(resolve(process.env['NATIVE_PROCESS_MODULE'] ?? resolve(REPO_ROOT, 'packages/web/dist/native/process.js'))).href) as ProcessModule;
   status = 'failed';
+  stage = 'native-negotiation';
   client = await module.connectNativeProcess({ executable: binary, cwd: home, env, capabilities }, { signal: AbortSignal.timeout(30_000), timeoutMs: 30_000 }, () => { throw new Error('Unexpected event during capability-only probe'); });
   negotiation = client.negotiation();
   const request = async (command: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
@@ -54,19 +57,23 @@ try {
   const chrome = process.env['E2E_CHROMIUM_EXECUTABLE'];
   if (!chrome) throw new Error('Scope exercise requires the explicitly installed Chromium executable');
   chromium = { sha256: sha256(readFileSync(resolve(chrome))), version: execFileSync(resolve(chrome), ['--version'], { encoding: 'utf8' }).trim() };
+  stage = 'scope-open';
   const opened = await request('scope.open', { source: 'launch', executablePath: resolve(chrome), headless: true });
   if (typeof opened['identityScope'] !== 'string' || !opened['identityScope']) throw new Error('Scope open returned no identity');
+  stage = 'page-roundtrip';
   const token = randomUUID();
-  await request('page.evaluate', { source: '(token) => { document.title = "Native foundation"; document.body.dataset.probe = token; return true; }', argument: token });
-  const readback = await request('page.evaluate', { source: '() => document.body.dataset.probe', argument: null });
-  const title = await request('page.title', {});
+  await request('page.evaluate', { identityScope: opened['identityScope'], source: '(token) => { document.title = "Native foundation"; document.body.dataset.probe = token; return true; }', argument: token });
+  const readback = await request('page.evaluate', { identityScope: opened['identityScope'], source: '() => document.body.dataset.probe', argument: null });
+  const title = await request('page.title', { identityScope: opened['identityScope'] });
   if (readback['value'] !== token || title['title'] !== 'Native foundation') throw new Error('Independent native page readback disagreed');
   scopeExercisePassed = true;
+  stage = 'scope-and-process-cleanup';
   await client.close({ signal: AbortSignal.timeout(10_000), timeoutMs: 10_000 });
   if (existsSync(sockets) && readdirSync(sockets).some((name) => /\.(sock|pid|port)$/.test(name))) throw new Error('Owned daemon transport cleanup was not confirmed');
   cleanupConfirmed = true;
   if (sha256(readFileSync(binary)) !== binarySha256) throw new Error('Native executable changed during negotiation');
   status = 'passed';
+  stage = 'complete';
 } catch (error) {
   problem = error instanceof Error ? error.message : String(error);
 } finally {
@@ -74,6 +81,7 @@ try {
     try { await client.close({ signal: AbortSignal.timeout(10_000), timeoutMs: 10_000 }); }
     catch { status = 'failed'; problem ??= 'Native scope cleanup was not confirmed'; }
   }
-  writeFileSync(output, JSON.stringify({ schemaVersion: 1, kind: 'native-runtime-negotiation', status, binarySha256, negotiation, scopeExercisePassed, chromium, cleanupConfirmed, problem, releaseEligible: false, note: 'Owned scope open/evaluate/readback and acknowledged scope/proxy closure only; not browser behavior, installed consumer, or real-model proof.' }, null, 2));
+  writeFileSync(output, JSON.stringify({ schemaVersion: 1, kind: 'native-runtime-negotiation', status, stage, binarySha256, negotiation, scopeExercisePassed, chromium, cleanupConfirmed, problem, releaseEligible: false, note: 'Owned scope open/evaluate/readback and acknowledged scope/proxy closure only; not browser behavior, installed consumer, or real-model proof.' }, null, 2));
 }
+if (status !== 'passed') console.error(`Native process proof ${status} at ${stage}; see the negotiation artifact for details`);
 process.exitCode = status === 'passed' ? 0 : status === 'blocked' ? 2 : 1;

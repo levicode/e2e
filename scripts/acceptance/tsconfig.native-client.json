@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "../../packages/web/src",
-    "outDir": "../../.artifacts/native-client",
+    "outDir": "../../packages/web/.artifacts/native-client",
     "noEmit": false,
     "declaration": false
   },
