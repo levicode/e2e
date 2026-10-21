@@ -311,9 +311,10 @@ test('HTML OBJECT screenshot proof rejects transforms and mutations without retu
 });
 
 test('HTML OBJECT without a browsing context is safe only under a proven display:none subtree', { timeout: 120_000 }, async () => {
-  const server = createServer((_request, response) => {
+  const server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html');
-    response.end('<!doctype html><style>html,body{margin:0;background:white}#hidden{display:none}object{display:block;opacity:0;pointer-events:none;width:200px;height:80px}input{position:absolute;left:20px;top:20px;width:100px;height:30px}</style><input type="password" value="generic-fixture-secret"><section id="hidden"><object id="dormant" type="text/html" data="about:blank"><input value="fallback-secret"></object></section>');
+    if (request.url === '/child') { response.end('<!doctype html><style>html,body{margin:0}input{position:absolute;left:20px;top:20px;width:100px;height:30px}</style><input type="password" value="generic-child-secret">'); return; }
+    response.end('<!doctype html><style>html,body{margin:0;background:white}#hidden{display:none}object{display:block;opacity:0;pointer-events:none;width:200px;height:80px}input{position:absolute;left:20px;top:20px;width:100px;height:30px}</style><input type="password" value="generic-fixture-secret"><section id="hidden"><object id="dormant" type="text/html" data="about:blank"><input value="fallback-secret"></object></section><object id="live" type="text/html" data="/child" style="position:absolute;left:300px;top:20px;width:240px;height:160px;opacity:1;border:0;padding:0"></object><object id="fractional" type="text/html" data="about:blank" style="position:absolute;left:600px;top:20px;width:120px;height:76.625px;border:0;padding:0"></object>');
   });
   const origin = await listen(server); let browser: OwnedBrowser | undefined; let connection: CdpConnection | undefined;
   try {
@@ -322,20 +323,22 @@ test('HTML OBJECT without a browsing context is safe only under a proven display
     const target = (await cdp.listTargets(operation())).find(item => item.type === 'page')!.targetId;
     await navigate(cdp, target, origin);
     assert.equal(await evaluate(cdp, target, 'document.querySelector("#dormant").contentDocument === null'), true, 'The fixture must exercise an uninstantiated object');
+    assert.deepEqual(await evaluate(cdp, target, '(()=>{const o=document.querySelector("#fractional");return [o.getBoundingClientRect().height,o.contentDocument.defaultView.innerHeight]})()'), [76.625, 77]);
     const captured = await captureMaskedPixels(cdp, target, operation());
     assert.equal(captured.maskingProven, true);
     assert.deepEqual(pixelAt(captured.pixels.data, Math.floor(50 * captured.pixels.scale), Math.floor(30 * captured.pixels.scale)), [0, 0, 0]);
+    assert.deepEqual(pixelAt(captured.pixels.data, Math.floor(350 * captured.pixels.scale), Math.floor(50 * captured.pixels.scale)), [0, 0, 0], 'A live HTML child remains inspected beside a dormant owner');
     assert.deepEqual(pixelAt(captured.pixels.data, captured.pixels.width - 10, 10), [255, 255, 255]);
     assert.equal(await evaluate(cdp, target, 'document.querySelectorAll("[popover]").length'), 0);
     const send = cdp.send.bind(cdp);
-    for (const transition of ['reveal', 'replace', 'remove'] as const) {
+    for (const transition of ['reveal', 'replace', 'remove', 'resize'] as const) {
       await navigate(cdp, target, origin + '/' + transition);
       let changed = false;
       cdp.send = async <T>(method: string, params: Record<string, unknown>, context: OperationContext, session?: string): Promise<T> => {
         const result = await send<T>(method, params, context, session);
         if (method === 'Page.captureScreenshot' && !changed) {
           changed = true;
-          await send('Runtime.evaluate', { expression: transition === 'reveal' ? 'document.querySelector("#hidden").style.display="block"' : transition === 'remove' ? 'document.querySelector("#dormant").remove()' : 'document.querySelector("#dormant").replaceWith(document.querySelector("#dormant").cloneNode(true))' }, operation(), session);
+          await send('Runtime.evaluate', { expression: transition === 'resize' ? 'document.querySelector("#fractional").style.height="76.75px"' : transition === 'reveal' ? 'document.querySelector("#hidden").style.display="block"' : transition === 'remove' ? 'document.querySelector("#dormant").remove()' : 'document.querySelector("#dormant").replaceWith(document.querySelector("#dormant").cloneNode(true))' }, operation(), session);
         }
         return result;
       };

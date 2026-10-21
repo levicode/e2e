@@ -44,6 +44,16 @@ function runtime(overrides: Partial<E2EConfig>, agentContext?: string) {
 const conclude = [{ toolName: 'complete_step', input: { status: 'passed', summary: 'done' } }];
 
 describe('the built-in agent from its agents entry', () => {
+  it('sends persistence and evidence-based missing-data rules to the model', async () => {
+    const model = installFakeLoopModel(() => conclude);
+    const fixtures = runtime({ agents: { default: { model } } });
+    await fixtures.agent.act('update the selected item and verify it was saved');
+    const system = loopCalls[0]!.system;
+    expect(system).toContain('Distinguish staged selections from persisted results.');
+    expect(system).toContain('An empty filtered choice list does not prove SEED_DATA_MISSING');
+    expect(system).toContain('not merely because time or tool attempts ran out');
+  });
+
   it('puts system and context in the act prompt', async () => {
     const model = installFakeLoopModel(() => conclude);
     const fixtures = runtime({ agents: { default: { model, system: 'Be careful.', context: 'Plans are called tiers.' } } });

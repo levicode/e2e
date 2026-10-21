@@ -449,6 +449,7 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
     }));
     const collectGeometry = async (): Promise<{ frames: [string, MaskGeometry][]; offsets: [string, MaskRectangle][]; rectangles: MaskRectangle[] }> => {
       const frames = new Map<string, MaskGeometry>(); const offsets = new Map<string, MaskRectangle>();
+      const roundedOwners = new Set<string>();
       for (const item of installed) {
         const geometry = await evaluate<MaskGeometry>(cdp, item.session, item.contextId, `(${MASK_GEOMETRY})(${JSON.stringify(key)})`, current());
         if (!geometry || !Number.isFinite(geometry.width) || !Number.isFinite(geometry.height) || geometry.width <= 0 || geometry.height <= 0 || !Array.isArray(geometry.rectangles) || !geometry.rectangles.every(validRectangle)) throw denied();
@@ -469,10 +470,25 @@ export async function captureMaskedPixels(cdp: CdpConnection, targetId: string, 
           throw denied();
         }
         if (!validRectangle(rectangle)) throw denied();
-        if (rectangle.width !== child.width || rectangle.height !== child.height) throw new OwnerProofFailure('owner-viewport-mismatch');
+        // Chromium pre-snaps embedded content size independently of its origin.
+        // Keep raw geometry for stability checks; do not invent a scaled projection.
+        if (Math.round(rectangle.width) !== child.width || Math.round(rectangle.height) !== child.height) throw new OwnerProofFailure('owner-viewport-mismatch');
+        if (rectangle.width !== child.width || rectangle.height !== child.height) roundedOwners.add(frameId);
         offsets.set(frameId, rectangle);
       }
       const mainFrame = sessions[0]!.documents[0]!; const rectangles: MaskRectangle[] = [];
+      // Prove the whole sensitive subtree before any clipping can discard a
+      // rectangle. Fractional auxiliary frames are accepted only when no
+      // descendant has a source-sensitive rectangle requiring projection.
+      for (const [frameId, geometry] of frames) if (geometry.rectangles.length > 0) {
+        let frame = frameId; const visited = new Set<string>();
+        while (frame !== mainFrame) {
+          if (visited.has(frame)) throw denied(); visited.add(frame);
+          if (roundedOwners.has(frame)) throw new OwnerProofFailure('owner-viewport-mismatch');
+          const owner = ownership.get(frame); if (!owner) throw denied();
+          frame = owner.parentFrameId;
+        }
+      }
       for (const [frameId, geometry] of frames) for (const rectangle of geometry.rectangles) {
         let visible = clipRectangle(rectangle, geometry.width, geometry.height); let frame = frameId; const visited = new Set<string>();
         while (visible && frame !== mainFrame) {
