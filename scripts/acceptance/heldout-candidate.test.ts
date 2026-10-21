@@ -41,7 +41,7 @@ test('held-out bridge binds real production modules but rejects a synthetic foun
     const options = { bundle, expectedManifestHash: member('manifest.json', manifest).sha256, installedCoreEntry: pathToFileURL(join(root, 'e2e/dist/runner.js')).href, installedWebEntry: pathToFileURL(join(root, 'web/dist/index.js')).href, nativeExecutable: join(bundle, native.path) };
     await assert.rejects(verifyHeldoutCandidate({ ...options, expectedManifestHash: '0'.repeat(64) }), /digest mismatch/);
     assert.equal(existsSync(launched), false);
-    await assert.rejects(verifyHeldoutCandidate(options), error => error instanceof Error && 'code' in error && error.code === 'ENGINE_FAILURE');
+    await assert.rejects(verifyHeldoutCandidate(options), error => error instanceof Error && 'code' in error && error.code === 'UNSUPPORTED_CAPABILITY');
     assert.equal(readFileSync(launched, 'utf8'), 'synthetic');
     writeFileSync(instrumented, 'test-only');
     await assert.rejects(verifyHeldoutCandidate(options), /instrumentation is forbidden/);

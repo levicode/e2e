@@ -107,7 +107,7 @@ describe('operations on a hung page', () => {
       targetName: 'web',
       projectRoot: process.cwd(),
       app: { site: '127.0.0.1' },
-      env: {},
+      env: process.env,
       headed: false,
       workerSlot: 0,
       log: () => undefined,

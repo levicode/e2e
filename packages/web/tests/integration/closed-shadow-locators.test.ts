@@ -72,7 +72,7 @@ async function boot(engine: EngineHandle, app: FixtureApp): Promise<void> {
     targetName: 'web',
     projectRoot: process.cwd(),
     app: { site: new URL(app.url).hostname },
-    env: {},
+    env: process.env,
     headed: false,
     workerSlot: 0,
     log: () => undefined,

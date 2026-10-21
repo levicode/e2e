@@ -15,6 +15,52 @@ function nodes(node: SemanticNode): SemanticNode[] {
 }
 
 describe('masked fallback after a stalled semantic reader', () => {
+  // These are public contracts, not equivalents of Playwright's individual handle stages.
+  // The dedicated native fault binary stalls the actual protected reader; no Page is mocked.
+  it.each(['deadline', 'cancellation'] as const)('does not synthesize fallback for a tree-only %s and permits a fresh read', async (failureKind) => {
+    const faults = semanticFaultControl();
+    const engine = web({});
+    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-semantic-tree-only-'));
+    const signal = new AbortController().signal;
+    const operation = { signal, timeoutMs: 5_000, runId: 'tree-only', attemptId: 'attempt', origin: 'agent' as const };
+    const cleanup = { signal, timeoutMs: 30_000 };
+    try {
+      await engine.init!({ runId: 'tree-only', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+      await engine.startAttempt!({ attemptId: 'attempt', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+      await engine.session!.open!('about:blank', operation);
+      const browser = nativeBrowser(engine, () => operation);
+      await nativeDocument(browser, '<button>Still available</button>');
+      const before = await engine.observe!(operation);
+      const fault = await faults.holdNext('semantic-acquire', before.identityScope);
+      const controller = new AbortController();
+      try {
+        const pending = engine.observe!({ ...operation, signal: controller.signal, timeoutMs: failureKind === 'deadline' ? 2_000 : 5_000 });
+        // Attach the assertion immediately so a native deadline cannot become an unhandled rejection.
+        const rejected = expect(pending).rejects.toMatchObject({ code: failureKind === 'deadline' ? 'OPERATION_TIMEOUT' : 'CANCELLED' });
+        void rejected.catch(() => undefined); // Keep a failed reached() check from leaving the assertion unhandled.
+        expect((await fault.reached()).phase).toBe('semantic-acquire');
+        if (failureKind === 'cancellation') controller.abort();
+        await rejected;
+      } finally {
+        await fault.release();
+      }
+      // A failed read must neither publish a pixels-only success nor poison a subsequent read.
+      const fresh = await engine.observe!(operation);
+      expect(fresh.treeUnavailable).toBeUndefined();
+      expect(fresh.pixels).toBeUndefined();
+      expect(fresh.identityScope).toBe(before.identityScope);
+      expect(nodes(fresh.root).some(node => node.role === 'button' && node.name === 'Still available')).toBe(true);
+    } finally {
+      try {
+        try { await engine.endAttempt!(cleanup); }
+        finally { await engine.dispose!(cleanup); }
+      } finally {
+        rmSync(artifactsDir, { recursive: true, force: true });
+        faults.restore();
+      }
+    }
+  });
+
   it('reserves capture time and takes fresh masked pixels', async () => {
     const faults = semanticFaultControl();
     const engine = web({});

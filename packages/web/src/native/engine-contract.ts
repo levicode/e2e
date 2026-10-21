@@ -68,7 +68,7 @@ export interface EngineCommandMap {
   'state.capture': { args: Scoped; result: NativeBlob & { readonly format: 'agent-browser-storage-state'; readonly version: 1 } };
   'state.restore': { args: Scoped & { readonly format: 'agent-browser-storage-state' | 'playwright-storage-state'; readonly version: 1; readonly bodyHandle: string }; result: Scoped };
   'recording.start': { args: Scoped & { readonly size?: ViewportSize; readonly quality?: number }; result: null };
-  'recording.stop': { args: Scoped; result: Scoped & { readonly segments: readonly (NativeBlob & { readonly mediaType: 'video/webm'; readonly startedAt: string })[] } };
+  'recording.stop': { args: Scoped; result: Scoped & ({ readonly segments: readonly (NativeBlob & { readonly mediaType: 'video/webm'; readonly startedAt: string })[] } | { readonly missingSegment: number }) };
   'session.environment': { args: Scoped; result: Scoped & { readonly browser: string; readonly userAgent?: string } };
   'scope.restart': { args: Scoped; result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
   'scope.reset': { args: Scoped; result: Scoped };

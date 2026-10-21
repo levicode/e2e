@@ -38,4 +38,17 @@ describe('native engine result boundary', () => {
     for (const value of [null, {}, { activated: false }, { activated: 'true' }, { activated: true, extra: 1 }]) expect(() => decodeEngineResult('page.activate', value)).toThrow();
   });
 
+  it('requires exactly one finalized recording output variant and a positive safe ordinal', () => {
+    expect(decodeEngineResult('recording.stop', { identityScope: 'scope-1', missingSegment: 2 })).toEqual({ identityScope: 'scope-1', missingSegment: 2 });
+    for (const missingSegment of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '2', null]) {
+      expect(() => decodeEngineResult('recording.stop', { identityScope: 'scope-1', missingSegment })).toThrow();
+    }
+    for (const result of [
+      { identityScope: 'scope-1', missingSegment: 1, segments: [] },
+      { identityScope: 'scope-1', missingSegment: 1, rawError: 'private backend text' },
+      { identityScope: 'scope-1', segments: [], extra: true },
+      { identityScope: '', missingSegment: 1 },
+    ]) expect(() => decodeEngineResult('recording.stop', result)).toThrow();
+  });
+
 });

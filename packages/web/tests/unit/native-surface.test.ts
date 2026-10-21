@@ -1,4 +1,5 @@
 /** Real protocol client over an in-memory native peer; no browser success is implied. */
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,8 @@ import { retainUnresolvedProcess } from '../../src/native/process-cleanup.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
+import { web } from '../../src/index.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
 import { HOSTILE_NAMES } from '../helpers/artifact-names.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -25,7 +28,10 @@ function context(attemptId: string, attemptSignal = signal): EngineAttemptContex
 }
 let frames: Record<string, unknown>[];
 let currentScope: string;
+let queryNodes: unknown[] = [];
 let recordingSegments: Record<string, unknown>[] = [];
+let recordingMissing: number | undefined;
+const recordingBytes = Buffer.from('synthetic-finalized-segment');
 let holdScopeEnd = false;
 let holdDecision = false;
 let rejectHeldDecision: (() => void) | undefined;
@@ -37,7 +43,7 @@ let rejectScopeOpen: 'not-dispatched' | 'unknown' | undefined;
 let releaseScopeEnd: (() => void) | undefined;
 let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { token: string; timeoutMs: number }) => Promise<void>;
 beforeEach(() => {
-  holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
+  recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, connectOperation, onEvent) => {
     const output = new PassThrough();
     const send = (message: unknown) => queueMicrotask(() => output.write(JSON.stringify(message) + '\n'));
@@ -57,9 +63,14 @@ beforeEach(() => {
         }
         if (command === 'scope.open') { currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, recoveryIdentity: { browser: 'browser-owner', context: repeatContextIdentity ? 'snapshot-default-context' : `context-${scopes}`, page: `page-${scopes}` } }; }
         else if (command === 'scope.reset' || command === 'scope.restart' || command === 'scope.reconnect') { if (!(command === 'scope.restart' && preserveRestartScope)) currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, ...(command === 'scope.restart' ? { recoveryIdentity: { browser: 'browser-owner', context: 'context-1', page: 'restarted-page' } } : {}) }; }
-        else if (command === 'fixture.query' || command === 'browser.query') data = { identityScope: currentScope, revision: '1', nodes: [] };
+        else if (command === 'fixture.query' || command === 'browser.query') data = { identityScope: currentScope, revision: '1', nodes: queryNodes };
         else if (command === 'blob.release') data = { released: true };
-        else if (command === 'recording.stop') data = { identityScope: currentScope, segments: recordingSegments };
+        else if (command === 'recording.stop') {
+          data = recordingMissing === undefined ? { identityScope: currentScope, segments: recordingSegments } : { identityScope: currentScope, missingSegment: recordingMissing };
+          if (recordingMissing === undefined) recordingSegments = [];
+          recordingMissing = undefined;
+        }
+        else if (command === 'blob.read') data = { base64: recordingBytes.toString('base64'), nextOffset: recordingBytes.length, eof: true };
         else if (command === 'capture.screenshot') data = { identityScope: currentScope, handle: 'synthetic-image', size: 1, sha256: '0'.repeat(64), mediaType: 'image/png', width: 100, height: 80, scale: 1, maskedRegionCount: 0 };
         else if (command === 'session.environment') data = { identityScope: currentScope, browser: 'Synthetic Chromium', userAgent: 'synthetic-agent' };
         else if (command === 'browser.observe') data = { identityScope: currentScope, revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' } };
@@ -104,6 +115,37 @@ describe('native surface ownership and fixed policy binding', () => {
       await expect(surface.dispose(cleanup())).resolves.toBeUndefined();
       expect(release).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it('builds real frame and selector fixtures through core context instead of an incomplete cast', async () => {
+    const engine = web({});
+    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    await engine.startAttempt!(context('frame-contract'));
+    try {
+      queryNodes = [{ ref: { id: '@e7', revision: '1' }, role: 'button', name: 'Button D', attributes: { 'data-clicked': 'D' }, states: { hidden: false } }];
+      const browser = nativeBrowser(engine, operation);
+      await browser.frameLocator('iframe').getByRole('button', { name: 'Button D' }).waitFor();
+      expect(await browser.frameLocator('iframe').frameLocator('#nested').locator('body').getAttribute('data-clicked')).toBe('D');
+      const queries = frames.filter(frame => frame['command'] === 'fixture.query');
+      expect(queries.length).toBeGreaterThanOrEqual(2);
+      expect(queries[0]?.['args']).toMatchObject({ expression: { kind: 'frame', selector: 'iframe', source: { kind: 'query' } } });
+      expect(queries.at(-1)?.['args']).toMatchObject({ expression: { kind: 'frame', selector: 'iframe', source: { kind: 'frame', selector: '#nested', source: { kind: 'selector', selector: 'body' } } } });
+      queryNodes = [{ ref: { id: '@e8', revision: '1' }, role: 'textbox', states: { secure: true } }];
+      await expect(browser.frameLocator('iframe').locator('input').getAttribute('value')).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); } }
+  });
+
+  it('forwards the hostname site contract in the actual startup configuration payload', async () => {
+    const surface = new NativeSurface({});
+    await surface.init({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: { site: '127.0.0.1' }, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    try {
+      await surface.startAttempt(context('hostname-contract'));
+      const configured = frames.find(frame => frame['command'] === 'scope.configure');
+      const nativeFixture: unknown = JSON.parse(await readFile(new URL('../fixtures/native-startup-hostname.json', import.meta.url), 'utf8'));
+      expect(configured?.['args']).toEqual(nativeFixture);
+      expect(frames.find(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ blockServiceWorkers: false });
+      expect(frames.find(frame => frame['command'] === 'network.routes.replace')?.['args']).toEqual({ identityScope: 'scope-1', version: 1, registrationIds: [] });
+    } finally { await surface.dispose(cleanup()); }
   });
 
   it('rethrows a latched callback failure once before any engine hook dispatch', async () => {
@@ -584,6 +626,25 @@ describe('native surface ownership and fixed policy binding', () => {
       }
     } finally { await surface.dispose(cleanup()); await rm(directory, { recursive: true, force: true }); }
   });
+  it.each([1, 2])('reports finalized missing segment %i once without losing retained earlier output on retry', async ordinal => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'native-video-retry-'));
+    const engine = web({});
+    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    await engine.startAttempt!({ ...context('video-retry'), artifactsDir: directory });
+    try {
+      recordingMissing = ordinal;
+      recordingSegments = ordinal === 1 ? [] : [{ identityScope: currentScope, handle: 'kept-video', size: recordingBytes.length, sha256: createHash('sha256').update(recordingBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-10-21T00:00:01.000Z' }];
+      const missing = `video/${ordinal === 1 ? 'video' : 'video-part2'}.webm`;
+      await expect(engine.artifacts!.stopVideo!(operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: expect.stringContaining(missing) });
+      expect(frames.filter(frame => frame['command'] === 'blob.read')).toHaveLength(0);
+      const kept = await engine.artifacts!.stopVideo!(operation());
+      expect(kept).toEqual(ordinal === 1 ? [] : [{ path: 'video/video.webm', startedAt: '2026-10-21T00:00:01.000Z' }]);
+      if (ordinal === 2) expect(await readFile(path.join(directory, 'video/video.webm'))).toEqual(recordingBytes);
+      expect(await engine.artifacts!.stopVideo!(operation())).toEqual([]);
+      expect(frames.filter(frame => frame['command'] === 'blob.release')).toHaveLength(ordinal === 1 ? 0 : 1);
+    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
+  });
+
   it('preserves the documented per-attempt WebM filenames independently of generic artifact counters', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'native-video-names-'));
     const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());

@@ -621,6 +621,10 @@ export class NativeSurface implements NativeWebSurface {
     const scope = attempt.scope; const engine = this.requireEngine();
     const result = await this.engineCommand('recording.stop', { identityScope: attempt.scope }, operation);
     if (result.identityScope !== attempt.scope) throw this.invalidate();
+    if ('missingSegment' in result) {
+      const filename = result.missingSegment === 1 ? 'video.webm' : `video-part${result.missingSegment}.webm`;
+      throw new EngineError('ENGINE_FAILURE', `screencast stop failed: video/${filename} was not produced`, { retryable: false });
+    }
     const segments: VideoSegment[] = [];
     const channel = attempt.channel!;
     let next = 0;
