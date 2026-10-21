@@ -321,7 +321,7 @@ test('HTML OBJECT without a browsing context is safe only under a proven display
     browser = await launchChromium({ executable: process.env.E2E_CHROMIUM_EXECUTABLE ?? 'chromium', args: process.env.E2E_CHROMIUM_NO_SANDBOX === '1' ? ['--no-sandbox'] : [], env: process.env }, operation());
     const cdp = await CdpConnection.connect(browser.endpoint, operation()); connection = cdp;
     const target = (await cdp.listTargets(operation())).find(item => item.type === 'page')!.targetId;
-    await navigate(cdp, target, origin);
+    await navigate(cdp, target, `${origin}/`);
     assert.equal(await evaluate(cdp, target, 'document.querySelector("#dormant").contentDocument === null'), true, 'The fixture must exercise an uninstantiated object');
     assert.deepEqual(await evaluate(cdp, target, '(()=>{const o=document.querySelector("#fractional");return [o.getBoundingClientRect().height,o.contentDocument.defaultView.innerHeight]})()'), [76.625, 77]);
     const captured = await captureMaskedPixels(cdp, target, operation());
