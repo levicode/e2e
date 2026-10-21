@@ -204,6 +204,13 @@ How recovery runs:
 - Endpoint resolution, CDP attachment, setup, and dispatch share one timeout.
   Cancelling a concurrent waiter does not cancel the operation that started
   recovery. Cancelling that recovery owner fails the shared recovery.
+- A recovery owner's first failure belongs to that attempt. Its concurrent
+  waiters and later admitted operations receive that same failure without resolving
+  or reconnecting again; an owner timeout stays `OPERATION_TIMEOUT` for all
+  of them. A waiter's own cancellation or timeout affects only that waiter.
+  Only ending the attempt and starting a fresh one clears a failed recovery;
+  restarting the document or issuing another operation does not. Persistent
+  contexts do not support state reset.
 
 | Throws | When |
 | --- | --- |

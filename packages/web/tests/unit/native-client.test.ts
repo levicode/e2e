@@ -2,6 +2,8 @@ import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { OperationContext } from 'e2e/engine';
 import { NativeClient } from '../../src/native/client.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import type { NativeEvent } from '../../src/native/protocol.ts';
 
 function context(signal = new AbortController().signal): OperationContext {
@@ -371,6 +373,32 @@ describe('native session client', () => {
     expect(await request).toMatchObject({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched' });
     expect(fixture.dispose).not.toHaveBeenCalled();
     expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+    await close(fixture);
+  });
+
+  // This proves only the public adapter boundary. The native producer must independently
+  // prove whole input ACKs, exact authority and cleanup before issuing Completed + usable.
+  it.each(['ack-first', 'result-first'] as const)('reports settled partial typing as CANCELLED and permits fresh inspection in %s order', async order => {
+    const fixture = await opened(); const controller = new AbortController();
+    const engine = new EngineChannel(fixture.client, scope => () => scope === 'typing-scope');
+    const browser = new BrowserChannel(fixture.client, { identityScope: () => 'typing-scope', operation: context });
+    const published = vi.fn();
+    const pending = engine.command('browser.keyboard.type', { identityScope: 'typing-scope', text: 'replacement', replace: true }, context(controller.signal)).then(published);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'CANCELLED', retryable: false });
+    const original = fixture.requests.at(-1)!; controller.abort();
+    const cancel = fixture.requests.at(-1)!;
+    const ack = { type: 'control-result', id: cancel['id'], generation: 1, accepted: order === 'ack-first', ...(order === 'ack-first' ? {} : { error: { code: 'invalid-arguments' } }), scopeState: 'usable' };
+    const result = fixture.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'completed', scopeState: 'usable' });
+    fixture.send(order === 'ack-first' ? ack : result); await Promise.resolve();
+    await expect(browser.command('page.title', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+    fixture.send(order === 'ack-first' ? result : ack); await rejected;
+    expect(published).not.toHaveBeenCalled();
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    const inspection = browser.command('page.title', {}, context());
+    fixture.send(fixture.result(fixture.requests.at(-1)!, { data: { title: 'Fresh inspection, not rollback' } }));
+    await expect(inspection).resolves.toEqual({ title: 'Fresh inspection, not rollback' });
+    expect(fixture.requests.filter(frame => frame['type'] === 'request').map(frame => frame['command'])).toEqual(['browser.keyboard.type', 'page.title']);
     await close(fixture);
   });
 

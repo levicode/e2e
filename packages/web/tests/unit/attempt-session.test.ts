@@ -6,6 +6,49 @@ import type { Browser, Page } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AttemptSession } from '../../src/attempt-session.ts';
 import type { WebMedia } from '../../src/media.ts';
+import type { EngineAttemptContext, EngineHandle } from 'e2e/engine';
+import { web, type WebOptions } from '../../src/index.ts';
+import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeProtocolPeer, type PeerRequest, type PeerOutcome } from '../helpers/native-protocol-peer.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
+
+vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
+vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
+const peers: NativeProtocolPeer[] = [];
+
+/** Real public adapter/client; the peer supplies protocol responses, never browser behavior. */
+async function nativeAttempt(options: WebOptions = {}, respond?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome> | undefined) {
+  vi.mocked(connectNativeProcess).mockImplementation(async (settings, operation, onEvent) => {
+    const index = peers.length + 1;
+    let scope = `attempt-${index}`;
+    const peer = new NativeProtocolPeer(settings.capabilities, frame => {
+      const custom = respond?.(frame);
+      if (custom !== undefined) return custom;
+      if (frame.command === 'scope.open') return { data: { identityScope: scope, recoveryIdentity: { browser: `browser-${index}`, context: `context-${index}`, page: `page-${index}` } } };
+      if (frame.command === 'scope.reconnect') { scope += '-reconnected'; return { data: { identityScope: scope } }; }
+      if (frame.command === 'page.title') return { data: { title: scope } };
+      if (frame.command === 'browser.observe') return { data: { identityScope: scope, revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' } } };
+      if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(frame.command)) return { data: null };
+      throw new Error(`Unexpected attempt peer command ${frame.command}`);
+    });
+    peers.push(peer);
+    return peer.connect(operation, onEvent);
+  });
+  const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: () => 'ws://synthetic.test/reconnect' }, ...options });
+  await engine.init!({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
+  return engine;
+}
+
+function nativeContext(attemptId = 'a1'): EngineAttemptContext {
+  return { attemptId, artifactsDir: tmpdir(), signal: new AbortController().signal, resolveSecret: async () => { throw new Error('No secrets in this attempt fixture'); }, appLog: () => undefined, navigation: () => undefined, environment: () => undefined };
+}
+
+async function disconnected(engine: EngineHandle) {
+  await engine.startAttempt!(nativeContext());
+  const peer = peers.at(-1)!;
+  await peer.event('scope.disconnected', { identityScope: `attempt-${peers.length}`, reason: 'browser-connection-closed' });
+  return peer;
+}
 
 const connectCdp = vi.fn<(endpoint: string, timeoutMs: number) => Promise<Browser>>();
 
@@ -79,8 +122,8 @@ const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal 
 const operation = (timeoutMs = 1_000, signal = new AbortController().signal) => ({ timeoutMs, signal, runId: 'run', attemptId: 'a1', origin: 'test' as const });
 
 describe('AttemptSession', () => {
-  beforeEach(() => vi.mocked(connectCdp).mockReset());
-  afterEach(() => vi.useRealTimers());
+  beforeEach(() => { vi.mocked(connectCdp).mockReset(); vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; });
+  afterEach(() => { for (const peer of peers) peer.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
   it('detaches an unresolved identity before its response arrives and cannot overwrite the next attempt', async () => {
     const response = deferred<Contexts>();
@@ -317,14 +360,20 @@ describe('AttemptSession', () => {
   it('does not attach an endpoint that resolves after disposal', async () => {
     const endpoint = deferred<string>();
     const provision = vi.fn(() => endpoint.promise);
-    const first = session({ provision });
-    const starting = expect(first.start(new AbortController().signal)).rejects.toMatchObject({ code: 'CANCELLED' });
-    await expect.poll(() => provision.mock.calls.length).toBe(1);
-    await first.close(cleanup());
-    await starting;
-    endpoint.resolve('late');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(connectCdp).not.toHaveBeenCalled();
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: provision, reconnectEndpoint: () => 'ws://synthetic.test/reconnect' } });
+    try {
+      const starting = expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'CANCELLED' });
+      await expect.poll(() => provision.mock.calls.length).toBe(1);
+      await engine.endAttempt!(cleanup());
+      await starting;
+      endpoint.resolve('ws://synthetic.test/late');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(connectNativeProcess).not.toHaveBeenCalled();
+      provision.mockResolvedValue('ws://synthetic.test/fresh');
+      await engine.startAttempt!(nativeContext('a2'));
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-1');
+      expect(peers[0]!.requests.find(frame => frame.command === 'scope.open')?.args['endpoint']).toBe('ws://synthetic.test/fresh');
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('keeps a late old-page identity out of the next attempt', async () => {
@@ -351,43 +400,55 @@ describe('AttemptSession', () => {
   });
 
   it('does not publish an attachment until configuration succeeds', async () => {
-    const configure = deferred<void>();
-    const browser = remote('current');
-    vi.mocked(connectCdp).mockResolvedValue(browser.browser);
-    const first = session({ configure: () => configure.promise });
-    const starting = first.start(new AbortController().signal);
-    await expect.poll(() => browser.send.mock.calls.length).toBe(1);
-    expect(() => first.current()).toThrow(/no attempt connection is ready/);
-    configure.resolve();
-    await starting;
-    expect(first.current().browser).toBe(browser.browser);
-    await first.close(cleanup());
+    const configure = deferred<PeerOutcome>();
+    const reached = deferred<void>();
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'scope.configure') return undefined;
+      reached.resolve(); return configure.promise;
+    });
+    const starting = engine.startAttempt!(nativeContext());
+    try {
+      await reached.promise;
+      expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+      await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers[0]!.requests.filter(frame => frame.command === 'browser.observe' || frame.command === 'page.title')).toEqual([]);
+      // The publication fence must not hold the independent native decision lane.
+      await peers[0]!.event('network.request', { identityScope: 'attempt-1', version: 0, registrationIds: [], request: { url: 'http://fixture.test/data', method: 'GET', headers: {} } }, { token: 'startup-request', timeoutMs: 1_000 });
+      expect(peers[0]!.frames.find(frame => frame['type'] === 'decision')).toMatchObject({ token: 'startup-request', decision: { kind: 'continue' } });
+      configure.resolve({ data: null });
+      await starting;
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-1');
+    } finally {
+      configure.resolve({ data: null });
+      await starting;
+      await engine.dispose!(cleanup());
+    }
   });
 
   it.each(['timeout', 'cancel'] as const)('distinguishes recovery %s and prevents dispatch', async (reason) => {
-    const browser = remote('current');
-    vi.mocked(connectCdp).mockResolvedValue(browser.browser);
     let resolverSignal: AbortSignal | undefined;
     const requested = deferred<void>();
-    const first = session({ reconnect: (signal) => {
+    const reconnect = vi.fn((signal: AbortSignal) => {
       resolverSignal = signal;
       requested.resolve();
       return new Promise<string>(() => undefined);
-    } });
-    await first.start(new AbortController().signal);
-    browser.disconnect();
+    });
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const peer = await disconnected(engine);
     const caller = new AbortController();
-    const dispatch = vi.fn(async () => undefined);
     const code = reason === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED';
-    const result = expect(first.run(operation(reason === 'timeout' ? 30 : 1_000, caller.signal), 'read', dispatch)).rejects.toMatchObject({ code });
-    await requested.promise;
-    if (reason === 'cancel') caller.abort();
-    await result;
-    expect(caller.signal.aborted).toBe(reason === 'cancel');
-    expect(resolverSignal?.aborted).toBe(true);
-    expect(dispatch).not.toHaveBeenCalled();
-    await expect(first.run(operation(), 'read', dispatch)).rejects.toMatchObject({ code });
-    await first.close(cleanup());
+    try {
+      const result = expect(engine.observe!(operation(reason === 'timeout' ? 30 : 1_000, caller.signal))).rejects.toMatchObject({ code });
+      await requested.promise;
+      if (reason === 'cancel') caller.abort();
+      await result;
+      expect(caller.signal.aborted).toBe(reason === 'cancel');
+      expect(resolverSignal?.aborted).toBe(true);
+      expect(peer.requests.filter(frame => frame.command === 'scope.reconnect' || frame.command === 'browser.observe')).toEqual([]);
+      await expect(engine.observe!(operation(30))).rejects.toMatchObject({ code });
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(peer.requests.filter(frame => frame.command === 'scope.reconnect' || frame.command === 'browser.observe')).toEqual([]);
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('refuses a remote that cannot expose its persistent context identity', async () => {
@@ -400,41 +461,40 @@ describe('AttemptSession', () => {
   });
 
   it('propagates the recovery owner cancellation to another waiting operation', async () => {
-    const browser = remote('current');
-    vi.mocked(connectCdp).mockResolvedValue(browser.browser);
     const requested = deferred<void>();
-    const first = session({ reconnect: () => { requested.resolve(); return new Promise<string>(() => undefined); } });
-    await first.start(new AbortController().signal);
-    browser.disconnect();
+    let resolverSignal: AbortSignal | undefined;
+    const reconnect = vi.fn((signal: AbortSignal) => { resolverSignal = signal; requested.resolve(); return new Promise<string>(() => undefined); });
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const peer = await disconnected(engine);
     const controller = new AbortController();
-    const dispatch = vi.fn(async () => undefined);
-    const owner = expect(first.run(operation(1_000, controller.signal), 'owner', dispatch)).rejects.toMatchObject({ code: 'CANCELLED' });
-    await requested.promise;
-    const waiter = expect(first.run(operation(), 'waiter', dispatch)).rejects.toMatchObject({ code: 'CANCELLED' });
-    controller.abort();
-    await Promise.all([owner, waiter]);
-    expect(dispatch).not.toHaveBeenCalled();
-    await first.close(cleanup());
+    const ownerBrowser = nativeBrowser(engine, () => operation(1_000, controller.signal));
+    const waiterBrowser = nativeBrowser(engine, operation);
+    try {
+      const owner = expect(ownerBrowser.title()).rejects.toMatchObject({ code: 'CANCELLED' });
+      await requested.promise;
+      const waiter = expect(waiterBrowser.title()).rejects.toMatchObject({ code: 'CANCELLED' });
+      await Promise.resolve();
+      controller.abort();
+      await Promise.all([owner, waiter]);
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(resolverSignal?.aborted).toBe(true);
+      expect(peer.requests.filter(frame => frame.command === 'page.title' || frame.command === 'scope.reconnect')).toEqual([]);
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('subtracts endpoint resolution from both the CDP dial and dispatched operation budgets', async () => {
-    const original = remote('current');
-    const recovered = remote('current');
-    vi.mocked(connectCdp).mockResolvedValueOnce(original.browser).mockResolvedValue(recovered.browser);
-    const first = session({ reconnect: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      return 'existing';
-    } });
-    await first.start(new AbortController().signal);
-    original.disconnect();
-    vi.useFakeTimers();
-    vi.setTimerTickMode('nextTimerAsync');
-    const dispatch = vi.fn(async (current) => current.timeoutMs as number);
-    const remaining = await first.run(operation(200), 'read', dispatch);
-    expect(vi.mocked(connectCdp).mock.calls[1]![1]).toBe(160);
-    // 160 ms left, less Playwright's timeout lead: half of a budget this short.
-    expect(remaining).toBe(80);
-    await first.close(cleanup());
+    let now = 0;
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: async () => { now += 40; return 'ws://synthetic.test/reconnect'; } } });
+    const peer = await disconnected(engine);
+    const browser = nativeBrowser(engine, () => operation(200));
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      await browser.title();
+      // Native owns the CDP dial inside scope.reconnect, under this remaining deadline.
+      expect(peer.frames.find(frame => frame['command'] === 'scope.reconnect')?.['timeoutMs']).toBe(160);
+      // Explicit native cancellation settlement replaces Playwright's private half-budget timeout lead.
+      expect(peer.frames.find(frame => frame['command'] === 'page.title')?.['timeoutMs']).toBe(160);
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('keeps late recording completion confined to the attempt that started it', async () => {
@@ -479,4 +539,263 @@ describe('AttemptSession', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+
+  it('waits for the initial route registry acknowledgment before publishing the attempt', async () => {
+    const routes = deferred<PeerOutcome>();
+    const reached = deferred<void>();
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'network.routes.replace') return undefined;
+      reached.resolve(); return routes.promise;
+    });
+    const starting = engine.startAttempt!(nativeContext());
+    try {
+      await reached.promise;
+      expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+      await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers[0]!.requests.filter(frame => frame.command === 'browser.observe' || frame.command === 'page.title')).toEqual([]);
+      routes.resolve({ data: null });
+      await starting;
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-1');
+    } finally {
+      routes.resolve({ data: null });
+      await starting;
+      await engine.dispose!(cleanup());
+    }
+  });
+
+  it.each(['scope.configure', 'network.routes.replace'])('does not publish failed %s setup and permits a new attempt after retirement', async command => {
+    let reject = true;
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== command || !reject) return undefined;
+      reject = false;
+      return { error: 'browser-failure' };
+    });
+    try {
+      await expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+      await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers[0]!.requests.filter(frame => frame.command === 'browser.observe' || frame.command === 'page.title')).toEqual([]);
+      // Failed setup already quarantines its native client; preserve that cleanup failure.
+      await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      await engine.startAttempt!(nativeContext('a2'));
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2');
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
+  it.each(['scope.configure', 'network.routes.replace'])('keeps late %s success out of the next attempt after retirement', async command => {
+    const result = deferred<PeerOutcome>();
+    const reached = deferred<void>();
+    let hold = true;
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== command || !hold) return undefined;
+      hold = false;
+      reached.resolve(); return result.promise;
+    });
+    const starting = expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'CANCELLED' });
+    try {
+      await reached.promise;
+      // A still-draining request refuses scope.end; explicit close nevertheless retires it.
+      await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await starting;
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      await engine.startAttempt!(nativeContext('a2'));
+      result.resolve({ data: null });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2');
+      expect(peers[0]!.requests.filter(frame => frame.command === 'page.title')).toEqual([]);
+      expect(peers[1]!.requests.filter(frame => frame.command === 'network.routes.replace')).toHaveLength(1);
+    } finally { result.resolve({ data: null }); await engine.dispose!(cleanup()); }
+  });
+
+  it('does not publish configuration after an unhandled setup callback failure', async () => {
+    const configure = deferred<PeerOutcome>();
+    const reached = deferred<void>();
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'scope.configure') return undefined;
+      reached.resolve(); return configure.promise;
+    });
+    const starting = expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await reached.promise;
+    await peers[0]!.event('dialog.opened', { identityScope: 'attempt-1' }, { token: 'setup-dialog', timeoutMs: 1_000 });
+    expect(peers[0]!.frames.find(frame => frame['type'] === 'decision')).toMatchObject({ token: 'setup-dialog', decision: { kind: 'dialog', accept: false } });
+    configure.resolve({ data: null });
+    await starting;
+    expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+    expect(peers[0]!.requests.filter(frame => frame.command === 'network.routes.replace')).toEqual([]);
+    await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  });
+
+  it('subtracts both endpoint resolution and native reconnect time before dispatch', async () => {
+    let now = 0;
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: async () => { now += 40; return 'ws://synthetic.test/reconnect'; } } }, frame => {
+      if (frame.command === 'scope.reconnect') now += 30;
+      return undefined;
+    });
+    const peer = await disconnected(engine);
+    const browser = nativeBrowser(engine, () => operation(200));
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      await browser.title();
+      expect(peer.frames.find(frame => frame['command'] === 'scope.reconnect')?.['timeoutMs']).toBe(160);
+      expect(peer.frames.find(frame => frame['command'] === 'page.title')?.['timeoutMs']).toBe(130);
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
+  it('does not dispatch reconnect or the action when endpoint resolution consumes its deadline', async () => {
+    let now = 0;
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: async () => { now += 200; return 'ws://synthetic.test/reconnect'; } } });
+    const peer = await disconnected(engine);
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      await expect(engine.observe!(operation(200))).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      expect(peer.requests.filter(frame => frame.command === 'scope.reconnect' || frame.command === 'browser.observe')).toEqual([]);
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
+  it.each(['timeout', 'cancel'] as const)('retains the exact recovery owner %s for concurrent and later followers', async reason => {
+    const requested = deferred<void>();
+    const reconnect = vi.fn(() => { requested.resolve(); return new Promise<string>(() => undefined); });
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const peer = await disconnected(engine);
+    const caller = new AbortController();
+    const code = reason === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED';
+    try {
+      const owner = engine.observe!(operation(reason === 'timeout' ? 30 : 1_000, caller.signal)).catch(error => error);
+      await requested.promise;
+      const followers = [engine.observe!(operation()).catch(error => error), engine.observe!(operation()).catch(error => error)];
+      if (reason === 'cancel') caller.abort();
+      const failure: unknown = await owner;
+      expect(failure).toMatchObject({ code });
+      for (const follower of followers) expect(await follower).toBe(failure);
+      await expect(engine.observe!(operation(30))).rejects.toBe(failure);
+      await expect(engine.session!.restart!(operation(30))).rejects.toBe(failure);
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(peer.requests.filter(frame => ['scope.reconnect', 'browser.observe', 'scope.restart'].includes(frame.command))).toEqual([]);
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
+  it.each(['timeout', 'cancel'] as const)('keeps an individual recovery waiter %s local to that waiter', async reason => {
+    const endpoint = deferred<string>();
+    const requested = deferred<void>();
+    let resolverSignal: AbortSignal | undefined;
+    const reconnect = vi.fn((signal: AbortSignal) => { resolverSignal = signal; requested.resolve(); return endpoint.promise; });
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const peer = await disconnected(engine);
+    const caller = new AbortController();
+    try {
+      const owner = nativeBrowser(engine, operation).title();
+      await requested.promise;
+      const waiter = expect(engine.observe!(operation(reason === 'timeout' ? 30 : 1_000, caller.signal))).rejects.toMatchObject({ code: reason === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED' });
+      await Promise.resolve();
+      if (reason === 'cancel') caller.abort();
+      await waiter;
+      expect(resolverSignal!.aborted).toBe(false);
+      expect(peer.requests.filter(frame => ['scope.reconnect', 'browser.observe', 'page.title'].includes(frame.command))).toEqual([]);
+      endpoint.resolve('ws://synthetic.test/recovered');
+      expect(await owner).toBe('attempt-1-reconnected');
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(peer.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+      expect(peer.requests.filter(frame => frame.command === 'browser.observe')).toEqual([]);
+      expect(peer.requests.filter(frame => frame.command === 'page.title')).toHaveLength(1);
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-1-reconnected');
+      expect(reconnect).toHaveBeenCalledTimes(1);
+    } finally { endpoint.resolve('ws://synthetic.test/recovered'); await engine.dispose!(cleanup()); }
+  });
+
+  it.each([['timeout', 'before retirement'], ['cancel', 'before retirement'], ['timeout', 'after retirement'], ['cancel', 'after retirement']] as const)('ignores late endpoint completion after recovery owner %s, released %s, and clears failure only for a new attempt', async (reason, release) => {
+    const endpoint = deferred<string>();
+    const requested = deferred<void>();
+    const reconnect = vi.fn<(_: AbortSignal) => Promise<string>>()
+      .mockImplementationOnce(() => { requested.resolve(); return endpoint.promise; })
+      .mockResolvedValue('ws://synthetic.test/fresh-recovery');
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const old = await disconnected(engine);
+    const caller = new AbortController();
+    const code = reason === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED';
+    try {
+      const failed = expect(engine.observe!(operation(reason === 'timeout' ? 30 : 1_000, caller.signal))).rejects.toMatchObject({ code });
+      await requested.promise;
+      if (reason === 'cancel') caller.abort();
+      await failed;
+      if (release === 'before retirement') {
+        endpoint.resolve('ws://synthetic.test/retired');
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      await expect(engine.observe!(operation(30))).rejects.toMatchObject({ code });
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      await engine.endAttempt!(cleanup());
+      const next = await disconnected(engine);
+      endpoint.resolve('ws://synthetic.test/retired');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(old.requests.filter(frame => ['scope.reconnect', 'browser.observe', 'page.title'].includes(frame.command))).toEqual([]);
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2-reconnected');
+      expect(reconnect).toHaveBeenCalledTimes(2);
+      expect(next.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+      expect(next.requests.find(frame => frame.command === 'scope.reconnect')!.args['endpoint']).toBe('ws://synthetic.test/fresh-recovery');
+    } finally { endpoint.resolve('ws://synthetic.test/retired'); await engine.dispose!(cleanup()); }
+  });
+
+  it('retains a resolver rejection as an attempt failure without invalidating the client needed for cleanup', async () => {
+    const reconnect = vi.fn(() => { throw new Error('synthetic resolver failure'); });
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const peer = await disconnected(engine);
+    try {
+      const failure: unknown = await engine.observe!(operation()).catch(error => error);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE' });
+      await expect(engine.observe!(operation())).rejects.toBe(failure);
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(peer.requests.filter(frame => frame.command === 'scope.reconnect' || frame.command === 'browser.observe')).toEqual([]);
+      await engine.endAttempt!(cleanup());
+      expect(peer.requests.filter(frame => frame.command === 'scope.end')).toHaveLength(1);
+      expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
+  it('does not make an already-cancelled caller the recovery owner', async () => {
+    const reconnect = vi.fn(() => 'ws://synthetic.test/recovered');
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } });
+    const peer = await disconnected(engine);
+    const caller = new AbortController(); caller.abort();
+    try {
+      await expect(engine.observe!(operation(1_000, caller.signal))).rejects.toMatchObject({ code: 'CANCELLED' });
+      expect(reconnect).not.toHaveBeenCalled();
+      expect(peer.requests.filter(frame => frame.command === 'scope.reconnect' || frame.command === 'browser.observe')).toEqual([]);
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-1-reconnected');
+      expect(reconnect).toHaveBeenCalledTimes(1);
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
+  it('keeps late reconnect completion out of a new attempt after recovery owner cancellation', async () => {
+    const reconnect = deferred<PeerOutcome>();
+    const requested = deferred<void>();
+    let hold = true;
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'scope.reconnect' || !hold) return undefined;
+      requested.resolve(); return reconnect.promise;
+    });
+    const old = await disconnected(engine);
+    const caller = new AbortController();
+    try {
+      const owner = engine.observe!(operation(1_000, caller.signal)).catch(error => error);
+      await requested.promise;
+      caller.abort();
+      const failure: unknown = await owner;
+      expect(failure).toMatchObject({ code: 'CANCELLED' });
+      await expect(engine.observe!(operation(30))).rejects.toBe(failure);
+      expect(old.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+      expect(old.requests.filter(frame => frame.command === 'browser.observe')).toEqual([]);
+      // A draining request is not successful scope cleanup; close still retires this client.
+      await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(old.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      hold = false;
+      const next = await disconnected(engine);
+      reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2-reconnected');
+      expect(next.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+      expect(old.requests.filter(frame => frame.command === 'page.title' || frame.command === 'browser.observe')).toEqual([]);
+    } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await engine.dispose!(cleanup()); }
+  });
+
 });

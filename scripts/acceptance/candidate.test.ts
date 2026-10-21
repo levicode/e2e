@@ -34,7 +34,7 @@ test('dedicated push is source-locked; manual selection needs an explicit immuta
 test('full native manifest extends foundation without weakening the foundation list', () => {
   for (const name of NATIVE_BROWSER_CONTRACTS) assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
   assert.equal(new Set(CANDIDATE_NATIVE_CONTRACTS).size, CANDIDATE_NATIVE_CONTRACTS.length);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 33);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 34);
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query'));
   for (const family of ['equivalence_tests', 'client_geometry', 'client_state', 'recording', 'borrowed_capture', 'borrowed_host']) assert.ok(CANDIDATE_NATIVE_CONTRACTS.some(name => name.includes(family)), family);
 });
@@ -44,6 +44,7 @@ test('native discovery rejects missing, duplicated and unreviewed hosted tests',
   assert.throws(() => verifyNativeInventory(list.replace(`${CANDIDATE_NATIVE_CONTRACTS[0]}: test`, '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_actions::tests::chromium_protected_pixels_then_exact_check_uses_committed_snapshot: test', '')), /Missing required/);
+  assert.throws(() => verifyNativeInventory(list.replace('native::client_actions::tests::chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(`${list}\n${CANDIDATE_NATIVE_CONTRACTS[0]}: test`), /Duplicate/);
   assert.throws(() => verifyNativeInventory(`${list}\nnative::client_new::tests::hosted: test`), /Unclassified/);

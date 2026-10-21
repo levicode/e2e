@@ -18,6 +18,7 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_actions::tests::chromium_fixture_query_then_exact_check_without_observation',
   'native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot',
   'native::client_actions::tests::chromium_protected_pixels_then_exact_check_uses_committed_snapshot',
+  'native::client_actions::tests::chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session',
   'native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page',
   'native::client_actions::tests::chromium_iframe_query_then_exact_check_without_observation',
   'native::client_actions::tests::chromium_nested_frame_action_projects_input_and_checks_exact_ancestor_occlusion',

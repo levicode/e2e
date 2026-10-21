@@ -38,6 +38,7 @@ interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEve
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
 interface Attempt {
   epoch: number;
+  ready: boolean;
   readonly context: EngineAttemptContext;
   readonly retirement: AbortController;
   scope: string;
@@ -55,6 +56,8 @@ interface Attempt {
   reconnect?: ((signal: AbortSignal) => string | Promise<string>) | undefined;
   recoveryPending?: boolean;
   recovering?: Promise<void> | undefined;
+  /** The recovery owner fails this attempt, not only its current waiters. */
+  recoveryFailure?: { readonly error: unknown };
   channel?: BrowserChannel;
   counter: number;
   videoCounter: number;
@@ -64,7 +67,7 @@ interface Attempt {
 /** Not exported as a Playwright surface and never supplies raw native/CDP commands to users. */
 export class NativeSurface implements NativeWebSurface {
   latch = new ErrorLatch();
-  private readonly scripts: ConfiguredInitScripts;
+  private scripts: ConfiguredInitScripts;
   private readonly leases: LeasedBrowsers | undefined;
   private initInfo: EngineInitInfo | undefined;
   private app: EngineAppInfo = {};
@@ -73,7 +76,10 @@ export class NativeSurface implements NativeWebSurface {
   private endingAttempt: Promise<void> | undefined;
   private client: NativeClient | undefined;
   private clientTenure = 0;
-  private readonly workerRetirement = new AbortController();
+  private workerRetirement = new AbortController();
+  private disposing: Promise<void> | undefined;
+  private workerRestartable = false;
+  private workerCleanupUnconfirmed = false;
   private connecting: PendingConnection | undefined;
   private engine: EngineChannel | undefined;
   private executable: string | undefined;
@@ -129,24 +135,34 @@ export class NativeSurface implements NativeWebSurface {
   }
   async finish(info: EngineFinishInfo): Promise<void> { await this.leases?.finish(info); }
   async init(info: EngineInitInfo): Promise<void> {
-    const signal = AbortSignal.any([info.signal, this.workerRetirement.signal]);
+    if (this.disposing !== undefined) throw invalidState('Native worker disposal is still pending');
+    if (this.workerRetirement.signal.aborted) {
+      if (!this.workerRestartable) throw invalidState('Native worker cleanup has not been confirmed');
+      this.workerRetirement = new AbortController(); this.workerRestartable = false;
+      this.openedBefore = false; this.workerSourceLost = false; this.workerEndpoint = undefined;
+    }
+    // An older initialization keeps its retired authority across every await.
+    const retirement = this.workerRetirement;
+    const signal = AbortSignal.any([info.signal, retirement.signal]);
     const check = () => { if (signal.aborted) throw new EngineError('CANCELLED', 'Native worker initialization was cancelled', { retryable: false }); };
     check();
     this.initInfo = info; this.app = info.app; this.leases?.init(info);
-    await raceAbort(() => this.scripts.load(info.projectRoot), signal, 'loading browser initialization scripts');
-    check();
+    const scripts = new ConfiguredInitScripts(this.options.initScripts ?? []);
+    await raceAbort(() => scripts.load(info.projectRoot), signal, 'loading browser initialization scripts');
+    check(); this.scripts = scripts;
     const executable = await raceAbort(() => resolveNativeExecutable(info.env, info.projectRoot), signal, 'resolving native browser executable');
     check(); this.executable = executable;
     if (!this.persistent) {
-      if (this.leases !== undefined) this.workerEndpoint = await raceAbort(() => this.leases!.endpoint(signal), signal, 'resolving worker browser endpoint');
-      else if (this.options.connect !== undefined) this.workerEndpoint = await this.resolveEndpoint(this.options.connect.cdpEndpoint, signal, 'connect.cdpEndpoint');
-      check();
+      const endpoint = this.leases !== undefined
+        ? await raceAbort(() => this.leases!.endpoint(signal), signal, 'resolving worker browser endpoint')
+        : this.options.connect === undefined ? undefined : await this.resolveEndpoint(this.options.connect.cdpEndpoint, signal, 'connect.cdpEndpoint');
+      check(); this.workerEndpoint = endpoint;
       await this.connect(this.operation(signal));
     }
   }
   async startAttempt(context: EngineAttemptContext): Promise<void> {
     if (this.workerRetirement.signal.aborted || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, context, retirement: new AbortController(), scope: '', counter: 0, videoCounter: 0, downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
+    const attempt: Attempt = { epoch: 0, ready: false, context, retirement: new AbortController(), scope: '', counter: 0, videoCounter: 0, downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
     const operation = this.operation(startupSignal);
@@ -188,13 +204,21 @@ export class NativeSurface implements NativeWebSurface {
       this.openedBefore = true;
       this.bindChannel(attempt);
       const downloads = this.leases?.downloads();
-      await this.engineCommand('scope.configure', {
+      await this.requireEngine().command('scope.configure', {
         identityScope: attempt.scope, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR,
         requestPolicy: { ...(this.app.site === undefined ? {} : { site: this.app.site }), ...(this.options.headers === undefined ? {} : { headers: lowercaseNames(this.options.headers) }), ...(attempt.credentials === undefined ? {} : { basicAuth: attempt.credentials }) },
         downloads: downloads === undefined ? { source: 'local' } : { source: 'provider', remoteDirectory: downloads.dir },
       }, operation);
+      this.assertAttempt(attempt);
       const version = this.allocateRouteRegistryVersion();
-      await this.command('network.routes.replace', { version, registrationIds: [] }, operation);
+      // Startup alone may admit its captured unpublished owner. Keep callback and recovery fences.
+      const admitted = await this.admit(operation, attempt);
+      this.assertScope(attempt, admitted.scope);
+      await attempt.channel!.command('network.routes.replace', { version, registrationIds: [] }, admitted.operation);
+      this.assertAttempt(attempt);
+      if (startupSignal.aborted) throw new EngineError('CANCELLED', 'Native attempt startup was cancelled', { retryable: false });
+      this.registryCurrent = version;
+      attempt.ready = true;
     } catch (cause) {
       // A partially opened scope is not reusable. Teardown uses the runner's fresh cleanup signal.
       if (openDispatched && this.attempt === attempt && this.client !== undefined && !(attempt.scope === '' && isNativeNotDispatched(cause))) this.client.invalidate();
@@ -243,18 +267,31 @@ export class NativeSurface implements NativeWebSurface {
     finally {
       if (attempt !== undefined) attempt.credentials = undefined;
       if (this.persistent || this.workerSourceLost || failure !== undefined) {
-        const client = this.client; this.client = undefined; this.engine = undefined; this.openedBefore = false;
-        try { await client?.close(this.operation(context.signal, context.timeoutMs)); } catch (cause) { failure ??= cause; }
+        try { await this.closeClient(context); } catch (cause) { failure ??= cause; }
       }
-      try { await this.leases?.endAttempt(context); } catch (cause) { failure ??= cause; }
+      try { await this.leases?.endAttempt(context); } catch (cause) { this.workerCleanupUnconfirmed = true; failure ??= cause; }
       this.retiringAttempt = undefined;
     }
     if (failure !== undefined) throw failure;
   }
-  async dispose(context: EngineCleanupContext): Promise<void> {
+  dispose(context: EngineCleanupContext): Promise<void> {
     this.workerRetirement.abort();
+    this.disposing ??= this.closeWorker(context).then(() => {
+      this.workerRestartable = !this.workerCleanupUnconfirmed;
+    }).finally(() => { this.disposing = undefined; });
+    return this.disposing;
+  }
+  private async closeClient(context: EngineCleanupContext): Promise<void> {
+    const client = this.client; this.client = undefined; this.engine = undefined; this.openedBefore = false;
+    try { await client?.close(this.operation(context.signal, context.timeoutMs)); }
+    catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
+  }
+  private async closeWorker(context: EngineCleanupContext): Promise<void> {
     let failure: unknown;
-    for (const work of [() => this.endAttempt(context), async () => { const client = this.client; this.client = undefined; this.engine = undefined; await client?.close(this.operation(context.signal, context.timeoutMs)); }, async () => { if (this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('Native connection or provider recording cleanup is unresolved; its lease remains owned'); await this.leases?.dispose(context); }]) {
+    for (const work of [() => this.endAttempt(context), () => this.closeClient(context), async () => {
+      if (this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('Native connection or provider recording cleanup is unresolved; its lease remains owned');
+      try { await this.leases?.dispose(context); } catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
+    }]) {
       try { await work(); } catch (cause) { failure ??= cause; }
     }
     if (failure !== undefined) throw failure;
@@ -293,7 +330,7 @@ export class NativeSurface implements NativeWebSurface {
   }
   private bindChannel(attempt: Attempt): void {
     attempt.channel?.dispose();
-    attempt.channel = new BrowserChannel(this.requireClient(), { identityScope: () => this.identityScope, operation: () => this.operation(attempt.context.signal) });
+    attempt.channel = new BrowserChannel(this.requireClient(), { identityScope: () => { this.assertAttempt(attempt); return attempt.scope; }, operation: () => this.operation(attempt.context.signal) });
     for (const [name, callbacks] of this.listeners) for (const listener of callbacks) listener.unsubscribe = attempt.channel.subscribe(name, listener.callback);
   }
   private async onEvent(event: NativeEvent): Promise<void> {
@@ -338,12 +375,12 @@ export class NativeSurface implements NativeWebSurface {
       try { request = decodeBrowserEvent('network.request', { ...payload, token: event.decision.token, timeoutMs: event.decision.timeoutMs }); } catch { throw this.invalidate(); }
       if (request.version !== this.registryCurrent || request.registrationIds.length !== 0) throw this.invalidate();
       const headers = this.siteHeaders(request.request.url);
-      await this.decide(request.token, { kind: 'continue', overrides: headers === undefined ? {} : { headers: Object.entries({ ...lowercaseNames(request.request.headers), ...headers }).map(([name, value]) => ({ name, value })) } }, operation);
+      await attempt.channel!.decide(request.token, { kind: 'continue', overrides: headers === undefined ? {} : { headers: Object.entries({ ...lowercaseNames(request.request.headers), ...headers }).map(([name, value]) => ({ name, value })) } }, operation);
       return;
     }
     if (event.event === 'dialog.opened' && (this.listeners.get('dialog.opened')?.size ?? 0) === 0) {
       if (event.decision === undefined) throw this.invalidate();
-      await this.decide(event.decision.token, { kind: 'dialog', accept: false }, operation);
+      await attempt.channel!.decide(event.decision.token, { kind: 'dialog', accept: false }, operation);
       if (this.attempt !== attempt || this.callbackIsCurrent()) latch.latch(invalidState('An application dialog had no registered handler')); return;
     }
     if (event.event === 'app.log') {
@@ -376,13 +413,14 @@ export class NativeSurface implements NativeWebSurface {
   }
 
   /** Capture the caller's attempt before yielding; a later attempt is never a retry target. */
-  private async admit(operation: OperationContext): Promise<{ attempt: Attempt; scope: string; operation: OperationContext }> {
+  private async admit(operation: OperationContext, startupAttempt?: Attempt): Promise<{ attempt: Attempt; scope: string; operation: OperationContext }> {
     this.assertCallback();
-    const attempt = this.requireAttempt();
+    const attempt = startupAttempt ?? this.requireAttempt();
+    this.assertAttempt(attempt);
     this.latch.throwPending();
     if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
     const endsAt = performance.now() + operation.timeoutMs;
-    await withConnectionBudget(operation, 'native browser recovery', remaining => this.ensureConnected({ ...operation, ...remaining() }));
+    await this.ensureConnected(operation, attempt);
     this.assertAttempt(attempt);
     if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
     const timeoutMs = endsAt - performance.now();
@@ -395,18 +433,31 @@ export class NativeSurface implements NativeWebSurface {
     return { attempt, scope: attempt.scope, operation: current };
   }
 
-  private async ensureConnected(operation: OperationContext): Promise<void> {
-    const attempt = this.requireAttempt();
+  private async ensureConnected(operation: OperationContext, attempt: Attempt): Promise<void> {
+    this.assertAttempt(attempt);
+    if (attempt.recoveryFailure !== undefined) throw attempt.recoveryFailure.error;
     if (!attempt.recoveryPending) return;
     if (attempt.reconnect === undefined || attempt.recovery === undefined) throw invalidState('The native browser disconnected and has no persistent recovery contract');
-    attempt.recovering ??= (async () => {
-      const endpoint = await this.resolveEndpoint(attempt.reconnect!, operation.signal, 'connect.reconnectEndpoint');
+    const recovering = attempt.recovering;
+    if (recovering !== undefined) {
+      // A waiter owns only its wait; its cancellation cannot fail the shared owner.
+      await withConnectionBudget(operation, 'native browser recovery', () => recovering);
+      return;
+    }
+    // Share the owner's classified deadline/cancellation, not an inner aborted resolver.
+    attempt.recovering = withConnectionBudget(operation, 'native browser recovery', async remaining => {
+      const endpoint = await this.resolveEndpoint(attempt.reconnect!, remaining().signal, 'connect.reconnectEndpoint');
       this.assertAttempt(attempt);
       const identity = attempt.recovery!;
       const client = this.requireClient(); const callbackEpoch = client.callbackCheckpoint();
-      const result = await this.requireEngine().command('scope.reconnect', { identityScope: attempt.scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, operation, callbackEpoch);
-      this.assertAttempt(attempt); client.retireCallbacks(callbackEpoch, 'scope-reconnected'); attempt.epoch += 1; attempt.scope = result.identityScope; attempt.recoveryPending = false; this.bindChannel(attempt);
-    })().finally(() => { attempt.recovering = undefined; });
+      const result = await this.requireEngine().command('scope.reconnect', { identityScope: attempt.scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, { ...operation, ...remaining() }, callbackEpoch);
+      this.assertAttempt(attempt); remaining();
+      client.retireCallbacks(callbackEpoch, 'scope-reconnected'); attempt.epoch += 1; attempt.scope = result.identityScope; attempt.recoveryPending = false; this.bindChannel(attempt);
+    }).catch((error: unknown) => {
+      // Only this captured owner may record failure. Callback errors remain one-shot.
+      attempt.recoveryFailure ??= { error };
+      throw attempt.recoveryFailure.error;
+    }).finally(() => { attempt.recovering = undefined; });
     await attempt.recovering;
   }
 
@@ -708,7 +759,7 @@ export class NativeSurface implements NativeWebSurface {
   private operation(signal: AbortSignal, timeoutMs = LIFECYCLE_TIMEOUT_MS, attemptId = this.attempt?.context.attemptId ?? ''): OperationContext {
     return { signal, timeoutMs, runId: this.initInfo?.runId ?? '', attemptId, origin: 'test' };
   }
-  private requireAttempt(): Attempt { if (this.attempt === undefined || this.attempt.scope === '') throw invalidState('No native browser attempt is ready'); return this.attempt; }
+  private requireAttempt(): Attempt { if (this.attempt === undefined || !this.attempt.ready || this.attempt.scope === '') throw invalidState('No native browser attempt is ready'); return this.attempt; }
   private assertScope(attempt: Attempt, scope: string): void { this.assertAttempt(attempt); if (attempt.scope !== scope) throw new EngineError('CANCELLED', 'The native browser scope has retired', { retryable: false }); }
   private assertAttempt(attempt: Attempt): void { if (this.attempt !== attempt) throw new EngineError('CANCELLED', 'The native browser attempt has retired', { retryable: false }); }
   private requireClient(): NativeClient { if (this.client === undefined) throw invalidState('The native browser client is not running'); return this.client; }
