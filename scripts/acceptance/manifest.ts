@@ -24,6 +24,7 @@ export type AcceptanceSuite = (typeof WEB_ACCEPTANCE)[number];
 export const NATIVE_BROWSER_CONTRACTS = [
   'native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup',
   'native::client_observation::tests::chromium_native_observation_query_exact_and_secure_contract',
+  'native::client_protected_read::tests::chromium_frozen_page_keeps_native_read_lane_and_restores',
 ] as const;
 
 /** Narrow first checkpoint only. This does not advertise full Web/state/capture support. */

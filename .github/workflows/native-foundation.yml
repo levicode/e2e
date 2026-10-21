@@ -111,9 +111,8 @@ jobs:
         if: ${{ !cancelled() && steps.chromium-install.outcome == 'success' }}
         run: |
           set -euo pipefail
-          mapfile -t CHROME < <(find "$RUNNER_TEMP/native-home/.agent-browser/browsers" -type f -path '*/chrome-linux64/chrome')
-          [ "${#CHROME[@]}" -eq 1 ] || { echo 'Expected exactly one installed Chromium executable'; exit 1; }
-          export E2E_CHROMIUM_EXECUTABLE="${CHROME[0]}"
+          E2E_CHROMIUM_EXECUTABLE="$(node scripts/acceptance/installed-chromium.ts "$RUNNER_TEMP/native-home/.agent-browser/browsers" native-evidence/chromium-executable.json)"
+          export E2E_CHROMIUM_EXECUTABLE
           export NATIVE_PROCESS_MODULE="$GITHUB_WORKSPACE/.artifacts/native-client/native/process.js"
           node --input-type=module -e "import { FOUNDATION_CAPABILITIES } from './scripts/acceptance/manifest.ts'; process.stdout.write(JSON.stringify(FOUNDATION_CAPABILITIES))" > native-evidence/required-capabilities.json
           node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-target/ci/agent-browser" native-evidence/required-capabilities.json native-evidence/negotiation.json
