@@ -18,7 +18,7 @@ describe('masked fallback after a stalled semantic reader', () => {
   // These are public contracts, not equivalents of Playwright's individual handle stages.
   // The dedicated native fault binary stalls the actual protected reader; no Page is mocked.
   it.each(['deadline', 'cancellation'] as const)('does not synthesize fallback for a tree-only %s and permits a fresh read', async (failureKind) => {
-    const faults = semanticFaultControl();
+    const faults = semanticFaultControl(failureKind);
     const engine = web({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-semantic-tree-only-'));
     const signal = new AbortController().signal;
@@ -62,7 +62,7 @@ describe('masked fallback after a stalled semantic reader', () => {
   });
 
   it('reserves capture time and takes fresh masked pixels', async () => {
-    const faults = semanticFaultControl();
+    const faults = semanticFaultControl('fallback');
     const engine = web({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-semantic-fallback-'));
     const signal = new AbortController().signal;
@@ -118,7 +118,7 @@ describe('masked fallback after a stalled semantic reader', () => {
   });
 
   it('keeps abandoned reader IDs distinct from new nodes, frames, and located refs', async () => {
-    const faults = semanticFaultControl();
+    const faults = semanticFaultControl('abandoned-ids');
     const engine = web({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-semantic-ids-'));
     const signal = new AbortController().signal;

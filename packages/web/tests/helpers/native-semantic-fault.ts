@@ -4,6 +4,8 @@ import { vi } from 'vitest';
 import type { JsonValue, OperationContext } from 'e2e/engine';
 import type { NativeClient } from '../../src/native/client.ts';
 import * as transport from '../../src/native/process.ts';
+import { AcceptanceTrace } from '../../src/native/acceptance-trace.ts';
+import { openSemanticTrace, type SemanticTraceCase } from './acceptance-trace-files.ts';
 
 export type SemanticFaultPhase = 'semantic-acquire' | 'semantic-publish';
 export interface SemanticFaultStatus {
@@ -25,11 +27,13 @@ function status(value: unknown, phase: SemanticFaultPhase): SemanticFaultStatus 
 }
 
 /** Capture the actual client, without replacing startup, negotiation, or browser work. */
-export function semanticFaultControl() {
+export function semanticFaultControl(traceCase?: SemanticTraceCase) {
+  const collector = traceCase === undefined ? undefined : openSemanticTrace(traceCase, process.env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
+  const trace = collector?.available !== true ? undefined : new AcceptanceTrace(event => collector.observe(event));
   let client: NativeClient | undefined;
   const connect = transport.connectNativeProcess;
   const spy = vi.spyOn(transport, 'connectNativeProcess').mockImplementation(async (...args) => {
-    const connected = await connect(...args);
+    const connected = trace === undefined ? await connect(...args) : await connect({ ...args[0], acceptanceTrace: trace }, args[1], args[2]);
     if (client !== undefined) {
       const failure = new Error('Acceptance fault fixture must own exactly one native client');
       try {
@@ -50,7 +54,7 @@ export function semanticFaultControl() {
     return result.data;
   }
   return {
-    restore: () => spy.mockRestore(),
+    restore: () => { spy.mockRestore(); trace?.finish(); collector?.close(); },
     async holdNext(phase: SemanticFaultPhase, identityScope: string | undefined) {
       if (!identityScope) throw new Error('Acceptance fault requires the observed native identity scope');
       const armed = record(await request('test.fault.arm', { identityScope, phase }));

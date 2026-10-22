@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { EngineError, type OperationContext } from 'e2e/engine';
+import type { AcceptanceTrace } from './acceptance-trace.ts';
 import { NativeClient } from './client.ts';
 import type { NativeEvent } from './protocol.ts';
 import { retainUnresolvedProcess } from './process-cleanup.ts';
@@ -13,6 +14,8 @@ export interface NativeProcessOptions {
   /** Explicit runtime environment. Provider credentials travel in protocol, not argv. */
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly capabilities: readonly string[];
+  /** Supplied only by acceptance tests, never inferred from the environment. */
+  readonly acceptanceTrace?: AcceptanceTrace;
 }
 
 /** A dedicated negotiated client, never a reconnect to an unknown old daemon. */
@@ -28,6 +31,10 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
   } catch {
     throw new EngineError('ENGINE_FAILURE', 'The native browser process could not start', { retryable: false });
   }
+  const trace = options.acceptanceTrace;
+  trace?.observeComputed('ProcessSpawned', () => child.pid === undefined ? {} : { proxyPid: child.pid });
+  if (trace !== undefined) child.on('exit', (code, signal) => trace?.observe('ProcessExit', { codeKnown: code !== null, ...(code === null || code < 0 ? {} : { exitCode: code }), signalled: signal !== null }));
+  if (trace !== undefined) child.on('close', (code, signal) => trace?.observe('ProcessClose', { codeKnown: code !== null, ...(code === null || code < 0 ? {} : { exitCode: code }), signalled: signal !== null }));
   // Native diagnostics may include browser/provider data. Drain without echoing
   // them into model/tool errors or retaining an unbounded stderr buffer.
   child.stderr.resume();
@@ -56,6 +63,7 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
       }, 2_000);
       deadline = setTimeout(() => finish(false), 3_000);
     });
+    trace?.observe('StreamsDestroyEntered');
     child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
     if (child.exitCode !== null || child.signalCode !== null) finish(true);
     else { try { child.kill('SIGTERM'); } catch { /* Still attempt bounded final cleanup. */ } }
@@ -69,11 +77,12 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
     const timer = setTimeout(abort, context.timeoutMs);
     child.once('exit', finish);
     context.signal.addEventListener('abort', abort, { once: true });
+    trace?.observe('StdinEndEntered');
     child.stdin.end();
     if (context.signal.aborted) abort();
   });
   try {
-    return await NativeClient.connect({ readable: child.stdout, writable: child.stdin, dispose, settle }, options.capabilities, operation, onEvent);
+    return await NativeClient.connect({ readable: child.stdout, writable: child.stdin, dispose, settle, ...(trace === undefined ? {} : { acceptanceTrace: trace }) }, options.capabilities, operation, onEvent);
   } catch (error) {
     dispose();
     if (!(await disposal!)) {

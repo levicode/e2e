@@ -1,7 +1,8 @@
 /** Orchestration regression tests, never counted as browser/native acceptance evidence. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, existsSync, symlinkSync } from 'node:fs';
+import fs, { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, existsSync, symlinkSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -12,6 +13,9 @@ import { candidateSourceProblems, LEGACY_PRODUCTION_FILES, REQUIRED_MIGRATED_TES
 import { CANDIDATE_GATES, OPTIONAL_CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
 import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_WEB_SUITES } from './candidate-manifest.ts';
 import { NATIVE_BROWSER_CONTRACTS, WEB_ACCEPTANCE } from './manifest.ts';
+import { collectSemanticTraceEvidence, nativeTraceVersion, verifySemanticTraceEvidence } from './candidate-semantic-trace.ts';
+import { openSemanticTrace, validTsTraceRecord, SEMANTIC_TRACE_CASES, tsTraceFile, NATIVE_TRACE_FILE, type TraceObject } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
+import type { AcceptanceRecord } from '../../packages/web/src/native/acceptance-trace.ts';
 import { REQUIRED_CAPABILITIES } from '../../packages/web/src/native/capabilities.ts';
 
 const fixture = (t: { after(fn: () => void): void }) => { const root = mkdtempSync(join(tmpdir(), 'candidate-orchestration-')); t.after(() => rmSync(root, { recursive: true, force: true })); return root; };
@@ -184,6 +188,10 @@ test('only semantic faults receive an exclusively created private native phase f
   assert.deepEqual(env, { KEEP: 'yes', AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: path });
   assert.equal(statSync(path).mode & 0o777, 0o600);
   assert.equal(readFileSync(path, 'utf8'), '');
+  for (const name of SEMANTIC_TRACE_CASES) {
+    assert.equal(statSync(join(root, tsTraceFile(name))).mode & 0o777, 0o600);
+    assert.equal(readFileSync(join(root, tsTraceFile(name)), 'utf8'), '');
+  }
   writeFileSync(path, 'existing bounded evidence');
   assert.throws(() => candidatePhaseEnvironment('semantic-faults', inherited, root), { code: 'EEXIST' });
   assert.equal(readFileSync(path, 'utf8'), 'existing bounded evidence');
@@ -195,4 +203,148 @@ test('native phase preparation refuses a preexisting symlink without modifying i
   symlinkSync(target, join(root, 'semantic-faults.native-phases.jsonl'));
   assert.throws(() => candidatePhaseEnvironment('semantic-faults', {}, root), { code: 'EEXIST' });
   assert.equal(readFileSync(target, 'utf8'), 'retained');
+});
+
+// Actual-path trace capture tests use ordinary temporary files and scalar records only.
+
+function tsRecord(record: number, phase: AcceptanceRecord['phase'], facts: TraceObject = {}): AcceptanceRecord {
+  return { schemaVersion: 2, source: 'ts', pid: process.pid, record, phase, droppedBefore: 0, emittedBefore: record, suppressedBefore: 0, overflow: false, ...facts } as AcceptanceRecord;
+}
+function nativeRecord(source: 'native' | 'proxy', pid: number, record: number, phase: string, facts: TraceObject = {}) {
+  return { schemaVersion: 2, source, pid, record, operationSeq: 0, phase, droppedBefore: 0, emittedBefore: record, suppressedBefore: 0, overflow: false, ...facts };
+}
+function successfulTraces(root: string) {
+  const env = candidatePhaseEnvironment('semantic-faults', {}, root); const native: TraceObject[] = [];
+  for (const [index, name] of SEMANTIC_TRACE_CASES.entries()) {
+    const proxy = 100 + index; const daemon = 200 + index;
+    const collector = openSemanticTrace(name, env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']); assert.equal(collector.available, true);
+    assert.equal(collector.observe(tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true })), true);
+    collector.observe(tsRecord(1, 'ProcessSpawned', { proxyPid: proxy }));
+    collector.observe(tsRecord(2, 'ProcessExit', { codeKnown: true, exitCode: 0, signalled: false }));
+    collector.observe(tsRecord(3, 'ProcessClose', { codeKnown: true, exitCode: 0, signalled: false }));
+    collector.observe(tsRecord(4, 'CaptureFinished', { submittedBytes: 100, pendingWriteCallbacks: 0 })); collector.close();
+    let ordinal = 0; native.push(nativeRecord('proxy', proxy, ordinal++, 'CaptureStarted'));
+    native.push(nativeRecord('proxy', proxy, ordinal++, 'ProxyDaemonSpawned', { daemonPid: daemon }));
+    for (const leg of ['to-native', 'from-native']) {
+      native.push(nativeRecord('proxy', proxy, ordinal++, 'CopyReturned', { leg, calls: 1, total: 100, outstanding: false, io: 'ok', length: 100 }));
+      native.push(nativeRecord('proxy', proxy, ordinal++, 'ProxySummary', { leg, calls: 1, total: 100, outstanding: false }));
+    }
+    native.push(nativeRecord('proxy', proxy, ordinal++, 'InputHalfCloseReturned', { io: 'ok' }));
+    native.push(nativeRecord('proxy', proxy, ordinal++, 'OutputFlushReturned', { io: 'ok' }));
+    native.push(nativeRecord('native', daemon, 0, 'CaptureStarted'));
+    native.push(nativeRecord('native', daemon, 1, 'FrameSummary', { consumedBytes: 100, pendingBytes: 0, calls: 1, seedKnown: true }));
+  }
+  writeFileSync(join(root, NATIVE_TRACE_FILE), native.map(record => JSON.stringify(record)).join('\n') + '\n');
+  writeFileSync(join(root, 'fault-rustc-version.txt'), 'rustc 1.99.1 (58cf8f9c3 2026-10-13)\ncommit-hash: ' + 'a'.repeat(40) + '\nrelease: 1.99.1\n');
+}
+
+test('all four successful actual-path captures are retained, linked and hash-bound independently of functional status', t => {
+  const root = fixture(t); successfulTraces(root);
+  const evidence = collectSemanticTraceEvidence(root);
+  assert.equal(evidence.status, 'complete'); assert.equal(evidence.files.length, 5); assert.equal(evidence.links.length, 4);
+  assert.equal(evidence.ownershipDirectories.length, 4); assert.equal(evidence.compiler.status, 'complete');
+  for (const file of evidence.files) { assert.equal(file.status, 'complete'); assert.match(file.sha256!, /^[a-f0-9]{64}$/); }
+  for (const status of ['passed', 'failed']) {
+    const receipt = { status, diagnostics: evidence, releaseEligible: false };
+    verifySemanticTraceEvidence(root, receipt.diagnostics); assert.equal(receipt.status, status);
+  }
+  fs.appendFileSync(join(root, tsTraceFile('deadline')), '\n');
+  assert.throws(() => verifySemanticTraceEvidence(root, evidence), /changed or is missing/);
+  assert.equal(collectSemanticTraceEvidence(root).status, 'incomplete');
+});
+
+test('collector refuses no-follow, nonempty, duplicate, stale and absent capture without exposing filesystem errors', t => {
+  const root = fixture(t); const env = candidatePhaseEnvironment('semantic-faults', {}, root); const path = env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
+  const one = openSemanticTrace('deadline', path); assert.equal(one.available, true);
+  // A second independent collector cannot claim the same file, even while still empty.
+  assert.equal(openSemanticTrace('deadline', path).available, false); one.close();
+  assert.equal(openSemanticTrace('deadline', path).available, false);
+  const stale = join(root, tsTraceFile('fallback')); writeFileSync(stale, 'secret stale sentinel');
+  assert.equal(openSemanticTrace('fallback', path).available, false); assert.equal(readFileSync(stale, 'utf8'), 'secret stale sentinel');
+  const target = join(root, 'target'); writeFileSync(target, 'preserved');
+  const linked = join(root, tsTraceFile('cancellation')); rmSync(linked); symlinkSync(target, linked);
+  assert.equal(openSemanticTrace('cancellation', path).available, false); assert.equal(readFileSync(target, 'utf8'), 'preserved');
+  assert.equal(openSemanticTrace('abandoned-ids', undefined).available, false);
+  assert.equal(openSemanticTrace('abandoned-ids', 'relative').available, false);
+});
+
+test('collector caps at 512 records including one marker and never serializes unknown fields or error text', t => {
+  const root = fixture(t); const env = candidatePhaseEnvironment('semantic-faults', {}, root);
+  const collector = openSemanticTrace('deadline', env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
+  collector.observe(tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true }));
+  for (let index = 1; index < 700; index++) collector.observe(tsRecord(index, 'FrameComplete'));
+  collector.close();
+  const raw = readFileSync(join(root, tsTraceFile('deadline')), 'utf8'); const lines = raw.trim().split('\n');
+  assert.equal(lines.length, 512); assert.equal(lines.filter(line => line.includes('CaptureLimitReached')).length, 1);
+  assert.ok(Buffer.byteLength(raw) <= 256 * 1024); assert.ok(lines.every(line => Buffer.byteLength(line) + 1 <= 512));
+  const privacy = openSemanticTrace('fallback', env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
+  assert.equal(privacy.observe(tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true, error: 'https://secret.invalid/token' })), false);
+  privacy.close(); assert.equal(readFileSync(join(root, tsTraceFile('fallback')), 'utf8'), '');
+  const prototype = openSemanticTrace('cancellation', env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
+  const inheritedSerializer = Object.assign(Object.create({ toJSON: () => ({ secret: 'private-token' }) }) as AcceptanceRecord, tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true }));
+  assert.equal(prototype.observe(inheritedSerializer), true); prototype.close();
+  assert.doesNotMatch(readFileSync(join(root, tsTraceFile('cancellation')), 'utf8'), /private-token|secret/);
+  assert.equal(collectSemanticTraceEvidence(root).status, 'incomplete');
+});
+
+test('partial append is terminal with no repair/retry and missing summaries never become a complete capture', t => {
+  const root = fixture(t); const env = candidatePhaseEnvironment('semantic-faults', {}, root);
+  const collector = openSemanticTrace('deadline', env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
+  const original = fs.writeSync; let calls = 0;
+  const mock = t.mock.method(fs, 'writeSync', ((fd: number, data: Uint8Array) => { calls++; return original(fd, data.subarray(0, 7)); }) as typeof fs.writeSync);
+  syncBuiltinESMExports();
+  try {
+    assert.equal(collector.observe(tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true })), false);
+    assert.equal(collector.observe(tsRecord(1, 'CaptureFinished', { submittedBytes: 0, pendingWriteCallbacks: 0 })), false);
+    assert.equal(calls, 1);
+  } finally { mock.mock.restore(); syncBuiltinESMExports(); collector.close(); }
+  const evidence = collectSemanticTraceEvidence(root);
+  assert.equal(evidence.status, 'incomplete'); assert.ok(evidence.files[1]!.reasons.includes('partial-record'));
+});
+
+test('strict v2 source schemas reject payloads, wrong enums, non-safe counters and distinguish legacy v1', () => {
+  const valid = nativeRecord('native', 12, 0, 'FrameComplete', { consumedBytes: 12, pendingBytes: 0, calls: 1, seedKnown: true, frameBytes: 12 });
+  assert.equal(nativeTraceVersion(valid), 2);
+  assert.equal(nativeTraceVersion({ ...valid, url: 'secret' }), undefined);
+  assert.equal(nativeTraceVersion({ ...valid, source: 'proxy' }), undefined);
+  for (const phase of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    for (const source of ['native', 'proxy'] as const) assert.equal(nativeTraceVersion(nativeRecord(source, 12, 0, phase)), undefined);
+  }
+  assert.equal(nativeTraceVersion({ ...nativeRecord('proxy', 12, 0, 'CaptureStarted'), source: ['proxy'] }), undefined);
+  for (const io of [['ok'], { private: 'secret', toString: () => 'ok' }]) assert.equal(nativeTraceVersion(nativeRecord('proxy', 12, 0, 'OutputFlushReturned', { io })), undefined);
+  assert.equal(nativeTraceVersion({ ...valid, record: Number.MAX_SAFE_INTEGER + 1 }), undefined);
+  assert.equal(nativeTraceVersion(nativeRecord('proxy', 12, 0, 'SocketReadReturned', { leg: 'from-native', total: 0, calls: 1, outstanding: false, io: 'eof', length: 0 })), 2);
+  assert.equal(nativeTraceVersion({ schemaVersion: 1, pid: 12, record: 0, operationSeq: 1, phase: 'CancelReceived', droppedBefore: 0 }), 1);
+  assert.equal(validTsTraceRecord(tsRecord(0, 'WriteCallback', { kind: 'cancel', operationSeq: 1, start: 10, end: 20, length: 10, io: 'other' })), true);
+  assert.equal(validTsTraceRecord(tsRecord(0, 'WriteCallback', { kind: 'cancel', start: 10, end: 20, length: 10, io: 'secret error' })), false);
+  for (const [key, value] of [['kind', 'cancel'], ['io', 'ok']] as const) {
+    for (const malformed of [[value], { private: 'secret', toString: () => value }]) assert.equal(validTsTraceRecord(tsRecord(0, 'WriteCallback', { kind: 'cancel', start: 10, end: 20, length: 10, io: 'ok', [key]: malformed })), false);
+  }
+  assert.equal(validTsTraceRecord(tsRecord(0, 'ClientFail', { reason: ['engine-failure'] })), false);
+});
+
+test('drops, caps, reordering, missing owners and changed preparation leave complete-looking files inconclusive', t => {
+  const root = fixture(t); successfulTraces(root);
+  const path = join(root, NATIVE_TRACE_FILE); const original = readFileSync(path, 'utf8');
+  for (const update of [
+    (records: TraceObject[]) => { records[0]!['phase'] = 'constructor'; },
+    (records: TraceObject[]) => { records[1]!['droppedBefore'] = 1; },
+    (records: TraceObject[]) => { records[1]!['suppressedBefore'] = 1; },
+    (records: TraceObject[]) => { records[1]!['overflow'] = true; },
+    (records: TraceObject[]) => { [records[1], records[2]] = [records[2]!, records[1]!]; },
+    (records: TraceObject[]) => { records[1]!['daemonPid'] = 999; },
+  ]) {
+    const records = original.trim().split('\n').map(line => JSON.parse(line) as TraceObject); update(records);
+    writeFileSync(path, records.map(record => JSON.stringify(record)).join('\n') + '\n');
+    const evidence = collectSemanticTraceEvidence(root);
+    assert.equal(evidence.status, 'incomplete');
+    if (records[0]!['phase'] === 'constructor') assert.ok(evidence.files[0]!.reasons.includes('invalid-record'));
+  }
+  const saturated = original.trim().split('\n').map(line => JSON.parse(line) as TraceObject);
+  for (const record of saturated) if (record['pid'] === 100) record['emittedBefore'] = Number.MAX_SAFE_INTEGER;
+  writeFileSync(path, saturated.map(record => JSON.stringify(record)).join('\n') + '\n');
+  const source = collectSemanticTraceEvidence(root).files[0]!.sources.find(item => item.pid === 100)!;
+  assert.equal(source.emitted, Number.MAX_SAFE_INTEGER); assert.equal(source.overflow, true); assert.equal(source.status, 'incomplete');
+  writeFileSync(path, original); assert.equal(collectSemanticTraceEvidence(root, false).status, 'incomplete');
+  assert.equal(collectSemanticTraceEvidence(root).status, 'complete');
 });

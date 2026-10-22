@@ -151,6 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          rustc -Vv > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-rustc-version.txt"
           cargo build --locked --profile ci --no-default-features --features acceptance-faults --message-format=json > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-compiler.jsonl"
           cp "$CARGO_TARGET_DIR/ci/agent-browser" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults"
       # Scripted-peer diagnostics are independent of browser/broker acceptance. Never replace a gate.

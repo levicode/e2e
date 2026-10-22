@@ -7,6 +7,8 @@ import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_F
 import { assertProductionCapabilities, sha256 } from './bundle.ts';
 import { REQUIRED_CAPABILITIES } from '../../packages/web/src/native/capabilities.ts';
 import { verifyReport, type TestReport } from './report.ts';
+import { NATIVE_TRACE_FILE, SEMANTIC_TRACE_CASES, tsTraceFile } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
+import { collectSemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { REPO_ROOT } from '../public-packages.ts';
 
 export function candidateDistInventory(root: string) {
@@ -59,9 +61,10 @@ export function candidatePhaseEnvironment(id: string, inherited: NodeJS.ProcessE
   const env = { ...inherited };
   delete env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
   if (id === 'semantic-faults') {
-    const file = resolve(output, 'semantic-faults.native-phases.jsonl');
+    const file = resolve(output, NATIVE_TRACE_FILE);
     // Exclusive creation refuses stale evidence and symlinks; native only appends static phases.
     writeFileSync(file, '', { flag: 'wx', mode: 0o600 });
+    for (const name of SEMANTIC_TRACE_CASES) writeFileSync(resolve(output, tsTraceFile(name)), '', { flag: 'wx', mode: 0o600 });
     env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'] = file;
   }
   return env;
@@ -76,6 +79,10 @@ function main(args: string[]): void {
   const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   const sourceState = () => execFileSync('git', ['status', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   const fingerprint = (files: readonly string[]) => sha256(Buffer.from(files.map(file => `${file}\0${sha256(readFileSync(file))}`).join('\n')));
+  let phaseEnvironment: NodeJS.ProcessEnv = { ...process.env };
+  delete phaseEnvironment['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
+  let capturePrepared = suite.id !== 'semantic-faults';
+  try { phaseEnvironment = candidatePhaseEnvironment(suite.id, process.env, output); capturePrepared = true; } catch { /* Capture setup must not change the functional suite outcome. */ }
   let files: string[] = []; let testSourceDigest: string | undefined;
   let status = 'failed'; let problem: string | undefined; let assertions = 0; let binarySha256: string | undefined; let runtimeBuild: ReturnType<typeof candidateDistInventory> | undefined;
   try {
@@ -90,7 +97,7 @@ function main(args: string[]): void {
     const directory = join(cwd, suite.directory);
     const discovered = readdirSync(directory, { recursive: true, encoding: 'utf8' }).filter(name => name.endsWith('.test.ts')).map(name => join(directory, name)).toSorted();
     files = candidateFiles(suite, directory, discovered); testSourceDigest = fingerprint(files);
-    const env: NodeJS.ProcessEnv = { ...candidatePhaseEnvironment(suite.id, process.env, output), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
+    const env: NodeJS.ProcessEnv = { ...phaseEnvironment, E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
     if (suite.id === 'crosscheck-benchmark') {
       if (env['CROSSCHECK_BENCHMARK_URL'] !== 'http://127.0.0.1:4280') throw new Error('Optional benchmark must be the explicitly served local synthetic app');
     } else delete env['CROSSCHECK_BENCHMARK_URL'];
@@ -105,7 +112,8 @@ function main(args: string[]): void {
     if (JSON.stringify(candidateDistInventory(REPO_ROOT)) !== JSON.stringify(runtimeBuild)) throw new Error('Built packages changed during suite execution');
     status = 'passed';
   } catch (error) { problem = String(error); process.stderr.write(`${problem}\n`); }
-  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
+  const diagnostics = suite.id === 'semantic-faults' ? collectSemanticTraceEvidence(output, capturePrepared) : undefined;
+  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, diagnostics, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
   if (status !== 'passed') process.exitCode = 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main(process.argv.slice(2));

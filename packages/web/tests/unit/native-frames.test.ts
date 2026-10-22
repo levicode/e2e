@@ -43,3 +43,18 @@ describe('native protocol frames', () => {
     expect(frames.push(Buffer.from(`${JSON.stringify(first)}\n{}\n`))).toEqual([first, {}]);
   });
 });
+
+
+describe('scalar acceptance framing state', () => {
+  it('keeps partial bytes over empty chunks and reports the original closed refusal class', () => {
+    const frames = new NativeFrames(16);
+    expect(frames.push(Buffer.from('{"x":'))).toEqual([]);
+    expect(frames.push(Buffer.alloc(0))).toEqual([]);
+    expect(frames.acceptanceState()).toEqual({ pendingBytes: 5, failed: false });
+    expect(frames.push(Buffer.from('1}\n{}\n'))).toEqual([{ x: 1 }, {}]);
+    expect(frames.acceptanceState()).toEqual({ pendingBytes: 0, failed: false });
+    expect(() => frames.push(Buffer.alloc(17, 120))).toThrow(expect.objectContaining({ kind: 'oversize' }));
+    expect(frames.acceptanceState()).toEqual({ pendingBytes: 0, failed: true });
+    expect(() => frames.push(Buffer.from('{}\n'))).toThrow(expect.objectContaining({ kind: 'already-failed' }));
+  });
+});

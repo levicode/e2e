@@ -2,13 +2,16 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import { EngineError, type JsonValue, type OperationContext } from 'e2e/engine';
 import { rejectedDecision } from './decision-outcome.ts';
-import { NativeFrames } from './frames.ts';
+import { NativeFrameError, NativeFrames } from './frames.ts';
+import { acceptanceIo, type AcceptanceTrace, type AcceptanceReason } from './acceptance-trace.ts';
 import { MAX_FRAME_BYTES, MAX_TIMEOUT_MS, NATIVE_PROTOCOL, serverMessage, type NativeEvent, type NativeReady, type NativeResult, type ServerMessage } from './protocol.ts';
 
 /** The native CLI proxy owns the actual daemon connection and browser lifecycle. */
 export interface NativeChannel {
   readonly readable: Readable;
   readonly writable: Writable;
+  /** Internal acceptance seam, never exported from the engine entry point. */
+  readonly acceptanceTrace?: AcceptanceTrace;
   dispose(): void;
   settle?(context: OperationContext): Promise<void>;
 }
@@ -16,6 +19,7 @@ interface CallbackOwner { generation: number; identityScope: string | undefined;
 interface Pending {
   readonly kind: 'hello' | 'request' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
+  readonly cancelTarget?: number;
   readonly callbackTransition?: number;
   readonly command?: string;
   readonly generation?: number;
@@ -56,20 +60,25 @@ export class NativeClient {
 
   private constructor(private readonly channel: NativeChannel, private readonly requiredCapabilities: readonly string[], private readonly onEvent: (event: NativeEvent) => void | Promise<void>) {
     channel.readable.on('data', (chunk: Buffer) => {
+      channel.acceptanceTrace?.observe('ReceiveChunk', { length: chunk.length, failed: this.failure !== undefined });
       try {
         for (const frame of this.frames.read(chunk)) {
+          channel.acceptanceTrace?.observe('FrameComplete');
           let message: ServerMessage;
           try { message = serverMessage(frame); }
-          catch { this.fail('The native browser protocol became invalid (schema)'); return; }
+          catch { channel.acceptanceTrace?.observe('FrameRefused', { reason: 'schema' }); this.fail('The native browser protocol became invalid (schema)'); return; }
           try { this.receive(message); }
           catch (cause) {
+            channel.acceptanceTrace?.observe('FrameRefused', { reason: cause instanceof ReceiveFailure ? cause.kind : 'receive' });
             const reason = cause instanceof ReceiveFailure ? `${cause.kind}${cause.code === undefined ? '' : `:${cause.code}`}` : 'receive';
             this.fail(`The native browser protocol became invalid (${reason})`); return;
           }
         }
-      } catch { this.fail('The native browser protocol became invalid (frame)'); }
+      } catch (cause) { channel.acceptanceTrace?.observe('FrameRefused', { reason: cause instanceof NativeFrameError ? cause.kind : 'parse' }); this.fail('The native browser protocol became invalid (frame)'); }
     });
     channel.readable.on('end', () => {
+      const framing = this.frames.acceptanceState();
+      channel.acceptanceTrace?.observe('ReceiveEof', { ...framing, clean: !framing.failed && framing.pendingBytes === 0 });
       try { this.frames.end(); } catch { this.fail('The native browser response was incomplete'); }
       if (!this.closed) this.fail('The native browser connection ended before scope settlement');
     });
@@ -196,18 +205,25 @@ export class NativeClient {
     return Math.min(Math.ceil(context.timeoutMs), this.ready?.limits.maxTimeoutMs ?? MAX_TIMEOUT_MS, MAX_TIMEOUT_MS);
   }
 
-  private exchange(kind: Pending['kind'], message: Readonly<Record<string, unknown>>, context: OperationContext, operationSeq?: number, callbackTransition?: number): Promise<ServerMessage> {
-    if (this.failure !== undefined) return Promise.reject(this.failure);
-    if (this.pending.size >= 322) return Promise.reject(new EngineError('ENGINE_FAILURE', 'The native browser protocol capacity was exceeded', { retryable: false }));
+  private exchange(kind: Pending['kind'], message: Readonly<Record<string, unknown>>, context: OperationContext, operationSeq?: number, callbackTransition?: number, cancelTarget?: number): Promise<ServerMessage> {
+    const trace = this.channel.acceptanceTrace;
+    const target = operationSeq ?? cancelTarget;
+    const facts = { kind, ...(target === undefined ? {} : { operationSeq: target }) };
+    if (this.failure !== undefined) { trace?.observe('ExchangeRefused', { ...facts, reason: 'already-failed' }); return Promise.reject(this.failure); }
+    if (this.pending.size >= 322) { trace?.observe('ExchangeRefused', { ...facts, reason: 'capacity' }); return Promise.reject(new EngineError('ENGINE_FAILURE', 'The native browser protocol capacity was exceeded', { retryable: false })); }
     let timeout: number;
     let bytes: Buffer;
-    if (this.nextId === Number.MAX_SAFE_INTEGER) return Promise.reject(this.fail('The native browser request identity was exhausted'));
+    if (this.nextId === Number.MAX_SAFE_INTEGER) { trace?.observe('ExchangeRefused', { ...facts, reason: 'identity-exhausted' }); return Promise.reject(this.fail('The native browser request identity was exhausted')); }
     const id = `c${++this.nextId}`;
+    let refusal: AcceptanceReason = 'timeout';
     try {
       timeout = this.timeout(context);
+      refusal = 'serialization';
       bytes = Buffer.from(`${JSON.stringify({ ...message, id })}\n`);
+      refusal = 'frame-bound';
       if (bytes.length - 1 > Math.min(MAX_FRAME_BYTES, this.ready?.limits.maxFrameBytes ?? MAX_FRAME_BYTES) || this.channel.writable.writableLength + bytes.length > 4 * MAX_FRAME_BYTES) throw new Error('bounded write');
     } catch (cause) {
+      trace?.observe('ExchangeRefused', { ...facts, reason: refusal });
       return Promise.reject(cause instanceof EngineError ? cause : new EngineError('ENGINE_FAILURE', 'The native browser request exceeded its protocol bounds', { retryable: false }));
     }
     return new Promise((resolve, reject) => {
@@ -234,17 +250,20 @@ export class NativeClient {
         if (kind !== 'request' || operationSeq === undefined || this.ready === undefined) {
           this.fail('The native browser operation ended without a settled outcome', code); return;
         }
+        trace?.observe('LocalCancelSelected', { operationSeq, reason: code === 'CANCELLED' ? 'abort' : 'deadline' });
         cancellation = code; pending.draining = true; this.settlingRequests++;
         clearTimeout(timer); context.signal.removeEventListener('abort', abort);
         // Cleanup/settlement only: the original native deadline is never extended.
         settlementTimer = setTimeout(() => {
+          trace?.observe('SettlementExpired', { operationSeq, resultSeen: settled !== undefined, cancelAckSeen: cancelAcknowledged });
           // Instrumented acceptance binary only: closed booleans, never frames,
           // commands, operation identities, token values, or native error text.
           const diagnostic = this.ready?.capabilities.includes('acceptance.faults/1')
             ? ` (settlement:result-seen=${settled !== undefined};cancel-ack-seen=${cancelAcknowledged})` : '';
           this.fail(`The native browser operation ended without a settled outcome${diagnostic}`, code);
         }, 5000);
-        void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, { ...context, signal: new AbortController().signal, timeoutMs: 5000 }).then(() => {
+        void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, { ...context, signal: new AbortController().signal, timeoutMs: 5000 }, undefined, undefined, operationSeq).then(() => {
+          trace?.observe('CancelExchangeResolved', { operationSeq });
           cancelAcknowledged = true; complete();
         }).catch(() => { if (!finished) this.fail('The native browser cancellation did not settle', code); });
       };
@@ -255,10 +274,28 @@ export class NativeClient {
         if (settled !== undefined) throw new ReceiveFailure('response-correlation');
         settled = reply; complete();
       };
-      this.pending.set(id, { kind, ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
+      this.pending.set(id, { kind, ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
       context.signal.addEventListener('abort', abort, { once: true });
       if (context.signal.aborted) { abort(); return; }
-      try { this.channel.writable.write(bytes); } catch { this.fail('The native browser request could not be delivered'); }
+      if (trace === undefined) {
+        try { this.channel.writable.write(bytes); } catch { this.fail('The native browser request could not be delivered'); }
+      } else {
+        const span = trace.span(bytes.length);
+        const writeFacts = { ...facts, ...span, length: bytes.length };
+        trace.observeComputed('WriteEntered', () => ({ ...writeFacts, writableLength: this.channel.writable.writableLength, writableEnded: this.channel.writable.writableEnded, destroyed: this.channel.writable.destroyed }));
+        const observer = trace.active ? trace.writeObserver(writeFacts) : undefined;
+        try {
+          // Same Buffer, exactly one write. Callback captures only scalar facts and trace state.
+          const returned = observer === undefined
+            ? this.channel.writable.write(bytes)
+            : this.channel.writable.write(bytes, observer.complete);
+          trace.observe('WriteReturned', { ...writeFacts, returned });
+        } catch (error) {
+          observer?.threw();
+          trace.observe('WriteThrew', { ...writeFacts, io: acceptanceIo(error) });
+          this.fail('The native browser request could not be delivered');
+        }
+      }
     });
   }
 
@@ -286,6 +323,7 @@ export class NativeClient {
       if (this.requiredCapabilities.some(item => !message.capabilities.includes(item))) { this.fail('The native browser does not satisfy the requested protocol capabilities', 'UNSUPPORTED_CAPABILITY'); return; }
       this.frames.limit(Math.min(MAX_FRAME_BYTES, message.limits.maxFrameBytes));
       this.ready = message;
+      if (message.capabilities.includes('acceptance.faults/1')) this.channel.acceptanceTrace?.enable();
     }
     if (!pending.draining) { this.pending.delete(message.id); pending.clear(); }
     if (message.type === 'closed') {
@@ -298,6 +336,8 @@ export class NativeClient {
       else this.transitionEpoch = undefined;
     }
     pending.resolve(message);
+    if (message.type === 'result') this.channel.acceptanceTrace?.observe('ResultValidated', { operationSeq: message.operationSeq, generation: message.generation });
+    if (pending.kind === 'cancel' && message.type === 'control-result') this.channel.acceptanceTrace?.observe('CancelAckValidated', { ...(pending.cancelTarget === undefined ? {} : { operationSeq: pending.cancelTarget }), generation: message.generation, accepted: message.accepted });
     if (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed')) this.fail('The native browser scope is no longer reusable');
   }
 
@@ -346,10 +386,12 @@ export class NativeClient {
   private dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.channel.acceptanceTrace?.observe('DisposeEntered');
     try { this.channel.dispose(); } catch { /* The scope remains unusable; never interpret proxy failure as browser settlement. */ }
   }
 
   private fail(message: string, code: 'ENGINE_FAILURE' | 'CANCELLED' | 'OPERATION_TIMEOUT' | 'UNSUPPORTED_CAPABILITY' = 'ENGINE_FAILURE'): EngineError {
+    this.channel.acceptanceTrace?.observe('ClientFail', { reason: code === 'OPERATION_TIMEOUT' ? 'deadline' : code === 'CANCELLED' ? 'cancelled' : code === 'UNSUPPORTED_CAPABILITY' ? 'unsupported-capability' : 'engine-failure' });
     this.failure ??= new EngineError(code, message, { retryable: false });
     this.stagedEvents.length = 0; this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
     for (const pending of this.pending.values()) { pending.clear(); pending.reject(this.failure); }

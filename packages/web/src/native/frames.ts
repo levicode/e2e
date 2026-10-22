@@ -1,6 +1,6 @@
 /** A malformed native frame never includes the potentially sensitive bytes in diagnostics. */
 export class NativeFrameError extends Error {
-  constructor() {
+  constructor(readonly kind: 'parse' | 'oversize' | 'already-failed' = 'parse') {
     super('The native browser returned an invalid protocol frame');
     this.name = 'NativeFrameError';
   }
@@ -31,7 +31,7 @@ export class NativeFrames {
 
   /** Streams frames so negotiation and backpressure take effect between coalesced messages. */
   *read(chunk: Uint8Array): IterableIterator<Record<string, unknown>> {
-    if (this.failed) throw new NativeFrameError();
+    if (this.failed) throw new NativeFrameError('already-failed');
     const bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
     try {
       let start = 0;
@@ -39,7 +39,7 @@ export class NativeFrames {
         const newline = bytes.indexOf(10, start);
         const end = newline < 0 ? bytes.length : newline;
         const size = this.length + end - start;
-        if (size > this.maximumBytes) throw new NativeFrameError();
+        if (size > this.maximumBytes) throw new NativeFrameError('oversize');
         if (size > this.buffer.length) {
           const next = Buffer.alloc(Math.min(this.maximumBytes, Math.max(size, this.buffer.length * 2)));
           this.buffer.copy(next, 0, 0, this.length);
@@ -56,13 +56,16 @@ export class NativeFrames {
         start = newline + 1;
         yield value as Record<string, unknown>;
       }
-    } catch {
+    } catch (cause) {
       this.failed = true;
       this.buffer.fill(0);
       this.length = 0;
-      throw new NativeFrameError();
+      throw new NativeFrameError(cause instanceof NativeFrameError ? cause.kind : 'parse');
     }
   }
+
+  /** Scalar state only for the internal acceptance observer. */
+  acceptanceState(): { pendingBytes: number; failed: boolean } { return { pendingBytes: this.length, failed: this.failed }; }
 
   /** EOF in a partial frame is a protocol failure, never a successful truncated response. */
   end(): void {

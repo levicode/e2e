@@ -76,3 +76,26 @@ describe('failed native startup retains bounded process cleanup', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+import { AcceptanceTrace, type AcceptanceRecord } from '../../src/native/acceptance-trace.ts';
+describe('acceptance-only actual process observer seam', () => {
+  it('links the original child and observes existing end, destroy, exit and close without payloads', async () => {
+    const records: AcceptanceRecord[] = []; const trace = new AcceptanceTrace(record => { records.push(record); });
+    const child = Object.assign(new EventEmitter(), { pid: 123, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null as number | null, signalCode: null as NodeJS.Signals | null, kill: vi.fn() });
+    const writes: Record<string, unknown>[] = [];
+    child.stdin.on('data', (chunk: Buffer) => {
+      const message = JSON.parse(chunk.toString()) as Record<string, unknown>; writes.push(message);
+      if (message['type'] === 'hello') child.stdout.write(JSON.stringify({ type: 'ready', id: message['id'], protocol: 'agent-browser-session/1', sessionId: 'private-session', generation: 1, capabilities: ['acceptance.faults/1'], limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' }) + '\n');
+      else if (message['type'] === 'close') child.stdout.write(JSON.stringify({ type: 'closed', id: message['id'], generation: 1, scopeState: 'closed' }) + '\n');
+    });
+    child.stdin.on('finish', () => { child.exitCode = 0; child.emit('exit', 0, null); child.emit('close', 0, null); });
+    spawn.mockReturnValueOnce(child);
+    const operation: OperationContext = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'test', attemptId: 'test', origin: 'test' };
+    const client = await connectNativeProcess({ executable: '/verified/native', cwd: '/synthetic', env: { PRIVATE: 'private-env' }, capabilities: [], acceptanceTrace: trace }, operation, () => {});
+    await client.close(operation); trace.finish();
+    expect(writes.map(message => message['type'])).toEqual(['hello', 'close']);
+    expect(records.find(record => record.phase === 'ProcessSpawned')).toMatchObject({ proxyPid: 123 });
+    expect(records.map(record => record.phase)).toEqual(expect.arrayContaining(['StdinEndEntered', 'StreamsDestroyEntered', 'ProcessExit', 'ProcessClose', 'CaptureFinished']));
+    expect(child.kill).not.toHaveBeenCalled(); expect(JSON.stringify(records)).not.toMatch(/private-session|private-env|verified|synthetic/);
+  });
+});

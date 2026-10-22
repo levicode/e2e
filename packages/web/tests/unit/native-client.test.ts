@@ -1,6 +1,7 @@
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { OperationContext } from 'e2e/engine';
+import { AcceptanceTrace, type AcceptanceRecord } from '../../src/native/acceptance-trace.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { BrowserChannel } from '../../src/native/browser-channel.ts';
@@ -9,7 +10,7 @@ import type { NativeEvent } from '../../src/native/protocol.ts';
 function context(signal = new AbortController().signal): OperationContext {
   return { signal, timeoutMs: 1000, runId: 'synthetic-run', attemptId: 'synthetic-attempt', origin: 'test' };
 }
-function harness() {
+function harness(trace?: AcceptanceTrace) {
   const output = new PassThrough();
   const requests: Record<string, unknown>[] = [];
   const input = new Writable({ write(chunk: Buffer, _encoding, callback) { requests.push(JSON.parse(chunk.toString('utf8')) as Record<string, unknown>); callback(); } });
@@ -17,14 +18,14 @@ function harness() {
   const send = (...messages: unknown[]) => output.write(messages.map(message => JSON.stringify(message)).join('\n') + '\n');
   const ready = (extra: Record<string, unknown> = {}) => ({ type: 'ready', id: requests[0]!['id'], protocol: 'agent-browser-session/1', sessionId: 'sample-client', generation: 1, capabilities: [], limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable', ...extra });
   const result = (request: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: true, data: { completed: true }, effects: 'completed', scopeState: 'usable', ...extra });
-  const connect = (onEvent: (event: NativeEvent) => void | Promise<void> = () => {}) => NativeClient.connect({ readable: output, writable: input, dispose }, [], context(), onEvent);
-  return { output, requests, dispose, send, ready, result, connect };
+  const connect = (onEvent: (event: NativeEvent) => void | Promise<void> = () => {}) => NativeClient.connect({ readable: output, writable: input, dispose, ...(trace === undefined ? {} : { acceptanceTrace: trace }) }, [], context(), onEvent);
+  return { input, output, requests, dispose, send, ready, result, connect };
 }
 
-async function opened() {
-  const fixture = harness();
+async function opened(trace?: AcceptanceTrace) {
+  const fixture = harness(trace);
   const connecting = fixture.connect();
-  fixture.send(fixture.ready());
+  fixture.send(fixture.ready(trace === undefined ? {} : { capabilities: ['acceptance.faults/1'] }));
   return { ...fixture, client: await connecting };
 }
 
@@ -359,7 +360,8 @@ describe('native session client', () => {
   });
 
   it.each(['ack-first', 'result-first'] as const)('retains cancellation settlement in %s order before reuse', async (order) => {
-    const fixture = await opened(); const controller = new AbortController();
+    const records: AcceptanceRecord[] = [];
+    const fixture = await opened(new AcceptanceTrace(record => { records.push(record); })); const controller = new AbortController();
     const request = fixture.client.request('browser.observe', {}, context(controller.signal));
     const original = fixture.requests.at(-1)!; controller.abort();
     const cancel = fixture.requests.at(-1)!;
@@ -373,6 +375,8 @@ describe('native session client', () => {
     expect(await request).toMatchObject({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched' });
     expect(fixture.dispose).not.toHaveBeenCalled();
     expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+    expect(records.filter(record => record.phase === 'CancelAckValidated')).toMatchObject([{ operationSeq: original['operationSeq'], accepted: order === 'ack-first' }]);
+    expect(records.filter(record => record.phase === 'ResultValidated')).toMatchObject([{ operationSeq: original['operationSeq'] }]);
     await close(fixture);
   });
 
@@ -405,7 +409,8 @@ describe('native session client', () => {
   it.each(['result', 'ack'] as const)('quarantines when cancellation settlement loses its %s', async (missing) => {
     vi.useFakeTimers();
     try {
-      const fixture = await opened(); const controller = new AbortController();
+      const records: AcceptanceRecord[] = [];
+      const fixture = await opened(new AcceptanceTrace(record => { records.push(record); })); const controller = new AbortController();
       const request = fixture.client.request('click', {}, context(controller.signal));
       const failed = expect(request).rejects.toMatchObject({ retryable: false });
       const original = fixture.requests.at(-1)!; controller.abort(); const cancel = fixture.requests.at(-1)!;
@@ -413,6 +418,7 @@ describe('native session client', () => {
         ? { type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' }
         : fixture.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
       await vi.advanceTimersByTimeAsync(5000); await failed;
+      expect(records.find(record => record.phase === 'SettlementExpired')).toMatchObject({ resultSeen: missing !== 'result', cancelAckSeen: missing !== 'ack' });
       expect(fixture.dispose).toHaveBeenCalledOnce();
       await expect(fixture.client.request('click', {}, context())).rejects.toMatchObject({ retryable: false });
       expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
@@ -441,23 +447,29 @@ describe('native session client', () => {
   });
 
   it.each(['completed', 'unknown'] as const)('preserves %s effects when cancellation races a mutation result', async (effects) => {
-    const fixture = await opened(); const controller = new AbortController();
+    const records: AcceptanceRecord[] = [];
+    const fixture = await opened(new AcceptanceTrace(record => { records.push(record); })); const controller = new AbortController();
     const request = fixture.client.request('click', {}, context(controller.signal));
     const original = fixture.requests.at(-1)!; controller.abort(); const cancel = fixture.requests.at(-1)!;
     if (effects === 'completed') fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
     fixture.send(fixture.result(original, effects === 'completed' ? {} : { ok: false, data: undefined, error: { code: 'cancelled' }, effects, scopeState: 'quarantined' }));
     expect(await request).toMatchObject({ effects });
+    expect(records.some(record => record.phase === 'ResultValidated')).toBe(true);
+    if (effects === 'unknown') expect(records.some(record => record.phase === 'CancelAckValidated')).toBe(false);
     if (effects === 'completed') await close(fixture);
     else expect(fixture.dispose).toHaveBeenCalledOnce();
   });
 
   it.each(['id', 'generation'] as const)('rejects a cancellation ACK with unrelated %s', async (field) => {
-    const fixture = await opened(); const controller = new AbortController();
+    const records: AcceptanceRecord[] = [];
+    const fixture = await opened(new AcceptanceTrace(record => { records.push(record); })); const controller = new AbortController();
     const request = fixture.client.request('browser.observe', {}, context(controller.signal));
     const failure = expect(request).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
     controller.abort(); const cancel = fixture.requests.at(-1)!;
     fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable', [field]: field === 'id' ? 'unrelated' : 2 });
     await failure; expect(fixture.dispose).toHaveBeenCalledOnce();
+    expect(records.some(record => record.phase === 'CancelAckValidated')).toBe(false);
+    expect(records.some(record => record.phase === 'FrameRefused' && record.reason === 'response-correlation')).toBe(true);
   });
 
   it('retains lifecycle event publication until a cancelled transition has actually settled', async () => {
@@ -591,5 +603,111 @@ describe('instrumented settlement diagnostics', () => {
       expect(await failure).toMatchObject({ code: 'CANCELLED', message: 'The native browser operation ended without a settled outcome (settlement:result-seen=false;cancel-ack-seen=true)' });
       expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
     } finally { vi.useRealTimers(); }
+  });
+});
+
+
+describe('internal acceptance observer isolation', () => {
+  it('emits nothing and adds no write callback before negotiated acceptance capability', async () => {
+    const observe = vi.fn(); const trace = new AcceptanceTrace(observe); const fixture = harness(trace);
+    const write = vi.spyOn(fixture.input, 'write');
+    const connecting = fixture.connect();
+    expect(write).toHaveBeenCalledOnce(); expect(write.mock.calls[0]).toHaveLength(1);
+    expect(observe).not.toHaveBeenCalled();
+    fixture.send(fixture.ready()); const client = await connecting;
+    const request = client.request('private-command', { token: 'private-token' }, context());
+    expect(write.mock.calls.at(-1)).toHaveLength(1);
+    fixture.send(fixture.result(fixture.requests.at(-1)!)); await request;
+    await close({ ...fixture, client }); trace.finish();
+    expect(observe).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('keeps the original Buffer and one write when backpressure returns %s', async returned => {
+    const records: AcceptanceRecord[] = []; const trace = new AcceptanceTrace(record => { records.push(record); });
+    const fixture = await opened(trace); const forwarded: Buffer[] = []; let callback: ((error?: Error | null) => void) | undefined;
+    const original = fixture.input.write.bind(fixture.input);
+    const write = vi.spyOn(fixture.input, 'write').mockImplementation((chunk, encoding, cb) => {
+      forwarded.push(chunk as Buffer); callback = typeof encoding === 'function' ? encoding : cb;
+      original(chunk); return returned;
+    });
+    const request = fixture.client.request('private-command', { url: 'https://private.invalid/secret', token: 'private-token' }, context());
+    expect(write).toHaveBeenCalledOnce(); expect(forwarded[0]).toBe(write.mock.calls[0]![0]);
+    const entry = records.findLast(record => record.phase === 'WriteEntered')!;
+    expect(entry.length).toBe(forwarded[0]!.length); expect(entry.end! - entry.start!).toBe(entry.length);
+    expect(records.findLast(record => record.phase === 'WriteReturned')?.returned).toBe(returned);
+    // A delayed error callback is not an ACK, rejection, quarantine, or retry.
+    callback?.(Object.assign(new Error('private-error-text'), { code: 'EPIPE' }));
+    expect(records.findLast(record => record.phase === 'WriteCallback')?.io).toBe('broken-pipe');
+    expect(fixture.dispose).not.toHaveBeenCalled(); expect(write).toHaveBeenCalledOnce();
+    fixture.send(fixture.result(fixture.requests.at(-1)!)); await expect(request).resolves.toMatchObject({ ok: true });
+    expect(JSON.stringify(records)).not.toMatch(/private-command|private.invalid|private-token|private-error-text/);
+    write.mockRestore(); await close(fixture); trace.finish();
+  });
+
+  it('contains observer and diagnostic property exceptions without changing delivery', async () => {
+    const records: AcceptanceRecord[] = []; let throwObserver = true;
+    const trace = new AcceptanceTrace(record => { if (throwObserver) throw new Error('private observer'); records.push(record); });
+    const fixture = await opened(trace); throwObserver = false;
+    Object.defineProperty(fixture.input, 'writableEnded', { configurable: true, get() { throw new Error('private getter'); } });
+    const writes = vi.spyOn(fixture.input, 'write');
+    const request = fixture.client.request('read', {}, context());
+    expect(writes).toHaveBeenCalledOnce(); fixture.send(fixture.result(fixture.requests.at(-1)!));
+    await expect(request).resolves.toMatchObject({ ok: true });
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(records.some(record => record.droppedBefore > 0)).toBe(true);
+    delete (fixture.input as unknown as Record<string, unknown>)['writableEnded'];
+    await close(fixture);
+  });
+
+  it('preserves thrown-write and stream-error failures without retaining error text', async () => {
+    for (const mode of ['throw', 'stream'] as const) {
+      const records: AcceptanceRecord[] = []; const fixture = await opened(new AcceptanceTrace(record => { records.push(record); }));
+      const error = Object.assign(new Error('secret error sentinel'), { code: 'ECONNRESET' });
+      const write = mode === 'throw' ? vi.spyOn(fixture.input, 'write').mockImplementation(() => { throw error; }) : undefined;
+      const request = fixture.client.request('read', {}, context());
+      const failed = expect(request).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      if (mode === 'stream') fixture.input.emit('error', error);
+      await failed; expect(fixture.dispose).toHaveBeenCalledOnce();
+      if (mode === 'throw') { expect(write).toHaveBeenCalledOnce(); expect(records.find(record => record.phase === 'WriteThrew')?.io).toBe('connection-reset'); }
+      expect(JSON.stringify(records)).not.toContain('secret error sentinel');
+    }
+  });
+
+  it('records a failed pre-write serialization without sending or poisoning reuse', async () => {
+    const records: AcceptanceRecord[] = []; const fixture = await opened(new AcceptanceTrace(record => { records.push(record); }));
+    const args: Record<string, never> = {}; Object.defineProperty(args, 'secret', { enumerable: true, get() { throw new Error('secret serialization'); } });
+    await expect(fixture.client.request('read', args, context())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(fixture.requests).toHaveLength(1); expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(records.findLast(record => record.phase === 'ExchangeRefused')).toMatchObject({ reason: 'serialization', kind: 'request' });
+    await close(fixture);
+  });
+
+  it.each(['clean', 'partial', 'invalid'] as const)('classifies %s receive boundaries without payloads', async mode => {
+    const records: AcceptanceRecord[] = []; const fixture = await opened(new AcceptanceTrace(record => { records.push(record); }));
+    const request = fixture.client.request('read', {}, context()); const failure = expect(request).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    if (mode === 'invalid') fixture.output.write('private-invalid-frame\n');
+    else { if (mode === 'partial') fixture.output.write('{"private-pending":'); fixture.output.end(); }
+    await failure;
+    if (mode === 'invalid') expect(records.findLast(record => record.phase === 'FrameRefused')?.reason).toBe('parse');
+    else expect(records.findLast(record => record.phase === 'ReceiveEof')).toMatchObject({ clean: mode === 'clean', failed: false, pendingBytes: mode === 'clean' ? 0 : 19 });
+    expect(JSON.stringify(records)).not.toMatch(/private-invalid|private-pending/);
+  });
+});
+
+
+describe('acceptance scalar accounting', () => {
+  it('bounds pre-ready facts, marks suppression, and clamps counters with explicit overflow', () => {
+    const records: AcceptanceRecord[] = []; const trace = new AcceptanceTrace(record => { records.push(record); });
+    for (let index = 0; index < 100; index++) trace.observe('FrameComplete');
+    expect(records).toHaveLength(0); trace.enable();
+    expect(records).toHaveLength(64); expect(records[0]).toMatchObject({ phase: 'CaptureStarted', initialSubmittedBytes: 0, seedKnown: true, suppressedBefore: 37 });
+    trace.span(Number.MAX_SAFE_INTEGER); expect(trace.span(1).end).toBe(Number.MAX_SAFE_INTEGER);
+    trace.finish(); expect(records.at(-1)).toMatchObject({ phase: 'CaptureFinished', submittedBytes: Number.MAX_SAFE_INTEGER, overflow: true, pendingWriteCallbacks: 0 });
+  });
+  it('reports pending write callbacks at the terminal boundary rather than inventing completion', () => {
+    const records: AcceptanceRecord[] = []; const trace = new AcceptanceTrace(record => { records.push(record); }); trace.enable();
+    const write = trace.writeObserver({ kind: 'cancel', operationSeq: 2, start: 0, end: 1, length: 1 });
+    trace.finish(); expect(records.at(-1)?.pendingWriteCallbacks).toBe(1);
+    write.complete(); expect(records.at(-1)?.phase).toBe('CaptureFinished');
   });
 });
