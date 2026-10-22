@@ -311,14 +311,37 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
   /** A fallback keeps the original matching list while native rotates the resource token. */
   const handleRequest = async (event: BrowserEventMap['network.request']): Promise<void> => {
     let selected = false;
+    let submitted = false;
+    let decisionWork: Promise<void> | undefined;
     const operation = context.operation(event.timeoutMs);
     const deadline = new Deadline(operation.timeoutMs);
+    const current = (): OperationContext => ({ ...operation, timeoutMs: deadline.remaining() });
+    const waitFor = (work: Promise<void>): Promise<void> => raceAbort(withTimeout(work, deadline.remaining(),
+      () => new TestError('ACTION_FAILED', 'route handler exceeded its decision deadline')), operation.signal, 'route handler');
     const decide = async (decision: BrowserDecision): Promise<void> => {
       assertSurfaceScope(surface, event.identityScope);
-      if (selected) throw new TestError('ACTION_FAILED', 'route handler already decided');
-      selected = true;
       if (decision.kind !== 'fallback') chains.delete(event.token);
-      await surface.decide(event.token, decision, { ...operation, timeoutMs: deadline.remaining() });
+      submitted = true;
+      try { await surface.decide(event.token, decision, current()); }
+      catch (cause) {
+        // Only an explicit rejection proves a submitted decision can be aborted.
+        if (isRejectedDecision(cause)) submitted = false;
+        throw cause;
+      }
+    };
+    const choose = (name: string, prepare: () => () => Promise<void>): Promise<void> => {
+      try {
+        // Validate and reserve synchronously, before file reads or blob uploads.
+        const act = prepare();
+        assertSurfaceScope(surface, event.identityScope);
+        if (selected) throw new TestError('ACTION_FAILED', `route handler already decided; ${name} called twice`);
+        selected = true;
+        decisionWork = Promise.resolve().then(act);
+        // Return the original promise, not an async wrapper whose rejection could
+        // escape when a handler deliberately does not await its selected choice.
+        void decisionWork.catch(() => undefined);
+        return decisionWork;
+      } catch (cause) { return Promise.reject(cause); }
     };
     try {
       const snapshot = snapshots.get(event.version);
@@ -347,44 +370,52 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
       };
       if (stored === undefined) {
         const site = surface.siteHeaders(request.url);
+        selected = true;
         await decide({ kind: 'continue', overrides: site === undefined ? {} : { headers: headerPairs({ ...lowercaseNames(request.headers), ...site }) } });
         return;
       }
       const route: WebRoute = {
         request,
-        fulfill: async response => {
+        fulfill: response => choose('fulfill', () => {
           const parsed = parseFulfill(response, file => surface.projectPath(file));
-          const body = parsed.path !== undefined ? await readFile(parsed.path)
-            : Buffer.from(parsed.json !== undefined ? JSON.stringify(parsed.json) : parsed.body ?? '');
-          const headers = { ...lowercaseNames(parsed.headers) };
-          const contentType = parsed.contentType ?? (parsed.json !== undefined ? 'application/json' : parsed.path === undefined ? undefined : lookupMime(parsed.path) || 'application/octet-stream');
-          if (contentType !== undefined) headers['content-type'] = contentType;
-          await withDecisionBody(surface, body, operation, payload => decide({ kind: 'fulfill', status: parsed.status, headers: headerPairs(headers), ...payload }), event.identityScope);
-        },
-        continue: async overrides => {
+          return async () => {
+            const body = parsed.path !== undefined ? await readFile(parsed.path, { signal: operation.signal })
+              : Buffer.from(parsed.json !== undefined ? JSON.stringify(parsed.json) : parsed.body ?? '');
+            const headers = { ...lowercaseNames(parsed.headers) };
+            const contentType = parsed.contentType ?? (parsed.json !== undefined ? 'application/json' : parsed.path === undefined ? undefined : lookupMime(parsed.path) || 'application/octet-stream');
+            if (contentType !== undefined) headers['content-type'] = contentType;
+            await withDecisionBody(surface, body, operation, deadline, payload => decide({ kind: 'fulfill', status: parsed.status, headers: headerPairs(headers), ...payload }), event.identityScope);
+          };
+        }),
+        continue: overrides => choose('continue', () => {
           const parsed = parseContinue(overrides, request.url, context.app.resolveUrl);
           const site = surface.siteHeaders(parsed.url ?? request.url);
           const headers = parsed.headers === undefined && site === undefined ? undefined : headerPairs({ ...lowercaseNames(parsed.headers ?? request.headers), ...site });
-          const continueWith = (payload: NativeDecisionBody | { bodyBase64?: never; bodyHandle?: never }): Promise<void> => decide({ kind: 'continue', overrides: {
-            ...(parsed.url === undefined ? {} : { url: parsed.url }),
-            ...(parsed.method === undefined ? {} : { method: parsed.method }),
-            ...(headers === undefined ? {} : { headers }),
-            ...payload,
-          } });
-          if (parsed.postData === undefined) await continueWith({});
-          else await withDecisionBody(surface, Buffer.from(parsed.postData), operation, continueWith, event.identityScope);
-        },
-        fallback: async (...args: unknown[]) => { requireNoArguments('route.fallback', args); await decide({ kind: 'fallback', overrides: {} }); },
-        abort: async (...args: unknown[]) => { requireNoArguments('route.abort', args); await decide({ kind: 'abort' }); },
+          return async () => {
+            const continueWith = (payload: NativeDecisionBody | { bodyBase64?: never; bodyHandle?: never }): Promise<void> => decide({ kind: 'continue', overrides: {
+              ...(parsed.url === undefined ? {} : { url: parsed.url }),
+              ...(parsed.method === undefined ? {} : { method: parsed.method }),
+              ...(headers === undefined ? {} : { headers }),
+              ...payload,
+            } });
+            if (parsed.postData === undefined) await continueWith({});
+            else await withDecisionBody(surface, Buffer.from(parsed.postData), operation, deadline, continueWith, event.identityScope);
+          };
+        }),
+        fallback: (...args: unknown[]) => choose('fallback', () => { requireNoArguments('route.fallback', args); return () => decide({ kind: 'fallback', overrides: {} }); }),
+        abort: (...args: unknown[]) => choose('abort', () => { requireNoArguments('route.abort', args); return () => decide({ kind: 'abort' }); }),
       };
-      await raceAbort(withTimeout(Promise.resolve().then(() => stored.handler(route)), deadline.remaining(),
-        () => new TestError('ACTION_FAILED', 'route handler exceeded its decision deadline')), operation.signal, 'route handler');
+      await waitFor(Promise.resolve().then(() => stored.handler(route)));
       if (!selected) throw new TestError('ACTION_FAILED', 'route handler returned without calling fulfill, continue, fallback, or abort');
+      if (decisionWork !== undefined) await waitFor(decisionWork);
     } catch (cause) {
-      chains.delete(event.token);
       surface.latchCallbackFailure(event.identityScope, cause instanceof Error ? cause : new TestError('ACTION_FAILED', `route handler failed: ${causeMessage(cause)}`));
+      // A throwing handler must not end the native callback while its original
+      // selected choice is still reading, uploading, or awaiting acknowledgment.
+      if (decisionWork !== undefined) await waitFor(decisionWork).catch(() => undefined);
+      chains.delete(event.token);
       if (!surfaceScopeActive(surface, event.identityScope)) return;
-      if (!selected) await surface.decide(event.token, { kind: 'abort' }, operation).catch(() => undefined);
+      if (!submitted) await surface.decide(event.token, { kind: 'abort' }, current()).catch(() => undefined);
     }
   };
 
@@ -526,7 +557,15 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
         ...(cookie.sameSite === undefined ? {} : { sameSite: cookie.sameSite }),
       })) }).then(() => undefined);
     },
-    async setViewport(size) { await command('context.viewport', size); context.attachViewport({ ...size, scale: 1 }); },
+    async setViewport(size) {
+      const { width, height } = size;
+      if (![width, height].every(side => Number.isInteger(side) && side >= 0)) {
+        const cause = new Error(`the viewport needs whole, non-negative pixels, got ${width}x${height}`);
+        throw new EngineError('ENGINE_FAILURE', `setViewport failed: ${cause.message}`, { retryable: false, cause });
+      }
+      await command('context.viewport', { width, height });
+      context.attachViewport({ width, height, scale: 1 });
+    },
     async emulateMedia(media) {
       if (typeof media !== 'object' || media === null) throw new TestError('INVALID_ARGUMENT', 'browser.emulateMedia takes { colorScheme?, reducedMotion? }');
       rejectUnknownOptions('browser.emulateMedia', media, MEDIA_KEYS);
@@ -864,12 +903,12 @@ async function withDecisionBody(
   surface: NativeWebSurface,
   bytes: Buffer,
   operation: OperationContext,
+  deadline: Deadline,
   decide: (payload: NativeDecisionBody) => Promise<void>,
   scope = surface.identityScope,
 ): Promise<void> {
   assertSurfaceScope(surface, scope);
   if (bytes.length <= 256 * 1024) return decide({ bodyBase64: bytes.toString('base64') });
-  const deadline = new Deadline(operation.timeoutMs);
   const current = (): OperationContext => { assertSurfaceScope(surface, scope); return { ...operation, timeoutMs: deadline.remaining() }; };
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   const created = await surface.command('blob.create', { size: bytes.length, sha256 }, current());

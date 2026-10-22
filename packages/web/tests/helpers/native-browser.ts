@@ -2,6 +2,7 @@
 import type { EngineHandle, OperationContext } from 'e2e/engine';
 import { resolveConfig } from '../../../e2e/dist/config/resolve.js';
 import { createEngineSession } from '../../../e2e/dist/engine/session.js';
+import type { TargetSession } from '../../../e2e/dist/engine/surface.js';
 import { Deadline } from '../../../e2e/dist/internal/time.js';
 import { AttemptBudget } from '../../../e2e/dist/run/budget.js';
 import { createFixtures } from '../../../e2e/dist/run/fixtures.js';
@@ -15,18 +16,24 @@ import type { Browser } from '../../src/index.ts';
  * helper lifetime; each action uses the caller's initial per-action timeout.
  * No fabricated EngineFixtureContext or replacement locator implementation.
  */
-export function nativeBrowser(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): Browser {
+export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): { browser: Browser; session: TargetSession } {
   const current = operation();
   const config = resolveConfig({ targets: [{ name: 'web', platform: 'web', engine, app: { url: baseUrl } }], cache: 'off', timeout: 30_000, actionTimeout: current.timeoutMs, assertionTimeout: current.timeoutMs }, { projectRoot: process.cwd(), env: process.env });
   const steps = new StepRecorder(current.attemptId);
+  const session = createEngineSession({ engine, targetName: 'web' });
   const { fixtures } = createFixtures({
-    config, target: config.targets[0]!, session: createEngineSession({ engine, targetName: 'web' }),
+    config, target: config.targets[0]!, session,
     steps, budget: new AttemptBudget(current.signal, new Deadline(30_000)), runId: current.runId, attemptId: current.attemptId,
     attempt: { testId: 'native-browser-fixture', attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
     artifacts: { dir: process.cwd(), register: (_kind, relativePath) => relativePath, link: (relativePath) => relativePath }, priorSteps: () => steps.completed(),
     agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
   });
-  return Reflect.get(fixtures, 'browser') as Browser;
+  return { browser: Reflect.get(fixtures, 'browser') as Browser, session };
+}
+
+/** Existing fixture-only callers keep the same real graph and public Browser surface. */
+export function nativeBrowser(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): Browser {
+  return nativeBrowserGraph(engine, operation, baseUrl).browser;
 }
 
 /** Replace a synthetic fixture document through trusted evaluation, including inline scripts. */

@@ -1,13 +1,13 @@
 /** Orchestration regression tests, never counted as browser/native acceptance evidence. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { candidateRevision } from './candidate-revision.ts';
 import { candidateSha, compilerHarnesses, verifyNativeInventory } from './candidate-native.ts';
-import { candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures } from './candidate-web.ts';
+import { candidatePhaseEnvironment, candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures } from './candidate-web.ts';
 import { candidateSourceProblems, LEGACY_PRODUCTION_FILES, REQUIRED_MIGRATED_TEST_FILES } from './candidate-source.ts';
 import { CANDIDATE_GATES, OPTIONAL_CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
 import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_WEB_SUITES } from './candidate-manifest.ts';
@@ -71,6 +71,9 @@ test('production discovery excludes only the separately mandatory fault file', (
   const faults = CANDIDATE_WEB_SUITES.find(item => item.id === 'semantic-faults')!;
   assert.deepEqual(candidateFiles(faults, directory, discovered), [join(directory, CANDIDATE_FAULT_FILE)]);
   assert.equal(WEB_ACCEPTANCE.find(item => item.id === 'web-browser')?.requiredFiles.includes('native-state-roundtrip.test.ts'), true);
+  assert.equal(WEB_ACCEPTANCE.find(item => item.id === 'web-browser')?.requiredFiles.includes('query-reference-replacement.test.ts'), true);
+  assert.ok(selected.includes(join(directory, 'query-reference-replacement.test.ts')));
+  assert.throws(() => candidateFiles(suite, directory, discovered.filter(file => !file.endsWith('query-reference-replacement.test.ts'))), /Missing required.*query-reference-replacement/s);
 });
 test('all 15 named differential fixtures and reconciliation must pass independently of optional sweep', () => {
   const file = '/fixtures/crosscheck.test.ts';
@@ -166,4 +169,30 @@ test('fake-harness orchestration continues all exact contracts after failure and
   assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), [...CANDIDATE_NATIVE_CONTRACTS]);
   const summary = JSON.parse(readFileSync(join(output, 'browser.result.json'), 'utf8')) as { status: string; failures: string[]; results: unknown[] };
   assert.equal(summary.status, 'failed'); assert.equal(summary.failures.length, 1); assert.equal(summary.results.length, CANDIDATE_NATIVE_CONTRACTS.length - 1);
+});
+
+
+test('only semantic faults receive an exclusively created private native phase file', t => {
+  const root = fixture(t);
+  const inherited = { AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: '/untrusted-inherited-path', KEEP: 'yes' };
+  for (const id of ['web-browser', 'package-imports', 'crosscheck-fixtures', 'public-callbacks']) {
+    assert.deepEqual(candidatePhaseEnvironment(id, inherited, root), { KEEP: 'yes' });
+  }
+  const path = join(root, 'semantic-faults.native-phases.jsonl');
+  assert.equal(existsSync(path), false);
+  const env = candidatePhaseEnvironment('semantic-faults', inherited, root);
+  assert.deepEqual(env, { KEEP: 'yes', AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: path });
+  assert.equal(statSync(path).mode & 0o777, 0o600);
+  assert.equal(readFileSync(path, 'utf8'), '');
+  writeFileSync(path, 'existing bounded evidence');
+  assert.throws(() => candidatePhaseEnvironment('semantic-faults', inherited, root), { code: 'EEXIST' });
+  assert.equal(readFileSync(path, 'utf8'), 'existing bounded evidence');
+  assert.equal(inherited.AGENT_BROWSER_ACCEPTANCE_PHASE_FILE, '/untrusted-inherited-path');
+});
+
+test('native phase preparation refuses a preexisting symlink without modifying its target', t => {
+  const root = fixture(t); const target = join(root, 'retained'); writeFileSync(target, 'retained');
+  symlinkSync(target, join(root, 'semantic-faults.native-phases.jsonl'));
+  assert.throws(() => candidatePhaseEnvironment('semantic-faults', {}, root), { code: 'EEXIST' });
+  assert.equal(readFileSync(target, 'utf8'), 'retained');
 });

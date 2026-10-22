@@ -629,6 +629,30 @@ describe('native surface ownership and fixed policy binding', () => {
       }
     } finally { await surface.dispose(cleanup()); await rm(directory, { recursive: true, force: true }); }
   });
+  // The native encoder owns viewport fallback and JPEG options. This exercises
+  // the public adapter's real wire payload, not a synthetic claim about pixels.
+  it.each([
+    { label: 'viewport-default', screencast: undefined },
+    { label: 'configured', screencast: { size: { width: 640, height: 400 }, quality: 70 } },
+  ])('sends $label screencast size and quality through the public native client', async ({ screencast }) => {
+    const viewport = { width: 320, height: 200 };
+    const engine = web({ viewport, ...(screencast === undefined ? {} : { screencast }) });
+    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    await engine.startAttempt!(context('video-options'));
+    try {
+      expect(frames.find(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ viewport });
+      expect(frames.filter(frame => frame['command'] === 'recording.start')).toEqual([]);
+      await engine.artifacts!.startVideo!(operation());
+      const starts = frames.filter(frame => frame['command'] === 'recording.start');
+      expect(starts).toHaveLength(1);
+      expect(starts[0]?.['args']).toEqual({ identityScope: currentScope, ...screencast });
+      if (screencast === undefined) {
+        expect(starts[0]?.['args']).not.toHaveProperty('size');
+        expect(starts[0]?.['args']).not.toHaveProperty('quality');
+      }
+    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); } }
+  });
+
   it.each([1, 2])('reports finalized missing segment %i once without losing retained earlier output on retry', async ordinal => {
     const directory = await mkdtemp(path.join(tmpdir(), 'native-video-retry-'));
     const engine = web({});

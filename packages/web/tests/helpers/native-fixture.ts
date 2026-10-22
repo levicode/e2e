@@ -3,13 +3,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { EngineHandle, OperationContext } from 'e2e/engine';
+import type { TargetSession } from '../../../e2e/dist/engine/surface.js';
 import { web, type Browser, type WebOptions } from '../../src/index.ts';
-import { nativeBrowser } from './native-browser.ts';
+import { nativeBrowserGraph } from './native-browser.ts';
 import { ignoreTrace, noSecrets } from './secrets.ts';
 
 export interface NativeFixture {
   readonly engine: EngineHandle;
   readonly browser: Browser;
+  /** The same real session used by Browser, for retained-reference tests without locator retries. */
+  readonly session: TargetSession;
   readonly operation: () => OperationContext;
   readonly close: () => Promise<void>;
 }
@@ -37,7 +40,7 @@ export async function startNativeFixture(name: string, options: WebOptions = {})
       resolveSecret: noSecrets, ...ignoreTrace,
     });
     await engine.session!.open!('about:blank', operation());
-    return { engine, browser: nativeBrowser(engine, operation), operation, close };
+    return { engine, ...nativeBrowserGraph(engine, operation), operation, close };
   } catch (cause) {
     try { await close(); }
     catch (cleanupError) { throw new AggregateError([cause, cleanupError], 'Native fixture startup and cleanup failed', { cause: cleanupError }); }

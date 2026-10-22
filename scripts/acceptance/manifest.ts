@@ -8,7 +8,7 @@ export const WEB_ACCEPTANCE = [
   { id: 'web-unit', package: 'web', project: 'unit', directory: 'tests/unit', requiredFiles: [], prerequisites: [], evidence: 'deterministic-contract' },
   {
     id: 'web-browser', package: 'web', project: 'integration', directory: 'tests/integration',
-    requiredFiles: ['native-state-roundtrip.test.ts', 'native-capture-contract.test.ts', 'protected-app.test.ts', 'lifecycle.test.ts', 'routes.test.ts', 'observation.test.ts', 'keyboard.test.ts', 'media.test.ts', 'wait-for-response.test.ts'],
+    requiredFiles: ['native-state-roundtrip.test.ts', 'query-reference-replacement.test.ts', 'native-capture-contract.test.ts', 'protected-app.test.ts', 'lifecycle.test.ts', 'routes.test.ts', 'observation.test.ts', 'keyboard.test.ts', 'media.test.ts', 'wait-for-response.test.ts'],
     prerequisites: ['CROSSCHECK_BENCHMARK_URL'], evidence: 'real-browser',
   },
   {

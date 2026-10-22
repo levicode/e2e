@@ -22,17 +22,15 @@ const VIEWPORT = { width: 320, height: 200 };
 function fakePage(options: { writes?: boolean; stopError?: Error; startError?: Error; viewport?: { width: number; height: number }; firstFrameMs?: number | null } = {}) {
   const started: string[] = [];
   const sizes: { width: number; height: number }[] = [];
-  const startOptions: Record<string, unknown>[] = [];
   const stopped = { count: 0, at: [] as number[] };
   const page = {
     viewportSize: () => options.viewport ?? VIEWPORT,
     screencast: {
       start: async (start: { path: string; size: { width: number; height: number }; onFrame?: () => void }) => {
-        const { path: file, size, onFrame: _onFrame, ...rest } = start;
+        const { path: file, size } = start;
         if (options.startError !== undefined) throw options.startError;
         started.push(file);
         sizes.push(size);
-        startOptions.push({ path: file, size, ...rest });
         if (options.writes !== false) writeFileSync(file, 'webm');
         const firstFrameMs = options.firstFrameMs === undefined ? 0 : options.firstFrameMs;
         if (firstFrameMs !== null) setTimeout(() => start.onFrame?.(), firstFrameMs);
@@ -44,7 +42,7 @@ function fakePage(options: { writes?: boolean; stopError?: Error; startError?: E
       },
     },
   } as unknown as Page;
-  return { page, started, sizes, startOptions, stopped };
+  return { page, started, sizes, stopped };
 }
 
 describe('VideoRecorder', () => {
@@ -95,20 +93,10 @@ describe('VideoRecorder', () => {
     expect([first.stopped.count, second.stopped.count]).toEqual([1, 1]);
   });
 
-  it('records at the viewport size by default, and at the configured size and quality when given', async () => {
-    const plain = fakePage();
-    await recorder().arm(plain.page);
-    expect(plain.startOptions[0]).toMatchObject({ size: VIEWPORT });
-    expect(plain.startOptions[0]).not.toHaveProperty('quality');
-    const tuned = fakePage();
-    const dirTuned = mkdtempSync(path.join(tmpdir(), 'e2e-video-unit-'));
-    try {
-      await new VideoRecorder(dirTuned, { size: { width: 640, height: 400 }, quality: 70 }).arm(tuned.page);
-      expect(tuned.startOptions[0]).toMatchObject({ size: { width: 640, height: 400 }, quality: 70 });
-    } finally {
-      rmSync(dirTuned, { recursive: true, force: true });
-    }
-  });
+  // Size/quality payload assertions now use public web() and the real NativeClient
+  // in native-surface.test.ts. Native capture/encoder tests own configured output;
+  // the mid-attempt lifecycle test checks viewport-sized decoded video. These
+  // separate proofs do not establish the still-retained restart/reset lifecycle.
 
   it('keeps a segment whose stop failed but whose file exists', async () => {
     const video = recorder();

@@ -145,17 +145,17 @@ describe('AttemptSession', () => {
   });
 
   it('leaves the persistent page at the window size under viewport: null', async () => {
-    const current = remote('current');
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const setViewportSize = vi.fn(async () => undefined);
-    const active = target('page');
-    (active.page as unknown as { setViewportSize: unknown }).setViewportSize = setViewportSize;
-    current.pages.push(active.page);
-    const owner = session({ viewport: null });
-    await owner.start(new AbortController().signal);
-    await owner.ensurePage();
-    expect(setViewportSize).not.toHaveBeenCalled();
-    await owner.close(cleanup());
+    const engine = await nativeAttempt({ viewport: null });
+    try {
+      await engine.startAttempt!(nativeContext());
+      await nativeBrowser(engine, operation).title();
+      const peer = peers[0]!;
+      expect(peer.requests.find(frame => frame.command === 'scope.open')?.args).toMatchObject({ source: 'connect', context: 'persistent', viewport: null });
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title']);
+      // The native TCP test borrowed_initial_page_without_viewport_is_never_resized_during_enrollment
+      // checks actual set/clear metrics absence. CI7's real null-viewport window
+      // test checks measurement; this peer proves only persistent null forwarding.
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('serves the first page from the persistent browser\'s own tab, on a fresh document, and opens a new tab after it closed', async () => {
@@ -220,74 +220,93 @@ describe('AttemptSession', () => {
   });
 
   it('refuses a viewport that is not whole pixels, keeps a copy of the one it accepts, and resizes an open page', async () => {
-    const current = remote('current');
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const setViewportSize = vi.fn(async (_size: { width: number; height: number }) => undefined);
-    const active = target('page');
-    (active.page as unknown as { setViewportSize: unknown }).setViewportSize = setViewportSize;
-    current.pages.push(active.page);
-    const owner = session({ viewport: null });
-    await owner.start(new AbortController().signal);
-    await expect(owner.setViewport({ width: 390.5, height: 600 })).rejects.toThrow('whole, non-negative pixels, got 390.5x600');
-    await expect(owner.setViewport({ width: 390, height: -1 })).rejects.toThrow('got 390x-1');
-    expect(setViewportSize).not.toHaveBeenCalled();
-    const size = { width: 390, height: 600 };
-    await owner.setViewport(size);
-    size.width = 1000;
-    await owner.ensurePage();
-    expect(setViewportSize).toHaveBeenCalled();
-    for (const [called] of setViewportSize.mock.calls) expect(called).toEqual({ width: 390, height: 600 });
-    await owner.setViewport({ width: 800, height: 600 });
-    expect(setViewportSize).toHaveBeenLastCalledWith({ width: 800, height: 600 });
-    await owner.close(cleanup());
+    const reconnect = vi.fn(() => 'ws://synthetic.test/reconnect');
+    const engine = await nativeAttempt({ viewport: null, connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: reconnect } }, frame => frame.command === 'context.viewport' ? { data: null } : undefined);
+    try {
+      await engine.startAttempt!(nativeContext());
+      const browser = nativeBrowser(engine, operation);
+      const peer = peers[0]!;
+      const rejectsInvalidViewports = async () => {
+        const before = [...peer.requests];
+        for (const size of [{ width: 390.5, height: 600 }, { width: 390, height: -1 }]) {
+          // Preserve the legacy public guard's error, not only its private message.
+          await expect(browser.setViewport(size)).rejects.toMatchObject({
+            name: 'E2EError', category: 'infrastructure', code: 'ENGINE_FAILURE', retryable: false,
+            message: `setViewport failed: the viewport needs whole, non-negative pixels, got ${size.width}x${size.height}`,
+            cause: { name: 'EngineError', code: 'ENGINE_FAILURE', retryable: false, cause: { name: 'Error', message: `the viewport needs whole, non-negative pixels, got ${size.width}x${size.height}` } },
+          });
+          expect(peer.requests).toEqual(before);
+          expect(reconnect).not.toHaveBeenCalled();
+        }
+      };
+      await rejectsInvalidViewports();
+      const size = { width: 390, height: 600 };
+      await browser.setViewport(size);
+      size.width = 1000;
+      await browser.title();
+      expect(peer.requests.filter(frame => frame.command === 'context.viewport').map(frame => frame.args)).toEqual([
+        { identityScope: 'attempt-1', width: 390, height: 600 },
+      ]);
+      await browser.setViewport({ width: 800, height: 600 });
+      await browser.setViewport({ width: 0, height: 0 });
+      // These are adapter argument/order assertions, not simulated renderer proof.
+      // CI7 executed the unchanged native context.viewport primitive against real
+      // Chromium in e2e_client_page_input_context_and_evaluate (640x480 measured).
+      expect(peer.requests.filter(frame => frame.command === 'context.viewport').map(frame => frame.args)).toEqual([
+        { identityScope: 'attempt-1', width: 390, height: 600 },
+        { identityScope: 'attempt-1', width: 800, height: 600 },
+        { identityScope: 'attempt-1', width: 0, height: 0 },
+      ]);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'context.viewport', 'page.title', 'context.viewport', 'context.viewport']);
+      await peer.event('scope.disconnected', { identityScope: 'attempt-1', reason: 'browser-connection-closed' });
+      await rejectsInvalidViewports();
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('emulates the configured media on each page it opens, and merges a change into it for the rest of the attempt', async () => {
-    const current = remote('current');
-    const initial = target('initial');
-    const opened = target('opened');
-    const emulated: Array<[string, WebMedia]> = [];
-    let closed = false;
-    Object.assign(initial.page, { isClosed: () => closed, emulateMedia: async (media: WebMedia) => { emulated.push(['initial', media]); } });
-    Object.assign(opened.page, { emulateMedia: async (media: WebMedia) => { emulated.push(['opened', media]); } });
-    current.pages.push(initial.page);
-    const context = { ...current.browser.contexts()[0]!, newPage: async () => opened.page };
-    Object.assign(current.browser, { contexts: () => [context] });
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const owner = session({ media: { colorScheme: 'dark' } });
-    await owner.start(new AbortController().signal);
-    await owner.ensurePage();
-    expect(emulated).toEqual([['initial', { colorScheme: 'dark' }]]);
-    await owner.emulateMedia({ reducedMotion: 'reduce' });
-    expect(emulated.at(-1)).toEqual(['initial', { colorScheme: 'dark', reducedMotion: 'reduce' }]);
-    await owner.emulateMedia({ colorScheme: 'light' });
-    closed = true;
-    await owner.ensurePage();
-    expect(emulated.at(-1)).toEqual(['opened', { colorScheme: 'light', reducedMotion: 'reduce' }]);
-    await owner.close(cleanup());
+    const engine = await nativeAttempt({ colorScheme: 'dark' }, frame => frame.command === 'context.media' ? { data: null } : undefined);
+    try {
+      await engine.startAttempt!(nativeContext());
+      const browser = nativeBrowser(engine, operation);
+      await browser.title();
+      const peer = peers[0]!;
+      expect(peer.requests.find(frame => frame.command === 'scope.open')?.args['media']).toEqual({ colorScheme: 'dark' });
+      await browser.emulateMedia({ reducedMotion: 'reduce' });
+      expect(peer.requests.filter(frame => frame.command === 'context.media').map(frame => frame.args)).toEqual([
+        { identityScope: 'attempt-1', reducedMotion: 'reduce' },
+      ]);
+      await browser.emulateMedia({ colorScheme: 'light' });
+      await browser.title();
+      expect(peer.requests.filter(frame => frame.command === 'context.media').map(frame => frame.args)).toEqual([
+        { identityScope: 'attempt-1', reducedMotion: 'reduce' },
+        { identityScope: 'attempt-1', colorScheme: 'light' },
+      ]);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media', 'context.media', 'page.title']);
+      // Native TCP context_media_updates_active_page_before_popup_with_reversed_inventory
+      // pins dark -> dark+reduce; context_configuration_merges_and_enrolls_without_reinstalling_scripts
+      // pins light+reduce on a fresh session. CI7's public popup case grounds renderer inheritance.
+      // This peer pins the same scope and partial declarations, not page creation or retirement.
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('emulates the attempt\'s media on a tab the app opens itself, as it appears and when a test changes it', async () => {
-    const current = remote('current');
-    const initial = target('initial');
-    const emulated: Array<[string, WebMedia]> = [];
-    Object.assign(initial.page, { emulateMedia: async (media: WebMedia) => { emulated.push(['initial', media]); } });
-    current.pages.push(initial.page);
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const owner = session({ media: { colorScheme: 'dark' } });
-    await owner.start(new AbortController().signal);
-    await owner.ensurePage();
-    const popup = target('popup').page;
-    Object.assign(popup, { emulateMedia: async (media: WebMedia) => { emulated.push(['popup', media]); } });
-    current.popup(popup);
-    await Promise.resolve();
-    expect(emulated.at(-1)).toEqual(['popup', { colorScheme: 'dark' }]);
-    await owner.emulateMedia({ reducedMotion: 'reduce' });
-    expect(emulated.slice(-2)).toEqual([
-      ['initial', { colorScheme: 'dark', reducedMotion: 'reduce' }],
-      ['popup', { colorScheme: 'dark', reducedMotion: 'reduce' }],
-    ]);
-    await owner.close(cleanup());
+    const engine = await nativeAttempt({ colorScheme: 'dark' }, frame => frame.command === 'context.media' ? { data: null } : undefined);
+    try {
+      await engine.startAttempt!(nativeContext());
+      const browser = nativeBrowser(engine, operation);
+      await browser.title();
+      await browser.emulateMedia({ reducedMotion: 'reduce' });
+      const peer = peers[0]!;
+      expect(peer.requests.find(frame => frame.command === 'scope.open')?.args['media']).toEqual({ colorScheme: 'dark' });
+      expect(peer.requests.filter(frame => frame.command === 'context.media').map(frame => frame.args)).toEqual([
+        { identityScope: 'attempt-1', reducedMotion: 'reduce' },
+      ]);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media']);
+      // CI7's public popup-media case executes app-created popup rendering.
+      // Native TCP context_media_updates_active_page_before_popup_with_reversed_inventory
+      // pins initial dark enrollment and merged active-before-popup writes.
+      // This peer pins adapter declarations/partial updates, not a fake popup.
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('ignores a tab the app closes while the media reaches it, and reports one still open', async () => {
@@ -341,20 +360,62 @@ describe('AttemptSession', () => {
     await owner.ensurePage();
     expect(emulateMedia).toHaveBeenCalledWith({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await owner.close(cleanup());
+
+    // Keep the original merge/new-page assertions above until native production
+    // dispatch proves queued media changes and subsequent enrollment. The framed
+    // peer below proves only adapter result correlation, not reverse CDP ACKs or
+    // renderer media: native config_gate serializes those configuration writes.
+    const firstResult = deferred<PeerOutcome>();
+    const firstRequested = deferred<void>();
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'context.media') return undefined;
+      if (frame.args['colorScheme'] === 'dark') {
+        firstRequested.resolve();
+        return firstResult.promise;
+      }
+      return { data: null };
+    });
+    let firstCompletion: Promise<void> | undefined;
+    try {
+      await engine.startAttempt!(nativeContext());
+      const browser = nativeBrowser(engine, operation);
+      await browser.title();
+      const completed: string[] = [];
+      firstCompletion = browser.emulateMedia({ colorScheme: 'dark' }).then(() => { completed.push('first'); });
+      await firstRequested.promise;
+      await browser.emulateMedia({ reducedMotion: 'reduce' }).then(() => { completed.push('second'); });
+      expect(completed).toEqual(['second']);
+      const peer = peers[0]!;
+      const requests = peer.requests.filter(frame => frame.command === 'context.media');
+      expect(requests.map(frame => frame.args)).toEqual([
+        { identityScope: 'attempt-1', colorScheme: 'dark' },
+        { identityScope: 'attempt-1', reducedMotion: 'reduce' },
+      ]);
+      expect(requests[0]!.id).not.toBe(requests[1]!.id);
+      expect(requests[0]!.operationSeq).toBeLessThan(requests[1]!.operationSeq);
+      firstResult.resolve({ data: null });
+      await firstCompletion;
+      expect(completed).toEqual(['second', 'first']);
+      expect(await browser.title()).toBe('attempt-1');
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media', 'context.media', 'page.title']);
+    } finally {
+      firstResult.resolve({ data: null });
+      try { await firstCompletion; } finally { await engine.dispose!(cleanup()); }
+    }
   });
 
   it('leaves the browser\'s own media alone when none is configured or requested', async () => {
-    const current = remote('current');
-    const active = target('page');
-    const emulateMedia = vi.fn(async () => undefined);
-    Object.assign(active.page, { emulateMedia });
-    current.pages.push(active.page);
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const owner = session();
-    await owner.start(new AbortController().signal);
-    await owner.ensurePage();
-    expect(emulateMedia).not.toHaveBeenCalled();
-    await owner.close(cleanup());
+    const engine = await nativeAttempt();
+    try {
+      await engine.startAttempt!(nativeContext());
+      await nativeBrowser(engine, operation).title();
+      const peer = peers[0]!;
+      expect(peer.requests.find(frame => frame.command === 'scope.open')?.args['media']).toEqual({});
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title']);
+      // The peer proves no adapter media request, not browser preferences.
+      // Native CDP absence is pinned by the production TCP regression
+      // context_configuration_without_media_never_emulates_initial_or_child_sessions.
+    } finally { await engine.dispose!(cleanup()); }
   });
 
   it('does not attach an endpoint that resolves after disposal', async () => {
@@ -796,6 +857,71 @@ describe('AttemptSession', () => {
       expect(next.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'page.title' || frame.command === 'browser.observe')).toEqual([]);
     } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await engine.dispose!(cleanup()); }
+  });
+
+  it('snapshots a public viewport before waiting for recovery', async () => {
+    const endpoint = deferred<string>();
+    const requested = deferred<void>();
+    const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: () => { requested.resolve(); return endpoint.promise; } } }, frame => frame.command === 'context.viewport' ? { data: null } : undefined);
+    const peer = await disconnected(engine);
+    try {
+      const browser = nativeBrowser(engine, operation);
+      const size = { width: 390, height: 600 };
+      const setting = browser.setViewport(size);
+      await requested.promise;
+      size.width = 1000;
+      endpoint.resolve('ws://synthetic.test/recovered');
+      await setting;
+      expect(peer.requests.filter(frame => frame.command === 'context.viewport').map(frame => frame.args)).toEqual([{ identityScope: 'attempt-1-reconnected', width: 390, height: 600 }]);
+    } finally { endpoint.resolve('ws://synthetic.test/recovered'); await engine.dispose!(cleanup()); }
+  });
+
+  it('retires a pending native scope identity before its response and preserves the replacement recovery identity', async () => {
+    const opening = deferred<PeerOutcome>();
+    const reached = deferred<void>();
+    let hold = true;
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'scope.open' || !hold) return undefined;
+      hold = false; reached.resolve(); return opening.promise;
+    });
+    const starting = expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'CANCELLED' });
+    try {
+      await reached.promise;
+      const old = peers[0]!;
+      await engine.endAttempt!(cleanup());
+      await starting;
+      // This is the actual client's close exchange, not proof of native CDP detach.
+      expect(old.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      expect(old.requests.map(frame => frame.command)).toEqual(['scope.open']);
+      await engine.startAttempt!(nativeContext('a2'));
+      opening.resolve({ data: { identityScope: 'retired-late-open', recoveryIdentity: { browser: 'old-browser', context: 'old-context', page: 'old-page' } } });
+      await new Promise(resolve => setImmediate(resolve));
+      const next = peers[1]!;
+      await next.event('scope.disconnected', { identityScope: 'attempt-2', reason: 'browser-connection-closed' });
+      expect(await nativeBrowser(engine, () => ({ ...operation(), attemptId: 'a2' })).title()).toBe('attempt-2-reconnected');
+      expect(next.requests.find(frame => frame.command === 'scope.reconnect')?.args).toEqual({
+        identityScope: 'attempt-2', endpoint: 'ws://synthetic.test/reconnect',
+        expectedBrowserIdentity: 'browser-2', expectedContextIdentity: 'context-2', expectedPageIdentity: 'page-2',
+      });
+      expect(old.requests.map(frame => frame.command)).toEqual(['scope.open']);
+      expect(next.requests.filter(frame => frame.command === 'scope.configure' || frame.command === 'network.routes.replace').map(frame => frame.args['identityScope'])).toEqual(['attempt-2', 'attempt-2']);
+    } finally { opening.resolve({ data: { identityScope: 'retired-late-open', recoveryIdentity: { browser: 'old-browser', context: 'old-context', page: 'old-page' } } }); await engine.dispose!(cleanup()); }
+  });
+
+  it.each(['missing', 'empty'] as const)('rejects a native attachment response with %s mandatory context identity before configuration', async kind => {
+    const engine = await nativeAttempt({}, frame => frame.command === 'scope.open' ? { data: {
+      identityScope: 'invalid-identity', recoveryIdentity: { browser: 'browser', page: 'page', ...(kind === 'empty' ? { context: '' } : {}) },
+    } } : undefined);
+    try {
+      // Native optional advertised CDP metadata is not this required protocol field.
+      await expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+      await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers[0]!.requests.map(frame => frame.command)).toEqual(['scope.open']);
+      // Invalid protocol data quarantines the client; never pretend it ACKed native cleanup.
+      await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toEqual([]);
+    } finally { await engine.dispose!(cleanup()); }
   });
 
 });

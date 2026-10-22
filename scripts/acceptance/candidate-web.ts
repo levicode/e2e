@@ -54,6 +54,18 @@ export function verifyCandidateRuntime(proof: unknown, binarySha256: string, fau
   if (fault) { if (!capabilities.includes('acceptance.faults/1')) throw new Error('Semantic fault suite needs the separate acceptance-faults binary'); }
   else assertProductionCapabilities(capabilities);
 }
+/** Fault diagnostics are bounded by the native sink and never enabled for production suites. */
+export function candidatePhaseEnvironment(id: string, inherited: NodeJS.ProcessEnv, output: string): NodeJS.ProcessEnv {
+  const env = { ...inherited };
+  delete env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
+  if (id === 'semantic-faults') {
+    const file = resolve(output, 'semantic-faults.native-phases.jsonl');
+    // Exclusive creation refuses stale evidence and symlinks; native only appends static phases.
+    writeFileSync(file, '', { flag: 'wx', mode: 0o600 });
+    env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'] = file;
+  }
+  return env;
+}
 function main(args: string[]): void {
   const [id, binaryArg, proofArg, outputArg] = args;
   const suite = [...CANDIDATE_WEB_SUITES, ...OPTIONAL_CANDIDATE_WEB_SUITES].find(item => item.id === id);
@@ -78,7 +90,7 @@ function main(args: string[]): void {
     const directory = join(cwd, suite.directory);
     const discovered = readdirSync(directory, { recursive: true, encoding: 'utf8' }).filter(name => name.endsWith('.test.ts')).map(name => join(directory, name)).toSorted();
     files = candidateFiles(suite, directory, discovered); testSourceDigest = fingerprint(files);
-    const env: NodeJS.ProcessEnv = { ...process.env, E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
+    const env: NodeJS.ProcessEnv = { ...candidatePhaseEnvironment(suite.id, process.env, output), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
     if (suite.id === 'crosscheck-benchmark') {
       if (env['CROSSCHECK_BENCHMARK_URL'] !== 'http://127.0.0.1:4280') throw new Error('Optional benchmark must be the explicitly served local synthetic app');
     } else delete env['CROSSCHECK_BENCHMARK_URL'];
