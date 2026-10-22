@@ -38,7 +38,8 @@ test('dedicated push is source-locked; manual selection needs an explicit immuta
 test('full native manifest extends foundation without weakening the foundation list', () => {
   for (const name of NATIVE_BROWSER_CONTRACTS) assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
   assert.equal(new Set(CANDIDATE_NATIVE_CONTRACTS).size, CANDIDATE_NATIVE_CONTRACTS.length);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 36);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 37);
+  assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract'));
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query'));
   for (const family of ['equivalence_tests', 'client_geometry', 'client_state', 'recording', 'borrowed_capture', 'borrowed_host']) assert.ok(CANDIDATE_NATIVE_CONTRACTS.some(name => name.includes(family)), family);
 });
@@ -51,6 +52,7 @@ test('native discovery rejects missing, duplicated and unreviewed hosted tests',
   assert.throws(() => verifyNativeInventory(list.replace('native::client_actions::tests::chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page: test', '')), /Missing required/);
   for (const name of [
+    'native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract',
     'native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released',
     'native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport',
   ]) {

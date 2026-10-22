@@ -8,6 +8,7 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_observation::equivalence_tests::chromium_twenty_controls_budget_and_frame_truncation_contract',
   'native::client_observation::equivalence_tests::chromium_embedded_control_and_password_public_labels_contract',
   'native::client_observation::equivalence_tests::chromium_observation_metadata_gc_and_exact_ref_actionability',
+  'native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract',
   'native::client_observation::equivalence_tests::chromium_query_churn_bounds_durable_metadata_without_evicting_authority',
   'native::client_browser::reference_lifetime_tests::chromium_located_reference_retirement_across_owned_attempts',
   'native::client_observation::equivalence_tests::chromium_observation_retirement_races_are_stale_not_deadline',

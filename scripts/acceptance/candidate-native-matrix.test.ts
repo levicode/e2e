@@ -51,7 +51,7 @@ function compiledFixture(root: string) {
 test('the two exact matrices preserve historical contracts and restore eight preparation regressions without exemptions', () => {
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8); assert.equal(new Set(PREPARATION_SETTLEMENT_TESTS).size, 8);
   assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 31); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 31);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 36); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 37); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
   assert.equal(CANDIDATE_NATIVE_DIAGNOSTICS.length, 1);
   assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 31);
   const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
