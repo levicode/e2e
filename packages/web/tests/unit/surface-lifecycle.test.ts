@@ -8,7 +8,7 @@ import type { EngineFixtureContext, OperationContext } from 'e2e/engine';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
-import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
+import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { PlaywrightSurface } from '../../src/surface.ts';
 import { scriptedConnection } from '../helpers/scripted-connection.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
@@ -17,22 +17,20 @@ import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 
-const acquire = vi.fn<() => Promise<Browser>>();
-
 const operation = (): OperationContext => ({ timeoutMs: 1_000, signal: new AbortController().signal, runId: 'run', attemptId: 'a1', origin: 'test' });
 const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal });
 let artifactsDir: string;
-let surface: PlaywrightSurface;
-let browser: Browser;
-let focus: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
-let press: ReturnType<typeof vi.fn<(key: string) => Promise<void>>>;
-let type: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
+const legacySurfaces = new Set<PlaywrightSurface>();
 
-beforeEach(async () => {
+beforeEach(() => {
   artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-surface-lifecycle-'));
-  focus = vi.fn(async () => true);
-  press = vi.fn(async (_key: string) => undefined);
-  type = vi.fn(async (_text: string) => undefined);
+});
+
+/** Keep unresolved legacy obligations independent of the already-native cases. */
+async function legacyLifecycle() {
+  const focus = vi.fn(async () => true);
+  const press = vi.fn(async (_key: string) => undefined);
+  const type = vi.fn(async (_text: string) => undefined);
   const page = {
     isClosed: () => false,
     close: async () => undefined,
@@ -45,7 +43,7 @@ beforeEach(async () => {
       stop: async () => undefined,
     },
   };
-  browser = {
+  const browser = {
     isConnected: () => true,
     newContext: vi.fn(async () => ({
       addInitScript: async () => undefined,
@@ -57,23 +55,27 @@ beforeEach(async () => {
       newPage: async () => page,
     })),
   } as unknown as Browser;
-  acquire.mockResolvedValue(browser);
-  surface = new PlaywrightSurface({}, scriptedConnection(acquire));
+  const surface = new PlaywrightSurface({}, scriptedConnection(async () => browser));
+  legacySurfaces.add(surface);
   await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
   await surface.startAttempt({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
-});
+  return { surface, browser, focus, press, type };
+}
 
 afterEach(async () => {
-  await surface.dispose(cleanup());
+  await Promise.all([...legacySurfaces].map(surface => surface.dispose(cleanup())));
+  legacySurfaces.clear();
   rmSync(artifactsDir, { recursive: true, force: true });
 });
 
 // These cases exercise adapter-owned lifecycle through the actual framed client.
 // A synthetic peer acknowledges ownership; it does not prove remote browser cleanup.
-async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurface>[0] = {}) {
+async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurface>[0] = {}, override?: (request: PeerRequest) => PeerOutcome | undefined) {
   let peer!: NativeProtocolPeer; let scopes = 0;
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
     peer = new NativeProtocolPeer(config.capabilities, request => {
+      const outcome = override?.(request);
+      if (outcome !== undefined) return outcome;
       if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
       if (request.command === 'page.title') return { data: { title: 'clean' } };
       return { data: null };
@@ -140,7 +142,10 @@ it('keeps a late route failure on the attempt that registered it', async () => {
   } finally { release(); await native.dispose(cleanup()); }
 });
 
+// Retained obligations 22/23/26: native reset-recording and exact focus-retirement
+// proof are still missing; the focus cases must remain on the legacy surface.
 it('collects saved video segments after ordinary context replacement fails', async () => {
+  const { surface, browser } = await legacyLifecycle();
   await surface.startVideo(operation());
   vi.mocked(browser.newContext).mockRejectedValueOnce(new Error('replacement failed'));
   await expect(surface.reset(operation())).rejects.toThrow(/replacement failed/);
@@ -151,19 +156,19 @@ it('collects saved video segments after ordinary context replacement fails', asy
   await expect(surface.open('https://example.test/', operation())).rejects.toThrow(/replacement failed/);
 });
 
-it.each(['focus', 'select-all', 'delete'] as const)('stops remaining typing after cancellation during %s', async (stage) => {
+// Select-all/delete use the approved ACKed-prefix equivalence, not the old
+// unACKed promise-pause mechanics. Native client_actions' hosted prefix test
+// proves their effects/no later input; unACKed cases retain the public
+// ACTION_MAY_HAVE_COMMITTED outcome, not reusable CANCELLED.
+// NativeClient ACK/result-order tests and the Surface companion below cover the adapter.
+it('stops remaining typing after cancellation during focus', async () => {
+  const { surface, focus, press, type } = await legacyLifecycle();
   await surface.open('https://example.test/', operation());
   let release!: () => void;
   let entered!: () => void;
   const paused = new Promise<void>((resolve) => { release = resolve; });
   const reached = new Promise<void>((resolve) => { entered = resolve; });
-  if (stage === 'focus') {
-    focus.mockImplementationOnce(async () => { entered(); await paused; return true; });
-  } else {
-    press.mockImplementation(async (key) => {
-      if (key === (stage === 'select-all' ? 'ControlOrMeta+A' : 'Delete')) { entered(); await paused; }
-    });
-  }
+  focus.mockImplementationOnce(async () => { entered(); await paused; return true; });
   const controller = new AbortController();
   const pending = surface.typeText('replacement', { replace: true }, { ...operation(), signal: controller.signal });
   const rejected = expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
@@ -175,12 +180,12 @@ it.each(['focus', 'select-all', 'delete'] as const)('stops remaining typing afte
     release();
   }
   await new Promise<void>((resolve) => setImmediate(resolve));
-  const expected = stage === 'focus' ? [] : stage === 'select-all' ? ['ControlOrMeta+A'] : ['ControlOrMeta+A', 'Delete'];
-  expect(press.mock.calls.map(([key]) => key)).toEqual(expected);
+  expect(press.mock.calls.map(([key]) => key)).toEqual([]);
   expect(type).not.toHaveBeenCalled();
 });
 
 it('rejects a focus read from a context replaced before typing dispatches', async () => {
+  const { surface, focus, press, type } = await legacyLifecycle();
   await surface.open('https://example.test/', operation());
   let release!: () => void;
   let entered!: () => void;
@@ -217,5 +222,33 @@ it('opens no session for an attempt the runner gave up on while its basic-auth p
     expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(1);
     expect(peer.requests.find(request => request.command === 'scope.configure')?.args).toMatchObject({ requestPolicy: { basicAuth: { username: 'ada', password: 'next-password' } } });
     expect(JSON.stringify(peer.frames)).not.toContain('late-password');
+  } finally { await native.dispose(cleanup()); }
+});
+
+// Obligations 24/25, adapter-owned continuation only. NativeClient tests cover
+// cancel ACK/result ordering; client_actions' hosted acknowledged-prefix test
+// proves renderer selection/deletion, no replacement text and key release.
+// This peer cannot prove those facts, and unACKed input remains Unknown.
+it('does not take a success screen or replay settled replacement-prefix cancellation', async () => {
+  const screen = vi.fn();
+  const { native, peer } = await nativeLifecycle({}, request => {
+    if (request.command === 'browser.observe') return { data: {
+      identityScope: 'scope-1', revision: '1', viewport: { width: 100, height: 80 },
+      root: { ref: { id: '@e1', revision: '1' }, role: 'document' },
+    } };
+    if (request.command === 'browser.keyboard.type') return { error: 'cancelled', effects: 'completed', scopeState: 'usable' };
+    return undefined;
+  });
+  try {
+    await native.startAttempt({ attemptId: 'a1', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace, screen });
+    await native.observe(operation()); // Establish trace authority so a success would capture pixels.
+    const start = peer.requests.length;
+    await expect(native.typeText('replacement', { replace: true }, operation())).rejects.toMatchObject({ code: 'CANCELLED', retryable: false });
+    expect(screen).not.toHaveBeenCalled();
+    await expect(native.command('page.title', {}, operation())).resolves.toEqual({ title: 'clean' });
+    expect(peer.requests.slice(start).map(request => [request.command, request.args])).toEqual([
+      ['browser.keyboard.type', { identityScope: 'scope-1', text: 'replacement', replace: true }],
+      ['page.title', { identityScope: 'scope-1' }],
+    ]);
   } finally { await native.dispose(cleanup()); }
 });

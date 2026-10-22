@@ -167,19 +167,9 @@ describe('whole observation capture ownership', () => {
     expect(fixture.element.dispose).toHaveBeenCalledOnce();
   });
 
-  it('cannot publish an older capture over a newer observation on the same page', async () => {
-    const fixture = await setup('metadata');
-    const current = document();
-    fixture.page.evaluateHandle.mockImplementationOnce(fixture.evaluateHandle.getMockImplementation()!)
-      .mockImplementationOnce(current.evaluateHandle);
-    const oldFailure = expect(fixture.surface.observe(fixture.operation)).rejects.toMatchObject({ code: 'NODE_STALE' });
-    await vi.advanceTimersByTimeAsync(0);
-    await fixture.surface.observe(fixture.operation);
-    fixture.gate.resolve();
-    await oldFailure;
-    expect(fixture.element.dispose).toHaveBeenCalledOnce();
-    expect(current.element.dispose).not.toHaveBeenCalled();
-  });
+  // The retired same-page case is covered by integration/semantic-fallback.test.ts
+  // and native chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released.
+  // Native metadata groups release once; newer immutable authority stays actionable.
 
   it('cannot publish a capture after its page was replaced', async () => {
     const fixture = await setup('metadata');

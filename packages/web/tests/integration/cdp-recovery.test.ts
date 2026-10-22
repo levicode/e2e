@@ -295,10 +295,37 @@ describe('CDP session recovery', () => {
       cdpEndpoint: () => { provisioned += 1; return remote.endpoint; },
       reconnectEndpoint: () => { reconnected += 1; return remote.endpoint; },
     });
+    // Synthetic-case-only diagnostic: bounded closed facts, never request args or error text.
+    let step = 'witness';
+    const originalRequest = NativeClient.prototype.request;
+    let firstRefusal: Record<string, string | number | boolean> | undefined;
+    let firstTerminal: Record<string, string | number | boolean> | undefined;
+    const commands = new Set(['browser.observe', 'browser.query', 'browser.perform', 'browser.performAt', 'scope.reconnect', 'scope.end', 'fixture.evaluate', 'fixture.viewport', 'page.title']);
+    const requestSpy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(async function (this: NativeClient, ...args) {
+      const at = step;
+      const result = await originalRequest.apply(this, args);
+      // request returns only after production framing, correlation and protocol validation.
+      const fact = { step: at, command: commands.has(args[0]) ? args[0] : 'other',
+        operationSeq: result.operationSeq, ok: result.ok, effects: result.effects,
+        scopeState: result.scopeState, error: result.ok ? 'none' : (result.error?.code ?? 'none') };
+      if (!result.ok) firstRefusal ??= fact;
+      if (result.scopeState !== 'usable' || result.effects === 'unknown') firstTerminal ??= fact;
+      return result;
+    });
+    let bodyFailed = false;
+    let cleanupFailed = false;
+    let bodyStep = 'none';
+    let cleanupStep = 'none';
+    const preserveCleanupFailure = (cause: unknown): never => {
+      cleanupFailed = true; cleanupStep = step;
+      throw cause;
+    };
     try {
       const fixture = fixtureOf(engine);
       const original = await witness(engine, remote);
+      step = 'viewport';
       await fixture.setViewport({ width: 800, height: 600 });
+      step = 'seed-state';
       await fixture.evaluate(() => {
         sessionStorage.setItem('attempt', 'kept');
         localStorage.setItem('login', 'kept');
@@ -306,18 +333,26 @@ describe('CDP session recovery', () => {
         (document.querySelector('input[name=user]') as HTMLInputElement).value = 'unsaved';
         return null;
       });
+      step = 'initial-locate';
       const stale = (await engine.locate!(heading, operation()))[0]!;
+      step = 'initial-observe';
       const observation = await engine.observe!(operation());
       // Another tab at the same URL makes URL-based selection ambiguous.
+      step = 'other-tab';
       const other = await original.page.context().newPage();
       await other.goto(await fixture.url());
       await other.locator('h1').evaluate((node) => { node.textContent = 'Wrong tab'; });
 
+      step = 'route';
       await fixture.route('**/kept-route', (route) => route.fulfill({ body: 'route kept' }));
+      step = 'dialog';
       await fixture.onDialog('accept');
+      step = 'disconnect';
       await disconnect(remote);
 
+      step = 'recovered-locate';
       expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login');
+      step = 'recovered-state';
       expect(await fixture.evaluate(() => (window as unknown as { recoveryWitness: string }).recoveryWitness)).toBe(original.marker);
       const session = await original.page.context().newCDPSession(original.page);
       expect((await session.send('Target.getTargetInfo')).targetInfo.targetId).toBe(original.targetId);
@@ -328,22 +363,42 @@ describe('CDP session recovery', () => {
       expect(await fixture.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 800, height: 600 });
       expect(await fixture.evaluate(async () => (await fetch('/kept-route')).text())).toBe('route kept');
       expect(await fixture.evaluate(() => confirm('Handler survived?'))).toBe(true);
+      step = 'stale-element';
       await expect(engine.perform!(stale.ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
       expect(observation.viewportRef).toBeDefined();
+      step = 'stale-viewport';
       await expect(engine.perform!(observation.viewportRef!, { kind: 'swipe', direction: 'down' }, operation()))
         .rejects.toMatchObject({ code: 'NODE_STALE' });
+      step = 'stale-coordinate';
       await expect(engine.performAt!({ x: 1, y: 1 }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      step = 'recovered-observe';
       await engine.observe!(operation());
+      step = 'recovered-action';
       await engine.performAt!({ x: 1, y: 1 }, { kind: 'tap' }, operation());
       expect(provisioned).toBe(1);
       expect(reconnected).toBe(1);
+    } catch (cause) {
+      bodyFailed = true; bodyStep = step;
+      throw cause;
     } finally {
-      await engine.dispose!(cleanup());
-      await expect(fixtureOf(engine).url()).rejects.toMatchObject({ code: 'CANCELLED' });
-      await expect.poll(() => remote.connections()).toBe(0);
-      expect(remote.proc.exitCode).toBeNull();
-      expect(remote.proc.signalCode).toBeNull();
-      await closeRemoteChrome(remote);
+      step = 'dispose';
+      try {
+        await engine.dispose!(cleanup());
+        await expect(fixtureOf(engine).url()).rejects.toMatchObject({ code: 'CANCELLED' });
+        await expect.poll(() => remote.connections()).toBe(0);
+        expect(remote.proc.exitCode).toBeNull();
+        expect(remote.proc.signalCode).toBeNull();
+        step = 'close-host';
+        await closeRemoteChrome(remote);
+      } catch (cause) {
+        preserveCleanupFailure(cause);
+      } finally {
+        requestSpy.mockRestore();
+        if (bodyFailed || cleanupFailed) console.error('synthetic-recovery-outcome', JSON.stringify({
+          case: 'exact-page-recovery', bodyFailed, bodyStep, cleanupFailed, cleanupStep,
+          firstRefusal: firstRefusal ?? null, firstTerminal: firstTerminal ?? null,
+        }));
+      }
     }
   }, 60_000);
 

@@ -22,7 +22,7 @@ const browserContracts = CANDIDATE_NATIVE_CONTRACTS.map(name => {
   if (test.passed !== 1 || test.ignored !== 0) throw new Error(`Invalid exactly-once contract proof: ${name}`);
   return { name, file, sha256: hashFile(join(evidence, file)), ...test };
 });
-const recipes = ['candidate-manifest.ts', 'candidate-revision.ts', 'candidate-native.ts', 'candidate-producer.ts', 'candidate-web.ts', 'candidate-installed.ts', 'candidate-source.ts', 'candidate-receipt.ts', 'fixtures/installed-candidate.mjs', 'native-evidence.ts', 'probe-native.ts', 'package-bundle.ts', 'bundle-installer.ts', 'package-inventory.ts'];
+const recipes = ['candidate-manifest.ts', 'candidate-revision.ts', 'candidate-native.ts', 'candidate-native-matrix-manifest.ts', 'candidate-native-matrix.ts', 'candidate-proxy-diagnostic.ts', 'candidate-producer.ts', 'candidate-web.ts', 'candidate-installed.ts', 'candidate-source.ts', 'candidate-receipt.ts', 'fixtures/installed-candidate.mjs', 'native-evidence.ts', 'probe-native.ts', 'package-bundle.ts', 'bundle-installer.ts', 'package-inventory.ts'];
 writeFileSync(join(evidence, 'producer.json'), JSON.stringify({
   schemaVersion: 1, source,
   producer: { repository: process.env['GITHUB_REPOSITORY'], runId: process.env['GITHUB_RUN_ID'], runAttempt: process.env['GITHUB_RUN_ATTEMPT'], workflowSha: process.env['GITHUB_SHA'], runnerImage: process.env['ImageVersion'], platform: process.platform, architecture: process.arch, rustc: execFileSync('rustc', ['-Vv'], { encoding: 'utf8' }).trim(), cargo: execFileSync('cargo', ['-Vv'], { encoding: 'utf8' }).trim() },

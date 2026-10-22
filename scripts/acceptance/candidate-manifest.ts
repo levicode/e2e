@@ -1,5 +1,6 @@
 /** Full Linux public Web candidate gates, deliberately separate from foundation/release acceptance. */
 import { WEB_ACCEPTANCE } from './manifest.ts';
+import { PREPARATION_SETTLEMENT_TESTS } from './candidate-native-matrix-manifest.ts';
 
 export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup',
@@ -40,9 +41,10 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport',
 ] as const;
 
-/** Not a pass or waiver: a deliberately failing diagnostic outside the supported ingress contract. */
+/** Not passes or waivers: ingress diagnostic plus temporarily isolated preparation specifications. */
 export const CANDIDATE_NATIVE_DIAGNOSTICS = [
   'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
+  ...PREPARATION_SETTLEMENT_TESTS,
 ] as const;
 export const CANDIDATE_FAULT_FILE = 'semantic-fallback.test.ts';
 export const CANDIDATE_SEMANTIC_FAULT_ASSERTIONS = [

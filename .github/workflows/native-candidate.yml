@@ -143,6 +143,14 @@ jobs:
         env:
           EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
         run: node scripts/acceptance/candidate-native.ts browser .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      # Only the eight exact preparation tests are temporarily diagnostic-ignored. Do not waive their failures.
+      - name: Record exact preparation settlement diagnostic using the existing default harness
+        id: preparation-diagnostic
+        timeout-minutes: 10
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.packages.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native-matrix.ts preparation .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" - .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
       # Run only after the default harnesses: their CARGO_BIN_EXE path must still be production.
       - name: Compile separate non-distributable acceptance-faults runtime
         id: fault-build
@@ -154,6 +162,14 @@ jobs:
           rustc -Vv > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-rustc-version.txt"
           cargo build --locked --profile ci --no-default-features --features acceptance-faults --message-format=json > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-compiler.jsonl"
           cp "$CARGO_TARGET_DIR/ci/agent-browser" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults"
+      # This test binary is not the fault runtime. All 31 feature-only tests are an additional mandatory gate.
+      - name: Compile one source-matched feature harness and require every exact feature-only test
+        id: native-feature
+        timeout-minutes: 30
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.fault-build.outcome == 'success' && steps.packages.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native-matrix.ts feature .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
       # Scripted-peer diagnostics are independent of browser/broker acceptance. Never replace a gate.
       # Run after default harnesses, and preserve both separately copied runtime binaries.
       - name: Run bounded production byte-proxy diagnostic (not semantic recovery evidence)
@@ -237,6 +253,18 @@ jobs:
           if test -f .artifacts/native-candidate/benchmark.pid; then
             kill -- "-$(cat .artifacts/native-candidate/benchmark.pid)" 2>/dev/null || true
           fi
+      - name: Record preparation diagnostic outcome without converting expected RED into acceptance
+        id: preparation-diagnostic-receipt
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+        run: node scripts/acceptance/candidate-native-matrix.ts receipt preparation .artifacts/native-candidate
+      - name: Require complete feature matrix receipt including compiler failure or missing execution
+        id: native-feature-receipt
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+        run: node scripts/acceptance/candidate-native-matrix.ts receipt feature .artifacts/native-candidate
       # Every independent failure/skip remains red; diagnostic success never waives source removal.
       - name: Require every complete candidate gate
         id: candidate-gate

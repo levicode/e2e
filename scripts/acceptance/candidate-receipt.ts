@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CANDIDATE_WEB_SUITES, OPTIONAL_CANDIDATE_WEB_SUITES } from './candidate-manifest.ts';
 import { hashFile } from './candidate-native.ts';
+import { verifyFeatureMatrixReceipt } from './candidate-native-matrix.ts';
 import { verifyBundle } from './bundle.ts';
 import { verifySemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { candidateDistInventory } from './candidate-web.ts';
@@ -13,7 +14,7 @@ import { REPO_ROOT } from '../public-packages.ts';
 export const CANDIDATE_GATES = [
   'source', 'native-checkout', 'dependencies', 'acceptance-scripts', 'source-removal', 'packages', 'types',
   'package-imports', 'toolchain', 'native-lint', 'native-build', 'native-units', 'browsers', 'native-browser',
-  'native-proxy', 'fault-build', 'fault-proxy', 'web-unit', 'core-reference', 'crosscheck-fixtures',
+  'native-proxy', 'fault-build', 'native-feature', 'native-feature-receipt', 'fault-proxy', 'web-unit', 'core-reference', 'crosscheck-fixtures',
   'web-browser', 'public-callbacks', 'semantic-faults', 'producer', 'bundle', 'installed',
 ] as const;
 export const OPTIONAL_CANDIDATE_GATES = ['benchmark-build', 'benchmark', 'crosscheck-benchmark'] as const;
@@ -40,7 +41,7 @@ function main(args: string[]): void {
       const files = manifest.installation?.packages[name].files.filter(file => file.path.startsWith('dist/')).toSorted((a, b) => a.path.localeCompare(b.path));
       if (JSON.stringify(files) !== JSON.stringify(runtimeBuild[name])) throw new Error('Packed executable package bytes differ from suite-tested builds');
     }
-    const proofFiles = ['source-removal.result.json', 'baseline.result.json', 'browser.result.json', 'negotiation.json', 'fault-negotiation.json', 'installed.result.json', ...suites.map(suite => `${suite.id}.result.json`)];
+    const proofFiles = ['source-removal.result.json', 'baseline.result.json', 'browser.result.json', 'native-feature.result.json', 'negotiation.json', 'fault-negotiation.json', 'installed.result.json', ...suites.map(suite => `${suite.id}.result.json`)];
     for (const file of proofFiles) {
       const proof = JSON.parse(readFileSync(join(output, file), 'utf8')) as { status: string; sourceRevision?: string; binarySha256?: string; runtimeBuild?: unknown };
       if (proof.status !== 'passed') throw new Error(`Missing passing receipt: ${file}`);
@@ -51,6 +52,7 @@ function main(args: string[]): void {
     verifySemanticTraceEvidence(output, fault.diagnostics);
     const faultProbe = JSON.parse(readFileSync(join(output, 'fault-negotiation.json'), 'utf8')) as { binarySha256: string };
     if (fault.binarySha256 === manifest.native.sha256 || fault.binarySha256 !== faultProbe.binarySha256) throw new Error('Fault runtime identity is not separate and bound');
+    verifyFeatureMatrixReceipt(output, { sourceRevision: source, nativeSource: manifest.nativeSource, productionBinarySha256: manifest.native.sha256, acceptanceFaultBinarySha256: fault.binarySha256 }, { source: join(REPO_ROOT, '.artifacts/native-source'), target: process.env['CARGO_TARGET_DIR'] ?? '' });
     binding = { manifestSha256: digest, source: manifest.source, nativeSource: manifest.nativeSource, productionBinarySha256: manifest.native.sha256, acceptanceFaultBinarySha256: fault.binarySha256, semanticDiagnostics: fault.diagnostics, acceptanceFaultCompilerSha256: hashFile(join(output, 'fault-compiler.jsonl')), evidence: Object.fromEntries(proofFiles.map(file => [file, hashFile(join(output, file))])) };
     status = 'passed';
   } catch (error) { problem = String(error); process.stderr.write(`${problem}\n`); }

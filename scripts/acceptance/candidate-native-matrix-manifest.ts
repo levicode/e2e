@@ -1,0 +1,56 @@
+/** Exact diagnostic and mandatory feature inventories. No prefix-based exemptions. */
+export const PREPARATION_SETTLEMENT_TESTS = [
+  'native::client_actions::tests::preparation_effect_settlement_acked_interception_is_completed_and_reusable',
+  'native::client_actions::tests::preparation_effect_settlement_acked_not_actionable_is_completed_and_reusable',
+  'native::client_actions::tests::preparation_effect_settlement_unacked_first_scroll_remains_unknown',
+  'native::client_actions::tests::preparation_effect_settlement_unacked_later_scroll_invalidates_earlier_prefix',
+  'native::client_actions::tests::preparation_effect_settlement_unacked_input_release_remains_unknown',
+  'native::client_actions::tests::preparation_effect_settlement_dirty_handle_cleanup_quarantines',
+  'native::client_actions::tests::preparation_effect_settlement_unacked_geometry_control_remains_unknown',
+  'native::client_actions::tests::preparation_effect_settlement_lost_original_authority_remains_unknown',
+] as const;
+
+/** Expected RED is explanatory, never a success criterion or a waiver. */
+export const PREPARATION_DESIRED_RED = PREPARATION_SETTLEMENT_TESTS.slice(0, 2);
+
+export const REQUIRED_NATIVE_FEATURE_TESTS = [
+  'native::client_observation_dispatch::tests::semantic_only_timeout_never_mutates_lifecycle_and_fallback_stabilizes_separately',
+  'native::client_observation_dispatch::tests::actual_semantic_timeout_requires_admission_before_fallback_capture',
+  'native::client_observation_dispatch::tests::fallback_capture_refusal_releases_admitted_producer_after_restore',
+  'native::client_observation_dispatch::tests::fallback_dirty_restore_releases_admitted_producer_without_publishing',
+  'native::client_observation_dispatch::tests::fallback_initial_coverage_unproven_preserves_semantic_deadline_after_restore',
+  'native::client_observation_dispatch::tests::fallback_post_capture_policy_failure_survives_clean_restore',
+  'native::client_observation_dispatch::tests::semantic_policy_and_cancellation_never_admit_fallback',
+  'native::client_observation_dispatch::tests::fallback_inflight_capture_cancel_waits_for_restoration_without_publishing',
+  'native::client_observation_dispatch::tests::fallback_dirty_restore_dominates_coverage_policy_and_cancellation',
+  'native::client_observation_dispatch::tests::fallback_coverage_restore_rechecks_cancellation_and_scope_authority',
+  'native::client_observation_dispatch::tests::fallback_coverage_observed_cleanup_flag_prevents_usable_deadline',
+  'native::client_observation_dispatch::tests::fallback_failure_preserves_committed_refs_without_reviving_lost_authority',
+  'native::client_transport::tests::acceptance_phase_retained_frame_counts_survive_cancelled_future',
+  'native::client_transport::tests::acceptance_phase_retained_frame_eof_io_and_oversize_preserve_errors',
+  'native::client_test_faults::tests::release_is_scope_bound_and_does_not_replace_the_reader',
+  'native::client_test_faults::tests::original_deadline_expires_hold_and_late_release_cannot_revive_it',
+  'native::client_test_faults::tests::unarmed_checkpoint_never_changes_normal_reader_limits',
+  'native::client_test_faults::tests::arms_are_bounded_and_retirement_never_retargets',
+  'native::client_settlement_trace::tests::acceptance_phase_schema_contains_only_closed_facts',
+  'native::client_settlement_trace::tests::acceptance_phase_shared_file_record_bound_is_global_and_marked_once',
+  'native::client_settlement_trace::tests::acceptance_phase_byte_bound_is_global_and_never_truncates_a_record',
+  'native::client_settlement_trace::tests::acceptance_phase_refuses_unowned_paths_or_incomplete_existing_records',
+  'native::client_settlement_trace::tests::acceptance_phase_refuses_symlink_and_fifo_targets_without_opening_them',
+  'native::client_settlement_trace::tests::acceptance_phase_contention_drops_without_waiting_and_marks_next_record',
+  'native::client_settlement_trace::tests::acceptance_phase_file_lock_and_write_failures_only_drop_capture',
+  'native::client_settlement_trace::tests::acceptance_phase_scalar_counters_preserve_short_zero_and_error_results',
+  'native::client_settlement_trace::tests::acceptance_phase_saturates_safe_integer_counters_and_facts',
+  'native::client_settlement_trace::tests::acceptance_phase_proxy_and_frame_shapes_are_closed_and_payload_free',
+  'native::client_settlement_trace::tests::acceptance_phase_largest_summary_and_detail_fit_record_bound',
+  'native::client_settlement_trace::tests::acceptance_phase_decoded_message_and_io_error_never_serialize_secrets',
+  'native::client_settlement_trace::tests::acceptance_phase_write_failure_stops_without_repair_or_retry',
+] as const;
+
+/** Source audit at b8dd484b71087aabe530d5c930082973f680d688; runtime inventory delta is also checked. */
+export const FEATURE_TEST_CFG_SOURCES = [
+  { file: 'cli/src/native/client_observation_dispatch.rs', gate: 'direct acceptance-faults attribute', cfgGuardLines: [1944, 1957, 1962, 1968, 1990, 2004, 2015, 2027, 2033, 2052, 2062, 2074], count: 12 },
+  { file: 'cli/src/native/client_transport.rs', gate: 'direct acceptance-faults attribute', cfgGuardLines: [2783, 2843], count: 2 },
+  { file: 'cli/src/native/client_test_faults.rs', gate: 'cli/src/native/mod.rs:100 module acceptance-faults attribute', testAttributeLines: [206, 239, 253, 267], count: 4 },
+  { file: 'cli/src/native/client_settlement_trace.rs', gate: 'cli/src/native/mod.rs:104 module acceptance-faults attribute; symlink/FIFO test additionally cfg(unix), applicable on Linux', testAttributeLines: [747, 788, 805, 836, 855, 871, 887, 912, 948, 967, 1000, 1035, 1077], count: 13 },
+] as const;
