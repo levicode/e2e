@@ -212,3 +212,118 @@ describe('typed native browser channel', () => {
   });
 
 });
+
+describe('request-aware fixture acquisition correlation', () => {
+  const located = () => [{ id: '@e10', revision: '2' }, { id: '@e11', revision: '2' }, { id: '@e12', revision: '2' }];
+  const observed = () => [{ id: '@e20', revision: '3' }, { id: '@e21', revision: '3' }];
+
+  it('accepts distinct located/observed IDs, repeated matches and valid nonmatches without another request', async () => {
+    const fixture = await opened();
+    const pending = fixture.channel.command('fixture.correlate', { located: located(), observed: observed() }, operation());
+    expect(fixture.requests.at(-1)).toMatchObject({ command: 'fixture.correlate', args: { identityScope: 'scope-1', located: located(), observed: observed() } });
+    const result = { identityScope: 'scope-1', matches: [observed()[0], observed()[0], null] };
+    fixture.result(result);
+    await expect(pending).resolves.toEqual(result);
+    expect(fixture.requests).toHaveLength(2);
+    await fixture.close();
+  });
+
+  it('snapshots both arrays and ref values before yielding to caller mutation', async () => {
+    const fixture = await opened();
+    const args = { located: located(), observed: observed() };
+    const pending = fixture.channel.command('fixture.correlate', args, operation());
+    args.located[0]!.id = '@e100';
+    args.located.length = 0;
+    args.observed[0]!.id = '@e200';
+    args.observed[1]!.revision = '4';
+    args.observed.length = 0;
+    expect(fixture.requests.at(-1)?.['args']).toEqual({ identityScope: 'scope-1', located: located(), observed: observed() });
+    fixture.result({ identityScope: 'scope-1', matches: [observed()[0], observed()[1], null] });
+    await expect(pending).resolves.toEqual({ identityScope: 'scope-1', matches: [observed()[0], observed()[1], null] });
+    await fixture.close();
+  });
+
+  it.each([
+    ['wrong scope', { identityScope: 'scope-2', matches: [null, null, null] }],
+    ['missing scope', { matches: [null, null, null] }],
+    ['extra result key', { identityScope: 'scope-1', matches: [null, null, null], extra: true }],
+    ['missing matches', { identityScope: 'scope-1' }],
+    ['short output', { identityScope: 'scope-1', matches: [null] }],
+    ['long output', { identityScope: 'scope-1', matches: [null, null, null, null] }],
+    ['nonarray matches', { identityScope: 'scope-1', matches: {} }],
+    ['invented ref', { identityScope: 'scope-1', matches: [{ id: '@e99', revision: '3' }, null, null] }],
+    ['located ref as result', { identityScope: 'scope-1', matches: [{ id: '@e10', revision: '2' }, null, null] }],
+    ['wrong observed revision', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: '2' }, null, null] }],
+    ['extra ref key', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: '3', kind: 'observed' }, null, null] }],
+    ['missing revision', { identityScope: 'scope-1', matches: [{ id: '@e20' }, null, null] }],
+    ['numeric revision', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: 3 }, null, null] }],
+    ['noncanonical ref', { identityScope: 'scope-1', matches: [{ id: 'e20', revision: '3' }, null, null] }],
+  ])('invalidates the actual framed transport for %s', async (_name, result) => {
+    const fixture = await opened();
+    const pending = fixture.channel.command('fixture.correlate', { located: located(), observed: observed() }, operation());
+    fixture.result(result);
+    await expect(pending).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    await expect(fixture.channel.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(fixture.requests).toHaveLength(2);
+  });
+
+  it('does not allow a post-dispatch mutation to authorize a new response reference', async () => {
+    const fixture = await opened();
+    const args = { located: located(), observed: observed() };
+    const pending = fixture.channel.command('fixture.correlate', args, operation());
+    args.observed[0]!.id = '@e99';
+    fixture.result({ identityScope: 'scope-1', matches: [args.observed[0], null, null] });
+    await expect(pending).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    await expect(fixture.channel.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  });
+
+  it.each([
+    ['missing array', { located: [] }],
+    ['wrong array kind', { located: {}, observed: [] }],
+    ['extra request key', { located: [], observed: [], identityScope: 'spoofed' }],
+    ['duplicate located ID', { located: [{ id: '@e1', revision: '1' }, { id: '@e1', revision: '2' }], observed: [] }],
+    ['duplicate observed ID', { located: [], observed: [{ id: '@e1', revision: '1' }, { id: '@e1', revision: '2' }] }],
+    ['extra ref key', { located: [{ id: '@e1', revision: '1', role: 'button' }], observed: [] }],
+    ['missing revision', { located: [{ id: '@e1' }], observed: [] }],
+    ['ref alias', { located: [{ id: 'ref=e1', revision: '1' }], observed: [] }],
+    ['zero ID', { located: [{ id: '@e0', revision: '1' }], observed: [] }],
+    ['zero revision', { located: [{ id: '@e1', revision: '0' }], observed: [] }],
+    ['noncanonical revision', { located: [{ id: '@e1', revision: '01' }], observed: [] }],
+    ['numeric revision', { located: [{ id: '@e1', revision: 1 }], observed: [] }],
+    ['out-of-range ID', { located: [{ id: '@e18446744073709551616', revision: '1' }], observed: [] }],
+    ['out-of-range revision', { located: [{ id: '@e1', revision: '18446744073709551616' }], observed: [] }],
+  ])('rejects %s before dispatch without poisoning the peer', async (_name, args) => {
+    const fixture = await opened();
+    await expect(fixture.channel.command('fixture.correlate', args as never, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(fixture.requests).toHaveLength(1);
+    const pending = fixture.channel.command('fixture.correlate', { located: [], observed: [] }, operation());
+    fixture.result({ identityScope: 'scope-1', matches: [] });
+    await expect(pending).resolves.toEqual({ identityScope: 'scope-1', matches: [] });
+    await fixture.close();
+  });
+
+  it('bounds combined candidate work before dispatch', async () => {
+    const fixture = await opened();
+    const refs = Array.from({ length: 50_001 }, (_, index) => ({ id: `@e${index + 1}`, revision: '1' }));
+    await expect(fixture.channel.command('fixture.correlate', { located: refs, observed: refs.slice(1) }, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(fixture.requests).toHaveLength(1);
+    await fixture.close();
+  });
+
+  it('preserves a native stale acquisition refusal instead of turning it into a nonmatch', async () => {
+    const fixture = await opened();
+    const pending = fixture.channel.command('fixture.correlate', { located: located(), observed: observed() }, operation());
+    fixture.result(undefined, { ok: false, error: { code: 'stale-reference' }, effects: 'not-dispatched' });
+    await expect(pending).rejects.toMatchObject({ code: 'NODE_STALE', retryable: true });
+    await fixture.close();
+  });
+
+  it('rejects an otherwise valid correlation after scope retirement', async () => {
+    const fixture = await opened();
+    const pending = fixture.channel.command('fixture.correlate', { located: located(), observed: observed() }, operation());
+    fixture.reset();
+    fixture.result({ identityScope: 'scope-1', matches: [null, null, null] });
+    await expect(pending).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await fixture.close();
+  });
+});

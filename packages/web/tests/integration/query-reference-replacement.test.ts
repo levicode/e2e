@@ -8,12 +8,16 @@
  * selector engine. No legacy production imports, reference table or fake fixture
  * context. Native Browser owns setup, mutation and all event readback; the
  * explicitly opted-in Playwright client only reads and performs its retained
- * action. Both actions merely append synthetic witnesses, never mutate the DOM.
+ * action. Element actions merely append synthetic witnesses, never mutate the DOM.
+ * The viewport case separately compares equal, unclamped scroll increments.
  *
  * Direct calls use Browser's actual TargetSession, without LocatorEngine's
  * NODE_STALE re-resolution. Its cached read is deliberately asserted unchanged.
- * This is same-document replacement coverage, not permission to relax native
- * loader, frame or cross-session authority. A disagreement fails acceptance.
+ * Element probes cover same-document replacement; the viewport probe separately
+ * covers same-Page navigation. Neither relaxes frame or cross-session authority.
+ * This is a Playwright primitive oracle, not execution of the frozen RefRegistry.
+ * Official d7c6b5e5 lifecycle tests independently establish the API lifetime
+ * obligations. A disagreement fails acceptance.
  */
 import type { LocatorExpression, NodeRef, SemanticNode } from 'e2e/engine';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -162,6 +166,90 @@ describe('retained query-reference replacement matches the frozen source action'
     const source = fixture.actionOracle.locator('.match');
     expect(await source.count()).toBe(1);
     await compare(retained, source, 'A');
+  });
+
+  it('an observed live A remains actionable after a new observation, like the retained source handle', async () => {
+    await nativeDocument(fixture.browser, documentHtml(button('A')));
+    const first = await fixture.session.observe(fixture.operation());
+    expect(first.kind).toBe('semantic');
+    if (first.kind !== 'semantic') throw new Error('This fixture requires a semantic observation');
+    const original = observedNodes(first.tree).filter(node => node.testId === 'A');
+    expect(original).toHaveLength(1);
+    const source = await fixture.actionOracle.locator('.match').elementHandle();
+    expect(source).not.toBeNull();
+    const second = await fixture.session.observe(fixture.operation());
+    expect(second.kind).toBe('semantic');
+    if (second.kind !== 'semantic') throw new Error('This fixture requires a semantic observation');
+    const current = observedNodes(second.tree).filter(node => node.testId === 'A');
+    expect(current).toHaveLength(1);
+    expect(current[0]!.ref.id).toBe(original[0]!.ref.id);
+    // Core presentation generations remain fresh. ReferenceEvidence must still
+    // resolve the old presentation to its unchanged native issuance, not widen bN.
+    expect(second.tree.ref.revision).not.toBe(first.tree.ref.revision);
+    expect(current[0]!.ref.revision).not.toBe(original[0]!.ref.revision);
+    await compare(original[0]!.ref, source!, 'A');
+  });
+
+  it('the same observed DOM object detached and reinserted remains A, not a replacement object', async () => {
+    await nativeDocument(fixture.browser, documentHtml(button('A')));
+    const observation = await fixture.session.observe(fixture.operation());
+    expect(observation.kind).toBe('semantic');
+    if (observation.kind !== 'semantic') throw new Error('This fixture requires a semantic observation');
+    const matches = observedNodes(observation.tree).filter(node => node.testId === 'A');
+    expect(matches).toHaveLength(1);
+    const source = await fixture.actionOracle.locator('.match').elementHandle();
+    expect(source).not.toBeNull();
+    await fixture.browser.evaluate(() => {
+      const original = document.querySelector('.match')!;
+      original.remove();
+      document.body.append(original);
+      return null;
+    });
+    // No intervening committed observation omitted A. This does not authorize an
+    // omitted node or a new, same-looking backend to reuse the old capability.
+    await compare(matches[0]!.ref, source!, 'A');
+  });
+
+  it('the original viewport survives same-Page navigation like the retained source Page', async () => {
+    await nativeDocument(fixture.browser, documentHtml(button('A')));
+    const first = await fixture.engine.observe!(fixture.operation());
+    expect(first.viewportRef).toBeDefined();
+    const sourcePage = fixture.actionOracle; // Never reacquire a Page after navigation.
+    await fixture.engine.session!.open!('about:blank?viewport-lifetime', fixture.operation());
+    await nativeDocument(fixture.browser, documentHtml(`
+      <style>html,body { margin:0; scroll-behavior:auto } body { height:4000px }</style>
+      <script>addEventListener('wheel', event => {
+        referenceActionEvents.push(event.deltaY === Math.round(innerHeight / 2) ? 'A' : 'unexpected-wheel');
+      });</script>
+    `));
+    const second = await fixture.engine.observe!(fixture.operation());
+    expect(await fixture.browser.evaluate(() => scrollY)).toBe(0);
+    // Frozen support.ts:272 uses half the current viewport for momentum:none.
+    const distance = Math.round(second.viewport.height / 2);
+    // Each independent action advances equally on the same unchanging tall body.
+    // There are no nested scrollers or boundary clamping, and no DOM mutation.
+    const nativeResult = await record(async () => {
+      const count = (await events()).length;
+      await fixture.engine.perform!(first.viewportRef!, { kind: 'swipe', direction: 'down' },
+        { ...fixture.operation(), timeoutMs: ACTION_TIMEOUT });
+      await expect.poll(async () => (await events()).length, { timeout: ACTION_TIMEOUT }).toBe(count + 1);
+      await expect.poll(() => fixture.browser.evaluate(() => scrollY), { timeout: ACTION_TIMEOUT }).toBe(distance);
+    });
+    const sourceResult = await record(async () => {
+      const count = (await events()).length;
+      const before = await fixture.browser.evaluate(() => scrollY);
+      await sourcePage.mouse.wheel(0, distance);
+      await expect.poll(async () => (await events()).length, { timeout: ACTION_TIMEOUT }).toBe(count + 1);
+      await expect.poll(() => fixture.browser.evaluate(() => scrollY), { timeout: ACTION_TIMEOUT }).toBe(before + distance);
+    });
+    const finalEvents = await events();
+    await close();
+    expect(second.viewportRef).toEqual(first.viewportRef);
+    expect(second.root.ref.id).not.toBe(first.root.ref.id);
+    const prediction = { status: 'returned', events: ['A'], logIntact: true, readbackErrors: [] };
+    expect(sourceResult, 'the original Page remains usable across navigation').toMatchObject(prediction);
+    expect(nativeResult, 'the original viewport capability preserves that same Page lifetime').toMatchObject(prediction);
+    expect(finalEvents).toEqual(['A', 'A']);
   });
 
   it('observed ElementHandle refuses a detached A instead of clicking replacement B', async () => {

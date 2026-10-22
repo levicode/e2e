@@ -10,8 +10,9 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { LocatorAction, NodeRef, SemanticNode } from 'e2e/engine';
+import type { LocatorAction, NodeRef } from 'e2e/engine';
 import { nativeDocument } from '../helpers/native-browser.ts';
+import { observedNodes } from '../helpers/native-correlation.ts';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 
 let fixture: NativeFixture | undefined;
@@ -58,9 +59,8 @@ async function targetOf(kind: (typeof KINDS)[number], selector: string): Promise
   if (kind === 'locator') return { kind, selector };
   const ref = await locatedRef(selector);
   const snapshot = await fixture!.engine.observe!({ ...operation(), origin: 'agent' });
-  const find = (node: SemanticNode): SemanticNode | undefined =>
-    node.ref.id === ref.id ? node : node.children?.map(find).find(candidate => candidate !== undefined);
-  const observed = find(snapshot.root);
+  const [observed] = await fixture!.correlate([ref], observedNodes(snapshot.root), operation());
+  expect(observed).not.toBeNull();
   expect(observed).toBeDefined();
   return { kind, ref: observed!.ref };
 }

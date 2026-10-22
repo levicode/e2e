@@ -1,7 +1,7 @@
 /** Typed, validated command/event facade over the single native transport. */
 import { EngineError, type EngineErrorCode, type JsonValue, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap } from './browser-contract.ts';
-import { decodeBrowserEvent, decodeBrowserResult, validateBrowserDecision } from './browser-decode.ts';
+import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs, validateBrowserDecision } from './browser-decode.ts';
 import type { NativeClient } from './client.ts';
 import type { NativeEvent, NativeResult } from './protocol.ts';
 
@@ -30,13 +30,14 @@ export class BrowserChannel {
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
     this.assertScope();
+    const correlation = name === 'fixture.correlate' ? { args: snapshotCorrelationArgs(args), identityScope: this.scope } : undefined;
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
-    const result = await this.client.request(name, { ...args, identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
+    const result = await this.client.request(name, { ...(correlation?.args ?? args), identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
     // Validated uncertainty survives scope retirement; it never authorizes publication.
     if (!result.ok && result.effects === 'unknown') throw resultError(result);
     this.assertScope();
     if (!result.ok) throw resultError(result);
-    try { return decodeBrowserResult(name, result.data); }
+    try { return decodeBrowserResult(name, result.data, correlation); }
     catch { throw this.client.invalidate(); }
   }
 

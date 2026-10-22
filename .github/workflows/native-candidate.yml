@@ -153,6 +153,15 @@ jobs:
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
           cargo build --locked --profile ci --no-default-features --features acceptance-faults --message-format=json > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-compiler.jsonl"
           cp "$CARGO_TARGET_DIR/ci/agent-browser" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults"
+      # Scripted-peer diagnostics are independent of browser/broker acceptance. Never replace a gate.
+      # Run after default harnesses, and preserve both separately copied runtime binaries.
+      - name: Run bounded production byte-proxy diagnostic (not semantic recovery evidence)
+        id: proxy-diagnostic
+        timeout-minutes: 25
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.packages.outcome == 'success' && steps.native-build.outcome == 'success' && steps.fault-build.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-proxy-diagnostic.ts run .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
       - name: Negotiate the separate fault runtime
         id: fault-proxy
         if: ${{ !cancelled() && steps.fault-build.outcome == 'success' && steps.browsers.outcome == 'success' && steps.packages.outcome == 'success' }}
@@ -236,6 +245,12 @@ jobs:
           BENCHMARK_SWEEP: ${{ steps.source.outputs.benchmark_sweep }}
           EXPECTED_MANIFEST_SHA256: ${{ steps.bundle.outputs.manifest_sha256 }}
         run: node scripts/acceptance/candidate-receipt.ts "$RUNNER_TEMP/native-candidate-bundle" .artifacts/native-candidate
+      - name: Record independent proxy diagnostic outcome including failure or skip
+        id: proxy-diagnostic-receipt
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+        run: node scripts/acceptance/candidate-proxy-diagnostic.ts receipt .artifacts/native-candidate
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:

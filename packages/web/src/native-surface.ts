@@ -18,7 +18,7 @@ import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app
 import { withConnectionBudget } from './operation-budget.ts';
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
-import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
+import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
 import { EngineChannel } from './native/engine-channel.ts';
@@ -463,6 +463,7 @@ export class NativeSurface implements NativeWebSurface {
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
     const attempt = this.requireAttempt();
+    if (name === 'fixture.correlate') args = snapshotCorrelationArgs(args) as BrowserCommandMap[K]['args'];
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     this.assertAttempt(attempt);
     if (attempt.channel === undefined) throw invalidState('The native browser scope is not ready');

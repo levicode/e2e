@@ -10,9 +10,10 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { SemanticNode } from 'e2e/engine';
+import type { NodeRef } from 'e2e/engine';
 import type { Disagreement } from '../crosscheck/crosscheck.ts';
 import { nativeDocument } from '../helpers/native-browser.ts';
+import { observedNodes } from '../helpers/native-correlation.ts';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 import { diffExpectations, keyOf, readExpectations, TODO_REASON, writeExpectations } from '../crosscheck/expectations.ts';
 
@@ -62,11 +63,6 @@ const pages = new Set<string>();
 beforeAll(async () => { fixture = await startNativeFixture('conformance'); });
 afterAll(async () => { await fixture?.close(); });
 
-/** Flatten only the protected model tree, never the fixture-query result. */
-function flatten(node: SemanticNode): SemanticNode[] {
-  return [node, ...(node.children ?? []).flatMap(flatten)];
-}
-
 const asList = <T,>(value: T | readonly T[]): readonly T[] => (Array.isArray(value) ? value : [value as T]);
 
 describe('axe-core conformance', () => {
@@ -79,17 +75,21 @@ describe('axe-core conformance', () => {
       for (const [index, entry] of cases.entries()) {
         await nativeDocument(fixture!.browser, `<!doctype html><html lang="en"><head>${EMPTY_BOXES}</head><body>${entry.html}${SHADOW_TEMPLATES}</body></html>`);
         const snapshot = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
-        const byId = new Map(flatten(snapshot.root).map((node) => [node.ref.id, node]));
         const selectors = asList(entry.target);
         const texts = entry.accessibleText === undefined ? undefined : asList(entry.accessibleText);
-        for (const [position, selector] of selectors.entries()) {
-          targets += 1;
-          // Fixture queries correlate the target's exact identity, not its model-visible metadata.
+        // Locate each original expression once, then correlate the entire batch.
+        const located: NodeRef[] = [];
+        for (const selector of selectors) {
           const matches = await fixture!.engine.locate!({
             kind: 'index', source: { kind: 'selector', selector }, index: 'first',
           }, fixture!.operation(), { purpose: 'fixture' });
           expect(matches.length, `${table} #${index}: ${selector} matches nothing`).toBe(1);
-          const node = byId.get(matches[0]!.ref.id);
+          located.push(matches[0]!.ref);
+        }
+        const correlated = await fixture!.correlate(located, observedNodes(snapshot.root));
+        for (const [position, selector] of selectors.entries()) {
+          targets += 1;
+          const node = correlated[position] ?? undefined;
           const label = `#${index} ${selector}`;
           const push = (field: string, ours: string, theirs: string) => {
             const disagreement: Disagreement = { oracle: 'axe', field, ours, theirs, node: label };

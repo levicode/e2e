@@ -1,9 +1,14 @@
 /** The real reader maps explicit ARIA roles, implicit HTML semantics, and contenteditable hosts onto the vocabulary. */
 
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
+import { projectionDiagnostics } from '../helpers/projection-diagnostics.ts';
 import { nativeDocument } from '../helpers/native-browser.ts';
 import { startNativeOracle, type NativeOracle } from '../helpers/native-oracle.ts';
+
+// The source hash binds every diagnostic ordinal below to its exact fixture mapping.
+const projection = projectionDiagnostics(readFileSync(new URL(import.meta.url), 'utf8'));
 
 let fixture: NativeOracle | undefined;
 
@@ -26,6 +31,30 @@ function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
 async function rolesByTestId(): Promise<Map<string, SemanticNode>> {
   const { tree } = await capture();
   return new Map(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId!, node]));
+}
+
+/** Only static fixture expectations define ordinals; observed IDs and strings never leave this function. */
+function nodeProjection(
+  group: Parameters<typeof projection>[0],
+  nodes: ReadonlyMap<string, SemanticNode>,
+  expected: readonly { testId: string; included?: boolean; role?: string | undefined; name?: string | undefined; value?: string | undefined }[],
+  exactCount = true,
+): string {
+  return projection(group, {
+    observedCount: nodes.size,
+    ...(exactCount ? { expectedCount: expected.filter(item => item.included !== false).length } : {}),
+  }, expected.map((item, ordinal) => {
+    const node = nodes.get(item.testId);
+    return {
+      ordinal, missing: node === undefined,
+      ...(Object.hasOwn(item, 'role') ? { roleMatches: node?.role === item.role } : {}),
+      ...(Object.hasOwn(item, 'name') ? { nameMatches: node?.name === item.name } : {}),
+      ...(Object.hasOwn(item, 'value') ? { valueMatches: node?.value === item.value } : {}),
+      nameMissing: node?.name === undefined, valueMissing: node?.value === undefined,
+      ...(typeof node?.name === 'string' ? { nameLength: node.name.length } : {}),
+      ...(typeof node?.value === 'string' ? { valueLength: node.value.length } : {}),
+    };
+  }));
 }
 
 /** Fill the same exact element whose native identity the reader returned. */
@@ -121,11 +150,13 @@ describe('role mapping', () => {
       <table><tr><th data-testid="single-column">Item</th></tr><tr><td>Value</td></tr></table>
     `);
     const nodes = await rolesByTestId();
-    expect(Object.fromEntries([...nodes].map(([id, node]) => [id, node.role]))).toEqual({
+    const expected = {
       row: 'rowheader', 'last-row': 'rowheader', column: 'columnheader',
       'scoped-column': 'columnheader', 'scoped-row': 'rowheader', 'empty-data': 'columnheader',
       'child-data': 'rowheader', single: undefined, 'single-column': 'columnheader',
-    });
+    };
+    expect(Object.fromEntries([...nodes].map(([id, node]) => [id, node.role])),
+      nodeProjection('headers', nodes, Object.entries(expected).map(([testId, role]) => ({ testId, role })))).toEqual(expected);
     expect(await fixture!.oracle.getByRole('rowheader').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid'))))
       .toEqual(['row', 'last-row', 'scoped-row', 'child-data']);
   });
@@ -146,7 +177,13 @@ describe('role mapping', () => {
     expect(nodes.get('titled')).toMatchObject({ role: 'image', name: 'Close' });
     expect(nodes.get('labelled')).toMatchObject({ role: 'image', name: 'Labelled' });
     expect(nodes.has('decorative')).toBe(false);
-    expect(nodes.get('home')).toMatchObject({ role: 'link', name: 'Home' });
+    expect(nodes.get('home'), nodeProjection('inline-svg', nodes, [
+      { testId: 'bare', role: 'image', name: undefined },
+      { testId: 'titled', role: 'image', name: 'Close' },
+      { testId: 'labelled', role: 'image', name: 'Labelled' },
+      { testId: 'decorative', included: false },
+      { testId: 'home', role: 'link', name: 'Home' },
+    ])).toMatchObject({ role: 'link', name: 'Home' });
     const { tree } = await capture();
     expect(flatten(tree).filter((node) => node.role === 'presentation' || node.role === 'none')).toEqual([]);
     expect(await fixture!.oracle.getByRole('img').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid'))))
@@ -252,7 +289,7 @@ describe('role mapping', () => {
     `);
     const nodes = await rolesByTestId();
     const roles = Object.fromEntries([...nodes].map(([testId, node]) => [testId, node.role]));
-    expect(roles).toEqual({
+    const expected = {
       'page-header': 'banner',
       nav: 'navigation',
       main: 'main',
@@ -280,7 +317,8 @@ describe('role mapping', () => {
       address: 'group',
       aside: 'complementary',
       'page-footer': 'contentinfo',
-    });
+    };
+    expect(roles, nodeProjection('vocabulary', nodes, Object.entries(expected).map(([testId, role]) => ({ testId, role })))).toEqual(expected);
     expect(nodes.get('number')).toMatchObject({ name: 'Quantity', value: '2' });
     expect(nodes.get('progress')?.name).toBe('Upload');
     // A legend, a figcaption, and a caption name their parent, so the node the reader
@@ -309,18 +347,30 @@ describe('contenteditable editing hosts', () => {
       </div>
     `);
     const nodes = await rolesByTestId();
-    expect(nodes.get('labelled')).toMatchObject({ role: 'textbox', name: 'Notes', value: 'Hello\n\nWorld' });
+    const diagnostic = nodeProjection('editing-hosts', nodes, [
+      { testId: 'labelled', role: 'textbox', name: 'Notes', value: 'Hello\n\nWorld' },
+      { testId: 'block', role: undefined },
+      { testId: 'aria-placeholder', role: 'textbox', name: 'Write here', value: '' },
+      { testId: 'tiptap', role: 'textbox', name: 'Write something', value: '' },
+      { testId: 'quill', role: 'textbox', name: 'Compose a message', value: '' },
+      { testId: 'explicit', role: 'textbox', name: 'Message', value: 'Hi' },
+      { testId: 'bare', role: 'textbox', name: undefined, value: 'Bare' },
+      { testId: 'outer', role: 'textbox', name: 'Outer' },
+      { testId: 'island', role: undefined },
+      { testId: 'nested', role: 'textbox', name: 'Nested', value: 'Inner' },
+    ], false); // The block/island role assertions allow absence, so there is no exact node-count expectation.
+    expect(nodes.get('labelled'), diagnostic).toMatchObject({ role: 'textbox', name: 'Notes', value: 'Hello\n\nWorld' });
     // Only the host is the control: a block inside it is content, not a second textbox.
-    expect(nodes.get('block')?.role).toBeUndefined();
-    expect(nodes.get('aria-placeholder')).toMatchObject({ role: 'textbox', name: 'Write here', value: '' });
-    expect(nodes.get('tiptap')).toMatchObject({ role: 'textbox', name: 'Write something' });
-    expect(nodes.get('quill')).toMatchObject({ role: 'textbox', name: 'Compose a message' });
-    expect(nodes.get('explicit')).toMatchObject({ role: 'textbox', name: 'Message', value: 'Hi' });
-    expect(nodes.get('bare')).toMatchObject({ role: 'textbox', value: 'Bare' });
-    expect(nodes.get('bare')?.name).toBeUndefined();
-    expect(nodes.get('outer')).toMatchObject({ role: 'textbox', name: 'Outer' });
-    expect(nodes.get('island')?.role).toBeUndefined();
-    expect(nodes.get('nested')).toMatchObject({ role: 'textbox', name: 'Nested', value: 'Inner' });
+    expect(nodes.get('block')?.role, diagnostic).toBeUndefined();
+    expect(nodes.get('aria-placeholder'), diagnostic).toMatchObject({ role: 'textbox', name: 'Write here', value: '' });
+    expect(nodes.get('tiptap'), diagnostic).toMatchObject({ role: 'textbox', name: 'Write something' });
+    expect(nodes.get('quill'), diagnostic).toMatchObject({ role: 'textbox', name: 'Compose a message' });
+    expect(nodes.get('explicit'), diagnostic).toMatchObject({ role: 'textbox', name: 'Message', value: 'Hi' });
+    expect(nodes.get('bare'), diagnostic).toMatchObject({ role: 'textbox', value: 'Bare' });
+    expect(nodes.get('bare')?.name, diagnostic).toBeUndefined();
+    expect(nodes.get('outer'), diagnostic).toMatchObject({ role: 'textbox', name: 'Outer' });
+    expect(nodes.get('island')?.role, diagnostic).toBeUndefined();
+    expect(nodes.get('nested'), diagnostic).toMatchObject({ role: 'textbox', name: 'Nested', value: 'Inner' });
     // Playwright's role selector knows a textbox only through an explicit role; where it has a rule, the two agree.
     expect(await fixture!.oracle.getByRole('textbox', { name: 'Message' }).getAttribute('data-testid')).toBe('explicit');
   });
@@ -390,7 +440,13 @@ describe('contenteditable editing hosts', () => {
     const { tree } = await capture();
     const roles = Object.fromEntries(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId, node.role]));
     // A canvas, with no role, name, or text, is not a node at all; an svg has the image role, so it is listed.
-    expect(roles).toEqual({ svg: 'image', frame: 'iframe', host: 'textbox' });
+    expect(roles, nodeProjection('embedded-surfaces',
+      new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), [
+        { testId: 'canvas', included: false },
+        { testId: 'svg', role: 'image' },
+        { testId: 'frame', role: 'iframe' },
+        { testId: 'host', role: 'textbox' },
+      ])).toEqual({ svg: 'image', frame: 'iframe', host: 'textbox' });
   });
 
   it('drops a name taken from a block placeholder once the editor has content, and keeps one from the host', async () => {
@@ -406,10 +462,16 @@ describe('contenteditable editing hosts', () => {
       </div>
     `);
     const before = await rolesByTestId();
-    expect(before.get('tiptap')).toMatchObject({ role: 'textbox', name: 'Write something', value: '' });
-    expect(before.get('quill')).toMatchObject({ role: 'textbox', name: 'Compose a message', value: '' });
-    expect(before.get('aria-placeholder')).toMatchObject({ role: 'textbox', name: 'Write here', value: '' });
-    expect(before.get('labelled')).toMatchObject({ role: 'textbox', name: 'Notes', value: '' });
+    const beforeDiagnostic = nodeProjection('editor-before', before, [
+      { testId: 'tiptap', role: 'textbox', name: 'Write something', value: '' },
+      { testId: 'quill', role: 'textbox', name: 'Compose a message', value: '' },
+      { testId: 'aria-placeholder', role: 'textbox', name: 'Write here', value: '' },
+      { testId: 'labelled', role: 'textbox', name: 'Notes', value: '' },
+    ]);
+    expect(before.get('tiptap'), beforeDiagnostic).toMatchObject({ role: 'textbox', name: 'Write something', value: '' });
+    expect(before.get('quill'), beforeDiagnostic).toMatchObject({ role: 'textbox', name: 'Compose a message', value: '' });
+    expect(before.get('aria-placeholder'), beforeDiagnostic).toMatchObject({ role: 'textbox', name: 'Write here', value: '' });
+    expect(before.get('labelled'), beforeDiagnostic).toMatchObject({ role: 'textbox', name: 'Notes', value: '' });
 
     for (const testId of ['tiptap', 'quill', 'aria-placeholder', 'labelled']) {
       await fill(testId, 'Hello');
@@ -424,11 +486,17 @@ describe('contenteditable editing hosts', () => {
       return null;
     });
     const after = await rolesByTestId();
-    expect(after.get('tiptap')).toMatchObject({ role: 'textbox', value: 'Hello' });
-    expect(after.get('tiptap')?.name).toBeUndefined();
-    expect(after.get('quill')).toMatchObject({ role: 'textbox', name: 'Compose a message', value: 'Hello' });
-    expect(after.get('aria-placeholder')).toMatchObject({ role: 'textbox', name: 'Write here', value: 'Hello' });
-    expect(after.get('labelled')).toMatchObject({ role: 'textbox', name: 'Notes', value: 'Hello' });
+    const afterDiagnostic = nodeProjection('editor-after', after, [
+      { testId: 'tiptap', role: 'textbox', name: undefined, value: 'Hello' },
+      { testId: 'quill', role: 'textbox', name: 'Compose a message', value: 'Hello' },
+      { testId: 'aria-placeholder', role: 'textbox', name: 'Write here', value: 'Hello' },
+      { testId: 'labelled', role: 'textbox', name: 'Notes', value: 'Hello' },
+    ]);
+    expect(after.get('tiptap'), afterDiagnostic).toMatchObject({ role: 'textbox', value: 'Hello' });
+    expect(after.get('tiptap')?.name, afterDiagnostic).toBeUndefined();
+    expect(after.get('quill'), afterDiagnostic).toMatchObject({ role: 'textbox', name: 'Compose a message', value: 'Hello' });
+    expect(after.get('aria-placeholder'), afterDiagnostic).toMatchObject({ role: 'textbox', name: 'Write here', value: 'Hello' });
+    expect(after.get('labelled'), afterDiagnostic).toMatchObject({ role: 'textbox', name: 'Notes', value: 'Hello' });
   });
 
   it('follows the document as it is edited and focused, as a textarea value does', async () => {

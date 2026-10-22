@@ -1,5 +1,5 @@
 /** Typed fixture commands over the one native client session. No browser handles cross this boundary. */
-import type { EngineError, JsonValue, OperationContext } from 'e2e/engine';
+import type { EngineError, JsonValue, NodeRef, OperationContext } from 'e2e/engine';
 import type { Cookie } from '../browser.ts';
 import type { Dialog } from '../dialog-types.ts';
 import type { WebMedia } from '../media.ts';
@@ -14,6 +14,8 @@ export interface NativeBodyChunk {
 
 /** Commands return null for success without a value, never an unchecked missing result. */
 export interface BrowserCommandMap {
+  /** Internal fixture acquisition identity only, never future live-action resolution. */
+  'fixture.correlate': { args: { located: NodeRef[]; observed: NodeRef[] }; result: { identityScope: string; matches: (NodeRef | null)[] } };
   'blob.create': { args: { size: number; sha256: string }; result: { handle: string; size: number; sha256: string; maxChunkBytes: number } };
   'blob.write': { args: { handle: string; offset: number; base64: string }; result: { nextOffset: number } };
   'blob.seal': { args: { handle: string }; result: { handle: string; size: number; sha256: string } };

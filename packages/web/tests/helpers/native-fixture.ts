@@ -6,11 +6,14 @@ import type { EngineHandle, OperationContext } from 'e2e/engine';
 import type { TargetSession } from '../../../e2e/dist/engine/surface.js';
 import { web, type Browser, type WebOptions } from '../../src/index.ts';
 import { nativeBrowserGraph } from './native-browser.ts';
+import type { CorrelateObserved } from './native-correlation.ts';
 import { ignoreTrace, noSecrets } from './secrets.ts';
 
 export interface NativeFixture {
   readonly engine: EngineHandle;
   readonly browser: Browser;
+  /** Read-only acquisition identity join through the same attempt-bound fixture channel. */
+  readonly correlate: CorrelateObserved;
   /** The same real session used by Browser, for retained-reference tests without locator retries. */
   readonly session: TargetSession;
   readonly operation: () => OperationContext;

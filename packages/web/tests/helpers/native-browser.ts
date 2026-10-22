@@ -9,6 +9,8 @@ import { createFixtures } from '../../../e2e/dist/run/fixtures.js';
 import { StepRecorder } from '../../../e2e/dist/run/steps.js';
 import { WorkerModels } from '../../../e2e/dist/run/worker-models.js';
 import type { Browser } from '../../src/index.ts';
+import { captureFixtureSurface } from './capture-fixture-surface.ts';
+import { correlateObserved, type CorrelateObserved } from './native-correlation.ts';
 
 /**
  * Test-only real core fixture graph over the already-started public engine.
@@ -16,19 +18,22 @@ import type { Browser } from '../../src/index.ts';
  * helper lifetime; each action uses the caller's initial per-action timeout.
  * No fabricated EngineFixtureContext or replacement locator implementation.
  */
-export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): { browser: Browser; session: TargetSession } {
+export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): { browser: Browser; session: TargetSession; correlate: CorrelateObserved } {
   const current = operation();
   const config = resolveConfig({ targets: [{ name: 'web', platform: 'web', engine, app: { url: baseUrl } }], cache: 'off', timeout: 30_000, actionTimeout: current.timeoutMs, assertionTimeout: current.timeoutMs }, { projectRoot: process.cwd(), env: process.env });
   const steps = new StepRecorder(current.attemptId);
   const session = createEngineSession({ engine, targetName: 'web' });
-  const { fixtures } = createFixtures({
-    config, target: config.targets[0]!, session,
-    steps, budget: new AttemptBudget(current.signal, new Deadline(30_000)), runId: current.runId, attemptId: current.attemptId,
-    attempt: { testId: 'native-browser-fixture', attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
-    artifacts: { dir: process.cwd(), register: (_kind, relativePath) => relativePath, link: (relativePath) => relativePath }, priorSteps: () => steps.completed(),
-    agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
+  const captured = captureFixtureSurface(() => {
+    const { fixtures } = createFixtures({
+      config, target: config.targets[0]!, session,
+      steps, budget: new AttemptBudget(current.signal, new Deadline(30_000)), runId: current.runId, attemptId: current.attemptId,
+      attempt: { testId: 'native-browser-fixture', attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
+      artifacts: { dir: process.cwd(), register: (_kind, relativePath) => relativePath, link: (relativePath) => relativePath }, priorSteps: () => steps.completed(),
+      agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
+    });
+    return Reflect.get(fixtures, 'browser') as Browser;
   });
-  return { browser: Reflect.get(fixtures, 'browser') as Browser, session };
+  return { browser: captured.value, session, correlate: correlateObserved(captured.surface, operation) };
 }
 
 /** Existing fixture-only callers keep the same real graph and public Browser surface. */

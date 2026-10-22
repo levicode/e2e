@@ -8,13 +8,18 @@
  * `visibility: hidden` one a child shows again.
  */
 
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { chromium, type Browser as OracleBrowser, type Page as OraclePage } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
+import { projectionDiagnostics } from '../helpers/projection-diagnostics.ts';
 import { nativeDocument } from '../helpers/native-browser.ts';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
+
+// The source hash binds every diagnostic ordinal below to its exact fixture mapping.
+const projection = projectionDiagnostics(readFileSync(new URL(import.meta.url), 'utf8'));
 
 let remote: RemoteChrome | undefined;
 let fixture: NativeFixture | undefined;
@@ -200,9 +205,22 @@ describe('the tree walk through a box with no size', () => {
     const nodes = await captureTree();
     const buttons = nodes.filter((node) => node.role === 'button').map((node) => node.name);
     const options = nodes.filter((node) => node.role === 'option').map((node) => node.name);
+    // Fixed fixture order, independent of the observed order or page-provided IDs.
+    const diagnostic = projection('select-visibility', {
+      observedCount: nodes.filter(node => ['button', 'option', 'combobox'].includes(node.role ?? '')).length,
+      expectedCount: 3,
+    }, [
+      ['button', 'Pay'], ['button', 'Shown pay'],
+      ['option', 'plain'], ['option', 'warm'], ['option', 'cool'],
+      ['combobox', 'Folded'], ['combobox', 'Shown'],
+    ].map(([role, name], ordinal) => {
+      const matches = nodes.filter(node => node.name === name);
+      return { ordinal, missing: matches.length === 0, presentCount: matches.length,
+        roleMatches: matches.length === 1 && matches[0]!.role === role };
+    }));
     expect(buttons).toEqual(['Shown pay']);
-    expect(options).toEqual(['cool']);
-    expect(nodes.filter((node) => node.role === 'combobox').map((node) => node.name)).toEqual(['Shown']);
+    expect(options, diagnostic).toEqual(['cool']);
+    expect(nodes.filter((node) => node.role === 'combobox').map((node) => node.name), diagnostic).toEqual(['Shown']);
   });
 });
 

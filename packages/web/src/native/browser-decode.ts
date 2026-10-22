@@ -1,5 +1,5 @@
 /** Runtime validation for the typed native fixture boundary. */
-import { EngineError, validateJsonValue, type JsonValue } from 'e2e/engine';
+import { EngineError, validateJsonValue, type JsonValue, type NodeRef } from 'e2e/engine';
 import type { Cookie, CookieFields } from '../browser.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeBodyChunk } from './browser-contract.ts';
 
@@ -74,6 +74,66 @@ function sealed(value: unknown): { handle: string; size: number; sha256: string 
   return { handle, size: counter(item['size']), sha256 };
 }
 
+const MAX_CORRELATION_CANDIDATES = 100_000;
+const MAX_U64 = '18446744073709551615';
+type CorrelationArgs = BrowserCommandMap['fixture.correlate']['args'];
+
+/** Correlation never admits aliases, extra fields, or noncanonical native references. */
+function correlationRef(value: unknown): NodeRef {
+  const item = record(value);
+  exactKeys(item, ['id', 'revision']);
+  const id = string(item['id']);
+  const revision = string(item['revision']);
+  if (!/^@e[1-9][0-9]*$/.test(id) || !/^[1-9][0-9]*$/.test(revision)) invalid();
+  const bounded = (value: string): boolean => value.length < MAX_U64.length || (value.length === MAX_U64.length && value <= MAX_U64);
+  if (!bounded(id.slice(2)) || !bounded(revision)) invalid();
+  return { id, revision };
+}
+
+/** This closed seam must not silently accept a future command/result shape. */
+function exactKeys(item: Record<string, unknown>, keys: readonly string[]): void {
+  if (Object.keys(item).length !== keys.length || keys.some(key => !Object.hasOwn(item, key))) invalid();
+}
+
+/** Snapshot request values before admission/transport can yield to caller mutation. */
+export function snapshotCorrelationArgs(value: unknown): CorrelationArgs {
+  try {
+    const item = record(value);
+    exactKeys(item, ['located', 'observed']);
+    const located = item['located'];
+    const observed = item['observed'];
+    if (!Array.isArray(located) || !Array.isArray(observed) || located.length + observed.length > MAX_CORRELATION_CANDIDATES) return invalid();
+    const refs = (values: unknown[]): NodeRef[] => {
+      const seen = new Set<string>();
+      return Array.from(values, value => {
+        const ref = correlationRef(value);
+        if (seen.has(ref.id)) invalid();
+        seen.add(ref.id);
+        return ref;
+      });
+    };
+    return { located: refs(located), observed: refs(observed) };
+  } catch {
+    throw new EngineError('INVALID_STATE', 'The native fixture correlation request does not match its contract', { retryable: false });
+  }
+}
+
+/** A successful correlation is valid only relative to the exact dispatched candidates. */
+function correlationResult(value: unknown, request: CorrelationArgs, expectedScope: string): BrowserCommandMap['fixture.correlate']['result'] {
+  const item = record(value);
+  exactKeys(item, ['identityScope', 'matches']);
+  const identityScope = scope(item['identityScope']);
+  const matches = item['matches'];
+  if (identityScope !== expectedScope || !Array.isArray(matches) || matches.length !== request.located.length) return invalid();
+  const observed = new Map(request.observed.map(ref => [ref.id, ref.revision]));
+  return { identityScope, matches: Array.from(matches, value => {
+    if (value === null) return null;
+    const ref = correlationRef(value);
+    if (observed.get(ref.id) !== ref.revision) return invalid();
+    return ref;
+  }) };
+}
+
 const decoders = {
   'blob.create': (value: unknown) => {
     const maxChunkBytes = counter(record(value)['maxChunkBytes']);
@@ -117,11 +177,15 @@ const decoders = {
   'download.unsubscribe': empty,
   'download.read': chunk,
   'download.release': empty,
-} satisfies { [K in keyof BrowserCommandMap]: (value: unknown) => BrowserCommandMap[K]['result'] };
+} satisfies { [K in Exclude<keyof BrowserCommandMap, 'fixture.correlate'>]: (value: unknown) => BrowserCommandMap[K]['result'] };
 
 /** Decode first; the cast only restores the mapped command/result correlation. */
-export function decodeBrowserResult<K extends keyof BrowserCommandMap>(command: K, value: unknown): BrowserCommandMap[K]['result'] {
-  return decoders[command](value) as BrowserCommandMap[K]['result'];
+export function decodeBrowserResult<K extends keyof BrowserCommandMap>(command: K, value: unknown, correlation?: { args: CorrelationArgs; identityScope: string }): BrowserCommandMap[K]['result'] {
+  if (command === 'fixture.correlate') {
+    if (correlation === undefined) return invalid();
+    return correlationResult(value, correlation.args, correlation.identityScope) as BrowserCommandMap[K]['result'];
+  }
+  return decoders[command as Exclude<K, 'fixture.correlate'>](value) as BrowserCommandMap[K]['result'];
 }
 
 /** Read an exact nonnegative counter without accepting coercion or unsafe integers. */

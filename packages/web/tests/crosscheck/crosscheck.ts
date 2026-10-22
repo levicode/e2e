@@ -2,7 +2,7 @@
  * Differential check of the engine's semantic tree against two oracles on
  * the same live page: Chrome's own accessibility tree over CDP, and
  * Playwright's `getByRole` resolution. Protected observation refs are joined
- * to temporary DOM markers by exact fixture-query identity, then looked up
+ * to temporary DOM markers by native acquisition correlation, then looked up
  * in both oracles. Interactive Chrome nodes absent from observation count
  * as missing even if a fixture query can find them.
  *
@@ -256,7 +256,6 @@ async function tagOracleElements(page: Page) {
 async function captureTagged(fixture: NativeOracle) {
   const snapshot = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent', timeoutMs: 30_000 });
   const nodes = flatten(snapshot.root);
-  const observed = new Set(nodes.map(node => node.ref.id));
   const tagged = await tagOracleElements(fixture.oracle);
   try {
     const byToken = new Map(tagged.elements.map(element => [element.token, element]));
@@ -268,15 +267,18 @@ async function captureTagged(fixture: NativeOracle) {
       // Explicit fixture reads preserve attributes; protected observation does not.
       // Only the marker and exact ref participate in this join, never query metadata.
       const matches = await fixture.engine.locate!(expression, { ...fixture.operation(), timeoutMs: 30_000 }, { purpose: 'fixture' });
-      for (const match of matches) {
+      const correlated = await fixture.correlate(matches.map(match => match.ref), nodes, { ...fixture.operation(), timeoutMs: 30_000 });
+      for (const [index, match] of matches.entries()) {
         const token = match.attributes?.[MARKER];
         const element = token === undefined ? undefined : byToken.get(token);
         if (element === undefined || element.frameId !== frameId || element.facts === undefined) throw new Error('Fixture query did not identify an exact oracle element');
-        if (!observed.has(match.ref.id)) continue;
-        if (markers.has(match.ref.id) || ids.has(token!)) throw new Error('Crosscheck identity join is not one-to-one');
-        facts.set(match.ref.id, element.facts);
-        markers.set(match.ref.id, token!);
-        ids.set(token!, match.ref.id);
+        const observed = correlated[index];
+        if (observed === null) continue;
+        if (observed === undefined) throw new Error('Crosscheck identity correlation omitted a result');
+        if (markers.has(observed.ref.id) || ids.has(token!)) throw new Error('Crosscheck identity join is not one-to-one');
+        facts.set(observed.ref.id, element.facts);
+        markers.set(observed.ref.id, token!);
+        ids.set(token!, observed.ref.id);
       }
     }
     for (const node of nodes) {

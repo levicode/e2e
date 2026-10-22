@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
 import { web } from '../../src/index.ts';
-import { nativeBrowser, nativeDocument } from '../helpers/native-browser.ts';
+import { nativeBrowser, nativeBrowserGraph, nativeDocument } from '../helpers/native-browser.ts';
 import { semanticFaultControl } from '../helpers/native-semantic-fault.ts';
 import { decodePng } from '../helpers/png.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
@@ -90,13 +90,18 @@ describe('masked fallback after a stalled semantic reader', () => {
         expect(performance.now() - started).toBeGreaterThan(1_250);
         expect(performance.now() - started).toBeLessThan(operation.timeoutMs);
         expect(fallback.treeUnavailable).toBe(true);
-        expect(fallback.root.ref.id).toBe(old.root.ref.id);
+        // Fallback retires document/located authority, not the Page viewport.
+        // The former same-root-ID assertion was a migration-only assumption.
+        expect(fallback.root.ref.id).not.toBe(old.root.ref.id);
+        expect(old.viewportRef).toBeDefined();
+        expect(fallback.viewportRef).toEqual(old.viewportRef);
         expect(fallback.root.ref.revision).not.toBe(old.root.ref.revision);
         expect(fallback.root.children ?? []).toEqual([]);
         expect(fallback.maskedRegionCount).toBeGreaterThanOrEqual(1);
         const image = decodePng(fallback.pixels!.data);
         expect(image.pixelAt(40, 30)).toEqual([0, 0, 0, 255]);
         expect(image.pixelAt(200, 100)).toEqual([0, 0, 255, 255]);
+        await expect(engine.perform!(old.root.ref, { kind: 'tap' }, operation)).rejects.toMatchObject({ code: 'NODE_STALE' });
         await expect(engine.perform!(password!.ref, { kind: 'tap' }, operation)).rejects.toMatchObject({ code: 'NODE_STALE' });
       } finally {
         await fault.release();
@@ -123,7 +128,7 @@ describe('masked fallback after a stalled semantic reader', () => {
       await engine.init!({ runId: 'ids', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
       await engine.startAttempt!({ attemptId: 'attempt', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
       await engine.session!.open!('about:blank', operation);
-      const browser = nativeBrowser(engine, () => operation);
+      const { browser, correlate } = nativeBrowserGraph(engine, () => operation);
       await nativeDocument(browser, '<button data-testid="a" onclick="document.body.dataset.clicked=\'A\'">Button A</button>');
       const old = await engine.observe!(operation);
       await browser.evaluate(() => {
@@ -164,8 +169,11 @@ describe('masked fallback after a stalled semantic reader', () => {
       const ids = observed.map((node) => node.ref.id);
       expect(new Set(ids).size).toBe(ids.length);
       expect(located).toBeDefined();
-      // Native IDs are stable for the same exact node, including fixture queries.
-      expect(observed.find(node => node.testId === 'a')?.ref.id).toBe(located!.ref.id);
+      // Distinct locate/observe IDs can retain the same immutable acquisition binding.
+      const [correlated] = await correlate([located!.ref], observed, operation);
+      const observedA = observed.find(node => node.testId === 'a');
+      expect(observedA).toBeDefined();
+      expect(correlated).toBe(observedA);
       // Staged IDs from the abandoned transaction are consumed, never retargeted.
       for (const id of abandonedIds) {
         expect(ids).not.toContain(id);
