@@ -1480,6 +1480,10 @@ above, so a fixture over a session that ended reports `APP_NOT_OPEN` the way
 an observation would. A method can also fail a step with the runner's own
 error classes, exported from the same entry.
 
+The native Web adapter reports `TestError('POLICY_DENIED')` only for a
+policy refusal with no dispatched action and a usable scope. A policy label
+never overrides unknown effects or makes a closed or quarantined scope reusable.
+
 ```ts
 throw new TestError('ASSERTION_FAILED', 'expected the receipt to print');
 ```

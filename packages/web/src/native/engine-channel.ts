@@ -7,6 +7,7 @@ import { decodeBrowserResult } from './browser-decode.ts';
 import { decodeEngineResult } from './engine-decode.ts';
 import type { EngineCommandMap, NativeBlob } from './engine-contract.ts';
 import type { NativeClient } from './client.ts';
+import { queryDiagnostic } from './query-diagnostic.ts';
 
 /** No retries, backend implementation, or alternative process transport. */
 export class EngineChannel {
@@ -16,6 +17,10 @@ export class EngineChannel {
     const scope = (args as { identityScope?: string }).identityScope;
     const owns = scope === undefined ? () => true : this.captureScope(scope);
     this.assertOwner(owns);
+    // Capture only a bounded diagnostic fact before awaiting native authority.
+    // Later caller mutation cannot change the classification of this request.
+    const diagnostic = name === 'browser.query' || name === 'fixture.query'
+      ? queryDiagnostic((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
@@ -27,7 +32,7 @@ export class EngineChannel {
     }
     if (!result.ok) {
       const action = name === 'browser.perform' ? (args as EngineCommandMap['browser.perform']['args']).action.kind : undefined;
-      throw resultError(result, action === 'check' || action === 'uncheck' ? action : undefined);
+      throw resultError(result, action === 'check' || action === 'uncheck' ? action : undefined, diagnostic);
     }
     try { return decodeEngineResult(name, result.data); }
     catch { throw this.client.invalidate(); }

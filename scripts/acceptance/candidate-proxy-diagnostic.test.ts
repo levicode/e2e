@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test, type TestContext } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { collectProxyDiagnostics, finalizeProxyReceipt, PROXY_SCENARIOS, PROXY_TEST, proxyCommands, proxyCompilerArtifact, proxyEnvironment, proxyProcessGroup, proxyReportSummary, runProxyCommand } from './candidate-proxy-diagnostic.ts';
+import { collectProxyDiagnostics, finalizeProxyReceipt, PROXY_SCENARIOS, PROXY_TEST, proxyCommands, proxyCompileEvidence, proxyCompilerArtifact, proxyEnvironment, proxyProcessGroup, proxyReportSummary, runProxyCommand } from './candidate-proxy-diagnostic.ts';
 import { CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
 
 function compilerFixture(t: TestContext) {
@@ -291,4 +291,34 @@ test('workflow wires an independent diagnostic without substituting or relaxing 
   for (const id of ['source-removal', 'web-browser', 'semantic-faults', 'producer', 'bundle', 'installed']) {
     assert.throws(() => requireCandidateGates({ ...complete, [id]: { outcome: 'failure' }, 'proxy-diagnostic': { outcome: 'success' } }), /missing, skipped or failed/);
   }
+});
+
+
+test('compiler receipt preserves bounded codes and both stream digests without raw diagnostics', () => {
+  const diagnostic = (code: unknown) => JSON.stringify({ reason: 'compiler-message', message: { level: 'error', code: { code }, rendered: '/private/path: synthetic secret', message: 'never retain' } });
+  const stdout = [diagnostic('E0432'), diagnostic('E0432'), diagnostic('E0308'), diagnostic('raw-private-text'), diagnostic(['E0432']), 'not-json'].join('\n');
+  const summary = proxyCompileEvidence(stdout, 'sensitive stderr is not retained');
+  assert.deepEqual(summary.compilerErrorCodes, ['E0308', 'E0432']);
+  assert.equal(summary.compilerCodesIncomplete, true);
+  assert.equal(summary.stdoutSha256.length, 64); assert.equal(summary.stderrSha256.length, 64);
+  assert.equal(summary.stdoutBytes, Buffer.byteLength(stdout));
+  assert.doesNotMatch(JSON.stringify(summary), /private|secret|sensitive|never retain/);
+  assert.deepEqual(proxyCompileEvidence('', '').compilerErrorCodes, []);
+  assert.equal(proxyCompileEvidence('', '').compilerCodesIncomplete, false);
+});
+test('compiler receipt caps distinct codes, records and oversized diagnostic lines', () => {
+  const row = (code: string) => JSON.stringify({ reason: 'compiler-message', message: { level: 'error', code: { code } } });
+  const bounded = proxyCompileEvidence(Array.from({ length: 33 }, (_, i) => row(`E${String(i).padStart(4, '0')}`)).join('\n'), '');
+  assert.equal(bounded.compilerErrorCodes.length, 32); assert.equal(bounded.compilerCodesIncomplete, true);
+  assert.equal(proxyCompileEvidence(('{}\n').repeat(8193), '').compilerCodesIncomplete, true);
+  assert.equal(proxyCompileEvidence(' '.repeat(65537) + '{}', '').compilerCodesIncomplete, true);
+});
+
+test('compiler errors without an extractable code mark the summary incomplete', () => {
+  for (const code of [null, undefined, 'E0432', 3]) {
+    const stdout = JSON.stringify({ reason: 'compiler-message', message: { level: 'error', code } });
+    const summary = proxyCompileEvidence(stdout, '');
+    assert.deepEqual(summary.compilerErrorCodes, []); assert.equal(summary.compilerCodesIncomplete, true);
+  }
+  assert.equal(proxyCompileEvidence(JSON.stringify({ reason: 'compiler-message', message: { level: 'warning', code: null } }), '').compilerCodesIncomplete, false);
 });

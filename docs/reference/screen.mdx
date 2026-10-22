@@ -216,8 +216,9 @@ await screen.getByDisplayValue('ada@example.test').clear();
 <Note>
 In the web engine a `getByDisplayValue` locator cannot be the scope of a
 child query or a `has` filter; both fail with `UNSUPPORTED_CAPABILITY`.
-Playwright has no selector for a control's current value, so the engine
-filters candidates after the fact.
+The native engine refuses these compositions before acquiring browser facts or
+issuing references. Position and filter refinements remain supported, including
+`filter({ hasText })` and `filter({ has })` with an ordinary child query.
 </Note>
 
 #### `getByTestId`

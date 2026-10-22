@@ -23,6 +23,30 @@ const natural = (value: unknown): boolean => Number.isSafeInteger(value) && Numb
 const within = (root: string, file: string): boolean => { const path = relative(root, file); return !!path && path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path); };
 const exactKeys = (value: ObjectValue, required: readonly string[], optional: readonly string[] = []): boolean => required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => required.includes(key) || optional.includes(key));
 
+/** Compiler-only summary: never retain rendered messages, source paths or stderr text. */
+export function proxyCompileEvidence(stdout: string, stderr: string) {
+  const errorCodes = new Set<string>(); let incomplete = false; let records = 0;
+  // The process owner already bounds each stream. Independently bound JSON inspection.
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue;
+    if (++records > 8192) { incomplete = true; break; }
+    if (Buffer.byteLength(line) > 64 * 1024) { incomplete = true; continue; }
+    let value: unknown;
+    try { value = JSON.parse(line); } catch { incomplete = true; continue; }
+    if (!object(value) || value['reason'] !== 'compiler-message' || !object(value['message'])) continue;
+    const message = value['message'];
+    if (message['level'] !== 'error') continue;
+    if (!object(message['code'])) { incomplete = true; continue; }
+    const code = message['code']['code'];
+    if (typeof code !== 'string' || !/^E[0-9]{4}$/.test(code)) { incomplete = true; continue; }
+    if (errorCodes.size >= 32 && !errorCodes.has(code)) { incomplete = true; continue; }
+    errorCodes.add(code);
+  }
+  return { stdoutSha256: sha256(Buffer.from(stdout)), stderrSha256: sha256(Buffer.from(stderr)),
+    stdoutBytes: Buffer.byteLength(stdout), stderrBytes: Buffer.byteLength(stderr),
+    compilerErrorCodes: [...errorCodes].toSorted(), compilerCodesIncomplete: incomplete };
+}
+
 /** harness=false/test=false does NOT imply profile.test=true. Select the explicit test target. */
 export function proxyCompilerArtifact(jsonLines: string, source: string, target: string) {
   if (Buffer.byteLength(jsonLines) > 8 * LIMIT) throw new Error('Compiler output exceeds bound');
@@ -243,7 +267,7 @@ async function run(args: string[]): Promise<void> {
     const reportFile = join(scratch, 'vitest.json'); const commands = proxyCommands(reportFile);
     checkpoint('compile');
     const compile = await runProxyCommand('cargo', commands.compile, { cwd: join(source, 'cli'), env: { ...proxyEnvironment(process.env), CARGO_TARGET_DIR: target }, maxBuffer: 8 * LIMIT, timeoutMs: 900_000, signal: controller.signal });
-    execution['compile'] = { exitCode: compile.status, signal: compile.signal, termination: compile.termination, cleanupConfirmed: compile.cleanupConfirmed, groupRetired: compile.groupRetired, stdoutSha256: sha256(Buffer.from(compile.stdout)) };
+    execution['compile'] = { exitCode: compile.status, signal: compile.signal, termination: compile.termination, cleanupConfirmed: compile.cleanupConfirmed, groupRetired: compile.groupRetired, ...proxyCompileEvidence(compile.stdout, compile.stderr) };
     if (compile.termination !== 'completed' || !compile.cleanupConfirmed || compile.status !== 0) throw new Error('Explicit proxy fixture compilation did not complete');
     checkpoint('select-artifact');
     const fixture = proxyCompilerArtifact(compile.stdout, source, target);

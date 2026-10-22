@@ -43,8 +43,13 @@ let preserveRestartScope = false;
 let coalescedTransitionEvent = false;
 let rejectScopeOpen: 'not-dispatched' | 'unknown' | undefined;
 let releaseScopeEnd: (() => void) | undefined;
+let holdObservation = false;
+let observationHeld: (() => void) | undefined;
+let settleObservation: (() => void) | undefined;
+let acknowledgeCancel: (() => void) | undefined;
 let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { token: string; timeoutMs: number }) => Promise<void>;
 beforeEach(() => {
+  holdObservation = false; observationHeld = undefined; settleObservation = undefined; acknowledgeCancel = undefined;
   downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, connectOperation, onEvent) => {
     const output = new PassThrough();
@@ -53,12 +58,17 @@ beforeEach(() => {
       const frame = JSON.parse(chunk.toString()) as Record<string, unknown>; frames.push(frame);
       if (frame['type'] === 'hello') send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic-peer', generation: 1, capabilities: options.capabilities, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
       else if (frame['type'] === 'close') send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+      else if (frame['type'] === 'cancel') acknowledgeCancel = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
       else if (frame['type'] === 'decision') {
         if (holdDecision) rejectHeldDecision = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
         else send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
       }
       else {
         const command = frame['command']; let data: unknown = null;
+        if (command === 'browser.observe' && holdObservation) {
+          settleObservation = () => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false, error: { code: 'deadline-exceeded' }, effects: 'not-dispatched', scopeState: 'usable' });
+          observationHeld?.(); done(); return;
+        }
         if (command === 'scope.open' && rejectScopeOpen !== undefined) {
           const effects = rejectScopeOpen; rejectScopeOpen = undefined;
           send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false, error: { code: 'browser-failure' }, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' }); done(); return;
@@ -167,6 +177,75 @@ describe('native surface ownership and fixed policy binding', () => {
     await expect(surface.observe({ ...operation(), signal: controller.signal })).rejects.toMatchObject({ code: 'CANCELLED', retryable: false });
     expect(frames).toHaveLength(before);
     await surface.dispose(cleanup());
+  });
+  it.each(['ack-first', 'result-first', 'missing-ack'] as const)('settles an expired NativeSurface context without rereading its deadline (%s)', async order => {
+    const surface = new NativeSurface({}); await start(surface);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let now = 10_000;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const originalRequest = NativeClient.prototype.request;
+    let expiredGetterReads = 0;
+    let getter: ReturnType<typeof vi.spyOn> | undefined;
+    let readProductionDeadline: (() => number) | undefined;
+    const request = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, command, args, current, transition) {
+      if (command === 'browser.observe' && holdObservation) {
+        const productionGetter = Object.getOwnPropertyDescriptor(current, 'timeoutMs')?.get;
+        expect(productionGetter).toBeTypeOf('function');
+        readProductionDeadline = () => productionGetter!.call(current) as number;
+        getter = vi.spyOn(current, 'timeoutMs', 'get').mockImplementation(() => {
+          if (now >= 12_000) expiredGetterReads++;
+          return readProductionDeadline!();
+        });
+      }
+      return originalRequest.call(this, command, args, current, transition);
+    });
+    let finished = false;
+    try {
+      holdObservation = true;
+      const reached = new Promise<void>(resolve => { observationHeld = resolve; });
+      const pending = surface.observe({ ...operation(), timeoutMs: 2_000 }).then(
+        value => { finished = true; return value; },
+        (error: unknown) => { finished = true; return error; },
+      );
+      await reached;
+      const original = frames.at(-1)!;
+      expect(original).toMatchObject({ type: 'request', command: 'browser.observe', timeoutMs: 2_000 });
+      now = 12_000;
+      expect(readProductionDeadline).toThrow('Native operation exhausted its deadline before dispatch');
+      const timerError: unknown = await vi.advanceTimersByTimeAsync(2_000).then(() => undefined, (error: unknown) => error);
+      const boundary = { expiredGetterReads, cancelWrites: frames.filter(frame => frame['type'] === 'cancel').length, timerError };
+      if (acknowledgeCancel !== undefined) {
+        const cancel = frames.at(-1)!;
+        expect(cancel).toMatchObject({ type: 'cancel', operationSeq: original['operationSeq'], generation: original['generation'] });
+        expect(finished).toBe(false);
+        if (order === 'missing-ack') {
+          settleObservation!(); now += 4_999;
+          await vi.advanceTimersByTimeAsync(4_999); expect(finished).toBe(false);
+          now += 1; await vi.advanceTimersByTimeAsync(1);
+          await expect(pending).resolves.toMatchObject({ code: 'OPERATION_TIMEOUT', message: 'The native browser operation ended without a settled outcome' });
+          const submitted = frames.length;
+          await expect(surface.observe(operation())).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+          expect(frames).toHaveLength(submitted);
+        } else {
+          (order === 'ack-first' ? acknowledgeCancel : settleObservation)!();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(finished).toBe(false);
+          (order === 'ack-first' ? settleObservation : acknowledgeCancel)!();
+          await expect(pending).resolves.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+          holdObservation = false;
+          await expect(surface.observe(operation())).resolves.toMatchObject({ identityScope: 'scope-1' });
+        }
+        expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      } else {
+        // Let the old failure terminate before reporting its pre-exchange boundary.
+        settleObservation!(); await vi.advanceTimersByTimeAsync(5_000); await pending;
+      }
+      expect(boundary).toEqual({ expiredGetterReads: 0, cancelWrites: 1, timerError: undefined });
+      expect(expiredGetterReads).toBe(0);
+    } finally {
+      getter?.mockRestore(); request.mockRestore(); clock.mockRestore(); vi.useRealTimers();
+      await surface.dispose(cleanup()).catch(() => undefined);
+    }
   });
   it('does not let an operation admitted before retirement dispatch into the next attempt', async () => {
     const surface = new NativeSurface({}); await start(surface);

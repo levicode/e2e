@@ -262,7 +262,10 @@ export class NativeClient {
             ? ` (settlement:result-seen=${settled !== undefined};cancel-ack-seen=${cancelAcknowledged})` : '';
           this.fail(`The native browser operation ended without a settled outcome${diagnostic}`, code);
         }, 5000);
-        void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, { ...context, signal: new AbortController().signal, timeoutMs: 5000 }, undefined, undefined, operationSeq).then(() => {
+        // The work context may expose an expired deadline getter. Settlement
+        // has its own budget and must not read that getter while copying metadata.
+        const cancelContext: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs: 5000 };
+        void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, cancelContext, undefined, undefined, operationSeq).then(() => {
           trace?.observe('CancelExchangeResolved', { operationSeq });
           cancelAcknowledged = true; complete();
         }).catch(() => { if (!finished) this.fail('The native browser cancellation did not settle', code); });

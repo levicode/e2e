@@ -1,9 +1,10 @@
 /** Typed, validated command/event facade over the single native transport. */
-import { EngineError, type EngineErrorCode, type JsonValue, type OperationContext } from 'e2e/engine';
+import { EngineError, TestError, type EngineErrorCode, type JsonValue, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap } from './browser-contract.ts';
 import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs, validateBrowserDecision } from './browser-decode.ts';
 import type { NativeClient } from './client.ts';
 import type { NativeEvent, NativeResult } from './protocol.ts';
+import type { QueryDiagnostic } from './query-diagnostic.ts';
 
 /** The lifecycle surface supplies current attempt identity and bounded cleanup context. */
 export interface BrowserChannelContext {
@@ -111,17 +112,23 @@ export class BrowserChannel {
 }
 
 /** Static protocol codes only. Never infer retryability from raw backend messages. */
-const cleanRejections = new WeakSet<EngineError>();
+const cleanRejections = new WeakSet<EngineError | TestError>();
 /** Internal lifecycle evidence, never inferred from a public error string or caller-supplied code. */
-export function isNativeNotDispatched(cause: unknown): boolean { return cause instanceof EngineError && cleanRejections.has(cause); }
-export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck'): EngineError {
-  const failure = classifyResultError(result, checkedAction);
+export function isNativeNotDispatched(cause: unknown): boolean { return (cause instanceof EngineError || cause instanceof TestError) && cleanRejections.has(cause); }
+export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic): EngineError | TestError {
+  const failure = classifyResultError(result, checkedAction, queryDiagnostic);
   if (result.effects === 'not-dispatched' && result.scopeState === 'usable') cleanRejections.add(failure);
   return failure;
 }
-function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck'): EngineError {
+function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic): EngineError | TestError {
   if (result.effects === 'unknown') return new EngineError('ACTION_MAY_HAVE_COMMITTED', 'The native browser action outcome is unknown', { retryable: false });
   const reason = result.error?.code;
+  // Only a settled clean refusal carries public policy semantics. A policy
+  // label cannot hide completed effects or make a dirty scope reusable.
+  if (reason === 'policy-denied' && result.effects === 'not-dispatched' && result.scopeState === 'usable') return new TestError('POLICY_DENIED', 'The native browser operation was denied by policy', { retryable: false });
+  if (!result.ok && reason === 'unsupported-capability' && result.effects === 'not-dispatched' && result.scopeState === 'usable' && queryDiagnostic === 'display-value-composition') {
+    return new EngineError('UNSUPPORTED_CAPABILITY', 'displayValue queries cannot scope child queries or serve as a has-filter in this engine', { retryable: false });
+  }
   if (reason === 'intercepted-pointer') return new EngineError('NOT_ACTIONABLE', 'Another element intercepts pointer events', { retryable: false });
   if (reason === 'checked-state-unchanged' || reason === 'checked-control-replaced') {
     const verb = checkedAction ?? 'The checked-state action';

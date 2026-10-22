@@ -10,7 +10,7 @@ function foreignTestError(code: string): Error {
   const error = new Error(code); error.name = 'TestError';
   Object.assign(error, { category: 'test', code, retryable: false }); return error;
 }
-function failure(code: string, effects: Effects = 'not-dispatched'): EngineError {
+function failure(code: string, effects: Effects = 'not-dispatched'): EngineError | TestError {
   return resultError({ type: 'result', id: 'failure', generation: 1, operationSeq: 1, ok: false, error: { code }, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' });
 }
 async function fromCallback(error: Error): Promise<Error | undefined> {
