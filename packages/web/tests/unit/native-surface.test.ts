@@ -47,8 +47,10 @@ let holdObservation = false;
 let observationHeld: (() => void) | undefined;
 let settleObservation: (() => void) | undefined;
 let acknowledgeCancel: (() => void) | undefined;
+let interceptRequest: ((frame: Record<string, unknown>, reply: (result: Record<string, unknown>) => void) => boolean) | undefined;
 let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { token: string; timeoutMs: number }) => Promise<void>;
 beforeEach(() => {
+  interceptRequest = undefined;
   holdObservation = false; observationHeld = undefined; settleObservation = undefined; acknowledgeCancel = undefined;
   downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, connectOperation, onEvent) => {
@@ -65,6 +67,7 @@ beforeEach(() => {
       }
       else {
         const command = frame['command']; let data: unknown = null;
+        if (interceptRequest?.(frame, result => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, ...(result['ok'] === false ? {} : { data: null }), effects: 'completed', scopeState: 'usable', ...result }))) { done(); return; }
         if (command === 'browser.observe' && holdObservation) {
           settleObservation = () => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false, error: { code: 'deadline-exceeded' }, effects: 'not-dispatched', scopeState: 'usable' });
           observationHeld?.(); done(); return;
@@ -110,6 +113,284 @@ async function start(surface: NativeSurface) {
   await surface.init({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: { site: 'fixture.test' }, env: prepared?.env ?? {}, headed: false, workerSlot: 0, signal, log: () => {} });
   await surface.startAttempt(context('attempt'));
 }
+
+interface HeldRequest {
+  readonly args: Record<string, unknown>;
+  succeed(data: unknown): void;
+  fail(code: string, effects?: 'not-dispatched' | 'unknown'): void;
+}
+/** Hold real framed requests without replacing the Surface, channel, or blob collector. */
+function holdRequests(...commands: string[]) {
+  const queued = new Map<string, HeldRequest[]>();
+  const waiting = new Map<string, (request: HeldRequest) => void>();
+  interceptRequest = (frame, reply) => {
+    const command = String(frame['command']);
+    if (!commands.includes(command)) return false;
+    const request: HeldRequest = {
+      args: frame['args'] as Record<string, unknown>,
+      succeed: data => reply({ data }),
+      fail: (code, effects = 'not-dispatched') => reply({ ok: false, error: { code }, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' }),
+    };
+    const resolve = waiting.get(command);
+    if (resolve !== undefined) { waiting.delete(command); resolve(request); }
+    else { const pending = queued.get(command) ?? []; pending.push(request); queued.set(command, pending); }
+    return true;
+  };
+  return {
+    next(command: string): Promise<HeldRequest> {
+      const request = queued.get(command)?.shift();
+      if (request !== undefined) return Promise.resolve(request);
+      return new Promise(resolve => { waiting.set(command, resolve); });
+    },
+  };
+}
+/** Distinct root data shares an immutable viewport issuance, not the publication revision. */
+function observation(revision: unknown, handle?: string, scope = currentScope) {
+  return {
+    identityScope: scope, revision, viewport: { width: 100, height: 80 },
+    root: { ref: { id: '@e1', revision: '1' }, role: 'document', name: `snapshot ${String(revision)}` },
+    viewportRef: { id: '@e2', revision: '1' },
+    ...(handle === undefined ? {} : { pixels: { identityScope: scope, handle, size: recordingBytes.length, sha256: createHash('sha256').update(recordingBytes).digest('hex'), mediaType: 'image/png', width: 100, height: 80, scale: 1, maskedRegionCount: 0 } }),
+  };
+}
+/** Complete a single exact synthetic blob chunk; production code still verifies its digest. */
+function finishBlob(request: HeldRequest): void {
+  request.succeed({ base64: recordingBytes.toString('base64'), nextOffset: recordingBytes.length, eof: true });
+}
+
+describe('native observation presentation ordering', () => {
+  it.each([
+    ['blob.read', '1', '2'], ['blob.release', '1', '2'],
+    ['blob.read', '9', '10'], ['blob.release', '9', '10'],
+    ['blob.read', '9007199254740992', '9007199254740993'],
+    ['blob.release', '9007199254740992', '9007199254740993'],
+    ['blob.read', '18446744073709551614', '18446744073709551615'],
+    ['blob.release', '18446744073709551614', '18446744073709551615'],
+  ] as const)('rejects an older snapshot after delayed %s (%s < %s)', async (boundary, oldRevision, newRevision) => {
+    const peer = holdRequests('browser.observe', boundary);
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed(observation(oldRevision, 'older-image'));
+      const transfer = await peer.next(boundary);
+      expect(transfer.args['handle']).toBe('older-image');
+      const newer = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation(newRevision));
+      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: '@e2', revision: '1' } });
+      if (boundary === 'blob.read') finishBlob(transfer); else transfer.succeed({ released: true });
+      await expect(older).resolves.toMatchObject({ code: 'NODE_STALE', retryable: true });
+      expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => frame['args'])).toEqual([{ identityScope: currentScope, handle: 'older-image' }]);
+      expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(2);
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it.each(['pending', 'failed'] as const)('advances before the newer snapshot transfer is %s and never rolls it back', async outcome => {
+    const peer = holdRequests('browser.observe', 'blob.read');
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed(observation('1', 'older-image'));
+      const oldRead = await peer.next('blob.read');
+      let newerSettled = false;
+      const newer = surface.observe(operation()).then(value => { newerSettled = true; return value; }, (cause: unknown) => { newerSettled = true; return cause; });
+      (await peer.next('browser.observe')).succeed(observation('2', 'newer-image'));
+      const newRead = await peer.next('blob.read');
+      if (outcome === 'failed') {
+        newRead.fail('browser-failure');
+        await expect(newer).resolves.toMatchObject({ code: 'ENGINE_FAILURE' });
+      }
+      finishBlob(oldRead);
+      await expect(older).resolves.toMatchObject({ code: 'NODE_STALE' });
+      if (outcome === 'pending') {
+        expect(newerSettled).toBe(false);
+        finishBlob(newRead);
+        await expect(newer).resolves.toMatchObject({ root: { name: 'snapshot 2' }, pixels: { data: recordingBytes } });
+      }
+      expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => (frame['args'] as Record<string, unknown>)['handle']).toSorted()).toEqual(['newer-image', 'older-image']);
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it.each(['pending', 'browser-failure', 'invalid-arguments'] as const)('does not supersede an already committed snapshot for a newer %s request', async outcome => {
+    const peer = holdRequests('browser.observe', 'blob.read');
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('1', 'older-image'));
+      const oldRead = await peer.next('blob.read');
+      const newer = surface.observe(operation()).catch((cause: unknown) => cause);
+      const newRequest = await peer.next('browser.observe');
+      if (outcome !== 'pending') { newRequest.fail(outcome); await expect(newer).resolves.toMatchObject({ code: 'ENGINE_FAILURE' }); }
+      finishBlob(oldRead);
+      await expect(older).resolves.toMatchObject({ root: { name: 'snapshot 1' } });
+      if (outcome === 'pending') { newRequest.fail('browser-failure'); await expect(newer).resolves.toMatchObject({ code: 'ENGINE_FAILURE' }); }
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('does not lower its watermark when native success replies arrive out of order', async () => {
+    const peer = holdRequests('browser.observe', 'blob.read');
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      const oldRequest = await peer.next('browser.observe');
+      const newer = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('2'));
+      await expect(newer).resolves.toMatchObject({ root: { name: 'snapshot 2' } });
+      oldRequest.succeed(observation('1', 'older-image'));
+      finishBlob(await peer.next('blob.read'));
+      await expect(older).resolves.toMatchObject({ code: 'NODE_STALE' });
+      const stillOld = surface.observe(operation()).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed(observation('1'));
+      await expect(stillOld).resolves.toMatchObject({ code: 'NODE_STALE' });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('keeps queries, fixture correlation, and screenshots outside observation ordering', async () => {
+    const peer = holdRequests('browser.observe', 'blob.read', 'browser.query', 'fixture.query', 'fixture.correlate', 'capture.screenshot');
+    const directory = await mkdtemp(path.join(tmpdir(), 'native-observe-isolation-'));
+    const surface = new NativeSurface({}); await start(surface);
+    await surface.endAttempt(cleanup()); await surface.startAttempt({ ...context('isolation'), artifactsDir: directory });
+    try {
+      const pending = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('1', 'observed-image'));
+      const observationRead = await peer.next('blob.read');
+      const expression = { kind: 'query', query: { kind: 'testId', value: { kind: 'string', value: 'save', exact: true } } } as const;
+      for (const fixture of [false, true]) {
+        const query = surface.locate(expression, operation(), fixture ? { purpose: 'fixture' } : undefined);
+        (await peer.next(fixture ? 'fixture.query' : 'browser.query')).succeed({ identityScope: currentScope, revision: '18446744073709551615', nodes: [] });
+        await expect(query).resolves.toEqual([]);
+      }
+      const correlation = surface.command('fixture.correlate', { located: [], observed: [] }, operation());
+      (await peer.next('fixture.correlate')).succeed({ identityScope: currentScope, matches: [] });
+      await expect(correlation).resolves.toEqual({ identityScope: currentScope, matches: [] });
+      const screenshot = surface.screenshot('separate', operation());
+      (await peer.next('capture.screenshot')).succeed(observation('18446744073709551615', 'screenshot-image').pixels);
+      finishBlob(await peer.next('blob.read'));
+      const screenshotPath = await screenshot;
+      expect(await readFile(path.join(directory, screenshotPath))).toEqual(recordingBytes);
+      finishBlob(observationRead);
+      await expect(pending).resolves.toMatchObject({ root: { name: 'snapshot 1' }, pixels: { data: recordingBytes } });
+      expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(1);
+    } finally { await surface.dispose(cleanup()); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it('does not replace the current trace reference when an older root-only snapshot finishes late', async () => {
+    const peer = holdRequests('browser.observe', 'blob.release', 'capture.screenshot');
+    const surface = new NativeSurface({}); await start(surface);
+    const screen = vi.fn();
+    await surface.endAttempt(cleanup()); await surface.startAttempt({ ...context('traced-order'), screen });
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed({ ...observation('1', 'older-image'), viewportRef: undefined });
+      const oldRelease = await peer.next('blob.release');
+      const newer = surface.observe(operation());
+      const nextData = observation('2'); nextData.root.ref = { id: '@e3', revision: '2' };
+      (await peer.next('browser.observe')).succeed({ ...nextData, viewportRef: undefined });
+      const current = await newer;
+      oldRelease.succeed({ released: true });
+      await expect(older).resolves.toMatchObject({ code: 'NODE_STALE' });
+      const action = surface.perform(current.root.ref, { kind: 'tap' }, operation());
+      (await peer.next('capture.screenshot')).succeed(observation('2', 'trace-image').pixels);
+      (await peer.next('blob.release')).succeed({ released: true });
+      await action;
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ref: current.root.ref }, treeUnavailable: true }));
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as Record<string, unknown>)['ref'])).toEqual([current.root.ref]);
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it.each(['cancelled', 'deadline'] as const)('keeps %s ahead of stale presentation after blob release', async outcome => {
+    const peer = holdRequests('browser.observe', 'blob.release');
+    const surface = new NativeSurface({}); await start(surface);
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const controller = new AbortController();
+    try {
+      const older = surface.observe({ ...operation(), signal: controller.signal }).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed(observation('1', 'older-image'));
+      const release = await peer.next('blob.release');
+      const newer = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('2'));
+      await newer;
+      if (outcome === 'cancelled') controller.abort(); else clock.mockReturnValue(2001);
+      release.succeed({ released: true });
+      await expect(older).resolves.toMatchObject({ code: outcome === 'cancelled' ? 'CANCELLED' : 'OPERATION_TIMEOUT', retryable: false });
+      expect(frames.filter(frame => frame['command'] === 'blob.release')).toHaveLength(1);
+    } finally { clock.mockRestore(); await surface.dispose(cleanup()); }
+  });
+
+  it.each(['reset', 'same-scope restart', 'attempt'] as const)('isolates the watermark and late completion across %s turnover', async turnover => {
+    const peer = holdRequests('browser.observe', 'blob.release');
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed(observation('100', 'older-image'));
+      const release = await peer.next('blob.release');
+      const oldScope = currentScope;
+      if (turnover === 'reset') await surface.reset(operation());
+      else if (turnover === 'same-scope restart') { preserveRestartScope = true; await surface.restart(operation()); }
+      else { await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement')); }
+      const replacement = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('1'));
+      await expect(replacement).resolves.toMatchObject({ root: { name: 'snapshot 1' } });
+      release.succeed({ released: true });
+      await expect(older).resolves.toMatchObject({ code: 'CANCELLED' });
+      const current = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('1'));
+      await expect(current).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 1' } });
+      expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => frame['args'])).toEqual([{ identityScope: oldScope, handle: 'older-image' }]);
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('rejects a late old-owner result before its malformed revision can poison a replacement owner', async () => {
+    const peer = holdRequests('browser.observe');
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      const oldRequest = await peer.next('browser.observe');
+      preserveRestartScope = true; await surface.restart(operation());
+      const replacement = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('1'));
+      await replacement;
+      oldRequest.succeed(observation('18446744073709551616'));
+      await expect(older).resolves.toMatchObject({ code: 'CANCELLED' });
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it.each(['', '0', '00', '01', '-1', '+1', '1.0', '1e2', ' 1', '1\n', '18446744073709551616', '9'.repeat(100), 1])('invalidates non-canonical or out-of-range publication revision %j', async revision => {
+    const peer = holdRequests('browser.observe');
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const pending = surface.observe(operation()).catch((cause: unknown) => cause);
+      (await peer.next('browser.observe')).succeed(observation(revision));
+      await expect(pending).resolves.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+      expect(frames.filter(frame => frame['command'] === 'blob.read')).toHaveLength(0);
+    } finally { await surface.dispose(cleanup()).catch(() => undefined); }
+  });
+
+  it.each(['unknown', 'malformed', 'digest', 'release'] as const)('preserves %s failure instead of replacing it with stale presentation', async failure => {
+    const boundary = failure === 'release' ? 'blob.release' : 'blob.read';
+    const peer = holdRequests('browser.observe', boundary);
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const older = surface.observe(operation()).catch((cause: unknown) => cause);
+      const oldRequest = await peer.next('browser.observe');
+      let transfer: HeldRequest | undefined;
+      if (failure === 'digest' || failure === 'release') {
+        const data = observation('1', 'older-image');
+        if (failure === 'digest') data.pixels!.sha256 = '0'.repeat(64);
+        oldRequest.succeed(data); transfer = await peer.next(boundary);
+      }
+      const newer = surface.observe(operation());
+      (await peer.next('browser.observe')).succeed(observation('2'));
+      await newer;
+      if (failure === 'unknown') oldRequest.fail('browser-failure', 'unknown');
+      else if (failure === 'malformed') oldRequest.succeed({ ...observation('1'), root: null });
+      else if (failure === 'digest') finishBlob(transfer!);
+      else transfer!.fail('browser-failure');
+      await expect(older).resolves.toMatchObject({ code: failure === 'unknown' ? 'ACTION_MAY_HAVE_COMMITTED' : 'ENGINE_FAILURE', retryable: false });
+    } finally { await surface.dispose(cleanup()).catch(() => undefined); }
+  });
+});
 
 describe('native surface ownership and fixed policy binding', () => {
   it.each([false, true])('retains a failed-start provider lease only for private unresolved cleanup evidence (%s)', async unresolved => {

@@ -3,10 +3,15 @@ import { closeSync, constants, fstatSync, mkdirSync, openSync, writeSync } from 
 import { dirname, isAbsolute, join } from 'node:path';
 import type { AcceptanceRecord } from '../../src/native/acceptance-trace.ts';
 
-export const SEMANTIC_TRACE_CASES = ['deadline', 'cancellation', 'fallback', 'abandoned-ids'] as const;
+export const SEMANTIC_TRACE_CASES = ['deadline', 'cancellation', 'fallback', 'abandoned-ids', 'supersession'] as const;
 export type SemanticTraceCase = typeof SEMANTIC_TRACE_CASES[number];
-export const TS_TRACE_RECORDS = 512;
-export const TRACE_BYTES = 256 * 1024;
+// Five TS cases share the original aggregate budget with the unchanged native sink.
+export const TS_TRACE_RECORDS = 400;
+export const TS_TRACE_BYTES = 200 * 1024;
+export const NATIVE_TRACE_RECORDS = 2048;
+export const NATIVE_TRACE_BYTES = 256 * 1024;
+export const TOTAL_TRACE_RECORDS = 4096;
+export const TOTAL_TRACE_BYTES = 1280 * 1024;
 export const TRACE_RECORD_BYTES = 512;
 export const NATIVE_TRACE_FILE = 'semantic-faults.native-phases.jsonl';
 export const tsTraceFile = (name: SemanticTraceCase): string => `semantic-faults.${name}.ts-phases.jsonl`;
@@ -76,12 +81,12 @@ export function openSemanticTrace(name: SemanticTraceCase, nativeFile: string | 
         let line = Buffer.from(JSON.stringify(snapshot) + '\n');
         if (line.length > TRACE_RECORD_BYTES) { stopped = true; return false; }
         // Reserve one maximum-sized record for the unique cap marker.
-        const limited = count >= TS_TRACE_RECORDS - 1 || bytes + line.length > TRACE_BYTES - TRACE_RECORD_BYTES;
+        const limited = count >= TS_TRACE_RECORDS - 1 || bytes + line.length > TS_TRACE_BYTES - TRACE_RECORD_BYTES;
         if (limited) {
           const { schemaVersion, source, pid, record: ordinal, droppedBefore, emittedBefore, suppressedBefore, overflow } = snapshot;
           line = Buffer.from(JSON.stringify({ schemaVersion, source, pid, record: ordinal, phase: 'CaptureLimitReached', droppedBefore, emittedBefore, suppressedBefore, overflow }) + '\n');
         }
-        if (count >= TS_TRACE_RECORDS || bytes + line.length > TRACE_BYTES) { stopped = true; return false; }
+        if (count >= TS_TRACE_RECORDS || bytes + line.length > TS_TRACE_BYTES) { stopped = true; return false; }
         // A short/failed append is terminal. Never retry, repair, truncate, or reopen.
         if (writeSync(handle, line) !== line.length) { stopped = true; return false; }
         count++; bytes += line.length;

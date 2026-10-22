@@ -47,6 +47,15 @@ feature and all exact contracts in `candidate-manifest.ts`.
 - All discovered Web unit/browser files, the canonical reference contract, and
   genuine public callback/primitives consumers. The semantic fault and
   differential files are explicit required partitions, not dropped tests.
+- All five exact semantic fault assertions: the original tree-only deadline,
+  tree-only cancellation, masked fallback and abandoned-ID cases, plus public
+  capture supersession. The supersession fixture uses the same native client,
+  channel and browser with the existing semantic-publish hold. B must finish
+  and its committed ref must perform an actual action before manual release of
+  A; A must settle as `NODE_STALE`. After release, B's ref must still act and a
+  fresh same-scope observation must remain usable. The original cancellation
+  case stays separate. Both ignored native supersession contracts are required
+  in addition to the original 34 native contracts, with omission checks.
 - All original 15 named differential fixtures and expectation reconciliation,
   independently of the optional benchmark sweep. Only the precisely named
   optional benchmark assertion may be skipped in this dedicated fixture gate;
@@ -63,6 +72,18 @@ installable production bundle is uploaded only after the complete candidate gate
 passes. Foundation metadata or advertised capabilities never waive other gates.
 The explicitly excluded external-direct-URL ingress diagnostic is recorded as a
 known unsupported ingress path, not reported as a passing containment contract.
+
+The semantic diagnostic inventory has five fixed TS case files, five exclusive
+owner directories and one shared native/proxy file. Each TS file is capped at
+400 records / 200 KiB (reduced from 512 / 256 KiB); the shared native file remains
+2048 records / 256 KiB. Total limits remain 4096 records / 1280 KiB, and each
+record remains at most 512 bytes. The reader applies these same bounds and
+requires all five process links. Schema v2 scalar-only records are unchanged;
+missing, capped, partial or invalid evidence remains inconclusive, independent
+of functional results. Adding fixtures or passing orchestration checks is not
+real-browser proof: the new public and native supersession gates require hosted
+execution before claiming that behavior passed. The optional benchmark remains
+unchanged and is not a substitute for these mandatory cases.
 
 ## Local checks
 

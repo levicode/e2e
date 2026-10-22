@@ -8,13 +8,13 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { candidateRevision } from './candidate-revision.ts';
 import { candidateSha, compilerHarnesses, verifyNativeInventory } from './candidate-native.ts';
-import { candidatePhaseEnvironment, candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures } from './candidate-web.ts';
+import { candidatePhaseEnvironment, candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures, verifySemanticFaults } from './candidate-web.ts';
 import { candidateSourceProblems, LEGACY_PRODUCTION_FILES, REQUIRED_MIGRATED_TEST_FILES } from './candidate-source.ts';
 import { CANDIDATE_GATES, OPTIONAL_CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
-import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_WEB_SUITES } from './candidate-manifest.ts';
+import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_SEMANTIC_FAULT_ASSERTIONS, CANDIDATE_WEB_SUITES } from './candidate-manifest.ts';
 import { NATIVE_BROWSER_CONTRACTS, WEB_ACCEPTANCE } from './manifest.ts';
 import { collectSemanticTraceEvidence, nativeTraceVersion, verifySemanticTraceEvidence } from './candidate-semantic-trace.ts';
-import { openSemanticTrace, validTsTraceRecord, SEMANTIC_TRACE_CASES, tsTraceFile, NATIVE_TRACE_FILE, type TraceObject } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
+import { openSemanticTrace, validTsTraceRecord, SEMANTIC_TRACE_CASES, tsTraceFile, NATIVE_TRACE_FILE, NATIVE_TRACE_BYTES, NATIVE_TRACE_RECORDS, TOTAL_TRACE_BYTES, TOTAL_TRACE_RECORDS, TRACE_RECORD_BYTES, TS_TRACE_BYTES, TS_TRACE_RECORDS, type TraceObject } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
 import type { AcceptanceRecord } from '../../packages/web/src/native/acceptance-trace.ts';
 import { REQUIRED_CAPABILITIES } from '../../packages/web/src/native/capabilities.ts';
 
@@ -38,7 +38,7 @@ test('dedicated push is source-locked; manual selection needs an explicit immuta
 test('full native manifest extends foundation without weakening the foundation list', () => {
   for (const name of NATIVE_BROWSER_CONTRACTS) assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
   assert.equal(new Set(CANDIDATE_NATIVE_CONTRACTS).size, CANDIDATE_NATIVE_CONTRACTS.length);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 34);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 36);
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query'));
   for (const family of ['equivalence_tests', 'client_geometry', 'client_state', 'recording', 'borrowed_capture', 'borrowed_host']) assert.ok(CANDIDATE_NATIVE_CONTRACTS.some(name => name.includes(family)), family);
 });
@@ -50,6 +50,13 @@ test('native discovery rejects missing, duplicated and unreviewed hosted tests',
   assert.throws(() => verifyNativeInventory(list.replace('native::client_actions::tests::chromium_protected_pixels_then_exact_check_uses_committed_snapshot: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_actions::tests::chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page: test', '')), /Missing required/);
+  for (const name of [
+    'native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released',
+    'native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport',
+  ]) {
+    assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
+    assert.throws(() => verifyNativeInventory(list.replace(`${name}: test`, '')), /Missing required/);
+  }
   assert.throws(() => verifyNativeInventory(`${list}\n${CANDIDATE_NATIVE_CONTRACTS[0]}: test`), /Duplicate/);
   assert.throws(() => verifyNativeInventory(`${list}\nnative::client_new::tests::hosted: test`), /Unclassified/);
 });
@@ -91,6 +98,27 @@ test('all 15 named differential fixtures and reconciliation must pass independen
     assert.throws(() => verifyCrosscheckFixtures(skipped, [file]), /not acceptance/);
   }
   assert.throws(() => verifyCrosscheckFixtures({ success: true, testResults: [] }, [file]), /Missing mandatory/);
+});
+test('all five exact semantic fault assertions must pass without omission, substitution, duplicates or skips', () => {
+  const file = '/fixtures/semantic-fallback.test.ts';
+  assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
+  const assertions = CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.map(fullName => ({ fullName, status: 'passed' }));
+  const report = { success: true, testResults: [{ name: file, status: 'passed', assertionResults: assertions }] };
+  assert.equal(verifySemanticFaults(report, [file]), 5);
+  for (let index = 0; index < assertions.length; index++) {
+    const missing = structuredClone(report); missing.testResults[0]!.assertionResults.splice(index, 1);
+    assert.throws(() => verifySemanticFaults(missing, [file]), /Missing mandatory semantic fault assertion/);
+    for (const status of ['pending', 'skipped', 'todo', 'failed']) {
+      const skipped = structuredClone(report); skipped.testResults[0]!.assertionResults[index]!.status = status;
+      assert.throws(() => verifySemanticFaults(skipped, [file]), /not acceptance/);
+    }
+    const duplicate = structuredClone(report); duplicate.testResults[0]!.assertionResults.push(assertions[index]!);
+    assert.throws(() => verifySemanticFaults(duplicate, [file]), /Unexpected or duplicate/);
+    const substituted = structuredClone(report); substituted.testResults[0]!.assertionResults[index]!.fullName += ' renamed';
+    assert.throws(() => verifySemanticFaults(substituted, [file]), /Unexpected or duplicate/);
+  }
+  assert.throws(() => verifySemanticFaults({ success: true, testResults: [] }, [file]), /Missing mandatory/);
+  assert.throws(() => verifySemanticFaults({ ...report, success: false }, [file]), /did not report success/);
 });
 test('only the semantic suite accepts instrumentation and both require full live proof', () => {
   const proof = { status: 'passed', binarySha256: 'a'.repeat(64), scopeExercisePassed: true, cleanupConfirmed: true, negotiation: { capabilities: [...REQUIRED_CAPABILITIES] } };
@@ -238,11 +266,13 @@ function successfulTraces(root: string) {
   writeFileSync(join(root, 'fault-rustc-version.txt'), 'rustc 1.99.1 (58cf8f9c3 2026-10-13)\ncommit-hash: ' + 'a'.repeat(40) + '\nrelease: 1.99.1\n');
 }
 
-test('all four successful actual-path captures are retained, linked and hash-bound independently of functional status', t => {
+test('all five successful actual-path captures are retained, linked and hash-bound independently of functional status', t => {
   const root = fixture(t); successfulTraces(root);
   const evidence = collectSemanticTraceEvidence(root);
-  assert.equal(evidence.status, 'complete'); assert.equal(evidence.files.length, 5); assert.equal(evidence.links.length, 4);
-  assert.equal(evidence.ownershipDirectories.length, 4); assert.equal(evidence.compiler.status, 'complete');
+  assert.equal(evidence.status, 'complete'); assert.equal(evidence.files.length, 6); assert.equal(evidence.links.length, 5);
+  assert.equal(evidence.ownershipDirectories.length, 5); assert.equal(evidence.compiler.status, 'complete');
+  assert.deepEqual(evidence.links.map(link => link.case), ['deadline', 'cancellation', 'fallback', 'abandoned-ids', 'supersession']);
+  assert.deepEqual(evidence.limits, { traceFiles: 6, ownershipDirectories: 5, records: 4096, bytes: 1280 * 1024, recordBytes: 512, tsFileRecords: 400, tsFileBytes: 200 * 1024, nativeFileRecords: 2048, nativeFileBytes: 256 * 1024 });
   for (const file of evidence.files) { assert.equal(file.status, 'complete'); assert.match(file.sha256!, /^[a-f0-9]{64}$/); }
   for (const status of ['passed', 'failed']) {
     const receipt = { status, diagnostics: evidence, releaseEligible: false };
@@ -251,6 +281,44 @@ test('all four successful actual-path captures are retained, linked and hash-bou
   fs.appendFileSync(join(root, tsTraceFile('deadline')), '\n');
   assert.throws(() => verifySemanticTraceEvidence(root, evidence), /changed or is missing/);
   assert.equal(collectSemanticTraceEvidence(root).status, 'incomplete');
+});
+
+test('fifth trace and owner cannot be omitted and the five-case budget stays below the original aggregate caps', t => {
+  assert.equal(SEMANTIC_TRACE_CASES.length, 5);
+  assert.equal(TOTAL_TRACE_RECORDS, 4096); assert.equal(TOTAL_TRACE_BYTES, 1280 * 1024);
+  assert.ok(NATIVE_TRACE_RECORDS + SEMANTIC_TRACE_CASES.length * TS_TRACE_RECORDS <= TOTAL_TRACE_RECORDS);
+  assert.ok(NATIVE_TRACE_BYTES + SEMANTIC_TRACE_CASES.length * TS_TRACE_BYTES <= TOTAL_TRACE_BYTES);
+  const root = fixture(t); successfulTraces(root);
+  const expected = collectSemanticTraceEvidence(root);
+  rmSync(join(root, `${tsTraceFile('supersession')}.owner`), { recursive: true });
+  const noOwner = collectSemanticTraceEvidence(root);
+  assert.equal(noOwner.status, 'incomplete'); assert.ok(noOwner.reasons.includes('missing-owner-claim'));
+  rmSync(join(root, tsTraceFile('supersession')));
+  const noFile = collectSemanticTraceEvidence(root);
+  assert.equal(noFile.status, 'incomplete'); assert.ok(noFile.reasons.includes('missing-process-link'));
+  assert.equal(noFile.files.find(file => file.file === tsTraceFile('supersession'))?.status, 'unavailable');
+  assert.throws(() => verifySemanticTraceEvidence(root, expected), /changed or is missing/);
+});
+
+test('trace reader enforces separate TS and native byte and record caps without serializing payloads', t => {
+  const root = fixture(t); successfulTraces(root);
+  for (const [file, byteCap, recordCap] of [
+    [tsTraceFile('supersession'), TS_TRACE_BYTES, TS_TRACE_RECORDS],
+    [NATIVE_TRACE_FILE, NATIVE_TRACE_BYTES, NATIVE_TRACE_RECORDS],
+  ] as const) {
+    const path = join(root, file); const original = readFileSync(path, 'utf8');
+    writeFileSync(path, 'private payload'.padEnd(byteCap + 1, 'x'));
+    const oversized = collectSemanticTraceEvidence(root);
+    assert.equal(oversized.status, 'incomplete');
+    assert.equal(oversized.files.find(item => item.file === file)?.status, 'unavailable');
+    assert.doesNotMatch(JSON.stringify(oversized), /private payload/);
+    writeFileSync(path, '{}\n'.repeat(recordCap + 1));
+    const overcount = collectSemanticTraceEvidence(root);
+    assert.equal(overcount.status, 'incomplete');
+    assert.ok(overcount.files.find(item => item.file === file)?.reasons.includes('record-cap'));
+    writeFileSync(path, original);
+  }
+  assert.equal(collectSemanticTraceEvidence(root).status, 'complete');
 });
 
 test('collector refuses no-follow, nonempty, duplicate, stale and absent capture without exposing filesystem errors', t => {
@@ -268,15 +336,15 @@ test('collector refuses no-follow, nonempty, duplicate, stale and absent capture
   assert.equal(openSemanticTrace('abandoned-ids', 'relative').available, false);
 });
 
-test('collector caps at 512 records including one marker and never serializes unknown fields or error text', t => {
+test('collector caps at 400 records including one marker and never serializes unknown fields or error text', t => {
   const root = fixture(t); const env = candidatePhaseEnvironment('semantic-faults', {}, root);
   const collector = openSemanticTrace('deadline', env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
   collector.observe(tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true }));
   for (let index = 1; index < 700; index++) collector.observe(tsRecord(index, 'FrameComplete'));
   collector.close();
   const raw = readFileSync(join(root, tsTraceFile('deadline')), 'utf8'); const lines = raw.trim().split('\n');
-  assert.equal(lines.length, 512); assert.equal(lines.filter(line => line.includes('CaptureLimitReached')).length, 1);
-  assert.ok(Buffer.byteLength(raw) <= 256 * 1024); assert.ok(lines.every(line => Buffer.byteLength(line) + 1 <= 512));
+  assert.equal(lines.length, 400); assert.equal(lines.filter(line => line.includes('CaptureLimitReached')).length, 1);
+  assert.ok(Buffer.byteLength(raw) <= TS_TRACE_BYTES); assert.ok(lines.every(line => Buffer.byteLength(line) + 1 <= TRACE_RECORD_BYTES));
   const privacy = openSemanticTrace('fallback', env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']);
   assert.equal(privacy.observe(tsRecord(0, 'CaptureStarted', { initialSubmittedBytes: 0, seedKnown: true, error: 'https://secret.invalid/token' })), false);
   privacy.close(); assert.equal(readFileSync(join(root, tsTraceFile('fallback')), 'utf8'), '');

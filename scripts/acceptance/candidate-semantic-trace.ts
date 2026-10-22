@@ -1,8 +1,8 @@
-/** Read-only receipt validation for the actual four-case cancellation trace, not peer diagnostics. */
+/** Read-only receipt validation for the actual five-case semantic trace, not peer diagnostics. */
 import { closeSync, constants, fstatSync, openSync, readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { exactKeys, natural, traceObject, validTsTraceRecord, NATIVE_TRACE_FILE, SEMANTIC_TRACE_CASES, TRACE_BYTES, TRACE_COMMON_KEYS, TRACE_IO, TRACE_RECORD_BYTES, TS_TRACE_RECORDS, tsTraceFile, type TraceObject } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
+import { exactKeys, natural, traceObject, validTsTraceRecord, NATIVE_TRACE_FILE, SEMANTIC_TRACE_CASES, NATIVE_TRACE_BYTES, NATIVE_TRACE_RECORDS, TOTAL_TRACE_BYTES, TOTAL_TRACE_RECORDS, TRACE_COMMON_KEYS, TRACE_IO, TRACE_RECORD_BYTES, TS_TRACE_BYTES, TS_TRACE_RECORDS, tsTraceFile, type TraceObject } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
 
 const hash = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const settlement = ['ExecuteStarted', 'ExecuteReturned', 'CancelObserved', 'DeadlineObserved', 'GraceReturned', 'GraceExpired', 'CompletionJoined', 'ResultQueued', 'ResultFlushed', 'ControlFlushed', 'CancelReceived', 'CancelAccepted', 'CancelRejected', 'CancelQueued', 'ReaderEnded', 'ReaderRefused', 'WriterFailed', 'PublicationExpired', 'HealthFailed', 'CompletionLost', 'ResultQueueFailed', 'UnknownOutcome', 'CloseReceived', 'ControlQueueFailed', 'ShutdownStarted', 'ShutdownProven', 'ShutdownUnproven', 'PendingResultQueued'];
@@ -74,7 +74,7 @@ function inspectFile(output: string, file: string, native: boolean): { receipt: 
   const receipt: FileReceipt = { file, records: 0, status: 'unavailable', reasons: [], sources: [] };
   const records: TraceObject[] = [];
   let bytes: Buffer;
-  try { bytes = readBounded(join(output, file), TRACE_BYTES); }
+  try { bytes = readBounded(join(output, file), native ? NATIVE_TRACE_BYTES : TS_TRACE_BYTES); }
   catch { receipt.reasons.push('unavailable-file'); return { receipt, records }; }
   receipt.sha256 = hash(bytes); receipt.bytes = bytes.length;
   if (bytes.length === 0) { receipt.reasons.push('empty-file'); return { receipt, records }; }
@@ -82,7 +82,7 @@ function inspectFile(output: string, file: string, native: boolean): { receipt: 
   if (bytes.at(-1) !== 10) receipt.reasons.push('partial-record');
   const lines = bytes.toString('utf8').split('\n'); if (lines.at(-1) === '') lines.pop();
   receipt.records = lines.length;
-  if (lines.length > (native ? 2048 : TS_TRACE_RECORDS)) receipt.reasons.push('record-cap');
+  if (lines.length > (native ? NATIVE_TRACE_RECORDS : TS_TRACE_RECORDS)) receipt.reasons.push('record-cap');
   for (const line of lines) {
     let value: unknown;
     try { value = JSON.parse(line); } catch { receipt.reasons.push('invalid-record'); continue; }
@@ -148,16 +148,16 @@ export function collectSemanticTraceEvidence(output: string, prepared = true) {
     proxyOwners.add(proxyPid); nativeOwners.add(daemonPid);
     links.push({ case: item.name, tsPid: Number(spawns[0]!['pid']), proxyPid, daemonPid });
   }
-  if (native.receipt.sources.length !== 8 || native.receipt.sources.some(source => !(source.source === 'proxy' ? proxyOwners : nativeOwners).has(source.pid))) reasons.push('unexpected-native-owner');
+  if (native.receipt.sources.length !== SEMANTIC_TRACE_CASES.length * 2 || native.receipt.sources.some(source => !(source.source === 'proxy' ? proxyOwners : nativeOwners).has(source.pid))) reasons.push('unexpected-native-owner');
   const totalRecords = files.reduce((total, file) => total + file.records, 0);
   const totalBytes = files.reduce((total, file) => total + (file.bytes ?? 0), 0);
-  if (totalRecords > 4096 || totalBytes > 1280 * 1024) reasons.push('aggregate-cap');
+  if (totalRecords > TOTAL_TRACE_RECORDS || totalBytes > TOTAL_TRACE_BYTES) reasons.push('aggregate-cap');
   const compiler = compilerReceipt(output);
   if (compiler.status !== 'complete') reasons.push('compiler-unavailable');
   const status: CaptureStatus = files.every(file => file.status === 'unavailable') ? 'unavailable' : reasons.length || files.some(file => file.status !== 'complete') ? 'incomplete' : 'complete';
-  return { schemaVersion: 2, prepared, status, interpretation: status === 'complete' ? 'capture-only' : 'inconclusive', files, ownershipDirectories: SEMANTIC_TRACE_CASES.map(name => `${tsTraceFile(name)}.owner`), links, compiler, totalRecords, totalBytes, reasons: [...new Set(reasons)], limits: { traceFiles: 5, ownershipDirectories: 4, records: 4096, bytes: 1280 * 1024, recordBytes: TRACE_RECORD_BYTES }, note: 'Process-local records only. Append order is not global order; write completion is not a protocol ACK. Instrumentation can change scheduling. Functional outcome is independent.' };
+  return { schemaVersion: 2, prepared, status, interpretation: status === 'complete' ? 'capture-only' : 'inconclusive', files, ownershipDirectories: SEMANTIC_TRACE_CASES.map(name => `${tsTraceFile(name)}.owner`), links, compiler, totalRecords, totalBytes, reasons: [...new Set(reasons)], limits: { traceFiles: SEMANTIC_TRACE_CASES.length + 1, ownershipDirectories: SEMANTIC_TRACE_CASES.length, records: TOTAL_TRACE_RECORDS, bytes: TOTAL_TRACE_BYTES, recordBytes: TRACE_RECORD_BYTES, tsFileRecords: TS_TRACE_RECORDS, tsFileBytes: TS_TRACE_BYTES, nativeFileRecords: NATIVE_TRACE_RECORDS, nativeFileBytes: NATIVE_TRACE_BYTES }, note: 'Process-local records only. Append order is not global order; write completion is not a protocol ACK. Instrumentation can change scheduling. Functional outcome is independent.' };
 }
-/** Re-read all five artifacts; a receipt is not proof of bytes that have since changed. */
+/** Re-read all six artifacts; a receipt is not proof of bytes that have since changed. */
 export function verifySemanticTraceEvidence(output: string, expected: unknown): void {
   if (!traceObject(expected) || JSON.stringify(collectSemanticTraceEvidence(output, expected['prepared'] === true)) !== JSON.stringify(expected)) throw new Error('Semantic diagnostic evidence changed or is missing');
 }

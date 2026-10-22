@@ -36,6 +36,8 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_geometry::tests::chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale',
   'native::client_geometry::tests::chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots',
   'native::recording::tests::recording_sparse_frames_preserve_timestamps',
+  'native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released',
+  'native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport',
 ] as const;
 
 /** Not a pass or waiver: a deliberately failing diagnostic outside the supported ingress contract. */
@@ -43,6 +45,13 @@ export const CANDIDATE_NATIVE_DIAGNOSTICS = [
   'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
 ] as const;
 export const CANDIDATE_FAULT_FILE = 'semantic-fallback.test.ts';
+export const CANDIDATE_SEMANTIC_FAULT_ASSERTIONS = [
+  'masked fallback after a stalled semantic reader does not synthesize fallback for a tree-only deadline and permits a fresh read',
+  'masked fallback after a stalled semantic reader does not synthesize fallback for a tree-only cancellation and permits a fresh read',
+  'masked fallback after a stalled semantic reader reserves capture time and takes fresh masked pixels',
+  'masked fallback after a stalled semantic reader keeps abandoned reader IDs distinct from new nodes, frames, and located refs',
+  'masked fallback after a stalled semantic reader supersedes a held capture without releasing it and keeps newer refs actionable',
+] as const;
 export const CANDIDATE_CROSSCHECK_FILE = 'crosscheck.test.ts';
 export const CANDIDATE_DIFFERENTIAL_FIXTURES = [
   'shadow section landmarks', 'inferred table headers', 'role fallback tokens', 'boolean attribute casing',

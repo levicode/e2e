@@ -53,6 +53,7 @@ interface Attempt {
   recordingStop?: Promise<readonly VideoSegment[]> | undefined;
   environmentTold?: boolean;
   traceRef?: { scope: string; ref: NodeRef };
+  observationHighWater?: { readonly epoch: number; readonly scope: string; readonly client: NativeClient; revision: bigint };
   reconnect?: ((signal: AbortSignal) => string | Promise<string>) | undefined;
   recoveryPending?: boolean;
   recovering?: Promise<void> | undefined;
@@ -538,10 +539,20 @@ export class NativeSurface implements NativeWebSurface {
   async observe(operation: OperationContext, options: EngineObserveOptions = {}): Promise<EngineSnapshot> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
+    const epoch = attempt.epoch; const client = this.requireClient();
     const snapshot = await this.engineCommand('browser.observe', { identityScope: scope, options, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
-    if (snapshot.identityScope !== scope) throw this.invalidate();
+    this.assertObservationOwner(attempt, scope, epoch, client);
+    const revision = observationRevision(snapshot.revision);
+    if (snapshot.identityScope !== scope || (snapshot.pixels !== undefined && snapshot.pixels.identityScope !== scope) || revision === undefined) throw client.invalidate();
+    // Native publication, not local admission or transfer completion, advances this scalar.
+    let highWater = attempt.observationHighWater;
+    if (highWater === undefined || highWater.epoch !== epoch || highWater.scope !== scope || highWater.client !== client) {
+      highWater = { epoch, scope, client, revision }; attempt.observationHighWater = highWater;
+    } else if (revision > highWater.revision) highWater.revision = revision;
     const pixels = snapshot.pixels === undefined ? undefined : { data: await engine.readBlob(snapshot.pixels, scope, operation), mediaType: snapshot.pixels.mediaType, width: snapshot.pixels.width, height: snapshot.pixels.height, scale: snapshot.pixels.scale };
     this.assertScope(attempt, scope); this.assertBudget(operation);
+    this.assertObservationOwner(attempt, scope, epoch, client);
+    if (revision < highWater.revision) throw new EngineError('NODE_STALE', 'observation capture was superseded', { retryable: true });
     attempt.traceRef = { scope, ref: { ...(snapshot.viewportRef ?? snapshot.root.ref) } };
     return { identityScope: scope, root: snapshot.root, viewport: snapshot.viewport,
       ...(snapshot.viewportRef === undefined ? {} : { viewportRef: snapshot.viewportRef }),
@@ -762,8 +773,19 @@ export class NativeSurface implements NativeWebSurface {
   }
   private requireAttempt(): Attempt { if (this.attempt === undefined || !this.attempt.ready || this.attempt.scope === '') throw invalidState('No native browser attempt is ready'); return this.attempt; }
   private assertScope(attempt: Attempt, scope: string): void { this.assertAttempt(attempt); if (attempt.scope !== scope) throw new EngineError('CANCELLED', 'The native browser scope has retired', { retryable: false }); }
+  /** A reused scope string cannot restore a retired observation's publication owner. */
+  private assertObservationOwner(attempt: Attempt, scope: string, epoch: number, client: NativeClient): void {
+    this.assertScope(attempt, scope);
+    if (attempt.epoch !== epoch || this.client !== client) throw new EngineError('CANCELLED', 'The native observation owner has retired', { retryable: false });
+  }
   private assertAttempt(attempt: Attempt): void { if (this.attempt !== attempt) throw new EngineError('CANCELLED', 'The native browser attempt has retired', { retryable: false }); }
   private requireClient(): NativeClient { if (this.client === undefined) throw invalidState('The native browser client is not running'); return this.client; }
   private requireEngine(): EngineChannel { if (this.engine === undefined) throw invalidState('The native browser client is not running'); return this.engine; }
+}
+/** Bound canonical positive u64 ordering evidence before converting it without precision loss. */
+function observationRevision(value: string): bigint | undefined {
+  if (value.length === 0 || value.length > 20 || value[0] === '0' || /[^0-9]/.test(value)) return undefined;
+  const revision = BigInt(value);
+  return revision <= 18_446_744_073_709_551_615n ? revision : undefined;
 }
 function invalidState(message: string): EngineError { return new EngineError('INVALID_STATE', message, { retryable: false }); }

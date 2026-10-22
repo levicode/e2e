@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_WEB_SUITES, OPTIONAL_CANDIDATE_WEB_SUITES, type CandidateSuite } from './candidate-manifest.ts';
+import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_SEMANTIC_FAULT_ASSERTIONS, CANDIDATE_WEB_SUITES, OPTIONAL_CANDIDATE_WEB_SUITES, type CandidateSuite } from './candidate-manifest.ts';
 import { assertProductionCapabilities, sha256 } from './bundle.ts';
 import { REQUIRED_CAPABILITIES } from '../../packages/web/src/native/capabilities.ts';
 import { verifyReport, type TestReport } from './report.ts';
@@ -48,6 +48,17 @@ export function verifyCrosscheckFixtures(report: TestReport, files: string[]): n
   }) })) };
   for (const name of expected) if (!seen.has(name)) throw new Error(`Missing mandatory differential assertion: ${name}`);
   return verifyReport(filtered, files);
+}
+/** All original four fault contracts and the public supersession contract are mandatory. */
+export function verifySemanticFaults(report: TestReport, files: string[]): number {
+  const expected = new Set<string>(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS);
+  const seen = new Set<string>();
+  for (const result of report.testResults) for (const assertion of result.assertionResults) {
+    if (!assertion.fullName || !expected.has(assertion.fullName) || seen.has(assertion.fullName)) throw new Error('Unexpected or duplicate semantic fault assertion');
+    seen.add(assertion.fullName);
+  }
+  for (const name of expected) if (!seen.has(name)) throw new Error(`Missing mandatory semantic fault assertion: ${name}`);
+  return verifyReport(report, files);
 }
 export function verifyCandidateRuntime(proof: unknown, binarySha256: string, fault: boolean): void {
   const value = proof as { status?: string; binarySha256?: string; scopeExercisePassed?: boolean; cleanupConfirmed?: boolean; negotiation?: { capabilities?: string[] } };
@@ -107,7 +118,7 @@ function main(args: string[]): void {
     });
     if (result.status !== 0) throw new Error(`Vitest failed: ${result.error?.message ?? result.signal ?? result.status}`);
     const report = JSON.parse(readFileSync(rawReport, 'utf8')) as TestReport;
-    assertions = suite.id === 'crosscheck-fixtures' ? verifyCrosscheckFixtures(report, files) : verifyReport(report, files);
+    assertions = suite.id === 'crosscheck-fixtures' ? verifyCrosscheckFixtures(report, files) : suite.id === 'semantic-faults' ? verifySemanticFaults(report, files) : verifyReport(report, files);
     if (sourceState() || fingerprint(files) !== testSourceDigest || (binarySha256 !== undefined && sha256(readFileSync(binary)) !== binarySha256)) throw new Error('Candidate source/runtime changed during execution');
     if (JSON.stringify(candidateDistInventory(REPO_ROOT)) !== JSON.stringify(runtimeBuild)) throw new Error('Built packages changed during suite execution');
     status = 'passed';

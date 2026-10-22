@@ -198,4 +198,70 @@ describe('masked fallback after a stalled semantic reader', () => {
       }
     }
   });
+
+  it('supersedes a held capture without releasing it and keeps newer refs actionable', async () => {
+    const faults = semanticFaultControl('supersession');
+    const engine = web({});
+    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-semantic-supersession-'));
+    const signal = new AbortController().signal;
+    const operation = { signal, timeoutMs: 5_000, runId: 'supersession', attemptId: 'attempt', origin: 'agent' as const };
+    const cleanup = { signal, timeoutMs: 30_000 };
+    try {
+      await engine.init!({ runId: 'supersession', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+      await engine.startAttempt!({ attemptId: 'attempt', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+      await engine.session!.open!('about:blank', operation);
+      const browser = nativeBrowser(engine, () => operation);
+      await nativeDocument(browser, '<button data-testid="current" onclick="document.body.dataset.clicks=String(Number(document.body.dataset.clicks || 0)+1)">Previous button</button>');
+      const before = await engine.observe!(operation);
+      expect(nodes(before.root).find(node => node.testId === 'current')?.name).toBe('Previous button');
+      expect(nodes(before.root).some(node => node.name === 'Current button')).toBe(false);
+      await browser.evaluate(() => { document.querySelector('button')!.textContent = 'Current button'; return null; });
+      const fault = await faults.holdNext('semantic-publish', before.identityScope);
+      let current: Awaited<ReturnType<NonNullable<typeof engine.observe>>>;
+      let target: SemanticNode;
+      try {
+        // The same NativeClient/EngineChannel and native ClientBrowser own A and B.
+        // A's deadline is not the mechanism that lets the newer capture finish.
+        const pending = engine.observe!({ ...operation, timeoutMs: 15_000 });
+        const rejected = expect(pending).rejects.toMatchObject({ code: 'NODE_STALE' });
+        void rejected.catch(() => undefined);
+        expect(await fault.reached()).toMatchObject({ phase: 'semantic-publish', state: 'reached' });
+
+        current = await engine.observe!(operation);
+        expect(current.identityScope).toBe(before.identityScope);
+        expect(current.treeUnavailable).toBeUndefined();
+        const observed = nodes(current.root).find(node => node.testId === 'current');
+        expect(observed).toMatchObject({ name: 'Current button' });
+        target = observed!;
+        // A must settle on supersession, and B must act through browser.perform,
+        // before the manual release. A timeout or a replacement fake peer cannot pass.
+        await rejected;
+        await engine.perform!(target.ref, { kind: 'tap' }, operation);
+        expect(await browser.locator('body').getAttribute('data-clicks')).toBe('1');
+      } finally {
+        await fault.release();
+      }
+
+      // A's late release must neither replace B's committed refs nor corrupt the
+      // shared response channel. Exercise B again before any newer observation.
+      await engine.perform!(target.ref, { kind: 'tap' }, operation);
+      expect(await browser.locator('body').getAttribute('data-clicks')).toBe('2');
+      const fresh = await engine.observe!(operation);
+      expect(fresh.identityScope).toBe(current.identityScope);
+      expect(fresh.treeUnavailable).toBeUndefined();
+      const usable = nodes(fresh.root).find(node => node.testId === 'current');
+      // Fresh content is independent of the unchanged node's stable ref issuance.
+      expect(usable).toMatchObject({ name: 'Current button', ref: target.ref });
+      await engine.perform!(usable!.ref, { kind: 'tap' }, operation);
+      expect(await browser.locator('body').getAttribute('data-clicks')).toBe('3');
+    } finally {
+      try {
+        try { await engine.endAttempt!(cleanup); }
+        finally { await engine.dispose!(cleanup); }
+      } finally {
+        rmSync(artifactsDir, { recursive: true, force: true });
+        faults.restore();
+      }
+    }
+  });
 });
