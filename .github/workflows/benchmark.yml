@@ -40,7 +40,7 @@ jobs:
   # nor the benchmark app (.github/filters.yml says what does, and why a skip
   # rather than a workflow-level `paths:` filter). A manual dispatch runs them.
   changes:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       web: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.web == 'true' }}
@@ -59,7 +59,7 @@ jobs:
   web:
     needs: changes
     if: ${{ needs.changes.outputs.web == 'true' }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,10 +109,10 @@ jobs:
   web-agent:
     needs: changes
     if: >-
-      ${{ needs.changes.outputs.web == 'true'
+      ${{ github.repository == 'tester-army/e2e' && needs.changes.outputs.web == 'true'
         && (github.event_name != 'pull_request'
           || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     name: web agent
     steps:
@@ -164,7 +164,7 @@ jobs:
     name: benchmark gate
     needs: [changes, web, web-agent]
     if: ${{ always() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require every job to pass or skip

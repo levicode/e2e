@@ -1,4 +1,4 @@
-/** Exact diagnostic and mandatory feature inventories. No prefix-based exemptions. */
+/** Exact mandatory preparation and feature inventories. No prefix-based exemptions. */
 export const PREPARATION_SETTLEMENT_TESTS = [
   'native::client_actions::tests::preparation_effect_settlement_acked_interception_is_completed_and_reusable',
   'native::client_actions::tests::preparation_effect_settlement_acked_not_actionable_is_completed_and_reusable',
@@ -9,9 +9,6 @@ export const PREPARATION_SETTLEMENT_TESTS = [
   'native::client_actions::tests::preparation_effect_settlement_unacked_geometry_control_remains_unknown',
   'native::client_actions::tests::preparation_effect_settlement_lost_original_authority_remains_unknown',
 ] as const;
-
-/** Expected RED is explanatory, never a success criterion or a waiver. */
-export const PREPARATION_DESIRED_RED = PREPARATION_SETTLEMENT_TESTS.slice(0, 2);
 
 export const REQUIRED_NATIVE_FEATURE_TESTS = [
   'native::client_observation_dispatch::tests::semantic_only_timeout_never_mutates_lifecycle_and_fallback_stabilizes_separately',

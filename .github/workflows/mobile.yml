@@ -79,7 +79,7 @@ jobs:
   # workflow-level `paths:` filter); a manual dispatch always gets them. A
   # push to main gets the cache warm-up instead, on the same filter.
   changes:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       suites: ${{ steps.plan.outputs.suites }}
@@ -125,7 +125,7 @@ jobs:
   ios:
     name: ios ${{ matrix.suite }}
     needs: changes
-    if: ${{ needs.changes.outputs.suites != '[]' }}
+    if: ${{ github.repository == 'tester-army/e2e' && needs.changes.outputs.suites != '[]' }}
     runs-on: blacksmith-6vcpu-macos-26
     timeout-minutes: 60
     strategy:
@@ -254,7 +254,7 @@ jobs:
   android:
     name: android ${{ matrix.suite }}
     needs: changes
-    if: ${{ needs.changes.outputs.suites != '[]' }}
+    if: ${{ github.repository == 'tester-army/e2e' && needs.changes.outputs.suites != '[]' }}
     # x64 Blacksmith runners expose KVM, which the emulator needs.
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 60
@@ -337,7 +337,7 @@ jobs:
   warm:
     name: ${{ matrix.platform }} app cache
     needs: changes
-    if: ${{ needs.changes.outputs.warm == 'true' }}
+    if: ${{ github.repository == 'tester-army/e2e' && needs.changes.outputs.warm == 'true' }}
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 60
     strategy:
@@ -373,9 +373,12 @@ jobs:
     name: mobile gate
     needs: [changes, ios, android, warm]
     if: ${{ always() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
+      - name: Record fork mobile coverage boundary
+        if: ${{ github.repository != 'tester-army/e2e' }}
+        run: echo 'Mobile device, model and cache-warm jobs are not executed on forks; this gate checks planning only, not mobile acceptance.' >> "$GITHUB_STEP_SUMMARY"
       - name: Require every job to pass or skip
         env:
           RESULTS: ${{ toJSON(needs) }}

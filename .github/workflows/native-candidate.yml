@@ -143,8 +143,8 @@ jobs:
         env:
           EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
         run: node scripts/acceptance/candidate-native.ts browser .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
-      # Only the eight exact preparation tests are temporarily diagnostic-ignored. Do not waive their failures.
-      - name: Record exact preparation settlement diagnostic using the existing default harness
+      # All eight preparation regressions now run in default and this exact must-pass stage.
+      - name: Require all exact preparation settlement regressions using the default harness
         id: preparation-diagnostic
         timeout-minutes: 10
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.packages.outcome == 'success' }}
@@ -253,7 +253,7 @@ jobs:
           if test -f .artifacts/native-candidate/benchmark.pid; then
             kill -- "-$(cat .artifacts/native-candidate/benchmark.pid)" 2>/dev/null || true
           fi
-      - name: Record preparation diagnostic outcome without converting expected RED into acceptance
+      - name: Verify mandatory preparation settlement evidence
         id: preparation-diagnostic-receipt
         if: ${{ always() }}
         env:

@@ -7,7 +7,7 @@ import { REPO_ROOT } from '../public-packages.ts';
 import { sha256 } from './bundle.ts';
 import { hashFile, sourceIdentity } from './candidate-native.ts';
 import { proxyCompileEvidence, proxyEnvironment, runProxyCommand } from './candidate-proxy-diagnostic.ts';
-import { PREPARATION_DESIRED_RED, PREPARATION_SETTLEMENT_TESTS, REQUIRED_NATIVE_FEATURE_TESTS } from './candidate-native-matrix-manifest.ts';
+import { PREPARATION_SETTLEMENT_TESTS, REQUIRED_NATIVE_FEATURE_TESTS } from './candidate-native-matrix-manifest.ts';
 
 export type MatrixMode = 'preparation' | 'feature';
 type Status = 'passed' | 'failed' | 'unknown';
@@ -26,11 +26,11 @@ interface InventoryProof { schemaVersion: 1; kind: 'closed-native-inventory'; mo
 interface ListingProof { schemaVersion: 1; kind: 'closed-native-discovery'; name: string; process: ProcessFacts; stdout: Digest; stderr: Digest; entries: number; duplicates: number; exact: boolean }
 interface TestProof { schemaVersion: 1; kind: 'closed-native-test'; name: string; process: ProcessFacts; stdout: Digest; stderr: Digest; test: TestFacts; panicSite: PanicSite | null }
 export interface MatrixRow extends Observation {
-  name: string; expectation: 'desired-contract-red' | 'must-pass'; listing: ProcessFacts | null; execution: ProcessFacts | null;
+  name: string; expectation: 'must-pass'; listing: ProcessFacts | null; execution: ProcessFacts | null;
   listingFile: string | null; listingSha256: string | null; file: string | null; proofSha256: string | null;
 }
 export interface MatrixExecution {
-  schemaVersion: 1; kind: 'preparation-settlement-diagnostic' | 'required-native-feature-tests'; mode: MatrixMode; stage: string; status: Status;
+  schemaVersion: 1; kind: 'required-preparation-settlement-tests' | 'required-native-feature-tests'; mode: MatrixMode; stage: string; status: Status;
   required: readonly string[]; results: MatrixRow[]; binding?: ObjectValue; inventory?: { file: string; sha256: string }; compile?: CompilerProof; problem?: string;
   releaseEligible: false; acceptanceEvidence: boolean;
 }
@@ -44,7 +44,7 @@ const within = (root: string, file: string) => { const path = relative(root, fil
 const names = (mode: MatrixMode): readonly string[] => mode === 'preparation' ? PREPARATION_SETTLEMENT_TESTS : REQUIRED_NATIVE_FEATURE_TESTS;
 const allNames: readonly string[] = [...PREPARATION_SETTLEMENT_TESTS, ...REQUIRED_NATIVE_FEATURE_TESTS];
 const stem = (mode: MatrixMode) => mode === 'preparation' ? 'preparation-diagnostic' : 'native-feature';
-const kind = (mode: MatrixMode): MatrixExecution['kind'] => mode === 'preparation' ? 'preparation-settlement-diagnostic' : 'required-native-feature-tests';
+const kind = (mode: MatrixMode): MatrixExecution['kind'] => mode === 'preparation' ? 'required-preparation-settlement-tests' : 'required-native-feature-tests';
 const digest = (value: string): Digest => ({ sha256: sha256(Buffer.from(value)), bytes: Buffer.byteLength(value) });
 const validDigest = (value: unknown): value is Digest => object(value) && keys(value, ['sha256', 'bytes']) && hex(value['sha256']) && natural(value['bytes']) && value['bytes'] <= 8 * LIMIT;
 const facts = (result: ProcessResult): ProcessFacts => ({ status: result.status, signal: result.signal, termination: result.termination, cleanupConfirmed: result.cleanupConfirmed, groupRetired: result.groupRetired });
@@ -53,8 +53,8 @@ const validProcess = (value: unknown): value is ProcessFacts => object(value) &&
   && member(value['termination'], ['completed', 'timeout', 'output-limit', 'output-error', 'interrupted', 'spawn-error', 'leftover-processes']) && typeof value['cleanupConfirmed'] === 'boolean' && typeof value['groupRetired'] === 'boolean';
 const completed = (value: ProcessFacts) => validProcess(value) && value.termination === 'completed' && value.signal === null && value.status !== null && value.cleanupConfirmed && value.groupRetired;
 const fileName = (mode: MatrixMode, name: string) => `${stem(mode)}-${sha256(Buffer.from(name))}.proof.json`;
-const rows = (mode: MatrixMode): MatrixRow[] => names(mode).map(name => ({ name, expectation: mode === 'preparation' && (PREPARATION_DESIRED_RED as readonly string[]).includes(name) ? 'desired-contract-red' : 'must-pass', status: 'unknown', testStatus: 'unknown', problem: 'not-executed', listing: null, execution: null, listingFile: null, listingSha256: null, file: null, proofSha256: null }));
-const base = (mode: MatrixMode): MatrixExecution => ({ schemaVersion: 1, kind: kind(mode), mode, stage: 'started', status: 'unknown', required: names(mode), results: rows(mode), releaseEligible: false, acceptanceEvidence: mode === 'feature' });
+const rows = (mode: MatrixMode): MatrixRow[] => names(mode).map(name => ({ name, expectation: 'must-pass', status: 'unknown', testStatus: 'unknown', problem: 'not-executed', listing: null, execution: null, listingFile: null, listingSha256: null, file: null, proofSha256: null }));
+const base = (mode: MatrixMode): MatrixExecution => ({ schemaVersion: 1, kind: kind(mode), mode, stage: 'started', status: 'unknown', required: names(mode), results: rows(mode), releaseEligible: false, acceptanceEvidence: true });
 export const featureCompileArgs = ['test', '--locked', '--profile', 'ci', '--no-default-features', '--features', 'acceptance-faults', '--bin', 'agent-browser', '--no-run', '--message-format=json'];
 
 function validHarness(value: unknown, feature: boolean): value is RelativeHarness {
@@ -123,7 +123,7 @@ export function inventoryProof(mode: MatrixMode, normal: ProcessResult, feature:
   try {
     for (const result of [normal, ignored, ...(feature === null ? [] : [feature])]) { if (!completed(facts(result)) || result.status !== 0) return proof; matrixInventory(result.stdout); }
     if (mode === 'feature') { if (feature === null) return proof; verifyFeatureDelta(defaults, features, skips); }
-    else if (PREPARATION_SETTLEMENT_TESTS.some(name => !defaults.includes(name) || !skips.includes(name))) return proof;
+    else if (PREPARATION_SETTLEMENT_TESTS.some(name => !defaults.includes(name) || skips.includes(name))) return proof;
     proof.verified = true;
   } catch { /* Counts/digests remain truthful; unverified sets never pass. */ }
   return proof;
@@ -142,7 +142,7 @@ function validInventory(value: unknown, mode: MatrixMode): value is InventoryPro
 function inventoryPassed(proof: InventoryProof): boolean {
   const streams = [proof.default, proof.ignored, ...(proof.feature === null ? [] : [proof.feature])];
   if (!proof.verified || streams.some(value => !completed(value.process) || value.process.status !== 0 || value.entries === 0 || value.duplicates !== 0 || value.knownNames.length > value.entries)) return false;
-  if (proof.mode === 'preparation') return proof.required.every(row => row.inDefault && row.ignored && proof.default.knownNames.includes(row.name) && proof.ignored.knownNames.includes(row.name));
+  if (proof.mode === 'preparation') return proof.required.every(row => row.inDefault && !row.ignored && proof.default.knownNames.includes(row.name) && !proof.ignored.knownNames.includes(row.name));
   return proof.feature !== null && proof.delta !== null && JSON.stringify(proof.delta.added) === JSON.stringify(REQUIRED_NATIVE_FEATURE_TESTS) && proof.delta.addedCount === 31 && proof.delta.unexpectedAddedCount === 0 && proof.delta.removedDefaultCount === 0
     && proof.feature.entries === proof.default.entries + 31 && proof.required.every(row => !row.inDefault && row.inFeature && !row.ignored && !proof.default.knownNames.includes(row.name) && proof.feature!.knownNames.includes(row.name) && !proof.ignored.knownNames.includes(row.name));
 }
@@ -169,7 +169,7 @@ function assessFacts(test: TestFacts, processResult: ProcessFacts): Observation 
   return { status: 'failed', testStatus: 'unknown', problem: 'exit-output-disagreement' };
 }
 export function assessExactTest(name: string, stdout: string, processResult: ProcessFacts): Observation { return assessFacts(normalizedTest(name, stdout), processResult); }
-export function matrixTestArgs(mode: MatrixMode, name: string): string[] { if (!names(mode).includes(name)) throw new Error('Test name is not in the exact matrix'); return [name, '--exact', ...(mode === 'preparation' ? ['--ignored'] : []), '--test-threads=1', '--format=pretty', '--color=never']; }
+export function matrixTestArgs(mode: MatrixMode, name: string): string[] { if (!names(mode).includes(name)) throw new Error('Test name is not in the exact matrix'); return [name, '--exact', '--test-threads=1', '--format=pretty', '--color=never']; }
 const panicFile = (name: string) => { if (!allNames.includes(name)) return null; const module = name.split('::')[1]; return `cli/src/native/${module}.rs`; };
 function validPanic(value: unknown, name: string): value is PanicSite | null { return value === null || (object(value) && keys(value, ['file', 'line', 'column']) && value['file'] === panicFile(name) && natural(value['line']) && value['line'] > 0 && value['line'] <= 1_000_000 && natural(value['column']) && value['column'] > 0 && value['column'] <= 65_535); }
 function checkPanic(site: PanicSite, name: string, source: string): boolean {
@@ -208,7 +208,7 @@ function validateRows(mode: MatrixMode, value: unknown): value is MatrixRow[] {
 const stages = ['started', 'identity', 'compile', 'inventory', 'execute', 'verified', 'identity-changed', 'interrupted'];
 function validExecution(mode: MatrixMode, value: unknown): value is MatrixExecution {
   return object(value) && keys(value, ['schemaVersion', 'kind', 'mode', 'stage', 'status', 'required', 'results', 'releaseEligible', 'acceptanceEvidence'], ['binding', 'inventory', 'compile', 'problem']) && value['schemaVersion'] === 1 && value['kind'] === kind(mode) && value['mode'] === mode && member(value['stage'], stages) && member(value['status'], ['passed', 'failed', 'unknown'])
-    && value['releaseEligible'] === false && value['acceptanceEvidence'] === (mode === 'feature') && JSON.stringify(value['required']) === JSON.stringify(names(mode)) && validateRows(mode, value['results'])
+    && value['releaseEligible'] === false && value['acceptanceEvidence'] === true && JSON.stringify(value['required']) === JSON.stringify(names(mode)) && validateRows(mode, value['results'])
     && (!Object.hasOwn(value, 'binding') || validBinding(value['binding'], mode)) && (!Object.hasOwn(value, 'compile') || (mode === 'feature' && validCompiler(value['compile'])))
     && (!Object.hasOwn(value, 'problem') || stages.some(stage => value['problem'] === `matrix-stopped-at-${stage}`))
     && (!Object.hasOwn(value, 'inventory') || (object(value['inventory']) && keys(value['inventory'], ['file', 'sha256']) && value['inventory']['file'] === `${stem(mode)}-inventory.proof.json` && hex(value['inventory']['sha256'])));
@@ -225,20 +225,23 @@ export function finalizeMatrixReceipt(mode: MatrixMode, steps: Record<string, { 
   const eligible = step === 'success' && Object.values(prerequisites).every(value => value === 'success') && complete && execution.status === 'passed' && aggregate(results) === 'passed';
   const status: Status = eligible ? 'passed' : ['missing', 'skipped', 'cancelled'].includes(step) || execution === undefined ? 'unknown' : execution.status === 'unknown' ? 'unknown' : 'failed';
   return { schemaVersion: 1, kind: kind(mode), mode, status, step, prerequisites, complete, required: names(mode), results, binding: execution?.binding ?? null, inventory: execution?.inventory ?? null, compile: execution?.compile ?? null,
-    executionStatus: execution?.status ?? 'missing', stage: execution?.stage ?? 'missing', releaseEligible: false, acceptanceEvidence: mode === 'feature',
-    note: mode === 'preparation' ? 'Expected RED never converts failure or unknown into acceptance. Remove only these eight diagnostic exemptions with their production fix.' : 'Required closed execution-time proof. Raw listings are not retained or reconstructed from hashes; current source/harness identity is rechecked. All 31 exact tests must pass.' };
+    executionStatus: execution?.status ?? 'missing', stage: execution?.stage ?? 'missing', releaseEligible: false, acceptanceEvidence: true,
+    note: mode === 'preparation' ? 'Required default-harness preparation regression: all eight exact tests must execute, none ignored, and all must pass. Historical CI14 RED is not rewritten.' : 'Required closed execution-time proof. Raw listings are not retained or reconstructed from hashes; current source/harness identity is rechecked. All 31 exact tests must pass.' };
 }
 const readProof = (path: string): unknown => { if (statSync(path).size > 4 * LIMIT) throw new Error('Proof exceeds bound'); return JSON.parse(readFileSync(path, 'utf8')); };
 /** Verify closed execution-time facts, NOT a reconstruction of discarded raw output from its hashes. */
 export function verifyFeatureMatrixReceipt(output: string, expectedBinding: ObjectValue, paths: { source: string; target: string }): void {
-  try { verifyFeatureProof(output, expectedBinding, paths); } catch { throw new Error('Required native feature closed proof is invalid or incomplete'); }
+  try { verifyMatrixProof('feature', output, expectedBinding, paths); } catch { throw new Error('Required native feature closed proof is invalid or incomplete'); }
 }
-function verifyFeatureProof(output: string, expectedBinding: ObjectValue, paths: { source: string; target: string }): void {
-  const receipt = readProof(join(output, 'native-feature.result.json')); const executionFile = join(output, 'native-feature.execution.json'); const execution = readProof(executionFile);
-  if (!object(receipt) || !keys(receipt, ['schemaVersion', 'kind', 'mode', 'status', 'step', 'prerequisites', 'complete', 'required', 'results', 'binding', 'inventory', 'compile', 'executionStatus', 'stage', 'releaseEligible', 'acceptanceEvidence', 'note', 'executionSha256']) || !validExecution('feature', execution)
+export function verifyPreparationMatrixReceipt(output: string, expectedBinding: ObjectValue, paths: { source: string; target: string }): void {
+  try { verifyMatrixProof('preparation', output, expectedBinding, paths); } catch { throw new Error('Required preparation closed proof is invalid or incomplete'); }
+}
+function verifyMatrixProof(mode: MatrixMode, output: string, expectedBinding: ObjectValue, paths: { source: string; target: string }): void {
+  const receipt = readProof(join(output, `${stem(mode)}.result.json`)); const executionFile = join(output, `${stem(mode)}.execution.json`); const execution = readProof(executionFile);
+  if (!object(receipt) || !keys(receipt, ['schemaVersion', 'kind', 'mode', 'status', 'step', 'prerequisites', 'complete', 'required', 'results', 'binding', 'inventory', 'compile', 'executionStatus', 'stage', 'releaseEligible', 'acceptanceEvidence', 'note', 'executionSha256']) || !validExecution(mode, execution)
     || receipt['executionSha256'] !== hashFile(executionFile)) throw new Error('Missing closed feature matrix receipt');
-  const expectedReceipt = finalizeMatrixReceipt('feature', { 'native-build': { outcome: 'success' }, 'fault-build': { outcome: 'success' }, 'native-feature': { outcome: 'success' } }, execution);
-  if (JSON.stringify(receipt) !== JSON.stringify({ ...expectedReceipt, executionSha256: hashFile(executionFile) }) || expectedReceipt.status !== 'passed' || !execution.binding || !execution.inventory || !execution.compile) throw new Error('Feature matrix is not completely passing');
+  const expectedReceipt = finalizeMatrixReceipt(mode, { 'native-build': { outcome: 'success' }, 'fault-build': { outcome: 'success' }, [stem(mode)]: { outcome: 'success' } }, execution);
+  if (JSON.stringify(receipt) !== JSON.stringify({ ...expectedReceipt, executionSha256: hashFile(executionFile) }) || expectedReceipt.status !== 'passed' || !execution.binding || !execution.inventory || (mode === 'feature' && !execution.compile)) throw new Error('Feature matrix is not completely passing');
   const binding = execution.binding;
   for (const [key, value] of Object.entries(expectedBinding)) if (JSON.stringify(binding[key]) !== JSON.stringify(value)) throw new Error('Feature matrix binding mismatch');
   if (!isAbsolute(paths.source) || !isAbsolute(paths.target) || binding['architecture'] !== process.arch) throw new Error('Trusted current runner paths/platform are required');
@@ -247,11 +250,15 @@ function verifyFeatureProof(output: string, expectedBinding: ObjectValue, paths:
   const compilerFile = join(output, 'compiler.jsonl'); const rawDefault = readFileSync(compilerFile, 'utf8');
   const defaultHarness = matrixCompilerHarness(rawDefault, paths.source, paths.target, false);
   if (JSON.stringify(binding['defaultCompiler']) !== JSON.stringify(digest(rawDefault)) || JSON.stringify(binding['defaultHarness']) !== JSON.stringify(defaultHarness.identity)) throw new Error('Default compiler/harness identity changed');
-  const compiled = execution.compile;
+  if (mode === 'feature') {
+  const compiled = execution.compile!;
   if (!completed(compiled.process) || compiled.process.status !== 0 || compiled.selected === null || compiled.errorCodes.length !== 0 || JSON.stringify(compiled.selected) !== JSON.stringify(binding['harness'])) throw new Error('Successful feature compilation is unproved');
   resolveHarness(compiled.selected, paths.source, paths.target);
+  } else if (JSON.stringify(binding['harness']) !== JSON.stringify(defaultHarness.identity) || execution.compile !== undefined) {
+    throw new Error('Preparation must use the verified default test harness');
+  }
   const inventoryFile = join(output, execution.inventory.file); if (hashFile(inventoryFile) !== execution.inventory.sha256) throw new Error('Inventory proof changed');
-  const inventory = readProof(inventoryFile); if (!validInventory(inventory, 'feature') || !inventoryPassed(inventory)) throw new Error('Closed feature inventory delta is unproved');
+  const inventory = readProof(inventoryFile); if (!validInventory(inventory, mode) || !inventoryPassed(inventory)) throw new Error('Closed feature inventory delta is unproved');
   for (const row of execution.results) {
     if (row.file === null || row.listingFile === null || row.status !== 'passed' || row.proofSha256 !== hashFile(join(output, row.file)) || row.listingSha256 !== hashFile(join(output, row.listingFile))) throw new Error('Feature exact proof is missing or changed');
     const discovery = readProof(join(output, row.listingFile)); const proof = readProof(join(output, row.file));
@@ -295,7 +302,7 @@ async function runMatrix(mode: MatrixMode, args: string[]): Promise<void> {
     for (const row of execution.results) {
       if (controller.signal.aborted) break;
       try {
-        const discovery = await run(selected, [row.name, '--exact', ...(mode === 'preparation' ? ['--ignored'] : []), '--list', '--format=terse'], 30_000); const listing = closedListing(row.name, discovery);
+        const discovery = await run(selected, [row.name, '--exact', '--list', '--format=terse'], 30_000); const listing = closedListing(row.name, discovery);
         row.listing = facts(discovery); const listed = persistProof(output, `${fileName(mode, row.name)}.list.json`, listing); row.listingFile = listed.file; row.listingSha256 = listed.sha256;
         if (!completed(row.listing) || row.listing.status !== 0 || !listing.exact) { row.problem = 'exact-discovery-incomplete'; row.status = completed(row.listing) ? 'failed' : 'unknown'; continue; }
         const result = await run(selected, matrixTestArgs(mode, row.name), mode === 'preparation' ? 30_000 : 180_000); const proof = closedTest(row.name, result, source);

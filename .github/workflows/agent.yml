@@ -37,6 +37,8 @@ jobs:
   # skipping steps inside the matrix keeps unselected suites out of the run
   # entirely, so the checks list shows what actually ran.
   plan:
+    # Scheduled model calls and third-party runners are upstream-only.
+    if: ${{ github.repository == 'tester-army/e2e' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
@@ -67,6 +69,7 @@ jobs:
           echo "matrix=$selected" >> "$GITHUB_OUTPUT"
 
   agent:
+    if: ${{ github.repository == 'tester-army/e2e' }}
     needs: plan
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30

@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +64,7 @@ jobs:
         run: pnpm --filter @e2e-dev/testbed test
 
   test:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -90,7 +90,7 @@ jobs:
   # A new user's first install of the packed packages, which pnpm 11 and
   # later fail on any dependency build script (scripts/install-smoke.ts).
   install:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -114,7 +114,7 @@ jobs:
     name: spec gate
     needs: [check, test, install]
     if: ${{ always() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require every job to pass or skip

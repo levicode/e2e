@@ -9,8 +9,8 @@ import { sha256 } from './bundle.ts';
 import { CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_SEMANTIC_FAULT_ASSERTIONS } from './candidate-manifest.ts';
 import { hashFile, sourceIdentity, verifyNativeInventory } from './candidate-native.ts';
 import { CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
-import { FEATURE_TEST_CFG_SOURCES, PREPARATION_DESIRED_RED, PREPARATION_SETTLEMENT_TESTS, REQUIRED_NATIVE_FEATURE_TESTS } from './candidate-native-matrix-manifest.ts';
-import { assessExactTest, closedListing, closedTest, compilerProof, inventoryProof, panicSite, exactListing, featureCompileArgs, finalizeMatrixReceipt, matrixCompilerHarness, matrixInventory, matrixTestArgs, verifyFeatureDelta, verifyFeatureMatrixReceipt, type MatrixExecution, type MatrixMode, type ProcessFacts } from './candidate-native-matrix.ts';
+import { FEATURE_TEST_CFG_SOURCES, PREPARATION_SETTLEMENT_TESTS, REQUIRED_NATIVE_FEATURE_TESTS } from './candidate-native-matrix-manifest.ts';
+import { assessExactTest, closedListing, closedTest, compilerProof, inventoryProof, panicSite, exactListing, featureCompileArgs, finalizeMatrixReceipt, matrixCompilerHarness, matrixInventory, matrixTestArgs, verifyFeatureDelta, verifyFeatureMatrixReceipt, verifyPreparationMatrixReceipt, type MatrixExecution, type MatrixMode, type ProcessFacts } from './candidate-native-matrix.ts';
 import type { runProxyCommand } from './candidate-proxy-diagnostic.ts';
 
 const completed: ProcessFacts = { status: 0, signal: null, termination: 'completed', cleanupConfirmed: true, groupRetired: true };
@@ -22,12 +22,12 @@ const temp = (t: { after(fn: () => void): void }) => { const root = mkdtempSync(
 const relativeHarness = (feature: boolean): ReturnType<typeof matrixCompilerHarness>['identity'] => ({ name: 'agent-browser', source: 'cli/src/main.rs', kind: ['bin'], features: feature ? ['acceptance-faults'] : [], profile: 'ci', executable: `ci/deps/agent_browser-${feature ? '1' : '2'}`.padEnd(38, feature ? '1' : '2'), sha256: 'a'.repeat(64) });
 const matrix = (mode: MatrixMode): MatrixExecution => {
   const required = mode === 'feature' ? REQUIRED_NATIVE_FEATURE_TESTS : PREPARATION_SETTLEMENT_TESTS;
-  return { schemaVersion: 1, kind: mode === 'feature' ? 'required-native-feature-tests' : 'preparation-settlement-diagnostic', mode,
+  return { schemaVersion: 1, kind: mode === 'feature' ? 'required-native-feature-tests' : 'required-preparation-settlement-tests', mode,
     stage: 'verified', status: 'passed', required, ...(mode === 'feature' ? { compile: compilerProof('synthetic compiler fixture only', '', completed, relativeHarness(true)) } : {}),
     binding: { sourceRevision: 'a'.repeat(40), nativeSource: { repository: 'levicode/agent-browser', commit: 'b'.repeat(40), tree: 'c'.repeat(40), cargoLockSha256: 'd'.repeat(64) },
       productionBinarySha256: 'e'.repeat(64), ...(mode === 'feature' ? { acceptanceFaultBinarySha256: 'f'.repeat(64) } : {}), platform: 'linux', architecture: process.arch, profile: 'ci', defaultCompiler: { sha256: 'a'.repeat(64), bytes: 123 }, defaultHarness: relativeHarness(false), harness: relativeHarness(mode === 'feature') },
-    inventory: { file: `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}-inventory.proof.json`, sha256: 'a'.repeat(64) }, releaseEligible: false, acceptanceEvidence: mode === 'feature',
-    results: required.map((name, index) => { const file = `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}-${sha256(Buffer.from(name))}.proof.json`; return { name, expectation: mode === 'preparation' && index < 2 ? 'desired-contract-red' : 'must-pass', status: 'passed', testStatus: 'passed', problem: null,
+    inventory: { file: `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}-inventory.proof.json`, sha256: 'a'.repeat(64) }, releaseEligible: false, acceptanceEvidence: true,
+    results: required.map(name => { const file = `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}-${sha256(Buffer.from(name))}.proof.json`; return { name, expectation: 'must-pass', status: 'passed', testStatus: 'passed', problem: null,
       listing: { ...completed }, execution: { ...completed }, listingFile: `${file}.list.json`, listingSha256: 'a'.repeat(64), file, proofSha256: 'b'.repeat(64) }; }) };
 };
 const successfulSteps = { 'native-build': { outcome: 'success' }, 'fault-build': { outcome: 'success' }, 'native-feature': { outcome: 'success' }, 'preparation-diagnostic': { outcome: 'success' } };
@@ -48,13 +48,11 @@ function compiledFixture(root: string) {
   return { source, target, feature, normal, stream };
 }
 
-test('the two exact matrices preserve the historical contracts and only exempt eight new diagnostic names', () => {
+test('the two exact matrices preserve historical contracts and restore eight preparation regressions without exemptions', () => {
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8); assert.equal(new Set(PREPARATION_SETTLEMENT_TESTS).size, 8);
   assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 31); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 31);
-  assert.deepEqual(PREPARATION_DESIRED_RED, PREPARATION_SETTLEMENT_TESTS.slice(0, 2));
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 36); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
-  assert.deepEqual(CANDIDATE_NATIVE_DIAGNOSTICS.slice(1), PREPARATION_SETTLEMENT_TESTS);
-  assert.equal(CANDIDATE_NATIVE_DIAGNOSTICS.length, 9);
+  assert.equal(CANDIDATE_NATIVE_DIAGNOSTICS.length, 1);
   assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 31);
   const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
   verifyNativeInventory(inventory);
@@ -106,10 +104,10 @@ test('full feature-minus-default discovery rejects hidden additions, omissions, 
   assert.equal(exactListing(listing(features), features[0]!), false);
 });
 
-test('every test uses an exact literal name and prep alone requests its ignored diagnostic', () => {
+test('every mandatory test uses an exact literal name without an ignored exemption', () => {
   for (const mode of ['feature', 'preparation'] as const) for (const name of mode === 'feature' ? REQUIRED_NATIVE_FEATURE_TESTS : PREPARATION_SETTLEMENT_TESTS) {
     const args = matrixTestArgs(mode, name); assert.equal(args[0], name); assert.ok(args.includes('--exact')); assert.ok(args.includes('--test-threads=1'));
-    assert.equal(args.includes('--ignored'), mode === 'preparation'); assert.ok(!args.includes('--nocapture'));
+    assert.equal(args.includes('--ignored'), false); assert.ok(!args.includes('--nocapture'));
   }
   assert.throws(() => matrixTestArgs('feature', 'native::client_'), /exact matrix/);
   assert.deepEqual(featureCompileArgs, ['test', '--locked', '--profile', 'ci', '--no-default-features', '--features', 'acceptance-faults', '--bin', 'agent-browser', '--no-run', '--message-format=json']);
@@ -147,15 +145,15 @@ test('both receipts always enumerate every exact unique row, with missing execut
     assert.equal(result.status, 'unknown'); assert.equal(result.complete, false);
     assert.equal(result.results.length, mode === 'feature' ? 31 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
     assert.ok(result.results.every(row => row.status === 'unknown' && row.testStatus === 'unknown' && row.execution === null));
-    assert.equal(result.releaseEligible, false); assert.equal(result.acceptanceEvidence, mode === 'feature');
+    assert.equal(result.releaseEligible, false); assert.equal(result.acceptanceEvidence, true);
   }
 });
 
-test('two desired REDs remain failed diagnostics while all six negative results remain individually reported', () => {
+test('any preparation failures remain failed mandatory evidence with all eight outcomes reported', () => {
   const execution = matrix('preparation'); execution.status = 'failed';
   for (const row of execution.results.slice(0, 2)) Object.assign(row, { status: 'failed', testStatus: 'failed', problem: 'test-failed', execution: { ...completed, status: 101 } });
   const result = finalizeMatrixReceipt('preparation', { ...successfulSteps, 'preparation-diagnostic': { outcome: 'failure' } }, execution);
-  assert.equal(result.status, 'failed'); assert.equal(result.complete, true); assert.equal(result.acceptanceEvidence, false);
+  assert.equal(result.status, 'failed'); assert.equal(result.complete, true); assert.equal(result.acceptanceEvidence, true);
   assert.equal(result.results.filter(row => row.status === 'failed').length, 2); assert.equal(result.results.filter(row => row.status === 'passed').length, 6);
   assert.equal(finalizeMatrixReceipt('preparation', successfulSteps, execution).status, 'failed');
   assert.equal(finalizeMatrixReceipt('preparation', successfulSteps, matrix('preparation')).status, 'passed');
@@ -177,7 +175,7 @@ test('a passing receipt requires complete exact rows and successful authoritativ
   }
   for (const corrupt of [
     (e: MatrixExecution) => { e.results.pop(); }, (e: MatrixExecution) => { e.results[1] = e.results[0]!; },
-    (e: MatrixExecution) => { e.results[0]!.name += '-renamed'; }, (e: MatrixExecution) => { e.results[0]!.expectation = 'desired-contract-red'; },
+    (e: MatrixExecution) => { e.results[0]!.name += '-renamed'; }, (e: MatrixExecution) => { (e.results[0] as { expectation: string }).expectation = 'desired-contract-red'; },
     (e: MatrixExecution) => { e.results[0]!.execution = null; }, (e: MatrixExecution) => { e.results[0]!.listing = null; },
     (e: MatrixExecution) => { e.results[0]!.testStatus = 'unknown'; }, (e: MatrixExecution) => { e.results[0]!.execution!.cleanupConfirmed = false; },
     (e: MatrixExecution) => { delete e.compile; }, (e: MatrixExecution) => { e.compile!.process.status = 101; },
@@ -187,7 +185,7 @@ test('a passing receipt requires complete exact rows and successful authoritativ
 });
 
 /** A synthetic file receipt exercises verification only. Fixture executable bytes are never run. */
-function proofFixture(root: string) {
+function proofFixture(root: string, mode: MatrixMode = 'feature') {
   const f = compiledFixture(root); const output = join(root, 'evidence'); mkdirSync(output);
   mkdirSync(join(f.source, 'cli/src/native'));
   for (const name of ['client_actions', 'client_observation_dispatch', 'client_transport', 'client_test_faults', 'client_settlement_trace']) writeFileSync(join(f.source, `cli/src/native/${name}.rs`), '// tracked source fixture\n// second line\n');
@@ -195,22 +193,22 @@ function proofFixture(root: string) {
   git('init'); git('add', '.'); git('-c', 'user.name=Receipt test', '-c', 'user.email=receipt@example.invalid', 'commit', '-m', 'Source fixture only');
   const nativeSource = sourceIdentity(f.source, git('rev-parse', 'HEAD'));
   const rawDefault = f.stream(f.normal); writeFileSync(join(output, 'compiler.jsonl'), rawDefault);
-  const execution = matrix('feature'); const defaultHarness = matrixCompilerHarness(rawDefault, f.source, f.target, false);
-  const harness = matrixCompilerHarness(f.stream(f.feature), f.source, f.target, true);
-  const expected = { sourceRevision: 'a'.repeat(40), nativeSource, productionBinarySha256: 'b'.repeat(64), acceptanceFaultBinarySha256: 'c'.repeat(64) };
+  const execution = matrix(mode); const defaultHarness = matrixCompilerHarness(rawDefault, f.source, f.target, false);
+  const harness = matrixCompilerHarness(f.stream(mode === 'feature' ? f.feature : f.normal), f.source, f.target, mode === 'feature');
+  const expected = { sourceRevision: 'a'.repeat(40), nativeSource, productionBinarySha256: 'b'.repeat(64), ...(mode === 'feature' ? { acceptanceFaultBinarySha256: 'c'.repeat(64) } : {}) };
   execution.binding = { ...expected, platform: 'linux', architecture: process.arch, profile: 'ci', defaultCompiler: { sha256: hashFile(join(output, 'compiler.jsonl')), bytes: Buffer.byteLength(rawDefault) }, defaultHarness: defaultHarness.identity, harness: harness.identity };
-  execution.compile = compilerProof(f.stream(f.feature), '', completed, harness.identity);
-  const defaults = ['historical_test', ...PREPARATION_SETTLEMENT_TESTS]; const features = [...defaults, ...REQUIRED_NATIVE_FEATURE_TESTS];
-  const inventory = inventoryProof('feature', processResult(listing(defaults)), processResult(listing(features)), processResult(listing(PREPARATION_SETTLEMENT_TESTS)));
-  const inventoryFile = join(output, 'native-feature-inventory.proof.json'); writeFileSync(inventoryFile, JSON.stringify(inventory));
-  execution.inventory = { file: 'native-feature-inventory.proof.json', sha256: hashFile(inventoryFile) };
+  if (mode === 'feature') execution.compile = compilerProof(f.stream(f.feature), '', completed, harness.identity);
+  const defaults = ['historical_test', 'historical_ignored', ...PREPARATION_SETTLEMENT_TESTS]; const features = [...defaults, ...REQUIRED_NATIVE_FEATURE_TESTS];
+  const inventory = inventoryProof(mode, processResult(listing(defaults)), mode === 'feature' ? processResult(listing(features)) : null, processResult(listing(['historical_ignored'])));
+  const inventoryFile = join(output, `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}-inventory.proof.json`); writeFileSync(inventoryFile, JSON.stringify(inventory));
+  execution.inventory = { file: `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}-inventory.proof.json`, sha256: hashFile(inventoryFile) };
   for (const row of execution.results) {
     writeFileSync(join(output, row.file!), JSON.stringify(closedTest(row.name, processResult(passedLog(row.name)), f.source)));
     writeFileSync(join(output, row.listingFile!), JSON.stringify(closedListing(row.name, processResult(listing([row.name])))));
     row.proofSha256 = hashFile(join(output, row.file!)); row.listingSha256 = hashFile(join(output, row.listingFile!));
   }
-  const seal = () => { const file = join(output, 'native-feature.execution.json'); writeFileSync(file, JSON.stringify(execution));
-    writeFileSync(join(output, 'native-feature.result.json'), JSON.stringify({ ...finalizeMatrixReceipt('feature', successfulSteps, execution), executionSha256: hashFile(file) })); };
+  const seal = () => { const file = join(output, `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}.execution.json`); writeFileSync(file, JSON.stringify(execution));
+    writeFileSync(join(output, `${mode === 'feature' ? 'native-feature' : 'preparation-diagnostic'}.result.json`), JSON.stringify({ ...finalizeMatrixReceipt(mode, successfulSteps, execution), executionSha256: hashFile(file) })); };
   seal(); return { ...f, output, execution, expected, seal, inventory, inventoryFile, paths: { source: f.source, target: f.target } };
 }
 
@@ -250,10 +248,10 @@ test('workflow retains every old gate, adds mandatory feature evidence and keeps
   assert.ok(workflow.indexOf('id: native-feature-receipt\n') < workflow.indexOf('id: candidate-gate\n'));
   for (const id of ['preparation-diagnostic-receipt', 'native-feature-receipt']) assert.match(workflow, new RegExp(`id: ${id}\\n\\s+if: \\$\\{\\{ always\\(\\) }}`));
   assert.ok(CANDIDATE_GATES.includes('native-feature')); assert.ok(CANDIDATE_GATES.includes('native-feature-receipt'));
-  assert.ok(!(CANDIDATE_GATES as readonly string[]).includes('preparation-diagnostic'));
+  assert.ok(CANDIDATE_GATES.includes('preparation-diagnostic')); assert.ok(CANDIDATE_GATES.includes('preparation-diagnostic-receipt'));
   const all = Object.fromEntries(CANDIDATE_GATES.map(name => [name, { outcome: 'success' }]));
-  requireCandidateGates({ ...all, 'preparation-diagnostic': { outcome: 'failure' }, 'preparation-diagnostic-receipt': { outcome: 'failure' } });
-  for (const id of ['native-feature', 'native-feature-receipt']) assert.throws(() => requireCandidateGates({ ...all, [id]: { outcome: 'failure' }, 'preparation-diagnostic': { outcome: 'success' } }), /missing, skipped or failed/);
+  assert.throws(() => requireCandidateGates({ ...all, 'preparation-diagnostic': { outcome: 'failure' }, 'preparation-diagnostic-receipt': { outcome: 'failure' } }));
+  for (const id of ['native-feature', 'native-feature-receipt', 'preparation-diagnostic', 'preparation-diagnostic-receipt']) assert.throws(() => requireCandidateGates({ ...all, [id]: { outcome: 'failure' } }), /missing, skipped or failed/);
   const producer = readFileSync(new URL('candidate-producer.ts', import.meta.url), 'utf8');
   for (const file of ['candidate-native-matrix.ts', 'candidate-native-matrix-manifest.ts', 'candidate-proxy-diagnostic.ts']) assert.ok(producer.includes(`'${file}'`));
   const source = readFileSync(new URL('candidate-native-matrix.ts', import.meta.url), 'utf8');
@@ -293,7 +291,7 @@ test('successful compiler warnings and failed diagnostics retain only relative i
 });
 
 test('foreign inventory names affect counts and verification but never enter closed files', t => {
-  const output = temp(t); const sentinel = 'SENTINEL_UNREVIEWED_TEST_NAME'; const defaults = ['historical_test', ...PREPARATION_SETTLEMENT_TESTS];
+  const output = temp(t); const sentinel = 'SENTINEL_UNREVIEWED_TEST_NAME'; const defaults = ['historical_test', 'historical_ignored', ...PREPARATION_SETTLEMENT_TESTS];
   const full = listing([...defaults, ...REQUIRED_NATIVE_FEATURE_TESTS, sentinel]);
   const proof = inventoryProof('feature', processResult(listing(defaults)), processResult(full, 'SENTINEL_PRIVATE_STDERR'), processResult(listing(PREPARATION_SETTLEMENT_TESTS)));
   assert.equal(proof.verified, false); assert.equal(proof.delta?.unexpectedAddedCount, 1); assert.equal(proof.delta?.addedCount, 32); assert.equal(proof.feature?.entries, defaults.length + 32);
@@ -336,4 +334,20 @@ test('final gate rejects extra keys even when closed proof hashes and receipt ar
   const invalid = JSON.parse(JSON.stringify(f.execution)) as MatrixExecution & { unexpected?: string }; invalid.unexpected = 'SENTINEL_UNCLOSED';
   const finalized = finalizeMatrixReceipt('feature', successfulSteps, invalid); assert.equal(finalized.status, 'unknown'); assert.doesNotMatch(JSON.stringify(finalized), /SENTINEL/);
   assert.throws(() => verifyFeatureMatrixReceipt(f.output, f.expected, { source: 'relative-source', target: '/untrusted-target' }), /closed proof/);
+});
+
+
+test('preparation final gate requires all eight unignored exact results and unchanged default harness', t => {
+  const f = proofFixture(temp(t), 'preparation');
+  verifyPreparationMatrixReceipt(f.output, f.expected, f.paths);
+  f.inventory.required[0]!.ignored = true;
+  writeFileSync(f.inventoryFile, JSON.stringify(f.inventory)); f.execution.inventory!.sha256 = hashFile(f.inventoryFile); f.seal();
+  assert.throws(() => verifyPreparationMatrixReceipt(f.output, f.expected, f.paths));
+  f.inventory.required[0]!.ignored = false;
+  writeFileSync(f.inventoryFile, JSON.stringify(f.inventory)); f.execution.inventory!.sha256 = hashFile(f.inventoryFile);
+  f.execution.results[0]!.status = 'unknown'; f.seal();
+  assert.throws(() => verifyPreparationMatrixReceipt(f.output, f.expected, f.paths));
+  f.execution.results[0]!.status = 'passed'; f.seal();
+  writeFileSync(f.normal.executable, 'replaced default harness');
+  assert.throws(() => verifyPreparationMatrixReceipt(f.output, f.expected, f.paths));
 });
