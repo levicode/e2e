@@ -1,3 +1,5 @@
+import { beginSyntheticCase } from '../helpers/synthetic-evidence.ts';
+import { SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /** Next.js App Router's route announcer is never observed; an app's own alert still is. */
 
 import { readFileSync } from 'node:fs';
@@ -25,14 +27,21 @@ function flatten(node: SemanticNode): SemanticNode[] {
 }
 
 it('omits the announcer empty or populated and keeps the app alert', async () => {
-  const fixture = await startNativeFixture('route-announcer');
+  const evidence = new SyntheticRecoveryEvidence(beginSyntheticCase('P43'));
+  evidence.enter('start');
+  let fixture: Awaited<ReturnType<typeof startNativeFixture>>;
+  try { fixture = await startNativeFixture('route-announcer'); }
+  catch (cause) { evidence.failed('setup'); evidence.observer.close(); evidence.evidence.finish(evidence.outcome); throw cause; }
+  evidence.passed('setup');
   try {
+    evidence.enter('document', 'body');
     await nativeDocument(fixture.browser, PAGE);
     for (const text of ['', 'Acme Notes']) {
       await fixture.browser.evaluate((value) => {
         document.querySelector('next-route-announcer')!.shadowRoot!.querySelector('#__next-route-announcer__')!.textContent = value;
         return null;
       }, text);
+      evidence.enter('observe');
       const snapshot = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent' });
       const alerts = flatten(snapshot.root).filter((node) => node.role === 'alert');
       const appAlerts = alerts.filter(node => node.testId === 'app-alert');
@@ -44,10 +53,18 @@ it('omits the announcer empty or populated and keeps the app alert', async () =>
             nameMatches: appAlerts.length === 1 && appAlerts[0]!.name === 'Acme Notes' },
           { ordinal: 1, presentCount: alerts.length - appAlerts.length },
         ]);
+      evidence.enter('assertion');
       expect(alerts, diagnostic).toMatchObject([{ name: 'Acme Notes', testId: 'app-alert' }]);
     }
     expect(await fixture.browser.evaluate(() => document.querySelector('next-route-announcer')!.shadowRoot!.querySelector<HTMLElement>('#__next-route-announcer__')!.innerText)).toBe('Acme Notes');
-  } finally {
-    await fixture.close();
+    evidence.passed('body');
+  } catch (cause) { evidence.failed('body'); throw cause; }
+  finally {
+    evidence.enter('dispose', 'cleanup');
+    let cleanupFailed = false;
+    try { await fixture.close(); }
+    // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+    catch (cause) { cleanupFailed = true; throw cause; }
+    finally { evidence.finishBackstop(cleanupFailed); }
   }
 });

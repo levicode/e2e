@@ -1,3 +1,5 @@
+import { beginSyntheticCase } from '../helpers/synthetic-evidence.ts';
+import { SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The app log: what a page does on its own during an attempt reaches the
  * harness as one line each, from a real browser: console output, exceptions
@@ -115,6 +117,7 @@ describe('app log', () => {
   });
 
   it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async () => {
+    const evidence = new SyntheticRecoveryEvidence(beginSyntheticCase('P01'));
     const surface = new NativeSurface({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
     const entries: AppLogEntry[] = [];
@@ -122,8 +125,10 @@ describe('app log', () => {
     const screens: EngineSnapshot[] = [];
     const facts: Record<string, string>[] = [];
     try {
+      evidence.enter('init');
       await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
         env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+      evidence.enter('start');
       await surface.startAttempt({
         attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
         appLog: (entry) => entries.push(entry),
@@ -131,7 +136,10 @@ describe('app log', () => {
         screen: (snapshot) => screens.push(snapshot),
         environment: (told) => facts.push({ ...told }),
       });
+      evidence.passed('setup');
+      evidence.enter('open', 'body');
       await surface.open(`${url}/moving`, operation());
+      evidence.enter('assertion');
       expect(screens).toHaveLength(1);
       expect(screens[0]!.location).toBe(`${url}/moving`);
       // The screen is the trace's, never published: a ref from the observation acts after it, twice.
@@ -150,10 +158,19 @@ describe('app log', () => {
       expect(navigations().some((text) => text.startsWith('the new tab navigated'))).toBe(false);
       await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
       expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
-    } finally {
-      await surface.endAttempt(cleanup()).catch(() => undefined);
-      await surface.dispose(cleanup());
-      rmSync(artifactsDir, { recursive: true, force: true });
+      evidence.passed('body');
+    } catch (cause) { evidence.failed(); throw cause; }
+    finally {
+      evidence.enter('end', 'cleanup');
+      let cleanupFailed = false;
+      try {
+        await surface.endAttempt(cleanup()).catch(() => { cleanupFailed = true; evidence.failed('cleanup'); });
+        evidence.enter('dispose', 'cleanup');
+        await surface.dispose(cleanup());
+        rmSync(artifactsDir, { recursive: true, force: true });
+      // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+      } catch (cause) { cleanupFailed = true; throw cause; }
+      finally { evidence.finishBackstop(cleanupFailed); }
     }
   });
 });

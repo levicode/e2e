@@ -1,3 +1,5 @@
+import { beginSyntheticCase } from '../helpers/synthetic-evidence.ts';
+import { SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * Deterministic locators inside closed shadow roots: every query kind resolves
  * the nodes the reader already observes there, actions and reads work on them,
@@ -237,30 +239,51 @@ describe('match order across one closed root', () => {
   let artifactsDir: string;
   const engine = web();
   const op = operation('closed-order');
+  let evidence: SyntheticRecoveryEvidence;
 
   beforeAll(async () => {
+    evidence = new SyntheticRecoveryEvidence(beginSyntheticCase('P15'));
+    evidence.enter('host');
+    try {
     app = await startFixtureApp();
     artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-closed-order-'));
+    evidence.enter('init');
     await boot(engine, app);
+    evidence.enter('start');
     await engine.startAttempt!({ attemptId: 'closed-order', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    evidence.enter('open');
     await engine.session!.open!(`${app.url}/closed-order`, op);
+    evidence.passed('setup');
+    } catch (cause) { evidence.failed('setup'); throw cause; }
   });
 
   afterAll(async () => {
+    evidence.enter('end', 'cleanup');
+    let cleanupFailed = false;
+    try {
     await engine.endAttempt!(cleanup());
+    evidence.enter('dispose', 'cleanup');
     await engine.dispose!(cleanup());
+    evidence.enter('close-host', 'cleanup');
     await app.close();
     rmSync(artifactsDir, { recursive: true, force: true });
+    } catch (cause) { cleanupFailed = true; throw cause; }
+    finally { evidence.finishBackstop(cleanupFailed); }
   });
 
   it('lists light-DOM matches first and the closed root after, where the observed tree lists them in place', async () => {
+    evidence.enter('observe', 'body');
+    try {
     // The host comes before the light-DOM button, so the reader reads Alpha first.
     const observed = [...walk((await engine.observe!(op)).root)].filter((node) => node.role === 'button');
     expect(observed.map((node) => node.name)).toEqual(['Alpha', 'Beta']);
     // A locator searches the light DOM as one root and the closed root as the next.
+    evidence.enter('locate');
     const located = await engine.locate!(byRole('button'), op);
     expect(located.map((node) => node.name)).toEqual(['Beta', 'Alpha']);
     const first = await engine.locate!({ kind: 'index', source: byRole('button'), index: 'first' }, op);
     expect(first.map((node) => node.name)).toEqual(['Beta']);
+    evidence.passed('body');
+    } catch (cause) { evidence.failed('body'); throw cause; }
   });
 });

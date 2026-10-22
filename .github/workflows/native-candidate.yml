@@ -70,9 +70,21 @@ jobs:
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: |
           pnpm run build
+      # Read-only source reference. No dependency install, build, or script from this checkout runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        name: Read fixed official source for diagnostic oracle equivalence
+        id: oracle-reference
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+        with:
+          repository: tester-army/e2e
+          ref: d7c6b5e5a4c27fac7633e66866fd367b0351ead8
+          path: .artifacts/canvas-oracle-baseline
+          persist-credentials: false
       - name: Test the fail-closed acceptance scripts
         id: acceptance-scripts
         if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+        env:
+          E2E_CANVAS_ORACLE_BASELINE_ROOT: ${{ github.workspace }}/.artifacts/canvas-oracle-baseline
         run: node --test 'scripts/acceptance/*.test.ts'
       - name: Check complete package and test source types
         id: types
@@ -152,6 +164,13 @@ jobs:
           EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
         run: node scripts/acceptance/candidate-native-matrix.ts preparation .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" - .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
       # Run only after the default harnesses: their CARGO_BIN_EXE path must still be production.
+      - name: Record two controlled preparation schedules without acceptance exemptions
+        id: controlled-preparation
+        timeout-minutes: 3
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.packages.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-controlled-preparation.ts .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
       - name: Compile separate non-distributable acceptance-faults runtime
         id: fault-build
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
@@ -212,6 +231,8 @@ jobs:
       - name: Run genuine complete web-browser production suite
         id: web-browser
         if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        env:
+          E2E_SYNTHETIC_EVIDENCE_BATCH: '1'
         run: node scripts/acceptance/candidate-web.ts web-browser "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
       - name: Run requested optional local synthetic benchmark sweep
         id: crosscheck-benchmark
@@ -222,6 +243,8 @@ jobs:
       - name: Run genuine built-package public callbacks and native primitives
         id: public-callbacks
         if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        env:
+          E2E_SYNTHETIC_EVIDENCE_BATCH: '1'
         run: node scripts/acceptance/candidate-web.ts public-callbacks "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
       - name: Run mandatory semantic fault suite only on feature runtime
         id: semantic-faults

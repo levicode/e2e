@@ -169,6 +169,11 @@ function assessFacts(test: TestFacts, processResult: ProcessFacts): Observation 
   return { status: 'failed', testStatus: 'unknown', problem: 'exit-output-disagreement' };
 }
 export function assessExactTest(name: string, stdout: string, processResult: ProcessFacts): Observation { return assessFacts(normalizedTest(name, stdout), processResult); }
+/** Recheck saved closed facts without pretending to reconstruct discarded raw output. */
+export function assessClosedTest(test: unknown, processResult: unknown): Observation {
+  return validTestFacts(test) && validProcess(processResult) ? assessFacts(test, processResult)
+    : { status: 'unknown', testStatus: 'unknown', problem: 'invalid-closed-test-facts' };
+}
 export function matrixTestArgs(mode: MatrixMode, name: string): string[] { if (!names(mode).includes(name)) throw new Error('Test name is not in the exact matrix'); return [name, '--exact', '--test-threads=1', '--format=pretty', '--color=never']; }
 const panicFile = (name: string) => { if (!allNames.includes(name)) return null; const module = name.split('::')[1]; return `cli/src/native/${module}.rs`; };
 function validPanic(value: unknown, name: string): value is PanicSite | null { return value === null || (object(value) && keys(value, ['file', 'line', 'column']) && value['file'] === panicFile(name) && natural(value['line']) && value['line'] > 0 && value['line'] <= 1_000_000 && natural(value['column']) && value['column'] > 0 && value['column'] <= 65_535); }

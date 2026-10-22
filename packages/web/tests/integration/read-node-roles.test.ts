@@ -6,6 +6,9 @@ import type { SemanticNode } from 'e2e/engine';
 import { projectionDiagnostics } from '../helpers/projection-diagnostics.ts';
 import { nativeDocument } from '../helpers/native-browser.ts';
 import { startNativeOracle, type NativeOracle } from '../helpers/native-oracle.ts';
+import { beginSyntheticCase, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
+import { recordCanvasOracle } from '../helpers/canvas-oracle.ts';
+import { pairCanvasNative, type CanvasNativePair } from '../helpers/canvas-oracle-provenance.ts';
 
 // The source hash binds every diagnostic ordinal below to its exact fixture mapping.
 const projection = projectionDiagnostics(readFileSync(new URL(import.meta.url), 'utf8'));
@@ -429,24 +432,59 @@ describe('contenteditable editing hosts', () => {
     expect(nodes.get('section')).toMatchObject({ name: 'Notes', value: '' });
   });
 
-  it('never makes a drawn or embedded surface a textbox, whatever its contenteditable says', async () => {
-    await nativeDocument(fixture!.browser, `
+  // One immutable source-bound fixture pairs the original native snapshot with the optional P42O companion.
+  const embeddedSurfaceHtml = `
       <canvas contenteditable tabindex="0" width="120" height="60" data-testid="canvas"></canvas>
       <svg contenteditable width="20" height="20" data-testid="svg"></svg>
       <iframe contenteditable srcdoc="<p>Framed</p>" data-testid="frame"></iframe>
       <div contenteditable data-testid="host"><canvas width="20" height="20"></canvas><p>Caption</p></div>
-    `);
-    await fixture!.oracle.frames()[1]?.waitForLoadState('domcontentloaded');
-    const { tree } = await capture();
-    const roles = Object.fromEntries(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId, node.role]));
-    // A canvas, with no role, name, or text, is not a node at all; an svg has the image role, so it is listed.
-    expect(roles, nodeProjection('embedded-surfaces',
-      new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), [
-        { testId: 'canvas', included: false },
-        { testId: 'svg', role: 'image' },
-        { testId: 'frame', role: 'iframe' },
-        { testId: 'host', role: 'textbox' },
-      ])).toEqual({ svg: 'image', frame: 'iframe', host: 'textbox' });
+    `;
+  let embeddedNativePair: CanvasNativePair | undefined;
+
+  it('never makes a drawn or embedded surface a textbox, whatever its contenteditable says', async () => {
+    const evidence = beginSyntheticCase('P42');
+    const outcome: SyntheticOutcome = { setup: 'failed', body: 'not-started', cleanup: 'not-started' };
+    let bodyPhase: 'initial-observe' | 'assertion' = 'initial-observe';
+    try {
+      embeddedNativePair = undefined;
+      evidence.record({ kind: 'phase', section: 'setup', phase: 'navigate', state: 'enter' });
+      await nativeDocument(fixture!.browser, embeddedSurfaceHtml);
+      await fixture!.oracle.frames()[1]?.waitForLoadState('domcontentloaded');
+      outcome.setup = 'passed';
+      evidence.record({ kind: 'phase', section: 'setup', phase: 'navigate', state: 'passed' });
+      outcome.body = 'failed';
+      evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'enter' });
+      const { tree } = await capture();
+      evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'passed' });
+      // In-memory closed facts only; no additional reads and no oracle await before the original assertion.
+      if (evidence.available) {
+        try { embeddedNativePair = pairCanvasNative(new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), embeddedSurfaceHtml); }
+        catch { evidence.invalidate(); }
+      }
+      bodyPhase = 'assertion';
+      evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'enter' });
+      const roles = Object.fromEntries(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId, node.role]));
+      // A canvas, with no role, name, or text, is not a node at all; an svg has the image role, so it is listed.
+      expect(roles, nodeProjection('embedded-surfaces',
+        new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), [
+          { testId: 'canvas', included: false },
+          { testId: 'svg', role: 'image' },
+          { testId: 'frame', role: 'iframe' },
+          { testId: 'host', role: 'textbox' },
+        ])).toEqual({ svg: 'image', frame: 'iframe', host: 'textbox' });
+      outcome.body = 'passed';
+    } finally {
+      if (outcome.body !== 'not-started') evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: outcome.body === 'passed' ? 'passed' : 'failed' });
+      evidence.finish(outcome);
+    }
+  });
+
+  it('P42O: records an isolated source-equivalent embedded-surface oracle', async () => {
+    const evidence = beginSyntheticCase('P42O');
+    let outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
+    try { outcome = await recordCanvasOracle(evidence, embeddedNativePair, fixture?.oracle, embeddedSurfaceHtml); }
+    catch { evidence.invalidate(); }
+    finally { embeddedNativePair = undefined; evidence.finish(outcome); }
   });
 
   it('drops a name taken from a block placeholder once the editor has content, and keeps one from the host', async () => {

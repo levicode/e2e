@@ -14,6 +14,34 @@ import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, Operatio
 import { web, type Browser, type WebMedia, type WebOptions } from '../../src/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { beginSyntheticCase, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+
+/** Synchronous facts preserve the original operation and sequential shutdown. */
+class MediaEvidence {
+  readonly evidence: SyntheticEvidence = beginSyntheticCase('P35');
+  readonly outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
+  currentPhase: SyntheticPhase = 'init';
+  private active: { section: keyof SyntheticOutcome; phase: SyntheticPhase } | undefined;
+
+  phase(section: keyof SyntheticOutcome, phase: SyntheticPhase): void {
+    this.returned();
+    this.currentPhase = phase;
+    this.outcome[section] = 'incomplete';
+    this.active = { section, phase };
+    this.evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+  }
+  returned(): void {
+    if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'passed' });
+    this.active = undefined;
+  }
+  passed(section: keyof SyntheticOutcome): void { this.returned(); this.outcome[section] = 'passed'; }
+  failed(section: keyof SyntheticOutcome): void {
+    if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
+    this.active = undefined;
+    this.outcome[section] = 'failed';
+  }
+  finish(): void { this.evidence.finish(this.outcome); }
+}
 
 function cleanup(): EngineCleanupContext {
   return { signal: new AbortController().signal, timeoutMs: 30_000 };
@@ -50,20 +78,31 @@ describe('media emulation', () => {
   });
 
   /** Boots one engine into a running attempt, before the first navigation. */
-  async function boot(options: WebOptions): Promise<EngineHandle> {
+  async function boot(options: WebOptions, evidence?: MediaEvidence): Promise<EngineHandle> {
     const engine = web(options);
-    await engine.init!({
-      runId: 'run-media', targetName: 'web', projectRoot: process.cwd(),
-      app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
-      workerSlot: 0, log: () => undefined, signal: new AbortController().signal,
-    });
-    await engine.startAttempt!({ attemptId: 'm1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
-    return engine;
+    try {
+      evidence?.phase('setup', 'init');
+      await engine.init!({
+        runId: 'run-media', targetName: 'web', projectRoot: process.cwd(),
+        app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
+        workerSlot: 0, log: () => undefined, signal: new AbortController().signal,
+      });
+      evidence?.phase('setup', 'start');
+      await engine.startAttempt!({ attemptId: 'm1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+      evidence?.passed('setup');
+      return engine;
+    } catch (cause) { evidence?.failed('setup'); evidence?.finish(); throw cause; }
   }
 
-  async function shutdown(engine: EngineHandle): Promise<void> {
-    await engine.endAttempt!(cleanup());
-    await engine.dispose!(cleanup());
+  async function shutdown(engine: EngineHandle, evidence?: MediaEvidence): Promise<void> {
+    try {
+      evidence?.phase('cleanup', 'end');
+      await engine.endAttempt!(cleanup());
+      evidence?.phase('cleanup', 'dispose');
+      await engine.dispose!(cleanup());
+      evidence?.passed('cleanup');
+    } catch (cause) { evidence?.failed('cleanup'); throw cause; }
+    finally { evidence?.finish(); }
   }
 
   const fixtures = new WeakMap<EngineHandle, Browser>();
@@ -83,8 +122,10 @@ describe('media emulation', () => {
     return browser;
   }
 
-  async function openMedia(engine: EngineHandle): Promise<MediaReading> {
+  async function openMedia(engine: EngineHandle, evidence?: MediaEvidence): Promise<MediaReading> {
+    evidence?.phase('body', 'navigate');
     await engine.session!.open!(`${app.url}/media`, operation());
+    evidence?.phase('body', 'media-read');
     return read(engine);
   }
 
@@ -130,23 +171,38 @@ describe('media emulation', () => {
   });
 
   it('emulates media set before the first navigation from first paint, and holds a change for the rest of the attempt', async () => {
-    const engine = await boot({ colorScheme: 'dark' });
-    const browser = fixtureOf(engine);
+    const evidence = new MediaEvidence();
+    const engine = await boot({ colorScheme: 'dark' }, evidence);
+    let browser: Browser;
     try {
+      evidence.phase('setup', 'fixture-create');
+      browser = fixtureOf(engine);
+      evidence.passed('setup');
+    } catch (cause) { evidence.failed('setup'); evidence.finish(); throw cause; }
+    try {
+      evidence.phase('body', 'media-configure');
       await browser.emulateMedia({ reducedMotion: 'reduce' });
-      expect(await openMedia(engine)).toEqual(loadedWith({ dark: true, reduce: true }));
+      expect(await openMedia(engine, evidence)).toEqual(loadedWith({ dark: true, reduce: true }));
       // A change applies to the open page at once; a feature left out keeps its value.
+      evidence.phase('body', 'media-configure');
       await browser.emulateMedia({ colorScheme: 'light' });
+      evidence.phase('body', 'media-read');
       expect(await read(engine)).toEqual({ ...loadedWith({ dark: false, reduce: true }), atLoad: { dark: true, reduce: true } });
       const expected = loadedWith({ dark: false, reduce: true });
+      evidence.phase('body', 'restart');
       await engine.session!.restart!(operation());
-      expect(await openMedia(engine)).toEqual(expected);
+      expect(await openMedia(engine, evidence)).toEqual(expected);
+      evidence.phase('body', 'state-reset');
       await engine.session!.reset!(operation());
-      expect(await openMedia(engine)).toEqual(expected);
+      expect(await openMedia(engine, evidence)).toEqual(expected);
+      evidence.phase('body', 'media-configure');
       await browser.emulateMedia({ colorScheme: 'no-preference', reducedMotion: 'no-preference' });
+      evidence.phase('body', 'media-read');
       expect(await read(engine)).toMatchObject({ color: LIGHT, transition: '0.3s', dark: false, reduce: false });
-    } finally {
-      await shutdown(engine);
+      evidence.passed('body');
+    } catch (cause) { evidence.failed('body'); throw cause; }
+    finally {
+      await shutdown(engine, evidence);
     }
   });
 

@@ -52,7 +52,11 @@ test('the two exact matrices preserve historical contracts and restore eight pre
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8); assert.equal(new Set(PREPARATION_SETTLEMENT_TESTS).size, 8);
   assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 31); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 31);
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 37); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
-  assert.equal(CANDIDATE_NATIVE_DIAGNOSTICS.length, 1);
+  assert.deepEqual(CANDIDATE_NATIVE_DIAGNOSTICS, [
+    'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
+    'native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable',
+    'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline',
+  ]);
   assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 31);
   const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
   verifyNativeInventory(inventory);

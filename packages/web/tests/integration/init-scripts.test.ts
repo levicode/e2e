@@ -17,6 +17,7 @@ import { createBrowserFixture, type Browser } from '../../src/browser.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import type { WebOptions } from '../../src/web-options.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { beginSyntheticCase, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 
 declare global {
   interface Window {
@@ -87,20 +88,91 @@ describe('init scripts', () => {
   const seenAtBoot = (browser: Browser) => browser.evaluate(() => window.seenAtBoot ?? null);
 
   it('runs the configured scripts in order before the page, in frames, new tabs, and replaced contexts', async () => {
+    const evidence = beginSyntheticCase('P22');
+    /** Boots one worker of a surface with `options` and runs `body` in one attempt with its `browser` fixture. */
+    async function diagnosedAttempt(options: WebOptions, body: (browser: Browser, surface: NativeSurface) => Promise<void>): Promise<void> {
+      const outcome: SyntheticOutcome = { setup: 'incomplete', body: 'not-started', cleanup: 'not-started' };
+      let phase: SyntheticPhase = 'init';
+      let section: 'setup' | 'body' | 'cleanup' = 'setup';
+      const surface = new NativeSurface(options);
+      const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-init-scripts-artifacts-'));
+      try {
+        evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+        await surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: { site: '127.0.0.1' },
+          env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+        evidence.record({ kind: 'phase', section, phase, state: 'passed' }); phase = 'start';
+        evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+        await surface.startAttempt({ attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+        evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+        const browser = createBrowserFixture(surface.fixtureSurface(), {
+          operation,
+          app: { resolveUrl: (target: string) => new URL(target, url).href },
+          timeouts: { test: 30_000, assertion: 5_000 },
+          expectable: (target: object) => target,
+          fixture: (_name: string, target: object) => target,
+        } as unknown as EngineFixtureContext);
+        outcome.setup = 'passed'; outcome.body = 'incomplete'; section = 'body'; phase = 'action';
+        evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+        await body(browser, surface);
+        outcome.body = 'passed'; evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+      } catch (cause) {
+        outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+        throw cause;
+      } finally {
+        section = 'cleanup'; outcome.cleanup = 'incomplete'; phase = 'end';
+        try {
+          evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+          let endFailed = false;
+          await surface.endAttempt(cleanup()).catch(() => {
+            endFailed = true; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+          });
+          if (!endFailed) evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+          phase = 'dispose'; evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+          await surface.dispose(cleanup());
+          evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+          rmSync(artifactsDir, { recursive: true, force: true });
+          outcome.cleanup = endFailed ? 'failed' : 'passed';
+        } catch (cause) {
+          outcome.cleanup = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+          // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+          throw cause;
+        } finally { evidence.finish(outcome); }
+      }
+    }
+
+    /** Stage ordinals identify fixture samples, never native document/session tenure. */
+    const recordTrail = (phase: 'main' | 'frame' | 'popup' | 'reset', fixtureLifecycleOrdinal: 0 | 1 | 2 | 3, trail: unknown): void => {
+      for (const scriptOrdinal of [0, 1, 2, 3] as const) evidence.observe(() => {
+        const expected = ['source', 'file', 'function', 'method'];
+        const valid = Array.isArray(trail) && trail.every(item => typeof item === 'string' && expected.includes(item));
+        if (!valid) evidence.invalidate();
+        return { kind: 'script-boot', phase, fixtureLifecycleOrdinal, scriptOrdinal,
+          executionCount: valid ? trail.filter(item => item === expected[scriptOrdinal]).length : null,
+          exactOrder: valid ? trail.length === expected.length && trail.every((item, index) => item === expected[index]) : null };
+      });
+    };
     const initScripts: WebOptions['initScripts'] = [
       "(window.trail ??= []).push('source');",
       { path: 'from-file.js' },
       () => { (window.trail ??= []).push('function'); },
       { method() { (window.trail ??= []).push('method'); } }.method,
     ];
-    await attempt({ initScripts }, async (browser, surface) => {
+    await diagnosedAttempt({ initScripts }, async (browser, surface) => {
       const expected = ['source', 'file', 'function', 'method'];
+      evidence.record({ kind: 'phase', section: 'body', phase: 'navigate', state: 'enter' });
       await browser.goto('/framed');
-      expect(await seenAtBoot(browser)).toEqual(expected);
-      await expect.poll(() => browser.evaluate(() =>
-        document.querySelector('iframe')?.contentWindow?.seenAtBoot ?? null,
-      )).toEqual(expected);
+      evidence.record({ kind: 'phase', section: 'body', phase: 'navigate', state: 'passed' });
+      const mainTrail = await seenAtBoot(browser); recordTrail('main', 0, mainTrail);
+      expect(mainTrail).toEqual(expected);
+      let frameTrail: unknown = null;
+      // The extra local continuation changes scheduling, not the original renderer request or poll timeout.
+      try {
+        await expect.poll(() => browser.evaluate(() =>
+          document.querySelector('iframe')?.contentWindow?.seenAtBoot ?? null,
+        ).then(value => { frameTrail = value; return value; })).toEqual(expected);
+      } finally { recordTrail('frame', 1, frameTrail); }
 
+      evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'enter' });
       const tabTrail = await browser.evaluate((target) => new Promise<string[]>((resolve, reject) => {
         let tab: Window | null = null;
         const loaded = (event: MessageEvent) => {
@@ -117,11 +189,16 @@ describe('init scripts', () => {
           reject(new Error('The init-script fixture popup did not open'));
         }
       }), `${url}/`);
+      evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'passed' });
+      recordTrail('popup', 2, tabTrail);
       expect(tabTrail).toEqual(expected);
 
+      evidence.record({ kind: 'phase', section: 'body', phase: 'reset', state: 'enter' });
       await surface.reset(operation());
+      evidence.record({ kind: 'phase', section: 'body', phase: 'reset', state: 'passed' });
       await browser.goto('/');
-      expect(await seenAtBoot(browser)).toEqual(expected);
+      const resetTrail = await seenAtBoot(browser); recordTrail('reset', 3, resetTrail);
+      expect(resetTrail).toEqual(expected);
     });
   });
 

@@ -1,13 +1,14 @@
 /** Real CDP transport drops preserve only the dedicated persistent context, never a replacement. */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { connect as connectSocket, createServer, type AddressInfo, type Socket } from 'node:net';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type TestContext } from 'vitest';
 import { chromium, type Browser as HostBrowser, type ConnectOverCDPOptions } from 'playwright-core';
-import type { EngineHandle, OperationContext } from 'e2e/engine';
+import { TestError, type EngineHandle, type OperationContext } from 'e2e/engine';
 import { web as webEngine, type WebConnectOptions, type WebOptions, type Browser } from '../../src/index.ts';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
@@ -16,6 +17,28 @@ import { NativeClient } from '../../src/native/client.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { beginSyntheticCase, type SyntheticCaseId, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEvidence, type RecoverySection } from '../helpers/synthetic-native-outcomes.ts';
+
+const recoveryEvidence = new AsyncLocalStorage<RecoveryEvidence>();
+const recoveryTasks = new WeakMap<object, RecoveryEvidence>();
+function recoveryCase(id: SyntheticCaseId, body: () => Promise<void>) {
+  return async (context: TestContext): Promise<void> => {
+    const record = new RecoveryEvidence(beginSyntheticCase(id));
+    recoveryTasks.set(context.task, record);
+    return record.observer.run(() => recoveryEvidence.run(record, async () => {
+      try { await body(); record.passed('body'); }
+      catch (cause) {
+        if (record.outcome[record.section] !== 'passed' || !Object.values(record.outcome).includes('failed')) record.failed();
+        throw cause;
+      }
+      // Footer waits for the ORIGINAL afterEach backstop, including startup failure.
+    }));
+  };
+}
+function recoveryPhase(phase: SyntheticPhase, section?: RecoverySection): void {
+  recoveryEvidence.getStore()?.enter(phase, section);
+}
 
 /** One operation's budget, independent of model calls or the runner's test timeout. */
 function operation(timeoutMs = 10_000, signal = new AbortController().signal): OperationContext {
@@ -117,15 +140,16 @@ describe('CDP session recovery', () => {
     disconnectEvents = 0;
     const connect = NativeClient.connect;
     vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) =>
-      connect(channel, capabilities, context, async event => {
+      observeSyntheticConnection(connect(channel, capabilities, context, async event => {
         await onEvent(event);
         if (event.event === 'browser.disconnected') disconnectEvents += 1;
-      }),
+      })),
     );
   });
 
   /** Wait for the adapter to consume the real disconnection, not an arbitrary delay. */
   async function disconnect(remote: RecoveryHost): Promise<void> {
+    recoveryPhase('disconnect');
     const previous = disconnectEvents;
     remote.disconnect();
     await expect.poll(() => disconnectEvents, { timeout: 5_000 }).toBeGreaterThan(previous);
@@ -141,7 +165,10 @@ describe('CDP session recovery', () => {
     if (artifactsDir !== undefined) rmSync(artifactsDir, { recursive: true, force: true });
   });
 
-  afterEach(async () => {
+  afterEach(async context => {
+    const diagnostic = recoveryTasks.get(context.task);
+    diagnostic?.enter('backstop', 'cleanup');
+    diagnostic?.evidence.record({ kind: 'ownership', phase: 'backstop', hosts: activeHosts.size, clients: activeEngines.size, relays: activeHosts.size, pendingCleanup: activeHosts.size + activeEngines.size + hostControls.size });
     const failures: unknown[] = [];
     const settle = async (work: readonly Promise<unknown>[]) => {
       for (const result of await Promise.allSettled(work)) if (result.status === 'rejected') failures.push(result.reason);
@@ -151,11 +178,16 @@ describe('CDP session recovery', () => {
     await settle([...activeHosts].flatMap(remote => [remote.closeRelay(), closeRemoteChrome(remote)]));
     activeEngines.clear(); activeHosts.clear(); hostControls.clear(); fixtures.clear();
     vi.restoreAllMocks();
+    if (diagnostic) {
+      diagnostic.finishBackstop(failures.length > 0);
+      recoveryTasks.delete(context.task);
+    }
     if (failures.length > 0) throw new AggregateError(failures, 'Recovery fixture cleanup failed');
   });
 
   /** Registers the host before attempt setup, so a failed setup cannot leak Chrome. */
   async function host(): Promise<RecoveryHost> {
+    recoveryPhase('host');
     const chrome = await launchRemoteChrome();
     let remote: RecoveryHost;
     try { remote = { ...chrome, ...await relay(chrome.endpoint) }; } catch (cause) { await closeRemoteChrome(chrome); throw cause; }
@@ -199,6 +231,7 @@ describe('CDP session recovery', () => {
 
   /** Resolve the actual active target through a unique page marker, not a matching URL. */
   async function witness(engine: EngineHandle, remote: RecoveryHost) {
+    recoveryPhase('witness');
     const marker = randomUUID();
     await fixtureOf(engine).evaluate((value) => { (window as unknown as { recoveryWitness: string }).recoveryWitness = value; return null; }, marker);
     const control = await hostControl(remote);
@@ -217,6 +250,7 @@ describe('CDP session recovery', () => {
 
   /** Starts the engine's attempt against a host-provisioned browser. */
   async function start(connect: WebConnectOptions | undefined, options: Omit<WebOptions, 'connect'> = {}, open = true): Promise<EngineHandle> {
+    recoveryPhase('start', 'setup');
     const engine = webEngine({ ...options, ...(connect === undefined ? {} : { connect }) });
     activeEngines.add(engine);
     const info = { runId: 'run-recovery', targetName: 'web', projectRoot: process.cwd(),
@@ -226,6 +260,8 @@ describe('CDP session recovery', () => {
     await engine.init!({ ...info, env: { ...prepared?.env, ...info.env }, workerSlot: 0 });
     await engine.startAttempt!({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
     if (open) await engine.session!.open!(`${app.url}/login`, operation());
+    recoveryEvidence.getStore()?.passed('setup');
+    recoveryPhase('dispatch', 'body');
     return engine;
   }
 
@@ -277,7 +313,7 @@ describe('CDP session recovery', () => {
     await engine.artifacts!.stopVideo!(operation());
   });
 
-  it.each(['open', 'video'] as const)('dismisses an unhandled activated beforeunload on first %s instead of silently accepting it', async first => {
+  for (const first of ['open', 'video'] as const) it(`dismisses an unhandled activated beforeunload on first ${first} instead of silently accepting it`, recoveryCase(first === 'open' ? 'P02' : 'P03', async () => {
     const remote = await host(); const page = await activatedHost(remote); const url = page.url();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint }, {}, false);
     expect(page.url()).toBe(url);
@@ -285,35 +321,14 @@ describe('CDP session recovery', () => {
     await expect(activating).rejects.toBeDefined();
     expect(page.url()).toBe(url);
     expect(await page.locator('#activate-beforeunload').count()).toBe(1);
-  });
+  }));
 
-  it('keeps the exact page, document state, storage, viewport, routes, and dialog handlers', async () => {
+  it('keeps the exact page, document state, storage, viewport, routes, and dialog handlers', recoveryCase('P04', async () => {
     // Synthetic-case-only diagnostic: bounded closed facts, never request args or error text.
     type Step = 'host' | 'start' | 'witness' | 'viewport' | 'seed-state' | 'initial-locate' | 'initial-observe' |
       'other-tab' | 'route' | 'dialog' | 'disconnect' | 'recovered-locate' | 'recovered-state' | 'stale-element' |
       'stale-viewport' | 'stale-coordinate' | 'recovered-observe' | 'recovered-action' | 'dispose' | 'close-host';
     let step: Step = 'host';
-    const originalRequest = NativeClient.prototype.request;
-    const commands = ['scope.open', 'scope.configure', 'network.routes.replace', 'page.activate', 'page.navigate',
-      'browser.observe', 'browser.query', 'browser.perform', 'browser.performAt', 'scope.reconnect', 'scope.end',
-      'fixture.evaluate', 'fixture.viewport', 'page.title'] as const;
-    type Result = Awaited<ReturnType<NativeClient['request']>>;
-    type Outcome = Pick<Result, 'operationSeq' | 'ok' | 'effects' | 'scopeState'> & {
-      step: Step; command: typeof commands[number] | 'other'; error: string;
-    };
-    let firstRefusal: Outcome | undefined;
-    let firstTerminal: Outcome | undefined;
-    const requestSpy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(async function (this: NativeClient, ...args) {
-      const at = step;
-      const result = await originalRequest.apply(this, args);
-      // request returns only after production framing, correlation and protocol validation.
-      const fact: Outcome = { step: at, command: commands.find(command => command === args[0]) ?? 'other',
-        operationSeq: result.operationSeq, ok: result.ok, effects: result.effects,
-        scopeState: result.scopeState, error: result.ok ? 'none' : (result.error?.code ?? 'none') };
-      if (!result.ok) firstRefusal ??= fact;
-      if (result.scopeState !== 'usable' || result.effects === 'unknown') firstTerminal ??= fact;
-      return result;
-    });
     let startupFailed = false;
     let startupStep: Step | 'none' = 'none';
     let bodyFailed = false;
@@ -328,18 +343,18 @@ describe('CDP session recovery', () => {
       const remote = await host();
       let provisioned = 0;
       let reconnected = 0;
-      step = 'start';
+      step = 'start'; recoveryPhase('start', 'setup');
       const engine = await start({
         cdpEndpoint: () => { provisioned += 1; return remote.endpoint; },
         reconnectEndpoint: () => { reconnected += 1; return remote.endpoint; },
       });
-      step = 'witness';
+      step = 'witness'; recoveryPhase('witness', 'body');
       try {
         const fixture = fixtureOf(engine);
         const original = await witness(engine, remote);
-        step = 'viewport';
+        step = 'viewport'; recoveryPhase('viewport', 'body');
         await fixture.setViewport({ width: 800, height: 600 });
-        step = 'seed-state';
+        step = 'seed-state'; recoveryPhase('seed-state', 'body');
         await fixture.evaluate(() => {
           sessionStorage.setItem('attempt', 'kept');
           localStorage.setItem('login', 'kept');
@@ -347,26 +362,26 @@ describe('CDP session recovery', () => {
           (document.querySelector('input[name=user]') as HTMLInputElement).value = 'unsaved';
           return null;
         });
-        step = 'initial-locate';
+        step = 'initial-locate'; recoveryPhase('initial-locate', 'body');
         const stale = (await engine.locate!(heading, operation()))[0]!;
-        step = 'initial-observe';
+        step = 'initial-observe'; recoveryPhase('initial-observe', 'body');
         const observation = await engine.observe!(operation());
         // Another tab at the same URL makes URL-based selection ambiguous.
-        step = 'other-tab';
+        step = 'other-tab'; recoveryPhase('other-tab', 'body');
         const other = await original.page.context().newPage();
         await other.goto(await fixture.url());
         await other.locator('h1').evaluate((node) => { node.textContent = 'Wrong tab'; });
 
-        step = 'route';
+        step = 'route'; recoveryPhase('route', 'body');
         await fixture.route('**/kept-route', (route) => route.fulfill({ body: 'route kept' }));
-        step = 'dialog';
+        step = 'dialog'; recoveryPhase('dialog', 'body');
         await fixture.onDialog('accept');
-        step = 'disconnect';
+        step = 'disconnect'; recoveryPhase('disconnect', 'body');
         await disconnect(remote);
 
-        step = 'recovered-locate';
+        step = 'recovered-locate'; recoveryPhase('recovered-locate', 'body');
         expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login');
-        step = 'recovered-state';
+        step = 'recovered-state'; recoveryPhase('recovered-state', 'body');
         expect(await fixture.evaluate(() => (window as unknown as { recoveryWitness: string }).recoveryWitness)).toBe(original.marker);
         const session = await original.page.context().newCDPSession(original.page);
         expect((await session.send('Target.getTargetInfo')).targetInfo.targetId).toBe(original.targetId);
@@ -377,17 +392,17 @@ describe('CDP session recovery', () => {
         expect(await fixture.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 800, height: 600 });
         expect(await fixture.evaluate(async () => (await fetch('/kept-route')).text())).toBe('route kept');
         expect(await fixture.evaluate(() => confirm('Handler survived?'))).toBe(true);
-        step = 'stale-element';
+        step = 'stale-element'; recoveryPhase('stale-element', 'body');
         await expect(engine.perform!(stale.ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
         expect(observation.viewportRef).toBeDefined();
-        step = 'stale-viewport';
+        step = 'stale-viewport'; recoveryPhase('stale-viewport', 'body');
         await expect(engine.perform!(observation.viewportRef!, { kind: 'swipe', direction: 'down' }, operation()))
           .rejects.toMatchObject({ code: 'NODE_STALE' });
-        step = 'stale-coordinate';
+        step = 'stale-coordinate'; recoveryPhase('stale-coordinate', 'body');
         await expect(engine.performAt!({ x: 1, y: 1 }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-        step = 'recovered-observe';
+        step = 'recovered-observe'; recoveryPhase('recovered-observe', 'body');
         await engine.observe!(operation());
-        step = 'recovered-action';
+        step = 'recovered-action'; recoveryPhase('recovered-action', 'body');
         await engine.performAt!({ x: 1, y: 1 }, { kind: 'tap' }, operation());
         expect(provisioned).toBe(1);
         expect(reconnected).toBe(1);
@@ -395,14 +410,14 @@ describe('CDP session recovery', () => {
         bodyFailed = true; bodyStep = step;
         throw cause;
       } finally {
-        step = 'dispose';
+        step = 'dispose'; recoveryPhase('dispose', 'cleanup');
         try {
           await engine.dispose!(cleanup());
           await expect(fixtureOf(engine).url()).rejects.toMatchObject({ code: 'CANCELLED' });
           await expect.poll(() => remote.connections()).toBe(0);
           expect(remote.proc.exitCode).toBeNull();
           expect(remote.proc.signalCode).toBeNull();
-          step = 'close-host';
+          step = 'close-host'; recoveryPhase('close-host', 'cleanup');
           await closeRemoteChrome(remote);
         } catch (cause) {
           preserveCleanupFailure(cause);
@@ -413,49 +428,96 @@ describe('CDP session recovery', () => {
       if (!bodyFailed && !cleanupFailed) { startupFailed = true; startupStep = step; }
       throw cause;
     } finally {
-      requestSpy.mockRestore();
-      if (startupFailed || bodyFailed || cleanupFailed) console.error('synthetic-recovery-outcome', JSON.stringify({
-        case: 'exact-page-recovery', startupFailed, startupStep, bodyFailed, bodyStep, cleanupFailed, cleanupStep,
-        firstRefusal: firstRefusal ?? null, firstTerminal: firstTerminal ?? null,
-      }));
-    }
-  }, 60_000);
+      const record = recoveryEvidence.getStore();
+      if (startupFailed) { record?.enter(startupStep as Step, 'setup'); record?.failed('setup'); }
+      if (bodyFailed) { record?.enter(bodyStep as Step, 'body'); record?.failed('body'); }
+      else if (!startupFailed) record?.passed('body');
+      if (cleanupFailed) { record?.enter(cleanupStep as Step, 'cleanup'); record?.failed('cleanup'); }
 
-  it('emulates the configured and requested media on the persistent page, after reconnect too', async () => {
-    const remote = await host();
-    const engine = await start(
-      { cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint },
-      { colorScheme: 'dark' },
-    );
-    const media = () => fixtureOf(engine).evaluate(() => ({
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
-      reduce: matchMedia('(prefers-reduced-motion: reduce)').matches,
-    }));
-    try {
-      await fixtureOf(engine).emulateMedia({ reducedMotion: 'reduce' });
-      expect(await media()).toEqual({ dark: true, reduce: true });
-      const fixture = fixtureOf(engine);
-      await fixture.evaluate(() => {
-        (window as unknown as { recoveryPopup: Window | null }).recoveryPopup = window.open('/');
-        return null;
-      });
-      await expect.poll(() => fixture.evaluate(() => {
-        const popup = (window as unknown as { recoveryPopup: Window | null }).recoveryPopup;
-        return popup !== null && popup.location.pathname === '/' && popup.document.readyState === 'complete';
-      })).toBe(true);
-      const popupReduced = () => fixture.evaluate(() => (window as unknown as { recoveryPopup: Window }).recoveryPopup.matchMedia('(prefers-reduced-motion: reduce)').matches);
-      expect(await popupReduced()).toBe(true);
-      await disconnect(remote);
-      expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login');
-      expect(await media()).toEqual({ dark: true, reduce: true });
-      // The actual popup Window survives, not another page chosen by URL.
-      expect(await fixture.evaluate(() => (window as unknown as { recoveryPopup: Window }).recoveryPopup.closed)).toBe(false);
-      expect(await popupReduced()).toBe(true);
-    } finally {
-      await engine.dispose!(cleanup());
-      await closeRemoteChrome(remote);
     }
-  }, 60_000);
+  }), 60_000);
+
+  it('emulates the configured and requested media on the persistent page, after reconnect too', recoveryCase('P05', async () => {
+    const record = recoveryEvidence.getStore()!;
+    const evidence = record.evidence;
+    const outcome = record.outcome;
+    let section: 'setup' | 'body' | 'cleanup' = 'setup';
+    let phase: SyntheticPhase = 'host';
+    /** Record only the current original operation, without inserting an awaited wrapper. */
+    const enter = (next: SyntheticPhase): void => { phase = next; record.enter(phase, section); };
+    const passed = (): void => evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+    enter('host');
+    try {
+      const remote = await host(); passed();
+      enter('start');
+      const engine = await start(
+        { cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint },
+        { colorScheme: 'dark' },
+      ); passed();
+      outcome.setup = 'passed'; section = 'body'; outcome.body = 'incomplete';
+      const media = () => fixtureOf(engine).evaluate(() => ({
+        dark: matchMedia('(prefers-color-scheme: dark)').matches,
+        reduce: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      }));
+      try {
+        enter('media-configure');
+        await fixtureOf(engine).emulateMedia({ reducedMotion: 'reduce' }); passed();
+        enter('media-read');
+        expect(await media()).toEqual({ dark: true, reduce: true }); passed();
+        const fixture = fixtureOf(engine);
+        enter('popup-open');
+        const opened = await fixture.evaluate(() => {
+          (window as unknown as { recoveryPopup: Window | null }).recoveryPopup = window.open('/');
+          const popup = (window as unknown as { recoveryPopup: Window | null }).recoveryPopup;
+          let readFailed = false;
+          const read = (getter: () => boolean): boolean | null => { try { return getter(); } catch { readFailed = true; return null; } };
+          return { present: popup !== null, closed: read(() => popup!.closed),
+            activationActive: read(() => navigator.userActivation.isActive), activationEver: read(() => navigator.userActivation.hasBeenActive), readState: readFailed ? 'failed' as const : 'ok' as const };
+        });
+        evidence.observe(() => ({ kind: 'popup-readiness', phase: 'open-return', sampleOrdinal: 0,
+          ...opened, pathMatches: null, complete: null, predicate: null })); passed();
+        enter('readiness');
+        let sampleOrdinal = 0;
+        await expect.poll(async () => {
+          const sampled = await fixture.evaluate(() => {
+            const popup = (window as unknown as { recoveryPopup: Window | null }).recoveryPopup;
+            // Keep the original predicate and its throwing/short-circuit order before optional diagnostics.
+            const predicate = popup !== null && popup.location.pathname === '/' && popup.document.readyState === 'complete';
+            let readFailed = false;
+            const read = (getter: () => boolean): boolean | null => { try { return getter(); } catch { readFailed = true; return null; } };
+            return { predicate, present: popup !== null, closed: read(() => popup!.closed),
+              pathMatches: read(() => popup!.location.pathname === '/'), complete: read(() => popup!.document.readyState === 'complete'),
+              activationActive: read(() => navigator.userActivation.isActive), activationEver: read(() => navigator.userActivation.hasBeenActive), readState: readFailed ? 'failed' as const : 'ok' as const };
+          });
+          // No additional browser request; serialization and this continuation can still perturb polling cadence.
+          if (sampleOrdinal < 15) evidence.observe(() => ({ kind: 'popup-readiness', phase: 'ready-sample', sampleOrdinal: ++sampleOrdinal, ...sampled }));
+          else evidence.invalidate();
+          return sampled.predicate;
+        }).toBe(true); passed();
+        const popupReduced = () => fixture.evaluate(() => (window as unknown as { recoveryPopup: Window }).recoveryPopup.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        enter('media-read'); expect(await popupReduced()).toBe(true); passed();
+        enter('disconnect'); await disconnect(remote); passed();
+        enter('recovered-locate'); expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login'); passed();
+        enter('media-read'); expect(await media()).toEqual({ dark: true, reduce: true }); passed();
+        // The actual popup Window survives, not another page chosen by URL.
+        enter('popup'); expect(await fixture.evaluate(() => (window as unknown as { recoveryPopup: Window }).recoveryPopup.closed)).toBe(false); passed();
+        enter('media-read'); expect(await popupReduced()).toBe(true); passed();
+        outcome.body = 'passed';
+      } catch (cause) {
+        outcome.body = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+        throw cause;
+      } finally {
+        section = 'cleanup'; outcome.cleanup = 'incomplete';
+        enter('dispose'); await engine.dispose!(cleanup()); passed();
+        enter('close-host'); await closeRemoteChrome(remote); passed();
+        outcome.cleanup = 'passed';
+      }
+    } catch (cause) {
+      // A body rejection propagating through successful cleanup is not a cleanup failure.
+      if (section !== 'body' && outcome[section] !== 'passed') { outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' }); }
+      throw cause;
+    }
+  }), 60_000);
 
   it('runs configured and test init scripts once per document, after reconnect too', async () => {
     const remote = await host();
@@ -480,7 +542,7 @@ describe('CDP session recovery', () => {
     }
   }, 60_000);
 
-  it('fails an uncertain click without reconnecting or dispatching it twice', async () => {
+  it('fails an uncertain click without reconnecting or dispatching it twice', recoveryCase('P06', async () => {
     const remote = await host();
     let reconnected = 0;
     const engine = await start({
@@ -510,20 +572,29 @@ describe('CDP session recovery', () => {
           void disconnect(remote).then(() => debuggerSession.send('Debugger.resume')).then(() => resolve(), reject);
         });
       });
+      recoveryPhase('locate');
       const [button] = await engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Purchase', exact: true } } }, operation());
+      recoveryPhase('perform');
       await expect(engine.perform!(button!.ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ retryable: false });
       await transportDropped;
       expect(reconnected).toBe(0);
+      recoveryPhase('observe');
       await engine.observe!(operation());
       expect(await fixtureOf(engine).evaluate(() => sessionStorage.getItem('clicks'))).toBe('1');
       expect(reconnected).toBe(1);
+    } catch (cause) {
+      recoveryEvidence.getStore()?.failed('body');
+      throw cause;
     } finally {
+      recoveryEvidence.getStore()?.passed('body');
+      recoveryPhase('dispose', 'cleanup');
       await engine.dispose!(cleanup());
       await closeRemoteChrome(remote);
+      recoveryEvidence.getStore()?.passed('cleanup');
     }
-  }, 60_000);
+  }), 60_000);
 
-  it('rejects a different browser and never falls back to the provisioning resolver', async () => {
+  it('rejects a different browser and never falls back to the provisioning resolver', recoveryCase('P07', async () => {
     const remote = await host();
     const replacement = await host();
     let provisioned = 0;
@@ -533,32 +604,48 @@ describe('CDP session recovery', () => {
     });
     try {
       await disconnect(remote);
+      recoveryPhase('observe');
       await expect(engine.observe!(operation())).rejects.toThrow(/different browser/);
+      recoveryPhase('observe');
       await expect(engine.observe!(operation())).rejects.toThrow(/different browser/);
       expect(provisioned).toBe(1);
       expect(replacement.proc.exitCode).toBeNull();
+    } catch (cause) {
+      recoveryEvidence.getStore()?.failed('body');
+      throw cause;
     } finally {
+      recoveryEvidence.getStore()?.passed('body');
+      recoveryPhase('dispose', 'cleanup');
       await engine.dispose!(cleanup());
       await closeRemoteChrome(remote);
       await closeRemoteChrome(replacement);
+      recoveryEvidence.getStore()?.passed('cleanup');
     }
-  }, 60_000);
+  }), 60_000);
 
-  it('rejects a missing active target even when another tab has the same URL', async () => {
+  it('rejects a missing active target even when another tab has the same URL', recoveryCase('P08', async () => {
     const remote = await host();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
     try {
       const original = await witness(engine, remote);
       const other = await original.page.context().newPage();
       await other.goto(await fixtureOf(engine).url());
+      recoveryPhase('target-close');
       await original.page.close();
       await disconnect(remote);
+      recoveryPhase('observe');
       await expect(engine.observe!(operation())).rejects.toThrow(/original page no longer exists/);
+    } catch (cause) {
+      recoveryEvidence.getStore()?.failed('body');
+      throw cause;
     } finally {
+      recoveryEvidence.getStore()?.passed('body');
+      recoveryPhase('dispose', 'cleanup');
       await engine.dispose!(cleanup());
       await closeRemoteChrome(remote);
+      recoveryEvidence.getStore()?.passed('cleanup');
     }
-  }, 60_000);
+  }), 60_000);
 
   it('bounds a hung reconnect resolver and propagates cancellation to it', async () => {
     const remote = await host();
@@ -577,7 +664,7 @@ describe('CDP session recovery', () => {
     }
   }, 60_000);
 
-  it('provisions a fresh browser for each attempt and refuses accidental reuse', async () => {
+  it('provisions a fresh browser for each attempt and refuses accidental reuse', recoveryCase('P09', async () => {
     const hosts: RecoveryHost[] = [];
     let provisioned = 0;
     let reuse = false;
@@ -591,21 +678,31 @@ describe('CDP session recovery', () => {
     });
     try {
       await fixtureOf(engine).evaluate(() => { localStorage.setItem('attempt', 'a1'); return null; });
+      recoveryPhase('end');
       await engine.endAttempt!(cleanup());
       fixtures.delete(engine);
+      recoveryPhase('start');
       await engine.startAttempt!({ attemptId: 'a2', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
       await engine.session!.open!(`${app.url}/login`, operation());
       expect(await fixtureOf(engine).evaluate(() => localStorage.getItem('attempt'))).toBeNull();
       expect(provisioned).toBe(2);
+      recoveryPhase('end');
       await engine.endAttempt!(cleanup());
       reuse = true;
+      recoveryPhase('start');
       await expect(engine.startAttempt!({ attemptId: 'a3', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace }))
         .rejects.toThrow(/reused a browser/);
+    } catch (cause) {
+      recoveryEvidence.getStore()?.failed('body');
+      throw cause;
     } finally {
+      recoveryEvidence.getStore()?.passed('body');
+      recoveryPhase('dispose', 'cleanup');
       await engine.dispose!(cleanup());
       await Promise.all(hosts.map(closeRemoteChrome));
+      recoveryEvidence.getStore()?.passed('cleanup');
     }
-  }, 60_000);
+  }), 60_000);
 
   it('shares recovery between concurrent operations while a cancelled waiter dispatches nothing', async () => {
     const remote = await host();
@@ -635,7 +732,7 @@ describe('CDP session recovery', () => {
     expect(reconnected).toBe(1);
   });
 
-  it('counts reconnect time against the operation budget', async () => {
+  it('counts reconnect time against the operation budget', recoveryCase('P10', async () => {
     const remote = await host();
     const engine = await start({
       cdpEndpoint: () => remote.endpoint,
@@ -646,33 +743,45 @@ describe('CDP session recovery', () => {
     });
     const original = await witness(engine, remote);
     await disconnect(remote);
-    await expect(fixtureOf(engine, 1_000).evaluate(async () => {
+    // The witness graph captured its original 10s config. Use a new real graph, not a mutable callback, for this 1s operation.
+    const budgeted = nativeBrowser(engine, () => operation(1_000), app.url);
+    let published = false;
+    const failure = await budgeted.evaluate(async () => {
       document.body.dataset['started'] = 'true';
       await new Promise((resolve) => setTimeout(resolve, 800));
       return 'too late';
-    })).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    }).then(value => { published = true; return value; }).catch((cause: unknown) => cause);
+    // Core's own timeout has no EngineError cause; a translated native timeout may have one.
+    expect(failure).toBeInstanceOf(TestError);
+    expect(failure).toMatchObject({ code: 'ACTION_FAILED', retryable: false });
     expect(await original.page.getAttribute('body', 'data-started')).toBe('true');
-  });
+    expect(published).toBe(false);
+  }));
 
-  it('resumes video recording on the recovered page', async () => {
+  it('resumes video recording on the recovered page', recoveryCase('P11', async () => {
     const remote = await host();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
+    recoveryPhase('recording-start');
     await engine.artifacts!.startVideo!(operation());
+    recoveryPhase('screenshot');
     await engine.artifacts!.screenshot('before-reconnect', operation());
     await disconnect(remote);
+    recoveryPhase('observe');
     await engine.observe!(operation());
     await fixtureOf(engine).evaluate(() => { document.body.style.background = 'blue'; return null; });
+    recoveryPhase('screenshot');
     await engine.artifacts!.screenshot('after-reconnect', operation());
     // The first segment may be lost during disconnect; the new segment must finalize.
+    recoveryPhase('recording-stop');
     await engine.artifacts!.stopVideo!(operation()).catch((cause: unknown) => {
       expect(cause).toMatchObject({ code: 'ENGINE_FAILURE' });
     });
     const video = path.join(artifactsDir, 'video/video-part2.webm');
     expect(existsSync(video)).toBe(true);
     expect(statSync(video).size).toBeGreaterThan(0);
-  }, 60_000);
+  }), 60_000);
 
-  it('recovers before arming a download waiter and runs its trigger once', async () => {
+  it('recovers before arming a download waiter and runs its trigger once', recoveryCase('P12', async () => {
     const remote = await host();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
     await fixtureOf(engine).evaluate(() => {
@@ -686,16 +795,20 @@ describe('CDP session recovery', () => {
     });
     await disconnect(remote);
     let triggered = 0;
+    recoveryPhase('download-arm');
     const download = await fixtureOf(engine).waitForDownload(async () => {
       triggered += 1;
+      recoveryPhase('locate');
       const [link] = await engine.locate!({ kind: 'selector', selector: '#download' }, operation());
+      recoveryPhase('perform');
       await engine.perform!(link!.ref, { kind: 'tap' }, operation());
     });
     expect(triggered).toBe(1);
     expect(readFileSync(path.join(artifactsDir, download.path), 'utf8')).toBe('download kept');
     const failure = new Error('test trigger failed');
+    recoveryPhase('download-arm');
     await expect(fixtureOf(engine).waitForDownload(async () => { throw failure; })).rejects.toBe(failure);
-  });
+  }));
 
   it('allows direct test-code mouse input using current geometry while observation-derived taps stay stale', async () => {
     const remote = await host();
@@ -778,7 +891,7 @@ describe('CDP session recovery', () => {
     expect(await fixture.evaluate(() => document.body.dataset['enters'] ?? '0')).toBe('2');
   });
 
-  it('rejects an observation that finishes during recovery and still requires new evidence', async () => {
+  it('rejects an observation that finishes during recovery and still requires new evidence', recoveryCase('P13', async () => {
     const remote = await host();
     let resumePixels!: () => void;
     let pixelsStarted!: () => void;
@@ -801,24 +914,34 @@ describe('CDP session recovery', () => {
       return pixels;
     });
     try {
+      recoveryPhase('observe');
       const oldObservation = engine.observe!(operation(), { pixels: true }).catch((cause: unknown) => cause);
       await pixelsReached;
       await disconnect(remote);
+      recoveryPhase('locate');
       const recovery = engine.locate!(heading, operation());
       await reconnectRequested;
       resumePixels();
       expect(await oldObservation).toMatchObject({ code: 'NODE_STALE' });
       resolveEndpoint(remote.endpoint);
       await recovery;
+      recoveryPhase('point-perform');
       await expect(engine.performAt!({ x: 20, y: 20 }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      recoveryPhase('observe');
       await engine.observe!(operation());
+      recoveryPhase('point-perform');
       await engine.performAt!({ x: 20, y: 20 }, { kind: 'tap' }, operation());
+    } catch (cause) {
+      recoveryEvidence.getStore()?.failed('body');
+      throw cause;
     } finally {
+      recoveryEvidence.getStore()?.passed('body');
+      recoveryPhase('dispose', 'cleanup');
       resumePixels();
       resolveEndpoint(remote.endpoint);
       pixelSpy.mockRestore();
     }
-  });
+  }));
 
   it('masks password fields in light and closed shadow DOM before and after reconnect', async () => {
     const remote = await host();

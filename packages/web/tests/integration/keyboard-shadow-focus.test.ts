@@ -1,13 +1,114 @@
 /** Focused typing validates the actual control inside open and closed shadow roots. */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { beginSyntheticCase, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { observeSyntheticConnection, SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
+
+/** Test-only boundaries. A missing footer remains unknown, including a hard test timeout. */
+class CaseEvidence {
+  readonly evidence: SyntheticEvidence;
+  readonly outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
+  readonly observer: SyntheticNativeObserver;
+  currentPhase: SyntheticPhase = 'init';
+  section: keyof SyntheticOutcome = 'setup';
+  private active: { section: keyof SyntheticOutcome; phase: SyntheticPhase } | undefined;
+  constructor(id: SyntheticCaseId) {
+    this.evidence = beginSyntheticCase(id);
+    this.observer = new SyntheticNativeObserver(this.evidence, () => this.currentPhase);
+  }
+  phase(section: keyof SyntheticOutcome, phase: SyntheticPhase): void {
+    // A different hook may start after a hard timeout; that is not a returned phase.
+    if (this.active?.section === section) this.returned();
+    else this.active = undefined;
+    this.section = section; this.currentPhase = phase;
+    if (this.outcome[section] !== 'failed') this.outcome[section] = 'incomplete';
+    this.active = { section, phase };
+    this.evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+  }
+  returned(): void {
+    if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'passed' });
+    this.active = undefined;
+  }
+  passed(section: keyof SyntheticOutcome): void {
+    if (this.active?.section === section) this.returned();
+    else this.active = undefined;
+    if (this.outcome[section] !== 'failed') this.outcome[section] = 'passed';
+  }
+  failed(section: keyof SyntheticOutcome = this.section): void {
+    if (this.active?.section === section) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
+    this.active = undefined;
+    this.outcome[section] = 'failed';
+  }
+  finish(): void { this.observer.close(); this.evidence.finish(this.outcome); }
+}
+
+/** Capture only this file's owned fixture connections; never patch a client prototype. */
+function watchConnections(evidence: CaseEvidence | undefined, clients: Set<NativeClient>): () => void {
+  try {
+    const connect = NativeClient.connect;
+    const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => {
+      const pending = connect(...args);
+      // Passive observation preserves the exact original Promise but adds a microtask observer.
+      void pending.then(client => { clients.add(client); }, () => {}).catch(() => { evidence?.evidence.invalidate(); });
+      return observeSyntheticConnection(pending);
+    });
+    let restored = false;
+    return () => {
+      if (restored) return;
+      restored = true;
+      try { connection.mockRestore(); } catch { evidence?.evidence.invalidate(); }
+    };
+  } catch { evidence?.evidence.invalidate(); return () => {}; }
+}
 
 let fixture: NativeFixture | undefined;
 const operation = () => ({ ...fixture!.operation(), timeoutMs: 5_000 });
 
-beforeAll(async () => { fixture = await startNativeFixture('keyboard-shadow'); });
-beforeEach(async () => { await fixture!.browser.goto('about:blank'); });
-afterAll(async () => { await fixture?.close(); });
+const fixtureClients = new Set<NativeClient>();
+let restoreFixtureConnection = () => {};
+let restoreIframeConnection = () => {};
+let iframeEvidence: CaseEvidence | undefined;
+const iframeTasks = new WeakMap<object, CaseEvidence>();
+
+beforeAll(async () => {
+  const restore = restoreFixtureConnection = watchConnections(undefined, fixtureClients);
+  try { fixture = await startNativeFixture('keyboard-shadow'); }
+  finally { restore(); }
+});
+beforeEach((context) => {
+  const evidence = context.task.name === 'does not mistake the iframe host for an editable control when its button has focus'
+    ? new CaseEvidence('P23') : undefined;
+  if (evidence !== undefined) {
+    iframeEvidence = evidence;
+    iframeTasks.set(context.task, evidence);
+    restoreIframeConnection = watchConnections(evidence, fixtureClients);
+    for (const client of fixtureClients) evidence.observer.attach(client);
+  }
+  const open = async () => {
+    try {
+      evidence?.phase('setup', 'navigate');
+      await fixture!.browser.goto('about:blank');
+      evidence?.passed('setup');
+    } catch (cause) { evidence?.failed('setup'); throw cause; }
+  };
+  return evidence === undefined ? open() : evidence.observer.run(open);
+});
+afterEach((context) => {
+  // Stop observing the shared client before any other row can run, including shuffled runs.
+  const evidence = iframeTasks.get(context.task);
+  if (evidence !== undefined) { restoreIframeConnection(); evidence.observer.close(); }
+});
+afterAll(async () => {
+  try {
+    iframeEvidence?.phase('cleanup', 'dispose');
+    await fixture?.close();
+    iframeEvidence?.passed('cleanup');
+  } catch (cause) { iframeEvidence?.failed('cleanup'); throw cause; }
+  finally { restoreFixtureConnection(); restoreIframeConnection(); iframeEvidence?.finish(); }
+});
+// Shared beforeAll failure has no P23 body record. Its original hook failure is authoritative.
+// Validated-result slots cover only P23 navigation/body, not the shared fixture close.
 
 /** Create nested real shadow roots and record only events delivered to their focused leaf. */
 async function focusShadow(shadowMode: ShadowRootMode, markup: string): Promise<void> {
@@ -46,15 +147,24 @@ describe.each(['open', 'closed'] as const)('%s shadow focus', (mode) => {
   });
 });
 
-it('does not mistake the iframe host for an editable control when its button has focus', async () => {
-  await fixture!.browser.evaluate(async () => {
-    const frame = document.createElement('iframe');
-    const loaded = new Promise<void>((resolve) => { frame.addEventListener('load', () => resolve(), { once: true }); });
-    frame.srcdoc = '<button id="stop">Stop</button>';
-    document.body.append(frame);
-    await loaded;
-    frame.contentDocument!.getElementById('stop')!.focus();
-    return null;
-  });
-  await expect(fixture!.engine.keyboard!.type('lost', { replace: false }, operation())).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+it('does not mistake the iframe host for an editable control when its button has focus', (context) => {
+  const evidence = iframeTasks.get(context.task);
+  const check = async () => {
+    try {
+      evidence?.phase('body', 'document');
+      await fixture!.browser.evaluate(async () => {
+        const frame = document.createElement('iframe');
+        const loaded = new Promise<void>((resolve) => { frame.addEventListener('load', () => resolve(), { once: true }); });
+        frame.srcdoc = '<button id="stop">Stop</button>';
+        document.body.append(frame);
+        await loaded;
+        frame.contentDocument!.getElementById('stop')!.focus();
+        return null;
+      });
+      evidence?.phase('body', 'perform');
+      await expect(fixture!.engine.keyboard!.type('lost', { replace: false }, operation())).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+      evidence?.passed('body');
+    } catch (cause) { evidence?.failed('body'); throw cause; }
+  };
+  return evidence === undefined ? check() : evidence.observer.run(check);
 });

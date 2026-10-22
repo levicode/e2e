@@ -10,6 +10,8 @@ import { verifyReport, type TestReport } from './report.ts';
 import { NATIVE_TRACE_FILE, SEMANTIC_TRACE_CASES, tsTraceFile } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
 import { collectSemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { REPO_ROOT } from '../public-packages.ts';
+import { SYNTHETIC_BATCH_ENV } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
+import { cleanSyntheticEnvironment, collectSyntheticEvidence, prepareSyntheticCapture, type SyntheticCapture } from './candidate-synthetic-evidence.ts';
 
 export function candidateDistInventory(root: string) {
   return Object.fromEntries(['e2e', 'web'].map(name => {
@@ -90,10 +92,12 @@ function main(args: string[]): void {
   const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   const sourceState = () => execFileSync('git', ['status', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   const fingerprint = (files: readonly string[]) => sha256(Buffer.from(files.map(file => `${file}\0${sha256(readFileSync(file))}`).join('\n')));
-  let phaseEnvironment: NodeJS.ProcessEnv = { ...process.env };
+  const syntheticRequested = process.env[SYNTHETIC_BATCH_ENV] === '1' && (suite.id === 'web-browser' || suite.id === 'public-callbacks');
+  let syntheticCapture: SyntheticCapture | undefined;
+  let phaseEnvironment: NodeJS.ProcessEnv = cleanSyntheticEnvironment(process.env);
   delete phaseEnvironment['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
   let capturePrepared = suite.id !== 'semantic-faults';
-  try { phaseEnvironment = candidatePhaseEnvironment(suite.id, process.env, output); capturePrepared = true; } catch { /* Capture setup must not change the functional suite outcome. */ }
+  try { phaseEnvironment = candidatePhaseEnvironment(suite.id, cleanSyntheticEnvironment(process.env), output); capturePrepared = true; } catch { /* Capture setup must not change the functional suite outcome. */ }
   let files: string[] = []; let testSourceDigest: string | undefined;
   let status = 'failed'; let problem: string | undefined; let assertions = 0; let binarySha256: string | undefined; let runtimeBuild: ReturnType<typeof candidateDistInventory> | undefined;
   try {
@@ -108,11 +112,17 @@ function main(args: string[]): void {
     const directory = join(cwd, suite.directory);
     const discovered = readdirSync(directory, { recursive: true, encoding: 'utf8' }).filter(name => name.endsWith('.test.ts')).map(name => join(directory, name)).toSorted();
     files = candidateFiles(suite, directory, discovered); testSourceDigest = fingerprint(files);
+    if (syntheticRequested && binarySha256 !== undefined && (suite.id === 'web-browser' || suite.id === 'public-callbacks')) {
+      try {
+        syntheticCapture = prepareSyntheticCapture(REPO_ROOT, suite.id, { sourceRevision, testSourceDigest, binarySha256 }, phaseEnvironment);
+        phaseEnvironment = syntheticCapture.env;
+      } catch { /* Missing capture remains UNKNOWN without changing the original functional outcome. */ }
+    }
     const env: NodeJS.ProcessEnv = { ...phaseEnvironment, E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
     if (suite.id === 'crosscheck-benchmark') {
       if (env['CROSSCHECK_BENCHMARK_URL'] !== 'http://127.0.0.1:4280') throw new Error('Optional benchmark must be the explicitly served local synthetic app');
     } else delete env['CROSSCHECK_BENCHMARK_URL'];
-    const result = spawnSync('pnpm', ['exec', 'vitest', 'run', '--project', suite.project, '--maxWorkers=2', '--reporter=json', `--outputFile=${rawReport}`, ...files], {
+    const result = spawnSync('pnpm', ['exec', 'vitest', 'run', '--project', suite.project, '--maxWorkers=2', ...(suite.id === 'web-browser' ? ['--bail=0'] : []), '--reporter=json', `--outputFile=${rawReport}`, ...files], {
       cwd, stdio: 'inherit', timeout: 1_800_000,
       env,
     });
@@ -124,7 +134,9 @@ function main(args: string[]): void {
     status = 'passed';
   } catch (error) { problem = String(error); process.stderr.write(`${problem}\n`); }
   const diagnostics = suite.id === 'semantic-faults' ? collectSemanticTraceEvidence(output, capturePrepared) : undefined;
-  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, diagnostics, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
+  const syntheticDiagnostics = syntheticRequested ? collectSyntheticEvidence(output, syntheticCapture) : undefined;
+  const syntheticBinding = syntheticCapture?.configuration.binding;
+  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, diagnostics, syntheticDiagnostics, syntheticBinding, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
   if (status !== 'passed') process.exitCode = 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main(process.argv.slice(2));

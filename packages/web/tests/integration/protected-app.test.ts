@@ -15,6 +15,7 @@ import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, Operatio
 import { web, type Browser } from '../../src/index.ts';
 import { PROTECTED_CREDENTIAL, startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { beginSyntheticCase, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
 
 function cleanup(): EngineCleanupContext {
   return { signal: new AbortController().signal, timeoutMs: 30_000 };
@@ -133,23 +134,52 @@ describe('web({ headers, basicAuth })', () => {
       await navigator.serviceWorker.register('/sw.js').catch(() => undefined);
       return (await navigator.serviceWorker.getRegistrations()).length;
     };
-    const plain = web();
+    const evidence = beginSyntheticCase('P41');
+    const outcome: SyntheticOutcome = { setup: 'passed', body: 'incomplete', cleanup: 'not-started' };
+    let branch: 'plain' | 'headers-blocked' = 'plain';
+    let phase: 'boot' | 'navigate' | 'register-count' | 'shutdown-end' | 'shutdown-dispose' = 'boot';
+    /** These are source-configured branches, not observations of an internal worker rule. */
+    const record = (state: 'enter' | 'passed' | 'failed', registeredCount: number | null = null): void =>
+      evidence.record({ kind: 'service-worker', branch, phase, state, headersConfigured: branch === 'headers-blocked', registeredCount });
     try {
-      await boot(plain, app, artifactsDir, 's0');
-      await headingAt(plain, 's0', `${app.url}/`);
-      // The fixture itself can register one: 127.0.0.1 is a secure context.
-      expect(await fixtureOf(plain, app, 's0').evaluate(registrations)).toBe(1);
-    } finally {
-      await shutdown(plain);
-    }
-    const engine = web({ headers: { 'x-fixture-header': 'no-workers' } });
-    try {
-      await boot(engine, app, artifactsDir, 's1');
-      await headingAt(engine, 's1', `${app.url}/`);
-      expect(await fixtureOf(engine, app, 's1').evaluate(registrations)).toBe(0);
-    } finally {
-      await shutdown(engine);
-    }
+      const plain = web();
+      try {
+        record('enter'); await boot(plain, app, artifactsDir, 's0'); record('passed');
+        phase = 'navigate'; record('enter'); await headingAt(plain, 's0', `${app.url}/`); record('passed');
+        // The fixture itself can register one: 127.0.0.1 is a secure context.
+        phase = 'register-count'; record('enter');
+        const count = await fixtureOf(plain, app, 's0').evaluate(registrations); record('passed', count);
+        expect(count).toBe(1);
+      } catch (cause) { outcome.body = 'failed'; record('failed'); throw cause; }
+      finally {
+        outcome.cleanup = 'incomplete';
+        try {
+          phase = 'shutdown-end'; record('enter'); await plain.endAttempt!(cleanup()); record('passed');
+          phase = 'shutdown-dispose'; record('enter'); await plain.dispose!(cleanup()); record('passed');
+          outcome.cleanup = 'passed';
+        // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+        } catch (cause) { outcome.cleanup = 'failed'; record('failed'); throw cause; }
+      }
+      branch = 'headers-blocked'; phase = 'boot';
+      const engine = web({ headers: { 'x-fixture-header': 'no-workers' } });
+      try {
+        record('enter'); await boot(engine, app, artifactsDir, 's1'); record('passed');
+        phase = 'navigate'; record('enter'); await headingAt(engine, 's1', `${app.url}/`); record('passed');
+        phase = 'register-count'; record('enter');
+        const count = await fixtureOf(engine, app, 's1').evaluate(registrations); record('passed', count);
+        expect(count).toBe(0);
+        outcome.body = 'passed';
+      } catch (cause) { outcome.body = 'failed'; record('failed'); throw cause; }
+      finally {
+        outcome.cleanup = 'incomplete';
+        try {
+          phase = 'shutdown-end'; record('enter'); await engine.endAttempt!(cleanup()); record('passed');
+          phase = 'shutdown-dispose'; record('enter'); await engine.dispose!(cleanup()); record('passed');
+          outcome.cleanup = 'passed';
+        // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+        } catch (cause) { outcome.cleanup = 'failed'; record('failed'); throw cause; }
+      }
+    } finally { evidence.finish(outcome); }
   });
 
   it('answers a basic-auth challenge wherever one is issued', async () => {

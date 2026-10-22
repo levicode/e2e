@@ -10,6 +10,8 @@ import { verifyBundle } from './bundle.ts';
 import { verifySemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { candidateDistInventory } from './candidate-web.ts';
 import { REPO_ROOT } from '../public-packages.ts';
+import { SYNTHETIC_BATCH_ENV, validSyntheticBinding } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
+import { verifySyntheticEvidence } from './candidate-synthetic-evidence.ts';
 
 export const CANDIDATE_GATES = [
   'source', 'native-checkout', 'dependencies', 'acceptance-scripts', 'source-removal', 'packages', 'types',
@@ -53,13 +55,26 @@ function main(args: string[]): void {
       if (proof.sourceRevision !== undefined && (proof.sourceRevision !== source || JSON.stringify(proof.runtimeBuild) !== JSON.stringify(runtimeBuild))) throw new Error(`Public suite used different source/build: ${file}`);
       if (suites.some(suite => suite.id !== 'semantic-faults' && suite.id !== 'package-imports' && `${suite.id}.result.json` === file) && proof.binarySha256 !== manifest.native.sha256) throw new Error(`Public suite used a different native binary: ${file}`);
     }
+    const syntheticDiagnostics: Record<string, unknown> = {};
+    const syntheticProofs = (['web-browser', 'public-callbacks'] as const).map(suite => ({ suite,
+      proof: JSON.parse(readFileSync(join(output, `${suite}.result.json`), 'utf8')) as { syntheticBinding?: unknown; syntheticDiagnostics?: unknown; testSourceDigest?: string },
+    }));
+    const syntheticRequested = process.env[SYNTHETIC_BATCH_ENV] === '1' || syntheticProofs.some(({ proof }) => proof.syntheticDiagnostics !== undefined || proof.syntheticBinding !== undefined);
+    if (syntheticRequested) {
+      for (const { suite, proof } of syntheticProofs) {
+        const expected = proof.syntheticBinding;
+        if (!validSyntheticBinding(expected) || expected.suite !== suite || expected.sourceRevision !== source || expected.binarySha256 !== manifest.native.sha256 || expected.testSourceDigest !== proof.testSourceDigest) throw new Error('Synthetic suite identity is missing or changed');
+        verifySyntheticEvidence(output, proof.syntheticDiagnostics, expected, REPO_ROOT);
+        syntheticDiagnostics[suite] = proof.syntheticDiagnostics;
+      }
+    }
     const fault = JSON.parse(readFileSync(join(output, 'semantic-faults.result.json'), 'utf8')) as { binarySha256: string; diagnostics: unknown };
     verifySemanticTraceEvidence(output, fault.diagnostics);
     const faultProbe = JSON.parse(readFileSync(join(output, 'fault-negotiation.json'), 'utf8')) as { binarySha256: string };
     if (fault.binarySha256 === manifest.native.sha256 || fault.binarySha256 !== faultProbe.binarySha256) throw new Error('Fault runtime identity is not separate and bound');
     verifyFeatureMatrixReceipt(output, { sourceRevision: source, nativeSource: manifest.nativeSource, productionBinarySha256: manifest.native.sha256, acceptanceFaultBinarySha256: fault.binarySha256 }, { source: join(REPO_ROOT, '.artifacts/native-source'), target: process.env['CARGO_TARGET_DIR'] ?? '' });
     verifyPreparationMatrixReceipt(output, { sourceRevision: source, nativeSource: manifest.nativeSource, productionBinarySha256: manifest.native.sha256 }, { source: join(REPO_ROOT, '.artifacts/native-source'), target: process.env['CARGO_TARGET_DIR'] ?? '' });
-    binding = { manifestSha256: digest, source: manifest.source, nativeSource: manifest.nativeSource, productionBinarySha256: manifest.native.sha256, acceptanceFaultBinarySha256: fault.binarySha256, semanticDiagnostics: fault.diagnostics, acceptanceFaultCompilerSha256: hashFile(join(output, 'fault-compiler.jsonl')), evidence: Object.fromEntries(proofFiles.map(file => [file, hashFile(join(output, file))])) };
+    binding = { manifestSha256: digest, ...(syntheticRequested ? { syntheticDiagnostics } : {}), source: manifest.source, nativeSource: manifest.nativeSource, productionBinarySha256: manifest.native.sha256, acceptanceFaultBinarySha256: fault.binarySha256, semanticDiagnostics: fault.diagnostics, acceptanceFaultCompilerSha256: hashFile(join(output, 'fault-compiler.jsonl')), evidence: Object.fromEntries(proofFiles.map(file => [file, hashFile(join(output, file))])) };
     status = 'passed';
   } catch (error) { problem = candidateReceiptProblem(error); process.stderr.write(`${problem}\n`); }
   writeFileSync(join(output, 'candidate.result.json'), JSON.stringify({ schemaVersion: 1, kind: 'linux-full-public-native-candidate', status, gates: Object.fromEntries([...CANDIDATE_GATES, ...OPTIONAL_CANDIDATE_GATES].map(id => [id, steps[id]?.outcome ?? 'missing'])), binding, problem, releaseEligible: false, note: 'Synthetic Linux native/public/installed candidate evidence only. No model runs, cross-platform acceptance, publication or release approval.' }, null, 2));

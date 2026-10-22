@@ -7,7 +7,7 @@
  * the file the way it rewrites the cross-check's.
  */
 
-import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NodeRef } from 'e2e/engine';
@@ -16,19 +16,10 @@ import { nativeDocument } from '../helpers/native-browser.ts';
 import { observedNodes } from '../helpers/native-correlation.ts';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 import { diffExpectations, keyOf, readExpectations, TODO_REASON, writeExpectations } from '../crosscheck/expectations.ts';
+import { beginSyntheticCase, type SyntheticFact, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
+import { loadConformanceTables, conformanceCoordinateKey, conformanceSourceDomain, type ConformanceCoordinate } from '../helpers/conformance-evidence.ts';
 
-interface AxeCase {
-  readonly html: string;
-  readonly target: string | readonly string[];
-  readonly role?: string | null;
-  readonly accessibleText?: string | readonly string[];
-}
-
-const require = createRequire(import.meta.url);
-const TABLES: Readonly<Record<string, readonly AxeCase[]>> = {
-  'implicit-role': require('../conformance/axe-core/implicit-role.cjs') as AxeCase[],
-  'accessible-text': require('../conformance/axe-core/accessible-text.cjs') as AxeCase[],
-};
+const TABLES = loadConformanceTables(path.resolve(import.meta.dirname, '../../../..'));
 const EXPECTED = path.join(import.meta.dirname, '../conformance/expected.txt');
 const HEADER = [
   '# Cases where the engine reads markup differently from what the axe-core suite expects, one per line:',
@@ -60,14 +51,72 @@ let fixture: NativeFixture | undefined;
 const seen = new Set<string>();
 const pages = new Set<string>();
 
-beforeAll(async () => { fixture = await startNativeFixture('conformance'); });
-afterAll(async () => { await fixture?.close(); });
+const evidence = beginSyntheticCase('P16');
+const outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
+let domain: ReturnType<typeof conformanceSourceDomain> | undefined;
+const coverage = [0, 1].map(() => ({ completedCases: 0, completedTargets: 0, checkedComparisons: 0,
+  visited: new Set<string>(), mismatchComparisons: 0, assertionsPassed: false }));
+const mismatches = new Map<string, Extract<SyntheticFact, { kind: 'conformance' }>>();
+const summaries: Extract<SyntheticFact, { kind: 'conformance-summary' }>[] = [];
+let aggregateComplete = false;
+
+/** Diagnostic bookkeeping cannot throw in place of an original operation or assertion. */
+function diagnostic(work: () => void): void {
+  if (!evidence.available) return;
+  try { work(); } catch { evidence.invalidate(); }
+}
+
+beforeAll(async () => {
+  diagnostic(() => { domain = conformanceSourceDomain(TABLES, readFileSync(EXPECTED, 'utf8')); });
+  outcome.setup = 'failed';
+  fixture = await startNativeFixture('conformance');
+  outcome.setup = 'passed';
+});
+afterAll(async () => {
+  outcome.cleanup = 'failed';
+  try { await fixture?.close(); outcome.cleanup = 'passed'; }
+  finally {
+    diagnostic(() => {
+      if (domain === undefined) { evidence.invalidate(); return; }
+      for (const table of domain.tables) {
+        const actual = coverage[table.tableOrdinal]!;
+        const expectedCoordinates = [...domain.coordinates].filter(([, row]) => row.tableOrdinal === table.tableOrdinal);
+        const complete = actual.assertionsPassed && actual.completedCases === table.expectedCases
+          && actual.completedTargets === table.expectedTargets && actual.checkedComparisons === table.expectedComparisons
+          && actual.checkedComparisons === actual.visited.size
+          && expectedCoordinates.every(([key]) => actual.visited.has(key));
+        evidence.record({ kind: 'conformance-coverage', ...table,
+          completedCases: actual.completedCases, completedTargets: actual.completedTargets,
+          checkedComparisons: actual.checkedComparisons, uniqueComparisons: actual.visited.size,
+          mismatchComparisons: actual.mismatchComparisons, complete });
+        if (!complete) evidence.invalidate();
+      }
+      // Mismatch identities and aggregate rows take priority; never emit source/page strings.
+      // Reserve header/footer, both coverage rows and the count row within the 256-row cap.
+      const rows = [...mismatches.values(), ...summaries];
+      let emitted = 0;
+      let bytes = 0;
+      for (const fact of rows) {
+        const size = Buffer.byteLength(JSON.stringify({ kind: 'record', sequence: emitted + 2, fact })) + 1;
+        // Leave 8 KiB for header, footer, coverage, count and the sink's final-record reserve.
+        if (emitted >= 251 || bytes + size > 56 * 1024) break;
+        evidence.record(fact); emitted++; bytes += size;
+      }
+      evidence.record({ kind: 'conformance-counts', total: rows.length, emitted,
+        omitted: rows.length - emitted, truncated: emitted !== rows.length });
+      if (!aggregateComplete || UPDATE) evidence.invalidate();
+    });
+    evidence.finish(outcome);
+  }
+});
 
 const asList = <T,>(value: T | readonly T[]): readonly T[] => (Array.isArray(value) ? value : [value as T]);
 
 describe('axe-core conformance', () => {
-  for (const [table, cases] of Object.entries(TABLES)) {
+  for (const [tableIndex, [table, cases]] of Object.entries(TABLES).entries()) {
+    const tableOrdinal = tableIndex as 0 | 1;
     it(`${table}: every case`, { timeout: 300_000 }, async () => {
+      outcome.body = 'failed';
       const name = `axe: ${table}`;
       pages.add(name);
       let checked = 0;
@@ -95,23 +144,41 @@ describe('axe-core conformance', () => {
             const disagreement: Disagreement = { oracle: 'axe', field, ours, theirs, node: label };
             seen.add(keyOf(name, disagreement));
           };
+          const compareEvidence = (field: 'role' | 'name', ours: string, theirs: string): void => diagnostic(() => {
+            const coordinate: ConformanceCoordinate = { tableOrdinal, caseOrdinal: index, targetOrdinal: position, field };
+            const actual = coverage[tableOrdinal]!;
+            actual.checkedComparisons++;
+            actual.visited.add(conformanceCoordinateKey(coordinate));
+            if (ours === theirs) return;
+            actual.mismatchComparisons++;
+            const key = keyOf(name, { oracle: 'axe', field, ours, theirs, node: label });
+            if (mismatches.has(key)) evidence.invalidate();
+            mismatches.set(key, { kind: 'conformance', ...coordinate, listed: node !== undefined,
+              matchesAxe: false, observedMissing: node === undefined, valueMissing: node?.[field] === undefined,
+              valueEmpty: node?.[field] === '', matchesExistingException: domain?.expectations.has(key) ?? false });
+          });
           if (entry.role !== undefined) {
             // A node the tree does not list has no role to the model either.
             const ours = node?.role === undefined || NO_ROLE.has(node.role) ? 'none' : (AS_ARIA[node.role] ?? node.role);
             const theirs = entry.role === null || entry.role === undefined || NO_ROLE.has(entry.role) ? 'none' : entry.role;
             if (ours !== theirs) push('role', ours, theirs);
+            compareEvidence('role', ours, theirs);
             checked += 1;
           }
           if (texts !== undefined) {
             const ours = node === undefined ? '(not in tree)' : (node.name ?? '').replace(/\s+/g, ' ').trim();
             const theirs = (texts[position] ?? '').replace(/\s+/g, ' ').trim();
             if (ours !== theirs) push('name', ours, theirs);
+            compareEvidence('name', ours, theirs);
             checked += 1;
           }
+          diagnostic(() => { coverage[tableOrdinal]!.completedTargets++; });
         }
+        diagnostic(() => { coverage[tableOrdinal]!.completedCases++; });
       }
       expect(checked, `${table} checked nothing`).toBeGreaterThan(0);
       expect(checked).toBe(targets);
+      diagnostic(() => { coverage[tableOrdinal]!.assertionsPassed = true; });
     });
   }
 
@@ -123,10 +190,24 @@ describe('axe-core conformance', () => {
     }
     const { unexpected, stale } = diffExpectations(expected, seen, pages);
     const todo = [...expected].filter(([, reason]) => reason === TODO_REASON).map(([key]) => key);
+    diagnostic(() => {
+      for (const [category, keys] of [['unexpected', unexpected], ['stale', stale], ['todo', todo]] as const) {
+        for (const key of keys) {
+          const listed = domain?.expectations.get(key);
+          const coordinate = category === 'unexpected' ? mismatches.get(key) : listed?.coordinate;
+          if (coordinate === undefined) { evidence.invalidate(); continue; }
+          summaries.push({ kind: 'conformance-summary', category, tableOrdinal: coordinate.tableOrdinal,
+            caseOrdinal: coordinate.caseOrdinal, targetOrdinal: coordinate.targetOrdinal,
+            expectedLineOrdinal: category === 'unexpected' ? 0 : listed!.expectedLineOrdinal });
+        }
+      }
+      aggregateComplete = true;
+    });
     expect({ unexpected, stale, todo }, 'rerun with E2E_CROSSCHECK_UPDATE=1 and review the diff of tests/conformance/expected.txt').toEqual({
       unexpected: [],
       stale: [],
       todo: [],
     });
+    if (coverage.every(table => table.assertionsPassed)) outcome.body = 'passed';
   });
 });

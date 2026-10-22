@@ -558,6 +558,27 @@ describe('AttemptSession', () => {
     } finally { await engine.dispose!(cleanup()); }
   });
 
+  it('keeps the new 1s graph evaluation budget after a 10s witness graph and 300ms reconnect', async () => {
+    let now = 0;
+    const engine = await nativeAttempt({ connect: {
+      cdpEndpoint: () => 'ws://synthetic.test/attempt',
+      reconnectEndpoint: async () => { now += 300; return 'ws://synthetic.test/reconnect'; },
+    } }, frame => frame.command === 'page.evaluate' ? { data: { value: { ok: true, value: null } } } : undefined);
+    await engine.startAttempt!(nativeContext());
+    const peer = peers.at(-1)!;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      await nativeBrowser(engine, () => operation(10_000)).evaluate(() => null);
+      expect(peer.frames.find(frame => frame['command'] === 'page.evaluate')?.['timeoutMs']).toBe(10_000);
+      await peer.event('scope.disconnected', { identityScope: `attempt-${peers.length}`, reason: 'browser-connection-closed' });
+      await nativeBrowser(engine, () => operation(1_000)).evaluate(() => null);
+      // Actual production graph -> adapter -> NativeClient wire, not only the outer fixture timer.
+      expect(peer.frames.find(frame => frame['command'] === 'scope.reconnect')?.['timeoutMs']).toBe(700);
+      expect(peer.frames.findLast(frame => frame['command'] === 'page.evaluate')?.['timeoutMs']).toBe(700);
+      expect(peer.frames.filter(frame => frame['command'] === 'page.evaluate')).toHaveLength(2);
+    } finally { await engine.dispose!(cleanup()); }
+  });
+
   it('keeps late recording completion confined to the attempt that started it', async () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'e2e-attempt-recorder-'));
     const old = remote('old');

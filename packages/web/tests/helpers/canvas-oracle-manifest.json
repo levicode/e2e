@@ -1,0 +1,442 @@
+{
+  "schemaVersion": 1,
+  "baselineRevision": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8",
+  "candidateSourceBase": "889e3ae5348ecb792754ddd6cfbb40476a1b1d89",
+  "claim": "source-equivalent-primitive-oracle",
+  "entry": "packages/web/src/observation.ts",
+  "sources": [
+    {
+      "path": "packages/e2e/src/config/secrets.ts",
+      "currentSha256": "1dc203c728a177d5815a8793b926494d64694d1828fc0896b02872dc21bc9240",
+      "baselineSha256": "1dc203c728a177d5815a8793b926494d64694d1828fc0896b02872dc21bc9240",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/engine/contract.ts",
+      "currentSha256": "80e22401d3bfa23f929fe07ae9e248d27bce5ef12a92753efb7b84da5763a2f7",
+      "baselineSha256": "bb84292b254644676ff611a625daeeac5304aa6e4f4f9e6e3694420e90494ee5",
+      "byteEqual": false,
+      "imports": [],
+      "external": [],
+      "differenceReview": "Only viewport documentation changed. EngineError, retryable-code set, observed limits and every runtime statement are unchanged."
+    },
+    {
+      "path": "packages/e2e/src/engine/index.ts",
+      "currentSha256": "a0e6a76dba156b58956e47a238ed2576a0565615d258758353ac55cf2e68f615",
+      "baselineSha256": "f0644d48279326e37b0b791bdab5648f92fcae54593341e630121dff4ca7cb93",
+      "byteEqual": false,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts",
+        "packages/e2e/src/engine/manifest.ts",
+        "packages/e2e/src/engine/recording.ts",
+        "packages/e2e/src/engine/resolve.ts",
+        "packages/e2e/src/engine/timing.ts",
+        "packages/e2e/src/internal/brands.ts",
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/internal/json-value.ts",
+        "packages/e2e/src/internal/objects.ts",
+        "packages/e2e/src/internal/options.ts",
+        "packages/e2e/src/internal/text.ts",
+        "packages/e2e/src/internal/time.ts",
+        "packages/e2e/src/internal/urls.ts",
+        "packages/e2e/src/secrets.ts"
+      ],
+      "external": [],
+      "differenceReview": "Relevant runtime exports unchanged. Added jsonValueProblem export and type/comment extensions do not change the primitive capture path."
+    },
+    {
+      "path": "packages/e2e/src/engine/manifest.ts",
+      "currentSha256": "03951659751f796b79450a2c86161d26df41e7cbbab971d6f92bd19467f9ce84",
+      "baselineSha256": "c675388c928f780e187d6035876991610bcd2cf2a359d64aa571a80e3b25a0f0",
+      "byteEqual": false,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts",
+        "packages/e2e/src/internal/brands.ts",
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/internal/objects.ts",
+        "packages/e2e/src/secrets.ts"
+      ],
+      "external": [],
+      "differenceReview": "Barrel-loaded but defineEngine is not invoked by this oracle. Changes are referenceRevisions known-key/validation/copy only."
+    },
+    {
+      "path": "packages/e2e/src/engine/recording.ts",
+      "currentSha256": "cfb8c98bd4a5e7abfc5a155cec3757b3581d1d63f864d567b5d35807496feefe",
+      "baselineSha256": "cfb8c98bd4a5e7abfc5a155cec3757b3581d1d63f864d567b5d35807496feefe",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts"
+      ],
+      "external": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "path": "packages/e2e/src/engine/resolve.ts",
+      "currentSha256": "c24af91697672f0c4c1b9c133a89a6d21b88dc5560da8c3cfe3e62f59d1ad000",
+      "baselineSha256": "c24af91697672f0c4c1b9c133a89a6d21b88dc5560da8c3cfe3e62f59d1ad000",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts",
+        "packages/e2e/src/internal/text.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/engine/timing.ts",
+      "currentSha256": "2fb371da56ad75f5133480379a78f8fe84452715ff546ace011ee1914867e5cc",
+      "baselineSha256": "2fb371da56ad75f5133480379a78f8fe84452715ff546ace011ee1914867e5cc",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts",
+        "packages/e2e/src/internal/time.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/brands.ts",
+      "currentSha256": "6cd996386f6d55181992ab7873119cd4e5e73c6a36dafb8f6cf8e3d52d86aa00",
+      "baselineSha256": "6cd996386f6d55181992ab7873119cd4e5e73c6a36dafb8f6cf8e3d52d86aa00",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/errors.ts",
+      "currentSha256": "ded7841d27500130684e6f7ae0e9f878731d31b0dbebdfaeadf081426b37c755",
+      "baselineSha256": "ded7841d27500130684e6f7ae0e9f878731d31b0dbebdfaeadf081426b37c755",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts",
+        "packages/e2e/src/internal/realm-slot.ts",
+        "packages/e2e/src/internal/source.ts"
+      ],
+      "external": [
+        "node:util"
+      ]
+    },
+    {
+      "path": "packages/e2e/src/internal/json-value.ts",
+      "currentSha256": "982c6cd874ca5051a7e1f6ebd0b6972b747532128ffd10ae6d87d251c4fd5eb2",
+      "baselineSha256": "2b87c7ea9439080c14d170fc9483a92ba69629426c6049bb1ad28f07cda70a77",
+      "byteEqual": false,
+      "imports": [
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/secrets.ts"
+      ],
+      "external": [],
+      "differenceReview": "Barrel-loaded validator refactor. No validator/export from this module is invoked by the primitive capture path; it has no changed module-initialization statements."
+    },
+    {
+      "path": "packages/e2e/src/internal/objects.ts",
+      "currentSha256": "1eeffcdb3fc1dd5792e8578fbc00a7e8d5901cab0b275a4b704657bb220be9f3",
+      "baselineSha256": "1eeffcdb3fc1dd5792e8578fbc00a7e8d5901cab0b275a4b704657bb220be9f3",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/options.ts",
+      "currentSha256": "bebd2f019ae766561d3287f32494ac925b4c3a890daa4ad3e885e0bfc25c9e3e",
+      "baselineSha256": "bebd2f019ae766561d3287f32494ac925b4c3a890daa4ad3e885e0bfc25c9e3e",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/internal/suggest.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/realm-slot.ts",
+      "currentSha256": "8e1e095ba3819f0bc862649551a28df331c5c5f54604f6d40449fbef70c65bfc",
+      "baselineSha256": "8e1e095ba3819f0bc862649551a28df331c5c5f54604f6d40449fbef70c65bfc",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/regexp.ts",
+      "currentSha256": "b5177b9598b77672fcc4be3cd08f906db29f8cb4aa42dd0dc5b34ff4a55c54e6",
+      "baselineSha256": "b5177b9598b77672fcc4be3cd08f906db29f8cb4aa42dd0dc5b34ff4a55c54e6",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/source.ts",
+      "currentSha256": "70d2ba1bde36aede4d288042ecef49488a19dea2d99e16ef66d96ac6cb86f0b5",
+      "baselineSha256": "70d2ba1bde36aede4d288042ecef49488a19dea2d99e16ef66d96ac6cb86f0b5",
+      "byteEqual": true,
+      "imports": [],
+      "external": [
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "path": "packages/e2e/src/internal/suggest.ts",
+      "currentSha256": "b42317823681071707f37dbc5f1a098fe972f25ac5a2d9160af09396935c350a",
+      "baselineSha256": "b42317823681071707f37dbc5f1a098fe972f25ac5a2d9160af09396935c350a",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/text.ts",
+      "currentSha256": "292ee4f004307e744bd0f7864023854f5b4dbe0dd8f81c040163e03d86188253",
+      "baselineSha256": "292ee4f004307e744bd0f7864023854f5b4dbe0dd8f81c040163e03d86188253",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/internal/regexp.ts"
+      ],
+      "external": [
+        "node:util"
+      ]
+    },
+    {
+      "path": "packages/e2e/src/internal/time.ts",
+      "currentSha256": "dc9feb56048ceaff4dc194c596ba0ac2d71693a35caf3be0ffaa4696b0fcdfcf",
+      "baselineSha256": "dc9feb56048ceaff4dc194c596ba0ac2d71693a35caf3be0ffaa4696b0fcdfcf",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/internal/errors.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/internal/urls.ts",
+      "currentSha256": "2e40f66bbdab8c94aadb705b74f0751dadd9424f7fa1909993c13aa57b1116e5",
+      "baselineSha256": "2e40f66bbdab8c94aadb705b74f0751dadd9424f7fa1909993c13aa57b1116e5",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/internal/regexp.ts",
+        "packages/e2e/src/internal/text.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/e2e/src/secrets.ts",
+      "currentSha256": "0d041e7fe40fea42cac101e1e5b26190fb4b110b315a48f059d96c80dd3fbef1",
+      "baselineSha256": "0d041e7fe40fea42cac101e1e5b26190fb4b110b315a48f059d96c80dd3fbef1",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/config/secrets.ts",
+        "packages/e2e/src/internal/brands.ts",
+        "packages/e2e/src/internal/errors.ts",
+        "packages/e2e/src/internal/realm-slot.ts"
+      ],
+      "external": [
+        "node:async_hooks"
+      ]
+    },
+    {
+      "path": "packages/web/src/capture-scope.ts",
+      "currentSha256": "fa2d7a9d6ec709753ec2a9d5117f86d1935f3dfc43c8b267fbc307a2204bd77c",
+      "baselineSha256": "fa2d7a9d6ec709753ec2a9d5117f86d1935f3dfc43c8b267fbc307a2204bd77c",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/engine/index.ts",
+        "packages/web/src/support.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/web/src/in-page/read-semantics.ts",
+      "currentSha256": "dc88e6552d89564a701b7357ca8439df1c9a1cbba091a666ad7d409ce81f426e",
+      "baselineSha256": "dc88e6552d89564a701b7357ca8439df1c9a1cbba091a666ad7d409ce81f426e",
+      "byteEqual": true,
+      "imports": [],
+      "external": []
+    },
+    {
+      "path": "packages/web/src/observation.ts",
+      "currentSha256": "7391be0011e6199a88f097b2a5bddbe720a27f25c0b51713f509ab23373b7684",
+      "baselineSha256": "7391be0011e6199a88f097b2a5bddbe720a27f25c0b51713f509ab23373b7684",
+      "byteEqual": true,
+      "imports": [
+        "packages/e2e/src/engine/index.ts",
+        "packages/web/src/capture-scope.ts",
+        "packages/web/src/read-node.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/web/src/read-node.ts",
+      "currentSha256": "65afd5e56249f6a5c0cb11cbe6501250b53323acb4f5fe606f8e49885675d2ad",
+      "baselineSha256": "65afd5e56249f6a5c0cb11cbe6501250b53323acb4f5fe606f8e49885675d2ad",
+      "byteEqual": true,
+      "imports": [
+        "packages/web/src/in-page/read-semantics.ts"
+      ],
+      "external": []
+    },
+    {
+      "path": "packages/web/src/runtime-support.ts",
+      "currentSha256": "34be2f8de11f5de98e2bf3aa5ae87dfe84c743656b50f9c1fad86beb0c3f735b",
+      "baselineSha256": null,
+      "byteEqual": false,
+      "imports": [
+        "packages/e2e/src/engine/index.ts"
+      ],
+      "external": [],
+      "differenceReview": "New module. Only cancelled is invoked by capture; its function source is byte-identical to baseline support.ts. New hasPending method is not invoked."
+    },
+    {
+      "path": "packages/web/src/support.ts",
+      "currentSha256": "f1e2e1cd07c70afae8ce947ae8f6638c3d42dd6ea2b8979a48118f3a6201e1a0",
+      "baselineSha256": "a2cfb48489715a94fab9f2c42fcab0664f9a1b67e49245739dd1a5539f1f136d",
+      "byteEqual": false,
+      "imports": [
+        "packages/e2e/src/engine/index.ts",
+        "packages/web/src/runtime-support.ts"
+      ],
+      "external": [
+        "node:timers/promises"
+      ],
+      "differenceReview": "CaptureScope calls only cancelled, re-exported from runtime-support.ts. The original cancelled function moved unchanged; other support actions are not invoked."
+    }
+  ],
+  "runtimeEntry": "packages/e2e/dist/engine/index.js",
+  "runtime": [
+    {
+      "path": "packages/e2e/dist/config/secrets.js",
+      "sourcePath": "packages/e2e/src/config/secrets.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/contract.js",
+      "sourcePath": "packages/e2e/src/engine/contract.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/index.js",
+      "sourcePath": "packages/e2e/src/engine/index.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/manifest.js",
+      "sourcePath": "packages/e2e/src/engine/manifest.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/recording.js",
+      "sourcePath": "packages/e2e/src/engine/recording.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/resolve.js",
+      "sourcePath": "packages/e2e/src/engine/resolve.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/timing.js",
+      "sourcePath": "packages/e2e/src/engine/timing.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/brands.js",
+      "sourcePath": "packages/e2e/src/internal/brands.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/errors.js",
+      "sourcePath": "packages/e2e/src/internal/errors.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/json-value.js",
+      "sourcePath": "packages/e2e/src/internal/json-value.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/objects.js",
+      "sourcePath": "packages/e2e/src/internal/objects.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/options.js",
+      "sourcePath": "packages/e2e/src/internal/options.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/realm-slot.js",
+      "sourcePath": "packages/e2e/src/internal/realm-slot.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/regexp.js",
+      "sourcePath": "packages/e2e/src/internal/regexp.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/source.js",
+      "sourcePath": "packages/e2e/src/internal/source.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/suggest.js",
+      "sourcePath": "packages/e2e/src/internal/suggest.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/text.js",
+      "sourcePath": "packages/e2e/src/internal/text.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/time.js",
+      "sourcePath": "packages/e2e/src/internal/time.ts"
+    },
+    {
+      "path": "packages/e2e/dist/internal/urls.js",
+      "sourcePath": "packages/e2e/src/internal/urls.ts"
+    },
+    {
+      "path": "packages/e2e/dist/secrets.js",
+      "sourcePath": "packages/e2e/src/secrets.ts"
+    }
+  ],
+  "movedSymbols": [
+    {
+      "name": "cancelled",
+      "baselinePath": "packages/web/src/support.ts",
+      "currentPath": "packages/web/src/runtime-support.ts",
+      "source": "export function cancelled(text: string): EngineError {\n  return new EngineError('CANCELLED', text, { retryable: false });\n}",
+      "sha256": "713596fd835b48688b6565cfddd6ad094f146827b3e503941222a1f4ed441850"
+    }
+  ],
+  "calledPrimitives": {
+    "packages/web/src/observation.ts": [
+      "captureDocument and its local tree/geometry/frame helpers"
+    ],
+    "packages/web/src/capture-scope.ts": [
+      "CaptureScope",
+      "captureTimeout"
+    ],
+    "packages/web/src/read-node.ts": [
+      "readDocumentSemanticsFunction",
+      "SECURE_FIELD_SELECTOR"
+    ],
+    "packages/web/src/in-page/read-semantics.ts": [
+      "readSemanticsFunction"
+    ],
+    "packages/web/src/runtime-support.ts": [
+      "cancelled"
+    ],
+    "packages/e2e/src/engine/contract.ts": [
+      "EngineError",
+      "RETRYABLE_ENGINE_ERROR_CODES",
+      "OBSERVED_NAME_LIMIT",
+      "OBSERVED_TEXT_LIMIT"
+    ],
+    "packages/e2e/src/engine/timing.ts": [
+      "raceAbort"
+    ],
+    "packages/e2e/src/internal/time.ts": [
+      "withTimeout",
+      "withAbort",
+      "abortError"
+    ],
+    "packages/e2e/src/internal/errors.ts": [
+      "isE2EError",
+      "E2E_ERROR_MARKER",
+      "CATEGORIES"
+    ],
+    "packages/e2e/src/internal/urls.ts": [
+      "sameSite",
+      "siteOf"
+    ]
+  },
+  "runtimeBinding": {
+    "receipt": ".artifacts/native-candidate/web-unit.result.json",
+    "claim": "Actual complete core dist inventory from the prior passed web-unit candidate receipt, bound to the same source revision and native binary as this synthetic run. No local copied dist establishes this binding."
+  }
+}

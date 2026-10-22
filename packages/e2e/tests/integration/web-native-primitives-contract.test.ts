@@ -15,8 +15,11 @@ const CASES = [
   'large fulfill and continued request bodies use verified native storage',
 ] as const;
 
+const syntheticEvidenceModule = new URL('../../../web/tests/helpers/synthetic-evidence.ts', import.meta.url).href;
+
 const SUITE = `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
+import { beginSyntheticCase } from ${JSON.stringify(syntheticEvidenceModule)};
 
 test('${CASES[0]}', { timeout: 12_000 }, async ({ browser }) => {
   await browser.goto('/a', { waitUntil: 'domcontentloaded' });
@@ -92,25 +95,87 @@ test('${CASES[4]}', async ({ browser }) => {
 });
 
 test('${CASES[5]}', async ({ browser }) => {
-  await browser.goto('/a');
-  await browser.mouse.move(30, 130);
-  await browser.mouse.down();
-  await browser.mouse.up();
-  await browser.mouse.wheel(0, 40);
-  const events = await browser.evaluate(() => globalThis.fixturePointer);
-  expect(events).toContain('down:30:130:1');
-  expect(events).toContain('up:30:130:0');
-  expect(events).toContain('wheel:40');
+  const evidence = beginSyntheticCase('C01');
+  let phase = 'navigate';
+  let body = 'incomplete';
+  try {
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+    await browser.goto('/a');
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'passed' });
+    phase = 'dispatch'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+    await browser.mouse.move(30, 130);
+    await browser.mouse.down();
+    await browser.mouse.up();
+    await browser.mouse.wheel(0, 40);
+    phase = 'sample';
+    const events = await browser.evaluate(() => globalThis.fixturePointer);
+    // Emit completion facts after the original sample; do not insert synchronous I/O between wheel and read.
+    evidence.record({ kind: 'phase', section: 'body', phase: 'dispatch', state: 'passed' });
+    evidence.observe(() => ({ kind: 'wheel-sample', phase: 'original-sample', sampleOrdinal: 0,
+      downCount: events.filter(value => value.startsWith('down:')).length,
+      upCount: events.filter(value => value.startsWith('up:')).length,
+      wheelCount: events.filter(value => value.startsWith('wheel:')).length,
+      expectedDeltaSeen: events.includes('wheel:40'), nativePublicResultObserved: false, cdpAckObserved: null }));
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'passed' });
+    phase = 'assertion';
+    expect(events).toContain('down:30:130:1');
+    expect(events).toContain('up:30:130:0');
+    expect(events).toContain('wheel:40');
+    body = 'passed';
+  } catch (cause) {
+    body = 'failed'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'failed' }); throw cause;
+  } finally {
+    // The runner owns fixture teardown after this callback: its result is not observed here.
+    evidence.finish({ setup: 'passed', body, cleanup: 'not-started' });
+  }
 });
 
 test('${CASES[6]}', async ({ browser }) => {
-  await browser.goto('/a');
-  const frame = browser.frameLocator('iframe');
-  expect(await frame.getByRole('button', { name: 'Inside frame' }).textContent()).toBe('Inside frame');
-  await frame.locator('#frame-button').tap();
-  expect(await frame.locator('#frame-button').getAttribute('data-clicked')).toBe('yes');
-  await expect(browser).toHaveClass(browser.locator('#input'), /fixture-input/);
-  await expect(browser).not.toHaveClass(browser.locator('#input'), 'missing');
+  const evidence = beginSyntheticCase('C02');
+  let phase = 'navigate';
+  let body = 'incomplete';
+  try {
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+    await browser.goto('/a');
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'passed' });
+    phase = 'locate';
+    const frame = browser.frameLocator('iframe');
+    expect(await frame.getByRole('button', { name: 'Inside frame' }).textContent()).toBe('Inside frame');
+    // One extra renderer await can change scheduling. These static centers do not prove the native action point.
+    try {
+      const hit = await browser.evaluate(() => {
+        const owner = document.querySelector('iframe');
+        const child = owner?.contentDocument;
+        const button = child?.getElementById('frame-button');
+        const input = child?.getElementById('input');
+        if (!owner || !child || !button) return { available: false, leafHitInput: null, leafHitButton: null, ancestorHitOwner: null, clickSeen: null };
+        const box = button.getBoundingClientRect();
+        const x = box.x + box.width / 2; const y = box.y + box.height / 2;
+        const leaf = child.elementFromPoint(x, y);
+        const ownerBox = owner.getBoundingClientRect();
+        const ancestor = document.elementFromPoint(ownerBox.x + owner.clientLeft + x, ownerBox.y + owner.clientTop + y);
+        return { available: true, leafHitInput: input != null && leaf === input, leafHitButton: leaf === button,
+          ancestorHitOwner: ancestor === owner, clickSeen: button.getAttribute('data-clicked') === 'yes' };
+      });
+      evidence.observe(() => ({ kind: 'frame-hit', phase: 'pre-tap', ...hit, nativePointProven: false, nativeDispatchCount: null }));
+    } catch {
+      evidence.invalidate();
+      evidence.record({ kind: 'frame-hit', phase: 'pre-tap', available: false, leafHitInput: null, leafHitButton: null,
+        ancestorHitOwner: null, clickSeen: null, nativePointProven: false, nativeDispatchCount: null });
+    }
+    phase = 'dispatch'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+    await frame.locator('#frame-button').tap();
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'passed' });
+    phase = 'assertion';
+    expect(await frame.locator('#frame-button').getAttribute('data-clicked')).toBe('yes');
+    await expect(browser).toHaveClass(browser.locator('#input'), /fixture-input/);
+    await expect(browser).not.toHaveClass(browser.locator('#input'), 'missing');
+    body = 'passed';
+  } catch (cause) {
+    body = 'failed'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'failed' }); throw cause;
+  } finally {
+    evidence.finish({ setup: 'passed', body, cleanup: 'not-started' });
+  }
 });
 
 test('${CASES[7]}', { timeout: 15_000 }, async ({ browser }) => {

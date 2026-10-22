@@ -7,16 +7,78 @@
  * for input, which may have reached the page.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type TestContext } from 'vitest';
 import type { Locator } from 'e2e';
 import type { EngineFixtureContext, EngineHandle, LocatorExpression, NodeRef, OperationContext } from 'e2e/engine';
 import { web, type BrowserExpectation } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { beginSyntheticCase, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { observeSyntheticConnection, SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
+
+/** Test-only boundaries. A missing footer remains unknown, including a hard test timeout. */
+class CaseEvidence {
+  readonly evidence: SyntheticEvidence;
+  readonly outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
+  readonly observer: SyntheticNativeObserver;
+  currentPhase: SyntheticPhase = 'init';
+  section: keyof SyntheticOutcome = 'setup';
+  private active: { section: keyof SyntheticOutcome; phase: SyntheticPhase } | undefined;
+  constructor(id: SyntheticCaseId) {
+    this.evidence = beginSyntheticCase(id);
+    this.observer = new SyntheticNativeObserver(this.evidence, () => this.currentPhase);
+  }
+  phase(section: keyof SyntheticOutcome, phase: SyntheticPhase): void {
+    // A different hook may start after a hard timeout; that is not a returned phase.
+    if (this.active?.section === section) this.returned();
+    else this.active = undefined;
+    this.section = section; this.currentPhase = phase;
+    if (this.outcome[section] !== 'failed') this.outcome[section] = 'incomplete';
+    this.active = { section, phase };
+    this.evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+  }
+  returned(): void {
+    if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'passed' });
+    this.active = undefined;
+  }
+  passed(section: keyof SyntheticOutcome): void {
+    if (this.active?.section === section) this.returned();
+    else this.active = undefined;
+    if (this.outcome[section] !== 'failed') this.outcome[section] = 'passed';
+  }
+  failed(section: keyof SyntheticOutcome = this.section): void {
+    if (this.active?.section === section) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
+    this.active = undefined;
+    this.outcome[section] = 'failed';
+  }
+  finish(): void { this.observer.close(); this.evidence.finish(this.outcome); }
+}
+
+const currentEvidence = new AsyncLocalStorage<CaseEvidence>();
+const caseTasks = new WeakMap<object, { evidence: CaseEvidence; restore: () => void }>();
+function diagnosticCase(id: SyntheticCaseId, body: (evidence: CaseEvidence) => Promise<void>) {
+  return (context: TestContext): Promise<void> => {
+    const evidence = new CaseEvidence(id);
+    let restore = () => {};
+    try {
+      const connect = NativeClient.connect;
+      const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observeSyntheticConnection(connect(...args)));
+      restore = () => { try { connection.mockRestore(); } catch { evidence.evidence.invalidate(); } };
+    } catch { evidence.evidence.invalidate(); }
+    caseTasks.set(context.task, { evidence, restore });
+    return evidence.observer.run(() => currentEvidence.run(evidence, async () => {
+      try { await body(evidence); evidence.passed('body'); }
+      catch (cause) { evidence.failed(); throw cause; }
+      // The footer belongs to the original afterEach, not successful body return.
+    }));
+  };
+}
 
 const BUDGET_MS = 1_000;
 /** The action timeout a read left to the harness's default budget takes. */
@@ -93,15 +155,28 @@ describe('operations on a hung page', () => {
     rmSync(artifactsDir, { recursive: true, force: true });
   });
 
-  afterEach(async () => {
-    const cleanup = { signal: new AbortController().signal, timeoutMs: 10_000 };
-    await engine.endAttempt!(cleanup);
-    await engine.dispose!(cleanup);
+  afterEach((context) => {
+    const diagnostic = caseTasks.get(context.task);
+    const evidence = diagnostic?.evidence;
+    const close = async () => {
+      const cleanup = { signal: new AbortController().signal, timeoutMs: 10_000 };
+      try {
+        evidence?.phase('cleanup', 'end');
+        await engine.endAttempt!(cleanup);
+        evidence?.phase('cleanup', 'dispose');
+        await engine.dispose!(cleanup);
+        evidence?.passed('cleanup');
+      } catch (cause) { evidence?.failed('cleanup'); throw cause; }
+      finally { diagnostic?.restore(); evidence?.finish(); }
+    };
+    return evidence === undefined ? close() : evidence.observer.run(close);
   });
 
   /** Boots a fresh engine and attempt. */
   async function start(): Promise<void> {
     engine = web();
+    const evidence = currentEvidence.getStore();
+    evidence?.phase('setup', 'init');
     await engine.init!({
       runId: 'run-hung',
       targetName: 'web',
@@ -113,16 +188,25 @@ describe('operations on a hung page', () => {
       log: () => undefined,
       signal: new AbortController().signal,
     });
+    evidence?.phase('setup', 'start');
     await engine.startAttempt!({ attemptId: 'hung', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    evidence?.passed('setup');
   }
 
   /** Opens the busy page, observes it, and taps the button that starts the endless script. */
   async function freeze(): Promise<void> {
+    const evidence = currentEvidence.getStore();
+    evidence?.phase('setup', 'open');
     await engine.session!.open!(`${origin}/`, operation());
+    evidence?.phase('setup', 'initial-observe');
     await engine.observe!(operation());
+    evidence?.phase('setup', 'initial-locate');
     const [target] = await engine.locate!(button('Freeze'), operation());
+    evidence?.phase('setup', 'freeze-renderer');
     const tap = await bounded(() => engine.perform!(target!.ref as NodeRef, { kind: 'tap' }, operation()));
+    evidence?.phase('setup', 'assertion');
     expect(tap.error).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    evidence?.passed('setup');
   }
 
   /**
@@ -148,10 +232,13 @@ describe('operations on a hung page', () => {
     return expectation!() as BrowserExpectation;
   }
 
-  it('ends a browser assertion on a stuck page at its own timeout, not the action timeout', async () => {
+  it('ends a browser assertion on a stuck page at its own timeout, not the action timeout', diagnosticCase('P19', async (evidence) => {
     await start();
     await freeze();
+    evidence.phase('setup', 'fixture-create');
     const expectation = browserExpectation();
+    evidence.passed('setup');
+    evidence.phase('body', 'assertion');
     const title = await bounded(() => expectation.toHaveTitle('Other', { timeout: BUDGET_MS }));
     expect(title.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
     // A locator read waits out the action timeout, as the harness's does.
@@ -162,24 +249,31 @@ describe('operations on a hung page', () => {
         return 'card';
       },
     } as unknown as Locator;
+    evidence.phase('body', 'assertion');
     const negated = await bounded(() => expectation.not.toHaveClass(card, 'card', { timeout: BUDGET_MS }));
     expect(negated.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
-  });
+  }));
 
-  it('times out a navigation to a server that never answers', async () => {
+  it('times out a navigation to a server that never answers', diagnosticCase('P20', async (evidence) => {
     await start();
+    evidence.phase('body', 'navigate');
     const open = await bounded(() => engine.session!.open!(`${origin}/never`, operation()));
+    evidence.phase('body', 'assertion');
     expect(open.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
-  });
+  }));
 
-  it('times out a locate and a point tap on a page whose renderer is stuck in a script', async () => {
+  it('times out a locate and a point tap on a page whose renderer is stuck in a script', diagnosticCase('P21', async (evidence) => {
     await start();
     await freeze();
+    evidence.phase('body', 'locate');
     const locate = await bounded(() => engine.locate!(button('Next'), operation()));
+    evidence.phase('body', 'assertion');
     expect(locate.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    evidence.phase('body', 'point-perform');
     const tap = await bounded(() => engine.performAt!({ x: 10, y: 10 }, { kind: 'tap' }, operation()));
+    evidence.phase('body', 'assertion');
     expect(tap.error).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
-  });
+  }));
 
   it('keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline', async () => {
     await start();
