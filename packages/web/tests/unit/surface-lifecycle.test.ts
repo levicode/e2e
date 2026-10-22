@@ -2,12 +2,14 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { PassThrough, Writable } from 'node:stream';
 import type { Browser } from 'playwright-core';
 import { secrets } from 'e2e';
-import type { EngineFixtureContext, OperationContext } from 'e2e/engine';
+import { EngineError, type EngineFixtureContext, type OperationContext } from 'e2e/engine';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeClient } from '../../src/native/client.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { PlaywrightSurface } from '../../src/surface.ts';
 import { scriptedConnection } from '../helpers/scripted-connection.ts';
@@ -251,4 +253,105 @@ it('does not take a success screen or replay settled replacement-prefix cancella
       ['page.title', { identityScope: 'scope-1' }],
     ]);
   } finally { await native.dispose(cleanup()); }
+});
+
+/** Hold one typing result and its cancel ACK through the actual NativeClient. */
+async function nativeFocusCancellation() {
+  const output = new PassThrough();
+  const frames: Record<string, unknown>[] = [];
+  let typingStarted!: (request: PeerRequest) => void;
+  let cancelStarted!: (frame: Record<string, unknown>) => void;
+  const typing = new Promise<PeerRequest>(resolve => { typingStarted = resolve; });
+  const cancelled = new Promise<Record<string, unknown>>(resolve => { cancelStarted = resolve; });
+  let input!: Writable;
+  const dispose = vi.fn(() => { input.destroy(); output.destroy(); });
+  const send = (message: unknown) => output.write(`${JSON.stringify(message)}\n`);
+  const result = (request: PeerRequest, outcome: PeerOutcome) => send({
+    type: 'result', id: request.id, generation: request.generation, operationSeq: request.operationSeq,
+    ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed', scopeState: 'usable' }
+      : { ok: false, error: { code: outcome.error }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable' }),
+  });
+  vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, context, onEvent) => {
+    input = new Writable({ write(chunk: Buffer, _encoding, done) {
+      try {
+        const frame = JSON.parse(chunk.toString('utf8')) as Record<string, unknown>;
+        frames.push(frame);
+        if (frame['type'] === 'hello') send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'focus-cancellation-peer', generation: 1,
+          capabilities: options.capabilities, scopeState: 'usable', limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 } });
+        else if (frame['type'] === 'request') {
+          const request = frame as unknown as PeerRequest;
+          if (request.command === 'browser.keyboard.type') typingStarted(request);
+          else if (request.command === 'scope.open') result(request, { data: { identityScope: 'scope-1', recoveryIdentity: { browser: 'browser', context: 'context-1', page: 'page-1' } } });
+          else if (request.command === 'browser.observe') result(request, { data: {
+            identityScope: 'scope-1', revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' },
+          } });
+          else if (request.command === 'page.title') result(request, { data: { title: 'clean' } });
+          else if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(request.command)) result(request, { data: null });
+          else throw new Error(`Unexpected focus-cancellation command: ${request.command}`);
+        } else if (frame['type'] === 'cancel') cancelStarted(frame);
+        else if (frame['type'] === 'close') send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        else throw new Error(`Unexpected focus-cancellation frame: ${String(frame['type'])}`);
+        done();
+      } catch (cause) { done(cause instanceof Error ? cause : new Error('Invalid focus-cancellation frame')); }
+    } });
+    return NativeClient.connect({ readable: output, writable: input, dispose }, options.capabilities, context, onEvent);
+  });
+  const native = new NativeSurface({});
+  await native.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: operation().signal, log: () => undefined });
+  return { native, frames, typing, cancelled, result, dispose,
+    acknowledge: (cancel: Record<string, unknown>, accepted: boolean) => send({ type: 'control-result', id: cancel['id'], generation: 1, accepted,
+      ...(accepted ? {} : { error: { code: 'invalid-arguments' } }), scopeState: 'usable' }),
+  };
+}
+
+// Obligation 23 remains above until its producer and adapter evidence is reviewed
+// and executed. This peer proves no adapter continuation, not native focus,
+// late remote-object cleanup, or the renderer's absence of Input dispatch.
+it.each(['ack-first', 'result-first'] as const)('settles clean undispatched focus cancellation in %s order without typing replay', async order => {
+  const fixture = await nativeFocusCancellation();
+  const screen = vi.fn();
+  try {
+    await fixture.native.startAttempt({ attemptId: 'a1', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace, screen });
+    await fixture.native.observe(operation()); // Give a successful action actual trace authority.
+    const start = fixture.frames.length;
+    const controller = new AbortController();
+    const published = vi.fn();
+    const pending = fixture.native.typeText('replacement', { replace: true }, { ...operation(), signal: controller.signal }).then(published);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'CANCELLED', retryable: false });
+    void rejected.catch(() => undefined);
+    const original = await fixture.typing;
+    expect(original.args).toEqual({ identityScope: 'scope-1', text: 'replacement', replace: true });
+    controller.abort();
+    const cancel = await fixture.cancelled;
+    expect(cancel).toMatchObject({ type: 'cancel', generation: original.generation, operationSeq: original.operationSeq });
+    let ackSent = false; let resultSent = false;
+    const acknowledge = () => { fixture.acknowledge(cancel, order === 'ack-first'); ackSent = true; };
+    const settle = () => { fixture.result(original, { error: 'cancelled', effects: 'not-dispatched', scopeState: 'usable' }); resultSent = true; };
+    let finished = false;
+    void pending.then(() => { finished = true; }, () => { finished = true; });
+    try {
+      if (order === 'ack-first') acknowledge(); else settle();
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(finished).toBe(false);
+      expect(published).not.toHaveBeenCalled();
+      expect(screen).not.toHaveBeenCalled();
+      await expect(fixture.native.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(fixture.frames.slice(start).map(frame => frame['type'])).toEqual(['request', 'cancel']);
+      if (order === 'ack-first') settle(); else acknowledge();
+      await rejected;
+      await expect(pending).rejects.toBeInstanceOf(EngineError);
+      expect(published).not.toHaveBeenCalled();
+      expect(screen).not.toHaveBeenCalled();
+      expect(fixture.dispose).not.toHaveBeenCalled();
+      await expect(fixture.native.command('page.title', {}, operation())).resolves.toEqual({ title: 'clean' });
+      expect(fixture.frames.slice(start).filter(frame => frame['type'] === 'request').map(frame => [frame['command'], frame['args']])).toEqual([
+        ['browser.keyboard.type', { identityScope: 'scope-1', text: 'replacement', replace: true }],
+        ['page.title', { identityScope: 'scope-1' }],
+      ]);
+    } finally {
+      if (!ackSent) acknowledge();
+      if (!resultSent) settle();
+      await pending.catch(() => undefined);
+    }
+  } finally { await fixture.native.dispose(cleanup()); }
 });
