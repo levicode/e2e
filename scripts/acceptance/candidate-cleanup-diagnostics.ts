@@ -203,7 +203,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
         } else {
           if (!worker.pending || worker.pending.step !== value.admissionStep) reasons.add('worker-admission-unobserved');
           else if (value.admissionStep === 'network-enable' && (worker.pending.rpcStartMs !== value.rpcStartMs || (worker.pending.rpcMsCapped === true && value.rpcMsCapped !== true))) reasons.add('invalid-worker-admission');
-          worker.pending = undefined;
+          delete worker.pending;
           worker.terminal = value.admissionState === 'failed' || value.admissionStep === 'configuration-committed';
         }
       }
