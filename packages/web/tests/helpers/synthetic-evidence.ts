@@ -29,31 +29,31 @@ export const SYNTHETIC_CASE_MANIFEST = {
   P19: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/hung-page.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P20: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/hung-page.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P21: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/hung-page.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P22: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/init-scripts.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P22: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/init-scripts.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P23: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/keyboard-shadow-focus.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P24: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P25: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P26: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P27: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/native-browser.ts", "packages/web/tests/helpers/capture-fixture-surface.ts", "packages/web/tests/helpers/native-correlation.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P28: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P29: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P30: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P31: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P32: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P33: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P34: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P35: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/media.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P24: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P25: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P26: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P27: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/native-browser.ts", "packages/web/tests/helpers/capture-fixture-surface.ts", "packages/web/tests/helpers/native-correlation.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P28: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P29: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P30: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P31: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P32: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P33: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P34: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/lifecycle.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P35: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/media.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P36: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P37: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P38: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P39: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P40: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P41: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/protected-app.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P41: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/protected-app.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P42: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/read-node-roles.test.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   P43: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/route-announcer.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   C01: { suite: 'public-callbacks', group: 'callback', sources: ["packages/e2e/tests/integration/web-native-primitives-contract.test.ts", 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   C02: { suite: 'public-callbacks', group: 'callback', sources: ["packages/e2e/tests/integration/web-native-primitives-contract.test.ts", 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
-  C03: { suite: 'public-callbacks', group: 'callback', sources: ["packages/e2e/tests/integration/web-callback-contract.test.ts"], maxRecords: 8, maxBytes: 8 * 1024 },
+  C03: { suite: 'public-callbacks', group: 'callback', sources: ["packages/e2e/tests/integration/web-callback-contract.test.ts", "packages/web/tests/helpers/synthetic-evidence.ts", 'packages/e2e/tests/helpers/synthetic-callback-screenshot.ts'], maxRecords: 8, maxBytes: 8 * 1024 },
   P05PW: { suite: 'web-browser', group: 'oracle', sources: ['packages/web/tests/integration/events-synthetic-controls.test.ts', 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   C01N: { suite: 'web-browser', group: 'oracle', sources: ['packages/web/tests/integration/events-synthetic-controls.test.ts', 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   C01PW: { suite: 'web-browser', group: 'oracle', sources: ['packages/web/tests/integration/events-synthetic-controls.test.ts', 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
@@ -91,6 +91,9 @@ export const SYNTHETIC_CASE_MANIFEST = {
     'packages/web/src/support.ts',
   ], maxRecords: 32, maxBytes: 16 * 1024 },
   'nested-setup': { suite: 'web-browser', group: 'setup', sources: ['packages/web/tests/integration/nested-frames.test.ts', "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], covers: ['P36', 'P37', 'P38', 'P39', 'P40'], maxRecords: 64, maxBytes: 32 * 1024 },
+  P44: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/cdp-recovery.test.ts', 'packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
+  P45: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/media.test.ts', 'packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
+  P46: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/visibility.test.ts', 'packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
 } as const;
 export type SyntheticCaseId = keyof typeof SYNTHETIC_CASE_MANIFEST;
 export type SyntheticSuite = typeof SYNTHETIC_CASE_MANIFEST[SyntheticCaseId]['suite'];
@@ -107,15 +110,15 @@ export const SYNTHETIC_PHASES = [
   'close-host', 'backstop', 'popup', 'register', 'registrations', 'dispatch', 'sample',
   'fixture-create', 'budget-change', 'target-close', 'browser-close', 'freeze-renderer', 'perform',
   'point-perform', 'navigate', 'abort', 'state-capture', 'state-reset', 'state-restore', 'video-start',
-  'screenshot', 'video-stop', 'video-decode', 'popup-open', 'media-configure', 'media-read',
+  'screenshot', 'video-stop', 'video-decode', 'popup-open', 'media-configure', 'media-read', 'url',
 ] as const;
 export type SyntheticPhase = typeof SYNTHETIC_PHASES[number];
 export const SYNTHETIC_COMMANDS = [
-  'scope.open', 'scope.configure', 'scope.reconnect', 'scope.end', 'network.routes.replace',
-  'page.activate', 'page.navigate', 'page.title', 'browser.observe', 'browser.query',
-  'browser.perform', 'browser.performAt', 'fixture.evaluate', 'fixture.viewport',
+  'scope.open', 'scope.configure', 'scope.reconnect', 'scope.end', 'scope.restart', 'scope.reset', 'network.routes.replace',
+  'page.activate', 'page.navigate', 'page.title', 'page.evaluate', 'page.url', 'browser.observe', 'browser.query',
+  'browser.perform', 'browser.pointer', 'browser.keyboard.type', 'browser.keyboard.press', 'fixture.query',
   'capture.screenshot', 'blob.read', 'blob.release',
-  'state.capture', 'state.reset', 'state.restore', 'recording.start', 'recording.stop', 'other',
+  'state.capture', 'state.restore', 'recording.start', 'recording.stop', 'other',
 ] as const;
 export type SyntheticCommand = typeof SYNTHETIC_COMMANDS[number];
 export const SYNTHETIC_CODES = [
@@ -123,7 +126,7 @@ export const SYNTHETIC_CODES = [
   'sequence-reused', 'invalid-sequence', 'invalid-timeout', 'capacity-exceeded', 'operation-missing',
   'content-length-mismatch', 'redirect-body-unavailable', 'unsupported-command', 'deadline-exceeded',
   'cancelled', 'invalid-arguments', 'browser-failure', 'stale-scope', 'cleanup-failed', 'stale-reference',
-  'policy-denied', 'not-actionable', 'intercepted-pointer', 'checked-state-unchanged',
+  'frame-not-found', 'frame-ambiguous', 'policy-denied', 'not-actionable', 'intercepted-pointer', 'checked-state-unchanged',
   'checked-control-replaced', 'locator-not-found', 'decision-missing', 'decision-expired',
   'decision-kind-mismatch', 'registry-missing', 'registry-in-use', 'identifier-exhausted',
 ] as const;
@@ -136,8 +139,26 @@ export interface SyntheticNativeResult {
   effects: 'not-dispatched' | 'completed' | 'unknown'; scopeState: 'usable' | 'quarantined' | 'closed';
   retention?: SyntheticRetention;
 }
+export const SYNTHETIC_FAILURE_REASONS = ['native-stale-scope', 'native-stale-generation', 'native-scope-unavailable', 'settling-cancellation', 'callback-completed', 'session-unavailable', 'scope-retired', 'attempt-not-ready', 'scope-changed', 'browser-reused', 'capability-contract', 'other'] as const;
+
+export interface SyntheticSelectedOperation {
+  kind: 'selected-operation'; ordinal: number; phase: SyntheticPhase; command: SyntheticCommand;
+  invoked: true; requestCount: number; requestPending: number; firstResult: SyntheticNativeResult | null;
+  firstFailure: SyntheticNativeResult | null; rejected: boolean;
+  adapter: 'pending' | 'fulfilled' | 'rejected'; code: typeof SYNTHETIC_PUBLIC_CODES[number] | null;
+  causeCode: typeof SYNTHETIC_PUBLIC_CODES[number] | null; reason: typeof SYNTHETIC_FAILURE_REASONS[number] | null; causeReason: typeof SYNTHETIC_FAILURE_REASONS[number] | null;
+  assertion: 'not-observed' | 'pending' | 'passed' | 'failed';
+}
+export interface SyntheticCleanupNative {
+  kind: 'cleanup-native'; phase: SyntheticPhase; command: 'scope.end'; requestCount: number; requestPending: number;
+  firstResult: SyntheticNativeResult | null; firstFailure: SyntheticNativeResult | null; rejected: boolean;
+}
 export type SyntheticFact =
-  | { kind: 'callback-failure'; stageOrdinal: number; code: typeof SYNTHETIC_PUBLIC_CODES[number]; causeCode: typeof SYNTHETIC_PUBLIC_CODES[number] | null }
+  | SyntheticSelectedOperation | SyntheticCleanupNative
+  | { kind: 'test-failure'; section: keyof SyntheticOutcome; phase: SyntheticPhase; code: typeof SYNTHETIC_PUBLIC_CODES[number]; causeCode: typeof SYNTHETIC_PUBLIC_CODES[number] | null; reason: typeof SYNTHETIC_FAILURE_REASONS[number]; causeReason: typeof SYNTHETIC_FAILURE_REASONS[number] | null }
+  | { kind: 'download-boundaries'; registrations: number; deliveries: number; triggers: number; tap: 'not-observed' | 'pending' | 'passed' | 'failed' }
+  | { kind: 'point-witness'; ordinal: 0 | 1; count: number | null }
+  | { kind: 'callback-failure'; stageOrdinal: number; code: typeof SYNTHETIC_PUBLIC_CODES[number]; causeCode: typeof SYNTHETIC_PUBLIC_CODES[number] | null; reason: typeof SYNTHETIC_FAILURE_REASONS[number]; causeReason: typeof SYNTHETIC_FAILURE_REASONS[number] | null }
   | ({ kind: 'installer-runtime' } & InstallerRuntimeBinding)
   | { kind: 'phase'; section: 'setup' | 'body' | 'cleanup' | 'backstop'; phase: SyntheticPhase; state: 'enter' | 'passed' | 'failed' }
   | { kind: 'native-result'; slot: 'first-refusal' | 'first-terminal'; phase: SyntheticPhase; command: typeof SYNTHETIC_COMMANDS[number]; result: SyntheticNativeResult | null }
@@ -221,7 +242,31 @@ export function validSyntheticNativeResult(value: unknown): value is SyntheticNa
 export function validSyntheticFact(value: unknown, caseId: SyntheticCaseId): value is SyntheticFact {
   if (!syntheticObject(value)) return false;
   switch (value['kind']) {
-    case 'callback-failure': return caseId === 'C03' && syntheticKeys(value, ['kind', 'stageOrdinal', 'code', 'causeCode']) && syntheticCount(value['stageOrdinal'], 5) && member(SYNTHETIC_PUBLIC_CODES, value['code']) && (value['causeCode'] === null || member(SYNTHETIC_PUBLIC_CODES, value['causeCode']));
+    case 'selected-operation': return syntheticKeys(value, ['kind', 'ordinal', 'phase', 'command', 'invoked', 'requestCount', 'requestPending', 'firstResult', 'firstFailure', 'rejected', 'adapter', 'code', 'causeCode', 'reason', 'causeReason', 'assertion'])
+      && syntheticCount(value['ordinal'], 11) && member(SYNTHETIC_PHASES, value['phase']) && member(SYNTHETIC_COMMANDS, value['command']) && value['invoked'] === true
+      && counts(value, ['requestCount', 'requestPending'], 64) && (value['requestPending'] as number) <= (value['requestCount'] as number)
+      && (value['requestCount'] !== 0 || (value['firstResult'] === null && value['firstFailure'] === null && value['rejected'] === false))
+      && (value['firstFailure'] === null || value['firstResult'] !== null)
+      && (value['firstResult'] === null || validSyntheticNativeResult(value['firstResult']))
+      && (value['firstFailure'] === null || (validSyntheticNativeResult(value['firstFailure']) && !value['firstFailure'].ok)) && typeof value['rejected'] === 'boolean'
+      && member(['pending', 'fulfilled', 'rejected'], value['adapter']) && (value['code'] === null || member(SYNTHETIC_PUBLIC_CODES, value['code']))
+      && (value['causeCode'] === null || member(SYNTHETIC_PUBLIC_CODES, value['causeCode'])) && (value['reason'] === null || member(SYNTHETIC_FAILURE_REASONS, value['reason']))
+      && (value['causeReason'] === null || member(SYNTHETIC_FAILURE_REASONS, value['causeReason']))
+      && (value['adapter'] === 'rejected' ? value['code'] !== null && value['reason'] !== null : value['code'] === null && value['causeCode'] === null && value['reason'] === null && value['causeReason'] === null)
+      && member(['not-observed', 'pending', 'passed', 'failed'], value['assertion']);
+    case 'cleanup-native': return syntheticKeys(value, ['kind', 'phase', 'command', 'requestCount', 'requestPending', 'firstResult', 'firstFailure', 'rejected'])
+      && member(SYNTHETIC_PHASES, value['phase']) && value['command'] === 'scope.end' && counts(value, ['requestCount', 'requestPending'], 64)
+      && (value['requestPending'] as number) <= (value['requestCount'] as number) && (value['requestCount'] as number) > 0 && typeof value['rejected'] === 'boolean'
+      && (value['firstFailure'] === null || value['firstResult'] !== null)
+      && (value['firstResult'] === null || validSyntheticNativeResult(value['firstResult']))
+      && (value['firstFailure'] === null || (validSyntheticNativeResult(value['firstFailure']) && !value['firstFailure'].ok));
+    case 'test-failure': return syntheticKeys(value, ['kind', 'section', 'phase', 'code', 'causeCode', 'reason', 'causeReason'])
+      && member(['setup', 'body', 'cleanup'], value['section']) && member(SYNTHETIC_PHASES, value['phase']) && member(SYNTHETIC_PUBLIC_CODES, value['code'])
+      && (value['causeCode'] === null || member(SYNTHETIC_PUBLIC_CODES, value['causeCode'])) && member(SYNTHETIC_FAILURE_REASONS, value['reason']) && (value['causeReason'] === null || member(SYNTHETIC_FAILURE_REASONS, value['causeReason']));
+    case 'download-boundaries': return caseId === 'P12' && syntheticKeys(value, ['kind', 'registrations', 'deliveries', 'triggers', 'tap'])
+      && counts(value, ['registrations', 'deliveries', 'triggers'], 8) && member(['not-observed', 'pending', 'passed', 'failed'], value['tap']);
+    case 'point-witness': return caseId === 'P44' && syntheticKeys(value, ['kind', 'ordinal', 'count']) && member([0, 1], value['ordinal']) && (value['count'] === null || syntheticCount(value['count'], 8));
+    case 'callback-failure': return caseId === 'C03' && syntheticKeys(value, ['kind', 'stageOrdinal', 'code', 'causeCode', 'reason', 'causeReason']) && syntheticCount(value['stageOrdinal'], 5) && member(SYNTHETIC_PUBLIC_CODES, value['code']) && (value['causeCode'] === null || member(SYNTHETIC_PUBLIC_CODES, value['causeCode'])) && member(SYNTHETIC_FAILURE_REASONS, value['reason']) && (value['causeReason'] === null || member(SYNTHETIC_FAILURE_REASONS, value['causeReason']));
     case 'installer-runtime': {
       if (caseId !== 'P14' || !syntheticKeys(value, ['kind', 'caseId', 'purpose', 'binarySha256', 'negotiationProofSha256'])) return false;
       const { kind: _kind, ...binding } = value; return validInstallerRuntimeBinding(binding);
@@ -308,8 +353,8 @@ export function readSyntheticFile(file: string, maxBytes: number): Buffer {
     return bytes.subarray(0, size);
   } finally { closeSync(fd); }
 }
-/** Only closed own error codes survive; no message, stack, URL, payload or getter is read. */
-export function callbackFailureFact(stageOrdinal: number, error: unknown): SyntheticFact {
+/** Closed own codes and exact fixed guard-message enums only; no arbitrary text is retained or getter invoked. */
+export function callbackFailureFact(stageOrdinal: number, error: unknown): Extract<SyntheticFact, { kind: 'callback-failure' }> {
   const own = (value: unknown, key: string): unknown => {
     if (value === null || typeof value !== 'object') return undefined;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -319,8 +364,40 @@ export function callbackFailureFact(stageOrdinal: number, error: unknown): Synth
     const candidate = own(value, 'code');
     return (SYNTHETIC_PUBLIC_CODES as readonly unknown[]).includes(candidate) ? candidate as typeof SYNTHETIC_PUBLIC_CODES[number] : 'other';
   };
+  const reason = (value: unknown): typeof SYNTHETIC_FAILURE_REASONS[number] => {
+    // Exact equality only: do not parse, prefix-match, or retain arbitrary error text.
+    const messages: Readonly<Record<string, typeof SYNTHETIC_FAILURE_REASONS[number]>> = {
+      'The native browser operation failed (stale-scope)': 'native-stale-scope',
+      'The native browser operation failed (stale-generation)': 'native-stale-generation',
+      'The native browser operation failed (scope-unavailable)': 'native-scope-unavailable',
+      'The native browser is settling a cancelled operation': 'settling-cancellation',
+      'The native callback has already completed': 'callback-completed',
+      'The native browser session is not available': 'session-unavailable',
+      'The native browser scope has retired': 'scope-retired',
+      'No native browser attempt is ready': 'attempt-not-ready',
+      'The browser scope changed during an operation': 'scope-changed',
+      'cdpEndpoint reused a browser from a previous attempt; provision a fresh browser': 'browser-reused',
+      'The native browser response violated its capability contract': 'capability-contract',
+      'The native browser decision does not match its capability contract': 'capability-contract',
+    };
+    const message = own(value, 'message');
+    return typeof message === 'string' && Object.hasOwn(messages, message) ? messages[message]! : 'other';
+  };
   const cause = own(error, 'cause');
-  return { kind: 'callback-failure', stageOrdinal, code: code(error), causeCode: cause === undefined ? null : code(cause) };
+  return { kind: 'callback-failure', stageOrdinal, code: code(error), causeCode: cause === undefined ? null : code(cause), reason: reason(error), causeReason: cause === undefined ? null : reason(cause) };
+}
+/** Shared writer/collector checks prevent forged duplicate or prematurely completed summaries. */
+export function syntheticFactSlot(fact: SyntheticFact): string | undefined {
+  if (fact.kind === 'native-result') return fact.slot;
+  if (fact.kind === 'selected-operation') return `${fact.kind}:${fact.ordinal}`;
+  if (fact.kind === 'test-failure') return `${fact.kind}:${fact.section}`;
+  if (fact.kind === 'request-rejected-without-result' || fact.kind === 'cleanup-native' || fact.kind === 'download-boundaries') return fact.kind;
+  return undefined;
+}
+export function incompleteSyntheticFact(fact: SyntheticFact): boolean {
+  return ('truncated' in fact && fact.truncated) || ('unavailable' in fact && fact.unavailable)
+    || (fact.kind === 'selected-operation' && (fact.adapter === 'pending' || fact.assertion === 'pending' || fact.requestPending > 0))
+    || (fact.kind === 'cleanup-native' && fact.requestPending > 0);
 }
 export interface SyntheticEvidence {
   readonly available: boolean;
@@ -391,17 +468,14 @@ export function beginSyntheticCase(caseId: SyntheticCaseId, env: NodeJS.ProcessE
         if (writeFailed || sequence >= budget.maxRecords - 2 || bytes + 2 * SYNTHETIC_RECORD_BYTES > budget.maxBytes) { truncated = true; drop(); return false; }
         const fact = snapshotFact(observer());
         if (!validSyntheticFact(fact, caseId)) { drop(); return false; }
-        let slot: string | undefined;
-        if (fact.kind === 'native-result' || fact.kind === 'request-rejected-without-result') {
-          slot = fact.kind === 'native-result' ? fact.slot : fact.kind;
-          if (slots.has(slot)) { drop(); return false; }
-        }
+        const slot = syntheticFactSlot(fact);
+        if (slot !== undefined && slots.has(slot)) { drop(); return false; }
         // Rebuild the already validated plain data; user getters/toJSON never reach serialization.
         const saved: SyntheticSavedRecord = { kind: 'record', sequence, fact };
         if (!append(saved)) { drop(); return false; }
         if (slot !== undefined) slots.add(slot);
         sequence++;
-        if (('truncated' in fact && fact.truncated) || ('unavailable' in fact && fact.unavailable)) incomplete = true;
+        if (incompleteSyntheticFact(fact)) incomplete = true;
         return true;
       } catch { drop(); return false; }
     };

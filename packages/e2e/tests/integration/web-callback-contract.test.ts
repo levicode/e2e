@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ExecutorNode, StepExecutor } from '../../src/agent/executor.ts';
 import { resultByTitle, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
+import { retainSyntheticCallbackScreenshot } from '../helpers/synthetic-callback-screenshot.ts';
 
 const CASES = [
   'route callback reads the live page while evaluate awaits fetch',
@@ -146,6 +147,7 @@ describe('public Web callback contract', () => {
   }, 90_000);
 
   afterAll(async () => {
+    retainSyntheticCallbackScreenshot(project?.dir, outcome);
     project?.cleanup();
     const current = server;
     if (current?.listening) await new Promise<void>((resolve, reject) => current.close(error => error ? reject(error) : resolve()));

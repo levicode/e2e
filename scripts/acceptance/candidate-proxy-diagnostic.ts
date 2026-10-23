@@ -217,7 +217,7 @@ export async function runProxyCommand(command: string, args: string[], options: 
 }
 export function proxyEnvironment(inherited: NodeJS.ProcessEnv, executable?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...inherited, NO_COLOR: '1', FORCE_COLOR: '0' };
-  for (const name of ['RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'E2E_AGENT_BROWSER_EXECUTABLE', 'E2E_AGENT_BROWSER_PROXY_FIXTURE', 'AGENT_BROWSER_ACCEPTANCE_PHASE_FILE']) delete env[name];
+  for (const name of ['RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'E2E_AGENT_BROWSER_EXECUTABLE', 'E2E_AGENT_BROWSER_PROXY_FIXTURE', 'AGENT_BROWSER_ACCEPTANCE_PHASE_FILE', 'AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE', 'E2E_SYNTHETIC_CALLBACK_SCREENSHOT_FILE']) delete env[name];
   if (executable !== undefined) env['E2E_AGENT_BROWSER_PROXY_FIXTURE'] = executable;
   return env;
 }

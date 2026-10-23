@@ -39,6 +39,22 @@ function peer(capabilities: string[] = []) {
 }
 
 describe('synthetic native outcome ownership', () => {
+  it('observes the exact already-dispatched P27 request before the public assertion can fail', async () => {
+    const fixture = peer(); const connecting = fixture.connect(); fixture.ready(); const client = await connecting;
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'perform');
+    const request = client.request;
+    try {
+      const pending = client.request('browser.perform', {}, context());
+      expect(observer.observePromise('browser.perform', 'perform', pending)).toBeUndefined();
+      expect(client.request).toBe(request);
+      expect(fixture.requests.filter(item => item['type'] === 'request')).toHaveLength(1);
+      fixture.result({ error: { code: 'cancelled' } });
+      const result = await pending;
+      expect(result.error?.code).toBe('cancelled');
+      expect(sink.facts).toEqual([expect.objectContaining({ kind: 'native-result', slot: 'first-refusal', phase: 'perform', command: 'browser.perform', result: expect.objectContaining({ code: 'cancelled' }) })]);
+    } finally { observer.close(); await fixture.close(client); }
+  });
+
   it('installs before the first caller request and preserves the original connection promise', async () => {
     const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'start');
     const fixture = peer();
@@ -217,5 +233,160 @@ describe('synthetic recovery footer ownership', () => {
     owner.enter('start', 'setup'); owner.failed('setup');
     owner.enter('backstop', 'cleanup'); owner.finishBackstop(false);
     expect(footers).toEqual([{ setup: 'failed', body: 'not-started', cleanup: 'passed' }]);
+  });
+});
+
+describe('bounded selected operation and cleanup receipts', () => {
+  const ok = (operationSeq = 1): NativeResult => ({ type: 'result', id: 'redacted', generation: 1, operationSeq, ok: true, data: null, effects: 'completed', scopeState: 'usable' });
+  const refused = (operationSeq = 2): NativeResult => ({ type: 'result', id: 'redacted', generation: 1, operationSeq, ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+  const selectedFact = (facts: SyntheticFact[], ordinal = 0) => facts.find(fact => fact.kind === 'selected-operation' && fact.ordinal === ordinal);
+
+  it('captures selected success independently after an expected setup refusal, without changing the promise', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'point-perform');
+    observer.observePromise('browser.perform', 'freeze-renderer', Promise.resolve(refused()));
+    await Promise.resolve();
+    const raw = Promise.resolve(ok());
+    const returned = observer.select(0, 'browser.pointer', () => { observer.observePromise('browser.pointer', 'point-perform', raw); return raw; });
+    expect(returned).toBe(raw); await returned;
+    observer.assert(0, () => expect(true).toBe(true)); observer.close();
+    expect(selectedFact(sink.facts)).toMatchObject({ requestCount: 1, requestPending: 0, firstResult: { ok: true }, firstFailure: null, adapter: 'fulfilled', assertion: 'passed' });
+    expect(sink.facts.find(fact => fact.kind === 'native-result' && fact.slot === 'first-refusal')).toMatchObject({ phase: 'freeze-renderer', result: { ok: false } });
+  });
+
+  it('never hides a later matching refusal behind the first matching success', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'recovered-state');
+    const pending = observer.select(0, 'page.evaluate', async () => {
+      const first = Promise.resolve(ok()); observer.observePromise('page.evaluate', 'recovered-state', first); await first;
+      const second = Promise.resolve(refused()); observer.observePromise('page.evaluate', 'recovered-state', second); await second;
+    });
+    await pending; observer.close();
+    expect(selectedFact(sink.facts)).toMatchObject({ requestCount: 2, requestPending: 0, firstResult: { ok: true, operationSeq: 1 }, firstFailure: { code: 'cancelled', operationSeq: 2 } });
+  });
+
+  it('preserves synchronous causes and records inner guard reasons without reading getters or payloads', () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'start');
+    let getters = 0;
+    const cause = Object.assign(new Error('The native browser response violated its capability contract'), { code: 'INVALID_STATE' });
+    const original = Object.assign(new Error('PRIVATE'), { code: 'ACTION_FAILED', cause });
+    Object.defineProperty(original, 'payload', { get() { getters++; throw new Error('PRIVATE'); } });
+    expect(() => observer.select(3, 'scope.open', () => { throw original; })).toThrow(original);
+    observer.failure('body', original); observer.close();
+    expect(selectedFact(sink.facts, 3)).toMatchObject({ adapter: 'rejected', requestCount: 0, firstResult: null, code: 'ACTION_FAILED', causeCode: 'INVALID_STATE', causeReason: 'capability-contract' });
+    expect(sink.facts.find(fact => fact.kind === 'test-failure')).toMatchObject({ causeReason: 'capability-contract' });
+    expect(getters).toBe(0); expect(JSON.stringify(sink.facts)).not.toContain('PRIVATE');
+  });
+
+  it('captures adapter rejection before a timing matcher replaces it, retaining exact promise and both failures', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    const original = Object.assign(new Error('PRIVATE original'), { code: 'INVALID_STATE' });
+    const raw = Promise.reject(original);
+    const returned = observer.select(0, 'browser.query', () => raw);
+    expect(returned).toBe(raw); await expect(returned).rejects.toBe(original);
+    const timing = new Error('PRIVATE timing matcher');
+    expect(() => observer.assert(0, () => { throw timing; })).toThrow(timing);
+    observer.failure('body', timing); observer.close();
+    expect(selectedFact(sink.facts)).toMatchObject({ adapter: 'rejected', code: 'INVALID_STATE', assertion: 'failed' });
+    expect(sink.facts.find(fact => fact.kind === 'test-failure')).toMatchObject({ code: 'other' });
+    expect(JSON.stringify(sink.facts)).not.toContain('PRIVATE');
+  });
+
+  it('keeps expected-rejection assertions separate from adapter outcomes and unrelated later assertions', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'start');
+    const error = Object.assign(new Error('fixed'), { code: 'INVALID_STATE' });
+    await observer.assert(3, () => expect(observer.select(3, 'scope.open', () => Promise.reject(error))).rejects.toBe(error));
+    expect(() => { throw new Error('unrelated'); }).toThrow();
+    observer.close();
+    expect(selectedFact(sink.facts, 3)).toMatchObject({ adapter: 'rejected', assertion: 'passed' });
+  });
+
+  it('captures an independent cleanup refusal after expected setup failure and preserves body error', async () => {
+    const sink = recorder(); let phase: 'freeze-renderer' | 'end' = 'freeze-renderer';
+    const observer = new SyntheticNativeObserver(sink.evidence, () => phase);
+    observer.observePromise('browser.perform', phase, Promise.resolve(refused())); await Promise.resolve();
+    observer.failure('body', Object.assign(new Error('body'), { code: 'NODE_STALE' })); phase = 'end';
+    const cleanup = { ...refused(9), error: { code: 'cleanup-failed' }, scopeState: 'quarantined' } as const;
+    observer.observePromise('scope.end', phase, Promise.resolve(cleanup)); await Promise.resolve();
+    observer.failure('cleanup', Object.assign(new Error('cleanup'), { code: 'ENGINE_FAILURE' })); observer.close();
+    expect(sink.facts.find(fact => fact.kind === 'cleanup-native')).toMatchObject({ firstFailure: { operationSeq: 9, code: 'cleanup-failed' }, requestCount: 1, requestPending: 0 });
+    expect(sink.facts.filter(fact => fact.kind === 'test-failure')).toMatchObject([{ section: 'body', code: 'NODE_STALE' }, { section: 'cleanup', code: 'ENGINE_FAILURE' }]);
+  });
+
+  it('keeps pre-dispatch rejection distinct from a validated native result', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'navigate');
+    const error = Object.assign(new Error('aborted'), { code: 'CANCELLED' }); const raw = Promise.reject(error);
+    const original = observer.select(0, 'page.navigate', () => { observer.observePromise('page.navigate', 'navigate', raw); return raw; });
+    await expect(original).rejects.toBe(error); observer.close();
+    expect(selectedFact(sink.facts)).toMatchObject({ requestCount: 1, requestPending: 0, rejected: true, firstResult: null, firstFailure: null, adapter: 'rejected' });
+  });
+
+  it('freezes pending facts at footer and does not invent uninvoked later operations', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    let resolve!: (value: NativeResult) => void; const raw = new Promise<NativeResult>(done => { resolve = done; });
+    observer.select(0, 'browser.query', () => { observer.observePromise('browser.query', 'locate', raw); return raw; });
+    observer.close(); const snapshot = JSON.stringify(sink.facts); resolve(ok()); await raw; await Promise.resolve();
+    expect(JSON.stringify(sink.facts)).toBe(snapshot);
+    expect(selectedFact(sink.facts)).toMatchObject({ adapter: 'pending', requestPending: 1, assertion: 'not-observed' });
+    expect(selectedFact(sink.facts, 1)).toBeUndefined();
+  });
+
+  it('bounds selected ordinals and repeated requests without affecting the calls or producing negative pending counts', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'evaluate');
+    let calls = 0;
+    await observer.select(0, 'page.evaluate', async () => {
+      for (let i = 0; i < 65; i++) { const raw = Promise.resolve(ok(i + 1)); observer.observePromise('page.evaluate', 'evaluate', raw); calls++; await raw; }
+    });
+    expect(observer.select(0, 'page.evaluate', () => ++calls)).toBe(66);
+    expect(observer.select(12, 'page.evaluate', () => ++calls)).toBe(67);
+    observer.close(); expect(sink.invalid()).toBe(3);
+    expect(selectedFact(sink.facts)).toMatchObject({ requestCount: 64, requestPending: 0 });
+  });
+
+  it('does not let sink exceptions alter selected return values, promises, or thrown causes', async () => {
+    const sink = recorder(true); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    const original = new Error('original'); const raw = Promise.reject(original);
+    expect(observer.select(0, 'browser.query', () => raw)).toBe(raw); await expect(raw).rejects.toBe(original);
+    expect(() => observer.assert(0, () => { throw original; })).toThrow(original);
+    expect(() => observer.failure('body', original)).not.toThrow(); expect(() => observer.close()).not.toThrow();
+  });
+});
+
+describe('shared-fixture diagnostic cleanup isolation', () => {
+  it('detaches between rows and rejoins only the existing client for original cleanup', async () => {
+    const sink = recorder(); let phase: 'perform' | 'end' = 'perform';
+    const observer = new SyntheticNativeObserver(sink.evidence, () => phase);
+    const raw = Promise.resolve({ operationSeq: 1, ok: true, data: null, effects: 'completed', scopeState: 'usable' } as NativeResult);
+    let calls = 0;
+    const request = function () { calls++; return raw; };
+    const client = { request } as unknown as NativeClient;
+    observer.attach(client);
+    expect(client.request('browser.perform', {}, context())).toBe(raw); await raw;
+    observer.detach(); expect(client.request).toBe(request);
+    expect(client.request('browser.query', {}, context())).toBe(raw); await raw;
+    phase = 'end'; observer.attach(client);
+    expect(client.request('scope.end', {}, context())).toBe(raw); await raw;
+    observer.close(); expect(client.request).toBe(request); expect(calls).toBe(3);
+    expect(sink.facts.find(fact => fact.kind === 'cleanup-native')).toMatchObject({ requestCount: 1, requestPending: 0, firstResult: { ok: true } });
+    expect(sink.facts.some(fact => 'command' in fact && fact.command === 'browser.query')).toBe(false);
+  });
+
+  it('preserves synchronous request rejection identity and does not label it wire dispatch', () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'navigate');
+    const cause = Object.assign(new Error('original'), { code: 'CANCELLED' });
+    const client = { request() { throw cause; } } as unknown as NativeClient;
+    observer.attach(client);
+    expect(() => observer.select(0, 'page.navigate', () => client.request('page.navigate', {}, context()))).toThrow(cause);
+    observer.close();
+    expect(sink.facts.find(fact => fact.kind === 'selected-operation')).toMatchObject({ requestCount: 1, requestPending: 0, rejected: true, firstResult: null, adapter: 'rejected', code: 'CANCELLED' });
+  });
+
+  it('preserves an asynchronous matcher promise and never flips an earlier failed matcher to passed', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    observer.select(0, 'browser.query', () => 1);
+    const original = new Error('matcher');
+    expect(() => observer.assert(0, () => { throw original; })).toThrow(original);
+    const matcher = Promise.resolve();
+    expect(observer.assert(0, () => matcher)).toBe(matcher); await matcher;
+    observer.close();
+    expect(sink.facts.find(fact => fact.kind === 'selected-operation')).toMatchObject({ adapter: 'fulfilled', assertion: 'failed' });
   });
 });

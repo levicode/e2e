@@ -1,3 +1,4 @@
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The native engine's lifecycle through the public contract: one shared
  * browser per engine, one context per attempt, and honest idempotent
@@ -26,7 +27,7 @@ import { nativeBrowser } from '../helpers/native-browser.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
-import { beginSyntheticCase, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { beginSyntheticCase, type SyntheticCommand, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 
 /** Synchronous boundary facts only; never wrap or repeat a browser operation. */
 class LifecycleEvidence {
@@ -35,7 +36,21 @@ class LifecycleEvidence {
   currentPhase: SyntheticPhase = 'init';
   private active: { section: keyof SyntheticOutcome; phase: SyntheticPhase } | undefined;
 
-  constructor(caseId: SyntheticCaseId) { this.evidence = beginSyntheticCase(caseId); }
+  observer: SyntheticNativeObserver;
+  private restore = () => {};
+  constructor(caseId: SyntheticCaseId) {
+    this.evidence = beginSyntheticCase(caseId);
+    this.observer = new SyntheticNativeObserver(this.evidence, () => this.currentPhase);
+    if (caseId !== 'P27') {
+      try {
+        const connect = NativeClient.connect;
+        const spy = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => this.observer.connection(connect(...args)));
+        this.restore = () => spy.mockRestore();
+      } catch { this.evidence.invalidate(); }
+    }
+  }
+  select<T>(ordinal: number, command: SyntheticCommand, body: () => T): T { return this.observer.select(ordinal, command, body); }
+  assert<T>(ordinal: number, body: () => T): T { return this.observer.assert(ordinal, body); }
   phase(section: keyof SyntheticOutcome, phase: SyntheticPhase): void {
     this.returned();
     this.currentPhase = phase;
@@ -44,16 +59,17 @@ class LifecycleEvidence {
     this.evidence.record({ kind: 'phase', section, phase, state: 'enter' });
   }
   returned(): void {
-    if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'passed' });
+    // Enter facts plus explicit section/matcher outcomes replace redundant automatic phase passes.
     this.active = undefined;
   }
-  passed(section: keyof SyntheticOutcome): void { this.returned(); this.outcome[section] = 'passed'; }
-  failed(section: keyof SyntheticOutcome): void {
+  passed(section: keyof SyntheticOutcome): void { this.returned(); this.outcome[section] = 'passed'; this.evidence.record({ kind: 'phase', section, phase: this.currentPhase, state: 'passed' }); }
+  failed(section: keyof SyntheticOutcome, cause?: unknown): void {
+    if (cause !== undefined) this.observer.failure(section, cause);
     if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
     this.active = undefined;
     this.outcome[section] = 'failed';
   }
-  finish(): void { this.evidence.finish(this.outcome); }
+  finish(): void { this.observer.close(); try { this.restore(); } catch { this.evidence.invalidate(); } this.evidence.finish(this.outcome); }
 }
 
 /** The segments as files: a local recording never links, so a link here is a failure. */
@@ -188,7 +204,7 @@ async function withAttempt(
 ): Promise<void> {
   evidence?.phase('setup', 'init');
   try { await boot(engine, app); }
-  catch (cause) { evidence?.failed('setup'); evidence?.finish(); throw cause; }
+  catch (cause) { evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
   let started = false;
   try {
     evidence?.phase('setup', 'start');
@@ -198,7 +214,7 @@ async function withAttempt(
     await body();
     evidence?.passed('body');
   } catch (cause) {
-    evidence?.failed(started ? 'body' : 'setup');
+    evidence?.failed(started ? 'body' : 'setup', cause);
     throw cause;
   } finally {
     // Preserve the original sequential finally, including its masking behavior.
@@ -209,7 +225,7 @@ async function withAttempt(
       await engine.dispose!(cleanup());
       evidence?.passed('cleanup');
     // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-    } catch (cause) { evidence?.failed('cleanup'); throw cause; }
+    } catch (cause) { evidence?.failed('cleanup', cause); throw cause; }
     finally { evidence?.finish(); }
   }
 }
@@ -321,12 +337,12 @@ describe('web engine lifecycle', () => {
         priorAttemptRetired = false;
         await engine.startAttempt!(attempt(attemptId, dir));
       }
-      catch (cause) { evidence?.failed('setup'); evidence?.finish(); throw cause; }
+      catch (cause) { evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
       evidence?.passed('setup');
       try {
         await body();
         evidence?.passed('body');
-      } catch (cause) { evidence?.failed('body'); throw cause; }
+      } catch (cause) { evidence?.failed('body', cause); throw cause; }
       finally {
         try {
           evidence?.phase('cleanup', 'end');
@@ -336,7 +352,7 @@ describe('web engine lifecycle', () => {
           priorAttemptRetired = true;
           evidence?.passed('cleanup');
         // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-        } catch (cause) { evidence?.failed('cleanup'); throw cause; }
+        } catch (cause) { evidence?.failed('cleanup', cause); throw cause; }
         finally { evidence?.finish(); }
       }
     }
@@ -863,6 +879,7 @@ describe('web engine lifecycle', () => {
 
     it('refuses to swipe a node with no box even when its child is under aim', async () => {
       const evidence = new LifecycleEvidence('P27');
+      const observer = evidence.observer = new SyntheticNativeObserver(evidence.evidence, () => evidence.currentPhase);
       const caseDeadline = performance.now() + 30_000;
       const settleReserveMs = 10_000;
       const swipeBudgetMs = 1_000;
@@ -875,10 +892,11 @@ describe('web engine lifecycle', () => {
       const performed: { timeoutMs: number; result: ReturnType<NativeClient['request']> }[] = [];
       const request = NativeClient.prototype.request;
       const spy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
-        if (args[0] !== 'browser.perform' || args[2].attemptId !== 'dc2') return request.apply(this, args);
+        if ((args[0] !== 'browser.perform' && args[0] !== 'scope.end') || args[2].attemptId !== 'dc2') return request.apply(this, args);
         const timeoutMs = args[2].timeoutMs;
         const result = request.apply(this, args);
-        performed.push({ timeoutMs, result });
+        observer.observePromise(args[0], evidence.currentPhase, result);
+        if (args[0] === 'browser.perform') performed.push({ timeoutMs, result });
         return result;
       });
       try {
@@ -903,9 +921,9 @@ describe('web engine lifecycle', () => {
           evidence.phase('body', 'perform');
           // The actionability wait must fit inside the unchanged 30s case,
           // leaving time for native settlement, end, and a fresh attempt.
-          await expect(
-            engine.perform!(feed!.ref, { kind: 'swipe', direction: 'down' }, boundedOperation('dc2', swipeBudgetMs)),
-          ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+          await evidence.assert(0, () => expect(
+            evidence.select(0, 'browser.perform', () => engine.perform!(feed!.ref, { kind: 'swipe', direction: 'down' }, boundedOperation('dc2', swipeBudgetMs))),
+          ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' }));
           evidence.phase('body', 'assertion');
           expect(performed).toHaveLength(1);
           expect(performed[0]!.timeoutMs).toBeGreaterThan(0);
@@ -1070,10 +1088,12 @@ describe('web engine lifecycle', () => {
       const exhausted = new AbortController();
       exhausted.abort();
       evidence.phase('body', 'end');
-      await expect(engine.endAttempt!({ signal: exhausted.signal, timeoutMs: 0 })).resolves.toBeUndefined();
-      expect(await openAttempt(engine, app, artifactsDir, 'g2', evidence)).toBe('Home');
+      await evidence.assert(0, () => expect(evidence.select(0, 'scope.end', () => engine.endAttempt!({ signal: exhausted.signal, timeoutMs: 0 }))).resolves.toBeUndefined());
+      evidence.phase('body', 'start');
+      const next = await evidence.select(1, 'scope.open', () => openAttempt(engine, app, artifactsDir, 'g2', evidence));
+      evidence.assert(1, () => expect(next).toBe('Home'));
       evidence.passed('body');
-    } catch (cause) { evidence.failed(booted ? 'body' : 'setup'); throw cause; }
+    } catch (cause) { evidence.failed(booted ? 'body' : 'setup', cause); throw cause; }
     finally {
       try {
         evidence.phase('cleanup', 'end');
@@ -1082,7 +1102,7 @@ describe('web engine lifecycle', () => {
         await engine.dispose!(cleanup());
         evidence.passed('cleanup');
       // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-      } catch (cause) { evidence.failed('cleanup'); throw cause; }
+      } catch (cause) { evidence.failed('cleanup', cause); throw cause; }
       finally { evidence.finish(); }
     }
   });
@@ -1094,13 +1114,13 @@ describe('web engine lifecycle', () => {
       const controller = new AbortController();
       const started = Date.now();
       evidence.phase('body', 'navigate');
-      const pending = engine.session!.open!(`${app.url}/slow`, operation('h1', controller.signal));
+      const pending = evidence.select(0, 'page.navigate', () => engine.session!.open!(`${app.url}/slow`, operation('h1', controller.signal)));
       setTimeout(() => {
         evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'enter' });
         controller.abort();
         evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'passed' });
       }, 100);
-      await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
+      await evidence.assert(0, () => expect(pending).rejects.toMatchObject({ code: 'CANCELLED' }));
       evidence.phase('body', 'assertion');
       expect(Date.now() - started).toBeLessThan(3_000);
     }, evidence);
@@ -1110,9 +1130,9 @@ describe('web engine lifecycle', () => {
     const evidence = new LifecycleEvidence('P33');
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 's1', async () => {
-      const token = async (): Promise<string> => {
+      const token = async (selected = false): Promise<string> => {
         evidence.phase('body', 'locate');
-        const [heading] = await engine.locate!(byRole('heading'), operation('s1'));
+        const [heading] = await (selected ? evidence.select(4, 'browser.query', () => engine.locate!(byRole('heading'), operation('s1'))) : engine.locate!(byRole('heading'), operation('s1')));
         evidence.phase('body', 'assertion');
         return heading?.name ?? '';
       };
@@ -1139,19 +1159,22 @@ describe('web engine lifecycle', () => {
 
       // A restart keeps the persisted state and shows nothing until the harness reopens the app.
       evidence.phase('body', 'restart');
-      await engine.session!.restart!(operation('s1'));
-      evidence.phase('body', 'evaluate');
-      expect(await fixtureOf(engine, 's1').url()).toBe('about:blank');
+      await evidence.select(0, 'scope.restart', () => engine.session!.restart!(operation('s1')));
+      evidence.phase('body', 'url');
+      const blankUrl = await evidence.select(1, 'page.url', () => fixtureOf(engine, 's1').url());
+      evidence.assert(1, () => expect(blankUrl).toBe('about:blank'));
       evidence.phase('body', 'observe');
-      expect((await engine.observe!(operation('s1'))).location).toBe('about:blank');
+      const blank = await evidence.select(2, 'browser.observe', () => engine.observe!(operation('s1')));
+      evidence.assert(2, () => expect(blank.location).toBe('about:blank'));
       evidence.phase('body', 'navigate');
-      await engine.session!.open!(`${app.url}/state`, operation('s1'));
-      expect(await token()).toBe('abc');
+      await evidence.select(3, 'page.navigate', () => engine.session!.open!(`${app.url}/state`, operation('s1')));
+      const restoredToken = await token(true);
+      evidence.assert(4, () => expect(restoredToken).toBe('abc'));
 
       evidence.phase('body', 'assertion');
-      await expect(
-        engine.state!.restore({ format: 'playwright-storage-state', version: 1, data: '/etc/passwd' }, operation('s1')),
-      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await evidence.assert(5, () => expect(
+        evidence.select(5, 'state.restore', () => engine.state!.restore({ format: 'playwright-storage-state', version: 1, data: '/etc/passwd' }, operation('s1'))),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' }));
     }, evidence);
   });
 
@@ -1237,7 +1260,7 @@ describe('web engine lifecycle', () => {
         // A restart closes the page and opens another, blank until the harness
         // reopens the app: the recording continues in a second segment.
         evidence.phase('body', 'restart');
-        await engine.session!.restart!(operation('v1'));
+        await evidence.select(0, 'scope.restart', () => engine.session!.restart!(operation('v1')));
         evidence.phase('body', 'observe');
         expect((await engine.observe!(operation('v1'))).root.ref.id).not.toBe(initialDocument.id);
         evidence.phase('body', 'evaluate');

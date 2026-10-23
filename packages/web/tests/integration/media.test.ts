@@ -9,16 +9,32 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, OperationContext } from 'e2e/engine';
 import { web, type Browser, type WebMedia, type WebOptions } from '../../src/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
-import { beginSyntheticCase, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { beginSyntheticCase, type SyntheticCaseId, type SyntheticCommand, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+
+import { NativeClient } from '../../src/native/client.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 
 /** Synchronous facts preserve the original operation and sequential shutdown. */
 class MediaEvidence {
-  readonly evidence: SyntheticEvidence = beginSyntheticCase('P35');
+  readonly evidence: SyntheticEvidence;
+  readonly observer: SyntheticNativeObserver;
+  private restore = () => {};
+  constructor(id: SyntheticCaseId = 'P35') {
+    this.evidence = beginSyntheticCase(id);
+    this.observer = new SyntheticNativeObserver(this.evidence, () => this.currentPhase);
+    try {
+      const connect = NativeClient.connect;
+      const spy = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => this.observer.connection(connect(...args)));
+      this.restore = () => spy.mockRestore();
+    } catch { this.evidence.invalidate(); }
+  }
+  select<T>(ordinal: number, command: SyntheticCommand, body: () => T): T { return this.observer.select(ordinal, command, body); }
+  assert<T>(ordinal: number, body: () => T): T { return this.observer.assert(ordinal, body); }
   readonly outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
   currentPhase: SyntheticPhase = 'init';
   private active: { section: keyof SyntheticOutcome; phase: SyntheticPhase } | undefined;
@@ -35,12 +51,13 @@ class MediaEvidence {
     this.active = undefined;
   }
   passed(section: keyof SyntheticOutcome): void { this.returned(); this.outcome[section] = 'passed'; }
-  failed(section: keyof SyntheticOutcome): void {
+  failed(section: keyof SyntheticOutcome, cause?: unknown): void {
+    if (cause !== undefined) this.observer.failure(section, cause);
     if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
     this.active = undefined;
     this.outcome[section] = 'failed';
   }
-  finish(): void { this.evidence.finish(this.outcome); }
+  finish(): void { this.observer.close(); try { this.restore(); } catch { this.evidence.invalidate(); } this.evidence.finish(this.outcome); }
 }
 
 function cleanup(): EngineCleanupContext {
@@ -91,7 +108,7 @@ describe('media emulation', () => {
       await engine.startAttempt!({ attemptId: 'm1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
       evidence?.passed('setup');
       return engine;
-    } catch (cause) { evidence?.failed('setup'); evidence?.finish(); throw cause; }
+    } catch (cause) { evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
   }
 
   async function shutdown(engine: EngineHandle, evidence?: MediaEvidence): Promise<void> {
@@ -101,7 +118,7 @@ describe('media emulation', () => {
       evidence?.phase('cleanup', 'dispose');
       await engine.dispose!(cleanup());
       evidence?.passed('cleanup');
-    } catch (cause) { evidence?.failed('cleanup'); throw cause; }
+    } catch (cause) { evidence?.failed('cleanup', cause); throw cause; }
     finally { evidence?.finish(); }
   }
 
@@ -122,11 +139,12 @@ describe('media emulation', () => {
     return browser;
   }
 
-  async function openMedia(engine: EngineHandle, evidence?: MediaEvidence): Promise<MediaReading> {
+  async function openMedia(engine: EngineHandle, evidence?: MediaEvidence, ordinal = 0): Promise<MediaReading> {
     evidence?.phase('body', 'navigate');
-    await engine.session!.open!(`${app.url}/media`, operation());
+    const open = () => engine.session!.open!(`${app.url}/media`, operation());
+    await (evidence ? evidence.select(ordinal, 'page.navigate', open) : open());
     evidence?.phase('body', 'media-read');
-    return read(engine);
+    return evidence ? evidence.select(ordinal + 1, 'page.evaluate', () => read(engine)) : read(engine);
   }
 
   function read(engine: EngineHandle): Promise<MediaReading> {
@@ -148,16 +166,23 @@ describe('media emulation', () => {
   }
 
   it('loads every page with the configured media, after a restart and a context reset too', async () => {
-    const engine = await boot({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    const evidence = new MediaEvidence('P45');
+    const engine = await boot({ colorScheme: 'dark', reducedMotion: 'reduce' }, evidence);
     const expected = loadedWith({ dark: true, reduce: true });
     try {
-      expect(await openMedia(engine)).toEqual(expected);
-      await engine.session!.restart!(operation());
-      expect(await openMedia(engine)).toEqual(expected);
-      await engine.session!.reset!(operation());
-      expect(await openMedia(engine)).toEqual(expected);
-    } finally {
-      await shutdown(engine);
+      const initial = await openMedia(engine, evidence, 0);
+      evidence.assert(1, () => expect(initial).toEqual(expected));
+      evidence.phase('body', 'restart');
+      await evidence.select(2, 'scope.restart', () => engine.session!.restart!(operation()));
+      const restarted = await openMedia(engine, evidence, 3);
+      evidence.assert(4, () => expect(restarted).toEqual(expected));
+      evidence.phase('body', 'state-reset');
+      await evidence.select(5, 'scope.reset', () => engine.session!.reset!(operation()));
+      const reset = await openMedia(engine, evidence, 6);
+      evidence.assert(7, () => expect(reset).toEqual(expected));
+      evidence.passed('body');
+    } catch (cause) { evidence.failed('body', cause); throw cause; } finally {
+      await shutdown(engine, evidence);
     }
   });
 
@@ -178,29 +203,34 @@ describe('media emulation', () => {
       evidence.phase('setup', 'fixture-create');
       browser = fixtureOf(engine);
       evidence.passed('setup');
-    } catch (cause) { evidence.failed('setup'); evidence.finish(); throw cause; }
+    } catch (cause) { evidence.failed('setup', cause); evidence.finish(); throw cause; }
     try {
       evidence.phase('body', 'media-configure');
       await browser.emulateMedia({ reducedMotion: 'reduce' });
-      expect(await openMedia(engine, evidence)).toEqual(loadedWith({ dark: true, reduce: true }));
+      const initial = await openMedia(engine, evidence, 0);
+      evidence.assert(1, () => expect(initial).toEqual(loadedWith({ dark: true, reduce: true })));
       // A change applies to the open page at once; a feature left out keeps its value.
       evidence.phase('body', 'media-configure');
       await browser.emulateMedia({ colorScheme: 'light' });
       evidence.phase('body', 'media-read');
-      expect(await read(engine)).toEqual({ ...loadedWith({ dark: false, reduce: true }), atLoad: { dark: true, reduce: true } });
+      const changed = await evidence.select(2, 'page.evaluate', () => read(engine));
+      evidence.assert(2, () => expect(changed).toEqual({ ...loadedWith({ dark: false, reduce: true }), atLoad: { dark: true, reduce: true } }));
       const expected = loadedWith({ dark: false, reduce: true });
       evidence.phase('body', 'restart');
-      await engine.session!.restart!(operation());
-      expect(await openMedia(engine, evidence)).toEqual(expected);
+      await evidence.select(3, 'scope.restart', () => engine.session!.restart!(operation()));
+      const restarted = await openMedia(engine, evidence, 4);
+      evidence.assert(5, () => expect(restarted).toEqual(expected));
       evidence.phase('body', 'state-reset');
-      await engine.session!.reset!(operation());
-      expect(await openMedia(engine, evidence)).toEqual(expected);
+      await evidence.select(6, 'scope.reset', () => engine.session!.reset!(operation()));
+      const reset = await openMedia(engine, evidence, 7);
+      evidence.assert(8, () => expect(reset).toEqual(expected));
       evidence.phase('body', 'media-configure');
       await browser.emulateMedia({ colorScheme: 'no-preference', reducedMotion: 'no-preference' });
       evidence.phase('body', 'media-read');
-      expect(await read(engine)).toMatchObject({ color: LIGHT, transition: '0.3s', dark: false, reduce: false });
+      const final = await evidence.select(9, 'page.evaluate', () => read(engine));
+      evidence.assert(9, () => expect(final).toMatchObject({ color: LIGHT, transition: '0.3s', dark: false, reduce: false }));
       evidence.passed('body');
-    } catch (cause) { evidence.failed('body'); throw cause; }
+    } catch (cause) { evidence.failed('body', cause); throw cause; }
     finally {
       await shutdown(engine, evidence);
     }

@@ -35,7 +35,8 @@ class CaseEvidence {
     else this.active = undefined;
     if (this.outcome[section] !== 'failed') this.outcome[section] = 'passed';
   }
-  failed(section: keyof SyntheticOutcome = this.section): void {
+  failed(section: keyof SyntheticOutcome = this.section, cause?: unknown): void {
+    if (cause !== undefined) this.observer.failure(section, cause);
     if (this.active?.section === section) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
     this.active = undefined;
     this.outcome[section] = 'failed';
@@ -90,25 +91,26 @@ beforeEach((context) => {
       evidence?.phase('setup', 'navigate');
       await fixture!.browser.goto('about:blank');
       evidence?.passed('setup');
-    } catch (cause) { evidence?.failed('setup'); throw cause; }
+    } catch (cause) { evidence?.failed('setup', cause); throw cause; }
   };
   return evidence === undefined ? open() : evidence.observer.run(open);
 });
 afterEach((context) => {
-  // Stop observing the shared client before any other row can run, including shuffled runs.
+  // Pause the shared client between rows; only the original afterAll reattaches for cleanup.
   const evidence = iframeTasks.get(context.task);
-  if (evidence !== undefined) { restoreIframeConnection(); evidence.observer.close(); }
+  if (evidence !== undefined) { restoreIframeConnection(); evidence.observer.detach(); }
 });
 afterAll(async () => {
   try {
+    if (iframeEvidence) for (const client of fixtureClients) iframeEvidence.observer.attach(client);
     iframeEvidence?.phase('cleanup', 'dispose');
     await fixture?.close();
     iframeEvidence?.passed('cleanup');
-  } catch (cause) { iframeEvidence?.failed('cleanup'); throw cause; }
+  } catch (cause) { iframeEvidence?.failed('cleanup', cause); throw cause; }
   finally { restoreFixtureConnection(); restoreIframeConnection(); iframeEvidence?.finish(); }
 });
 // Shared beforeAll failure has no P23 body record. Its original hook failure is authoritative.
-// Validated-result slots cover only P23 navigation/body, not the shared fixture close.
+// Shared fixture close is observed only when afterAll explicitly reattaches these exact clients.
 
 /** Create nested real shadow roots and record only events delivered to their focused leaf. */
 async function focusShadow(shadowMode: ShadowRootMode, markup: string): Promise<void> {
@@ -162,9 +164,12 @@ it('does not mistake the iframe host for an editable control when its button has
         return null;
       });
       evidence?.phase('body', 'perform');
-      await expect(fixture!.engine.keyboard!.type('lost', { replace: false }, operation())).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+      const type = () => fixture!.engine.keyboard!.type('lost', { replace: false }, operation());
+      const pending = evidence ? evidence.observer.select(0, 'browser.keyboard.type', type) : type();
+      const assertion = () => expect(pending).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+      await (evidence ? evidence.observer.assert(0, assertion) : assertion());
       evidence?.passed('body');
-    } catch (cause) { evidence?.failed('body'); throw cause; }
+    } catch (cause) { evidence?.failed('body', cause); throw cause; }
   };
   return evidence === undefined ? check() : evidence.observer.run(check);
 });

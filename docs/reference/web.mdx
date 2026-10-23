@@ -231,7 +231,10 @@ What survives:
 - Operations already dispatched are never retried.
 - Recovery clears old node references. Observation-derived `tapAt` calls,
   observation-root swipes, and focused engine keyboard input need a fresh
-  engine observation before they resume.
+  engine observation before they resume. For observation-derived points, only a
+  successful public observation of the recovered connection restores input, after
+  any requested pixels finish transferring. Locator reads, direct fixture input,
+  screenshots, and optional action traces do not restore that evidence.
 - An observation or locator read started before recovery cannot publish
   references after the connection changes. Each attempt owns its binding and
   recordings, so late cleanup cannot change a later attempt.
@@ -1244,3 +1247,21 @@ Cleanup requires its correlated native acknowledgement and proxy settlement,
 not EOF or process exit alone. Concurrent cleanup callers share that outcome;
 cleanup does not reconnect or make a terminal client reusable. A failed
 `scope.end` remains a cleanup failure even if final shutdown later succeeds.
+
+
+Attempt cleanup has one independent 15-second owner budget shared by recording,
+native scope, connection, and lease cleanup. Cancelling or exhausting an
+`endAttempt` caller's budget resolves that caller's wait, not the cleanup itself.
+Concurrent callers join the same work. The next attempt waits under its own
+signal and cannot open a scope or acquire a lease until cleanup succeeds.
+An owner deadline or cleanup failure permanently blocks reuse, even if an old
+operation later succeeds. Provider leases remain held when native or recording
+cleanup is unconfirmed; cleanup never replays a business action.
+
+A later explicit cleanup call may make another bounded attempt to reap retained
+resources, sharing that work with concurrent cleanup callers. Successful reaping
+can release the exact lease once, but every later cleanup call still reports the
+original failure and the worker stays unusable. There is no automatic retry loop.
+An already-started mandatory native close retains its separate, existing
+15-second upper bound; a late close acknowledgement cannot undo the adapter's
+owner deadline or restore reuse.

@@ -26,6 +26,7 @@ const peers: ProviderPeer[] = [];
 let nextScope = 0;
 let repeatedContext: string | undefined;
 let failOpen = false;
+let failEnd = false;
 const videoBytes = Buffer.from('synthetic native WebM transfer');
 
 /** Endpoints are asserted at actual scope attachment/recovery, not at proxy negotiation. */
@@ -53,6 +54,7 @@ function installNativePeers(): void {
       }
       if (command === 'scope.reconnect') { owner.scope = `scope-${++nextScope}`; return { data: { identityScope: owner.scope } }; }
       if (command === 'page.activate') return { data: { activated: true } };
+      if (command === 'scope.end' && failEnd) return { error: 'cleanup-failed', effects: 'unknown', scopeState: 'quarantined' };
       if (['scope.configure', 'scope.end', 'network.routes.replace', 'recording.start'].includes(command)) return { data: null };
       if (command === 'blob.release') return { data: { released: true } };
       if (command === 'page.title') return { data: { title: 'reattached' } };
@@ -160,7 +162,7 @@ async function prepared(cloud: BrowserProvider, slots: number): Promise<{ runner
 }
 
 beforeEach(() => {
-  peers.length = 0; nextScope = 0; repeatedContext = undefined; failOpen = false;
+  peers.length = 0; nextScope = 0; repeatedContext = undefined; failOpen = false; failEnd = false;
   installNativePeers();
 });
 afterEach(() => { for (const { peer } of peers) peer.dispose(); vi.restoreAllMocks(); });
@@ -440,7 +442,7 @@ describe('worker scope', () => {
     await worker.dispose(cleanup());
   });
 
-  it('releases the replacement on dispose even when ending the attempt failed', async () => {
+  it('releases the replacement only after confirmed close even when scope end failed', async () => {
     const cloud = provider();
     const { env } = await prepared(cloud.impl, 1);
     const worker = new NativeSurface({ browser: cloud.impl });
@@ -450,8 +452,9 @@ describe('worker scope', () => {
     await peers.at(-1)!.dropBrowser();
     await worker.startAttempt(attempt('a1'));
     expect(cloud.acquired).toHaveLength(2);
-    vi.spyOn(worker, 'endAttempt').mockRejectedValueOnce(new Error('video flush failed'));
-    await expect(worker.dispose(cleanup())).rejects.toThrow(/video flush failed/);
+    failEnd = true;
+    await expect(worker.dispose(cleanup())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    expect(peers.at(-1)!.peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     expect(cloud.released.map((lease) => lease.id)).toEqual(['lease-1']);
   });
 
@@ -967,16 +970,18 @@ describe('recording', () => {
       await expect(worker.stopVideo(operation())).rejects.toMatchObject(invalidArtifact);
       // Legacy ProviderVideo.abandon swallowed this secondary error. Native cleanup
       // retains ownership without stopped proof; an invalid artifact alone says nothing about liveness.
-      await expect(worker.dispose(cleanup())).rejects.toMatchObject(invalidArtifact);
+      const failure = await worker.dispose(cleanup()).catch((cause: unknown) => cause);
+      expect(failure).toMatchObject(invalidArtifact);
       expect(cloud.released).toEqual([]);
       await expect(worker.startAttempt(attempt('unproven-cleanup'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       // The same provider stop is repeatable and can return a validated artifact on retry.
       options.report = 'replay.mp4';
-      await worker.endAttempt(cleanup());
+      await expect(worker.endAttempt(cleanup())).rejects.toBe(failure);
       expect(cloud.stopped).toEqual(['lease-0', 'lease-0', 'lease-0']);
       expect(cloud.released.map(lease => lease.id)).toEqual(['lease-0']);
-      await worker.endAttempt(cleanup());
-      await worker.dispose(cleanup());
+      await expect(worker.endAttempt(cleanup())).rejects.toBe(failure);
+      await expect(worker.dispose(cleanup())).rejects.toBe(failure);
+      await expect(worker.startAttempt(attempt('still-not-reusable'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       expect(cloud.released).toHaveLength(1);
       expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     }

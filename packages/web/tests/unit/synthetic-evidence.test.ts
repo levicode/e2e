@@ -60,3 +60,16 @@ describe('closed concentrated synthetic evidence schemas', () => {
     expect(validSyntheticFact({ ...item, unavailable: true }, 'P42O')).toBe(true);
   });
 });
+
+it('uses current native primitive names and accepts frame errors without retaining their diagnostic payloads', () => {
+  for (const command of ['page.evaluate', 'page.url', 'fixture.query', 'scope.restart', 'scope.reset', 'browser.pointer', 'browser.keyboard.type', 'browser.keyboard.press']) {
+    expect(validSyntheticFact({ kind: 'native-result', slot: 'first-refusal', phase: 'evaluate', command, result }, 'P33')).toBe(true);
+  }
+  for (const command of ['fixture.evaluate', 'fixture.viewport', 'browser.performAt', 'state.reset']) {
+    expect(validSyntheticFact({ kind: 'native-result', slot: 'first-refusal', phase: 'evaluate', command, result }, 'P33')).toBe(false);
+  }
+  for (const code of ['frame-not-found', 'frame-ambiguous']) {
+    expect(validSyntheticNativeResult({ ...result, code })).toBe(true);
+    expect(validSyntheticNativeResult({ ...result, code, frameSelection: { private: 'never' } })).toBe(false);
+  }
+});

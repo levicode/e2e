@@ -12,7 +12,7 @@ import {
   SYNTHETIC_BATCH_ENV, SYNTHETIC_BINDING_ENV, SYNTHETIC_BINDING_FILE, SYNTHETIC_CASE_MANIFEST,
   SYNTHETIC_DIRECTORY_ENV, SYNTHETIC_MANIFEST_BYTES, SYNTHETIC_RECORD_BYTES, SYNTHETIC_TOTAL_BYTES,
   readSyntheticFile, requireSyntheticDirectory, syntheticCase, syntheticCount, syntheticDigest,
-  syntheticKeys, syntheticObject, validSyntheticBinding, validSyntheticConfiguration, validSyntheticSavedRecord,
+  syntheticFactSlot, incompleteSyntheticFact, syntheticKeys, syntheticObject, validSyntheticBinding, validSyntheticConfiguration, validSyntheticSavedRecord,
   type SyntheticBinding, type SyntheticCaseId, type SyntheticConfiguration, type SyntheticFact, type SyntheticSavedRecord, type SyntheticSuite,
 } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 
@@ -149,8 +149,8 @@ function inspectCase(directory: string, entry: SyntheticConfiguration['cases'][n
     if (last.dropped || last.truncated) reasons.push('dropped');
     if (last.incomplete || Object.values(last.outcome).includes('incomplete') || (entry.caseId === 'nested-setup' ? last.outcome.setup : last.outcome.body) === 'not-started') reasons.push('incomplete');
   }
-  if (facts.some(({ fact }) => ('truncated' in fact && fact.truncated) || ('unavailable' in fact && fact.unavailable))) reasons.push('incomplete');
-  const slots = facts.flatMap(({ fact }) => fact.kind === 'native-result' ? [fact.slot] : fact.kind === 'request-rejected-without-result' ? [fact.kind] : []);
+  if (facts.some(({ fact }) => incompleteSyntheticFact(fact))) reasons.push('incomplete');
+  const slots = facts.flatMap(({ fact }) => syntheticFactSlot(fact) ?? []);
   if (new Set(slots).size !== slots.length) reasons.push('invalid-record');
   if (entry.caseId === 'P14' && !completeInstallerEvidence(records, installerRuntime)) reasons.push('wrong-binding');
   if (entry.caseId === 'P16' && !completeConformanceEvidence(records, sourceRoot, entry.sourceSha256)) reasons.push('incomplete');
@@ -207,7 +207,7 @@ export function verifySyntheticEvidence(output: string, value: unknown, expected
     if (recordItems.length < 2 || recordItems.length > budget.maxRecords || Buffer.byteLength(recordItems.map(record => `${JSON.stringify(record)}\n`).join('')) > budget.maxBytes
       || recordItems.some(record => !validSyntheticSavedRecord(record, item.caseId) || Buffer.byteLength(JSON.stringify(record)) + 1 > SYNTHETIC_RECORD_BYTES)
       || sha256(Buffer.from(JSON.stringify(recordItems))) !== item.recordsSha256) fail();
-    const slots = recordItems.flatMap(record => record.kind === 'record' && record.fact.kind === 'native-result' ? [record.fact.slot] : record.kind === 'record' && record.fact.kind === 'request-rejected-without-result' ? [record.fact.kind] : []);
+    const slots = recordItems.flatMap(record => record.kind === 'record' ? syntheticFactSlot(record.fact) ?? [] : []);
     if (new Set(slots).size !== slots.length) fail();
     if (item.caseId === 'P14' && !completeInstallerEvidence(recordItems, installerRuntime)) fail();
     if (item.caseId === 'P16' && !completeConformanceEvidence(recordItems, root, item.sourceSha256)) fail();
@@ -217,6 +217,6 @@ export function verifySyntheticEvidence(output: string, value: unknown, expected
       || last.sequence !== recordItems.length - 2 || last.dropped !== 0 || last.truncated || last.incomplete || Object.values(last.outcome).includes('incomplete')
       || (item.caseId === 'nested-setup' ? last.outcome.setup : last.outcome.body) === 'not-started'
       || recordItems.slice(1, -1).some((record, ordinal) => record.kind !== 'record' || record.sequence !== ordinal
-        || ('truncated' in record.fact && record.fact.truncated) || ('unavailable' in record.fact && record.fact.unavailable))) fail();
+        || incompleteSyntheticFact(record.fact))) fail();
   }
 }

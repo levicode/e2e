@@ -11,10 +11,13 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { chromium, type Browser as OracleBrowser, type Page as OraclePage } from 'playwright-core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { projectionDiagnostics } from '../helpers/projection-diagnostics.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { beginSyntheticCase, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 import { nativeDocument } from '../helpers/native-browser.ts';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 
@@ -25,6 +28,7 @@ let remote: RemoteChrome | undefined;
 let fixture: NativeFixture | undefined;
 let oracle: OracleBrowser | undefined;
 let oraclePage: OraclePage;
+let inertEvidence: { evidence: SyntheticEvidence; outcome: SyntheticOutcome; observer: SyntheticNativeObserver; cleanup(phase: SyntheticPhase): void; restore(): void } | undefined;
 
 beforeAll(async () => {
   remote = await launchRemoteChrome();
@@ -48,8 +52,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const failures: unknown[] = [];
-  for (const close of [() => fixture?.close(), () => oracle?.close(), () => remote === undefined ? undefined : closeRemoteChrome(remote)]) {
-    try { await close(); } catch (cause) { failures.push(cause); }
+  const closes = [() => fixture?.close(), () => oracle?.close(), () => remote === undefined ? undefined : closeRemoteChrome(remote)];
+  for (const [index, close] of closes.entries()) {
+    inertEvidence?.cleanup(index === 0 ? 'end' : index === 1 ? 'browser-close' : 'close-host');
+    try { await close(); } catch (cause) { inertEvidence?.observer.failure('cleanup', cause); failures.push(cause); }
+  }
+  if (inertEvidence) {
+    inertEvidence.observer.close();
+    try { inertEvidence.restore(); } catch { inertEvidence.evidence.invalidate(); }
+    inertEvidence.outcome.cleanup = failures.length > 0 ? 'failed' : 'passed';
+    inertEvidence.evidence.finish(inertEvidence.outcome);
   }
   if (failures.length > 0) throw new AggregateError(failures, 'Visibility fixture cleanup failed');
 });
@@ -176,8 +188,9 @@ function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
 }
 
 /** Model-visible nodes come only from the protected public observation, frames included. */
-async function captureTree(): Promise<SemanticNode[]> {
-  const { root } = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
+async function captureTree(observer?: SyntheticNativeObserver): Promise<SemanticNode[]> {
+  const observe = () => fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
+  const { root } = await (observer ? observer.select(0, 'browser.observe', observe) : observe());
   return flatten(root);
 }
 
@@ -236,15 +249,47 @@ describe('a frame\'s document', () => {
 
 describe('an inert subtree', () => {
   it('leaves the tree, as Chrome drops it, while Playwright still calls it visible', async () => {
-    await nativeDocument(fixture!.browser, `
-      <main inert><h2>Behind the drawer</h2><button id="inert-save">Save</button></main>
-      <button>Close drawer</button>
-    `);
-    const names = (await captureTree()).map((node) => node.name).filter((name) => name !== undefined);
-    expect(names).toContain('Close drawer');
-    expect(names).not.toContain('Save');
-    expect(names).not.toContain('Behind the drawer');
-    expect(await hiddenOf('#inert-save')).toEqual({ reader: false, playwright: false });
+    const evidence = beginSyntheticCase('P46');
+    const outcome: SyntheticOutcome = { setup: 'passed', body: 'incomplete', cleanup: 'not-started' };
+    let phase: SyntheticPhase = 'document';
+    const observer = new SyntheticNativeObserver(evidence, () => phase);
+    let active = true; let cleanupActive = false; let owner: NativeClient | undefined;
+    let restore = () => {};
+    try {
+      const request = NativeClient.prototype.request;
+      const spy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
+        const promise = request.apply(this, args);
+        if (active || (cleanupActive && this === owner)) {
+          // eslint-disable-next-line no-this-alias -- Retain only the exact already-observed client for its original shared cleanup.
+          owner ??= this;
+          observer.observePromise(args[0], phase, promise);
+        }
+        return promise;
+      });
+      restore = () => spy.mockRestore();
+    } catch { evidence.invalidate(); }
+    inertEvidence = { evidence, outcome, observer, restore, cleanup(next) { phase = next; active = false; cleanupActive = true; } };
+    try {
+      evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+      await nativeDocument(fixture!.browser, `
+        <main inert><h2>Behind the drawer</h2><button id="inert-save">Save</button></main>
+        <button>Close drawer</button>
+      `);
+      phase = 'observe'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+      const names = (await captureTree(observer)).map((node) => node.name).filter((name) => name !== undefined);
+      phase = 'assertion';
+      observer.assert(0, () => {
+        expect(names).toContain('Close drawer');
+        expect(names).not.toContain('Save');
+        expect(names).not.toContain('Behind the drawer');
+      });
+      expect(await hiddenOf('#inert-save')).toEqual({ reader: false, playwright: false });
+      outcome.body = 'passed';
+    } catch (cause) { outcome.body = 'failed'; observer.failure('body', cause); throw cause; }
+    finally {
+      active = false;
+      // The ORIGINAL shared afterAll re-enables only this exact client for cleanup, then closes the observer/footer.
+    }
   });
 
   it('lists nothing under an inert document root, and nothing slotted into an inert slot of a closed root', async () => {

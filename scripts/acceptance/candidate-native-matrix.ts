@@ -241,6 +241,13 @@ export function verifyFeatureMatrixReceipt(output: string, expectedBinding: Obje
 export function verifyPreparationMatrixReceipt(output: string, expectedBinding: ObjectValue, paths: { source: string; target: string }): void {
   try { verifyMatrixProof('preparation', output, expectedBinding, paths); } catch { throw new Error('Required preparation closed proof is invalid or incomplete'); }
 }
+/** Reuse only an already verified listing, even when subsequent tests failed. Never grants acceptance. */
+export function focusedPreparationInventory(execution: unknown, inventory: unknown, inventorySha256: string, expectedBinding: ObjectValue) {
+  if (!validExecution('preparation', execution) || !['execute', 'verified'].includes(execution.stage) || !execution.binding || !execution.inventory
+    || execution.inventory.sha256 !== inventorySha256 || !validInventory(inventory, 'preparation') || !inventoryPassed(inventory)) throw new Error('Verified default preparation inventory is required');
+  for (const [key, value] of Object.entries(expectedBinding)) if (JSON.stringify(execution.binding[key]) !== JSON.stringify(value)) throw new Error('Preparation inventory build identity mismatch');
+  return { listing: { ...inventory.default.stdout }, entries: inventory.default.entries, proofSha256: inventorySha256 };
+}
 function verifyMatrixProof(mode: MatrixMode, output: string, expectedBinding: ObjectValue, paths: { source: string; target: string }): void {
   const receipt = readProof(join(output, `${stem(mode)}.result.json`)); const executionFile = join(output, `${stem(mode)}.execution.json`); const execution = readProof(executionFile);
   if (!object(receipt) || !keys(receipt, ['schemaVersion', 'kind', 'mode', 'status', 'step', 'prerequisites', 'complete', 'required', 'results', 'binding', 'inventory', 'compile', 'executionStatus', 'stage', 'releaseEligible', 'acceptanceEvidence', 'note', 'executionSha256']) || !validExecution(mode, execution)

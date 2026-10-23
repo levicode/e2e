@@ -60,8 +60,10 @@ it('joins disposal and rejects re-init until a late old handshake is closed', as
   const surface = new NativeSurface({});
   const initializing = surface.init(initInfo()).catch((error: unknown) => error);
   await reached.promise;
-  const first = surface.dispose(cleanup()); const second = surface.dispose(cleanup());
-  expect(second).toBe(first);
+  const first = surface.dispose(cleanup());
+  const owner = (surface as unknown as { disposing: Promise<void> }).disposing;
+  const second = surface.dispose(cleanup());
+  expect((surface as unknown as { disposing: Promise<void> }).disposing).toBe(owner);
   await expect(surface.init(initInfo())).rejects.toBeDefined();
   expect(peers).toHaveLength(1);
   deliver.resolve(); await Promise.all([first, second]);

@@ -52,7 +52,8 @@ class CaseEvidence {
     else this.active = undefined;
     if (this.outcome[section] !== 'failed') this.outcome[section] = 'passed';
   }
-  failed(section: keyof SyntheticOutcome = this.section): void {
+  failed(section: keyof SyntheticOutcome = this.section, cause?: unknown): void {
+    if (cause !== undefined) this.observer.failure(section, cause);
     if (this.active?.section === section) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
     this.active = undefined;
     this.outcome[section] = 'failed';
@@ -74,7 +75,7 @@ function diagnosticCase(id: SyntheticCaseId, body: (evidence: CaseEvidence) => P
     caseTasks.set(context.task, { evidence, restore });
     return evidence.observer.run(() => currentEvidence.run(evidence, async () => {
       try { await body(evidence); evidence.passed('body'); }
-      catch (cause) { evidence.failed(); throw cause; }
+      catch (cause) { evidence.failed(evidence.section, cause); throw cause; }
       // The footer belongs to the original afterEach, not successful body return.
     }));
   };
@@ -118,17 +119,20 @@ function button(name: string): LocatorExpression {
  * well before its budget fails the test too: the budget must bound it, not
  * cut it short.
  */
-async function bounded(call: () => Promise<unknown>): Promise<{ error: unknown }> {
+async function bounded(call: () => Promise<unknown>, selected?: { ordinal: number; command: 'page.title' | 'fixture.query' | 'browser.query' | 'browser.pointer' | 'page.navigate' }): Promise<{ error: unknown }> {
   const started = Date.now();
   const pending = Symbol('pending');
   let timer: NodeJS.Timeout | undefined;
+  const observer = currentEvidence.getStore()?.observer;
+  const original = selected && observer ? observer.select(selected.ordinal, selected.command, call) : call();
   const outcome = await Promise.race([
-    call().then(() => undefined, (error: unknown) => error),
+    original.then(() => undefined, (error: unknown) => error),
     new Promise<typeof pending>((resolve) => { timer = setTimeout(() => resolve(pending), BUDGET_MS + SLACK_MS); }),
   ]);
   clearTimeout(timer);
   if (outcome === pending) throw new Error(`still pending ${BUDGET_MS + SLACK_MS}ms into a ${BUDGET_MS}ms budget`);
-  expect(Date.now() - started).toBeGreaterThanOrEqual(BUDGET_MS - EARLY_MS);
+  const timing = () => expect(Date.now() - started).toBeGreaterThanOrEqual(BUDGET_MS - EARLY_MS);
+  if (selected && observer) observer.assert(selected.ordinal, timing); else timing();
   return { error: outcome };
 }
 
@@ -166,7 +170,7 @@ describe('operations on a hung page', () => {
         evidence?.phase('cleanup', 'dispose');
         await engine.dispose!(cleanup);
         evidence?.passed('cleanup');
-      } catch (cause) { evidence?.failed('cleanup'); throw cause; }
+      } catch (cause) { evidence?.failed('cleanup', cause); throw cause; }
       finally { diagnostic?.restore(); evidence?.finish(); }
     };
     return evidence === undefined ? close() : evidence.observer.run(close);
@@ -239,8 +243,8 @@ describe('operations on a hung page', () => {
     const expectation = browserExpectation();
     evidence.passed('setup');
     evidence.phase('body', 'assertion');
-    const title = await bounded(() => expectation.toHaveTitle('Other', { timeout: BUDGET_MS }));
-    expect(title.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    const title = await bounded(() => expectation.toHaveTitle('Other', { timeout: BUDGET_MS }), { ordinal: 0, command: 'page.title' });
+    evidence.observer.assert(0, () => expect(title.error).toMatchObject({ code: 'OPERATION_TIMEOUT' }));
     // A locator read waits out the action timeout, as the harness's does.
     const card = {
       count: async () => 1,
@@ -250,29 +254,29 @@ describe('operations on a hung page', () => {
       },
     } as unknown as Locator;
     evidence.phase('body', 'assertion');
-    const negated = await bounded(() => expectation.not.toHaveClass(card, 'card', { timeout: BUDGET_MS }));
-    expect(negated.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    const negated = await bounded(() => expectation.not.toHaveClass(card, 'card', { timeout: BUDGET_MS }), { ordinal: 1, command: 'browser.query' });
+    evidence.observer.assert(1, () => expect(negated.error).toMatchObject({ code: 'OPERATION_TIMEOUT' }));
   }));
 
   it('times out a navigation to a server that never answers', diagnosticCase('P20', async (evidence) => {
     await start();
     evidence.phase('body', 'navigate');
-    const open = await bounded(() => engine.session!.open!(`${origin}/never`, operation()));
+    const open = await bounded(() => engine.session!.open!(`${origin}/never`, operation()), { ordinal: 0, command: 'page.navigate' });
     evidence.phase('body', 'assertion');
-    expect(open.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    evidence.observer.assert(0, () => expect(open.error).toMatchObject({ code: 'OPERATION_TIMEOUT' }));
   }));
 
   it('times out a locate and a point tap on a page whose renderer is stuck in a script', diagnosticCase('P21', async (evidence) => {
     await start();
     await freeze();
     evidence.phase('body', 'locate');
-    const locate = await bounded(() => engine.locate!(button('Next'), operation()));
+    const locate = await bounded(() => engine.locate!(button('Next'), operation()), { ordinal: 0, command: 'browser.query' });
     evidence.phase('body', 'assertion');
-    expect(locate.error).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    evidence.observer.assert(0, () => expect(locate.error).toMatchObject({ code: 'OPERATION_TIMEOUT' }));
     evidence.phase('body', 'point-perform');
-    const tap = await bounded(() => engine.performAt!({ x: 10, y: 10 }, { kind: 'tap' }, operation()));
+    const tap = await bounded(() => engine.performAt!({ x: 10, y: 10 }, { kind: 'tap' }, operation()), { ordinal: 1, command: 'browser.pointer' });
     evidence.phase('body', 'assertion');
-    expect(tap.error).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    evidence.observer.assert(1, () => expect(tap.error).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' }));
   }));
 
   it('keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline', async () => {

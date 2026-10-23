@@ -9,12 +9,14 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secrets } from 'e2e';
 import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, OperationContext, Secret } from 'e2e/engine';
 import { web, type Browser } from '../../src/index.ts';
 import { PROTECTED_CREDENTIAL, startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 import { beginSyntheticCase, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
 
 function cleanup(): EngineCleanupContext {
@@ -138,6 +140,13 @@ describe('web({ headers, basicAuth })', () => {
     const outcome: SyntheticOutcome = { setup: 'passed', body: 'incomplete', cleanup: 'not-started' };
     let branch: 'plain' | 'headers-blocked' = 'plain';
     let phase: 'boot' | 'navigate' | 'register-count' | 'shutdown-end' | 'shutdown-dispose' = 'boot';
+    const observer = new SyntheticNativeObserver(evidence, () => phase === 'boot' ? 'start' : phase === 'register-count' ? 'registrations' : phase === 'shutdown-end' ? 'end' : phase === 'shutdown-dispose' ? 'dispose' : 'navigate');
+    let restore = () => {};
+    try {
+      const connect = NativeClient.connect;
+      const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observer.connection(connect(...args)));
+      restore = () => connection.mockRestore();
+    } catch { evidence.invalidate(); }
     /** These are source-configured branches, not observations of an internal worker rule. */
     const record = (state: 'enter' | 'passed' | 'failed', registeredCount: number | null = null): void =>
       evidence.record({ kind: 'service-worker', branch, phase, state, headersConfigured: branch === 'headers-blocked', registeredCount });
@@ -148,9 +157,9 @@ describe('web({ headers, basicAuth })', () => {
         phase = 'navigate'; record('enter'); await headingAt(plain, 's0', `${app.url}/`); record('passed');
         // The fixture itself can register one: 127.0.0.1 is a secure context.
         phase = 'register-count'; record('enter');
-        const count = await fixtureOf(plain, app, 's0').evaluate(registrations); record('passed', count);
-        expect(count).toBe(1);
-      } catch (cause) { outcome.body = 'failed'; record('failed'); throw cause; }
+        const count = await observer.select(0, 'page.evaluate', () => fixtureOf(plain, app, 's0').evaluate(registrations)); record('passed', count);
+        observer.assert(0, () => expect(count).toBe(1));
+      } catch (cause) { observer.failure('body', cause); outcome.body = 'failed'; record('failed'); throw cause; }
       finally {
         outcome.cleanup = 'incomplete';
         try {
@@ -158,7 +167,7 @@ describe('web({ headers, basicAuth })', () => {
           phase = 'shutdown-dispose'; record('enter'); await plain.dispose!(cleanup()); record('passed');
           outcome.cleanup = 'passed';
         // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-        } catch (cause) { outcome.cleanup = 'failed'; record('failed'); throw cause; }
+        } catch (cause) { observer.failure('cleanup', cause); outcome.cleanup = 'failed'; record('failed'); throw cause; }
       }
       branch = 'headers-blocked'; phase = 'boot';
       const engine = web({ headers: { 'x-fixture-header': 'no-workers' } });
@@ -169,7 +178,7 @@ describe('web({ headers, basicAuth })', () => {
         const count = await fixtureOf(engine, app, 's1').evaluate(registrations); record('passed', count);
         expect(count).toBe(0);
         outcome.body = 'passed';
-      } catch (cause) { outcome.body = 'failed'; record('failed'); throw cause; }
+      } catch (cause) { observer.failure('body', cause); outcome.body = 'failed'; record('failed'); throw cause; }
       finally {
         outcome.cleanup = 'incomplete';
         try {
@@ -177,9 +186,9 @@ describe('web({ headers, basicAuth })', () => {
           phase = 'shutdown-dispose'; record('enter'); await engine.dispose!(cleanup()); record('passed');
           outcome.cleanup = 'passed';
         // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-        } catch (cause) { outcome.cleanup = 'failed'; record('failed'); throw cause; }
+        } catch (cause) { observer.failure('cleanup', cause); outcome.cleanup = 'failed'; record('failed'); throw cause; }
       }
-    } finally { evidence.finish(outcome); }
+    } finally { observer.close(); try { restore(); } catch { evidence.invalidate(); } evidence.finish(outcome); }
   });
 
   it('answers a basic-auth challenge wherever one is issued', async () => {

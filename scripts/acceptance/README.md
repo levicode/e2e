@@ -90,6 +90,37 @@ real-browser proof: the new public and native supersession gates require hosted
 execution before claiming that behavior passed. The optional benchmark remains
 unchanged and is not a substitute for these mandatory cases.
 
+## Diagnostic-only exact-build reuse
+
+The same ordinary candidate run may upload `native-focused-diagnostic-<native SHA>-<run>-<attempt>`
+with three-day retention. This is not the installable candidate bundle and is
+never release or acceptance evidence, even when its packaging succeeds.
+It contains exactly `production`, `default-test-harness`, and `manifest.json`.
+No target directory, workspace, environment, cache, home, browser profile,
+feature runtime, credentials, or raw compiler/listing output enters it.
+
+The build receipt is captured before any acceptance-faults build. Packaging
+reuses only the existing verified preparation listing, including when a later
+exact test failed; a missing or unverified listing produces no artifact. The
+closed manifest binds both repositories/commits/trees, Cargo.lock, workflow,
+compiler metadata, default features/profile, toolchain/host triple, installed
+Chromium version/hash, listing digest, binary lengths and SHA256 values. Source,
+compiler manifests and original/copied bytes are rechecked before atomic staging.
+All existing mandatory gates and the gated installable bundle remain unchanged.
+
+To use a downloaded artifact, first check the GitHub-returned artifact digest
+and inspect archive entries before extracting into a fresh directory (reject
+absolute/parent paths, links, duplicates, extra files and oversized entries).
+Cross-check the manifest against the desired native/e2e revisions and current
+clean source trees, then check its trusted digest and every file digest; the
+`verifyFocusedArtifact` helper checks a safely extracted directory against an
+independently trusted manifest and digest. It does not extract, install, chmod,
+or execute anything. Do not assume host compatibility from filenames. Native
+execution requires separate authorization, a compatible Linux host/toolchain
+runtime, the same Chromium version, and fresh runtime negotiation. Use only an
+existing exact allowlisted test with `--exact`, retaining its original body,
+timeout and cleanup. Focused evidence never replaces full candidate CI.
+
 ## Local checks
 
 `node --test scripts/acceptance/candidate.test.ts` checks only fail-closed

@@ -10,10 +10,12 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secrets } from 'e2e';
 import type { EngineCleanupContext, EngineFixtureContext, OperationContext } from 'e2e/engine';
 import { createBrowserFixture, type Browser } from '../../src/browser.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import type { WebOptions } from '../../src/web-options.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
@@ -89,10 +91,18 @@ describe('init scripts', () => {
 
   it('runs the configured scripts in order before the page, in frames, new tabs, and replaced contexts', async () => {
     const evidence = beginSyntheticCase('P22');
+    let phase: SyntheticPhase = 'init';
+    const observer = new SyntheticNativeObserver(evidence, () => phase);
     /** Boots one worker of a surface with `options` and runs `body` in one attempt with its `browser` fixture. */
     async function diagnosedAttempt(options: WebOptions, body: (browser: Browser, surface: NativeSurface) => Promise<void>): Promise<void> {
       const outcome: SyntheticOutcome = { setup: 'incomplete', body: 'not-started', cleanup: 'not-started' };
-      let phase: SyntheticPhase = 'init';
+      phase = 'init';
+      let restore = () => {};
+      try {
+        const connect = NativeClient.connect;
+        const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observer.connection(connect(...args)));
+        restore = () => connection.mockRestore();
+      } catch { evidence.invalidate(); }
       let section: 'setup' | 'body' | 'cleanup' = 'setup';
       const surface = new NativeSurface(options);
       const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-init-scripts-artifacts-'));
@@ -116,14 +126,15 @@ describe('init scripts', () => {
         await body(browser, surface);
         outcome.body = 'passed'; evidence.record({ kind: 'phase', section, phase, state: 'passed' });
       } catch (cause) {
-        outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+        observer.failure(section, cause); outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
         throw cause;
       } finally {
         section = 'cleanup'; outcome.cleanup = 'incomplete'; phase = 'end';
         try {
           evidence.record({ kind: 'phase', section, phase, state: 'enter' });
           let endFailed = false;
-          await surface.endAttempt(cleanup()).catch(() => {
+          await surface.endAttempt(cleanup()).catch((cause: unknown) => {
+            observer.failure('cleanup', cause);
             endFailed = true; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
           });
           if (!endFailed) evidence.record({ kind: 'phase', section, phase, state: 'passed' });
@@ -133,20 +144,20 @@ describe('init scripts', () => {
           rmSync(artifactsDir, { recursive: true, force: true });
           outcome.cleanup = endFailed ? 'failed' : 'passed';
         } catch (cause) {
-          outcome.cleanup = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+          observer.failure('cleanup', cause); outcome.cleanup = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
           // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
           throw cause;
-        } finally { evidence.finish(outcome); }
+        } finally { observer.close(); try { restore(); } catch { evidence.invalidate(); } evidence.finish(outcome); }
       }
     }
 
     /** Stage ordinals identify fixture samples, never native document/session tenure. */
-    const recordTrail = (phase: 'main' | 'frame' | 'popup' | 'reset', fixtureLifecycleOrdinal: 0 | 1 | 2 | 3, trail: unknown): void => {
+    const recordTrail = (lifecyclePhase: 'main' | 'frame' | 'popup' | 'reset', fixtureLifecycleOrdinal: 0 | 1 | 2 | 3, trail: unknown): void => {
       for (const scriptOrdinal of [0, 1, 2, 3] as const) evidence.observe(() => {
         const expected = ['source', 'file', 'function', 'method'];
         const valid = Array.isArray(trail) && trail.every(item => typeof item === 'string' && expected.includes(item));
         if (!valid) evidence.invalidate();
-        return { kind: 'script-boot', phase, fixtureLifecycleOrdinal, scriptOrdinal,
+        return { kind: 'script-boot', phase: lifecyclePhase, fixtureLifecycleOrdinal, scriptOrdinal,
           executionCount: valid ? trail.filter(item => item === expected[scriptOrdinal]).length : null,
           exactOrder: valid ? trail.length === expected.length && trail.every((item, index) => item === expected[index]) : null };
       });
@@ -172,8 +183,9 @@ describe('init scripts', () => {
         ).then(value => { frameTrail = value; return value; })).toEqual(expected);
       } finally { recordTrail('frame', 1, frameTrail); }
 
+      phase = 'popup';
       evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'enter' });
-      const tabTrail = await browser.evaluate((target) => new Promise<string[]>((resolve, reject) => {
+      const tabTrail = await observer.select(0, 'page.evaluate', () => browser.evaluate((target) => new Promise<string[]>((resolve, reject) => {
         let tab: Window | null = null;
         const loaded = (event: MessageEvent) => {
           if (event.origin !== location.origin || event.source !== tab) return;
@@ -188,10 +200,10 @@ describe('init scripts', () => {
           window.removeEventListener('message', loaded);
           reject(new Error('The init-script fixture popup did not open'));
         }
-      }), `${url}/`);
+      }), `${url}/`));
       evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'passed' });
       recordTrail('popup', 2, tabTrail);
-      expect(tabTrail).toEqual(expected);
+      observer.assert(0, () => expect(tabTrail).toEqual(expected));
 
       evidence.record({ kind: 'phase', section: 'body', phase: 'reset', state: 'enter' });
       await surface.reset(operation());

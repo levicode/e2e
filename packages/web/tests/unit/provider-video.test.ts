@@ -98,11 +98,15 @@ describe('provider recording lifecycle', () => {
     await engine.artifacts!.startVideo!(operation()); land(recording('first', stopped, 2));
     await vi.waitFor(() => expect(stopped).toEqual(['first']));
     await expect(engine.settleAttempt!(cleanup())).rejects.toMatchObject({ message: expect.stringContaining('cloud') });
-    await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ message: expect.stringContaining('cloud') });
+    const failure = await engine.endAttempt!(cleanup()).catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ message: expect.stringContaining('cloud') });
     expect(stopped).toEqual(['first', 'first']); expect(released).not.toHaveBeenCalled();
-    await engine.endAttempt!(cleanup());
+    await expect(engine.endAttempt!(cleanup())).rejects.toBe(failure);
     expect(stopped).toEqual(['first', 'first', 'first', 'second']); expect(released).toHaveBeenCalledTimes(1);
     expect(await first).toMatchObject({ code: 'CANCELLED' });
+    // Reaping succeeded, but a real cleanup failure can never make this worker reusable.
+    await expect(engine.dispose!(cleanup())).rejects.toBe(failure);
+    engines.splice(engines.indexOf(engine), 1);
   });
 
   it("does not detach another caller's live recording start when only a shared waiter cancels", async () => {
@@ -132,7 +136,7 @@ describe('provider recording lifecycle', () => {
     expect(await first).toMatchObject({ code: 'CANCELLED' });
     land({ startedAt: '2026-09-28T10:00:00.000Z', stop: stopped });
     await vi.waitFor(() => expect(stopped).toHaveBeenCalledTimes(1));
-    await expect(engine.endAttempt!({ ...cleanup(), timeoutMs: 10 })).rejects.toBeDefined();
+    await expect(engine.endAttempt!({ ...cleanup(), timeoutMs: 10 })).resolves.toBeUndefined();
     expect(released).not.toHaveBeenCalled();
     const retry = engine.endAttempt!(cleanup()); await new Promise(resolve => setImmediate(resolve));
     expect(stopped).toHaveBeenCalledTimes(1); finish(); await retry;

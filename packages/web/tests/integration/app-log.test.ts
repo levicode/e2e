@@ -143,16 +143,18 @@ describe('app log', () => {
           });
           evidence.passed('setup');
           evidence.enter('open', 'body');
-          await surface.open(`${url}/moving`, operation());
+          await evidence.observer.select(0, 'capture.screenshot', () => surface.open(`${url}/moving`, operation()));
           evidence.enter('assertion');
-          expect(screens).toHaveLength(1);
-          expect(screens[0]!.location).toBe(`${url}/moving`);
+          evidence.observer.assert(0, () => {
+            expect(screens).toHaveLength(1);
+            expect(screens[0]!.location).toBe(`${url}/moving`);
+          });
           // The screen is the trace's, never published: a ref from the observation acts after it, twice.
           const observed = await surface.observe(operation());
           const help = observed.root.children?.find((node) => node.role === 'button');
-          await surface.perform(help!.ref, { kind: 'tap' }, operation());
-          await surface.perform(help!.ref, { kind: 'tap' }, operation());
-          expect(screens).toHaveLength(3);
+          await evidence.observer.select(1, 'capture.screenshot', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          await evidence.observer.select(2, 'capture.screenshot', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
           const navigations = () => [...went];
           await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
           expect(navigations()).toEqual(expect.arrayContaining([
@@ -164,17 +166,17 @@ describe('app log', () => {
           await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
           expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
           evidence.passed('body');
-        } catch (cause) { evidence.failed(); throw cause; }
+        } catch (cause) { evidence.failed(evidence.section, cause); throw cause; }
         finally {
           evidence.enter('end', 'cleanup');
           let cleanupFailed = false;
           try {
-            await surface.endAttempt(cleanup()).catch(() => { cleanupFailed = true; evidence.failed('cleanup'); });
+            await surface.endAttempt(cleanup()).catch((cause: unknown) => { cleanupFailed = true; evidence.failed('cleanup', cause); });
             evidence.enter('dispose', 'cleanup');
             await surface.dispose(cleanup());
             rmSync(artifactsDir, { recursive: true, force: true });
           // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-          } catch (cause) { cleanupFailed = true; throw cause; }
+          } catch (cause) { cleanupFailed = true; evidence.observer.failure('cleanup', cause); throw cause; }
           finally { evidence.finishBackstop(cleanupFailed); }
         }
       });

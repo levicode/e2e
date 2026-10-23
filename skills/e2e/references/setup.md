@@ -227,6 +227,9 @@ start a script that brings them up and serves the app.
   connection is reacquired at the next attempt.
   Recovery retires in-flight observation presentation after its pixel blob cleanup;
   only fresh observations can be published after a successful reconnect.
+  Observation-derived point input resumes only after a public engine observation
+  succeeds, including any requested pixels. Locator reads and screenshots do not
+  count; direct `browser.mouse` input remains available to test code.
 
 Two browsers, one app declaration:
 
