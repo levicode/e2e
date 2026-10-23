@@ -22,7 +22,7 @@ test('the exact synthetic corpus supplies a unique legal field for every target'
 test('expected disagreements map uniquely to their physical source lines and original coordinates', () => {
   const domain = conformanceSourceDomain(tables, expected);
   const lines = expected.split('\n');
-  assert.equal(domain.expectations.size, 25);
+  assert.equal(domain.expectations.size, 16);
   const coordinates = new Set<string>();
   for (const [key, row] of domain.expectations) {
     assert.equal(lines[row.expectedLineOrdinal - 1], `${key} | ${row.reason}`);

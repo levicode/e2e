@@ -21,6 +21,8 @@ import type {
 } from 'e2e/engine';
 import { web, type Browser } from '../../src/index.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
@@ -309,11 +311,16 @@ describe('web engine lifecycle', () => {
 
   describe('on one shared browser, a fresh attempt per test', () => {
     const engine = web();
+    let priorAttemptRetired = true;
 
-    /** Runs one attempt on the shared engine and always ends it. */
-    async function inAttempt(attemptId: string, body: () => Promise<void>, dir = artifactsDir, evidence?: LifecycleEvidence): Promise<void> {
+    /** Runs one attempt only after its predecessor's actual end has returned. */
+    async function inAttempt(attemptId: string, body: () => Promise<void>, dir = artifactsDir, evidence?: LifecycleEvidence, endContext: () => EngineCleanupContext = cleanup): Promise<void> {
       evidence?.phase('setup', 'start');
-      try { await engine.startAttempt!(attempt(attemptId, dir)); }
+      try {
+        if (!priorAttemptRetired) throw new Error('The shared engine still has an unfinished or failed attempt retirement');
+        priorAttemptRetired = false;
+        await engine.startAttempt!(attempt(attemptId, dir));
+      }
       catch (cause) { evidence?.failed('setup'); evidence?.finish(); throw cause; }
       evidence?.passed('setup');
       try {
@@ -323,7 +330,10 @@ describe('web engine lifecycle', () => {
       finally {
         try {
           evidence?.phase('cleanup', 'end');
-          await engine.endAttempt!(cleanup());
+          await engine.endAttempt!(endContext());
+          // A hard Vitest timeout does not cancel its async body. Keep later
+          // bodies fenced until this exact end succeeds; failure never reopens it.
+          priorAttemptRetired = true;
           evidence?.passed('cleanup');
         // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
         } catch (cause) { evidence?.failed('cleanup'); throw cause; }
@@ -853,20 +863,69 @@ describe('web engine lifecycle', () => {
 
     it('refuses to swipe a node with no box even when its child is under aim', async () => {
       const evidence = new LifecycleEvidence('P27');
-      await inAttempt('dc2', async () => {
-        evidence.phase('body', 'navigate');
-        await engine.session!.open!(`${app.url}/`, operation('dc2'));
-        const browser = fixtureOf(engine, 'dc2');
-        evidence.phase('body', 'document');
-        await replaceDocument(browser, `
-          <body style="margin: 0"><ul aria-label="Feed" style="display: contents"><li style="display: block; height: 400px">Item</li></ul></body>`);
-        evidence.phase('body', 'locate');
-        const [feed] = await engine.locate!(byRole('list'), operation('dc2'));
-        evidence.phase('body', 'perform');
-        await expect(
-          engine.perform!(feed!.ref, { kind: 'swipe', direction: 'down' }, operation('dc2')),
-        ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
-      }, artifactsDir, evidence);
+      const caseDeadline = performance.now() + 30_000;
+      const settleReserveMs = 10_000;
+      const swipeBudgetMs = 1_000;
+      const boundedOperation = (attemptId: string, maximumMs = 5_000): OperationContext => {
+        const timeoutMs = Math.min(maximumMs, caseDeadline - performance.now() - settleReserveMs);
+        if (timeoutMs <= 0) throw new Error('No operation budget remains before required attempt retirement');
+        return { ...operation(attemptId), timeoutMs };
+      };
+      const boundedCleanup = (): EngineCleanupContext => ({ ...cleanup(), timeoutMs: 5_000 });
+      const performed: { timeoutMs: number; result: ReturnType<NativeClient['request']> }[] = [];
+      const request = NativeClient.prototype.request;
+      const spy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
+        if (args[0] !== 'browser.perform' || args[2].attemptId !== 'dc2') return request.apply(this, args);
+        const timeoutMs = args[2].timeoutMs;
+        const result = request.apply(this, args);
+        performed.push({ timeoutMs, result });
+        return result;
+      });
+      try {
+        await inAttempt('dc2', async () => {
+          evidence.phase('body', 'navigate');
+          await engine.session!.open!(`${app.url}/`, boundedOperation('dc2'));
+          // Use the real fixture graph for setup/readback, not fixtureOf's
+          // fabricated EngineFixtureContext. The retained-ref action stays exact.
+          const browser = nativeBrowser(engine, () => boundedOperation('dc2'), app.url);
+          evidence.phase('body', 'document');
+          await replaceDocument(browser, `
+            <body style="margin: 0"><ul aria-label="Feed" style="display: contents"><li style="display: block; height: 400px">Item</li></ul>
+            <div style="height:4000px"></div><script>
+              window.noBoxEvents = { input: 0, scroll: 0 };
+              for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend', 'wheel', 'keydown', 'keyup', 'input']) {
+                addEventListener(type, () => noBoxEvents.input++, true);
+              }
+              addEventListener('scroll', () => noBoxEvents.scroll++, true);
+            </script></body>`);
+          evidence.phase('body', 'locate');
+          const [feed] = await engine.locate!(byRole('list'), boundedOperation('dc2'));
+          evidence.phase('body', 'perform');
+          // The actionability wait must fit inside the unchanged 30s case,
+          // leaving time for native settlement, end, and a fresh attempt.
+          await expect(
+            engine.perform!(feed!.ref, { kind: 'swipe', direction: 'down' }, boundedOperation('dc2', swipeBudgetMs)),
+          ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+          evidence.phase('body', 'assertion');
+          expect(performed).toHaveLength(1);
+          expect(performed[0]!.timeoutMs).toBeGreaterThan(0);
+          expect(performed[0]!.timeoutMs).toBeLessThanOrEqual(swipeBudgetMs);
+          expect(await performed[0]!.result).toMatchObject({
+            ok: false, error: { code: 'not-actionable' }, effects: 'not-dispatched', scopeState: 'usable',
+          });
+          expect(await browser.evaluate(() => ({
+            ...(window as unknown as { noBoxEvents: { input: number; scroll: number } }).noBoxEvents,
+            x: scrollX, y: scrollY,
+          }))).toEqual({ input: 0, scroll: 0, x: 0, y: 0 });
+        }, artifactsDir, evidence, boundedCleanup);
+        // This body is unreachable if the original attempt's end rejected or
+        // is still pending. Do not hide a retirement failure by starting anew.
+        await inAttempt('dc2-next', async () => {
+          await engine.session!.open!(`${app.url}/`, boundedOperation('dc2-next'));
+          const headings = await engine.locate!(byRole('heading'), boundedOperation('dc2-next'));
+          expect(headings[0]?.name).toBe('Home');
+        }, artifactsDir, undefined, boundedCleanup);
+      } finally { spy.mockRestore(); }
     });
 
     it('walks through a display:contents element to the fields it lays out', async () => {

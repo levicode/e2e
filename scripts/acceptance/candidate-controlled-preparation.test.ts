@@ -1,8 +1,11 @@
-/** Pure closed parser tests. No native harness, browser, socket, or subprocess is executed. */
+/** Closed parser and local Git identity tests. No native harness, browser or socket is executed. */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { CONTROLLED_PREPARATION_BUDGET, CONTROLLED_PREPARATION_CASES, CONTROLLED_PREPARATION_SOURCE, CONTROLLED_PREPARATION_SOURCE_HASH, controlledClassification, controlledRecord, requireControlledReceipt, validControlledRecord, verifyControlledReceipt } from './candidate-controlled-preparation.ts';
+import { CONTROLLED_PREPARATION_BUDGET, CONTROLLED_PREPARATION_CASES, CONTROLLED_PREPARATION_SOURCE, controlledSourceHash, controlledClassification, controlledRecord, requireControlledReceipt, validControlledRecord, verifyControlledReceipt } from './candidate-controlled-preparation.ts';
 import { assessClosedTest, assessExactTest, normalizedTest, type ProcessFacts } from './candidate-native-matrix.ts';
 import { CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS } from './candidate-manifest.ts';
 import { verifyNativeInventory } from './candidate-native.ts';
@@ -28,9 +31,9 @@ for (const [name, stdout, stderr] of [
 for (const [key, value] of [['inputs', -1], ['scrolls', 129], ['releases', 0.5], ['entry_remaining_ms', 801], ['complete', 'true'], ['case', 'unlisted']] as const) {
   test(`record invalid ${key} is refused`, () => assert.equal(validControlledRecord({ ...record(), [key]: value }, CONTROLLED_PREPARATION_CASES[0].id), false));
 }
-test('positive completion and precise lower-floor RED remain distinct', () => {
+test('positive completion and every lower-floor failure remain distinct', () => {
   assert.equal(controlledClassification(CONTROLLED_PREPARATION_CASES[0].id, record(), observation(0, true), completed, null), 'passed');
-  assert.equal(controlledClassification(CONTROLLED_PREPARATION_CASES[1].id, record(true), observation(1, false), failed, { line: 7688 }), 'known-red');
+  assert.equal(controlledClassification(CONTROLLED_PREPARATION_CASES[1].id, record(true), observation(1, false), failed, { line: 7688 }), 'failed');
   assert.equal(controlledClassification(CONTROLLED_PREPARATION_CASES[1].id, record(true), observation(1, false), failed, { line: 7692 }), 'failed');
   assert.equal(controlledClassification(CONTROLLED_PREPARATION_CASES[0].id, { ...record(), status: 'fail', contract_valid: false }, observation(0, false), failed, { line: 7688 }), 'failed');
 });
@@ -44,11 +47,11 @@ test('timeout, dirty process cleanup, ignored or missing test results remain unk
     assert.equal(controlledClassification(CONTROLLED_PREPARATION_CASES[0].id, record(), assessExactTest(CONTROLLED_PREPARATION_CASES[0].name, output, completed), completed, null), 'unknown');
   assert.equal(assessClosedTest({ ...normalizedTest(CONTROLLED_PREPARATION_CASES[0].name, log(CONTROLLED_PREPARATION_CASES[0].name, true)), payload: 'forbidden' }, completed).testStatus, 'unknown');
 });
-const binding = { sourceRevision: 'a'.repeat(40), nativeSource: { repository: 'levicode/agent-browser', commit: 'b'.repeat(40), tree: 'c'.repeat(40), cargoLockSha256: 'd'.repeat(64) }, fixtureSha256: CONTROLLED_PREPARATION_SOURCE_HASH, productionBinarySha256: 'e'.repeat(64), compiler: { bytes: 100, sha256: 'f'.repeat(64) }, harness: { name: 'agent-browser', source: 'cli/src/main.rs', kind: ['bin'], features: [], profile: 'ci', executable: 'ci/deps/agent_browser-aaaaaaaaaaaaaaaa', sha256: 'a'.repeat(64) } };
+const binding = { sourceRevision: 'a'.repeat(40), nativeSource: { repository: 'levicode/agent-browser', commit: 'b'.repeat(40), tree: 'c'.repeat(40), cargoLockSha256: 'd'.repeat(64) }, fixtureSha256: 'b'.repeat(64), productionBinarySha256: 'e'.repeat(64), compiler: { bytes: 100, sha256: 'f'.repeat(64) }, harness: { name: 'agent-browser', source: 'cli/src/main.rs', kind: ['bin'], features: [], profile: 'ci', executable: 'ci/deps/agent_browser-aaaaaaaaaaaaaaaa', sha256: 'a'.repeat(64) } };
 const digest = { bytes: 100, sha256: 'c'.repeat(64) };
 function receipt() {
   return { schemaVersion: 1, kind: 'controlled-preparation-diagnostic', acceptanceEvidence: false, releaseEligible: false, budget: CONTROLLED_PREPARATION_BUDGET, binding, sourceVerifiedAfter: true, status: 'failed', complete: true, problem: null,
-    rows: CONTROLLED_PREPARATION_CASES.map((item, index) => ({ ...item, status: index ? 'known-red' : 'passed', discovery: { process: completed, stdout: digest, stderr: digest, exact: true }, process: index ? failed : completed,
+    rows: CONTROLLED_PREPARATION_CASES.map((item, index) => ({ ...item, status: index ? 'failed' : 'passed', discovery: { process: completed, stdout: digest, stderr: digest, exact: true }, process: index ? failed : completed,
       stdout: digest, stderr: digest, test: normalizedTest(item.name, log(item.name, !index)), record: record(Boolean(index)), panic: index ? { file: CONTROLLED_PREPARATION_SOURCE, line: 7688, column: 9 } : null, problem: null })) };
 }
 test('complete exact two-case proof rereads as failed, never acceptance pass', () => assert.equal(verifyControlledReceipt(receipt(), binding), 'failed'));
@@ -93,7 +96,7 @@ test('missing, duplicate, malformed, mismatched binding and contradictory receip
     (v: ReturnType<typeof receipt>) => { v.rows.pop(); },
     (v: ReturnType<typeof receipt>) => { v.rows[1] = v.rows[0]!; },
     (v: ReturnType<typeof receipt>) => { v.rows[1]!.status = 'passed'; },
-    (v: ReturnType<typeof receipt>) => { v.rows[1]!.panic!.line = 7692; },
+    (v: ReturnType<typeof receipt>) => { v.rows[1]!.panic!.line = 0; },
     (v: ReturnType<typeof receipt>) => { v.complete = false; },
     (v: ReturnType<typeof receipt>) => { v.rows[0]!.discovery.exact = false; },
     (v: ReturnType<typeof receipt>) => { v.rows[0]!.stdout = { ...digest, bytes: 65537 }; },
@@ -110,4 +113,30 @@ test('concentrated stage preserves mandatory gates and explicit no-bail oracle d
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 37);
   for (const item of CONTROLLED_PREPARATION_CASES) assert.ok((CANDIDATE_NATIVE_DIAGNOSTICS as readonly string[]).includes(item.name));
   assert.doesNotThrow(() => verifyNativeInventory([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS].map(name => `${name}: test`).join('\n')));
+});
+
+
+test('controlled source hash follows the pinned tracked tree and rejects dirty, changed or mismatched sources', () => {
+  const root = mkdtempSync(join(tmpdir(), 'controlled-source-'));
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    git('init'); git('config', 'user.name', 'Synthetic Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    mkdirSync(join(root, 'cli/src/native'), { recursive: true });
+    writeFileSync(join(root, 'cli/Cargo.lock'), '# synthetic lock\n');
+    const source = join(root, CONTROLLED_PREPARATION_SOURCE);
+    writeFileSync(source, '// first synthetic fixture\n'); git('add', '.'); git('commit', '-m', 'synthetic baseline');
+    const firstCommit = git('rev-parse', 'HEAD'); const first = controlledSourceHash(root, firstCommit);
+    assert.match(first, /^[a-f0-9]{64}$/);
+    writeFileSync(source, '// second synthetic fixture\n');
+    assert.throws(() => controlledSourceHash(root, firstCommit), /clean and match/);
+    git('add', '.'); git('commit', '-m', 'synthetic update');
+    const secondCommit = git('rev-parse', 'HEAD'); const second = controlledSourceHash(root, secondCommit);
+    assert.notEqual(second, first);
+    assert.throws(() => controlledSourceHash(root, firstCommit), /clean and match/);
+    // Even an index flag hiding a worktree edit cannot substitute the pinned tree bytes.
+    git('update-index', '--assume-unchanged', CONTROLLED_PREPARATION_SOURCE);
+    writeFileSync(source, '// untracked substitution hidden from status\n');
+    assert.equal(git('status', '--porcelain'), '');
+    assert.throws(() => controlledSourceHash(root, secondCommit), /source-tree-mismatch/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

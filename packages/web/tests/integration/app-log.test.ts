@@ -1,5 +1,5 @@
 import { beginSyntheticCase } from '../helpers/synthetic-evidence.ts';
-import { SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
+import { observeSyntheticConnection, SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The app log: what a page does on its own during an attempt reaches the
  * harness as one line each, from a real browser: console output, exceptions
@@ -15,10 +15,11 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppLogEntry, EngineCleanupContext, EngineFixtureContext, EngineSnapshot, OperationContext } from 'e2e/engine';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
+import { NativeClient } from '../../src/native/client.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 const PAGE = `<!doctype html><html><body><h1>Todos</h1><script>
@@ -118,59 +119,68 @@ describe('app log', () => {
 
   it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async () => {
     const evidence = new SyntheticRecoveryEvidence(beginSyntheticCase('P01'));
-    const surface = new NativeSurface({});
-    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
-    const entries: AppLogEntry[] = [];
-    const went: string[] = [];
-    const screens: EngineSnapshot[] = [];
-    const facts: Record<string, string>[] = [];
+    const connect = NativeClient.connect;
+    const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observeSyntheticConnection(connect(...args)));
     try {
-      evidence.enter('init');
-      await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
-        env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
-      evidence.enter('start');
-      await surface.startAttempt({
-        attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
-        appLog: (entry) => entries.push(entry),
-        navigation: (line) => went.push(line),
-        screen: (snapshot) => screens.push(snapshot),
-        environment: (told) => facts.push({ ...told }),
+      return await evidence.observer.run(async () => {
+        const surface = new NativeSurface({});
+        const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
+        const entries: AppLogEntry[] = [];
+        const went: string[] = [];
+        const screens: EngineSnapshot[] = [];
+        const facts: Record<string, string>[] = [];
+        try {
+          evidence.enter('init');
+          await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
+            env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+          evidence.enter('start');
+          await surface.startAttempt({
+            attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
+            appLog: (entry) => entries.push(entry),
+            navigation: (line) => went.push(line),
+            screen: (snapshot) => screens.push(snapshot),
+            environment: (told) => facts.push({ ...told }),
+          });
+          evidence.passed('setup');
+          evidence.enter('open', 'body');
+          await surface.open(`${url}/moving`, operation());
+          evidence.enter('assertion');
+          expect(screens).toHaveLength(1);
+          expect(screens[0]!.location).toBe(`${url}/moving`);
+          // The screen is the trace's, never published: a ref from the observation acts after it, twice.
+          const observed = await surface.observe(operation());
+          const help = observed.root.children?.find((node) => node.role === 'button');
+          await surface.perform(help!.ref, { kind: 'tap' }, operation());
+          await surface.perform(help!.ref, { kind: 'tap' }, operation());
+          expect(screens).toHaveLength(3);
+          const navigations = () => [...went];
+          await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
+          expect(navigations()).toEqual(expect.arrayContaining([
+            `frame "pay" loaded ${url}/embed`,
+            `the app opened a new tab at ${url}/tab; the test stays on its page`,
+          ]));
+          expect(navigations().some((text) => text.includes('/moving'))).toBe(false);
+          expect(navigations().some((text) => text.startsWith('the new tab navigated'))).toBe(false);
+          await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
+          expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
+          evidence.passed('body');
+        } catch (cause) { evidence.failed(); throw cause; }
+        finally {
+          evidence.enter('end', 'cleanup');
+          let cleanupFailed = false;
+          try {
+            await surface.endAttempt(cleanup()).catch(() => { cleanupFailed = true; evidence.failed('cleanup'); });
+            evidence.enter('dispose', 'cleanup');
+            await surface.dispose(cleanup());
+            rmSync(artifactsDir, { recursive: true, force: true });
+          // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+          } catch (cause) { cleanupFailed = true; throw cause; }
+          finally { evidence.finishBackstop(cleanupFailed); }
+        }
       });
-      evidence.passed('setup');
-      evidence.enter('open', 'body');
-      await surface.open(`${url}/moving`, operation());
-      evidence.enter('assertion');
-      expect(screens).toHaveLength(1);
-      expect(screens[0]!.location).toBe(`${url}/moving`);
-      // The screen is the trace's, never published: a ref from the observation acts after it, twice.
-      const observed = await surface.observe(operation());
-      const help = observed.root.children?.find((node) => node.role === 'button');
-      await surface.perform(help!.ref, { kind: 'tap' }, operation());
-      await surface.perform(help!.ref, { kind: 'tap' }, operation());
-      expect(screens).toHaveLength(3);
-      const navigations = () => [...went];
-      await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
-      expect(navigations()).toEqual(expect.arrayContaining([
-        `frame "pay" loaded ${url}/embed`,
-        `the app opened a new tab at ${url}/tab; the test stays on its page`,
-      ]));
-      expect(navigations().some((text) => text.includes('/moving'))).toBe(false);
-      expect(navigations().some((text) => text.startsWith('the new tab navigated'))).toBe(false);
-      await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
-      expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
-      evidence.passed('body');
-    } catch (cause) { evidence.failed(); throw cause; }
-    finally {
-      evidence.enter('end', 'cleanup');
-      let cleanupFailed = false;
-      try {
-        await surface.endAttempt(cleanup()).catch(() => { cleanupFailed = true; evidence.failed('cleanup'); });
-        evidence.enter('dispose', 'cleanup');
-        await surface.dispose(cleanup());
-        rmSync(artifactsDir, { recursive: true, force: true });
-      // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-      } catch (cause) { cleanupFailed = true; throw cause; }
-      finally { evidence.finishBackstop(cleanupFailed); }
+    } finally {
+      try { connection.mockRestore(); } catch { evidence.evidence.invalidate(); }
+      evidence.observer.close();
     }
   });
 });

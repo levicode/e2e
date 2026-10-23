@@ -1,10 +1,36 @@
 /** Passive, synthetic-case-only observations of already validated public results. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NativeClient } from '../../src/native/client.ts';
-import { SYNTHETIC_COMMANDS, type SyntheticEvidence, type SyntheticFact, type SyntheticPhase } from './synthetic-evidence.ts';
+import { SYNTHETIC_COMMANDS, syntheticKeys, syntheticObject, validSyntheticNativeResult, type SyntheticEvidence, type SyntheticNativeResult, type SyntheticPhase } from './synthetic-evidence.ts';
 
 const current = new AsyncLocalStorage<SyntheticNativeObserver>();
 type Request = NativeClient['request'];
+
+/** Read only own data descriptors: neither payloads nor custom getters are diagnostic input. */
+function ownData(value: unknown, key: string): unknown {
+  if (value === null || typeof value !== 'object') throw new Error('Invalid native evidence');
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw new Error('Invalid native evidence');
+  return descriptor.value;
+}
+function projectResult(value: unknown): SyntheticNativeResult {
+  const ok = ownData(value, 'ok');
+  const result: Record<string, unknown> = {
+    operationSeq: ownData(value, 'operationSeq'), ok,
+    code: ok === true ? null : ownData(ownData(value, 'error'), 'code'),
+    effects: ownData(value, 'effects'), scopeState: ownData(value, 'scopeState'),
+  };
+  if (Object.hasOwn(value as object, 'retention')) {
+    const retention = ownData(value, 'retention');
+    if (!syntheticObject(retention) || !syntheticKeys(retention, ['version', 'retiredOperationSeq', 'producerState', 'inputDebt', 'objectDebt'])) throw new Error('Invalid native retention evidence');
+    // Validate the closed keys before copying; never silently strip an extra field.
+    const snapshot: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    for (const key of Object.keys(retention)) snapshot[key] = ownData(retention, key);
+    result['retention'] = snapshot;
+  }
+  if (!validSyntheticNativeResult(result)) throw new Error('Invalid native evidence');
+  return result;
+}
 
 /** Never wrap an operation's returned Promise, retry it, or inspect its payload. */
 export class SyntheticNativeObserver {
@@ -39,8 +65,7 @@ export class SyntheticNativeObserver {
         const command = SYNTHETIC_COMMANDS.find(value => value === args[0]) ?? 'other';
         const rejected = () => owner.safely(() => {
           if (!owner.closed && !owner.rejectedSeen) {
-            owner.rejectedSeen = true;
-            owner.evidence.record({ kind: 'request-rejected-without-result', phase, command });
+            owner.rejectedSeen = owner.evidence.tryRecord({ kind: 'request-rejected-without-result', phase, command });
           }
         });
         let promise: ReturnType<Request>;
@@ -49,20 +74,13 @@ export class SyntheticNativeObserver {
         // is returned below, so caller-visible resolution/rejection identity is intact.
         void promise.then(result => owner.safely(() => {
           if (owner.closed) return;
-          if (!result.ok && result.error === undefined) { owner.evidence.invalidate(); return; }
-          const fact = {
-            kind: 'native-result', phase, command,
-            result: { operationSeq: result.operationSeq, ok: result.ok,
-              code: result.ok ? null : result.error!.code,
-              effects: result.effects, scopeState: result.scopeState },
-          } as const;
-          if (!result.ok && !owner.refusalSeen) {
-            owner.refusalSeen = true;
-            owner.evidence.record({ ...fact, slot: 'first-refusal' } as SyntheticFact);
+          const projected = projectResult(result);
+          const fact = { kind: 'native-result', phase, command, result: projected } as const;
+          if (!projected.ok && !owner.refusalSeen) {
+            owner.refusalSeen = owner.evidence.tryRecord({ ...fact, slot: 'first-refusal' });
           }
-          if ((result.effects === 'unknown' || result.scopeState !== 'usable') && !owner.terminalSeen) {
-            owner.terminalSeen = true;
-            owner.evidence.record({ ...fact, slot: 'first-terminal' } as SyntheticFact);
+          if ((projected.effects === 'unknown' || projected.scopeState !== 'usable') && !owner.terminalSeen) {
+            owner.terminalSeen = owner.evidence.tryRecord({ ...fact, slot: 'first-terminal' });
           }
         }), rejected).catch(() => { owner.safely(() => owner.evidence.invalidate()); });
         return promise;

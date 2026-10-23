@@ -1,8 +1,10 @@
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { NativeClient } from '../../src/native/client.ts';
+import { CONTINUE_EXACT_OWNER_CAPABILITY } from '../../src/native/capabilities.ts';
+import type { NativeResult } from '../../src/native/protocol.ts';
 import type { OperationContext } from 'e2e/engine';
-import type { SyntheticEvidence, SyntheticFact } from '../helpers/synthetic-evidence.ts';
+import { validSyntheticFact, type SyntheticEvidence, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticNativeObserver, SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 
 const context = (): OperationContext => ({ signal: new AbortController().signal, timeoutMs: 1000, runId: 'synthetic', attemptId: 'case', origin: 'test' });
@@ -10,19 +12,20 @@ function recorder(throws = false) {
   const facts: SyntheticFact[] = [];
   let invalid = 0;
   const evidence: SyntheticEvidence = {
-    available: true, record(fact) { if (throws) throw new Error('synthetic observer failure'); facts.push(fact); },
+    available: true, record(fact) { this.tryRecord(fact); },
+    tryRecord(fact) { if (throws) throw new Error('synthetic observer failure'); if (!validSyntheticFact(fact, 'P26')) return false; facts.push(fact); return true; },
     observe(read) { try { this.record(read()); } catch { this.invalidate(); } },
     invalidate() { invalid++; }, finish() {},
   };
   return { evidence, facts, invalid: () => invalid };
 }
-function peer() {
+function peer(capabilities: string[] = []) {
   const output = new PassThrough();
   const requests: Record<string, unknown>[] = [];
   const input = new Writable({ write(chunk: Buffer, _encoding, done) { requests.push(JSON.parse(chunk.toString()) as Record<string, unknown>); done(); } });
   const send = (value: unknown) => output.write(JSON.stringify(value) + '\n');
-  const connect = () => NativeClient.connect({ readable: output, writable: input, dispose() { input.destroy(); output.destroy(); } }, [], context(), () => {});
-  const ready = () => send({ type: 'ready', id: requests[0]!['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic', generation: 1, capabilities: [], limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
+  const connect = () => NativeClient.connect({ readable: output, writable: input, dispose() { input.destroy(); output.destroy(); } }, capabilities, context(), () => {});
+  const ready = () => send({ type: 'ready', id: requests[0]!['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic', generation: 1, capabilities, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
   const result = (extra: Record<string, unknown> = {}) => {
     const request = requests.at(-1)!;
     send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'not-actionable' }, effects: 'not-dispatched', scopeState: 'usable', ...extra });
@@ -82,6 +85,70 @@ describe('synthetic native outcome ownership', () => {
     const same = client.request('browser.perform', {}, context());
     expect(same).toBe(rejected); await expect(same).rejects.toBe(reason);
     other.close(); client.request = original; await fixture.close(client);
+  });
+
+  it('records both first slots for negotiated UNKNOWN usable without changing its classification', async () => {
+    const fixture = peer([CONTINUE_EXACT_OWNER_CAPABILITY]);
+    const connecting = fixture.connect(); fixture.ready(); const client = await connecting;
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'perform'); observer.attach(client);
+    const retention = { version: 1, retiredOperationSeq: 1, producerState: 'retiring', inputDebt: 1, objectDebt: 32 } as const;
+    try {
+      const pending = client.request('browser.perform', {}, context());
+      fixture.result({ effects: 'unknown', retention });
+      const result = await pending;
+      expect(result.effects).toBe('unknown'); expect(result.scopeState).toBe('usable');
+      expect(sink.facts).toEqual(['first-refusal', 'first-terminal'].map(slot => ({ kind: 'native-result', slot, phase: 'perform', command: 'browser.perform', result: { operationSeq: 1, ok: false, code: 'not-actionable', effects: 'unknown', scopeState: 'usable', retention } })));
+      expect(sink.invalid()).toBe(0);
+    } finally { observer.close(); await fixture.close(client); }
+    expect(sink.facts).toHaveLength(2);
+  });
+
+  it('rejects malformed retention without reading getters or consuming either first slot', async () => {
+    const fixture = peer(); const connecting = fixture.connect(); fixture.ready(); const client = await connecting;
+    const original = client.request;
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'perform');
+    const retention = { version: 1, retiredOperationSeq: 1, producerState: 'retired', inputDebt: 0, objectDebt: 0 };
+    const valid = { type: 'result', id: 'fixed', generation: 1, operationSeq: 1, ok: false, error: { code: 'not-actionable' }, effects: 'unknown', scopeState: 'usable', retention };
+    let reads = 0;
+    const getter = () => { reads++; throw new Error('private getter'); };
+    const invalid: unknown[] = [
+      { ...valid, retention: undefined }, { ...valid, retention: null },
+      { ...valid, retention: { ...retention, retiredOperationSeq: 2 } },
+      { ...valid, retention: { ...retention, inputDebt: 33 } },
+      { ...valid, retention: { ...retention, private: 'never serialize' } },
+      { ...valid, retention: Object.defineProperty({ ...retention }, 'inputDebt', { get: getter, enumerable: true }) },
+      Object.defineProperty({ ...valid }, 'retention', { get: getter, enumerable: true }),
+    ];
+    const missing = { ...valid }; Reflect.deleteProperty(missing, 'retention'); invalid.push(missing);
+    let current: unknown;
+    client.request = () => Promise.resolve(current as NativeResult);
+    observer.attach(client);
+    try {
+      for (const value of invalid) { current = value; await expect(client.request('browser.perform', {}, context())).resolves.toBe(value); }
+      expect(reads).toBe(0); expect(sink.facts).toHaveLength(0); expect(sink.invalid()).toBe(invalid.length);
+      // Diagnostic projection may inspect descriptors, never payload/error text or property getters.
+      current = Object.defineProperty({ ...valid }, 'data', { get: getter, enumerable: true });
+      await client.request('browser.perform', {}, context());
+      expect(reads).toBe(0); expect(sink.facts).toHaveLength(2);
+      expect(sink.facts.every(fact => fact.kind === 'native-result' && fact.result?.effects === 'unknown' && fact.result.retention?.producerState === 'retired')).toBe(true);
+    } finally { observer.close(); client.request = original; await fixture.close(client); }
+  });
+
+  it('commits first slots only after the sink accepts each record', async () => {
+    const fixture = peer([CONTINUE_EXACT_OWNER_CAPABILITY]); const connecting = fixture.connect(); fixture.ready(); const client = await connecting;
+    const sink = recorder(); let reject = true;
+    const observer = new SyntheticNativeObserver({ ...sink.evidence, tryRecord(fact) { return reject ? false : sink.evidence.tryRecord(fact); } }, () => 'perform');
+    observer.attach(client);
+    try {
+      for (const operationSeq of [1, 2]) {
+        const pending = client.request('browser.perform', {}, context());
+        fixture.result({ effects: 'unknown', retention: { version: 1, retiredOperationSeq: operationSeq, producerState: 'retiring', inputDebt: 0, objectDebt: 0 } });
+        await pending;
+        if (reject) { expect(sink.facts).toHaveLength(0); reject = false; }
+      }
+      expect(sink.facts).toHaveLength(2);
+      expect(sink.facts.every(fact => fact.kind === 'native-result' && fact.result?.operationSeq === 2)).toBe(true);
+    } finally { observer.close(); await fixture.close(client); }
   });
 
   it('does not attach a late connection after close or capture an unrelated connection', async () => {

@@ -2,6 +2,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { primitiveFixtureDocument } from '../../../web/tests/helpers/public-primitive-fixture.ts';
 import { resultByTitle, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 const CASES = [
@@ -15,11 +16,13 @@ const CASES = [
   'large fulfill and continued request bodies use verified native storage',
 ] as const;
 
+const pointerFixtureModule = new URL('../../../web/tests/helpers/public-primitive-fixture.ts', import.meta.url).href;
 const syntheticEvidenceModule = new URL('../../../web/tests/helpers/synthetic-evidence.ts', import.meta.url).href;
 
 const SUITE = `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { beginSyntheticCase } from ${JSON.stringify(syntheticEvidenceModule)};
+import { pointerEvents, waitForPointerWheel } from ${JSON.stringify(pointerFixtureModule)};
 
 test('${CASES[0]}', { timeout: 12_000 }, async ({ browser }) => {
   await browser.goto('/a', { waitUntil: 'domcontentloaded' });
@@ -108,10 +111,18 @@ test('${CASES[5]}', async ({ browser }) => {
     await browser.mouse.up();
     await browser.mouse.wheel(0, 40);
     phase = 'sample';
-    const events = await browser.evaluate(() => globalThis.fixturePointer);
+    const immediate = await browser.evaluate(pointerEvents);
     // Emit completion facts after the original sample; do not insert synchronous I/O between wheel and read.
     evidence.record({ kind: 'phase', section: 'body', phase: 'dispatch', state: 'passed' });
     evidence.observe(() => ({ kind: 'wheel-sample', phase: 'original-sample', sampleOrdinal: 0,
+      downCount: immediate.filter(value => value.startsWith('down:')).length,
+      upCount: immediate.filter(value => value.startsWith('up:')).length,
+      wheelCount: immediate.filter(value => value.startsWith('wheel:')).length,
+      expectedDeltaSeen: immediate.includes('wheel:40'), nativePublicResultObserved: false, cdpAckObserved: null }));
+    evidence.record({ kind: 'phase', section: 'body', phase, state: 'passed' });
+    phase = 'witness'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'enter' });
+    const events = await browser.evaluate(waitForPointerWheel, 1_000);
+    evidence.observe(() => ({ kind: 'wheel-sample', phase: 'delivery-witness', sampleOrdinal: 2,
       downCount: events.filter(value => value.startsWith('down:')).length,
       upCount: events.filter(value => value.startsWith('up:')).length,
       wheelCount: events.filter(value => value.startsWith('wheel:')).length,
@@ -120,7 +131,7 @@ test('${CASES[5]}', async ({ browser }) => {
     phase = 'assertion';
     expect(events).toContain('down:30:130:1');
     expect(events).toContain('up:30:130:0');
-    expect(events).toContain('wheel:40');
+    expect(events).toEqual(['down:30:130:1', 'up:30:130:0', 'wheel:40']);
     body = 'passed';
   } catch (cause) {
     body = 'failed'; evidence.record({ kind: 'phase', section: 'body', phase, state: 'failed' }); throw cause;
@@ -189,19 +200,6 @@ test('${CASES[7]}', { timeout: 15_000 }, async ({ browser }) => {
 });
 `;
 
-function document(path: string): string {
-  return `<!doctype html><title>Fixture ${path}</title><script>
-  globalThis.fixtureAtFirstScript = globalThis.fixtureInit?.marker ?? '';
-  globalThis.fixtureKeys = []; globalThis.fixturePointer = [];
-  sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));
-  addEventListener('keydown', event => fixtureKeys.push('keydown:' + event.key));
-  addEventListener('keyup', event => fixtureKeys.push('keyup:' + event.key));
-  addEventListener('mousedown', event => fixturePointer.push('down:' + event.clientX + ':' + event.clientY + ':' + event.buttons));
-  addEventListener('mouseup', event => fixturePointer.push('up:' + event.clientX + ':' + event.clientY + ':' + event.buttons));
-  addEventListener('wheel', event => fixturePointer.push('wheel:' + event.deltaY));
-  </script><body data-init=""><input id="input" class="fixture-input" style="position:absolute;left:10px;top:10px"><button id="frame-button" onclick="this.dataset.clicked='yes'">Inside frame</button>${path === '/a' ? '<iframe src="/frame" style="position:absolute;left:400px;top:100px"></iframe>' : ''}<script>document.body.dataset.init = globalThis.fixtureAtFirstScript;</script>`;
-}
-
 describe('public native Web primitive contract', () => {
   let server: Server | undefined;
   let project: FixtureProject | undefined;
@@ -221,7 +219,7 @@ describe('public native Web primitive contract', () => {
         return;
       }
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(document(request.url ?? '/'));
+      response.end(primitiveFixtureDocument(request.url ?? '/'));
     });
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

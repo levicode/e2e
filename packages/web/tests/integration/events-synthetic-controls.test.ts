@@ -1,4 +1,4 @@
-/** Isolated source-pinned controls: 1 popup call and 7 wheel calls per backend, excluding setup/cleanup. */
+/** Isolated source-pinned controls: identical pointer calls, samples and bounded event witness on both backends. */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -10,35 +10,17 @@ import type { EngineCleanupContext, OperationContext } from 'e2e/engine';
 import { web } from '../../src/index.ts';
 import { closeRemoteChrome, launchRemoteChrome } from '../helpers/cdp-host.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
+import { pointerEvents, primitiveFixtureDocument, waitForPointerWheel } from '../helpers/public-primitive-fixture.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 import { beginSyntheticCase, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 
-/** Exact callback fixture copy; its overlap, event listeners and iframe are deliberately not repaired. */
-function document(path: string): string {
-  return `<!doctype html><title>Fixture ${path}</title><script>
-  globalThis.fixtureAtFirstScript = globalThis.fixtureInit?.marker ?? '';
-  globalThis.fixtureKeys = []; globalThis.fixturePointer = [];
-  sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));
-  addEventListener('keydown', event => fixtureKeys.push('keydown:' + event.key));
-  addEventListener('keyup', event => fixtureKeys.push('keyup:' + event.key));
-  addEventListener('mousedown', event => fixturePointer.push('down:' + event.clientX + ':' + event.clientY + ':' + event.buttons));
-  addEventListener('mouseup', event => fixturePointer.push('up:' + event.clientX + ':' + event.clientY + ':' + event.buttons));
-  addEventListener('wheel', event => fixturePointer.push('wheel:' + event.deltaY));
-  </script><body data-init=""><input id="input" class="fixture-input" style="position:absolute;left:10px;top:10px"><button id="frame-button" onclick="this.dataset.clicked='yes'">Inside frame</button>${path === '/a' ? '<iframe src="/frame" style="position:absolute;left:400px;top:100px"></iframe>' : ''}<script>document.body.dataset.init = globalThis.fixtureAtFirstScript;</script>`;
-}
-
-/** Each callback is serialized by the tested public browser API, without added renderer waits. */
-function pointerEvents(): string[] {
-  return (globalThis as unknown as { fixturePointer: string[] }).fixturePointer;
-}
-
 /** Record only closed facts about the already returned array; a missing record never proves no event. */
-function sample(evidence: SyntheticEvidence, events: unknown, ordinal: 0 | 1, nativePublicResultObserved: boolean): void {
+function sample(evidence: SyntheticEvidence, events: unknown, ordinal: 0 | 1 | 2, nativePublicResultObserved: boolean): void {
   evidence.observe(() => {
     const valid = Array.isArray(events) && events.every(value => typeof value === 'string');
     if (!valid) evidence.invalidate();
-    return { kind: 'wheel-sample', phase: ordinal === 0 ? 'original-sample' : 'post-result-sample', sampleOrdinal: ordinal,
+    return { kind: 'wheel-sample', phase: ordinal === 0 ? 'original-sample' : ordinal === 1 ? 'post-result-sample' : 'delivery-witness', sampleOrdinal: ordinal,
       downCount: valid ? events.filter(value => value.startsWith('down:')).length : null,
       upCount: valid ? events.filter(value => value.startsWith('up:')).length : null,
       wheelCount: valid ? events.filter(value => value.startsWith('wheel:')).length : null,
@@ -64,7 +46,7 @@ describe('isolated synthetic event controls', () => {
     app = await startFixtureApp();
     server = createServer((request, response) => {
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(document(request.url ?? '/'));
+      response.end(primitiveFixtureDocument(request.url ?? '/'));
     });
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -168,14 +150,18 @@ describe('isolated synthetic event controls', () => {
       // Keep wheel and first read adjacent, including no synchronous evidence I/O.
       evidence.record({ kind: 'phase', section, phase: 'dispatch', state: 'passed' });
       sample(evidence, immediate, 0, false);
-      // Replica only: exactly one later read, no sleep/rAF/poll, never substituted for the immediate assertion.
+      // Preserve the two diagnostic samples; neither alone is a delivery contract.
       const subsequent = await browser.evaluate(pointerEvents);
       sample(evidence, subsequent, 1, false);
       evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+      phase = 'witness'; evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+      const events = await browser.evaluate(waitForPointerWheel, 1_000);
+      sample(evidence, events, 2, false);
+      evidence.record({ kind: 'phase', section, phase, state: 'passed' });
       phase = 'assertion';
-      expect(immediate).toContain('down:30:130:1');
-      expect(immediate).toContain('up:30:130:0');
-      expect(immediate).toContain('wheel:40');
+      expect(events).toContain('down:30:130:1');
+      expect(events).toContain('up:30:130:0');
+      expect(events).toEqual(['down:30:130:1', 'up:30:130:0', 'wheel:40']);
       outcome.body = 'passed';
     } catch (cause) {
       outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' }); throw cause;
@@ -235,10 +221,14 @@ describe('isolated synthetic event controls', () => {
       const subsequent = await page.evaluate(pointerEvents);
       sample(evidence, subsequent, 1, false);
       evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+      phase = 'witness'; evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+      const events = await page.evaluate(waitForPointerWheel, 1_000);
+      sample(evidence, events, 2, false);
+      evidence.record({ kind: 'phase', section, phase, state: 'passed' });
       phase = 'assertion';
-      expect(immediate).toContain('down:30:130:1');
-      expect(immediate).toContain('up:30:130:0');
-      expect(immediate).toContain('wheel:40');
+      expect(events).toContain('down:30:130:1');
+      expect(events).toContain('up:30:130:0');
+      expect(events).toEqual(['down:30:130:1', 'up:30:130:0', 'wheel:40']);
       outcome.body = 'passed';
     } catch (cause) {
       outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' }); throw cause;

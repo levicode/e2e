@@ -15,7 +15,16 @@ export const CONTROLLED_PREPARATION_CASES = [
   { id: 'preparation-lower-floor', name: 'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline' },
 ] as const;
 export const CONTROLLED_PREPARATION_SOURCE = 'cli/src/native/client_actions.rs';
-export const CONTROLLED_PREPARATION_SOURCE_HASH = '9c4aacfc665be6074329e984fcdddd965824a998eb54a758c26e85a35e8cc972';
+/** Derive from the immutable tracked tree, never from a receipt or an unchecked work file. */
+export function controlledSourceHash(source: string, expectedCommit: string): string {
+  sourceIdentity(source, expectedCommit);
+  const path = resolve(source, CONTROLLED_PREPARATION_SOURCE);
+  if (realpathSync(path) !== path) throw new Error('controlled-preparation-source-not-canonical');
+  const tracked = execFileSync('git', ['-C', source, 'show', `${expectedCommit}:${CONTROLLED_PREPARATION_SOURCE}`], { maxBuffer: 8 * 1024 * 1024 });
+  const expected = sha256(tracked);
+  if (hashFile(path) !== expected) throw new Error('controlled-preparation-source-tree-mismatch');
+  return expected;
+}
 export const CONTROLLED_PREPARATION_BUDGET = { cases: 2, recordsPerCase: 1, recordBytes: 4096, savedBytes: 32768, streamBytes: 65536, processTimeoutMs: 30000 } as const;
 type RowId = typeof CONTROLLED_PREPARATION_CASES[number]['id'];
 type Value = Record<string, unknown>;
@@ -29,7 +38,7 @@ const finished = (r: ProcessFacts) => r.termination === 'completed' && r.signal 
 const hex = (v: unknown, size = 64) => typeof v === 'string' && new RegExp(`^[a-f0-9]{${size}}$`).test(v);
 function validBinding(v: unknown): v is Value {
   if (!object(v) || !exact(v, ['sourceRevision', 'nativeSource', 'fixtureSha256', 'productionBinarySha256', 'compiler', 'harness']) || !hex(v.sourceRevision, 40)
-    || v.fixtureSha256 !== CONTROLLED_PREPARATION_SOURCE_HASH || !hex(v.productionBinarySha256) || !object(v.nativeSource) || !object(v.compiler) || !object(v.harness)) return false;
+    || !hex(v.fixtureSha256) || !hex(v.productionBinarySha256) || !object(v.nativeSource) || !object(v.compiler) || !object(v.harness)) return false;
   const native = v.nativeSource; const compiler = v.compiler; const harness = v.harness;
   return exact(native, ['repository', 'commit', 'tree', 'cargoLockSha256']) && native.repository === 'levicode/agent-browser' && hex(native.commit, 40) && hex(native.tree, 40) && hex(native.cargoLockSha256)
     && exact(compiler, ['bytes', 'sha256']) && uint(compiler.bytes, 8 * 1024 * 1024) && hex(compiler.sha256)
@@ -53,7 +62,7 @@ export function controlledRecord(stdout: string, stderr: string, id: RowId): Val
   try { const value: unknown = JSON.parse(lines[0]!.slice(prefix.length)); return validControlledRecord(value, id) ? value : null; } catch { return null; }
 }
 /** Only a canonical tracked owning file and bounded line/column survive; never panic text. */
-export function controlledPanic(stdout: string, stderr: string, source: string): { file: string; line: number; column: number } | null {
+export function controlledPanic(stdout: string, stderr: string, source: string, expectedCommit: string, expectedFixtureSha256: string): { file: string; line: number; column: number } | null {
   const matches = [...`${stdout}\n${stderr}`.matchAll(/^thread [^\r\n]{0,512} panicked at ([^\r\n]{1,4096}):(\d{1,7}):(\d{1,5}):$/gm)];
   if (matches.length !== 1) return null;
   const match = matches[0]!; const emitted = match[1]!;
@@ -62,24 +71,22 @@ export function controlledPanic(stdout: string, stderr: string, source: string):
   const line = Number(match[2]); const column = Number(match[3]);
   if (file !== CONTROLLED_PREPARATION_SOURCE || !uint(line, 1000000) || line === 0 || !uint(column, 65535) || column === 0) return null;
   try {
-    const path = resolve(source, file); if (realpathSync(path) !== path || hashFile(path) !== CONTROLLED_PREPARATION_SOURCE_HASH) return null;
+    const path = resolve(source, file); if (realpathSync(path) !== path || controlledSourceHash(source, expectedCommit) !== expectedFixtureSha256) return null;
     execFileSync('git', ['-C', source, 'ls-files', '--error-unmatch', '--', file], { stdio: ['ignore', 'pipe', 'pipe'] });
     return line <= readFileSync(path, 'utf8').split('\n').length ? { file, line, column } : null;
   } catch { return null; }
 }
-export function controlledClassification(id: RowId, record: Value | null, observation: ReturnType<typeof assessExactTest>, process: ProcessFacts, panic: { line: number } | null): 'passed' | 'known-red' | 'failed' | 'unknown' {
+export function controlledClassification(id: RowId, record: Value | null, observation: ReturnType<typeof assessExactTest>, process: ProcessFacts, panic: { line: number } | null): 'passed' | 'failed' | 'unknown' {
   if (!finished(process) || observation.testStatus === 'unknown' || record === null || !validControlledRecord(record, id) || record.complete !== true || record.status === 'incomplete'
     || record.entry_ack !== true || record.entry_above_upper !== true || record.release_valid !== true || record.counts_bounded !== true
     || TIMES.some(key => record[key] === null)
     || record.retired_before_deadline !== (record.action_finished_before_deadline === true && record.broker_settled_before_deadline === true && record.retained_drained_before_deadline === true)
     || (record.contract_valid === true && (record.exact_release_acked !== true || record.releases !== 1 || record.inputs !== 0 || !uint(record.scrolls, 128) || record.scrolls < 1))) return 'unknown';
   if (observation.testStatus === 'passed') return record.status === 'pass' && record.contract_valid === true && record.retired_before_deadline === true && record.scrolls === 1 && record.inputs === 0 ? 'passed' : 'unknown';
-  // Fixed owning source hash binds line 7688 to the precise retirement assertion.
-  if (id === 'preparation-lower-floor' && observation.testStatus === 'failed' && record.status === 'fail' && record.contract_valid === true
-    && record.inputs === 0 && record.exact_release_acked === true && record.retired_before_deadline === false && panic?.line === 7688) return 'known-red';
+  // Every executed assertion failure remains failed, regardless of its source line.
   return 'failed';
 }
-interface Row { id: RowId; name: string; status: 'passed' | 'known-red' | 'failed' | 'unknown'; discovery: unknown; process: ProcessFacts | null; stdout: ReturnType<typeof digest> | null; stderr: ReturnType<typeof digest> | null; test: ReturnType<typeof normalizedTest> | null; record: Value | null; panic: ReturnType<typeof controlledPanic>; problem: 'not-run' | 'discovery-incomplete' | 'execution-incomplete' | null }
+interface Row { id: RowId; name: string; status: 'passed' | 'failed' | 'unknown'; discovery: unknown; process: ProcessFacts | null; stdout: ReturnType<typeof digest> | null; stderr: ReturnType<typeof digest> | null; test: ReturnType<typeof normalizedTest> | null; record: Value | null; panic: ReturnType<typeof controlledPanic>; problem: 'not-run' | 'discovery-incomplete' | 'execution-incomplete' | null }
 /** Trusts only the execution-time parser facts, not a reconstruction of discarded raw text. */
 export function verifyControlledReceipt(value: unknown, expectedBinding: unknown): 'passed' | 'failed' | 'unknown' {
   const validDigest = (v: unknown) => object(v) && exact(v, ['bytes', 'sha256']) && uint(v.bytes, CONTROLLED_PREPARATION_BUDGET.streamBytes) && typeof v.sha256 === 'string' && /^[a-f0-9]{64}$/.test(v.sha256);
@@ -116,8 +123,7 @@ export function verifyControlledPreparationReceipt(output: string, expected: { s
   const source = resolve(paths.source); const target = resolve(paths.target);
   const nativeSource = sourceIdentity(source, expected.nativeSource.commit);
   if (nativeSource.commit !== expected.nativeSource.commit || nativeSource.tree !== expected.nativeSource.tree) throw new Error('Controlled preparation native source differs from the manifest');
-  const fixtureSha256 = hashFile(join(source, CONTROLLED_PREPARATION_SOURCE));
-  if (fixtureSha256 !== CONTROLLED_PREPARATION_SOURCE_HASH) throw new Error('Controlled preparation source fixture changed');
+  const fixtureSha256 = controlledSourceHash(source, expected.nativeSource.commit);
   const rawCompiler = readFileSync(join(output, 'compiler.jsonl'), 'utf8');
   if (Buffer.byteLength(rawCompiler) > 8 * 1024 * 1024) throw new Error('Controlled preparation compiler evidence exceeds bound');
   const harness = matrixCompilerHarness(rawCompiler, source, target, false);
@@ -147,14 +153,13 @@ export async function runControlledPreparation(args: string[]): Promise<void> {
     const source = resolve(sourceArg); const target = resolve(targetArg); const production = resolve(productionArg);
     const git = (...v: string[]) => execFileSync('git', v, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     const sourceRevision = git('rev-parse', 'HEAD'); if (git('status', '--porcelain')) throw new Error('controlled-preparation-dirty-source');
-    const nativeSource = sourceIdentity(source, expectedSha); const fixtureSha256 = hashFile(join(source, CONTROLLED_PREPARATION_SOURCE));
-    if (fixtureSha256 !== CONTROLLED_PREPARATION_SOURCE_HASH) throw new Error('controlled-preparation-fixture-mismatch');
+    const nativeSource = sourceIdentity(source, expectedSha); const fixtureSha256 = controlledSourceHash(source, expectedSha);
     const productionBinarySha256 = hashFile(production); const rawCompiler = readFileSync(join(output, 'compiler.jsonl'), 'utf8');
     const harness = matrixCompilerHarness(rawCompiler, source, target, false);
     if (realpathSync(production) === harness.executable || productionBinarySha256 === harness.identity.sha256) throw new Error('controlled-preparation-harness-alias');
     receipt.binding = { sourceRevision, nativeSource, fixtureSha256, productionBinarySha256, compiler: digest(rawCompiler), harness: harness.identity };
     const pinned = () => { if (git('rev-parse', 'HEAD') !== sourceRevision || git('status', '--porcelain') || JSON.stringify(sourceIdentity(source, expectedSha)) !== JSON.stringify(nativeSource)
-      || hashFile(join(source, CONTROLLED_PREPARATION_SOURCE)) !== fixtureSha256 || hashFile(harness.executable) !== harness.identity.sha256 || hashFile(production) !== productionBinarySha256) throw new Error('controlled-preparation-binding-changed'); };
+      || controlledSourceHash(source, expectedSha) !== fixtureSha256 || hashFile(harness.executable) !== harness.identity.sha256 || hashFile(production) !== productionBinarySha256) throw new Error('controlled-preparation-binding-changed'); };
     const run = (testArgs: string[]) => { pinned(); return runProxyCommand(harness.executable, testArgs, { cwd: join(source, 'cli'), env: proxyEnvironment(process.env), timeoutMs: CONTROLLED_PREPARATION_BUDGET.processTimeoutMs, maxBuffer: CONTROLLED_PREPARATION_BUDGET.streamBytes, signal: controller.signal }); };
     for (const row of rows) {
       if (controller.signal.aborted) break;
@@ -164,7 +169,7 @@ export async function runControlledPreparation(args: string[]): Promise<void> {
         if (!finished(facts(discovery)) || discovery.status !== 0 || !exactListing(discovery.stdout, row.name)) { row.problem = 'discovery-incomplete'; continue; }
         const result = await run([row.name, '--ignored', '--exact', '--test-threads=1', '--format=pretty', '--color=never', '--nocapture']);
         row.process = facts(result); row.stdout = digest(result.stdout); row.stderr = digest(result.stderr); row.test = normalizedTest(row.name, result.stdout);
-        row.record = controlledRecord(result.stdout, result.stderr, row.id); row.panic = controlledPanic(result.stdout, result.stderr, source);
+        row.record = controlledRecord(result.stdout, result.stderr, row.id); row.panic = controlledPanic(result.stdout, result.stderr, source, expectedSha, fixtureSha256);
         row.status = controlledClassification(row.id, row.record, assessExactTest(row.name, result.stdout, row.process), row.process, row.panic); row.problem = row.status === 'unknown' ? 'execution-incomplete' : null;
       } catch { row.status = 'unknown'; row.problem = 'execution-incomplete'; }
     }

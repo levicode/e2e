@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import { chmodSync, copyFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { type InstallerRuntimeBinding } from '../../packages/web/tests/helpers/installer-fixture.ts';
 import { sha256 } from './bundle.ts';
 import {
-  beginSyntheticCase, SYNTHETIC_BATCH_ENV, SYNTHETIC_BINDING_ENV, SYNTHETIC_CASE_MANIFEST,
+  beginSyntheticCase, callbackFailureFact, validSyntheticFact, SYNTHETIC_BATCH_ENV, SYNTHETIC_BINDING_ENV, SYNTHETIC_CASE_MANIFEST,
   SYNTHETIC_DIRECTORY_ENV, SYNTHETIC_TOTAL_BYTES, type SyntheticCaseId, type SyntheticFact,
   type SyntheticOutcome, type SyntheticSavedRecord,
 } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
-import { cleanSyntheticEnvironment, collectSyntheticEvidence, prepareSyntheticCapture, verifySyntheticEvidence } from './candidate-synthetic-evidence.ts';
+import { cleanSyntheticEnvironment, collectSyntheticEvidence, prepareSyntheticCapture, syntheticCaseSourceDigest, verifySyntheticEvidence } from './candidate-synthetic-evidence.ts';
 import { conformanceSourceDomain, loadConformanceTables } from '../../packages/web/tests/helpers/conformance-evidence.ts';
 const installerRuntime: InstallerRuntimeBinding = { caseId: 'P14', purpose: 'installer-cancellation-loopback', binarySha256: 'd'.repeat(64), negotiationProofSha256: 'e'.repeat(64) };
 const outcome: SyntheticOutcome = { setup: 'passed', body: 'passed', cleanup: 'passed' };
@@ -63,13 +63,13 @@ function completeAll(capture: ReturnType<typeof prepareSyntheticCapture>, p16 = 
     evidence.finish(outcome);
   }
 }
-test('static case groups have exact source dependencies and a 1616 KiB total hard cap', () => {
+test('static case groups have exact source dependencies and a 1624 KiB total hard cap', () => {
   const entries = Object.entries(SYNTHETIC_CASE_MANIFEST);
   assert.equal(entries.filter(([, item]) => item.group === 'public').length, 43);
-  assert.equal(entries.filter(([, item]) => item.group === 'callback').length, 2);
+  assert.equal(entries.filter(([, item]) => item.group === 'callback').length, 3);
   assert.equal(entries.filter(([, item]) => item.group === 'setup').length, 1);
   assert.equal(entries.filter(([, item]) => item.group === 'oracle').length, 4);
-  assert.equal(SYNTHETIC_TOTAL_BYTES, 1616 * 1024);
+  assert.equal(SYNTHETIC_TOTAL_BYTES, 1624 * 1024);
   assert.deepEqual(SYNTHETIC_CASE_MANIFEST['nested-setup'].covers, ['P36', 'P37', 'P38', 'P39', 'P40']);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P16.maxRecords, 256);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P16.sources.length, 6);
@@ -79,7 +79,7 @@ test('static case groups have exact source dependencies and a 1616 KiB total har
   assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.maxBytes, 16 * 1024);
   assert.equal(entries.some(([id]) => id.startsWith('N')), false);
 });
-test('integrated repository prepares both suites and all 50 source-bound IDs without missing sources', t => {
+test('integrated repository prepares both suites and all 51 source-bound IDs without missing sources', t => {
   const ids: string[] = [];
   for (const suite of ['web-browser', 'public-callbacks'] as const) {
     // Availability check only: these placeholders do not assert an executed candidate or native binary.
@@ -88,7 +88,7 @@ test('integrated repository prepares both suites and all 50 source-bound IDs wit
     ids.push(...capture.configuration.cases.map(entry => entry.caseId));
     assert.ok(capture.configuration.cases.every(entry => /^[a-f0-9]{64}$/.test(entry.sourceSha256)));
   }
-  assert.equal(ids.length, 50);
+  assert.equal(ids.length, 51);
   assert.deepEqual(new Set(ids), new Set(Object.keys(SYNTHETIC_CASE_MANIFEST)));
 });
 test('P42O hard-coded sources exactly bind its reviewed 26-file oracle closure without importing page code', () => {
@@ -113,6 +113,44 @@ test('fresh private capture retains passing and failing body/cleanup independent
   assert.equal(evidence.available, true); evidence.record(phaseFact);
   evidence.finish({ setup: 'passed', body: 'failed', cleanup: 'failed' });
   assert.deepEqual(saved('P04').at(-1), { kind: 'footer', sequence: 1, dropped: 0, truncated: false, incomplete: false, outcome: { setup: 'passed', body: 'failed', cleanup: 'failed' } });
+});
+test('retained UNKNOWN usable survives the private writer and independent collector unchanged', t => {
+  const { capture, saved, manifest } = fixture(t);
+  const evidence = beginSyntheticCase('P17', capture.env);
+  const retention = { version: 1, retiredOperationSeq: 7, producerState: 'retiring', inputDebt: 1, objectDebt: 32 } as const;
+  const result = { operationSeq: 7, ok: false, code: 'browser-failure', effects: 'unknown', scopeState: 'usable', retention } as const;
+  for (const slot of ['first-refusal', 'first-terminal'] as const) assert.equal(evidence.tryRecord({ kind: 'native-result', slot, phase: 'evaluate', command: 'fixture.evaluate', result }), true);
+  evidence.finish({ ...outcome, body: 'failed' });
+  const records = saved('P17');
+  assert.deepEqual(records.slice(1, -1), ['first-refusal', 'first-terminal'].map((slot, sequence) => ({ kind: 'record', sequence, fact: { kind: 'native-result', slot, phase: 'evaluate', command: 'fixture.evaluate', result } })));
+  assert.deepEqual(records.at(-1), { kind: 'footer', sequence: 2, dropped: 0, truncated: false, incomplete: false, outcome: { ...outcome, body: 'failed' } });
+  assert.equal(evidence.tryRecord(phaseFact), false, 'a closed writer cannot claim it saved a later record');
+  const collected = manifest().value.cases.find(item => item.caseId === 'P17');
+  assert.equal(collected?.status, 'complete');
+  assert.deepEqual(collected?.records, records);
+});
+test('invalid nested retention never executes getters, consumes a slot or increments saved sequence', t => {
+  const { capture, saved } = fixture(t); const evidence = beginSyntheticCase('P17', capture.env);
+  const retention = { version: 1, retiredOperationSeq: 1, producerState: 'retired', inputDebt: 0, objectDebt: 0 } as const;
+  const result = { operationSeq: 1, ok: false, code: 'cancelled', effects: 'unknown', scopeState: 'usable', retention } as const;
+  const fact = { kind: 'native-result', slot: 'first-refusal', phase: 'evaluate', command: 'fixture.evaluate', result } as const;
+  let getters = 0;
+  const getter = () => { getters++; throw new Error('PRIVATE'); };
+  const invalid: unknown[] = [
+    { ...result, retention: undefined }, { ...result, retention: { ...retention, retiredOperationSeq: 2 } },
+    { ...result, retention: { ...retention, extra: 'PRIVATE' } },
+    { ...result, retention: { ...retention, objectDebt: { nested: 'PRIVATE' } } },
+    { ...result, retention: Object.defineProperty({ ...retention }, 'inputDebt', { get: getter, enumerable: true }) },
+    Object.defineProperty({ ...result }, 'retention', { get: getter, enumerable: true }),
+  ];
+  for (const invalidResult of invalid) assert.equal(evidence.tryRecord({ ...fact, result: invalidResult } as SyntheticFact), false);
+  assert.equal(getters, 0);
+  assert.equal(evidence.tryRecord(fact), true);
+  evidence.finish({ ...outcome, body: 'failed' });
+  const records = saved('P17');
+  assert.deepEqual(records[1], { kind: 'record', sequence: 0, fact });
+  assert.deepEqual(records.at(-1), { kind: 'footer', sequence: 1, dropped: invalid.length, truncated: false, incomplete: true, outcome: { ...outcome, body: 'failed' } });
+  assert.equal(JSON.stringify(records).includes('PRIVATE'), false);
 });
 test('the artifact validates complete suite identity and saved-record digests', t => {
   const { root, output, capture } = fixture(t);
@@ -238,7 +276,7 @@ test('full verifier detects source-dependency mutation after capture', t => {
 });
 test('callback manifest cannot contain public cases', t => {
   const { root, output, capture } = fixture(t, 'public-callbacks'); completeAll(capture);
-  assert.deepEqual(capture.configuration.cases.map(item => item.caseId), ['C01', 'C02']);
+  assert.deepEqual(capture.configuration.cases.map(item => item.caseId), ['C01', 'C02', 'C03']);
   verifySyntheticEvidence(output, collectSyntheticEvidence(output, capture), capture.configuration.binding, root, capture.configuration.installerRuntime);
 });
 test('P16 byte cap is independent of record cap and preserves truncation evidence', t => {
@@ -445,7 +483,7 @@ for (const source of ['packages/web/tests/helpers/canvas-oracle.ts', 'packages/w
 }
 
 test('P14 closure includes the fixture and complete capture requires one exact independently expected secondary identity', t => {
-  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P14.sources, ['packages/web/tests/integration/cli.test.ts', 'packages/web/tests/helpers/installer-fixture.ts']);
+  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P14.sources, ['packages/web/tests/integration/cli.test.ts', 'packages/web/tests/helpers/installer-fixture.ts', 'packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts']);
   const { root, output, capture } = fixture(t); completeAll(capture);
   const receipt = collectSyntheticEvidence(output, capture);
   assert.equal(receipt.status, 'complete');
@@ -489,4 +527,116 @@ test('P14 runtime fact rejects wrong case and arbitrary metadata, including in a
   const rejected = fixture(t); const wrong = beginSyntheticCase('P13', rejected.capture.env); wrong.record({ kind: 'installer-runtime', ...installerRuntime }); wrong.finish(outcome);
   const footer = rejected.saved('P13').at(-1)!; assert.equal(footer.kind, 'footer');
   if (footer.kind === 'footer') { assert.equal(footer.dropped, 1); assert.equal(footer.incomplete, true); }
+});
+
+
+test('callback failure sidecar is case-owned, bounded and cannot read or save error payloads', () => {
+  const cause = { code: 'NODE_STALE', message: 'not retained' };
+  const error = { code: 'ACTION_FAILED', cause, stack: 'not retained' };
+  assert.deepEqual(callbackFailureFact(3, error), { kind: 'callback-failure', stageOrdinal: 3, code: 'ACTION_FAILED', causeCode: 'NODE_STALE' });
+  const fact = callbackFailureFact(3, error);
+  assert.equal(validSyntheticFact(fact, 'C03'), true);
+  assert.equal(validSyntheticFact(fact, 'C02'), false);
+  assert.equal(validSyntheticFact({ ...fact, message: 'not retained' }, 'C03'), false);
+  assert.equal(validSyntheticFact({ ...fact, code: 'arbitrary text' }, 'C03'), false);
+  assert.equal(validSyntheticFact({ ...fact, stageOrdinal: 6 }, 'C03'), false);
+  const getter = Object.defineProperty({}, 'code', { get() { throw new Error('must not invoke getter'); } });
+  assert.deepEqual(callbackFailureFact(0, getter), { kind: 'callback-failure', stageOrdinal: 0, code: 'other', causeCode: null });
+});
+
+test('P01 observes optional trace failures with closed command names and a bound observer source', () => {
+  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P01.sources, [
+    'packages/web/tests/integration/app-log.test.ts',
+    'packages/web/tests/helpers/synthetic-native-outcomes.ts',
+    'packages/web/tests/helpers/synthetic-evidence.ts',
+  ]);
+  const source = readFileSync(join(sourceRoot, SYNTHETIC_CASE_MANIFEST.P01.sources[0]), 'utf8');
+  assert.match(source, /return await evidence\.observer\.run\(async \(\) =>/);
+  assert.match(source, /observeSyntheticConnection\(connect\(\.\.\.args\)\)/);
+  for (const command of ['capture.screenshot', 'blob.read', 'blob.release'] as const) {
+    const fact = { kind: 'request-rejected-without-result', phase: 'capture', command } as const;
+    assert.equal(validSyntheticFact(fact, 'P01'), true);
+    assert.equal(validSyntheticFact({ ...fact, payload: 'not permitted' }, 'P01'), false);
+  }
+  assert.equal(validSyntheticFact({ kind: 'request-rejected-without-result', phase: 'capture', command: 'arbitrary-private-command' }, 'P01'), false);
+});
+
+test('P27 source closure binds the real native fixture graph and its captured correlation helpers', () => {
+  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P27.sources, [
+    'packages/web/tests/integration/lifecycle.test.ts',
+    'packages/web/tests/helpers/native-browser.ts',
+    'packages/web/tests/helpers/capture-fixture-surface.ts',
+    'packages/web/tests/helpers/native-correlation.ts',
+  ]);
+});
+
+for (const source of [
+  'packages/web/tests/helpers/native-browser.ts',
+  'packages/web/tests/helpers/capture-fixture-surface.ts',
+  'packages/web/tests/helpers/native-correlation.ts',
+]) {
+  test(`P27 verifier invalidates captured evidence after helper mutation: ${source}`, t => {
+    const { root, output, capture } = fixture(t);
+    completeAll(capture);
+    const receipt = collectSyntheticEvidence(output, capture);
+    assert.equal(receipt.status, 'complete');
+    verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+    const file = join(root, source);
+    const original = readFileSync(file);
+    writeFileSync(file, 'changed P27 fixture helper');
+    assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime));
+    writeFileSync(file, original);
+    verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+  });
+}
+
+const nativeObserverCases: readonly SyntheticCaseId[] = [
+  'P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10', 'P11', 'P12', 'P13', 'P14', 'P15',
+  'P17', 'P18', 'P19', 'P20', 'P21', 'P23', 'P36', 'P37', 'P38', 'P39', 'P40', 'P43', 'nested-setup',
+];
+for (const helper of ['packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts']) {
+  test(`only actual native observer cases bind the evidence helper: ${helper}`, t => {
+    const bound = (Object.entries(SYNTHETIC_CASE_MANIFEST) as [SyntheticCaseId, { sources: readonly string[] }][])
+      .filter(([, spec]) => spec.sources.includes(helper)).map(([caseId]) => caseId);
+    assert.deepEqual(bound, nativeObserverCases);
+    for (const caseId of nativeObserverCases) {
+      const spec = SYNTHETIC_CASE_MANIFEST[caseId];
+      assert.equal(new Set(spec.sources).size, spec.sources.length);
+      assert.match(readFileSync(join(sourceRoot, spec.sources[0]), 'utf8'), /synthetic-native-outcomes\.ts/);
+    }
+    const { root, output, capture } = fixture(t);
+    completeAll(capture);
+    const receipt = collectSyntheticEvidence(output, capture);
+    assert.equal(receipt.status, 'complete');
+    verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+    const file = join(root, helper); const original = readFileSync(file);
+    writeFileSync(file, 'changed evidence helper');
+    for (const entry of capture.configuration.cases) {
+      assert.equal(syntheticCaseSourceDigest(root, entry.caseId) !== entry.sourceSha256, nativeObserverCases.includes(entry.caseId), entry.caseId);
+    }
+    assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime));
+    writeFileSync(file, original);
+    verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+  });
+}
+
+test('a failed append reports false and cannot manufacture a saved sequence or complete footer', t => {
+  const { capture, saved, manifest } = fixture(t);
+  const evidence = beginSyntheticCase('P17', capture.env);
+  const fs = createRequire(import.meta.url)('node:fs') as typeof import('node:fs');
+  const failedWrite = t.mock.method(fs, 'writeSync', () => 0);
+  syncBuiltinESMExports();
+  try {
+    assert.equal(evidence.tryRecord(phaseFact), false);
+    assert.equal(failedWrite.mock.callCount(), 1);
+  } finally {
+    failedWrite.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.equal(evidence.tryRecord(phaseFact), false, 'a failed writer cannot later claim success');
+  evidence.finish({ ...outcome, body: 'failed' });
+  assert.deepEqual(saved('P17').map(row => row.kind), ['header']);
+  const collected = manifest().value.cases.find(item => item.caseId === 'P17');
+  assert.equal(collected?.status, 'unknown');
+  assert.ok(collected?.reasons.includes('missing-footer'));
 });

@@ -7,6 +7,23 @@ describe('closed concentrated synthetic evidence schemas', () => {
     for (const invalid of [{ ...result, payload: 'private' }, { ...result, code: 'arbitrary text' }, { ...result, effects: 'unknown', scopeState: 'usable' }, { ...result, ok: true }, { ...result, operationSeq: Infinity }]) expect(validSyntheticNativeResult(invalid)).toBe(false);
     expect(validSyntheticNativeResult({ ...result, ok: true, code: null, effects: 'completed', scopeState: 'usable' })).toBe(true);
   });
+  it('retains UNKNOWN usable only with the exact closed retirement snapshot', () => {
+    const retention = { version: 1, retiredOperationSeq: 1, producerState: 'retiring', inputDebt: 0, objectDebt: 32 };
+    const retained = { ...result, scopeState: 'usable', retention };
+    expect(validSyntheticNativeResult(retained)).toBe(true);
+    expect(validSyntheticNativeResult({ ...retained, retention: { ...retention, producerState: 'retired', inputDebt: 32, objectDebt: 0 } })).toBe(true);
+    for (const invalid of [undefined, null, {}, { ...retention, version: 2 }, { ...retention, retiredOperationSeq: 2 },
+      { ...retention, producerState: 'running' }, { ...retention, inputDebt: -1 }, { ...retention, inputDebt: 33 },
+      { ...retention, objectDebt: 0.5 }, { ...retention, objectDebt: Infinity }, { ...retention, private: 'never serialize' },
+      Object.assign(Object.create({ inherited: true }), retention), { ...retention, [Symbol('hidden')]: true },
+    ]) expect(validSyntheticNativeResult({ ...retained, retention: invalid })).toBe(false);
+    for (const invalid of [{ ...retained, effects: 'completed' }, { ...retained, ok: true, code: null }, { ...retained, scopeState: 'quarantined' }, { ...retained, scopeState: 'closed' }]) expect(validSyntheticNativeResult(invalid)).toBe(false);
+    let reads = 0;
+    const getter = () => { reads++; return 0; };
+    expect(validSyntheticNativeResult({ ...retained, retention: Object.defineProperty({ ...retention }, 'inputDebt', { get: getter, enumerable: true }) })).toBe(false);
+    expect(validSyntheticNativeResult(Object.defineProperty({ ...retained }, 'retention', { get: getter, enumerable: true }))).toBe(false);
+    expect(reads).toBe(0);
+  });
   it('keeps absent native results explicit and case-owned oracle facts closed', () => {
     expect(validSyntheticFact({ kind: 'native-result', slot: 'first-refusal', phase: 'open', command: 'scope.open', result: null }, 'P04')).toBe(true);
     const drag: SyntheticFact = { kind: 'drag-acquisition', sourcePresent: true, targetPresent: false, sourceUnique: true, targetUnique: false, sourceCount: 1, targetCount: 0 };

@@ -37,21 +37,36 @@ const executor: StepExecutor = {
   },
 };
 
+const syntheticEvidenceModule = new URL('../../../web/tests/helpers/synthetic-evidence.ts', import.meta.url).href;
+
 const SUITE = `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
+import { beginSyntheticCase, callbackFailureFact } from ${JSON.stringify(syntheticEvidenceModule)};
 
 test('${CASES[0]}', { timeout: 8_000 }, async ({ browser }) => {
+  const evidence = beginSyntheticCase('C03');
+  let body = 'incomplete';
+  let setup = 'not-started';
+  evidence.record({ kind: 'phase', section: 'body', phase: 'route', state: 'enter' });
+  try {
   await browser.goto('/');
   await browser.setCookies([{ name: 'fixture', value: 'public-synthetic', url: '/' }]);
   await browser.route('**/read', async route => {
+    let stageOrdinal = 0;
+    try {
     expect(await browser.url()).toMatch(/\\/$/);
-    expect(await browser.title()).toBe('Callback fixture');
-    expect((await browser.cookies()).some(cookie => cookie.name === 'fixture')).toBe(true);
-    expect(await browser.locator('h1').textContent()).toBe('Ready');
-    expect(await browser.evaluate(() => document.querySelector('h1')?.textContent ?? '')).toBe('Ready');
-    await route.fulfill({ body: 'callback finished' });
+    stageOrdinal = 1; expect(await browser.title()).toBe('Callback fixture');
+    stageOrdinal = 2; expect((await browser.cookies()).some(cookie => cookie.name === 'fixture')).toBe(true);
+    stageOrdinal = 3; expect(await browser.locator('h1').textContent()).toBe('Ready');
+    stageOrdinal = 4; expect(await browser.evaluate(() => document.querySelector('h1')?.textContent ?? '')).toBe('Ready');
+    stageOrdinal = 5; await route.fulfill({ body: 'callback finished' });
+    } catch (cause) { evidence.observe(() => callbackFailureFact(stageOrdinal, cause)); throw cause; }
   });
+  setup = 'passed';
   expect(await browser.evaluate(() => fetch('/read').then(response => response.text()))).toBe('callback finished');
+  body = 'passed';
+  } catch (cause) { body = 'failed'; throw cause; }
+  finally { evidence.finish({ setup, body, cleanup: 'not-started' }); }
 });
 
 test('${CASES[1]}', { timeout: 8_000 }, async ({ browser }) => {
