@@ -1,0 +1,76 @@
+Restart-only readiness/publication design, before behavior implementation
+
+Authorization: parent approved the minimal behavior repair after the complete
+RED/GREEN attachment proof, then reviewed reuse of changed/pending_enrollment and
+received/applied watermarks. Baseline stays 49903189; diagnostics dc723253 remain
+separate from metadata bdf09c9e and callback work 776b93b. The new implementation
+will be on support/ci27-restart-readiness, based on dc723253, with no other support
+branch merged. No general ClientTasks settlement rule will change.
+
+Exact planned code boundary:
+- cdp/client.rs: BoundedEventWatermark gets one synchronous closure operation
+  that retains the existing bounded-route mutex through its validated receipt
+  observation and caller's final publication. received() reuses it. This is the
+  reader's existing publish_bounded admission mutex, not a new capture barrier.
+- client_targets.rs: restart-only full-inventory check with a synchronous publish
+  closure, under the existing registry mutex. Exact replacement OwnedTarget
+  tenure must match. Sealed/integrity-lost/unknown inventory refuses immediately.
+  Only incomplete targets whose exact sessions are in pending_enrollment may
+  wait. No kind exclusion, repair, seal clearing or diagnostic authority.
+- client_enrollment.rs: restart-only async wait + synchronous commit check.
+  Register/enable changed.notified() before inspecting. Under original operation
+  generation/deadline/cancellation, inspect stored failure, reconciled state,
+  exact replacement attribution, all known pending sessions, and received/applied
+  watermark. Drop every mutex before waiting on the existing bounded() helper.
+  Re-evaluate after each notification; late observed children join the wait.
+- client_restart.rs: retain the exact replacement OwnedTarget insertion ticket
+  in RestartedPage, beyond string target/session identity; expose a checked
+  restart readiness/publication operation to the lifecycle owner.
+- client_browser.rs::restart_pages: wait before reopening recording, and perform
+  a second fenced convergence/publication after asynchronous recording hooks.
+  Construct successful result and set page_active in the synchronous final
+  closure. Keep final full-inventory refusal and existing failure containment.
+
+Lock order: existing lifecycle/UI/input permits remain owned by restart. New
+readiness work does not acquire a protected target barrier or a new UI lock.
+Clone the watermark before locking enrollment. Final synchronous order is
+enrollment index -> bounded-route mutex -> target registry -> ScopePermit gate
+check. The final closure does not reacquire index/registry/routes and performs
+no await, CDP command, callback, recording hook or owner mutex acquisition.
+Existing attached()/poison() use index before targets; reader publish_bounded
+only enqueues under routes and does not acquire index. Reader debt observation
+releases its own mutex before entering bounded routes. Thus no lock is retained
+while waiting for an enrollment task that needs it.
+
+Atomic boundary: received==applied and no pending enrollment must hold while the
+same routes mutex blocks reader admission, with the registry mutex retaining
+the exact healthy full inventory until successful result construction. An event
+admitted after an earlier drain but before this boundary changes received and
+forces another wait. Holding only an earlier snapshot/check is insufficient.
+The watermark proves reader admission through this linearization point, never
+renderer quiescence or that no event can arrive after publication. Genuinely
+post-publication targets remain subject to ordinary fail-closed admission and
+settlement. If they require a separate generic settlement repair, report that
+boundary; do not silently broaden this patch.
+
+Deterministic synthetic regressions: hold sibling configure ACKs while the
+replacement is already ready; verify zero/one ACK cannot publish and all ACKs
+can. Inject another child after an earlier successful readiness pass and before
+final publication. Test cancellation, original deadline, stored configure
+failure, unknown incomplete inventory, seal, and identical-ID reattachment.
+Existing restart, borrowed-owner and settlement tests retain their assertions.
+Original P33 is repeated through built Web/capability negotiation, with original
+budgets, after source-bound production compilation.
+
+Validation update: the diagnostic-only optimized harness finished successfully
+in 426.963 seconds. Eight exact diagnostic/retirement unit tests passed, zero
+failed/ignored. Receipt native dc723253, harness SHA256
+d124bb5c3f23ee244406dd80596adacc8774fa3e219e5c7046ad1dbc41c33b68,
+compiler SHA256 2521022b9e1569fd0c5e21a5d6edbbe8ddbea10b3372482544d35a803912c7e0.
+The earlier FINDINGS pending statement was true at its original checkpoint.
+
+Security update: parent supplied explicit user permission for --no-sandbox only
+for this round's temporary-container, local synthetic Chromium tests. Record
+actual argv, CI variable presence/value, versions and execution context on new
+runs. Do not alter OS, SUID, namespace settings or bypass Chromium 156 HTTP403.
+Historical safety uncertainty in SAFETY_BOUNDARY.txt remains unchanged.
