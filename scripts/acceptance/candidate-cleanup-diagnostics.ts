@@ -9,6 +9,7 @@ export const CLEANUP_BYTES = 256 * 1024;
 export const CLEANUP_RECORDS = 2048;
 const common = ['schemaVersion', 'source', 'pid', 'record', 'operationSeq', 'phase', 'droppedBefore', 'emittedBefore', 'suppressedBefore', 'overflow'];
 const identity = ['generation', 'cleanupOwner', 'cleanupAttempt', 'cleanupLifecycle'];
+const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inventoryIntegrityLost', 'inventoryReservations', 'inventoryUnconfigured', 'inventoryObserved'];
 const components = new Set(['callback', 'dialog', 'interception', 'script', 'detach', 'recording', 'upload', 'containment', 'release', 'input', 'download', 'blob', 'enrollment-fallback', 'retained-task-fallback', 'owner-fallback']);
 const errors = new Set<string>([...SYNTHETIC_CODES, 'frame-not-found', 'frame-ambiguous']);
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -21,13 +22,19 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const phase = item.phase;
   if (typeof phase !== 'string') return false;
   const lifecycle = ['CleanupStarted', 'CleanupFirstFailure', 'CleanupResult'].includes(phase);
-  if (!lifecycle && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(lifecycle ? identity : []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
+  const inventory = phase === 'InventorySnapshot';
+  if (!lifecycle && !inventory && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
   const allowed = new Set([...required, ...(phase === 'CleanupResult' ? ['error'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
-  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : [])]) if (!natural(item[key])) return false;
+  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
-  if (!lifecycle && item.operationSeq !== 0) return false;
+  if (!lifecycle && !inventory && item.operationSeq !== 0) return false;
+  if (inventory) {
+    if (typeof item.inventoryPoint !== 'string' || !['restart-ready', 'settlement-refused'].includes(item.inventoryPoint)) return false;
+    for (const key of ['inventorySealed', 'inventoryIntegrityLost', 'inventoryObserved']) if (typeof item[key] !== 'boolean') return false;
+    for (const key of ['inventoryReservations', 'inventoryUnconfigured']) if (!natural(item[key]) || item[key] > 8192) return false;
+  }
   if (lifecycle && (typeof item.cleanupLifecycle !== 'string' || !['scope-end', 'restart'].includes(item.cleanupLifecycle))) return false;
   if (phase === 'CleanupFirstFailure' && (typeof item.cleanupComponent !== 'string' || !components.has(item.cleanupComponent))) return false;
   if (phase === 'CleanupResult') {
@@ -72,6 +79,11 @@ export function inspectCleanupBytes(bytes: Buffer) {
     if (value.phase === 'CaptureLimitReached') reasons.add('capture-limit');
     if (value.phase === 'CaptureStarted') { if (ordinal !== 0) reasons.add('reused-pid'); continue; }
     if (value.phase === 'CaptureLimitReached') continue;
+    if (value.phase === 'InventorySnapshot') {
+      // Lock-unavailable placeholders and saturated counts both explicitly lack a complete observation.
+      if (value.inventoryObserved === false) reasons.add('inventory-unobserved');
+      continue; // Independent read-only facts cannot start, finish or repair a cleanup attempt.
+    }
     const key = `${pid}:${value.cleanupOwner}:${value.cleanupAttempt}`;
     const exact = JSON.stringify([value.generation, value.operationSeq, value.cleanupLifecycle]);
     const previous = attempts.get(key);

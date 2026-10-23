@@ -62,3 +62,97 @@ test('concurrent growth cannot make the collector read beyond its fixed byte cap
   assert.equal(collectCleanupCapture(out, 'web-browser', capture, true).status, 'unknown');
   assert.equal(observedLimit, CLEANUP_BYTES + 1);
 });
+
+function inventory(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('InventorySnapshot', ordinal, { generation: 0, inventoryPoint: 'restart-ready', inventorySealed: false, inventoryIntegrityLost: false, inventoryReservations: 0, inventoryUnconfigured: 0, inventoryObserved: true, ...facts });
+}
+test('inventory snapshots accept only the two closed points and bounded observed facts', () => {
+  for (const inventoryPoint of ['restart-ready', 'settlement-refused']) {
+    for (const count of [0, 8192]) {
+      const value = inventory(1, { inventoryPoint, generation: Number.MAX_SAFE_INTEGER, inventorySealed: true, inventoryIntegrityLost: true, inventoryReservations: count, inventoryUnconfigured: count });
+      assert.equal(validCleanupRecord(value), true);
+      assert.ok(lines(value).length <= 512);
+    }
+  }
+  assert.equal(validCleanupRecord(inventory(1, { operationSeq: 0 })), true);
+});
+test('independent inventory snapshots interleave without changing cleanup lifecycle state', () => {
+  const values = [record('CaptureStarted', 0), inventory(1), record('CleanupStarted', 2), inventory(3, { inventoryPoint: 'settlement-refused', inventorySealed: true, inventoryReservations: 1 }), record('CleanupFirstFailure', 4, { cleanupComponent: 'dialog' }), inventory(5), record('CleanupResult', 6, { cleanupResult: 'failed', error: 'cleanup-failed' }), inventory(7)];
+  const result = inspectCleanupBytes(lines(...values));
+  assert.equal(result.status, 'complete-observed-snapshots');
+  assert.deepEqual(result.reasons, []);
+  assert.equal(result.records.length, values.length);
+  assert.equal(result.records[3]!.inventorySealed, true, 'complete evidence does not mean healthy inventory');
+});
+test('inventory-only evidence cannot invent cleanup coverage or a capture start', () => {
+  const only = inspectCleanupBytes(lines(record('CaptureStarted', 0), inventory(1)));
+  assert.equal(only.status, 'unknown');
+  assert.deepEqual(only.reasons, ['no-cleanup-attempt']);
+  assert.equal(only.records.length, 2);
+  const missing = inspectCleanupBytes(lines(inventory(0)));
+  assert.equal(missing.status, 'unknown');
+  assert.ok(missing.reasons.includes('missing-capture-start'));
+  assert.ok(!missing.reasons.includes('invalid-lifecycle'));
+});
+test('unobserved inventory remains unknown even alongside completed cleanup', t => {
+  const unobserved = inventory(4, { inventoryObserved: false });
+  assert.equal(validCleanupRecord(unobserved), true);
+  const inspected = inspectCleanupBytes(lines(...completed(), unobserved));
+  assert.equal(inspected.status, 'unknown');
+  assert.deepEqual(inspected.reasons, ['inventory-unobserved']);
+  const out = directory(t); const capture = prepareCleanupCapture(binding, {});
+  appendFileSync(capture.file, lines(...completed(), unobserved));
+  const result = collectCleanupCapture(out, 'web-browser', capture, true);
+  assert.equal(result.status, 'unknown');
+  const saved = JSON.parse(readFileSync(join(out, 'web-browser.cleanup-diagnostics.json'), 'utf8'));
+  assert.equal(saved.records.at(-1).inventoryObserved, false);
+  assert.equal(saved.releaseEligible, false);
+  assert.equal(saved.processCoverage, 'unproven');
+  assert.equal(saved.caseAssociation, 'unproven');
+});
+test('inventory rejects missing fields, extra payload or cleanup identity, and wrong closed types', () => {
+  const valid = inventory(1);
+  for (const key of ['generation', 'inventoryPoint', 'inventorySealed', 'inventoryIntegrityLost', 'inventoryReservations', 'inventoryUnconfigured', 'inventoryObserved']) {
+    const missing: Record<string, unknown> = { ...valid }; delete missing[key];
+    assert.equal(validCleanupRecord(missing), false, `missing ${key}`);
+  }
+  for (const facts of [
+    { inventoryPoint: 'private-marker' }, { inventoryPoint: ['restart-ready'] }, { inventoryPoint: { toString: 'restart-ready' } }, { inventoryPoint: null },
+    { generation: -1 }, { generation: '0' }, { generation: Number.MAX_SAFE_INTEGER + 1 },
+    { inventorySealed: 'false' }, { inventoryIntegrityLost: 0 }, { inventoryObserved: null }, { inventoryObserved: [] },
+    { inventoryReservations: -1 }, { inventoryReservations: 8193 }, { inventoryReservations: 0.5 }, { inventoryReservations: '0' },
+    { inventoryUnconfigured: -1 }, { inventoryUnconfigured: 8193 }, { inventoryUnconfigured: {} }, { inventoryUnconfigured: true },
+    { targetId: 'private-marker' }, { cleanupOwner: 1 }, { cleanupAttempt: 1 }, { cleanupLifecycle: 'restart' }, { cleanupResult: 'passed' }, { error: 'cleanup-failed' },
+  ]) {
+    const changed = inventory(4, facts);
+    assert.equal(validCleanupRecord(changed), false, JSON.stringify(facts));
+    const inspected = inspectCleanupBytes(lines(...completed(), changed));
+    assert.equal(inspected.status, 'unknown');
+    assert.ok(inspected.reasons.includes('invalid-record'));
+    assert.equal(inspected.records.length, 4, 'invalid payload must not enter saved records');
+    assert.ok(!JSON.stringify(inspected).includes('private-marker'));
+  }
+});
+test('inventory preserves sequence, overflow, emission and pending cleanup refusal rules', () => {
+  for (const facts of [{ record: 5 }, { emittedBefore: 3 }, { droppedBefore: 1 }, { suppressedBefore: 1 }, { overflow: true }, { pid: 43 }]) {
+    assert.equal(inspectCleanupBytes(lines(...completed(), inventory(4, facts))).status, 'unknown');
+  }
+  const pending = inspectCleanupBytes(lines(record('CaptureStarted', 0), record('CleanupStarted', 1), inventory(2)));
+  assert.equal(pending.status, 'unknown'); assert.ok(pending.reasons.includes('missing-terminal'));
+  const orphan = inspectCleanupBytes(lines(record('CaptureStarted', 0), inventory(1), record('CleanupResult', 2, { cleanupResult: 'passed' })));
+  assert.equal(orphan.status, 'unknown'); assert.ok(orphan.reasons.includes('invalid-lifecycle'));
+});
+
+test('saturated native inventory counts are retained as unknown, never healthy or silently truncated by collector', () => {
+  for (const facts of [
+    { inventoryReservations: 8192 }, { inventoryUnconfigured: 8192 },
+    { inventoryReservations: 8192, inventoryUnconfigured: 8192, inventorySealed: true, inventoryIntegrityLost: true },
+  ]) {
+    const value = inventory(4, { ...facts, inventoryObserved: false });
+    assert.equal(validCleanupRecord(value), true);
+    const result = inspectCleanupBytes(lines(...completed(), value));
+    assert.equal(result.status, 'unknown');
+    assert.deepEqual(result.reasons, ['inventory-unobserved']);
+    assert.deepEqual(result.records.at(-1), value);
+  }
+});

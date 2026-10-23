@@ -31,3 +31,22 @@ test('engine command mapping takes check/uncheck wording from the original typed
     expect(peer.requests.map(request => request.command)).toEqual(['browser.perform', 'browser.perform']);
   } finally { await client.close(operation); }
 });
+
+
+test('marks only the exact clean native timeout and never downgrades uncertain input', () => {
+  const wire = result('deadline-exceeded', 'not-dispatched');
+  expect(serverMessage({ ...wire })).toEqual(wire);
+  const failure = resultError(wire);
+  expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  expect(isNativeNotDispatched(failure)).toBe(true);
+  expect(isNativeNotDispatched(Object.assign(new Error(failure.message), failure))).toBe(false);
+  expect(isNativeNotDispatched(Object.assign(Object.create(Object.getPrototypeOf(failure)), failure))).toBe(false);
+  expect(isNativeNotDispatched({ code: 'OPERATION_TIMEOUT', retryable: false })).toBe(false);
+  for (const scopeState of ['usable', 'quarantined'] as const) {
+    const uncertain = resultError({ ...wire, effects: 'unknown', scopeState });
+    expect(uncertain).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+    expect(isNativeNotDispatched(uncertain)).toBe(false);
+  }
+  expect(isNativeNotDispatched(resultError({ ...wire, effects: 'completed' }))).toBe(false);
+  expect(isNativeNotDispatched(resultError({ ...wire, scopeState: 'quarantined' }))).toBe(false);
+});

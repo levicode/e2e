@@ -4,7 +4,9 @@
  * renderer stuck in a script a button started. Playwright cannot answer an
  * evaluate or a point tap there at all, so the engine's own deadline ends
  * the call: `OPERATION_TIMEOUT`, or `ACTION_MAY_HAVE_COMMITTED`
- * for input, which may have reached the page.
+ * for input, which may have reached the page. Native point admission instead
+ * waits for the older unknown input: if it never settles, the new point times
+ * out without dispatch. The independent Playwright baseline is unchanged.
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -19,6 +21,7 @@ import type { EngineFixtureContext, EngineHandle, LocatorExpression, NodeRef, Op
 import { web, type BrowserExpectation } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 import { NativeClient } from '../../src/native/client.ts';
+import { isNativeNotDispatched } from '../../src/native/browser-channel.ts';
 import { beginSyntheticCase, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 
@@ -276,7 +279,10 @@ describe('operations on a hung page', () => {
     evidence.phase('body', 'point-perform');
     const tap = await bounded(() => engine.performAt!({ x: 10, y: 10 }, { kind: 'tap' }, operation()), { ordinal: 1, command: 'browser.pointer' });
     evidence.phase('body', 'assertion');
-    evidence.observer.assert(1, () => expect(tap.error).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' }));
+    evidence.observer.assert(1, () => {
+      expect(tap.error).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+      expect(isNativeNotDispatched(tap.error)).toBe(true);
+    });
   }));
 
   it('keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline', async () => {

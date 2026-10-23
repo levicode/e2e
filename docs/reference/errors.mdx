@@ -32,7 +32,10 @@ The native web adapter can also expose engine-level `OPERATION_TIMEOUT` and
 `ACTION_FAILED` and `APP_NOT_OPEN`, respectively. A web route or dialog handler
 contract violation raised directly as a test error retains `INVALID_STATE`
 (test class, exit 1). These codes do not imply that an uncertain input was safe
-to repeat; an unknown input outcome remains non-replayable.
+to repeat; an unknown input outcome remains non-replayable. A native point
+operation waiting for older outstanding input can time out before dispatch,
+with `OPERATION_TIMEOUT` and `retryable: false`. That timeout does not cancel
+or settle the older input, or make its unknown outcome safe to replay.
 
 ## Reference
 

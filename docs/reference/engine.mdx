@@ -1472,6 +1472,14 @@ export const RETRYABLE_ENGINE_ERROR_CODES: ReadonlySet<EngineErrorCode> = new Se
 
 #### Timeouts at a deadline
 
+Native point input waits within its original operation budget for older input
+to settle. If that budget ends before the new input is dispatched, it reports
+`OPERATION_TIMEOUT` with `retryable: false`, not `ACTION_MAY_HAVE_COMMITTED`.
+The earlier input remains owned until actual settlement; its unknown receipt
+is never rewritten or made replayable by the new timeout. A late reply
+cannot reopen a quarantined or retired scope. Input already dispatched without
+a confirmed outcome still reports `ACTION_MAY_HAVE_COMMITTED`.
+
 An `OPERATION_TIMEOUT` on a locate or read that started with under 100 ms of
 a waiting call's deadline left, after one that completed, ends the wait
 instead:
