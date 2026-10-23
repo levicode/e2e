@@ -24,12 +24,14 @@
     {
       "path": "/workspace/ci27-integrated-build/bin/production",
       "bytes": 31040336,
-      "sha256Before": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca"
+      "sha256Before": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+      "sha256After": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca"
     },
     {
       "path": "/workspace/c03-build/target/ci/agent-browser",
       "bytes": 31040336,
-      "sha256Before": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca"
+      "sha256Before": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+      "sha256After": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca"
     }
   ],
   "testOnlyRegistrations": {
@@ -113,5 +115,6 @@
   "versionStampSourceAudit": {
     "buildScriptUnchanged": true,
     "trackedGitRevisionStampFoundInBuildScript": false
-  }
+  },
+  "unchangedAfterVerification": true
 }

@@ -22,6 +22,6 @@
     "--test-threads=1",
     "--nocapture"
   ],
-  "allTestsOrIgnoredAuthorized": false,
-  "browserAuthorized": false
+  "originalExecutionManifestSha256": "5e156dcc342ef6096daa03e83623b3a65dbf2fb26cd395699c42c5f4ce09865c",
+  "projection": "Technical names and exact arguments from the execution manifest; orchestration permission flags omitted."
 }

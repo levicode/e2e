@@ -1,0 +1,139 @@
+{
+  "native-default-clippy": {
+    "stage": "native-default-clippy",
+    "source": "79da48b64c275a09adb852b89de099d891941049",
+    "tree": "1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad",
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+    "pid": 33927,
+    "startedAt": "2026-10-23T18:06:51.549237+00:00",
+    "completedAt": "2026-10-23T18:07:55.762121+00:00",
+    "exitCode": 0,
+    "sourceUnchanged": true,
+    "durationSeconds": 64.2129060599982,
+    "resources": {
+      "cargoBuildJobs": 2,
+      "maxChildRssKiB": 4556596,
+      "childUserSeconds": 61.263686,
+      "childSystemSeconds": 2.838584
+    },
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "c6beacd9bef4d1149ffd815744bcf456e79137de86dc158760e6368e44eedbd9",
+    "browserExecuted": false,
+    "testsExecutedByThisStage": false
+  },
+  "scripts-types": {
+    "stage": "scripts-types",
+    "source": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+    "tree": "60eee9d9fc0585731c6e0dd6440ec16d0a3b8ac2",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "tsc",
+      "--project",
+      "scripts"
+    ],
+    "cwd": "/workspace/e2e-integrated-983c3ee",
+    "pid": 33910,
+    "startedAt": "2026-10-23T18:06:51.532471+00:00",
+    "completedAt": "2026-10-23T18:06:52.290399+00:00",
+    "exitCode": 0,
+    "sourceUnchanged": true,
+    "durationSeconds": 0.7579510469986417,
+    "resources": {
+      "cargoBuildJobs": null,
+      "maxChildRssKiB": 213152,
+      "childUserSeconds": 1.235375,
+      "childSystemSeconds": 0.337095
+    },
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browserExecuted": false,
+    "testsExecutedByThisStage": false
+  },
+  "collector-units": {
+    "stage": "collector-units",
+    "source": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+    "tree": "60eee9d9fc0585731c6e0dd6440ec16d0a3b8ac2",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "node",
+      "--test",
+      "--test-reporter=tap",
+      "scripts/acceptance/candidate-cleanup-diagnostics.test.ts"
+    ],
+    "cwd": "/workspace/e2e-integrated-983c3ee",
+    "pid": 33926,
+    "startedAt": "2026-10-23T18:06:51.548449+00:00",
+    "completedAt": "2026-10-23T18:06:52.061332+00:00",
+    "exitCode": 0,
+    "sourceUnchanged": true,
+    "durationSeconds": 0.5129104589977942,
+    "resources": {
+      "cargoBuildJobs": null,
+      "maxChildRssKiB": 86260,
+      "childUserSeconds": 0.415965,
+      "childSystemSeconds": 0.09486499999999999
+    },
+    "stdoutSha256": "02c0636f5092a0e7423f599f99af162963d659af33489c79c45d64237015db56",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browserExecuted": false,
+    "testsExecutedByThisStage": true,
+    "summary": {
+      "tests": 43,
+      "pass": 43,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  },
+  "native-unit-harness": {
+    "stage": "native-unit-harness",
+    "source": "79da48b64c275a09adb852b89de099d891941049",
+    "tree": "1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--bin",
+      "agent-browser",
+      "--no-run",
+      "--message-format=json"
+    ],
+    "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+    "pid": 34130,
+    "startedAt": "2026-10-23T18:08:17.130276+00:00",
+    "completedAt": "2026-10-23T18:15:46.642684+00:00",
+    "exitCode": 0,
+    "sourceUnchanged": true,
+    "durationSeconds": 449.51243934500235,
+    "resources": {
+      "cargoBuildJobs": 2,
+      "maxChildRssKiB": 7039064,
+      "childUserSeconds": 785.400298,
+      "childSystemSeconds": 20.500613
+    },
+    "stdoutSha256": "d4164bb56f42a30844c36a3fe545d8208e9dded840d30c5a865e8ec513981c72",
+    "stderrSha256": "ebeb1fa9a1ab8474a5998e5027dfc63700305f0fc7f28a31956fc6a7aa8872be",
+    "browserExecuted": false,
+    "testsExecutedByThisStage": false
+  }
+}

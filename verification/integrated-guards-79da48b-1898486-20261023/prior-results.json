@@ -1,0 +1,227 @@
+{
+  "evidenceCommit": "2aa0faa05372adeb1bf05677c3e6e0ddf31a4c2c",
+  "native": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+  "e2e": "983c3ee8232bef9f73061f3821c50f3111f722df",
+  "failedGates": {
+    "native-default-clippy": {
+      "stage": "native-default-clippy",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 24947,
+      "startedAt": "2026-10-23T17:26:39.483337+00:00",
+      "completedAt": "2026-10-23T17:28:06.940843+00:00",
+      "exitCode": 101,
+      "sourceUnchanged": true,
+      "durationSeconds": 87.45752844200251,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4560892,
+        "childUserSeconds": 137.816091,
+        "childSystemSeconds": 8.961171
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "40aca82b6e28f20287ed351a2626646d6ed7e43236efcd54acdad4f9e25c319e",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false,
+      "firstErrorExcerpt": "error: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:350:9\n    |\n350 |     let log = commands.lock().unwrap();\n    |         ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:369:16\n    |\n369 |         server.await.unwrap() >= deadline,\n    |                ^^^^^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#await_holding_lock\n    = note: `-D clippy::await-holding-lock` implied by `-D warnings`\n    = help: to override `-D warnings` add `#[allow(clippy::await_holding_lock)]`\n\nerror: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_mask_failure_tests.rs:308:13\n    |\n308 |         let log = self.commands.lock().unwrap();\n    |             ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through",
+      "firstErrorExtraction": "recomputed from preserved original output; no stage rerun"
+    },
+    "web12-scripts-types": {
+      "stage": "web12-scripts-types",
+      "source": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsc",
+        "--project",
+        "scripts"
+      ],
+      "cwd": "/workspace/e2e-integrated-983c3ee",
+      "pid": 26884,
+      "startedAt": "2026-10-23T17:34:39.764562+00:00",
+      "completedAt": "2026-10-23T17:34:41.547693+00:00",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "durationSeconds": 1.7831587069995294,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 227040,
+        "childUserSeconds": 1.208196,
+        "childSystemSeconds": 0.289979
+      },
+      "stdoutSha256": "3faf9675bac62ee0fc2a59faaba7c28a0f7e999f8a7549ccbcbd45a28c3a86ea",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false,
+      "firstErrorExcerpt": "scripts/acceptance/candidate-cleanup-diagnostics.ts(182,11): error TS2412: Type 'undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target."
+    }
+  },
+  "fixtureSummary": {
+    "default": {
+      "expected": 25,
+      "discovered": 25,
+      "executed": 25,
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "allSingleListAndRun": true,
+      "allExitZero": true
+    },
+    "acceptance-faults": {
+      "expected": 3,
+      "discovered": 3,
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "allSingleListAndRun": true,
+      "allExitZero": true
+    }
+  },
+  "oldBinaries": {
+    "default": {
+      "kind": "default",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "stage": "native-default-harness",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "compilerArtifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///workspace/agent-browser-integrated-32ccc5c/cli#agent-browser@0.39.1",
+        "manifest_path": "/workspace/agent-browser-integrated-32ccc5c/cli/Cargo.toml",
+        "target": {
+          "kind": [
+            "bin"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "agent-browser",
+          "src_path": "/workspace/agent-browser-integrated-32ccc5c/cli/src/main.rs",
+          "edition": "2021",
+          "doc": true,
+          "doctest": false,
+          "test": true
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        },
+        "features": [],
+        "filenames": [
+          "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57"
+        ],
+        "executable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+        "fresh": false
+      },
+      "compilerJsonSha256": "6db88d7909f539a1e568152021c83158245e313ff9b7005e33abbe94e0cbc834",
+      "stageReceiptSha256": "40a338de55bc9887b896e4de4d983a6e148f16018f876397d7ff7bbf08ebc819",
+      "originalExecutable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+      "preservedExecutable": "/workspace/ci27-integrated-build/bin/default-harness",
+      "sha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "bytes": 76374512,
+      "releaseEligible": false,
+      "embeddedDashboardIndexSha256": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c",
+      "preservedExecutableStillMatches": true
+    },
+    "acceptance-faults": {
+      "kind": "acceptance-faults",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [
+        "acceptance-faults"
+      ],
+      "stage": "native-feature-harness",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--bin",
+        "agent-browser",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "compilerArtifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///workspace/agent-browser-integrated-32ccc5c/cli#agent-browser@0.39.1",
+        "manifest_path": "/workspace/agent-browser-integrated-32ccc5c/cli/Cargo.toml",
+        "target": {
+          "kind": [
+            "bin"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "agent-browser",
+          "src_path": "/workspace/agent-browser-integrated-32ccc5c/cli/src/main.rs",
+          "edition": "2021",
+          "doc": true,
+          "doctest": false,
+          "test": true
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        },
+        "features": [
+          "acceptance-faults"
+        ],
+        "filenames": [
+          "/workspace/c03-build/target/ci/deps/agent_browser-bc2fe493e205e8e5"
+        ],
+        "executable": "/workspace/c03-build/target/ci/deps/agent_browser-bc2fe493e205e8e5",
+        "fresh": false
+      },
+      "compilerJsonSha256": "7274d27112b601fdfced73b7b616e299f9f82b4c15da2481a17c7c74f3f074db",
+      "stageReceiptSha256": "8104ccb4b31d22de90815832c82fae890999fa8dafb25fba8a2d6b0d1269f07d",
+      "originalExecutable": "/workspace/c03-build/target/ci/deps/agent_browser-bc2fe493e205e8e5",
+      "preservedExecutable": "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+      "sha256": "13a8fcd200ec476dc9e961a4885aab244c73180b3c09a47b9ab5e5991ebae733",
+      "bytes": 77575784,
+      "releaseEligible": false,
+      "embeddedDashboardIndexSha256": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c",
+      "preservedExecutableStillMatches": true
+    }
+  },
+  "oldPublishedEvidenceUnchanged": true,
+  "priorReceiptsBindToNewSource": false,
+  "completePrior28RunRepeated": false
+}

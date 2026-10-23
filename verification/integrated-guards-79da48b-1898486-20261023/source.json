@@ -39,5 +39,5 @@
   "cpuCount": 5,
   "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
   "browserExecuted": false,
-  "productionBuildRequested": false
+  "productionBuildExecuted": false
 }

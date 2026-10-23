@@ -1,0 +1,60 @@
+{
+  "kind": "default",
+  "source": "79da48b64c275a09adb852b89de099d891941049",
+  "tree": "1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad",
+  "e2eSource": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+  "features": [],
+  "stage": "native-unit-harness",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--bin",
+    "agent-browser",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "compilerArtifact": {
+    "reason": "compiler-artifact",
+    "package_id": "path+file:///workspace/agent-browser-integrated-32ccc5c/cli#agent-browser@0.39.1",
+    "manifest_path": "/workspace/agent-browser-integrated-32ccc5c/cli/Cargo.toml",
+    "target": {
+      "kind": [
+        "bin"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "agent-browser",
+      "src_path": "/workspace/agent-browser-integrated-32ccc5c/cli/src/main.rs",
+      "edition": "2021",
+      "doc": true,
+      "doctest": false,
+      "test": true
+    },
+    "profile": {
+      "opt_level": "3",
+      "debuginfo": 0,
+      "debug_assertions": false,
+      "overflow_checks": false,
+      "test": true
+    },
+    "features": [],
+    "filenames": [
+      "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57"
+    ],
+    "executable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "fresh": false
+  },
+  "compilerJsonSha256": "d4164bb56f42a30844c36a3fe545d8208e9dded840d30c5a865e8ec513981c72",
+  "stageReceiptSha256": "3d8053ae55889c93b73de27c189c39ed10030d276c50d961a3b6935058c0a22e",
+  "originalExecutable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+  "preservedExecutable": "/workspace/ci27-guards-build/bin/default-harness",
+  "sha256": "da778caa088c1478ba5d99d5ea6dc2ed0506056bd782a4f2c052488a1b30099e",
+  "bytes": 76360176,
+  "releaseEligible": false,
+  "embeddedDashboardIndexSha256": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c"
+}

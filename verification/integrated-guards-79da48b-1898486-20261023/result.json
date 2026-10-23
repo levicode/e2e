@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "kind": "integrated-compile-guard-targeted-reverification",
+  "status": "passed-targeted-scope",
+  "completedAt": "2026-10-23T18:16:22.951766+00:00",
+  "native": {
+    "root": "/workspace/agent-browser-integrated-32ccc5c",
+    "commit": "79da48b64c275a09adb852b89de099d891941049",
+    "tree": "1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad",
+    "parent": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+    "changedFiles": [
+      "cli/src/native/client_capture_frame_owner_deadline_tests.rs",
+      "cli/src/native/client_capture_mask_failure_tests.rs"
+    ],
+    "instructionBlobsUnchanged": {
+      "AGENTS.md": true
+    }
+  },
+  "e2e": {
+    "root": "/workspace/e2e-integrated-983c3ee",
+    "commit": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+    "tree": "60eee9d9fc0585731c6e0dd6440ec16d0a3b8ac2",
+    "parent": "983c3ee8232bef9f73061f3821c50f3111f722df",
+    "changedFiles": [
+      "scripts/acceptance/candidate-cleanup-diagnostics.ts"
+    ],
+    "instructionBlobsUnchanged": {
+      "AGENTS.md": true,
+      ".dev/skills/verify/SKILL.md": true,
+      ".github/workflows/native-candidate.yml": true
+    }
+  },
+  "gates": {
+    "native-default-clippy": {
+      "exitCode": 0,
+      "pid": 33927,
+      "durationSeconds": 64.2129060599982
+    },
+    "scripts-types": {
+      "exitCode": 0,
+      "pid": 33910,
+      "durationSeconds": 0.7579510469986417
+    },
+    "collector-units": {
+      "exitCode": 0,
+      "pid": 33926,
+      "durationSeconds": 0.5129104589977942
+    },
+    "native-unit-harness": {
+      "exitCode": 0,
+      "pid": 34130,
+      "durationSeconds": 449.51243934500235
+    }
+  },
+  "collectorSummary": {
+    "tests": 43,
+    "pass": 43,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "fixtureSummary": {
+    "discovered": 6,
+    "executed": 6,
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "cases": 6,
+    "singleExactListingPerCase": true,
+    "singleExactExecutionPerCase": true,
+    "allExitCodesZero": true
+  },
+  "harness": {
+    "source": "79da48b64c275a09adb852b89de099d891941049",
+    "tree": "1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad",
+    "features": [],
+    "sha256": "da778caa088c1478ba5d99d5ea6dc2ed0506056bd782a4f2c052488a1b30099e",
+    "compilerJsonSha256": "d4164bb56f42a30844c36a3fe545d8208e9dded840d30c5a865e8ec513981c72",
+    "newBuild": true
+  },
+  "production": {
+    "originalBuildSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+    "productionInputsUnchanged": true,
+    "rebuilt": false,
+    "executed": false,
+    "sha256": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+    "originalCompilerJsonSha256": "1143db202ff28d7798ea7b50466cb67c821a112c8084d18368e3dab1239a8bb5"
+  },
+  "priorEvidenceCommit": "2aa0faa05372adeb1bf05677c3e6e0ddf31a4c2c",
+  "old28ResultsRelabeled": false,
+  "oldFull28Reexecuted": false,
+  "other22FixturesReexecuted": false,
+  "oldEvidenceAndPreservedHarnessesUnchanged": true,
+  "verificationEditsToSource": false,
+  "budgetOrAssertionChanges": false,
+  "defaultAllTestsExecuted": false,
+  "ignoredTestsRequested": false,
+  "browserExecuted": false,
+  "restartProbeExecuted": false,
+  "productionBuildExecuted": false,
+  "newFeatureHarnessBuilt": false,
+  "fullCandidateVerified": false,
+  "releaseEligible": false,
+  "resources": {
+    "cargoBuildJobs": 2,
+    "limits": {
+      "cpu.max": "400000 100000",
+      "cpuset.cpus.effective": "0-4",
+      "memory.max": "17179869184",
+      "memory.swap.max": "max"
+    },
+    "maxReportedChildRssKiB": 7039064,
+    "rssMetric": "Maximum RUSAGE_CHILDREN child RSS reported by a stage; not summed simultaneous process RSS.",
+    "cgroupLifetimeMemoryPeakBytesAtSourceCheckout": 14688477184,
+    "cgroupLifetimeMemoryPeakBytesAfterTests": 14854037504,
+    "cgroupPeakIsTaskSpecific": false
+  },
+  "boundaries": {
+    "frameOwner": "Full dispatcher and installed production OwnerDebtLedger; exact late owner release, retained debt without release ACK, exact late ACK clears debt without resuming old work. Does not establish equivalence to the legacy 60ms successful fallback.",
+    "mask": "Synthetic CDP peer and real 80ms scheduling; no actual DOM detachment and no installed production transport debt ledger or operation journal. ProtectedReadJournal is separate. Does not establish millisecond equivalence to the old TypeScript 1000ms injected timeout or discharge all old capture obligations.",
+    "collector": "Synthetic closed-schema records and local temporary files; no browser or business data."
+  },
+  "failedStages": []
+}
