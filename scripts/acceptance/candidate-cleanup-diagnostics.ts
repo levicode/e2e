@@ -10,6 +10,19 @@ export const CLEANUP_RECORDS = 2048;
 const common = ['schemaVersion', 'source', 'pid', 'record', 'operationSeq', 'phase', 'droppedBefore', 'emittedBefore', 'suppressedBefore', 'overflow'];
 const identity = ['generation', 'cleanupOwner', 'cleanupAttempt', 'cleanupLifecycle'];
 const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inventoryIntegrityLost', 'inventoryReservations', 'inventoryUnconfigured', 'inventoryObserved'];
+const inventoryPoints = new Set(['restart-begin', 'restart-ready', 'settlement-refused']);
+const targetKinds = new Set(['other', 'page', 'iframe', 'worker', 'shared-worker', 'service-worker', 'browser', 'browser-ui', 'tab', 'webview', 'background-page']);
+const targetOrigins = new Set(['unclassified', 'initial-discovery', 'auto-attach']);
+const targetPurposes = new Set(['unclassified', 'application', 'state-bootstrap']);
+const targetClassifications = new Set(['pending-reservation', 'unreserved-application', 'reserved-application', 'reserved-bootstrap', 'reservation-remainder']);
+const targetStages = new Set(['registered', 'configure-started', 'configure-ack', 'configure-failed', 'resumed', 'detached', 'restart-retiring', 'purpose-assigned']);
+const targetFields: Record<string, string[]> = {
+  TargetAttribution: ['generation', 'attachmentOrdinal', 'targetOrdinal', 'targetKind', 'targetOrigin', 'parentAttachmentOrdinal', 'rootAttachmentOrdinal'],
+  TargetLifecycle: ['generation', 'attachmentOrdinal', 'targetStage', 'targetPurpose', 'targetClassification', 'targetConfigured', 'targetResumed'],
+  TargetInventory: ['generation', 'inventoryPoint', 'inventoryOrdinal', 'attachmentOrdinal', 'targetPurpose', 'targetClassification', 'targetConfigured', 'targetResumed'],
+  TargetInventorySummary: ['generation', 'inventoryPoint', 'inventoryOrdinal', 'targetCount', 'targetSampled', 'targetObserved'],
+  TargetObservationLost: ['generation'],
+};
 const components = new Set(['callback', 'dialog', 'interception', 'script', 'detach', 'recording', 'upload', 'containment', 'release', 'input', 'download', 'blob', 'enrollment-fallback', 'retained-task-fallback', 'owner-fallback']);
 const errors = new Set<string>([...SYNTHETIC_CODES, 'frame-not-found', 'frame-ambiguous']);
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -23,15 +36,30 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   if (typeof phase !== 'string') return false;
   const lifecycle = ['CleanupStarted', 'CleanupFirstFailure', 'CleanupResult'].includes(phase);
   const inventory = phase === 'InventorySnapshot';
-  if (!lifecycle && !inventory && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
+  const target = Object.hasOwn(targetFields, phase);
+  const linkedAttribution = phase === 'TargetAttribution' && (Object.hasOwn(item, 'inventoryPoint') || Object.hasOwn(item, 'inventoryOrdinal'));
+  const targetError = phase === 'TargetLifecycle' && item.targetStage === 'configure-failed';
+  if (!lifecycle && !inventory && !target && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(target ? targetFields[phase]! : []), ...(linkedAttribution ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(inventory && Object.hasOwn(item, 'inventoryOrdinal') ? ['inventoryOrdinal'] : []), ...(targetError ? ['error'] : []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
   const allowed = new Set([...required, ...(phase === 'CleanupResult' ? ['error'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
-  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory ? ['generation'] : [])]) if (!natural(item[key])) return false;
+  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || target ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
-  if (!lifecycle && !inventory && item.operationSeq !== 0) return false;
+  if (!lifecycle && !inventory && !target && item.operationSeq !== 0) return false;
+  if (Object.hasOwn(item, 'inventoryPoint') && (typeof item.inventoryPoint !== 'string' || !inventoryPoints.has(item.inventoryPoint))) return false;
+  for (const key of ['inventoryOrdinal', 'attachmentOrdinal', 'targetOrdinal']) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] === 0 || item[key] > 65_535)) return false;
+  for (const key of ['parentAttachmentOrdinal', 'rootAttachmentOrdinal']) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] > 65_535)) return false;
+  if (target) {
+    for (const [key, values] of [['targetKind', targetKinds], ['targetOrigin', targetOrigins], ['targetPurpose', targetPurposes], ['targetClassification', targetClassifications], ['targetStage', targetStages]] as const) {
+      if (Object.hasOwn(item, key) && (typeof item[key] !== 'string' || !values.has(item[key] as string))) return false;
+    }
+    for (const key of ['targetConfigured', 'targetResumed', 'targetObserved']) if (Object.hasOwn(item, key) && typeof item[key] !== 'boolean') return false;
+    for (const [key, limit] of [['targetCount', 8192], ['targetSampled', 16]] as const) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] > limit)) return false;
+    if (phase === 'TargetInventorySummary' && item.targetObserved === true && (item.targetCount !== item.targetSampled || (item.targetCount as number) > 16)) return false;
+    if (targetError && (typeof item.error !== 'string' || !errors.has(item.error))) return false;
+  }
   if (inventory) {
-    if (typeof item.inventoryPoint !== 'string' || !['restart-ready', 'settlement-refused'].includes(item.inventoryPoint)) return false;
+    if (typeof item.inventoryPoint !== 'string' || !inventoryPoints.has(item.inventoryPoint)) return false;
     for (const key of ['inventorySealed', 'inventoryIntegrityLost', 'inventoryObserved']) if (typeof item[key] !== 'boolean') return false;
     for (const key of ['inventoryReservations', 'inventoryUnconfigured']) if (!natural(item[key]) || item[key] > 8192) return false;
   }
@@ -65,6 +93,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
   const lines = bytes.toString('utf8').split('\n'); if (lines.at(-1) === '') lines.pop();
   if (lines.length > CLEANUP_RECORDS) return { status: 'unknown' as const, reasons: ['record-limit'], records };
   const pids = new Map<number, number>(); const attempts = new Map<string, { phase: string; identity: string }>();
+  const inventories = new Map<string, { scalar?: RecordValue; summary?: RecordValue; attribution: Map<number, RecordValue>; states: Map<number, RecordValue> }>();
   for (const line of lines) {
     let item: unknown;
     try { item = JSON.parse(line); } catch { reasons.add('invalid-record'); continue; }
@@ -79,11 +108,25 @@ export function inspectCleanupBytes(bytes: Buffer) {
     if (value.phase === 'CaptureLimitReached') reasons.add('capture-limit');
     if (value.phase === 'CaptureStarted') { if (ordinal !== 0) reasons.add('reused-pid'); continue; }
     if (value.phase === 'CaptureLimitReached') continue;
+    if (value.phase === 'TargetObservationLost') { reasons.add('target-observation-lost'); continue; }
+    if (Object.hasOwn(value, 'inventoryOrdinal')) {
+      const key = `${pid}:${value.inventoryOrdinal}`;
+      const group = inventories.get(key) ?? { attribution: new Map<number, RecordValue>(), states: new Map<number, RecordValue>() };
+      inventories.set(key, group);
+      for (const previous of [group.scalar, group.summary, ...group.attribution.values(), ...group.states.values()]) {
+        if (previous && ['generation', 'operationSeq', 'inventoryPoint'].some(field => previous[field] !== value[field])) reasons.add('target-inventory-identity');
+      }
+      if (value.phase === 'InventorySnapshot') { if (group.scalar) reasons.add('duplicate-target-inventory'); group.scalar = value; }
+      if (value.phase === 'TargetInventorySummary') { if (group.summary) reasons.add('duplicate-target-summary'); group.summary = value; if (value.targetObserved !== true) reasons.add('target-inventory-unobserved'); }
+      if (value.phase === 'TargetAttribution') { if (group.attribution.has(value.attachmentOrdinal as number)) reasons.add('duplicate-target-attribution'); group.attribution.set(value.attachmentOrdinal as number, value); }
+      if (value.phase === 'TargetInventory') { if (group.states.has(value.attachmentOrdinal as number)) reasons.add('duplicate-target-state'); group.states.set(value.attachmentOrdinal as number, value); }
+    }
     if (value.phase === 'InventorySnapshot') {
       // Lock-unavailable placeholders and saturated counts both explicitly lack a complete observation.
       if (value.inventoryObserved === false) reasons.add('inventory-unobserved');
       continue; // Independent read-only facts cannot start, finish or repair a cleanup attempt.
     }
+    if (typeof value.phase === 'string' && Object.hasOwn(targetFields, value.phase)) continue;
     const key = `${pid}:${value.cleanupOwner}:${value.cleanupAttempt}`;
     const exact = JSON.stringify([value.generation, value.operationSeq, value.cleanupLifecycle]);
     const previous = attempts.get(key);
@@ -94,6 +137,13 @@ export function inspectCleanupBytes(bytes: Buffer) {
   }
   if (!attempts.size) reasons.add('no-cleanup-attempt');
   if ([...attempts.values()].some(value => value.phase !== 'CleanupResult')) reasons.add('missing-terminal');
+  for (const group of inventories.values()) {
+    const expected = group.summary?.targetSampled;
+    if (!group.scalar || !group.summary || group.attribution.size !== expected || group.states.size !== expected
+      || [...group.states.keys()].some(key => !group.attribution.has(key))) reasons.add('target-inventory-incomplete');
+    if (group.summary?.targetObserved === true && group.scalar
+      && [...group.states.values()].filter(value => value.targetPurpose === 'unclassified' || value.targetConfigured !== true).length !== group.scalar.inventoryUnconfigured) reasons.add('target-inventory-count-mismatch');
+  }
   return { status: reasons.size ? 'unknown' as const : 'complete-observed-snapshots' as const, reasons: [...reasons], records };
 }
 /** Even valid snapshots do not attest unobserved processes, case association, or overall cleanup. */

@@ -66,8 +66,8 @@ test('concurrent growth cannot make the collector read beyond its fixed byte cap
 function inventory(ordinal: number, facts: Record<string, unknown> = {}) {
   return record('InventorySnapshot', ordinal, { generation: 0, inventoryPoint: 'restart-ready', inventorySealed: false, inventoryIntegrityLost: false, inventoryReservations: 0, inventoryUnconfigured: 0, inventoryObserved: true, ...facts });
 }
-test('inventory snapshots accept only the two closed points and bounded observed facts', () => {
-  for (const inventoryPoint of ['restart-ready', 'settlement-refused']) {
+test('inventory snapshots accept only the reviewed closed points and bounded observed facts', () => {
+  for (const inventoryPoint of ['restart-begin', 'restart-ready', 'settlement-refused']) {
     for (const count of [0, 8192]) {
       const value = inventory(1, { inventoryPoint, generation: Number.MAX_SAFE_INTEGER, inventorySealed: true, inventoryIntegrityLost: true, inventoryReservations: count, inventoryUnconfigured: count });
       assert.equal(validCleanupRecord(value), true);
@@ -154,5 +154,59 @@ test('saturated native inventory counts are retained as unknown, never healthy o
     assert.equal(result.status, 'unknown');
     assert.deepEqual(result.reasons, ['inventory-unobserved']);
     assert.deepEqual(result.records.at(-1), value);
+  }
+});
+
+function targetInventoryRecords() {
+  return [
+    ...completed(),
+    inventory(4, { inventoryOrdinal: 1, inventoryUnconfigured: 1 }),
+    record('TargetInventorySummary', 5, { generation: 0, inventoryPoint: 'restart-ready', inventoryOrdinal: 1, targetCount: 1, targetSampled: 1, targetObserved: true }),
+    record('TargetAttribution', 6, { generation: 0, inventoryPoint: 'restart-ready', inventoryOrdinal: 1, attachmentOrdinal: 3, targetOrdinal: 2, targetKind: 'service-worker', targetOrigin: 'auto-attach', parentAttachmentOrdinal: 1, rootAttachmentOrdinal: 1 }),
+    record('TargetInventory', 7, { generation: 0, inventoryPoint: 'restart-ready', inventoryOrdinal: 1, attachmentOrdinal: 3, targetPurpose: 'application', targetClassification: 'unreserved-application', targetConfigured: false, targetResumed: false }),
+  ];
+}
+test('target evidence joins exact PID, inventory ordinal and attachment without claiming a product pass', () => {
+  const values = targetInventoryRecords();
+  for (const value of values) assert.equal(validCleanupRecord(value), true);
+  const result = inspectCleanupBytes(lines(...values));
+  assert.equal(result.status, 'complete-observed-snapshots');
+  assert.equal(result.records.at(-1)!.targetConfigured, false);
+  assert.equal(result.records[3]!.cleanupResult, 'failed');
+  const other = values.map(v => ({ ...v, pid: 43 }));
+  assert.equal(inspectCleanupBytes(lines(...values.flatMap((v, i) => [v, other[i]]))).status, 'complete-observed-snapshots');
+});
+test('target diagnostics refuse raw IDs, URLs, wrong enums and impersonated scalar fields', () => {
+  const valid = targetInventoryRecords();
+  for (const [index, change] of [
+    [6, { targetId: 'private-marker' }], [6, { url: 'https://private-marker' }],
+    [6, { targetKind: 'private-marker' }], [6, { targetKind: ['service-worker'] }],
+    [6, { targetOrigin: {} }], [6, { attachmentOrdinal: 0 }], [6, { targetOrdinal: 65536 }],
+    [7, { targetClassification: 'private-marker' }], [7, { targetConfigured: 'false' }],
+    [5, { targetCount: 17, targetSampled: 17 }], [5, { targetObserved: true, targetCount: 2 }],
+  ] as const) {
+    const changed = valid.map((v, i) => i === index ? { ...v, ...change } : v);
+    assert.equal(validCleanupRecord(changed[index]), false);
+    const result = inspectCleanupBytes(lines(...changed));
+    assert.equal(result.status, 'unknown');
+    assert.ok(!JSON.stringify(result.records).includes('private-marker'));
+  }
+});
+test('target partial rows, conflicting joins, dropped observations and count mismatch stay unknown', () => {
+  const valid = targetInventoryRecords();
+  for (const values of [valid.slice(0, -1), valid.filter((_, i) => i !== 5),
+    valid.map((v, i) => i === 7 ? { ...v, attachmentOrdinal: 4 } : v),
+    valid.map((v, i) => i === 7 ? { ...v, inventoryPoint: 'restart-begin' } : v),
+    valid.map((v, i) => i === 7 ? { ...v, targetConfigured: true } : v),
+    valid.map((v, i) => i === 5 ? { ...v, targetObserved: false } : v),
+    [...valid, record('TargetObservationLost', 8, { generation: 0 })],
+  ]) assert.equal(inspectCleanupBytes(lines(...values)).status, 'unknown');
+});
+test('configuration failure, ACK and detach stages accept only closed failure codes', () => {
+  for (const targetStage of ['registered', 'configure-started', 'configure-ack', 'configure-failed', 'resumed', 'detached', 'restart-retiring', 'purpose-assigned']) {
+    const value = record('TargetLifecycle', 4, { generation: 1, attachmentOrdinal: 3, targetStage, targetPurpose: 'application', targetClassification: 'reservation-remainder', targetConfigured: false, targetResumed: false, ...(targetStage === 'configure-failed' ? { error: 'browser-failure' } : {}) });
+    assert.equal(validCleanupRecord(value), true);
+    assert.equal(inspectCleanupBytes(lines(...completed(), value)).status, 'complete-observed-snapshots');
+    assert.equal(validCleanupRecord({ ...value, error: 'private-marker' }), false);
   }
 });
