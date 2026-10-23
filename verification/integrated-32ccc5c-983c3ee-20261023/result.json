@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "kind": "integrated-compile-and-directed-mock-verification",
+  "status": "failed",
+  "completedAt": "2026-10-23T17:53:41.251592+00:00",
+  "native": {
+    "root": "/workspace/agent-browser-integrated-32ccc5c",
+    "commit": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+    "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+    "parent": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "files": {
+      "AGENTS.md": "8da81b2b0c755d674d8e70927bb7a967b01125ba7ff6f6884b44a41ef1bd5611",
+      "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+      "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+    }
+  },
+  "e2e": {
+    "root": "/workspace/e2e-integrated-983c3ee",
+    "commit": "983c3ee8232bef9f73061f3821c50f3111f722df",
+    "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+    "parent": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+    "files": {
+      "AGENTS.md": "20c6a9565b880c15bbdfd7251b0e26ff20144217fabd06b45dae3c962cc2eb87",
+      "package.json": "b75f70d486eeca5dd17dd816984f9b7c776e46965d9999cedaa1db0ee14c9ebb",
+      "pnpm-lock.yaml": "3b2d5cbb25cb64a7d2ffc21ae9d6c135ebd7e0645452b871ab735da49d76d1df",
+      "packages/e2e/package.json": "dbb6be1b0d8a4e4dd710723688412e4b6736a505f9ecca2700a82744aecc746e",
+      "packages/web/package.json": "2463cc710d2722d68b4d0e0b989d6a55dc8f932e5ffdfd07ed5332490e725bed",
+      ".dev/skills/verify/SKILL.md": "fd6046e4c50d3839c542747c3bd7c95cc3b94eb5d4be114113acc91fa8acfd6d",
+      ".github/workflows/native-candidate.yml": "0d5d4ffd60a2408c69550776e2e9d5d7253712951067c686686d5355ed3f7855"
+    }
+  },
+  "stageResults": [
+    {
+      "stage": "native-format",
+      "exitCode": 0,
+      "pid": 24849,
+      "durationSeconds": 2.8499110949996975,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 245320,
+        "childUserSeconds": 2.684502,
+        "childSystemSeconds": 0.118948
+      }
+    },
+    {
+      "stage": "native-default-clippy",
+      "exitCode": 101,
+      "pid": 24947,
+      "durationSeconds": 87.45752844200251,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4560892,
+        "childUserSeconds": 137.816091,
+        "childSystemSeconds": 8.961171
+      }
+    },
+    {
+      "stage": "native-feature-check",
+      "exitCode": 0,
+      "pid": 26246,
+      "durationSeconds": 60.531307838999055,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4500988,
+        "childUserSeconds": 58.716395,
+        "childSystemSeconds": 2.068168
+      }
+    },
+    {
+      "stage": "native-proxy-check",
+      "exitCode": 0,
+      "pid": 26367,
+      "durationSeconds": 0.5448973209968244,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 245672,
+        "childUserSeconds": 0.46202699999999997,
+        "childSystemSeconds": 0.088767
+      }
+    },
+    {
+      "stage": "native-production",
+      "exitCode": 0,
+      "pid": 26401,
+      "durationSeconds": 204.77701479399911,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4268292,
+        "childUserSeconds": 343.607817,
+        "childSystemSeconds": 9.498277999999999
+      }
+    },
+    {
+      "stage": "native-default-harness",
+      "exitCode": 0,
+      "pid": 28687,
+      "durationSeconds": 441.3125170909989,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 7001908,
+        "childUserSeconds": 825.737499,
+        "childSystemSeconds": 21.011371
+      }
+    },
+    {
+      "stage": "native-feature-harness",
+      "exitCode": 0,
+      "pid": 31718,
+      "durationSeconds": 447.3330721150014,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 7037820,
+        "childUserSeconds": 785.892618,
+        "childSystemSeconds": 19.753192
+      }
+    },
+    {
+      "stage": "web12-core-build",
+      "exitCode": 0,
+      "pid": 26623,
+      "durationSeconds": 2.0726930480013834,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 583904,
+        "childUserSeconds": 3.447477,
+        "childSystemSeconds": 0.870143
+      }
+    },
+    {
+      "stage": "web12-web-build",
+      "exitCode": 0,
+      "pid": 26740,
+      "durationSeconds": 0.6016319659975125,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 136416,
+        "childUserSeconds": 0.720263,
+        "childSystemSeconds": 0.28587799999999997
+      }
+    },
+    {
+      "stage": "web12-core-types",
+      "exitCode": 0,
+      "pid": 26859,
+      "durationSeconds": 4.2963815680013795,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 983096,
+        "childUserSeconds": 6.578063,
+        "childSystemSeconds": 1.183022
+      }
+    },
+    {
+      "stage": "web12-web-types",
+      "exitCode": 0,
+      "pid": 26870,
+      "durationSeconds": 2.8502746490012214,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 425244,
+        "childUserSeconds": 2.5615639999999997,
+        "childSystemSeconds": 0.634612
+      }
+    },
+    {
+      "stage": "web12-scripts-types",
+      "exitCode": 1,
+      "pid": 26884,
+      "durationSeconds": 1.7831587069995294,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 227040,
+        "childUserSeconds": 1.208196,
+        "childSystemSeconds": 0.289979
+      }
+    }
+  ],
+  "failedStages": [
+    {
+      "stage": "native-default-clippy",
+      "exitCode": 101,
+      "firstErrorExcerpt": "error: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:350:9\n    |\n350 |     let log = commands.lock().unwrap();\n    |         ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:369:16\n    |\n369 |         server.await.unwrap() >= deadline,\n    |                ^^^^^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#await_holding_lock\n    = note: `-D clippy::await-holding-lock` implied by `-D warnings`\n    = help: to override `-D warnings` add `#[allow(clippy::await_holding_lock)]`\n\nerror: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_mask_failure_tests.rs:308:13\n    |\n308 |         let log = self.commands.lock().unwrap();\n    |             ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through"
+    },
+    {
+      "stage": "web12-scripts-types",
+      "exitCode": 1,
+      "firstErrorExcerpt": "scripts/acceptance/candidate-cleanup-diagnostics.ts(182,11): error TS2412: Type 'undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target."
+    }
+  ],
+  "fixtureSummary": {
+    "default": {
+      "expected": 25,
+      "discovered": 25,
+      "executed": 25,
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "allSingleListAndRun": true,
+      "allExitZero": true
+    },
+    "acceptance-faults": {
+      "expected": 3,
+      "discovered": 3,
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "allSingleListAndRun": true,
+      "allExitZero": true
+    }
+  },
+  "binaries": [
+    {
+      "kind": "production",
+      "features": [],
+      "sha256": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+      "bytes": 31040336,
+      "preservedExecutable": "/workspace/ci27-integrated-build/bin/production",
+      "compilerJsonSha256": "1143db202ff28d7798ea7b50466cb67c821a112c8084d18368e3dab1239a8bb5"
+    },
+    {
+      "kind": "default",
+      "features": [],
+      "sha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "bytes": 76374512,
+      "preservedExecutable": "/workspace/ci27-integrated-build/bin/default-harness",
+      "compilerJsonSha256": "6db88d7909f539a1e568152021c83158245e313ff9b7005e33abbe94e0cbc834"
+    },
+    {
+      "kind": "acceptance-faults",
+      "features": [
+        "acceptance-faults"
+      ],
+      "sha256": "13a8fcd200ec476dc9e961a4885aab244c73180b3c09a47b9ab5e5991ebae733",
+      "bytes": 77575784,
+      "preservedExecutable": "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+      "compilerJsonSha256": "7274d27112b601fdfced73b7b616e299f9f82b4c15da2481a17c7c74f3f074db"
+    }
+  ],
+  "resources": {
+    "limits": {
+      "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+      "cpuCount": 5,
+      "cpu.max": "400000 100000",
+      "cpuset.cpus.effective": "0-4",
+      "memory.max": "17179869184",
+      "memory.peak": "14510604288",
+      "memory.swap.max": "max",
+      "meminfo": {
+        "MemTotal": "18440112 kB",
+        "SwapTotal": "0 kB"
+      }
+    },
+    "cargoBuildJobs": 2,
+    "maximumReportedChildRssKiB": 7037820,
+    "rssInterpretation": "Per-command RUSAGE_CHILDREN maximum child RSS; not a sum of simultaneous process RSS."
+  },
+  "pnpmVersion": "12.3.4",
+  "sourceChangesApplied": false,
+  "defaultAllTestsExecuted": false,
+  "ignoredTestsRequested": false,
+  "browserExecuted": false,
+  "restartProbeExecuted": false,
+  "browserInstallationProbeExecuted": false,
+  "newP41TypedDiagnosticBIncluded": false,
+  "fullCandidateVerified": false,
+  "releaseEligible": false
+}

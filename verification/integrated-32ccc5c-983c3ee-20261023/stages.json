@@ -1,0 +1,385 @@
+{
+  "stages": [
+    {
+      "stage": "native-format",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 24849,
+      "startedAt": "2026-10-23T17:26:20.434722+00:00",
+      "completedAt": "2026-10-23T17:26:23.284609+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 2.8499110949996975,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 245320,
+        "childUserSeconds": 2.684502,
+        "childSystemSeconds": 0.118948
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "native-default-clippy",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 24947,
+      "startedAt": "2026-10-23T17:26:39.483337+00:00",
+      "completedAt": "2026-10-23T17:28:06.940843+00:00",
+      "exitCode": 101,
+      "sourceUnchanged": true,
+      "durationSeconds": 87.45752844200251,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4560892,
+        "childUserSeconds": 137.816091,
+        "childSystemSeconds": 8.961171
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "40aca82b6e28f20287ed351a2626646d6ed7e43236efcd54acdad4f9e25c319e",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false,
+      "firstErrorExcerpt": "error: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:350:9\n    |\n350 |     let log = commands.lock().unwrap();\n    |         ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:369:16\n    |\n369 |         server.await.unwrap() >= deadline,\n    |                ^^^^^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#await_holding_lock\n    = note: `-D clippy::await-holding-lock` implied by `-D warnings`\n    = help: to override `-D warnings` add `#[allow(clippy::await_holding_lock)]`\n\nerror: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_mask_failure_tests.rs:308:13\n    |\n308 |         let log = self.commands.lock().unwrap();\n    |             ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through",
+      "firstErrorExtraction": "recomputed from preserved original output; no stage rerun"
+    },
+    {
+      "stage": "native-feature-check",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--tests"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 26246,
+      "startedAt": "2026-10-23T17:29:05.942284+00:00",
+      "completedAt": "2026-10-23T17:30:06.473568+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 60.531307838999055,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4500988,
+        "childUserSeconds": 58.716395,
+        "childSystemSeconds": 2.068168
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "19a29e45292980442b8c15dcd80c1c278359409e92a7a5ff8aaea09f657af7ab",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "native-proxy-check",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--test",
+        "client-proxy-fixture"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 26367,
+      "startedAt": "2026-10-23T17:31:18.543861+00:00",
+      "completedAt": "2026-10-23T17:31:19.088737+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 0.5448973209968244,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 245672,
+        "childUserSeconds": 0.46202699999999997,
+        "childSystemSeconds": 0.088767
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "bf290fed04f6f93e2db1cdfb0cc5692b17d22bc2c627788a75f308978c24301f",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "native-production",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 26401,
+      "startedAt": "2026-10-23T17:32:02.293180+00:00",
+      "completedAt": "2026-10-23T17:35:27.070172+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 204.77701479399911,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 4268292,
+        "childUserSeconds": 343.607817,
+        "childSystemSeconds": 9.498277999999999
+      },
+      "stdoutSha256": "1143db202ff28d7798ea7b50466cb67c821a112c8084d18368e3dab1239a8bb5",
+      "stderrSha256": "b159c7a16fb0952fbc5dd26f9c82bfb00b1fb46f444660f6f5a1c2d118a8a5b8",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "native-default-harness",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 28687,
+      "startedAt": "2026-10-23T17:36:16.893063+00:00",
+      "completedAt": "2026-10-23T17:43:38.205553+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 441.3125170909989,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 7001908,
+        "childUserSeconds": 825.737499,
+        "childSystemSeconds": 21.011371
+      },
+      "stdoutSha256": "6db88d7909f539a1e568152021c83158245e313ff9b7005e33abbe94e0cbc834",
+      "stderrSha256": "d8c704c398356deb6a5941d4942ddadb7594f8bad85c5eeb20e8357f989a5761",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "native-feature-harness",
+      "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--bin",
+        "agent-browser",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 31718,
+      "startedAt": "2026-10-23T17:45:44.598340+00:00",
+      "completedAt": "2026-10-23T17:53:11.931390+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 447.3330721150014,
+      "resources": {
+        "cargoBuildJobs": 2,
+        "maxChildRssKiB": 7037820,
+        "childUserSeconds": 785.892618,
+        "childSystemSeconds": 19.753192
+      },
+      "stdoutSha256": "7274d27112b601fdfced73b7b616e299f9f82b4c15da2481a17c7c74f3f074db",
+      "stderrSha256": "bdca9f37c6600dd57dc518b0b66b1b5a99940dde78bb8068dd206c85cdbe0124",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "web12-core-build",
+      "source": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+      "command": [
+        "corepack",
+        "pnpm",
+        "--filter",
+        "e2e",
+        "run",
+        "build"
+      ],
+      "cwd": "/workspace/e2e-integrated-983c3ee",
+      "pid": 26623,
+      "startedAt": "2026-10-23T17:33:21.975876+00:00",
+      "completedAt": "2026-10-23T17:33:24.048544+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 2.0726930480013834,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 583904,
+        "childUserSeconds": 3.447477,
+        "childSystemSeconds": 0.870143
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "34b03b4201367e596f14dca280647c5ea68eccb02e61e81e75f4d8a3ca3331d3",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "web12-web-build",
+      "source": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+      "command": [
+        "corepack",
+        "pnpm",
+        "--filter",
+        "@e2e-dev/web",
+        "run",
+        "build"
+      ],
+      "cwd": "/workspace/e2e-integrated-983c3ee",
+      "pid": 26740,
+      "startedAt": "2026-10-23T17:34:28.618208+00:00",
+      "completedAt": "2026-10-23T17:34:29.219817+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 0.6016319659975125,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 136416,
+        "childUserSeconds": 0.720263,
+        "childSystemSeconds": 0.28587799999999997
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "c88d12fbeffdb3012beb0f14465eb93f6ef056c41c09f63930b3ea87239cdea8",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "web12-core-types",
+      "source": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+      "command": [
+        "corepack",
+        "pnpm",
+        "--filter",
+        "e2e",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "/workspace/e2e-integrated-983c3ee",
+      "pid": 26859,
+      "startedAt": "2026-10-23T17:34:39.730257+00:00",
+      "completedAt": "2026-10-23T17:34:44.026614+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 4.2963815680013795,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 983096,
+        "childUserSeconds": 6.578063,
+        "childSystemSeconds": 1.183022
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "web12-web-types",
+      "source": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+      "command": [
+        "corepack",
+        "pnpm",
+        "--filter",
+        "@e2e-dev/web",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "/workspace/e2e-integrated-983c3ee",
+      "pid": 26870,
+      "startedAt": "2026-10-23T17:34:39.741419+00:00",
+      "completedAt": "2026-10-23T17:34:42.591664+00:00",
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "durationSeconds": 2.8502746490012214,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 425244,
+        "childUserSeconds": 2.5615639999999997,
+        "childSystemSeconds": 0.634612
+      },
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false
+    },
+    {
+      "stage": "web12-scripts-types",
+      "source": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "tree": "b8425ea99ca4b6f8709240dce51f54a528c554eb",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsc",
+        "--project",
+        "scripts"
+      ],
+      "cwd": "/workspace/e2e-integrated-983c3ee",
+      "pid": 26884,
+      "startedAt": "2026-10-23T17:34:39.764562+00:00",
+      "completedAt": "2026-10-23T17:34:41.547693+00:00",
+      "exitCode": 1,
+      "sourceUnchanged": true,
+      "durationSeconds": 1.7831587069995294,
+      "resources": {
+        "cargoBuildJobs": null,
+        "maxChildRssKiB": 227040,
+        "childUserSeconds": 1.208196,
+        "childSystemSeconds": 0.289979
+      },
+      "stdoutSha256": "3faf9675bac62ee0fc2a59faaba7c28a0f7e999f8a7549ccbcbd45a28c3a86ea",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "browserExecuted": false,
+      "testsExecutedByThisStage": false,
+      "firstErrorExcerpt": "scripts/acceptance/candidate-cleanup-diagnostics.ts(182,11): error TS2412: Type 'undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target."
+    }
+  ]
+}

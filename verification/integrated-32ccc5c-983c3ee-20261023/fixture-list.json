@@ -1,0 +1,47 @@
+{
+  "native": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+  "e2e": "983c3ee8232bef9f73061f3821c50f3111f722df",
+  "defaultExact": [
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry",
+    "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout"
+  ],
+  "acceptanceFaultsExact": [
+    "native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded",
+    "native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations",
+    "native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures"
+  ],
+  "listArguments": [
+    "<test-name>",
+    "--list",
+    "--exact"
+  ],
+  "executionArguments": [
+    "<test-name>",
+    "--exact",
+    "--test-threads=1",
+    "--nocapture"
+  ]
+}

@@ -1,0 +1,1578 @@
+{
+  "fixtures": [
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 1,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31445,
+        "exitCode": 0,
+        "durationSeconds": 0.002422920002572937,
+        "stdoutSha256": "669f7837844676e807154ecc5ee9359cd4617718e2f85e9118e7c1aeec899115",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31446,
+        "exitCode": 0,
+        "durationSeconds": 0.004759712999657495,
+        "stdoutSha256": "904850543ed39cc2563ee1b1b0375593b86a7be507cd6ab822d2a434a14d01c0",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 86620,
+        "childUserSeconds": 0.192275,
+        "childSystemSeconds": 0.144257
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 2,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31518,
+        "exitCode": 0,
+        "durationSeconds": 0.0027866989985341206,
+        "stdoutSha256": "31d467f99e63b484006b56f99ab55b6e135ca968d1092a151cc0be85d76cafe8",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31519,
+        "exitCode": 0,
+        "durationSeconds": 0.004943613999785157,
+        "stdoutSha256": "faee50fad206ecf18932e73492823bbaacf5fd7fabfeb7088b0a0c5ca3cec3af",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.001691,
+        "childSystemSeconds": 0.006901999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 3,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31526,
+        "exitCode": 0,
+        "durationSeconds": 0.0026867710002989043,
+        "stdoutSha256": "5a60da04b9094d9096bbbd6df11fdfb3bb55c2216bd5919847bf7cc35c257247",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31527,
+        "exitCode": 0,
+        "durationSeconds": 0.004224740001518512,
+        "stdoutSha256": "d6df6ad28daa4ad169d0e3fa8ea93c3ba8914ac39cc0a679958f3ec1280956d3",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.002522,
+        "childSystemSeconds": 0.008367
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 4,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31534,
+        "exitCode": 0,
+        "durationSeconds": 0.0025414560004719533,
+        "stdoutSha256": "b87a667488ff85d11dd58f67f9009b25b22ceb42370b4ac63cd3023b6c682aab",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31535,
+        "exitCode": 0,
+        "durationSeconds": 1.1764101179978752,
+        "stdoutSha256": "d756e0c5c1190974c328b872e706dff5e48038ce8ef77a2413c68eb4d740dc77",
+        "stderrSha256": "734aa097b92cc7f25124d746ebe90d1f3374c19d6f4bee2504b9f6f08b0d6426"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 1.17,
+      "resources": {
+        "maxChildRssKiB": 155804,
+        "childUserSeconds": 0.70572,
+        "childSystemSeconds": 0.47645099999999996
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 5,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31542,
+        "exitCode": 0,
+        "durationSeconds": 0.0024583630001870915,
+        "stdoutSha256": "6e5c2bf370d5d2dddd5c00f581c3a0a2f7e5096d117a97bef2b9664506af4a8c",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31543,
+        "exitCode": 0,
+        "durationSeconds": 0.0039203390006150585,
+        "stdoutSha256": "95f58dc1169a09b65afd2accf4bf1fe8b9efcfa7baa2ec8551e2c769e381b138",
+        "stderrSha256": "734aa097b92cc7f25124d746ebe90d1f3374c19d6f4bee2504b9f6f08b0d6426"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.001571,
+        "childSystemSeconds": 0.009574
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 6,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31550,
+        "exitCode": 0,
+        "durationSeconds": 0.0027398899983381853,
+        "stdoutSha256": "b1f51bfbbd02f29c195b5b6487eaf4ff8ccc6bc9a76970a7998e44338a5fc5f9",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31551,
+        "exitCode": 0,
+        "durationSeconds": 0.004039395000290824,
+        "stdoutSha256": "c3fe4ff262e914eefc185325d881cf1c42ad1027640d58f9f6fd2b2065e16f39",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.008003999999999999,
+        "childSystemSeconds": 0.00258
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 7,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31558,
+        "exitCode": 0,
+        "durationSeconds": 0.00237457799812546,
+        "stdoutSha256": "70fa59d4ed3dcd1f3c337161065237c2768ff2be8e1648afdb6fb0c3abc379ca",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31559,
+        "exitCode": 0,
+        "durationSeconds": 0.005049412000516895,
+        "stdoutSha256": "0a58081f607a14bc528c467c901995887079f802a4ed00050dc04a2168b27279",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.006084,
+        "childSystemSeconds": 0.005984
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 8,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31566,
+        "exitCode": 0,
+        "durationSeconds": 0.0025169950022245757,
+        "stdoutSha256": "6f3b7a48f28bc8c0c2133beff273dc255f68ba4fc3f1c69c81bbaadf79e095d9",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31567,
+        "exitCode": 0,
+        "durationSeconds": 0.004110370002308628,
+        "stdoutSha256": "bf207c4fc6eb1636bd212210934118fddc7ee4b4bfa841166911fe74e5b9d4d2",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.001549,
+        "childSystemSeconds": 0.009637999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 9,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31574,
+        "exitCode": 0,
+        "durationSeconds": 0.0024641309973958414,
+        "stdoutSha256": "269440513d7f622ec3d188d45629b2b3d264dd918bd45744a900896a17df1794",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31575,
+        "exitCode": 0,
+        "durationSeconds": 0.2564985870012606,
+        "stdoutSha256": "88f1a0c95005403b0429d15fbbc84cbd1754d2d804d5a690e623cca2d5e9710b",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.25,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.0016079999999999998,
+        "childSystemSeconds": 0.010164999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 10,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31582,
+        "exitCode": 0,
+        "durationSeconds": 0.002397871998255141,
+        "stdoutSha256": "5985bcf3b87bf53a1fbe7728eb997fc3fb33b2afffe4fd98119405bbb86e4695",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31583,
+        "exitCode": 0,
+        "durationSeconds": 0.2566321179983788,
+        "stdoutSha256": "0424986b948ce5a6700958e62c7e95929c5172ac6d208294f36884899d90377f",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.25,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.002253,
+        "childSystemSeconds": 0.010261
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 11,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31590,
+        "exitCode": 0,
+        "durationSeconds": 0.0024639710027258843,
+        "stdoutSha256": "fc7d7a443965b72e141bd0778ed2299719c8136a3015748877413ebf9094f46a",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31591,
+        "exitCode": 0,
+        "durationSeconds": 0.0043901349999941885,
+        "stdoutSha256": "eebe1050e4011162b5309c159c40580b26a0da38d2adf854d0aae07167581c33",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.0050609999999999995,
+        "childSystemSeconds": 0.004715
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 12,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31598,
+        "exitCode": 0,
+        "durationSeconds": 0.005556562999117887,
+        "stdoutSha256": "8dce0ac3d6c37456dea2c95bf9f14a026623646af36e680dd57621fc2fa53e37",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31599,
+        "exitCode": 0,
+        "durationSeconds": 0.003854851998767117,
+        "stdoutSha256": "fd64e874e243d5195cc55a9219803e0b20c8b3c593b800f01adb8c67d113aacf",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.0026969999999999997,
+        "childSystemSeconds": 0.011033999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 13,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31606,
+        "exitCode": 0,
+        "durationSeconds": 0.0022924170007172506,
+        "stdoutSha256": "146c992810d2e07d026f3e73dda46a0eeaca68f7bb971a6a4b50d1bb55e20ce4",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31607,
+        "exitCode": 0,
+        "durationSeconds": 0.004096744996786583,
+        "stdoutSha256": "f6d646e5a304465b2e684da4574066ac6ee78e0441509f27351eaac9056ebded",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.00582,
+        "childSystemSeconds": 0.003865
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 14,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31614,
+        "exitCode": 0,
+        "durationSeconds": 0.0024375419998250436,
+        "stdoutSha256": "a67ce358bd66340ed3c4acb3c2ff3dea51c1e2340031134d36d4a776a0cf6817",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31615,
+        "exitCode": 0,
+        "durationSeconds": 0.004153973997745197,
+        "stdoutSha256": "d766368a77e50c5f4151318d2034aef5543649e2bd35d85627d772134b62c619",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.006392999999999999,
+        "childSystemSeconds": 0.0038039999999999997
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 15,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31622,
+        "exitCode": 0,
+        "durationSeconds": 0.0026955739995173644,
+        "stdoutSha256": "fbdcca1a550fcbafa7a74f0cdf5b565567f6daf5e13ca2fb85fd33bd474c4fe3",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31623,
+        "exitCode": 0,
+        "durationSeconds": 0.004208354999718722,
+        "stdoutSha256": "f986408a46e02f6bc19324843999111fb620a798e5a1f0ce2a36177efe6990b2",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.008612,
+        "childSystemSeconds": 0.004004
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 16,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31630,
+        "exitCode": 0,
+        "durationSeconds": 0.0023963210005604196,
+        "stdoutSha256": "b2ed86304c12834fe53bafdbc488522016a52689ce5184ab073d779c67dda79e",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31631,
+        "exitCode": 0,
+        "durationSeconds": 0.067818724000972,
+        "stdoutSha256": "278c285314d6cc434f285bf14cf9c0c6bcfec3518931fbeb996eb896ad3477de",
+        "stderrSha256": "5918421f9200400095f4b982fb3df9abd952d7cf31d1f0eebcdf6aefb89348ad"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.07,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.006444999999999999,
+        "childSystemSeconds": 0.006176
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 17,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31638,
+        "exitCode": 0,
+        "durationSeconds": 0.0025611150012991857,
+        "stdoutSha256": "9b43a953152ac25f6b7eca376c7c8d7e3eb4ca02986bfff3d5fe2451dbce4934",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31639,
+        "exitCode": 0,
+        "durationSeconds": 0.06829246599954786,
+        "stdoutSha256": "c5cd22e54eda3f0d814129d520d2fdc93dbdb917475d61667a43a82457f99ca9",
+        "stderrSha256": "53003fcc35f8cd2ed08709ccb19b9bc87326a82a6176f3c261d09a52eaa74887"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.07,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.0060149999999999995,
+        "childSystemSeconds": 0.007771999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 18,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31646,
+        "exitCode": 0,
+        "durationSeconds": 0.002386166001087986,
+        "stdoutSha256": "948e9ffd142aa4c583d817dd182bc30bc4254e8a251e0d5e15b597e8af396c56",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31647,
+        "exitCode": 0,
+        "durationSeconds": 0.07780532100150594,
+        "stdoutSha256": "e4accd5e23e43be5766d0b8a27ad681beebb17ddfbf91adcaa2d99d09cd46c9b",
+        "stderrSha256": "53003fcc35f8cd2ed08709ccb19b9bc87326a82a6176f3c261d09a52eaa74887"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.07,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.00162,
+        "childSystemSeconds": 0.011918999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 19,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31654,
+        "exitCode": 0,
+        "durationSeconds": 0.002510350001102779,
+        "stdoutSha256": "8ad5ba17d250e6fff71b64fa92d30814035bfdba55c81641f34b923dd0795137",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31655,
+        "exitCode": 0,
+        "durationSeconds": 0.3182481759977236,
+        "stdoutSha256": "e0575885c42b213370db08c90be13d21defe52ba96bb1a7e87112ec6b84580df",
+        "stderrSha256": "799e19973a9ad65a77883de8ccfe5522d9e9739f823904d15cb264034eb59c92"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.32,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.002345,
+        "childSystemSeconds": 0.010388999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 20,
+      "case": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31662,
+        "exitCode": 0,
+        "durationSeconds": 0.0028615599985641893,
+        "stdoutSha256": "a99b819dc52f5a21a20f0ce42b1d00b3eff4745c94fffd55d82b1e4e74a96d08",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31663,
+        "exitCode": 0,
+        "durationSeconds": 0.08550503899823525,
+        "stdoutSha256": "7689050e41a75636f5db0a67d35fcb60181153609289d9831cf84e124853d4c1",
+        "stderrSha256": "26ee5ef69f9b2c6e48d8b19521727c245fce945acf67cacdf7484719d663997f"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.08,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.0043809999999999995,
+        "childSystemSeconds": 0.008309
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 21,
+      "case": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31670,
+        "exitCode": 0,
+        "durationSeconds": 0.0024578419979661703,
+        "stdoutSha256": "4fc4847c9f43b8efa3687eca57803a4abae923c5165711685d094cf45dc7ab7b",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31671,
+        "exitCode": 0,
+        "durationSeconds": 0.3385368359995482,
+        "stdoutSha256": "86c2d46ee1b7f726fdf76c76f4549a64ca744d38912c8d1db66d90bb32fb71e9",
+        "stderrSha256": "fb07dd87180bd188842d9ec60253d2c3a286747e325bd4629df3e722ba583fa8"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.34,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.00543,
+        "childSystemSeconds": 0.007871
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 22,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31678,
+        "exitCode": 0,
+        "durationSeconds": 0.0024779319974186365,
+        "stdoutSha256": "1629d667785e3f02bf8ee75775ab851ba742c739951b0a691cf6f685d4460b89",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31679,
+        "exitCode": 0,
+        "durationSeconds": 0.004287331998057198,
+        "stdoutSha256": "79e74a4b8c24ec16db6b12f23b75c3a57385ecefd9bf5224ed2e364caf3a5a07",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.006340999999999999,
+        "childSystemSeconds": 0.005901
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 23,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31686,
+        "exitCode": 0,
+        "durationSeconds": 0.0024959680013125762,
+        "stdoutSha256": "d3b07af7fdc754589ee051d81b78adbae4b81207e2aa1fe980fcb717d82ccdf2",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31687,
+        "exitCode": 0,
+        "durationSeconds": 0.005775968002126319,
+        "stdoutSha256": "7b6779312f340c70085e7ef6550bf1d9a98ce14f420b8ac256bc26de1014eb8a",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.005646,
+        "childSystemSeconds": 0.007037
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 24,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31694,
+        "exitCode": 0,
+        "durationSeconds": 0.0024165399991034064,
+        "stdoutSha256": "3ad6b908b5dbc314556c3816a822337105d15d0086e99738f5045fc07a01fc00",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31695,
+        "exitCode": 0,
+        "durationSeconds": 0.06628023400116945,
+        "stdoutSha256": "3cbe1a73e51c9806b8dbdf63694eefb1a085caca960a2c148e996b2730c9ada7",
+        "stderrSha256": "c7be92194539ea28906157d977330f57e5a0f18af7062e90781d6eaae23a0e20"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.06,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.001665,
+        "childSystemSeconds": 0.011420999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "default",
+      "index": 25,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [],
+      "harnessSha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout",
+          "--list",
+          "--exact"
+        ],
+        "pid": 31702,
+        "exitCode": 0,
+        "durationSeconds": 0.0024871550012903754,
+        "stdoutSha256": "ff6fd9bd68222e5bb18a3c345e633e5797d993b45b0bfa40dd77985170296265",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/default-harness",
+          "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 31703,
+        "exitCode": 0,
+        "durationSeconds": 0.06617818399899988,
+        "stdoutSha256": "2a6885aa3de2461925b29d7fc80ea0eab5c4c000ba7987e5fddda4fd23545b30",
+        "stderrSha256": "c7be92194539ea28906157d977330f57e5a0f18af7062e90781d6eaae23a0e20"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2674,
+      "harnessDurationSeconds": 0.06,
+      "resources": {
+        "maxChildRssKiB": 85120,
+        "childUserSeconds": 0.007154,
+        "childSystemSeconds": 0.0052959999999999995
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "acceptance-faults",
+      "index": 1,
+      "case": "native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [
+        "acceptance-faults"
+      ],
+      "harnessSha256": "13a8fcd200ec476dc9e961a4885aab244c73180b3c09a47b9ab5e5991ebae733",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+          "native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded",
+          "--list",
+          "--exact"
+        ],
+        "pid": 33476,
+        "exitCode": 0,
+        "durationSeconds": 0.0033166940011142287,
+        "stdoutSha256": "62d5f6531f5c7c05f9514694c12898dd723a61bdf328399b4956e8a82ebe14c1",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+          "native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 33477,
+        "exitCode": 0,
+        "durationSeconds": 0.0028821909982070792,
+        "stdoutSha256": "5cab9a91904b21e098c8ab56832db9efefcf49cdc54dc64ba1c732ffeab3803b",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2708,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 86272,
+        "childUserSeconds": 0.0,
+        "childSystemSeconds": 0.010865999999999999
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "acceptance-faults",
+      "index": 2,
+      "case": "native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [
+        "acceptance-faults"
+      ],
+      "harnessSha256": "13a8fcd200ec476dc9e961a4885aab244c73180b3c09a47b9ab5e5991ebae733",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+          "native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations",
+          "--list",
+          "--exact"
+        ],
+        "pid": 33484,
+        "exitCode": 0,
+        "durationSeconds": 0.002418693999061361,
+        "stdoutSha256": "67e647d72c6754a884f6820ae1d1a5d9344f522ff4888171588e9f36899afcfa",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+          "native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 33485,
+        "exitCode": 0,
+        "durationSeconds": 0.0028462570007832255,
+        "stdoutSha256": "10eaafaf0a5d12c7846f9bb7c0be8ce548a4ec62f41d004112ef4aedce61268a",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2708,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 86272,
+        "childUserSeconds": 0.010062,
+        "childSystemSeconds": 0.0
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "group": "acceptance-faults",
+      "index": 3,
+      "case": "native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures",
+      "nativeSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "nativeTree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+      "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "features": [
+        "acceptance-faults"
+      ],
+      "harnessSha256": "13a8fcd200ec476dc9e961a4885aab244c73180b3c09a47b9ab5e5991ebae733",
+      "allowlistSha256": "cd2b55f2e70d706130bf94af5028e53c815ad658bd53b4f8d8176cd807ae1ce9",
+      "list": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+          "native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures",
+          "--list",
+          "--exact"
+        ],
+        "pid": 33492,
+        "exitCode": 0,
+        "durationSeconds": 0.0025123430023086257,
+        "stdoutSha256": "858ceeb1aad808ce5a92d2a842f60a1350b7ed02a64c785d8548b509d566dd88",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleListMatchConfirmed": true,
+      "discovered": 1,
+      "browserExecuted": false,
+      "budgetOrAssertionsModified": false,
+      "execution": {
+        "command": [
+          "/workspace/ci27-integrated-build/bin/acceptance-faults-harness",
+          "native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "pid": 33493,
+        "exitCode": 0,
+        "durationSeconds": 0.002799498000968015,
+        "stdoutSha256": "fc7a61ba19b76921fe14a3cb2b3d10119ec0c4bd32c06070866b58d0b9f8e8f8",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "singleExecutionConfirmed": true,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "status": "passed",
+      "filteredOut": 2708,
+      "harnessDurationSeconds": 0.0,
+      "resources": {
+        "maxChildRssKiB": 86272,
+        "childUserSeconds": 0.007723,
+        "childSystemSeconds": 0.002366
+      }
+    }
+  ]
+}

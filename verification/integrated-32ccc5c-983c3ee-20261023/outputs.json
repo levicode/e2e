@@ -1,0 +1,313 @@
+{
+  "outputs": [
+    {
+      "stage": "native-format",
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "stage": "native-default-clippy",
+      "stdout": "",
+      "stderr": "    Checking libc v0.2.180\n    Checking cfg-if v1.0.4\n    Checking typenum v1.19.0\n    Checking stable_deref_trait v1.2.1\n    Checking generic-array v0.14.7\n    Checking getrandom v0.2.17\n    Checking rand_core v0.6.4\n    Checking subtle v2.6.1\n    Checking crypto-common v0.1.7\n    Checking zerofrom v0.1.6\n    Checking bytes v1.11.1\n    Checking yoke v0.8.1\n    Checking itoa v1.0.17\n    Checking pin-project-lite v0.2.17\n    Checking futures-core v0.3.32\n    Checking zeroize v1.8.2\n    Checking rustls-pki-types v1.14.0\n    Checking zerovec v0.11.5\n    Checking num-traits v0.2.19\n    Checking errno v0.3.14\n    Checking signal-hook-registry v1.4.8\n    Checking crossbeam-utils v0.8.21\n    Checking socket2 v0.6.2\n    Checking mio v1.1.1\n    Checking simd-adler32 v0.3.8\n    Checking once_cell v1.21.3\n    Checking smallvec v1.15.1\n    Checking log v0.4.29\n    Checking memchr v2.7.6\n    Checking cpufeatures v0.2.17\n    Checking tokio v1.49.0\n    Checking zerocopy v0.8.40\n    Checking crossbeam-epoch v0.9.18\n    Checking http v1.4.0\n    Checking crossbeam-deque v0.8.6\n    Checking tinystr v0.8.2\n    Checking block-buffer v0.10.4\n    Checking untrusted v0.9.0\n    Checking writeable v0.6.2\n    Checking litemap v0.8.1\n    Checking futures-sink v0.3.32\n    Checking icu_locale_core v2.1.1\n    Checking ring v0.17.14\n    Checking equator v0.4.2\n    Checking digest v0.10.7\n    Checking rayon-core v1.13.0\n    Checking num-integer v0.1.46\n    Checking zerotrie v0.2.3\n    Checking potential_utf v0.1.4\n    Checking either v1.15.0\n    Checking adler2 v2.0.1\n    Checking futures-task v0.3.32\n    Checking slab v0.4.12\n    Checking miniz_oxide v0.8.9\n    Checking futures-util v0.3.32\n    Checking icu_provider v2.1.1\n    Checking icu_collections v2.1.1\n    Checking rustls-webpki v0.103.13\n    Checking num-bigint v0.4.6\n    Checking aligned-vec v0.6.4\n    Checking crc32fast v1.5.0\n    Checking httparse v1.10.1\n    Checking http-body v1.0.1\n    Checking bitflags v2.11.0\n    Checking arrayvec v0.7.6\n    Checking percent-encoding v2.3.2\n    Checking num-rational v0.4.2\n    Checking v_frame v0.3.9\n    Checking rustls v0.23.37\n    Checking icu_properties_data v2.1.2\n    Checking anyhow v1.0.102\n    Checking icu_normalizer_data v2.1.1\n    Checking rayon v1.11.0\n    Checking as-slice v0.2.1\n    Checking zlib-rs v0.6.3\n    Checking try-lock v0.2.5\n    Checking tower-service v0.3.3\n    Checking want v0.3.1\n    Checking flate2 v1.1.9\n    Checking thiserror v2.0.18\n    Checking aligned v0.4.3\n    Checking serde_core v1.0.228\n    Checking icu_normalizer v2.1.1\n    Checking icu_properties v2.1.2\n    Checking ppv-lite86 v0.2.21\n    Checking nom v8.0.0\n    Checking core2 v0.4.0\n    Checking tracing-core v0.1.36\n    Checking webpki-roots v1.0.5\n    Checking futures-channel v0.3.32\n    Checking inout v0.1.4\n    Checking quick-error v2.0.1\n    Checking pin-utils v0.1.0\n    Checking atomic-waker v1.1.2\n    Checking y4m v0.8.0\n    Checking av-scenechange v0.14.1\n    Checking hyper v1.8.1\n    Checking profiling v1.0.17\n    Checking cipher v0.4.4\n    Checking tracing v0.1.44\n    Checking bitstream-io v4.9.0\n    Checking av1-grain v0.2.5\n    Checking rand_chacha v0.3.1\n    Checking idna_adapter v1.2.1\n    Checking tokio-rustls v0.26.4\n    Checking maybe-rayon v0.1.1\n    Checking form_urlencoded v1.2.2\n    Checking itertools v0.14.0\n    Checking half v2.7.1\n    Checking sync_wrapper v1.0.2\n    Checking universal-hash v0.5.1\n    Checking weezl v0.1.12\n    Checking tower-layer v0.3.3\n    Checking zune-core v0.4.12\n    Checking ipnet v2.12.0\n    Checking utf8_iter v1.0.4\n    Checking new_debug_unreachable v1.0.6\n    Checking same-file v1.0.6\n    Checking opaque-debug v0.3.1\n    Checking base64 v0.22.1\n    Checking imgref v1.12.0\n    Checking rav1e v0.8.1\n    Checking loop9 v0.1.5\n    Checking hyper-util v0.1.20\n    Checking polyval v0.6.2\n    Checking walkdir v2.5.0\n    Checking idna v1.1.0\n    Checking zune-jpeg v0.4.21\n    Checking tower v0.5.3\n    Checking thiserror v1.0.69\n    Checking fax v0.2.6\n    Checking zmij v1.0.12\n    Checking serde v1.0.228\n    Checking rand v0.8.5\n    Checking getrandom v0.4.1\n    Checking avif-serialize v0.8.8\n    Checking sha2 v0.10.9\n    Checking sha1 v0.10.6\n    Checking fdeflate v0.3.7\n    Checking zune-inflate v0.2.54\n    Checking color_quant v1.1.0\n    Checking lebe v0.5.3\n    Checking ryu v1.0.23\n    Checking equivalent v1.0.2\n    Checking zune-core v0.5.1\n    Checking rgb v0.8.53\n    Checking bumpalo v3.20.2\n    Checking bit_field v0.10.3\n    Checking powerfmt v0.2.0\n    Checking pxfm v0.1.28\n    Checking hashbrown v0.16.1\n    Checking byteorder-lite v0.1.0\n    Checking data-encoding v2.10.0\n    Checking iri-string v0.7.10\n    Checking bytemuck v1.25.0\n    Checking linux-raw-sys v0.11.0\n    Checking utf-8 v0.7.6\n    Checking byteorder v1.5.0\n    Checking option-ext v0.2.0\n    Checking dirs-sys v0.4.1\n    Checking tungstenite v0.24.0\n    Checking rustix v1.1.3\n    Checking moxcms v0.7.11\n    Checking qoi v0.4.1\n    Checking tower-http v0.6.8\n    Checking image-webp v0.2.4\n    Checking indexmap v2.13.0\n    Checking deranged v0.5.8\n    Checking exr v1.74.0\n    Checking zopfli v0.8.3\n    Checking ravif v0.12.0\n    Checking zune-jpeg v0.5.12\n    Checking serde_urlencoded v0.7.1\n    Checking gif v0.14.1\n    Checking png v0.18.1\n    Checking rust-embed-utils v8.11.0\n    Checking serde_json v1.0.149\n   Compiling agent-browser v0.39.1 (/workspace/agent-browser-integrated-32ccc5c/cli)\n    Checking tiff v0.10.3\n    Checking url v2.5.8\n    Checking ghash v0.5.1\n    Checking hyper-rustls v0.27.7\n    Checking ctr v0.9.2\n    Checking aes v0.8.4\n    Checking webpki-roots v0.26.11\n    Checking http-body-util v0.1.3\n    Checking tokio-util v0.7.18\n    Checking aead v0.5.2\n    Checking num-conv v0.2.0\n    Checking time-core v0.1.8\n    Checking typed-path v0.12.3\n    Checking iana-time-zone v0.1.65\n    Checking fastrand v2.4.1\n    Checking openssl-probe v0.2.1\n    Checking rustls-native-certs v0.8.4\n    Checking tempfile v3.25.0\n    Checking chrono v0.4.44\n    Checking zip v8.2.0\n    Checking time v0.3.47\n    Checking reqwest v0.12.28\n    Checking aes-gcm v0.10.3\n    Checking tokio-tungstenite v0.24.0\n    Checking image v0.25.9\n    Checking rust-embed v8.11.0\n    Checking dirs v5.0.1\n    Checking uuid v1.21.0\n    Checking hmac v0.12.1\n    Checking rustls-pemfile v2.2.0\n    Checking hex v0.4.3\n    Checking urlencoding v2.1.3\n    Checking similar v2.7.0\nerror: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:350:9\n    |\n350 |     let log = commands.lock().unwrap();\n    |         ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through\n   --> src/native/client_capture_frame_owner_deadline_tests.rs:369:16\n    |\n369 |         server.await.unwrap() >= deadline,\n    |                ^^^^^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#await_holding_lock\n    = note: `-D clippy::await-holding-lock` implied by `-D warnings`\n    = help: to override `-D warnings` add `#[allow(clippy::await_holding_lock)]`\n\nerror: this `MutexGuard` is held across an await point\n   --> src/native/client_capture_mask_failure_tests.rs:308:13\n    |\n308 |         let log = self.commands.lock().unwrap();\n    |             ^^^\n    |\n    = help: consider using an async-aware `Mutex` type or ensuring the `MutexGuard` is dropped before calling `await`\nnote: these are all the await points this lock is held through\n   --> src/native/client_capture_mask_failure_tests.rs:326:36\n    |\n326 |         let released = self.server.await.unwrap();\n    |                                    ^^^^^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#await_holding_lock\n\nerror: could not compile `agent-browser` (bin \"agent-browser\" test) due to 2 previous errors\n"
+    },
+    {
+      "stage": "native-feature-check",
+      "stdout": "",
+      "stderr": "   Compiling agent-browser v0.39.1 (/workspace/agent-browser-integrated-32ccc5c/cli)\n    Finished `ci` profile [optimized] target(s) in 1m 00s\n"
+    },
+    {
+      "stage": "native-proxy-check",
+      "stdout": "",
+      "stderr": "    Checking agent-browser v0.39.1 (/workspace/agent-browser-integrated-32ccc5c/cli)\n    Finished `ci` profile [optimized] target(s) in 0.51s\n"
+    },
+    {
+      "stage": "native-production",
+      "stderr": "   Compiling agent-browser v0.39.1 (/workspace/agent-browser-integrated-32ccc5c/cli)\n    Finished `ci` profile [optimized] target(s) in 3m 24s\n"
+    },
+    {
+      "stage": "native-default-harness",
+      "stderr": "   Compiling agent-browser v0.39.1 (/workspace/agent-browser-integrated-32ccc5c/cli)\n    Finished `ci` profile [optimized] target(s) in 7m 21s\n"
+    },
+    {
+      "stage": "native-feature-harness",
+      "stderr": "   Compiling agent-browser v0.39.1 (/workspace/agent-browser-integrated-32ccc5c/cli)\n    Finished `ci` profile [optimized] target(s) in 7m 27s\n"
+    },
+    {
+      "stage": "web12-core-build",
+      "stdout": "",
+      "stderr": "$ node scripts/prepare-build.ts && tsc --project tsconfig.build.json && node scripts/write-sibling-versions.ts && node ../../scripts/stamp-dist.ts\n"
+    },
+    {
+      "stage": "web12-web-build",
+      "stdout": "",
+      "stderr": "$ node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc --project tsconfig.build.json && node ../../scripts/stamp-dist.ts\n"
+    },
+    {
+      "stage": "web12-core-types",
+      "stdout": "",
+      "stderr": "$ tsc --noEmit\n"
+    },
+    {
+      "stage": "web12-web-types",
+      "stdout": "",
+      "stderr": "$ tsc --noEmit\n"
+    },
+    {
+      "stage": "web12-scripts-types",
+      "stdout": "scripts/acceptance/candidate-cleanup-diagnostics.ts(182,11): error TS2412: Type 'undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target.\n",
+      "stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 1,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_single_navigation_race_reaches_protected_read ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 2,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_reacquisition_is_independent_of_diagnostics ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 3,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_discards_old_bindings_and_recovers_without_failure_witness ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 4,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_continuous_navigation_uses_original_deadline ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 1.17s\n\n",
+      "run_stderr": "native observation protocol failure at Page.getFrameTree; details omitted\n"
+    },
+    {
+      "group": "default",
+      "index": 5,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_cancel_wins_without_reacquisition ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": "native observation protocol failure at Page.getFrameTree; details omitted\n"
+    },
+    {
+      "group": "default",
+      "index": 6,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pre_cancel_sends_no_commands ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 7,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_sealed_and_reserved_fences_are_not_retryable ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 8,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_same_ids_new_attachment_cannot_reacquire ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 9,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_accounted_release_without_ack_cannot_reacquire ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.25s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 10,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_new_debt_after_reacquisition_is_current_stage_failure ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.25s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 11,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_protected_phase_remains_one_shot ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 12,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_final_phase_helper_remains_one_shot ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 13,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_pixels_only_remains_one_shot ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 14,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_loader_failure_is_not_revision_retry ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 15,
+      "case": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner",
+      "list_stdout": "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 16,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.07s\n\n",
+      "run_stderr": "native observation protocol failure at Runtime.callFunctionOn; details omitted\nnative-observe-semantic-first-failure stage=SecurityInventory frameKind=Main\n"
+    },
+    {
+      "group": "default",
+      "index": 17,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.07s\n\n",
+      "run_stderr": "native observation protocol failure at Runtime.callFunctionOn; details omitted\nnative-metadata-first-failure stage=ReadCall\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    },
+    {
+      "group": "default",
+      "index": 18,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.07s\n\n",
+      "run_stderr": "native observation protocol failure at Runtime.callFunctionOn; details omitted\nnative-metadata-first-failure stage=ReadCall\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    },
+    {
+      "group": "default",
+      "index": 19,
+      "case": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.32s\n\n",
+      "run_stderr": "native observation protocol failure at DOM.resolveNode; details omitted\nnative-metadata-first-failure stage=Resolve\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    },
+    {
+      "group": "default",
+      "index": 20,
+      "case": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.08s\n\n",
+      "run_stderr": "native observation protocol failure at Runtime.callFunctionOn; details omitted\nframe-owner-deadline: release_ack_withheld=false, terminal_after_parent_us=1236\n"
+    },
+    {
+      "group": "default",
+      "index": 21,
+      "case": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.34s\n\n",
+      "run_stderr": "native observation protocol failure at Runtime.callFunctionOn; details omitted\nframe-owner-deadline: release_ack_withheld=true, terminal_after_parent_us=253762\n"
+    },
+    {
+      "group": "default",
+      "index": 22,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 23,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "default",
+      "index": 24,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.06s\n\n",
+      "run_stderr": "native-metadata-first-failure stage=ReadCall\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    },
+    {
+      "group": "default",
+      "index": 25,
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout",
+      "list_stdout": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2674 filtered out; finished in 0.06s\n\n",
+      "run_stderr": "native-metadata-first-failure stage=ReadCall\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    },
+    {
+      "group": "acceptance-faults",
+      "index": 1,
+      "case": "native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded",
+      "list_stdout": "native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2708 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "acceptance-faults",
+      "index": 2,
+      "case": "native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations",
+      "list_stdout": "native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2708 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    },
+    {
+      "group": "acceptance-faults",
+      "index": 3,
+      "case": "native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures",
+      "list_stdout": "native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures: test\n\n1 test, 0 benchmarks\n",
+      "list_stderr": "",
+      "run_stdout": "\nrunning 1 test\ntest native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2708 filtered out; finished in 0.00s\n\n",
+      "run_stderr": ""
+    }
+  ]
+}
