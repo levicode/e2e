@@ -1,0 +1,6 @@
+{
+  "source": "c03f34565ea58d9518debf890c07aae45b92ae44",
+  "errors": [
+    "error[E0308]: `match` arms have incompatible types\n   --> src/native/client_restart_readiness_tests.rs:257:21\n    |\n234 |               match case {\n    |               ---------- `match` arms have incompatible types\n235 |                   \"unknown\" => f\n    |  ______________________________-\n236 | |                     .owner\n237 | |                     .targets\n238 | |                     .attached(\n...   |\n244 | |                     .unwrap(),\n    | |_____________________________- this is found to be of type `bool`\n...\n257 | /                     f.owner\n258 | |                         .targets\n259 | |                         .resume_permit(\"target\")\n260 | |                         .await\n261 | |                         .unwrap()\n262 | |                         .complete()\n263 | |                         .unwrap();\n    | |__________________________________^ expected `bool`, found `()`\n\n"
+  ]
+}

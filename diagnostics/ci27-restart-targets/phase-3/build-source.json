@@ -1,0 +1,10 @@
+{
+  "nativeSha": "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+  "nativeTree": "a553b4285fe05cafe59729a9927ebfd8dcfb7faa",
+  "diagnosticParent": "dc7232538ee42cd9444cab5de5570af122d909a0",
+  "candidateBase": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+  "nativeClean": true,
+  "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1",
+  "e2eSource": "5ce4dde88ca0c4d9f953d6f80a4d83d91947d8f9",
+  "requiredCapabilitiesSha256": "d4734f47308d66eb2c36a57ce3362138ec4723ba2278d532987532db552e2d28"
+}

@@ -1,0 +1,39 @@
+{
+  "source": "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+  "parent": "dc7232538ee42cd9444cab5de5570af122d909a0",
+  "files": {
+    "cli/src/native/cdp/client.rs": [
+      "@@ -202,0 +203,9 @@ impl BoundedEventWatermark {",
+      "@@ -209 +218 @@ impl BoundedEventWatermark {",
+      "@@ -2307,0 +2317,21 @@ mod tests {"
+    ],
+    "cli/src/native/client_browser.rs": [
+      "@@ -3973,0 +3974 @@ impl ClientBrowser {",
+      "@@ -3978 +3978,0 @@ impl ClientBrowser {",
+      "@@ -3985,4 +3985,5 @@ impl ClientBrowser {"
+    ],
+    "cli/src/native/client_enrollment.rs": [
+      "@@ -701,0 +702 @@ enum CaptureTestPoint {",
+      "@@ -1991,0 +1993,105 @@ impl ClientEnrollment {",
+      "@@ -5258,0 +5365 @@ mod tests {"
+    ],
+    "cli/src/native/client_restart.rs": [
+      "@@ -12 +12 @@ use super::client_session::{CancelSignal, OperationLease};",
+      "@@ -165,0 +166 @@ pub(crate) struct RestartedPage {",
+      "@@ -184 +185,2 @@ impl RestartedPage {",
+      "@@ -193,0 +196,16 @@ impl RestartedPage {",
+      "@@ -395,0 +414 @@ async fn replace_inner(",
+      "@@ -405,0 +425 @@ async fn replace_inner(",
+      "@@ -837,0 +858 @@ mod tests {",
+      "@@ -985,0 +1007 @@ mod tests {"
+    ],
+    "cli/src/native/client_restart_readiness_tests.rs": [
+      "@@ -0,0 +1,326 @@"
+    ],
+    "cli/src/native/client_targets.rs": [
+      "@@ -951,0 +952,74 @@ impl ClientTargets {"
+    ]
+  },
+  "callbackSupportNotMerged": "776b93b",
+  "metadataSupportNotMerged": "bdf09c9ef802511fd435445d4fd32993d61bc22e"
+}

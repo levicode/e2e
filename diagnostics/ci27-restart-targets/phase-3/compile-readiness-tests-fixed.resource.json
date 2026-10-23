@@ -1,0 +1,23 @@
+{
+  "stage": "compile-readiness-tests-fixed",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-readiness-native/cli",
+  "startedAt": "2026-10-23T13:00:10.730889+00:00",
+  "elapsedSeconds": 600.225,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 10363367424,
+  "maximumChildRssKiB": 6496244,
+  "sampledPeakCgroupMemoryBytes": 17179865088,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

@@ -1,0 +1,22 @@
+{
+  "stage": "readiness-production-build",
+  "command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--message-format=json"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-readiness-native/cli",
+  "startedAt": "2026-10-23T13:10:24.582118+00:00",
+  "elapsedSeconds": 0.526,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 5939200,
+  "maximumChildRssKiB": 67848,
+  "sampledPeakCgroupMemoryBytes": 7518679040,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

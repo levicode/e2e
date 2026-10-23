@@ -1,0 +1,8 @@
+2026-10-23 13:13 UTC checkpoint, not final acceptance.
+Native support/ci27-restart-readiness HEAD fce932e38faced7af762dabe4bd45f4ab9f633c5 is pushed; diagnostic parent dc723253; no metadata/C03/P27 merged.
+Optimized default production/harness build succeeded in 600.225s. Peak cgroup exactly 17179869184 bytes (16 GiB), max events 1332, OOM/OOM kill 0.
+11 exact Rust tests passed, 0 failed/ignored, in 2.573s total runner time. Includes all 8 new publication/negative tests and 3 original restart tests.
+Initial fixture type error E0308 and runner missing-file setup failure were corrected; their logs remain in local evidence. No product assertion or budget was relaxed.
+Current original six-default-harness wrapper is running, about 2 minutes elapsed; current separate-target cargo build --locked --profile ci --no-default-features --features acceptance-faults --message-format=json is running, jobs=1, about 2 minutes elapsed.
+User temporary local synthetic --no-sandbox permission received and adopted; no longer waiting for authorization. Actual argv/CI/helper before-after recorder is ready. Browser repetition follows these heavy jobs.
+No GitHub CI, candidate/main change, subtask or OS/SUID/namespace change.
