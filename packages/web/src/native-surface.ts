@@ -43,6 +43,7 @@ interface Attempt {
   ready: boolean;
   readonly context: EngineAttemptContext;
   readonly retirement: AbortController;
+  readonly wireRequests: Set<Promise<void>>;
   scope: string;
   recovery?: RecoveryIdentity;
   credentials?: { readonly username: string; readonly password: string } | undefined;
@@ -171,7 +172,7 @@ export class NativeSurface implements NativeWebSurface {
       await raceAbort(() => retirement, context.signal, 'waiting for native attempt retirement');
     }
     if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, ready: false, recoveryObservationRequired: false, context, retirement: new AbortController(), scope: '', counter: 0, videoCounter: 0, downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
+    const attempt: Attempt = { epoch: 0, ready: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
     const operation = this.operation(startupSignal);
@@ -275,6 +276,12 @@ export class NativeSurface implements NativeWebSurface {
     attempt?.retirement.abort();
     this.attempt = undefined; this.retiringAttempt = attempt; this.listeners.clear(); attempt?.channel?.dispose();
     try {
+      // Cancellation ACK is not settlement. Join only these captured ordinary
+      // requests before scope.end enters the client's unchanged settlement gate.
+      if (attempt !== undefined && attempt.wireRequests.size > 0) {
+        await raceAbort(() => Promise.all(attempt.wireRequests), remaining().signal, 'settling retired native requests');
+        remaining();
+      }
       // A late process handshake remains owned until its fresh-signal close completes.
       if (connecting !== undefined) {
         this.clientTenure++;
@@ -554,7 +561,8 @@ export class NativeSurface implements NativeWebSurface {
       }
     }
     const client = this.requireClient(); const publication = client.publicationCheckpoint();
-    const result = await attempt.channel.command(name, args, operation);
+    const channel = attempt.channel;
+    const result = await withinAttemptRequest(operation, attempt, current => channel.command(name, args, current));
     this.assertAttempt(attempt);
     if (name === 'fixture.correlate') this.assertPublication(client, publication);
     if (name === 'page.navigate' || name === 'page.reload' || name === 'page.back' || name === 'page.forward') this.tellEnvironment(attempt);
@@ -609,7 +617,8 @@ export class NativeSurface implements NativeWebSurface {
 
   private async engineCommand<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext): Promise<EngineCommandMap[K]['result']> {
     const attempt = this.requireAttempt(); const scope = attempt.scope;
-    const result = await this.requireEngine().command(name, args, operation);
+    const engine = this.requireEngine();
+    const result = await withinAttemptRequest(operation, attempt, current => engine.command(name, args, current));
     this.assertAttempt(attempt);
     if (scope !== attempt.scope) throw invalidState('The browser scope changed during an operation');
     return result;
@@ -901,6 +910,24 @@ function observationRevision(value: string): bigint | undefined {
   return revision <= 18_446_744_073_709_551_615n ? revision : undefined;
 }
 function invalidState(message: string): EngineError { return new EngineError('INVALID_STATE', message, { retryable: false }); }
+
+/** Ordinary requests retire with their captured attempt, never mandatory cleanup. */
+async function withinAttemptRequest<T>(operation: OperationContext, attempt: Attempt, work: (operation: OperationContext) => Promise<T>): Promise<T> {
+  let settle!: () => void;
+  const settled = new Promise<void>(resolve => { settle = resolve; });
+  // Register before invoking the channel, including synchronous re-entry/throw.
+  attempt.wireRequests.add(settled);
+  try {
+    return await work({
+      signal: AbortSignal.any([operation.signal, attempt.retirement.signal]),
+      // Preserve the caller's original monotonic deadline without refreshing it.
+      get timeoutMs() { return operation.timeoutMs; },
+      runId: operation.runId,
+      attemptId: operation.attemptId,
+      origin: operation.origin,
+    });
+  } finally { attempt.wireRequests.delete(settled); settle(); }
+}
 
 /** End-hook waiters may leave; only the owned promise can prove cleanup or fail reuse. */
 function waitForRetirement(work: Promise<void>, context: EngineCleanupContext): Promise<void> {

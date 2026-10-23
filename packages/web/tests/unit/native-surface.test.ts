@@ -1,5 +1,6 @@
 /** Real protocol client over an in-memory native peer; no browser success is implied. */
 import { createHash } from 'node:crypto';
+import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -866,6 +867,178 @@ describe('native surface ownership and fixed policy binding', () => {
     await rejected;
     expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(0);
     await surface.dispose(cleanup());
+  });
+  it.each(['engine', 'browser'] as const)('cancels an already submitted %s read when its exact attempt retires', async channel => {
+    const surface = new NativeSurface({}); await start(surface);
+    const command = channel === 'engine' ? 'browser.query' : 'page.title';
+    const peer = holdRequests(command);
+    const longOperation = { ...operation(), timeoutMs: 30_000 };
+    const pending = (channel === 'engine'
+      ? surface.locate({ kind: 'selector', selector: '#held' }, longOperation)
+      : surface.command('page.title', {}, longOperation)).catch((cause: unknown) => cause);
+    const held = await peer.next(command);
+    const request = frames.find(frame => frame['command'] === command)!;
+    holdScopeEnd = true;
+    const ending = surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toEqual([
+        expect.objectContaining({ generation: request['generation'], operationSeq: request['operationSeq'] }),
+      ]);
+      expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+      expect(frames.some(frame => frame['type'] === 'cancel' && frame['operationSeq'] !== request['operationSeq'])).toBe(false);
+    } finally {
+      acknowledgeCancel?.(); held.fail('cancelled');
+      await new Promise(resolve => setImmediate(resolve));
+      releaseScopeEnd?.(); holdScopeEnd = false;
+      await expect(ending).resolves.toBeUndefined();
+      await expect(pending).resolves.toMatchObject({ code: channel === 'engine' ? 'CANCELLED' : 'INVALID_STATE' });
+      interceptRequest = undefined;
+      await surface.dispose(cleanup());
+    }
+  });
+  it.each(['engine', 'browser'] as const)('joins one %s cancellation independently of cleanup waiters and isolates the next attempt', async channel => {
+    const surface = new NativeSurface({}); await start(surface);
+    const command = channel === 'engine' ? 'browser.query' : 'page.title';
+    const original = NativeClient.prototype.request;
+    let requestSignal: AbortSignal | undefined;
+    let cleanupSignal: AbortSignal | undefined;
+    const inspect = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, name, args, current, transition) {
+      if (name === command) requestSignal = current.signal;
+      if (name === 'scope.end') cleanupSignal = current.signal;
+      return original.call(this, name, args, current, transition);
+    });
+    const caller = new AbortController();
+    const peer = holdRequests(command);
+    const pending = (channel === 'engine'
+      ? surface.locate({ kind: 'selector', selector: '#held' }, { ...operation(), signal: caller.signal, timeoutMs: 30_000 })
+      : surface.command('page.title', {}, { ...operation(), signal: caller.signal, timeoutMs: 30_000 })).catch((cause: unknown) => cause);
+    const held = await peer.next(command);
+    const oldSignal = requestSignal!;
+    expect(getEventListeners(oldSignal, 'abort')).toHaveLength(1);
+    holdScopeEnd = true;
+    const cleanupCaller = new AbortController();
+    const first = surface.endAttempt({ signal: cleanupCaller.signal, timeoutMs: 1000 });
+    const second = surface.endAttempt(cleanup());
+    cleanupCaller.abort();
+    await first;
+    expect(caller.signal.aborted).toBe(false);
+    expect(oldSignal.aborted).toBe(true);
+    expect(getEventListeners(oldSignal, 'abort')).toHaveLength(0);
+    expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+    acknowledgeCancel!();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+    held.fail('cancelled'); await pending;
+    await new Promise(resolve => setImmediate(resolve));
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+    expect(cleanupSignal?.aborted).toBe(false);
+    let opened = false;
+    const next = surface.startAttempt(context('next-after-cancel')).then(() => { opened = true; });
+    await new Promise(resolve => setImmediate(resolve)); expect(opened).toBe(false);
+    releaseScopeEnd!(); holdScopeEnd = false; await second; await next;
+    const fresh = (channel === 'engine'
+      ? surface.locate({ kind: 'selector', selector: '#fresh' }, operation())
+      : surface.command('page.title', {}, operation()));
+    const freshRequest = await peer.next(command);
+    const freshSignal = requestSignal!;
+    expect(freshSignal).not.toBe(oldSignal); expect(freshSignal.aborted).toBe(false);
+    caller.abort();
+    expect(freshSignal.aborted).toBe(false);
+    expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+    freshRequest.succeed(channel === 'engine' ? { identityScope: currentScope, revision: '1', nodes: [] } : { title: 'fresh' });
+    await fresh;
+    expect(getEventListeners(freshSignal, 'abort')).toHaveLength(0);
+    interceptRequest = undefined; inspect.mockRestore(); await surface.dispose(cleanup());
+  });
+  it.each(['engine', 'browser'] as const)('preserves an already dispatched %s Unknown while retirement joins its request', async channel => {
+    continueExactOwner = true;
+    const surface = new NativeSurface({}); await start(surface);
+    const command = channel === 'engine' ? 'browser.pointer' : 'page.evaluate';
+    const peer = holdRequests(command);
+    const pending = (channel === 'engine'
+      ? surface.performAt({ x: 1, y: 1 }, { kind: 'tap' }, { ...operation(), timeoutMs: 30_000 })
+      : surface.command('page.evaluate', { source: '() => 1', argument: null }, { ...operation(), timeoutMs: 30_000 })).catch((cause: unknown) => cause);
+    const held = await peer.next(command);
+    const ending = surface.endAttempt(cleanup());
+    expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+    acknowledgeCancel!(); held.retire();
+    await expect(pending).resolves.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+    await ending;
+    expect(frames.filter(frame => frame['command'] === command)).toHaveLength(1);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+    interceptRequest = undefined; await surface.dispose(cleanup());
+  });
+  it.each(['engine', 'browser'] as const)('releases the %s request owner after synchronous channel failure and reentrant retirement', async channel => {
+    const surface = new NativeSurface({}); await start(surface);
+    const command = channel === 'engine' ? 'browser.query' : 'page.title';
+    const original = NativeClient.prototype.request;
+    const failure = new Error('synchronous request failure');
+    let ending: Promise<void> | undefined;
+    const request = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, name, args, current, transition) {
+      if (name === command) { ending = surface.endAttempt(cleanup()); throw failure; }
+      return original.call(this, name, args, current, transition);
+    });
+    const pending = channel === 'engine'
+      ? surface.locate({ kind: 'selector', selector: '#held' }, operation())
+      : surface.command('page.title', {}, operation());
+    await expect(pending).rejects.toBe(failure);
+    expect(ending).toBeDefined(); await ending;
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+    request.mockRestore(); await surface.startAttempt(context('after-sync-failure'));
+    await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+    await surface.dispose(cleanup());
+  });
+  it('spends the original retirement deadline while joining requests instead of renewing scope cleanup', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const peer = holdRequests('browser.query');
+    const pending = surface.locate({ kind: 'selector', selector: '#held' }, { ...operation(), timeoutMs: 30_000 }).catch((cause: unknown) => cause);
+    const held = await peer.next('browser.query'); holdScopeEnd = true;
+    try {
+      const waiter = surface.endAttempt(cleanup());
+      const owner = retirementState(surface).endingAttempt!;
+      await vi.advanceTimersByTimeAsync(4_000); await waiter;
+      expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
+      acknowledgeCancel!(); held.fail('cancelled'); await pending;
+      await vi.advanceTimersByTimeAsync(0);
+      const end = frames.find(frame => frame['command'] === 'scope.end')!;
+      expect(end['timeoutMs']).toBeGreaterThan(10_000);
+      expect(end['timeoutMs']).toBeLessThanOrEqual(11_000);
+      releaseScopeEnd!(); holdScopeEnd = false; await owner;
+    } finally { vi.useRealTimers(); interceptRequest = undefined; await surface.dispose(cleanup()); }
+  });
+  it('keeps a request-join timeout failed even after that exact request returns late', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    const original = NativeClient.prototype.request;
+    let deliver!: (result: Awaited<ReturnType<NativeClient['request']>>) => void;
+    let entered!: () => void; const enteredRequest = new Promise<void>(resolve => { entered = resolve; });
+    const scope = currentScope;
+    const request = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, name, args, current, transition) {
+      if (name !== 'browser.query') return original.call(this, name, args, current, transition);
+      entered(); return new Promise(resolve => { deliver = resolve; });
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const pending = surface.locate({ kind: 'selector', selector: '#never-settled' }, { ...operation(), timeoutMs: 30_000 }).catch((cause: unknown) => cause);
+    await enteredRequest;
+    const waiter = surface.endAttempt(cleanup());
+    const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+    try {
+      await vi.advanceTimersByTimeAsync(15_000); await waiter;
+      const failure = await owner;
+      expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT', message: 'retiring native attempt timed out' });
+      expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
+      await expect(surface.startAttempt(context('blocked-before-late'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      deliver({ type: 'result', id: 'held-query', generation: 1, operationSeq: 4, ok: true, data: { identityScope: scope, revision: '1', nodes: [] }, effects: 'completed', scopeState: 'usable' });
+      await expect(pending).resolves.toMatchObject({ code: 'CANCELLED' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(retirementState(surface).retirementFailure).toBe(failure);
+      expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
+      await expect(surface.startAttempt(context('blocked-after-late'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      request.mockRestore(); vi.useRealTimers();
+      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+    } finally { request.mockRestore(); vi.useRealTimers(); }
   });
   it('closes a late native handshake instead of publishing it after disposal', async () => {
     const connect = vi.mocked(connectNativeProcess).getMockImplementation()!;

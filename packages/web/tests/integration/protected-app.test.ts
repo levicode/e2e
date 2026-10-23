@@ -11,13 +11,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secrets } from 'e2e';
-import type { EngineCleanupContext, EngineFixtureContext, EngineHandle, OperationContext, Secret } from 'e2e/engine';
+import type { EngineAttemptContext, EngineCleanupContext, EngineFixtureContext, EngineHandle, OperationContext, Secret } from 'e2e/engine';
 import { web, type Browser } from '../../src/index.ts';
 import { PROTECTED_CREDENTIAL, startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
-import { beginSyntheticCase, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
+import { beginSyntheticCase, serviceWorkerPromiseFact, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
 
 function cleanup(): EngineCleanupContext {
   return { signal: new AbortController().signal, timeoutMs: 30_000 };
@@ -33,6 +33,7 @@ async function boot(
   artifactsDir: string,
   attemptId: string,
   resolveSecret: (secret: Secret) => Promise<string> = noSecrets,
+  appLog?: EngineAttemptContext['appLog'],
 ): Promise<void> {
   await engine.init!({
     runId: 'run-protected',
@@ -45,7 +46,7 @@ async function boot(
     log: () => undefined,
     signal: new AbortController().signal,
   });
-  await engine.startAttempt!({ attemptId, artifactsDir, signal: new AbortController().signal, resolveSecret, ...ignoreTrace });
+  await engine.startAttempt!({ attemptId, artifactsDir, signal: new AbortController().signal, resolveSecret, ...ignoreTrace, ...(appLog === undefined ? {} : { appLog }) });
 }
 
 async function shutdown(engine: EngineHandle): Promise<void> {
@@ -131,10 +132,17 @@ describe('web({ headers, basicAuth })', () => {
 
   it('blocks service workers under headers, since routing never sees a worker\'s requests', async () => {
     // Registers the fixture's worker and counts what the browser now holds:
-    // a blocked registration resolves like a real one but registers nothing.
+    // the caught registration settles even when blocked; only the count proves registration.
     const registrations = async (): Promise<number> => {
-      await navigator.serviceWorker.register('/sw.js').catch(() => undefined);
-      return (await navigator.serviceWorker.getRegistrations()).length;
+      const registration = navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+      console.info('P41:service-worker:register-invoked');
+      await registration;
+      console.info('P41:service-worker:register-settled');
+      const registrationsPromise = navigator.serviceWorker.getRegistrations();
+      console.info('P41:service-worker:get-invoked');
+      const registered = await registrationsPromise;
+      console.info('P41:service-worker:get-settled');
+      return registered.length;
     };
     const evidence = beginSyntheticCase('P41');
     const outcome: SyntheticOutcome = { setup: 'passed', body: 'incomplete', cleanup: 'not-started' };
@@ -150,10 +158,17 @@ describe('web({ headers, basicAuth })', () => {
     /** These are source-configured branches, not observations of an internal worker rule. */
     const record = (state: 'enter' | 'passed' | 'failed', registeredCount: number | null = null): void =>
       evidence.record({ kind: 'service-worker', branch, phase, state, headersConfigured: branch === 'headers-blocked', registeredCount });
+    /** Capture the configured branch, never raw console text or its projected location. */
+    const promiseLog = (sourceBranch: 'plain' | 'headers-blocked'): EngineAttemptContext['appLog'] => entry => {
+      try {
+        const fact = serviceWorkerPromiseFact(sourceBranch, entry);
+        if (fact !== null) evidence.record(fact);
+      } catch { evidence.invalidate(); }
+    };
     try {
       const plain = web();
       try {
-        record('enter'); await boot(plain, app, artifactsDir, 's0'); record('passed');
+        record('enter'); await boot(plain, app, artifactsDir, 's0', undefined, promiseLog('plain')); record('passed');
         phase = 'navigate'; record('enter'); await headingAt(plain, 's0', `${app.url}/`); record('passed');
         // The fixture itself can register one: 127.0.0.1 is a secure context.
         phase = 'register-count'; record('enter');
@@ -172,7 +187,7 @@ describe('web({ headers, basicAuth })', () => {
       branch = 'headers-blocked'; phase = 'boot';
       const engine = web({ headers: { 'x-fixture-header': 'no-workers' } });
       try {
-        record('enter'); await boot(engine, app, artifactsDir, 's1'); record('passed');
+        record('enter'); await boot(engine, app, artifactsDir, 's1', undefined, promiseLog('headers-blocked')); record('passed');
         phase = 'navigate'; record('enter'); await headingAt(engine, 's1', `${app.url}/`); record('passed');
         phase = 'register-count'; record('enter');
         const count = await fixtureOf(engine, app, 's1').evaluate(registrations); record('passed', count);

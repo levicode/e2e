@@ -8,7 +8,7 @@ export function candidateRevision(lock: unknown, event: string, ref: string, man
   const value = lock as { schemaVersion?: number; repository?: string; commit?: unknown; benchmarkSweep?: boolean };
   if (value?.schemaVersion !== 1 || value.repository !== 'levicode/agent-browser' || typeof value.benchmarkSweep !== 'boolean') throw new Error('Invalid candidate source lock');
   if (event === 'push') {
-    if (ref !== 'refs/heads/implement/native-full-ci' || manualSha || manualBenchmark) throw new Error('Push candidate must use the exact opt-in branch and committed lock, without input overrides');
+    if (!['refs/heads/implement/native-full-ci', 'refs/heads/implement/native-macos-ci'].includes(ref) || manualSha || manualBenchmark) throw new Error('Push candidate must use the exact opt-in branch and committed lock, without input overrides');
     return { sha: candidateSha(typeof value.commit === 'string' ? value.commit : undefined), benchmarkSweep: value.benchmarkSweep };
   }
   if (event !== 'workflow_dispatch' || !['', 'true', 'false', undefined].includes(manualBenchmark)) throw new Error('Candidate only accepts dedicated push or reviewed manual dispatch');
