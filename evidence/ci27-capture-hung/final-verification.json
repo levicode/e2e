@@ -1,0 +1,1202 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "publication": {
+    "repository": "levicode/e2e",
+    "branch": "support/ci27-capture-hung-evidence",
+    "fixedParent": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+    "evidenceOnly": true,
+    "candidateMainAndCIFilesChanged": false,
+    "browserRunsForPublication": 0
+  },
+  "sourceBindings": {
+    "native": {
+      "repository": "levicode/agent-browser",
+      "commit": "bec755389f799ec3a9bb7448580a0b665c457544"
+    },
+    "captureAdapter": {
+      "repository": "levicode/e2e",
+      "commit": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "cases": [
+        "P01",
+        "P27"
+      ]
+    },
+    "hungAdapter": {
+      "repository": "levicode/e2e",
+      "commit": "6cf930e2bbc2ac82cdc7f15b49fcee325551bb20",
+      "cases": [
+        "P19",
+        "P21"
+      ]
+    },
+    "collectorSha256ByAdapter": {
+      "capture": "c8a5f0abb3abe89ff7e6a38c5f2bd86ef246a4894113a15ea979cb153ed16a43",
+      "hung": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+    }
+  },
+  "build": {
+    "profile": "ci",
+    "features": [],
+    "productionBuildCount": 1,
+    "nativeRecompiledForHungOrPublication": false,
+    "productionArgv": [
+      "cargo",
+      "build",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "-j",
+      "2",
+      "--message-format=json"
+    ],
+    "productionWallSeconds": 298.021868251,
+    "productionMaxRssKiB": 4270068,
+    "harnessArgv": [
+      "cargo",
+      "test",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--no-run",
+      "-j",
+      "2",
+      "--message-format=json"
+    ],
+    "harnessWallSeconds": 512.548516012,
+    "harnessMaxRssKiB": 6883876,
+    "vCPU": 4,
+    "memoryLimitGiB": 16,
+    "observedBuildCgroupPeakBytes": 11214065664,
+    "oomKilled": false,
+    "rustVersion": "1.99.1",
+    "nodeVersion": "24.19.0",
+    "pnpmVersion": "12.3.4"
+  },
+  "browser": {
+    "version": "Chromium 154.0.8037.57",
+    "versionLimitation": "Chrome 156 was not validated; known official download 403 was not retried or bypassed",
+    "observedMainArgvWithOnlyTemporaryProfilePathRedacted": [
+      "/usr/lib/chromium/chromium",
+      "--show-component-extension-options",
+      "--enable-gpu-rasterization",
+      "--no-default-browser-check",
+      "--disable-pings",
+      "--media-router=0",
+      "--enable-remote-extensions",
+      "--load-extension=",
+      "--remote-debugging-port=0",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-component-update",
+      "--disable-default-apps",
+      "--disable-hang-monitor",
+      "--disable-popup-blocking",
+      "--disable-prompt-on-repost",
+      "--disable-sync",
+      "--disable-features=Translate",
+      "--enable-features=NetworkService,NetworkServiceInProcess,WebMCPTesting,DevToolsWebMCPSupport",
+      "--metrics-recording-only",
+      "--password-store=basic",
+      "--use-mock-keychain",
+      "--headless=new",
+      "--hide-scrollbars",
+      "--enable-unsafe-swiftshader",
+      "--user-data-dir=<synthetic-temporary-profile>",
+      "--window-size=1280,720",
+      "--no-sandbox"
+    ],
+    "sandboxFlagObservedInEveryCase": "--no-sandbox",
+    "scope": "temporary container, loopback synthetic pages, no account/business Cookie/business data; no OS/SUID changes"
+  },
+  "validation": {
+    "compileBoundaries": {
+      "boundary-format": {
+        "argv": [
+          "cargo",
+          "fmt",
+          "--",
+          "--check"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 2.762525578,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "boundary-default-clippy": {
+        "argv": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--profile",
+          "ci",
+          "--no-default-features",
+          "--all-targets",
+          "-j",
+          "2",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exitCode": 101,
+        "wallSeconds": 127.483103454,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "99912287ba473e7ade21c63f56ec28122a63e496aeb3fd773e18f8c8b7f264ce"
+      },
+      "boundary-feature-tests": {
+        "argv": [
+          "cargo",
+          "check",
+          "--locked",
+          "--profile",
+          "ci",
+          "--no-default-features",
+          "--features",
+          "acceptance-faults",
+          "--tests",
+          "-j",
+          "2"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 63.946938098,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "25a01a5dab397ac94831f3afa3feff3833cddd58ef3b03407388e938eb09e768"
+      },
+      "boundary-proxy": {
+        "argv": [
+          "cargo",
+          "check",
+          "--locked",
+          "--profile",
+          "ci",
+          "--no-default-features",
+          "--features",
+          "acceptance-faults",
+          "--test",
+          "client-proxy-fixture",
+          "-j",
+          "2"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 0.483397747,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "dc90035a028479743a283d2cdce7dab5e029c43c6f2dd0ae8af875aa424909eb"
+      }
+    },
+    "clippyFailures": [
+      {
+        "path": "cli/src/native/client_cleanup_diagnostic_tests.rs",
+        "line": 652,
+        "lint": "clippy::int_plus_one",
+        "warningsDenied": true
+      },
+      {
+        "path": "cli/src/native/client_cleanup_diagnostic_tests.rs",
+        "line": 739,
+        "lint": "clippy::int_plus_one",
+        "warningsDenied": true
+      }
+    ],
+    "newScreenshotTests": [
+      {
+        "name": "native::client_observation_dispatch::tests::screenshot_witness_is_disabled_for_opt_out_nontrace_and_success",
+        "passed": true,
+        "execution": {
+          "argv": [
+            "<default-source-matched-test-harness>",
+            "native::client_observation_dispatch::tests::screenshot_witness_is_disabled_for_opt_out_nontrace_and_success",
+            "--exact",
+            "--test-threads=1",
+            "--nocapture"
+          ],
+          "exitCode": 0,
+          "wallSeconds": 0.003427208,
+          "stdoutSha256": "973ecf92610ec4d65c3c9aa498faf4b0c9a2419811893963aeb64b2d8dec22ea",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "native::client_observation_dispatch::tests::screenshot_capture_first_failure_survives_cleanup_and_is_consumed_once",
+        "passed": true,
+        "execution": {
+          "argv": [
+            "<default-source-matched-test-harness>",
+            "native::client_observation_dispatch::tests::screenshot_capture_first_failure_survives_cleanup_and_is_consumed_once",
+            "--exact",
+            "--test-threads=1",
+            "--nocapture"
+          ],
+          "exitCode": 0,
+          "wallSeconds": 0.004108405,
+          "stdoutSha256": "058c25406879b2e6c70b84e0dd46cdeb88cd02451e73af504a2a619ad282295c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "native::client_observation_dispatch::tests::screenshot_production_witness_observes_real_prepare_and_restore_failure_paths",
+        "passed": true,
+        "execution": {
+          "argv": [
+            "<default-source-matched-test-harness>",
+            "native::client_observation_dispatch::tests::screenshot_production_witness_observes_real_prepare_and_restore_failure_paths",
+            "--exact",
+            "--test-threads=1",
+            "--nocapture"
+          ],
+          "exitCode": 0,
+          "wallSeconds": 0.005457429,
+          "stdoutSha256": "409d98fa758b3318c65743907cce1120a210d08612f1a9144235f0531ff3a30b",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "native::client_settlement_trace::cleanup_tests::screenshot_failure_uses_production_sink_without_cleanup_attempt_or_payload",
+        "passed": true,
+        "execution": {
+          "argv": [
+            "<default-source-matched-test-harness>",
+            "native::client_settlement_trace::cleanup_tests::screenshot_failure_uses_production_sink_without_cleanup_attempt_or_payload",
+            "--exact",
+            "--test-threads=1",
+            "--nocapture"
+          ],
+          "exitCode": 0,
+          "wallSeconds": 0.003880551,
+          "stdoutSha256": "7959124db78b15212e3089ba99a75e45b45499ffa332429ca43cbaccd630690d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "native::client_settlement_trace::cleanup_tests::screenshot_failure_maximal_closed_record_fits_existing_bound",
+        "passed": true,
+        "execution": {
+          "argv": [
+            "<default-source-matched-test-harness>",
+            "native::client_settlement_trace::cleanup_tests::screenshot_failure_maximal_closed_record_fits_existing_bound",
+            "--exact",
+            "--test-threads=1",
+            "--nocapture"
+          ],
+          "exitCode": 0,
+          "wallSeconds": 0.00411246,
+          "stdoutSha256": "2c4449db2fd54440a2ae1f372ae1ded2019cd0a19c616c7f05db057f1dc37b1e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    ],
+    "readonlyTimingTests": {
+      "passed": 4,
+      "execution": {
+        "argv": [
+          "<default-source-matched-test-harness>",
+          "readonly_timing_",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 0.003421215,
+        "stdoutSha256": "406f7eafc7039b3fd7ee4753e8dc2b89537bfd3577827f434cbdce69c586c0f9",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "readonlyPrepareFailureTests": {
+      "passed": 2,
+      "execution": {
+        "argv": [
+          "<default-source-matched-test-harness>",
+          "readonly_prepare_failure_",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 0.00393691,
+        "stdoutSha256": "71964da795e6d5a6d03413a049394a347f448ed0d7a218f3432ee0e29e91dc42",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "collectorTests": {
+      "passed": 26,
+      "execution": {
+        "argv": [
+          "node",
+          "--test",
+          "scripts/acceptance/candidate-cleanup-diagnostics.test.ts"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 0.235927753,
+        "stdoutSha256": "ade8046951810dac2ba910dcff3161217f18d9b83fb1e87dd8751487760ee69e",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "ef34": {
+      "referenceCommit": "ef34a641050c5a0b1412857e711604906d65e916",
+      "sourceEquivalence": {
+        "byteIdenticalAfterRemovingOnlyAddedDiagnosticObservations": true,
+        "normalizedSha256": "f3b987950de88386341dafc6eb1828406bbc56f1b879d3497d512d4a5f404ae3",
+        "removedObservations": [
+          "start_readonly_timing scalar initialization",
+          "wake_us scalar sample after original pause; same pause future and result match"
+        ]
+      },
+      "strictTestResults": {
+        "readonly_preparation_accounts_for_actual_retry_wake_without_widening_tap": {
+          "byteIdentical": true,
+          "sha256": "b34651d58f7bdf7a6e8a7bd54de5c99e01c5f3a52a0ec426ab184a8bad9488c8",
+          "executedInPriorDefaultHarness": true,
+          "result": "passed"
+        },
+        "readonly_preparation_never_uses_missing_stale_mutated_or_below_floor_receipt": {
+          "byteIdentical": true,
+          "sha256": "965b7a8f798cac505d30ed8acec3c851719e95b0b420ba15677559400849a690",
+          "executedInPriorDefaultHarness": true,
+          "result": "passed"
+        },
+        "readonly_preparation_preserves_original_authority_errors": {
+          "byteIdentical": true,
+          "sha256": "e4683c146ab7c65c89a63e6493bb7f6a59f79b42e43f947c2d21c55eea920d4b",
+          "executedInPriorDefaultHarness": true,
+          "result": "passed"
+        },
+        "readonly_preparation_refusal_uses_current_ack_without_completed_mutation": {
+          "byteIdentical": true,
+          "sha256": "84982dae9f4dfbfa1b5cd56d75b7e2e355225fa3cb976ea61778e38343a9dc18",
+          "executedInPriorDefaultHarness": true,
+          "result": "passed"
+        }
+      },
+      "execution": {
+        "argv": [
+          "<default-source-matched-test-harness>",
+          "readonly_preparation_",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 0.003866611,
+        "stdoutSha256": "b2f4750fdb554ac8de4573865fab910f2084911f56ad5200116e2e04799c75da",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "identificationStatus": "resolved after full SHA supplied; these tests had already executed, not newly run"
+    },
+    "hungNewUnitTests": {
+      "passed": 10,
+      "names": [
+        "cancels an already submitted engine read when its exact attempt retires",
+        "cancels an already submitted browser read when its exact attempt retires",
+        "joins one engine cancellation independently of cleanup waiters and isolates the next attempt",
+        "joins one browser cancellation independently of cleanup waiters and isolates the next attempt",
+        "preserves an already dispatched engine Unknown while retirement joins its request",
+        "preserves an already dispatched browser Unknown while retirement joins its request",
+        "releases the engine request owner after synchronous channel failure and reentrant retirement",
+        "releases the browser request owner after synchronous channel failure and reentrant retirement",
+        "spends the original retirement deadline while joining requests instead of renewing scope cleanup",
+        "keeps a request-join timeout failed even after that exact request returns late"
+      ]
+    },
+    "hungBuild": {
+      "build-e2e": {
+        "argv": [
+          "pnpm",
+          "--filter",
+          "e2e",
+          "run",
+          "build"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 1.489312133,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "34b03b4201367e596f14dca280647c5ea68eccb02e61e81e75f4d8a3ca3331d3"
+      },
+      "build-web": {
+        "argv": [
+          "pnpm",
+          "--filter",
+          "@e2e-dev/web",
+          "run",
+          "build"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 0.383347454,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "c88d12fbeffdb3012beb0f14465eb93f6ef056c41c09f63930b3ea87239cdea8"
+      },
+      "typecheck-web": {
+        "argv": [
+          "pnpm",
+          "--filter",
+          "@e2e-dev/web",
+          "run",
+          "typecheck"
+        ],
+        "exitCode": 0,
+        "wallSeconds": 1.014589992,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92"
+      }
+    },
+    "full1056WebSuiteRerunHere": false,
+    "baselineBrowserABRunHere": false,
+    "unitAndCompileSuccessIsOriginalBrowserRegressionSuccess": false
+  },
+  "cases": [
+    {
+      "case": "P01-01",
+      "configuration": "original",
+      "exitCode": 1,
+      "wallSeconds": 3.820607513,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "tells where the page went, apart from its own navigations, the screen each action left, and the browser",
+          "status": "failed",
+          "durationMs": 2906.342689,
+          "firstFailure": "AssertionError: expected [ { …(8) } ] to have a length of 3 but got 1"
+        }
+      ],
+      "screenshotFirstFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 11920,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ScreenshotFirstFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "screenshotStage": "frame-inventory-fence",
+          "capturePhase": "not-entered",
+          "inventoryAfterFailure": "changed",
+          "error": "stale-scope"
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 11920,
+          "record": 2,
+          "operationSeq": 13,
+          "phase": "ScreenshotFirstFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 2,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "screenshotStage": "frame-inventory-fence",
+          "capturePhase": "not-entered",
+          "inventoryAfterFailure": "changed",
+          "error": "stale-scope"
+        }
+      ],
+      "readonlyPrepareFailureRecords": [],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 11920,
+          "record": 4,
+          "operationSeq": 14,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 4,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "observed",
+        "readonlyPrepareFailure": "unknown",
+        "requestTiming": "unknown"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false,
+      "revisionEvidence": {
+        "observedRevision": "unknown-not-emitted",
+        "currentRevision": "unknown-not-emitted",
+        "beforeInventoryEvent": "unknown-not-emitted",
+        "afterInventoryEvent": "unknown-not-emitted",
+        "atomicRejectingPredicate": "unknown",
+        "popupCausality": "unknown"
+      },
+      "verbatimClosedNativeRecordsFile": "p01-01.closed.jsonl"
+    },
+    {
+      "case": "P01-02",
+      "configuration": "passive-request-timing",
+      "exitCode": 1,
+      "wallSeconds": 3.636009179,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "tells where the page went, apart from its own navigations, the screen each action left, and the browser",
+          "status": "failed",
+          "durationMs": 2569.5179099999996,
+          "firstFailure": "AssertionError: expected [ { …(8) }, { …(8) } ] to have a length of 3 but got 2"
+        }
+      ],
+      "screenshotFirstFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12548,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ScreenshotFirstFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "screenshotStage": "frame-inventory-fence",
+          "capturePhase": "not-entered",
+          "inventoryAfterFailure": "changed",
+          "error": "stale-scope"
+        }
+      ],
+      "readonlyPrepareFailureRecords": [],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12548,
+          "record": 3,
+          "operationSeq": 16,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 3,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "observed",
+        "readonlyPrepareFailure": "unknown",
+        "requestTiming": "observed"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false,
+      "revisionEvidence": {
+        "observedRevision": "unknown-not-emitted",
+        "currentRevision": "unknown-not-emitted",
+        "beforeInventoryEvent": "unknown-not-emitted",
+        "afterInventoryEvent": "unknown-not-emitted",
+        "atomicRejectingPredicate": "unknown",
+        "popupCausality": "unknown"
+      },
+      "verbatimClosedNativeRecordsFile": "p01-02.closed.jsonl"
+    },
+    {
+      "case": "P27-01",
+      "configuration": "original",
+      "exitCode": 0,
+      "wallSeconds": 4.180872941,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "refuses to swipe a node with no box even when its child is under aim",
+          "status": "passed",
+          "durationMs": 2052.5592049999996,
+          "firstFailure": null
+        }
+      ],
+      "screenshotFirstFailureRecords": [],
+      "readonlyPrepareFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12230,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ReadonlyPrepareFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "entryUs": 985386,
+          "ackUs": 309418,
+          "ack": "current",
+          "wakeUs": 18100,
+          "failUs": 292085,
+          "window": "entered",
+          "deadline": false,
+          "zeroInput": true,
+          "cleanup": "not-observed",
+          "error": "not-actionable"
+        }
+      ],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12230,
+          "record": 3,
+          "operationSeq": 13,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 3,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12230,
+          "record": 5,
+          "operationSeq": 23,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 5,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 2,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "unknown",
+        "readonlyPrepareFailure": "observed",
+        "requestTiming": "unknown"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P27-02",
+      "configuration": "passive-request-timing",
+      "exitCode": 0,
+      "wallSeconds": 3.837794834,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "refuses to swipe a node with no box even when its child is under aim",
+          "status": "passed",
+          "durationMs": 1934.5799970000003,
+          "firstFailure": null
+        }
+      ],
+      "screenshotFirstFailureRecords": [],
+      "readonlyPrepareFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12867,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ReadonlyPrepareFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "entryUs": 985008,
+          "ackUs": 315191,
+          "ack": "current",
+          "wakeUs": 16861,
+          "failUs": 298970,
+          "window": "entered",
+          "deadline": false,
+          "zeroInput": true,
+          "cleanup": "not-observed",
+          "error": "not-actionable"
+        }
+      ],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12867,
+          "record": 3,
+          "operationSeq": 13,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 3,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 12867,
+          "record": 5,
+          "operationSeq": 23,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 5,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 2,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "unknown",
+        "readonlyPrepareFailure": "observed",
+        "requestTiming": "observed"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P27-03",
+      "configuration": "original",
+      "exitCode": 0,
+      "wallSeconds": 4.557790797,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "refuses to swipe a node with no box even when its child is under aim",
+          "status": "passed",
+          "durationMs": 2062.750277,
+          "firstFailure": null
+        }
+      ],
+      "screenshotFirstFailureRecords": [],
+      "readonlyPrepareFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13191,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ReadonlyPrepareFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "entryUs": 987828,
+          "ackUs": 303312,
+          "ack": "current",
+          "wakeUs": 17911,
+          "failUs": 286155,
+          "window": "entered",
+          "deadline": false,
+          "zeroInput": true,
+          "cleanup": "not-observed",
+          "error": "not-actionable"
+        }
+      ],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13191,
+          "record": 3,
+          "operationSeq": 13,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 3,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13191,
+          "record": 5,
+          "operationSeq": 23,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 5,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 2,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "unknown",
+        "readonlyPrepareFailure": "observed",
+        "requestTiming": "unknown"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P27-04",
+      "configuration": "original",
+      "exitCode": 0,
+      "wallSeconds": 4.044213002,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "refuses to swipe a node with no box even when its child is under aim",
+          "status": "passed",
+          "durationMs": 2031.97957,
+          "firstFailure": null
+        }
+      ],
+      "screenshotFirstFailureRecords": [],
+      "readonlyPrepareFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13488,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ReadonlyPrepareFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "entryUs": 984888,
+          "ackUs": 303369,
+          "ack": "current",
+          "wakeUs": 18095,
+          "failUs": 286253,
+          "window": "entered",
+          "deadline": false,
+          "zeroInput": true,
+          "cleanup": "not-observed",
+          "error": "not-actionable"
+        }
+      ],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13488,
+          "record": 3,
+          "operationSeq": 13,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 3,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13488,
+          "record": 5,
+          "operationSeq": 23,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 5,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 2,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "unknown",
+        "readonlyPrepareFailure": "observed",
+        "requestTiming": "unknown"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P27-05",
+      "configuration": "original",
+      "exitCode": 0,
+      "wallSeconds": 4.017220141,
+      "sourceAndBinaryUnchanged": true,
+      "adapterSourceRevision": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "functionalAssertion": [
+        {
+          "name": "refuses to swipe a node with no box even when its child is under aim",
+          "status": "passed",
+          "durationMs": 2053.939201,
+          "firstFailure": null
+        }
+      ],
+      "screenshotFirstFailureRecords": [],
+      "readonlyPrepareFailureRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13785,
+          "record": 1,
+          "operationSeq": 11,
+          "phase": "ReadonlyPrepareFailure",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "entryUs": 985148,
+          "ackUs": 303975,
+          "ack": "current",
+          "wakeUs": 18058,
+          "failUs": 286766,
+          "window": "entered",
+          "deadline": false,
+          "zeroInput": true,
+          "cleanup": "not-observed",
+          "error": "not-actionable"
+        }
+      ],
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13785,
+          "record": 3,
+          "operationSeq": 13,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 3,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 13785,
+          "record": 5,
+          "operationSeq": 23,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 5,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 2,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "missingRecordStatus": {
+        "screenshotFailure": "unknown",
+        "readonlyPrepareFailure": "observed",
+        "requestTiming": "unknown"
+      },
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P19-01",
+      "configuration": "original",
+      "adapterSourceRevision": "6cf930e2bbc2ac82cdc7f15b49fcee325551bb20",
+      "exitCode": 0,
+      "wallSeconds": 5.831363444,
+      "functionalAssertion": [
+        {
+          "name": "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+          "status": "passed",
+          "durationMs": 4378.923024
+        }
+      ],
+      "sourceAndBinaryUnchanged": true,
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 14709,
+          "record": 2,
+          "operationSeq": 14,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 2,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "requestTimingStatus": "unknown",
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P19-02",
+      "configuration": "passive-request-timing",
+      "adapterSourceRevision": "6cf930e2bbc2ac82cdc7f15b49fcee325551bb20",
+      "exitCode": 0,
+      "wallSeconds": 6.011736618,
+      "functionalAssertion": [
+        {
+          "name": "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+          "status": "passed",
+          "durationMs": 4574.82694
+        }
+      ],
+      "sourceAndBinaryUnchanged": true,
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 15332,
+          "record": 2,
+          "operationSeq": 14,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 2,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "requestTimingStatus": "observed",
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P21-01",
+      "configuration": "original",
+      "adapterSourceRevision": "6cf930e2bbc2ac82cdc7f15b49fcee325551bb20",
+      "exitCode": 0,
+      "wallSeconds": 5.879475427,
+      "functionalAssertion": [
+        {
+          "name": "times out a locate and a point tap on a page whose renderer is stuck in a script",
+          "status": "passed",
+          "durationMs": 4532.1779480000005
+        }
+      ],
+      "sourceAndBinaryUnchanged": true,
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 14992,
+          "record": 2,
+          "operationSeq": 14,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 2,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "requestTimingStatus": "unknown",
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    },
+    {
+      "case": "P21-02",
+      "configuration": "passive-request-timing",
+      "adapterSourceRevision": "6cf930e2bbc2ac82cdc7f15b49fcee325551bb20",
+      "exitCode": 0,
+      "wallSeconds": 6.0873416,
+      "functionalAssertion": [
+        {
+          "name": "times out a locate and a point tap on a page whose renderer is stuck in a script",
+          "status": "passed",
+          "durationMs": 4645.0518090000005
+        }
+      ],
+      "sourceAndBinaryUnchanged": true,
+      "cleanupTerminalRecords": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 15652,
+          "record": 2,
+          "operationSeq": 14,
+          "phase": "CleanupResult",
+          "droppedBefore": 0,
+          "emittedBefore": 2,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "cleanupOwner": 1,
+          "cleanupAttempt": 1,
+          "cleanupLifecycle": "scope-end",
+          "cleanupResult": "passed"
+        }
+      ],
+      "collectorSnapshotStatus": "complete-observed-snapshots",
+      "requestTimingStatus": "observed",
+      "observedRemainingProcessCount": 0,
+      "processSamplingIsCompleteProof": false
+    }
+  ],
+  "limits": {
+    "inventoryAfterFailureIsAtomicCausality": false,
+    "missingP01RevisionValuesAndInventoryEvents": "unknown-not-emitted",
+    "historicalP27FailureBudget": "unknown-not-reproduced; five current runs passed with positive failUs",
+    "collectorProcessCoverageAndCaseAssociation": "unproven",
+    "cleanupStartedIsLiveStartTimestamp": false,
+    "canonicalRunsRequestTiming": "unknown where not captured",
+    "C03RestartOrMetadataBrowserProbeRun": false,
+    "separateDeniedRestartActionExecuted": false,
+    "earlierBroadScreenshotFilter": "one old metadata pure WebSocket fixture was included; disclosed and excluded from P01/P27 causality; new five screenshot tests were subsequently run exactly"
+  }
+}

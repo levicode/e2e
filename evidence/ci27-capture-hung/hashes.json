@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "native": {
+      "commit": "bec755389f799ec3a9bb7448580a0b665c457544",
+      "parent": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "tree": "7b9e8e5e27321e558fae04287ae96216b268b584",
+      "files": {
+        "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1",
+        "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+        "cli/src/native/client_actions.rs": "c2a9b90b87a5fba5461623d1a50cc7d4dceb213829c06a5a296eafc5b7fd1e23",
+        "cli/src/native/client_observation_dispatch.rs": "0ecb50b1c0d33a3c508999a6278dfda171719c553a7eaaae7b4742e3ec96b634",
+        "cli/src/native/client_settlement_trace.rs": "7b455df24036b13684daafd68f9dda5c83a41cac164eb9378b4be2c19da884e6",
+        "cli/src/native/client_cleanup_diagnostic_tests.rs": "8fe9d2a073a7ea667ca52323ef795b3b9f274b20a00901b36cf0ea6d6120d854"
+      }
+    },
+    "captureAdapter": {
+      "commit": "9cfe7d62f4e6f1f947e595efd4ae0376f61d21cb",
+      "parent": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "tree": "fc8a8c828605cb9ae57dcef16dcb6e522979b321",
+      "files": {
+        "pnpm-lock.yaml": "3b2d5cbb25cb64a7d2ffc21ae9d6c135ebd7e0645452b871ab735da49d76d1df",
+        "scripts/acceptance/candidate-cleanup-diagnostics.ts": "c8a5f0abb3abe89ff7e6a38c5f2bd86ef246a4894113a15ea979cb153ed16a43",
+        "packages/web/tests/integration/app-log.test.ts": "4292bae8646a89d3fa1fc6bf1fa5c9172d29d99e9e4292247371c0434dd31bf3",
+        "packages/web/tests/integration/lifecycle.test.ts": "49bae068338db49b8835626dde58a34a6dbf86748c6e6844c88f4d66f97bca1b"
+      }
+    },
+    "hungAdapter": {
+      "commit": "6cf930e2bbc2ac82cdc7f15b49fcee325551bb20",
+      "parent": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "tree": "9f8c18912872d0963cce4d9ab47da66db5eb69e0",
+      "files": {
+        "pnpm-lock.yaml": "3b2d5cbb25cb64a7d2ffc21ae9d6c135ebd7e0645452b871ab735da49d76d1df",
+        "packages/web/src/native-surface.ts": "2fbd8eb18647b19adf8b7234b1e2a3b6ef4ea4f46adc70381ecada2679c9349b",
+        "packages/web/tests/unit/native-surface.test.ts": "6a24a95172b9d8c7dacb8999b84924b9edfe68c28c9ec39a7ef9ad062311f3fa",
+        "packages/web/tests/integration/hung-page.test.ts": "6201a9459828e01a0ea2776ac3747a7fdf8a5d798f60eb88235b265dece3a7fd",
+        "scripts/acceptance/candidate-cleanup-diagnostics.ts": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3",
+        "packages/web/dist/native-surface.js": "2b794ef06e9941e12a05a2e5bc672129d26662eec73d20a2824aa9b8c325d986",
+        "packages/e2e/dist/index.js": "dd85aae096cdba1b7b1274d8181284b5e894126d55f50f9fb6979f7c843edcc7"
+      }
+    }
+  },
+  "productionBinary": {
+    "sha256": "67f8626379049917b1df224151c9b0b087d6bae6fdcbb850be7b82f9942bd7ee",
+    "bytes": 30848656
+  },
+  "defaultTestHarness": {
+    "sha256": "14fd5e72f5a187f7b55f9395e6d3e20abedc4bf4325340f139ac96a404a9827d",
+    "features": [],
+    "profile": "ci"
+  },
+  "chromiumBinarySha256": "4dc9f9f9b20e9bd95bf201f43d2d643f48938f36a70ddcb6fce3dd611a178180",
+  "ef34SourceAndStrictTestCheck": {
+    "referenceCommit": "ef34a641050c5a0b1412857e711604906d65e916",
+    "referenceParent": "b530d60c9194ebdcb197da4df6063eecf4759230",
+    "validatedCommit": "bec755389f799ec3a9bb7448580a0b665c457544",
+    "sourcePath": "cli/src/native/client_actions.rs",
+    "referenceSourceSha256": "5a6315a4175a609801cbb537c3d5a644f1a0f3061f974b2b1a9b1a56686410cb",
+    "validatedSourceSha256": "c2a9b90b87a5fba5461623d1a50cc7d4dceb213829c06a5a296eafc5b7fd1e23",
+    "productionFunctions": {
+      "preparation_retry_estimate": {
+        "byteIdentical": true,
+        "sha256": "64008478e4a87f9d54e97bff744d0586ee3503898553ab80ff3568d52d02e346"
+      },
+      "preparation_has_classification_slack": {
+        "byteIdentical": true,
+        "sha256": "8e752ce7f012f20ad9ba3f89fffd28e3b9676307a00b5cfc880b6172e8eaa38d"
+      },
+      "preparation_classification_window": {
+        "byteIdentical": true,
+        "sha256": "6817b4efa40b76c9e855bf151147cff6c3de9957f44c055a99b527fb439d0fb9"
+      }
+    },
+    "strictTests": {
+      "readonly_preparation_accounts_for_actual_retry_wake_without_widening_tap": {
+        "byteIdentical": true,
+        "sha256": "b34651d58f7bdf7a6e8a7bd54de5c99e01c5f3a52a0ec426ab184a8bad9488c8",
+        "executedInPriorDefaultHarness": true,
+        "result": "passed"
+      },
+      "readonly_preparation_never_uses_missing_stale_mutated_or_below_floor_receipt": {
+        "byteIdentical": true,
+        "sha256": "965b7a8f798cac505d30ed8acec3c851719e95b0b420ba15677559400849a690",
+        "executedInPriorDefaultHarness": true,
+        "result": "passed"
+      },
+      "readonly_preparation_preserves_original_authority_errors": {
+        "byteIdentical": true,
+        "sha256": "e4683c146ab7c65c89a63e6493bb7f6a59f79b42e43f947c2d21c55eea920d4b",
+        "executedInPriorDefaultHarness": true,
+        "result": "passed"
+      },
+      "readonly_preparation_refusal_uses_current_ack_without_completed_mutation": {
+        "byteIdentical": true,
+        "sha256": "84982dae9f4dfbfa1b5cd56d75b7e2e355225fa3cb976ea61778e38343a9dc18",
+        "executedInPriorDefaultHarness": true,
+        "result": "passed"
+      }
+    },
+    "existingExecutionLogSha256": "b2f4750fdb554ac8de4573865fab910f2084911f56ad5200116e2e04799c75da",
+    "centerProductionLogic": {
+      "byteIdenticalAfterRemovingOnlyAddedDiagnosticObservations": true,
+      "normalizedSha256": "f3b987950de88386341dafc6eb1828406bbc56f1b879d3497d512d4a5f404ae3",
+      "removedObservations": [
+        "start_readonly_timing scalar initialization",
+        "wake_us scalar sample after original pause; same pause future and result match"
+      ]
+    },
+    "status": "identified-source-checked-and-previous-test-execution-confirmed",
+    "newCompilationOrExecutionForThisPublication": false
+  },
+  "localOriginalInputDigests": {
+    "p01p27Summary": "f5e55d9b4458c62ac646a91711551badf3bf27b7c807b04a20015d00945d955f",
+    "combinedPrivateSummary": "8caec0182df1f1397dc0c78977a8c5d57f078e5683c6547aa418625d906c1997",
+    "p01p27Manifest": "ce9fe805a6baa88d90137e356b9b84ce177136ec293961c6979123d297d443aa",
+    "readonlyPreparationExecutionLog": "b2f4750fdb554ac8de4573865fab910f2084911f56ad5200116e2e04799c75da"
+  }
+}

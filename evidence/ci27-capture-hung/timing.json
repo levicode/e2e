@@ -1,0 +1,432 @@
+{
+  "schemaVersion": 1,
+  "meaning": "closed request-result projections and monotonic relative offsets; not complete protocol envelopes or an atomic browser-causality proof",
+  "observer": "test-only memory observations of original Promises, no request I/O or added browser commands; canonical runs separate",
+  "runs": [
+    {
+      "case": "P01-02",
+      "configuration": "passive-request-timing",
+      "sourceLogSha256": "b5c7ebbe4957892598ebbb27faa303e98a0c724d2258d3d8789201e2dc69df41",
+      "terminalRequests": [
+        {
+          "command": "capture.screenshot",
+          "operationSeq": 6,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 114.844,
+          "timeoutMs": 999.849336
+        },
+        {
+          "command": "browser.perform",
+          "operationSeq": 10,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 64.006,
+          "timeoutMs": 29999.938138
+        },
+        {
+          "command": "capture.screenshot",
+          "operationSeq": 11,
+          "ok": false,
+          "code": "stale-scope",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "durationMs": 15.272,
+          "timeoutMs": 999.8810329999999
+        },
+        {
+          "command": "browser.perform",
+          "operationSeq": 12,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 1250.531,
+          "timeoutMs": 29999.964817
+        },
+        {
+          "command": "capture.screenshot",
+          "operationSeq": 13,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 64.882,
+          "timeoutMs": 999.8958460000003
+        },
+        {
+          "command": "scope.end",
+          "operationSeq": 16,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 32.893,
+          "timeoutMs": 14999.445106
+        }
+      ]
+    },
+    {
+      "case": "P27-02",
+      "configuration": "passive-request-timing",
+      "sourceLogSha256": "e01fc6304953d4ea6ec7b5424b43279f61f2231f86ff02210152efb6ed9ac144",
+      "terminalRequests": [
+        {
+          "command": "capture.screenshot",
+          "operationSeq": 6,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 93.584,
+          "timeoutMs": 999.8828759999997
+        },
+        {
+          "command": "browser.perform",
+          "operationSeq": 11,
+          "ok": false,
+          "code": "not-actionable",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "durationMs": 703.284,
+          "timeoutMs": 999.3479889999999
+        },
+        {
+          "command": "scope.end",
+          "operationSeq": 13,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 26.032,
+          "timeoutMs": 14999.592814000001
+        },
+        {
+          "command": "capture.screenshot",
+          "operationSeq": 19,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 60.263,
+          "timeoutMs": 999.9414930000003
+        },
+        {
+          "command": "scope.end",
+          "operationSeq": 23,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "durationMs": 24.635,
+          "timeoutMs": 14999.847052000001
+        }
+      ]
+    },
+    {
+      "case": "P19-02",
+      "configuration": "passive-request-timing",
+      "sourceLogSha256": "fcd46136bca980dc57e7db6a250273c52aaa1d4a4e0449b694808cb7ce1ee3be",
+      "events": [
+        {
+          "event": "request-start",
+          "id": 6,
+          "command": "capture.screenshot",
+          "timeoutMs": 999.9216439999998,
+          "signalInitiallyAborted": false,
+          "relativeUs": 1424990
+        },
+        {
+          "event": "request-result",
+          "id": 6,
+          "command": "capture.screenshot",
+          "operationSeq": 6,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "relativeUs": 1551104
+        },
+        {
+          "event": "request-start",
+          "id": 10,
+          "command": "browser.query",
+          "timeoutMs": 999.5920940000001,
+          "signalInitiallyAborted": false,
+          "relativeUs": 1583583
+        },
+        {
+          "event": "request-result",
+          "id": 10,
+          "command": "browser.query",
+          "operationSeq": 10,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "relativeUs": 1604146
+        },
+        {
+          "event": "request-start",
+          "id": 11,
+          "command": "browser.perform",
+          "timeoutMs": 999.84519,
+          "signalInitiallyAborted": false,
+          "relativeUs": 1604856
+        },
+        {
+          "event": "request-result",
+          "id": 11,
+          "command": "browser.perform",
+          "operationSeq": 11,
+          "ok": false,
+          "code": "deadline-exceeded",
+          "effects": "unknown",
+          "scopeState": "usable",
+          "relativeUs": 2858648
+        },
+        {
+          "event": "request-start",
+          "id": 12,
+          "command": "page.title",
+          "timeoutMs": 999.869756,
+          "signalInitiallyAborted": false,
+          "relativeUs": 2863432
+        },
+        {
+          "event": "request-result",
+          "id": 12,
+          "command": "page.title",
+          "operationSeq": 12,
+          "ok": false,
+          "code": "deadline-exceeded",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "relativeUs": 3865015
+        },
+        {
+          "event": "request-start",
+          "id": 13,
+          "command": "browser.query",
+          "timeoutMs": 29999.822235000003,
+          "signalInitiallyAborted": false,
+          "relativeUs": 3866293
+        },
+        {
+          "event": "end-attempt-start",
+          "id": 14,
+          "callerTimeoutMs": 10000,
+          "callerAborted": false,
+          "relativeUs": 4869215
+        },
+        {
+          "event": "request-abort",
+          "id": 13,
+          "command": "browser.query",
+          "relativeUs": 4869854
+        },
+        {
+          "event": "request-result",
+          "id": 13,
+          "command": "browser.query",
+          "operationSeq": 13,
+          "ok": false,
+          "code": "cancelled",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "relativeUs": 4870806
+        },
+        {
+          "event": "request-start",
+          "id": 15,
+          "command": "scope.end",
+          "timeoutMs": 14998.418249000002,
+          "signalInitiallyAborted": false,
+          "relativeUs": 4870988
+        },
+        {
+          "event": "request-result",
+          "id": 15,
+          "command": "scope.end",
+          "operationSeq": 14,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "relativeUs": 4914689
+        },
+        {
+          "event": "end-attempt-result",
+          "id": 14,
+          "ok": true,
+          "relativeUs": 4915196
+        }
+      ],
+      "ordering": {
+        "scopeEndSignalInitiallyAborted": false,
+        "scopeEndRemainingTimeoutMs": 14998.418249000002,
+        "scopeEndStartsAfterEndAttemptCallMs": 1.773,
+        "scopeEndDurationMs": 43.701,
+        "endAttemptDurationMs": 45.981,
+        "withinOriginal15sRetirement": true,
+        "queryWireTimeoutMs": 29999.822235000003,
+        "queryTerminal": {
+          "operationSeq": 13,
+          "ok": false,
+          "code": "cancelled",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "durationMs": 1004.513
+        },
+        "queryTerminalAfterEndCallMs": 1.591,
+        "scopeEndStartsAfterQueryTerminalUs": 182
+      }
+    },
+    {
+      "case": "P21-02",
+      "configuration": "passive-request-timing",
+      "sourceLogSha256": "36ac86e3c293569b5e8f037febfb6cdd8a5e7a86e3e8b912b5bd68bac322e6c8",
+      "events": [
+        {
+          "event": "request-start",
+          "id": 6,
+          "command": "capture.screenshot",
+          "timeoutMs": 999.8688750000001,
+          "signalInitiallyAborted": false,
+          "relativeUs": 1530792
+        },
+        {
+          "event": "request-result",
+          "id": 6,
+          "command": "capture.screenshot",
+          "operationSeq": 6,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "relativeUs": 1632492
+        },
+        {
+          "event": "request-start",
+          "id": 10,
+          "command": "browser.query",
+          "timeoutMs": 999.5659730000002,
+          "signalInitiallyAborted": false,
+          "relativeUs": 1676531
+        },
+        {
+          "event": "request-result",
+          "id": 10,
+          "command": "browser.query",
+          "operationSeq": 10,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "relativeUs": 1702580
+        },
+        {
+          "event": "request-start",
+          "id": 11,
+          "command": "browser.perform",
+          "timeoutMs": 999.907162,
+          "signalInitiallyAborted": false,
+          "relativeUs": 1703181
+        },
+        {
+          "event": "request-result",
+          "id": 11,
+          "command": "browser.perform",
+          "operationSeq": 11,
+          "ok": false,
+          "code": "deadline-exceeded",
+          "effects": "unknown",
+          "scopeState": "usable",
+          "relativeUs": 2956167
+        },
+        {
+          "event": "request-start",
+          "id": 12,
+          "command": "browser.query",
+          "timeoutMs": 999.8746339999993,
+          "signalInitiallyAborted": false,
+          "relativeUs": 2958010
+        },
+        {
+          "event": "request-result",
+          "id": 12,
+          "command": "browser.query",
+          "operationSeq": 12,
+          "ok": false,
+          "code": "deadline-exceeded",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "relativeUs": 3961907
+        },
+        {
+          "event": "request-start",
+          "id": 13,
+          "command": "browser.pointer",
+          "timeoutMs": 999.8588100000006,
+          "signalInitiallyAborted": false,
+          "relativeUs": 3964163
+        },
+        {
+          "event": "request-result",
+          "id": 13,
+          "command": "browser.pointer",
+          "operationSeq": 13,
+          "ok": false,
+          "code": "deadline-exceeded",
+          "effects": "not-dispatched",
+          "scopeState": "usable",
+          "relativeUs": 4965683
+        },
+        {
+          "event": "end-attempt-start",
+          "id": 14,
+          "callerTimeoutMs": 10000,
+          "callerAborted": false,
+          "relativeUs": 4967490
+        },
+        {
+          "event": "request-start",
+          "id": 15,
+          "command": "scope.end",
+          "timeoutMs": 14999.452567,
+          "signalInitiallyAborted": false,
+          "relativeUs": 4968266
+        },
+        {
+          "event": "request-result",
+          "id": 15,
+          "command": "scope.end",
+          "operationSeq": 14,
+          "ok": true,
+          "code": null,
+          "effects": "completed",
+          "scopeState": "usable",
+          "relativeUs": 5010348
+        },
+        {
+          "event": "end-attempt-result",
+          "id": 14,
+          "ok": true,
+          "relativeUs": 5010813
+        }
+      ],
+      "ordering": {
+        "scopeEndSignalInitiallyAborted": false,
+        "scopeEndRemainingTimeoutMs": 14999.452567,
+        "scopeEndStartsAfterEndAttemptCallMs": 0.776,
+        "scopeEndDurationMs": 42.082,
+        "endAttemptDurationMs": 43.323,
+        "withinOriginal15sRetirement": true
+      }
+    }
+  ]
+}
