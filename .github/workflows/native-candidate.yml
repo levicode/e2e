@@ -101,18 +101,41 @@ jobs:
         id: toolchain
         if: ${{ !cancelled() && steps.native-checkout.outcome == 'success' }}
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-      - name: Check native format and Clippy without feature instrumentation
+      - name: Check all native compilation boundaries before browser execution
         id: native-lint
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
         working-directory: .artifacts/native-source/cli
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set -euo pipefail
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
-          cargo fmt -- --check
-          cargo clippy --locked --profile ci --no-default-features --tests -- -D warnings
+          test "$(git rev-parse HEAD)" = "$EXPECTED_NATIVE_SHA"
+          test -z "$(git status --porcelain)"
+          out="$GITHUB_WORKSPACE/.artifacts/native-candidate"
+          mkdir -p "$out"
+          printf '%s\n' "$EXPECTED_NATIVE_SHA" > "$out/native-compile-source.txt"
+          failed=0
+          check_boundary() {
+            local name="$1" status=0
+            shift
+            if "$@" > "$out/$name.log" 2>&1; then
+              status=0
+            else
+              status=$?
+              failed=1
+            fi
+            printf '%s\n' "$status" > "$out/$name.exit"
+            cat "$out/$name.log"
+          }
+          check_boundary native-format-check cargo fmt -- --check
+          check_boundary native-default-clippy cargo clippy --locked --profile ci --no-default-features --all-targets -- -D warnings
+          check_boundary native-feature-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --tests
+          check_boundary native-proxy-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --test client-proxy-fixture
+          test "$failed" -eq 0
       - name: Compile production runtime and source-matched default harnesses once
         id: native-build
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native-lint.outcome == 'success' }}
         working-directory: .artifacts/native-source/cli
         env:
           EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
