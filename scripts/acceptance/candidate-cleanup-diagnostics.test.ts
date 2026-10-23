@@ -6,6 +6,7 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLEANUP_ENV, CLEANUP_BYTES, cleanCleanupEnvironment, collectCleanupCapture, inspectCleanupBytes, prepareCleanupCapture, validCleanupRecord } from './candidate-cleanup-diagnostics.ts';
+import { SYNTHETIC_CODES } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 const binding = { sourceRevision: 'a'.repeat(40), nativeSourceRevision: 'b'.repeat(40), testSourceDigest: 'c'.repeat(64), binarySha256: 'd'.repeat(64), collectorSha256: 'e'.repeat(64) };
 function record(phase: string, ordinal: number, facts = {}) { return { schemaVersion: 2, source: 'native', pid: 42, record: ordinal, operationSeq: phase.startsWith('Capture') ? 0 : 7, phase, droppedBefore: 0, emittedBefore: ordinal, suppressedBefore: 0, overflow: false, ...(phase.startsWith('Cleanup') ? { generation: 1, cleanupOwner: 1, cleanupAttempt: 1, cleanupLifecycle: 'scope-end' } : {}), ...facts }; }
 const lines = (...records: unknown[]) => Buffer.from(records.map(value => JSON.stringify(value) + '\n').join(''));
@@ -397,4 +398,237 @@ test('missing, mixed or over-budget worker observations remain unknown', () => {
     [workerAdmission(4, 'owned-attachment', 'done'), workerAdmission(5, 'configuration-committed', 'enter'), workerAdmission(6, 'configuration-committed', 'done', { droppedBefore: 1 })],
   ];
   for (const extra of cases) assert.equal(inspectCleanupBytes(lines(...completed(), ...extra)).status, 'unknown');
+});
+
+/** Build a complete diagnostic bundle without adding terminal-only fields to enter. */
+function workerRpc(ordinal: number, state = 'failed', facts: Record<string, unknown> = {}) {
+  return workerAdmission(ordinal, 'network-enable', state, { rpcStartMs: 10, rpcMsCapped: false, ...(state === 'enter' ? {} : { rpcEndMs: 15 }), ...(state === 'failed' ? { rpcFailure: 'response-error', cdpCode: -32601 } : {}), ...facts });
+}
+
+test('network-enable RPC bundles require exact keys while every legacy state stays valid', () => {
+  const fields = { rpcStartMs: 10, rpcEndMs: 15, rpcMsCapped: false, rpcFailure: 'response-error', error: 'browser-failure', cdpCode: -32601 };
+  for (const state of ['enter', 'done', 'failed']) {
+    for (let mask = 0; mask < 64; mask++) {
+      const facts = Object.fromEntries(Object.entries(fields).filter((_, index) => mask & (1 << index)));
+      const expected = mask === 0 || mask === (state === 'enter' ? 5 : state === 'done' ? 7 : 47);
+      assert.equal(validCleanupRecord(workerAdmission(1, 'network-enable', state, facts)), expected, `${state}:${mask}`);
+    }
+    assert.equal(validCleanupRecord(workerRpc(1, state)), true);
+    for (const key of ['url', 'sessionId', 'targetId', 'message', 'rpcError', 'rpcDurationMs', 'wireSubmitted', 'rejectionValid']) {
+      const value = workerRpc(4, state, { [key]: 'private-marker' });
+      assert.equal(validCleanupRecord(value), false, `${state}:${key}`);
+      const result = inspectCleanupBytes(lines(...completed(), value));
+      assert.equal(result.status, 'unknown');
+      assert.ok(result.reasons.includes('invalid-record'));
+      assert.ok(!JSON.stringify(result).includes('private-marker'));
+    }
+  }
+});
+
+test('only the closed protocol origins require the original whitelisted error', () => {
+  const protocolOrigins = ['owner-check', 'reserve', 'submit'];
+  for (const rpcFailure of protocolOrigins) {
+    for (const error of [...SYNTHETIC_CODES, 'frame-not-found', 'frame-ambiguous']) {
+      assert.equal(validCleanupRecord(workerRpc(1, 'failed', { rpcFailure, error, cdpCode: undefined })), false, 'an undefined but present CDP code is not absent');
+      const value: Record<string, unknown> = workerRpc(1, 'failed', { rpcFailure, error });
+      delete value.cdpCode;
+      assert.equal(validCleanupRecord(value), true, `${rpcFailure}:${error}`);
+      delete value.error;
+      assert.equal(validCleanupRecord(value), false, `${rpcFailure} must preserve its protocol error`);
+    }
+  }
+  for (const rpcFailure of ['owner-view', 'identifier', 'submit-owner', 'correlation', 'cleanup-envelope', 'envelope', 'init-cancelled', 'init-deadline', 'serialize', 'closed', 'send', 'response-channel', 'response-timeout', 'response-error', 'unknown']) {
+    const value: Record<string, unknown> = workerRpc(1, 'failed', { rpcFailure });
+    if (rpcFailure !== 'response-error') delete value.cdpCode;
+    assert.equal(validCleanupRecord(value), true, rpcFailure);
+    assert.equal(validCleanupRecord({ ...value, error: 'browser-failure' }), false, `${rpcFailure} must not invent a ProtocolError`);
+    if (rpcFailure !== 'response-error') assert.equal(validCleanupRecord({ ...value, cdpCode: -32601 }), false, rpcFailure);
+  }
+  for (const rpcFailure of ['response', 'owner', 'ResponseError', 'private-marker', '', 0, null, true, ['response-error'], { toString: 'response-error' }]) {
+    assert.equal(validCleanupRecord(workerRpc(1, 'failed', { rpcFailure })), false, JSON.stringify(rpcFailure));
+  }
+  for (const error of ['private-marker', 'ENGINE_FAILURE', '', 0, null, true, ['browser-failure'], { toString: 'browser-failure' }]) {
+    const value: Record<string, unknown> = workerRpc(1, 'failed', { rpcFailure: 'owner-check', error });
+    delete value.cdpCode;
+    assert.equal(validCleanupRecord(value), false, JSON.stringify(error));
+  }
+});
+
+test('response errors preserve signed safe CDP codes and distinguish absent from out-of-range', () => {
+  for (const cdpCode of [Number.MIN_SAFE_INTEGER, -32601, -32000, -1, 0, 1, Number.MAX_SAFE_INTEGER, 'absent', 'out-of-range']) {
+    const value = workerRpc(6, 'failed', { cdpCode });
+    assert.equal(validCleanupRecord(value), true);
+    const result = inspectCleanupBytes(lines(...completed(), workerAdmission(4, 'owned-attachment', 'done'), workerRpc(5, 'enter'), value));
+    assert.equal(result.status, 'complete-observed-snapshots');
+    assert.equal(result.records.at(-1)!.cdpCode, cdpCode);
+  }
+  for (const cdpCode of [Number.MIN_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER + 1, 0.5, -0.5, NaN, Infinity, -Infinity, '-32601', '0', 'Absent', 'out_of_range', '', null, undefined, true, ['absent'], { toString: 'absent' }]) {
+    assert.equal(validCleanupRecord(workerRpc(1, 'failed', { cdpCode })), false, JSON.stringify(cdpCode));
+  }
+});
+
+test('RPC endpoints are ordered bounded integer attachment times with explicit clamp uncertainty', () => {
+  for (const facts of [
+    { rpcStartMs: 0, rpcEndMs: 0, rpcMsCapped: false },
+    { rpcStartMs: 0, rpcEndMs: 60_000, rpcMsCapped: false },
+    { rpcStartMs: 60_000, rpcEndMs: 60_000, rpcMsCapped: false },
+    { rpcStartMs: 0, rpcEndMs: 60_000, rpcMsCapped: true },
+    { rpcStartMs: 60_000, rpcEndMs: 60_000, rpcMsCapped: true },
+  ]) {
+    for (const state of ['done', 'failed']) assert.equal(validCleanupRecord(workerRpc(1, state, facts)), true);
+    const enter = workerRpc(1, 'enter', { rpcStartMs: facts.rpcStartMs });
+    assert.equal(validCleanupRecord(enter), true);
+    assert.equal(Object.hasOwn(enter, 'rpcEndMs'), false, 'enter cannot claim an end time');
+  }
+  for (const key of ['rpcStartMs', 'rpcEndMs']) {
+    for (const value of [-1, 60_001, 0.5, NaN, Infinity, -Infinity, '10', null, undefined, true, [10], {}]) {
+      assert.equal(validCleanupRecord(workerRpc(1, 'failed', { [key]: value })), false, `${key}:${String(value)}`);
+      if (key === 'rpcStartMs') assert.equal(validCleanupRecord(workerRpc(1, 'enter', { [key]: value })), false);
+    }
+  }
+  for (const facts of [{ rpcEndMs: 9 }, { rpcStartMs: 16 }, { rpcMsCapped: true }, { rpcStartMs: 59_999, rpcEndMs: 59_999, rpcMsCapped: true }]) {
+    for (const state of ['done', 'failed']) assert.equal(validCleanupRecord(workerRpc(1, state, facts)), false);
+  }
+  for (const rpcMsCapped of [0, 1, 'false', null, undefined, [], {}]) {
+    for (const state of ['enter', 'done', 'failed']) assert.equal(validCleanupRecord(workerRpc(1, state, { rpcMsCapped })), false);
+  }
+  for (const rpcStartMs of [0, 10, 59_999]) assert.equal(validCleanupRecord(workerRpc(1, 'enter', { rpcStartMs, rpcMsCapped: true })), false);
+});
+
+test('RPC fields cannot leak to other worker steps or other diagnostic phases', () => {
+  const fields = { rpcStartMs: 0, rpcEndMs: 1, rpcMsCapped: false, rpcFailure: 'unknown', cdpCode: 'absent' };
+  for (const step of ['owned-attachment', 'auxiliary-classification', 'register', 'purpose', 'config-gate', 'network-bypass', 'fetch-enable', 'runtime-enable', 'recursive-autoattach', 'configured', 'resume-permit', 'resume-debugger', 'configuration-committed']) {
+    for (const [key, value] of Object.entries({ ...fields, error: 'browser-failure' })) {
+      for (const state of ['enter', 'done', 'failed']) assert.equal(validCleanupRecord(workerAdmission(1, step, state, { [key]: value })), false, `${step}:${state}:${key}`);
+    }
+  }
+  const phases = [...completed(), record('CaptureLimitReached', 4), inventory(4), screenshot(4), readonlyPreparation(4), ...atomicPair(), targetAttribution(4), targetLifecycle(4, { error: 'browser-failure' }), targetInventory(4), targetSummary(4), record('TargetObservationLost', 4, { generation: 1, operationSeq: 0 })];
+  for (const original of phases) {
+    assert.equal(validCleanupRecord(original), true);
+    for (const [key, value] of Object.entries(fields)) assert.equal(validCleanupRecord({ ...original, [key]: value }), false, `${original.phase}:${key}`);
+  }
+});
+
+test('RPC enter and terminal agree per worker without mixing new and legacy bundles', () => {
+  for (const state of ['done', 'failed']) {
+    for (const [enter, terminal] of [
+      [workerRpc(5, 'enter'), workerRpc(6, state, { rpcStartMs: 11 })],
+      [workerRpc(5, 'enter'), workerAdmission(6, 'network-enable', state)],
+      [workerAdmission(5, 'network-enable', 'enter'), workerRpc(6, state)],
+      [workerRpc(5, 'enter', { rpcStartMs: 60_000, rpcMsCapped: true }), workerRpc(6, state, { rpcStartMs: 60_000, rpcEndMs: 60_000, rpcMsCapped: false })],
+    ]) {
+      const finish = state === 'done' ? [workerAdmission(7, 'configuration-committed', 'enter'), workerAdmission(8, 'configuration-committed', 'done')] : [];
+      const result = inspectCleanupBytes(lines(...completed(), workerAdmission(4, 'owned-attachment', 'done'), enter, terminal, ...finish));
+      assert.equal(result.status, 'unknown');
+      assert.ok(result.reasons.includes('invalid-worker-admission'));
+    }
+    for (const rpcStartMs of [0, 10, 60_000]) {
+      for (const rpcMsCapped of rpcStartMs === 60_000 ? [false, true] : [false]) {
+        const finish = state === 'done' ? [workerAdmission(7, 'configuration-committed', 'enter'), workerAdmission(8, 'configuration-committed', 'done')] : [];
+        const result = inspectCleanupBytes(lines(...completed(), workerAdmission(4, 'owned-attachment', 'done'), workerRpc(5, 'enter', { rpcStartMs }), workerRpc(6, state, { rpcStartMs, rpcEndMs: rpcStartMs, rpcMsCapped }), ...finish));
+        assert.equal(result.status, 'complete-observed-snapshots');
+        assert.deepEqual(result.reasons, []);
+      }
+    }
+  }
+});
+
+test('enter retains exact or clamped start at 60000 even when the terminal is absent or dropped', () => {
+  for (const rpcMsCapped of [false, true]) {
+    const enter = workerRpc(5, 'enter', { rpcStartMs: 60_000, rpcMsCapped });
+    assert.equal(validCleanupRecord(enter), true);
+    const prefix = [...completed(), workerAdmission(4, 'owned-attachment', 'done'), enter];
+    const incomplete = inspectCleanupBytes(lines(...prefix));
+    assert.equal(incomplete.status, 'unknown');
+    assert.ok(incomplete.reasons.includes('worker-admission-incomplete'));
+    assert.deepEqual(incomplete.records.at(-1), enter);
+    for (const terminalCap of rpcMsCapped ? [true] : [false, true]) {
+      const terminal = workerRpc(6, 'failed', { rpcStartMs: 60_000, rpcEndMs: 60_000, rpcMsCapped: terminalCap });
+      assert.equal(inspectCleanupBytes(lines(...prefix, terminal)).status, 'complete-observed-snapshots');
+      const dropped = inspectCleanupBytes(lines(...prefix, { ...terminal, droppedBefore: 1 }));
+      assert.equal(dropped.status, 'unknown');
+      assert.ok(dropped.reasons.includes('dropped-or-overflow'));
+      assert.deepEqual(dropped.records.at(-2), enter);
+    }
+  }
+});
+
+test('interleaved workers keep independent legacy and timed RPC pairing through eight ordinals', () => {
+  const workers = Array.from({ length: 8 }, (_, index) => index + 1);
+  const attachment = workers.map(workerOrdinal => workerAdmission(0, 'owned-attachment', 'done', { workerOrdinal }));
+  const enter = workers.map(workerOrdinal => workerOrdinal % 2 ? workerRpc(0, 'enter', { workerOrdinal, rpcStartMs: workerOrdinal }) : workerAdmission(0, 'network-enable', 'enter', { workerOrdinal }));
+  const terminal = workers.toReversed().map(workerOrdinal => workerOrdinal % 2 ? workerRpc(0, 'failed', { workerOrdinal, rpcStartMs: workerOrdinal }) : workerAdmission(0, 'network-enable', 'failed', { workerOrdinal }));
+  const result = inspectCleanupBytes(lines(...reindex([...completed(), ...attachment, ...enter, ...terminal])));
+  assert.equal(result.status, 'complete-observed-snapshots');
+  assert.equal(result.records.length, 28);
+  const changed = terminal.map(item => ({ ...item, rpcStartMs: 1, rpcEndMs: 15, rpcMsCapped: false, rpcFailure: 'response-error', cdpCode: -32601 }));
+  assert.equal(inspectCleanupBytes(lines(...reindex([...completed(), ...attachment, ...enter, ...changed]))).status, 'unknown');
+});
+
+test('RPC missing or dropped observations cannot be repaired by completed cleanup', () => {
+  const attach = workerAdmission(4, 'owned-attachment', 'done');
+  for (const extra of [
+    [attach, workerRpc(5, 'enter')],
+    [attach, workerRpc(5, 'failed')],
+    [workerRpc(4, 'enter'), workerRpc(5, 'failed')],
+    [attach, workerRpc(5, 'enter'), workerRpc(6, 'done')],
+    [attach, workerRpc(5, 'enter'), workerRpc(7, 'failed')],
+    ...[{ droppedBefore: 1 }, { suppressedBefore: 1 }, { overflow: true }, { emittedBefore: 5 }, { generation: 2 }, { waitingForDebugger: false }, { workerOrdinal: 9 }, { operationSeq: 1 }].map(facts => [attach, workerRpc(5, 'enter'), workerRpc(6, 'failed', facts)]),
+  ]) {
+    const result = inspectCleanupBytes(lines(...completed(), ...extra));
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.records[3]!.cleanupResult, 'failed');
+  }
+  const full = lines(...completed(), attach, workerRpc(5, 'enter'), workerRpc(6, 'failed'));
+  assert.equal(inspectCleanupBytes(full.subarray(0, -1)).status, 'unknown');
+  const alone = inspectCleanupBytes(lines(record('CaptureStarted', 0), workerAdmission(1, 'owned-attachment', 'done'), workerRpc(2, 'enter'), workerRpc(3, 'failed')));
+  assert.deepEqual(alone.reasons, ['no-cleanup-attempt']);
+});
+
+test('timed RPC rows preserve the 32-row per-worker bound including the terminal', () => {
+  const pairs = Array.from({ length: 14 }, () => [workerRpc(0, 'enter'), workerRpc(0, 'done')]).flat();
+  const bounded = [workerAdmission(0, 'owned-attachment', 'done'), ...pairs, workerAdmission(0, 'configured', 'enter'), workerAdmission(0, 'configured', 'done'), workerAdmission(0, 'configuration-committed', 'enter'), workerAdmission(0, 'configuration-committed', 'done')];
+  assert.equal(bounded.length, 33);
+  const result = inspectCleanupBytes(lines(...reindex([...completed(), ...bounded])));
+  assert.equal(result.status, 'unknown');
+  assert.ok(result.reasons.includes('invalid-worker-admission'));
+  const within = [workerAdmission(0, 'owned-attachment', 'done'), ...pairs, ...bounded.slice(-2)];
+  assert.equal(within.length, 31);
+  assert.equal(inspectCleanupBytes(lines(...reindex([...completed(), ...within]))).status, 'complete-observed-snapshots');
+});
+
+test('RPC failure evidence survives the original assertion without wire or rejection inference', t => {
+  const out = directory(t); const capture = prepareCleanupCapture(binding, {});
+  const failure = new Error('original P41 assertion'); let observed: unknown;
+  const values = [...completed(), workerAdmission(4, 'owned-attachment', 'done'), workerRpc(5, 'enter'), workerRpc(6, 'failed')];
+  try { appendFileSync(capture.file, lines(...values)); throw failure; } catch (error) { observed = error; }
+  const result = collectCleanupCapture(out, 'web-browser', capture, true);
+  assert.equal(observed, failure);
+  assert.equal(result.status, 'complete-observed-snapshots');
+  const saved = JSON.parse(readFileSync(join(out, 'web-browser.cleanup-diagnostics.json'), 'utf8'));
+  assert.deepEqual(saved.records, values);
+  assert.equal(saved.releaseEligible, false);
+  assert.equal(saved.diagnosticOnly, true);
+  assert.equal(saved.caseAssociation, 'unproven');
+  assert.equal(saved.processCoverage, 'unproven');
+  assert.deepEqual(saved.binding, binding);
+});
+
+test('maximal RPC lines fit the unchanged 512-byte cap and larger lines are refused', () => {
+  const maximum = { pid: 4294967295, generation: Number.MAX_SAFE_INTEGER, emittedBefore: Number.MAX_SAFE_INTEGER, droppedBefore: Number.MAX_SAFE_INTEGER, suppressedBefore: Number.MAX_SAFE_INTEGER, workerOrdinal: 8, waitingForDebugger: 'unknown', rpcStartMs: 60_000, rpcEndMs: 60_000, rpcMsCapped: false };
+  const protocol: Record<string, unknown> = workerRpc(Number.MAX_SAFE_INTEGER, 'failed', { ...maximum, rpcFailure: 'owner-check', error: 'redirect-body-unavailable' });
+  delete protocol.cdpCode;
+  const response = workerRpc(Number.MAX_SAFE_INTEGER, 'failed', { ...maximum, cdpCode: Number.MIN_SAFE_INTEGER });
+  for (const [value, length] of [[protocol, 507], [response, 502]] as const) {
+    assert.equal(validCleanupRecord(value), true);
+    assert.equal(lines(value).length, length);
+    const boundary = Buffer.from(JSON.stringify(value) + ' '.repeat(511 - JSON.stringify(value).length) + '\n');
+    assert.equal(boundary.length, 512);
+    assert.deepEqual(inspectCleanupBytes(boundary).records, [value]);
+    const oversized = Buffer.concat([Buffer.from(' '), boundary]);
+    const result = inspectCleanupBytes(oversized);
+    assert.equal(result.status, 'unknown');
+    assert.ok(result.reasons.includes('invalid-record'));
+    assert.deepEqual(result.records, []);
+  }
 });

@@ -15,6 +15,9 @@ const frameFields = ['generation', 'pass', 'sealed', 'revisionMismatch', 'reserv
 const revisionEvents = ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'];
 const workerFields = ['generation', 'workerOrdinal', 'admissionStep', 'admissionState', 'waitingForDebugger'];
 const workerSteps = new Set(['owned-attachment', 'auxiliary-classification', 'register', 'purpose', 'config-gate', 'network-enable', 'network-bypass', 'fetch-enable', 'runtime-enable', 'recursive-autoattach', 'configured', 'resume-permit', 'resume-debugger', 'configuration-committed']);
+const workerRpcFields = ['rpcStartMs', 'rpcEndMs', 'rpcMsCapped', 'rpcFailure', 'error', 'cdpCode'];
+const workerRpcFailures = new Set(['owner-check', 'owner-view', 'reserve', 'identifier', 'submit-owner', 'submit', 'correlation', 'cleanup-envelope', 'envelope', 'init-cancelled', 'init-deadline', 'serialize', 'closed', 'send', 'response-channel', 'response-timeout', 'response-error', 'unknown']);
+const workerProtocolFailures = new Set(['owner-check', 'reserve', 'submit']);
 const readonlyFields = ['generation', 'entryUs', 'ack', 'window', 'deadline', 'zeroInput', 'cleanup', 'error'];
 // Native restart diagnostics use process-local bounded ordinals, never native IDs.
 const targetFields: Record<string, readonly string[]> = {
@@ -39,6 +42,25 @@ const errors = new Set<string>([...SYNTHETIC_CODES, 'frame-not-found', 'frame-am
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const natural = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 type RecordValue = Record<string, unknown>;
+/** Accept either a legacy observation or one complete, closed network-enable RPC bundle. */
+function validWorkerRpcDiagnostic(item: RecordValue): boolean {
+  const present = workerRpcFields.filter(key => Object.hasOwn(item, key));
+  if (!present.length) return true;
+  if (!Object.hasOwn(item, 'rpcStartMs') || !natural(item.rpcStartMs) || item.rpcStartMs > 60_000 || !Object.hasOwn(item, 'rpcMsCapped') || typeof item.rpcMsCapped !== 'boolean') return false;
+  if (item.admissionState === 'enter') return present.length === 2 && (!item.rpcMsCapped || item.rpcStartMs === 60_000);
+  if (!Object.hasOwn(item, 'rpcEndMs') || !natural(item.rpcEndMs) || item.rpcEndMs > 60_000 || item.rpcEndMs < item.rpcStartMs) return false;
+  // A boundary value alone is not proof of clamping; false also permits an exact 60000 ms sample.
+  if (item.rpcMsCapped && item.rpcStartMs !== 60_000 && item.rpcEndMs !== 60_000) return false;
+  if (item.admissionState === 'done') return present.length === 3;
+  if (!Object.hasOwn(item, 'rpcFailure') || typeof item.rpcFailure !== 'string' || !workerRpcFailures.has(item.rpcFailure)) return false;
+  if (workerProtocolFailures.has(item.rpcFailure)) {
+    if (!Object.hasOwn(item, 'error') || typeof item.error !== 'string' || !errors.has(item.error)) return false;
+  } else if (Object.hasOwn(item, 'error')) return false;
+  if (item.rpcFailure === 'response-error') {
+    if (!Object.hasOwn(item, 'cdpCode') || (item.cdpCode !== 'absent' && item.cdpCode !== 'out-of-range' && !(typeof item.cdpCode === 'number' && Number.isSafeInteger(item.cdpCode)))) return false;
+  } else if (Object.hasOwn(item, 'cdpCode')) return false;
+  return true;
+}
 export function validCleanupRecord(value: unknown): value is RecordValue {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as RecordValue;
@@ -54,7 +76,7 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const worker = phase === 'ServiceWorkerAdmission';
   if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
   const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
-  const allowed = new Set([...required, ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : [])]);
+  const allowed = new Set([...required, ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(worker && item.admissionStep === 'network-enable' ? workerRpcFields : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
@@ -65,6 +87,7 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
     if (typeof item.admissionState !== 'string' || !['enter', 'done', 'failed'].includes(item.admissionState)) return false;
     if (item.waitingForDebugger !== true && item.waitingForDebugger !== false && item.waitingForDebugger !== 'unknown') return false;
     if (item.admissionStep === 'owned-attachment' && item.admissionState !== 'done') return false;
+    if (item.admissionStep === 'network-enable' && !validWorkerRpcDiagnostic(item)) return false;
   }
   if (inventory || target) {
     for (const key of ['inventoryOrdinal', 'attachmentOrdinal', 'targetOrdinal', 'parentAttachmentOrdinal', 'rootAttachmentOrdinal']) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] > 65535)) return false;
@@ -146,7 +169,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
   const lines = bytes.toString('utf8').split('\n'); if (lines.at(-1) === '') lines.pop();
   if (lines.length > CLEANUP_RECORDS) return { status: 'unknown' as const, reasons: ['record-limit'], records };
   const pids = new Map<number, number>(); const attempts = new Map<string, { phase: string; identity: string }>();
-  const workers = new Map<string, { identity: string; count: number; pending?: string; terminal: boolean }>();
+  const workers = new Map<string, { identity: string; count: number; pending?: { step: string; rpcStartMs?: number; rpcMsCapped?: boolean }; terminal: boolean }>();
   // At most CLEANUP_RECORDS groups, each with at most 16 sampled attachments.
   // This checks only one declared inventory, not target lifetime or ancestry.
   const targetInventories = new Map<string, { identity: string; snapshot: boolean; sampled?: number; attribution: Set<number>; inventory: Set<number> }>();
@@ -176,9 +199,10 @@ export function inspectCleanupBytes(bytes: Buffer) {
       if (value.admissionStep !== 'owned-attachment') {
         if (value.admissionState === 'enter') {
           if (worker.pending !== undefined) reasons.add('invalid-worker-admission');
-          worker.pending = value.admissionStep as string;
+          worker.pending = { step: value.admissionStep as string, ...(Object.hasOwn(value, 'rpcStartMs') ? { rpcStartMs: value.rpcStartMs as number, rpcMsCapped: value.rpcMsCapped as boolean } : {}) };
         } else {
-          if (worker.pending !== value.admissionStep) reasons.add('worker-admission-unobserved');
+          if (!worker.pending || worker.pending.step !== value.admissionStep) reasons.add('worker-admission-unobserved');
+          else if (value.admissionStep === 'network-enable' && (worker.pending.rpcStartMs !== value.rpcStartMs || (worker.pending.rpcMsCapped === true && value.rpcMsCapped !== true))) reasons.add('invalid-worker-admission');
           worker.pending = undefined;
           worker.terminal = value.admissionState === 'failed' || value.admissionStep === 'configuration-committed';
         }
