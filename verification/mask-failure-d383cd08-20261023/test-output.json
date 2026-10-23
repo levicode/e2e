@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "outputs": [
+    {
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+      "stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2613 filtered out; finished in 0.00s\n\n",
+      "stderr": ""
+    },
+    {
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+      "stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2613 filtered out; finished in 0.00s\n\n",
+      "stderr": ""
+    },
+    {
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+      "stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2613 filtered out; finished in 0.06s\n\n",
+      "stderr": "native-metadata-first-failure stage=ReadCall\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    },
+    {
+      "case": "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout",
+      "stdout": "\nrunning 1 test\ntest native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2613 filtered out; finished in 0.06s\n\n",
+      "stderr": "native-metadata-first-failure stage=ReadCall\nnative-observe-semantic-first-failure stage=Metadata frameKind=Main\n"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "source": "d383cd081caa3c47636f19be217075c2815efebf",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--bin",
+    "agent-browser",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "exitCode": 0,
+  "compilerJsonSha256": "affbe90c824feb8ad650693f25a256d0e01fbf897f6857ec6c75a8a764fa55f0",
+  "compilerArtifact": {
+    "reason": "compiler-artifact",
+    "package_id": "path+file:///workspace/agent-browser-acquisition-a78e23a/cli#agent-browser@0.39.1",
+    "manifest_path": "/workspace/agent-browser-acquisition-a78e23a/cli/Cargo.toml",
+    "target": {
+      "kind": [
+        "bin"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "agent-browser",
+      "src_path": "/workspace/agent-browser-acquisition-a78e23a/cli/src/main.rs",
+      "edition": "2021",
+      "doc": true,
+      "doctest": false,
+      "test": true
+    },
+    "profile": {
+      "opt_level": "3",
+      "debuginfo": 0,
+      "debug_assertions": false,
+      "overflow_checks": false,
+      "test": true
+    },
+    "features": [],
+    "filenames": [
+      "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57"
+    ],
+    "executable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "fresh": false
+  },
+  "harnessSha256": "23d2c86ba9983a1b2564b7629f02471e4ebde0d5f06c75e8b4e3cc2087e07eca",
+  "harnessBytes": 75752896
+}

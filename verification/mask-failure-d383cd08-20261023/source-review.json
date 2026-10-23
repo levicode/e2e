@@ -1,0 +1,46 @@
+{
+  "source": "d383cd081caa3c47636f19be217075c2815efebf",
+  "parent": "5a8123306683aa24c1336df12ea88f142fc3d928",
+  "tree": "b4e7d09b3baa09eda6b0e7d48d7f9447d713235f",
+  "newTestFile": "cli/src/native/client_capture_mask_failure_tests.rs",
+  "newTestLines": 498,
+  "registrationLines": 3,
+  "protectedFilesUnchanged": [
+    "AGENTS.md",
+    "cli/src/native/client_actions.rs",
+    "cli/src/native/client_observation.rs",
+    "cli/src/native/client_capture.rs",
+    "cli/src/native/client_observation_dispatch.rs",
+    "cli/src/native/client_debt.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock"
+  ],
+  "productionChanges": false,
+  "localSourceFixes": false,
+  "assertionsOrBudgetsModified": false,
+  "originalParentDeadlineMs": 80,
+  "semanticCasesRequireElapsedAtLeastMs": 60,
+  "semanticCasesRequireCompletionBeforeOriginalDeadline": true,
+  "scope": {
+    "loopbackStrictCdpPeer": true,
+    "productionDebtLedgerInstalled": false,
+    "operationDebtJournalBound": false,
+    "protectedReadJournalUsedForCaptureRestoration": true,
+    "realBrowser": false,
+    "realDomDetachmentProven": false
+  },
+  "intendedAssertions": [
+    "detached-shape JS exception maps to CapturePhase::IndependentCoverage and CaptureReason::MaskingUnproven",
+    "CDP protocol rejection with the same words remains typed BrowserFailure",
+    "detached independent probe preserves original semantic DeadlineExceeded without pixels",
+    "rejected independent probe preserves BrowserFailure instead of hiding it behind semantic DeadlineExceeded",
+    "acknowledged peer object-group cleanup, animation restoration, no screenshot/source mask traversal and zero publication"
+  ],
+  "limits": [
+    "old TypeScript 1000ms injected timeout is not millisecond-equivalent to this 80ms native schedule",
+    "peer exception shape does not establish actual DOM detachment",
+    "no production debt ledger/journal settlement proof",
+    "four passing cases cannot establish completion of all legacy obligations"
+  ],
+  "sourcePatchSha256": "6a230fe07058efc0dbfd5b264c2032ce24b0f7eb1fac0412ee72f1caa5beaa2c"
+}

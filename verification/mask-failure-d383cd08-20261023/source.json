@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-23T16:21:52.813353+00:00",
+  "source": "d383cd081caa3c47636f19be217075c2815efebf",
+  "parent": "5a8123306683aa24c1336df12ea88f142fc3d928",
+  "tree": "b4e7d09b3baa09eda6b0e7d48d7f9447d713235f",
+  "buildCommand": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--bin",
+    "agent-browser",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "CARGO_BUILD_JOBS": 2,
+  "CARGO_TARGET_DIR": "/workspace/c03-build/target",
+  "cases": [
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout"
+  ],
+  "caseArguments": [
+    "--exact",
+    "<full-case-name>",
+    "--nocapture"
+  ],
+  "files": {
+    "cli/src/native/client_capture_mask_failure_tests.rs": "052533b8cbc748a95037bb852185d6346977eb01ce445d59cb3797cb541b352b",
+    "cli/src/native/client_capture_supersession_tests.rs": "3b9b38debcf12ee53c802b6739c120fd482c0e32164d75e1d08fe70b6405a8f2",
+    "cli/src/native/client_observation_dispatch.rs": "d475ad343c32fb0ad7096cfea264b3c1d0b4233e3e35052557910cde6b28bea4",
+    "cli/src/native/client_capture.rs": "ed833993107bfbc5e9edc83c83e98ed491f3355875114e1fc3b63c5c1f475c15",
+    "cli/src/native/client_actions.rs": "c2a9b90b87a5fba5461623d1a50cc7d4dceb213829c06a5a296eafc5b7fd1e23",
+    "cli/src/native/client_observation.rs": "0007152abc120afedc1a209f64bedc06325cd3c34439f654f190454582470f2a",
+    "cli/src/native/client_debt.rs": "65063fbbcd05c4f7bb24d3b4aa9806f2d6201673cec0f6dd258bb89feb4affb1",
+    "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+    "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "changes": [
+    "498\t0\tcli/src/native/client_capture_mask_failure_tests.rs",
+    "3\t0\tcli/src/native/client_capture_supersession_tests.rs"
+  ],
+  "originalParentDeadlineMs": 80,
+  "scope": "test-only loopback CDP peer; no browser, production debt ledger or operation debt journal installed; no real DOM detachment proof"
+}
