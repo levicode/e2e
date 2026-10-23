@@ -1,0 +1,228 @@
+# Opt-in compile evidence only. Never execute the produced runtime or test harnesses.
+name: native macOS compile only (not acceptance or release)
+on:
+  push:
+    branches: [implement/native-macos-compile-ci]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-macos-compile-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compile-only:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            rust_host: aarch64-apple-darwin
+            macho_arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+            rust_host: x86_64-apple-darwin
+            macho_arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      E2E_SHA: 18984864a8a65127b662c28cb6e0c06d63131e6b
+      E2E_TREE: 60eee9d9fc0585731c6e0dd6440ec16d0a3b8ac2
+      NATIVE_SHA: 79da48b64c275a09adb852b89de099d891941049
+      NATIVE_TREE: 1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad
+      NATIVE_LOCK_SHA256: 652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1
+      EVIDENCE_DIR: ${{ runner.temp }}/native-macos-compile
+      CARGO_TARGET_DIR: ${{ runner.temp }}/native-macos-compile-target
+      CARGO_HOME: ${{ runner.temp }}/native-macos-compile-cargo
+      CARGO_BUILD_JOBS: '1'
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Initialize compile-only diagnostics
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR" "$RUNNER_TEMP/native-macos-compile-bin"
+          printf '%s\n' \
+            'COMPILE ONLY / NONRELEASE. No runtime or test harness was executed.' \
+            'No browser, installed-consumer, acceptance, producer, or release evidence.' \
+            'Dashboard frontend is not built; the native build script may embed its placeholder.' \
+            'A zero compile exit is not a runtime or acceptance pass. not-run is not success.' \
+            > "$EVIDENCE_DIR/SCOPE.txt"
+          for phase in source-host toolchain native-format-check native-default-clippy native-feature-check native-proxy-check production-build production-capture default-test-build artifact-verification; do
+            printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+          done
+      - name: Check out the actual workflow recipe separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - name: Check out frozen e2e source (not the workflow commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/e2e
+          ref: 18984864a8a65127b662c28cb6e0c06d63131e6b
+          path: e2e-source
+          persist-credentials: false
+      - name: Check out frozen native source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 79da48b64c275a09adb852b89de099d891941049
+          path: native-source
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          architecture: ${{ matrix.arch }}
+      - name: Verify clean sources and native host architecture
+        id: source
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_MACHO_ARCH: ${{ matrix.macho_arch }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/source-host.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/source-host.log") 2>&1
+          date -u > "$EVIDENCE_DIR/started-at-utc.txt"
+          sw_vers > "$EVIDENCE_DIR/macos-version.txt"
+          uname -a > "$EVIDENCE_DIR/macos-host.txt"
+          sysctl hw.memsize hw.logicalcpu > "$EVIDENCE_DIR/macos-resources.txt"
+          df -h "$RUNNER_TEMP" > "$EVIDENCE_DIR/runner-disk.txt"
+          node -p 'JSON.stringify({platform:process.platform,architecture:process.arch,version:process.version})' > "$EVIDENCE_DIR/node-host.json"
+          test "$RUNNER_OS" = macOS
+          test "$(node -p 'process.platform')" = darwin
+          test "$(node -p 'process.arch')" = "$EXPECTED_ARCH"
+          test "$(uname -m)" = "$EXPECTED_MACHO_ARCH"
+          translated="$(sysctl -in sysctl.proc_translated 2>/dev/null || true)"
+          printf '%s\n' "${translated:-not-present}" > "$EVIDENCE_DIR/rosetta-translation.txt"
+          test "$translated" != 1
+          for repo in recipe e2e-source native-source; do
+            git -C "$repo" rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/$repo.txt"
+            git -C "$repo" status --porcelain --untracked-files=all > "$EVIDENCE_DIR/$repo-status.txt"
+            test ! -s "$EVIDENCE_DIR/$repo-status.txt"
+          done
+          test "$(git -C recipe rev-parse HEAD)" = "$RECIPE_SHA"
+          test "$(git -C e2e-source rev-parse HEAD)" = "$E2E_SHA"
+          test "$(git -C e2e-source rev-parse HEAD^{tree})" = "$E2E_TREE"
+          test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SHA"
+          test "$(git -C native-source rev-parse HEAD^{tree})" = "$NATIVE_TREE"
+          shasum -a 256 recipe/.github/workflows/native-macos-compile.yml > "$EVIDENCE_DIR/workflow-sha256.txt"
+          shasum -a 256 native-source/cli/Cargo.lock > "$EVIDENCE_DIR/native-lock-sha256.txt"
+          test "$(awk '{print $1}' "$EVIDENCE_DIR/native-lock-sha256.txt")" = "$NATIVE_LOCK_SHA256"
+          printf 'event_commit=%s\nrecipe_commit=%s\n' "$GITHUB_SHA" "$RECIPE_SHA" > "$EVIDENCE_DIR/recipe-context.txt"
+      - name: Require the native Rust host toolchain
+        id: toolchain
+        env:
+          EXPECTED_RUST_HOST: ${{ matrix.rust_host }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/toolchain.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/toolchain.log") 2>&1
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustc -Vv > "$EVIDENCE_DIR/rustc-version.txt"
+          cargo -Vv > "$EVIDENCE_DIR/cargo-version.txt"
+          test "$(sed -n 's/^host: //p' "$EVIDENCE_DIR/rustc-version.txt")" = "$EXPECTED_RUST_HOST"
+      - name: Check all compile boundaries independently; never run harnesses
+        id: compile
+        working-directory: native-source/cli
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+          failed=0
+          check_boundary() {
+            local name="$1" status=0
+            shift
+            printf '%q ' "$@" > "$EVIDENCE_DIR/$name.command.txt"
+            printf '\n' >> "$EVIDENCE_DIR/$name.command.txt"
+            if "$@" > "$EVIDENCE_DIR/$name.stdout.log" 2> "$EVIDENCE_DIR/$name.stderr.log"; then status=0; else status=$?; failed=1; fi
+            printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.exit"
+            cat "$EVIDENCE_DIR/$name.stdout.log" "$EVIDENCE_DIR/$name.stderr.log"
+          }
+          check_boundary native-format-check cargo fmt -- --check
+          check_boundary native-default-clippy cargo clippy --locked --profile ci --no-default-features --all-targets -- -D warnings
+          check_boundary native-feature-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --tests
+          check_boundary native-proxy-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --test client-proxy-fixture
+          check_boundary production-build cargo build --locked --profile ci --no-default-features --message-format=json
+          if test "$(cat "$EVIDENCE_DIR/production-build.exit")" = 0; then
+            # Capture the exact feature-free binary before compiling any test harness.
+            check_boundary production-capture node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { copyFileSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const rows = readFileSync(join(process.env.EVIDENCE_DIR, 'production-build.stdout.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+          const completed = rows.filter(row => row.reason === 'build-finished');
+          assert.equal(completed.length, 1); assert.equal(completed[0].success, true);
+          const binaries = rows.filter(row => row.reason === 'compiler-artifact' && row.target?.name === 'agent-browser' && row.profile?.test === false);
+          assert.equal(binaries.length, 1);
+          const binary = binaries[0];
+          assert.deepEqual(binary.features, []); assert.deepEqual(binary.target.kind, ['bin']);
+          assert.equal(binary.manifest_path, join(process.cwd(), 'Cargo.toml'));
+          assert.equal(binary.target.src_path, join(process.cwd(), 'src/main.rs'));
+          assert.equal(binary.executable, join(process.env.CARGO_TARGET_DIR, 'ci/agent-browser'));
+          copyFileSync(binary.executable, join(process.env.RUNNER_TEMP, 'native-macos-compile-bin/agent-browser'));
+          NODE
+          fi
+          check_boundary default-test-build cargo test --locked --profile ci --no-default-features --no-run --message-format=json
+          test "$failed" -eq 0
+      - name: Verify Mach-O, hashes, and unchanged sources without execution
+        id: verify
+        if: ${{ !cancelled() && steps.compile.outcome != 'skipped' }}
+        env:
+          EXPECTED_MACHO_ARCH: ${{ matrix.macho_arch }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/artifact-verification.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/artifact-verification.log") 2>&1
+          for repo in e2e-source native-source; do
+            git -C "$repo" status --porcelain --untracked-files=all > "$EVIDENCE_DIR/$repo-final-status.txt"
+            test ! -s "$EVIDENCE_DIR/$repo-final-status.txt"
+          done
+          test "$(git -C e2e-source rev-parse HEAD)" = "$E2E_SHA"
+          test "$(git -C e2e-source rev-parse HEAD^{tree})" = "$E2E_TREE"
+          test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SHA"
+          test "$(git -C native-source rev-parse HEAD^{tree})" = "$NATIVE_TREE"
+          test "$(shasum -a 256 native-source/cli/Cargo.lock | awk '{print $1}')" = "$NATIVE_LOCK_SHA256"
+          test "$(cat "$EVIDENCE_DIR/production-capture.exit")" = 0
+          binary="$RUNNER_TEMP/native-macos-compile-bin/agent-browser"
+          file "$binary" > "$EVIDENCE_DIR/production-file.txt"
+          grep -q 'Mach-O' "$EVIDENCE_DIR/production-file.txt"
+          lipo -archs "$binary" > "$EVIDENCE_DIR/production-architecture.txt"
+          test "$(cat "$EVIDENCE_DIR/production-architecture.txt")" = "$EXPECTED_MACHO_ARCH"
+          shasum -a 256 "$binary" > "$EVIDENCE_DIR/production-sha256.txt"
+          cmp "$CARGO_TARGET_DIR/ci/agent-browser" "$binary"
+      - name: Record actual step outcomes, including failures and skipped work
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+      - name: Preserve compile diagnostics even on failure (not a pass receipt)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: macos-compile-only-diagnostics-${{ matrix.arch }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-macos-compile/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve verified compile-only binary (not acceptance or release)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' && steps.verify.outcome == 'success' }}
+        with:
+          name: macos-compile-only-nonrelease-binary-${{ matrix.arch }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/native-macos-compile-bin/agent-browser
+            ${{ runner.temp }}/native-macos-compile/SCOPE.txt
+            ${{ runner.temp }}/native-macos-compile/production-*.txt
+            ${{ runner.temp }}/native-macos-compile/native-source.txt
+            ${{ runner.temp }}/native-macos-compile/e2e-source.txt
+            ${{ runner.temp }}/native-macos-compile/recipe.txt
+            ${{ runner.temp }}/native-macos-compile/workflow-sha256.txt
+            ${{ runner.temp }}/native-macos-compile/native-lock-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
