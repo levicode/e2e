@@ -15,7 +15,7 @@ export const CONTROLLED_PREPARATION_CASES = [
   { id: 'preparation-lower-floor', name: 'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline' },
 ] as const;
 export const CONTROLLED_PREPARATION_SOURCE = 'cli/src/native/client_actions.rs';
-export const CONTROLLED_PREPARATION_SOURCE_HASH = '1263838285a9072eeaf6f3ee0f6113c249cc78114ddd8e9da01fabf5105b91a4';
+export const CONTROLLED_PREPARATION_SOURCE_HASH = '9c4aacfc665be6074329e984fcdddd965824a998eb54a758c26e85a35e8cc972';
 export const CONTROLLED_PREPARATION_BUDGET = { cases: 2, recordsPerCase: 1, recordBytes: 4096, savedBytes: 32768, streamBytes: 65536, processTimeoutMs: 30000 } as const;
 type RowId = typeof CONTROLLED_PREPARATION_CASES[number]['id'];
 type Value = Record<string, unknown>;
@@ -74,9 +74,9 @@ export function controlledClassification(id: RowId, record: Value | null, observ
     || record.retired_before_deadline !== (record.action_finished_before_deadline === true && record.broker_settled_before_deadline === true && record.retained_drained_before_deadline === true)
     || (record.contract_valid === true && (record.exact_release_acked !== true || record.releases !== 1 || record.inputs !== 0 || !uint(record.scrolls, 128) || record.scrolls < 1))) return 'unknown';
   if (observation.testStatus === 'passed') return record.status === 'pass' && record.contract_valid === true && record.retired_before_deadline === true && record.scrolls === 1 && record.inputs === 0 ? 'passed' : 'unknown';
-  // Fixed owning source hash binds line 7027 to the precise retirement assertion.
+  // Fixed owning source hash binds line 7688 to the precise retirement assertion.
   if (id === 'preparation-lower-floor' && observation.testStatus === 'failed' && record.status === 'fail' && record.contract_valid === true
-    && record.inputs === 0 && record.exact_release_acked === true && record.retired_before_deadline === false && panic?.line === 7027) return 'known-red';
+    && record.inputs === 0 && record.exact_release_acked === true && record.retired_before_deadline === false && panic?.line === 7688) return 'known-red';
   return 'failed';
 }
 interface Row { id: RowId; name: string; status: 'passed' | 'known-red' | 'failed' | 'unknown'; discovery: unknown; process: ProcessFacts | null; stdout: ReturnType<typeof digest> | null; stderr: ReturnType<typeof digest> | null; test: ReturnType<typeof normalizedTest> | null; record: Value | null; panic: ReturnType<typeof controlledPanic>; problem: 'not-run' | 'discovery-incomplete' | 'execution-incomplete' | null }
@@ -105,6 +105,30 @@ export function verifyControlledReceipt(value: unknown, expectedBinding: unknown
   }
   const status = statuses.every(entry => entry === 'passed') ? 'passed' : 'failed';
   return value.status === status ? status : 'unknown';
+}
+/** A complete diagnostic is still not a pass unless both exact schedules passed. */
+export function requireControlledReceipt(value: unknown, expectedBinding: unknown): void {
+  if (verifyControlledReceipt(value, expectedBinding) !== 'passed') throw new Error('Both controlled preparation schedules require complete passing source-matched proof');
+}
+/** Rebind the final receipt to the manifest and actual default compiler/harness, not its own claims. */
+export function verifyControlledPreparationReceipt(output: string, expected: { sourceRevision: string; nativeSource: { commit: string; tree: string }; productionBinarySha256: string }, paths: { source: string; target: string }): void {
+  if (!paths.source || !paths.target) throw new Error('Controlled preparation source and target are required');
+  const source = resolve(paths.source); const target = resolve(paths.target);
+  const nativeSource = sourceIdentity(source, expected.nativeSource.commit);
+  if (nativeSource.commit !== expected.nativeSource.commit || nativeSource.tree !== expected.nativeSource.tree) throw new Error('Controlled preparation native source differs from the manifest');
+  const fixtureSha256 = hashFile(join(source, CONTROLLED_PREPARATION_SOURCE));
+  if (fixtureSha256 !== CONTROLLED_PREPARATION_SOURCE_HASH) throw new Error('Controlled preparation source fixture changed');
+  const rawCompiler = readFileSync(join(output, 'compiler.jsonl'), 'utf8');
+  if (Buffer.byteLength(rawCompiler) > 8 * 1024 * 1024) throw new Error('Controlled preparation compiler evidence exceeds bound');
+  const harness = matrixCompilerHarness(rawCompiler, source, target, false);
+  const binding = { ...expected, nativeSource, fixtureSha256, compiler: digest(rawCompiler), harness: harness.identity };
+  if (typeof constants.O_NOFOLLOW !== 'number') throw new Error('Controlled preparation no-follow reads unavailable');
+  const fd = openSync(join(output, 'controlled-preparation-diagnostic.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > CONTROLLED_PREPARATION_BUDGET.savedBytes) throw new Error('Controlled preparation receipt is not a bounded owned file');
+    requireControlledReceipt(JSON.parse(readFileSync(fd, 'utf8')), binding);
+  } finally { closeSync(fd); }
 }
 export async function runControlledPreparation(args: string[]): Promise<void> {
   const [sourceArg, targetArg, productionArg, outputArg, expectedSha] = args;

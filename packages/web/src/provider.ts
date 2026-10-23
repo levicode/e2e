@@ -340,6 +340,8 @@ export class LeasedBrowsers {
   private current: WorkerLease | undefined;
   private attached = false;
   private attempt: BrowserLease | undefined;
+  private attemptRelease: Promise<void> | undefined;
+  private workerRelease: Promise<void> | undefined;
   /** The attempt whose lease is being acquired or held; a lease that arrives for any other attempt is released, not committed. */
   private opened: object | undefined;
   /** This worker's tenure, replaced by `init` and `dispose`; a replacement lease that arrives for an earlier one is released, not committed. */
@@ -446,6 +448,8 @@ export class LeasedBrowsers {
    * the workers `prepare` reported.
    */
   init(info: EngineInitInfo): void {
+    if (this.attempt !== undefined || (this.current?.owned === true && this.workerRelease !== undefined)) throw invalidState('Provider cleanup remains unresolved');
+    this.workerRelease = undefined;
     const { provider } = this;
     this.current = undefined;
     this.attached = false;
@@ -488,6 +492,7 @@ export class LeasedBrowsers {
    * disposed is given straight back and never committed.
    */
   async endpoint(signal: AbortSignal): Promise<string> {
+    if (this.workerRelease !== undefined) throw invalidState('The provider worker lease is retiring');
     const run = this.requireRun();
     const previous = this.current;
     if (previous !== undefined && !this.attached) {
@@ -513,6 +518,8 @@ export class LeasedBrowsers {
    * straight back and never committed, so a retry never finds it.
    */
   async startAttempt(context: EngineAttemptContext): Promise<BrowserLease> {
+    if (this.attempt !== undefined || this.opened !== undefined) throw invalidState('The previous provider lease has not been retired');
+    this.attemptRelease = undefined;
     const run = this.requireRun();
     const opened = {};
     this.opened = opened;
@@ -528,6 +535,7 @@ export class LeasedBrowsers {
     });
     if (context.signal.aborted || this.opened !== opened) {
       await this.provider.release(lease, this.releaseContext(run, context.signal)).catch(discard);
+      if (this.opened === opened) this.opened = undefined;
       throw new EngineError('CANCELLED', `browser lease from "${this.provider.name}" arrived after the attempt ended; released`, { retryable: false });
     }
     this.attempt = lease;
@@ -535,22 +543,30 @@ export class LeasedBrowsers {
   }
 
   /** Releases the attempt's lease, when one was granted; idempotent, and safe after a failed `startAttempt`. */
-  async endAttempt(context: EngineCleanupContext): Promise<void> {
-    const lease = this.attempt;
-    this.attempt = undefined;
+  endAttempt(context: EngineCleanupContext): Promise<void> {
     this.opened = undefined;
-    if (lease === undefined) return;
-    await this.release(lease, context);
+    if (this.attemptRelease !== undefined) return this.attemptRelease;
+    const lease = this.attempt;
+    if (lease === undefined) return Promise.resolve();
+    this.attemptRelease = this.release(lease, context).then(() => {
+      if (this.attempt === lease) this.attempt = undefined;
+    });
+    void this.attemptRelease.catch(() => {});
+    return this.attemptRelease;
   }
 
-  /** Releases the replacement lease the worker acquired for itself; what `prepare` leased is the runner's to release. */
-  async dispose(context: EngineCleanupContext): Promise<void> {
-    const current = this.current;
-    this.current = undefined;
+  /** Releases only the worker-owned replacement; caches failure without retrying an uncertain release. */
+  dispose(context: EngineCleanupContext): Promise<void> {
     this.attached = false;
     this.tenure = {};
-    if (current === undefined || !current.owned) return;
-    await this.release(current.lease, context);
+    if (this.workerRelease !== undefined) return this.workerRelease;
+    const current = this.current;
+    if (current === undefined || !current.owned) return Promise.resolve();
+    this.workerRelease = this.release(current.lease, context).then(() => {
+      if (this.current === current) this.current = undefined;
+    });
+    void this.workerRelease.catch(() => {});
+    return this.workerRelease;
   }
 
   /**

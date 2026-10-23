@@ -41,6 +41,11 @@ feature and all exact contracts in `candidate-manifest.ts`.
   compilation for every browser contract. Upstream ignored inventory remains
   visible; every required hosted contract must run exactly once, with no skips.
   Unclassified ignored `native::client_*` tests fail inventory review.
+- Both exact controlled preparation schedules must pass. Their bounded receipt
+  is revalidated against the bundle's source/runtime identities, the reviewed
+  fixture hash and the actual default compiler/harness before the final candidate
+  can pass. Missing, skipped, failed, known-red or incomplete schedules never
+  permit a candidate bundle upload.
 - Separate production and feature runtime negotiations, including all 14 Web
   capability families. Only the semantic fault suite uses the feature binary;
   its bytes never enter a distributable bundle.

@@ -204,6 +204,11 @@ How recovery runs:
 - Endpoint resolution, CDP attachment, setup, and dispatch share one timeout.
   Cancelling a concurrent waiter does not cancel the operation that started
   recovery. Cancelling that recovery owner fails the shared recovery.
+- An observation still transferring pixels when recovery starts is retired.
+  Its original blob is released before the adapter rejects it as retryable
+  `NODE_STALE`; cancellation, retired ownership, and cleanup failures retain
+  precedence. A successful reconnect permits fresh observations, not publication
+  of the old snapshot. A failed recovery does not revive that snapshot.
 - A recovery owner's first failure belongs to that attempt. Its concurrent
   waiters and later admitted operations receive that same failure without resolving
   or reconnecting again; an owner timeout stays `OPERATION_TIMEOUT` for all
@@ -947,6 +952,8 @@ bunx @e2e-dev/web install chromium --with-deps
   installation and trust verification are separate prerequisites; the developer
   override is `E2E_AGENT_BROWSER_EXECUTABLE`, an absolute trusted executable path.
 - Starting a test never implicitly runs the installer or installs system dependencies.
+- Reports display recognized Chromium product versions as `chromium <version>`
+  and preserve the configured user-agent text.
 
 ## Semantic capture recovery
 
@@ -1212,3 +1219,28 @@ export type JsonValue =
 The [browser guide](/browser) shows these members in recipes and covers
 [hosted browsers](/browser#hosted-browsers). The portable operations live on
 the [`app`](/reference/app) fixture.
+
+### Terminal native cleanup
+
+An uncertain native action always reports non-retryable `ACTION_MAY_HAVE_COMMITTED`.
+It is never replayed, and a late response cannot change that outcome.
+
+With mutually negotiated `operation.continue-exact-owner/1`, a strict native
+retirement descriptor can keep the same owner and identity scope usable. Only
+that operation and its callback authority retire; unrelated routes, auth and
+dialog handlers, recording, downloads, and installed configuration remain.
+Earlier node and viewport references become stale, and in-flight old captures
+cannot publish a new observation. A fresh explicit point action does not need
+an observation or a viewport reference. Native live admission decides whether
+new work can dispatch while old work drains; descriptor debt counts and a later
+successful read do not prove an uncertain action completed or all debt cleared.
+The Web adapter requires this coordinated capability; older native runtimes fail
+negotiation rather than silently changing uncertainty semantics.
+
+Without that negotiated proof, or after an actual integrity or cleanup failure,
+the client stops ordinary commands and callbacks. The negotiated
+`terminal.close/1` capability permits one separately bounded close exchange.
+Cleanup requires its correlated native acknowledgement and proxy settlement,
+not EOF or process exit alone. Concurrent cleanup callers share that outcome;
+cleanup does not reconnect or make a terminal client reusable. A failed
+`scope.end` remains a cleanup failure even if final shutdown later succeeds.

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { type InstallerRuntimeBinding } from '../../packages/web/tests/helpers/installer-fixture.ts';
 import { sha256 } from './bundle.ts';
 import {
   beginSyntheticCase, SYNTHETIC_BATCH_ENV, SYNTHETIC_BINDING_ENV, SYNTHETIC_CASE_MANIFEST,
@@ -12,6 +13,7 @@ import {
 } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 import { cleanSyntheticEnvironment, collectSyntheticEvidence, prepareSyntheticCapture, verifySyntheticEvidence } from './candidate-synthetic-evidence.ts';
 import { conformanceSourceDomain, loadConformanceTables } from '../../packages/web/tests/helpers/conformance-evidence.ts';
+const installerRuntime: InstallerRuntimeBinding = { caseId: 'P14', purpose: 'installer-cancellation-loopback', binarySha256: 'd'.repeat(64), negotiationProofSha256: 'e'.repeat(64) };
 const outcome: SyntheticOutcome = { setup: 'passed', body: 'passed', cleanup: 'passed' };
 const phaseFact: SyntheticFact = { kind: 'phase', section: 'body', phase: 'open', state: 'passed' };
 const sourceRoot = join(import.meta.dirname, '../..');
@@ -25,7 +27,7 @@ function fixture(t: TestContext, suite: 'web-browser' | 'public-callbacks' = 'we
   for (const path of SYNTHETIC_CASE_MANIFEST.P16.sources.slice(1)) copyFileSync(join(sourceRoot, path), join(root, path));
   if (expectedSource !== undefined) writeFileSync(join(root, SYNTHETIC_CASE_MANIFEST.P16.sources[3]), expectedSource);
   const output = join(root, 'output'); mkdirSync(output);
-  const capture = prepareSyntheticCapture(root, suite, { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {});
+  const capture = prepareSyntheticCapture(root, suite, { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {}, suite === 'web-browser' ? installerRuntime : undefined);
   t.after(() => rmSync(capture.directory, { recursive: true, force: true }));
   const saved = (id: SyntheticCaseId): SyntheticSavedRecord[] => readFileSync(join(capture.directory, `${id}.jsonl`), 'utf8').trim().split('\n').map(line => JSON.parse(line) as SyntheticSavedRecord);
   const manifest = () => {
@@ -55,6 +57,7 @@ function completeAll(capture: ReturnType<typeof prepareSyntheticCapture>, p16 = 
   for (const entry of capture.configuration.cases) {
     const evidence = beginSyntheticCase(entry.caseId, capture.env); assert.equal(evidence.available, true);
     evidence.record(phaseFact);
+    if (entry.caseId === 'P14') evidence.record({ kind: 'installer-runtime', ...installerRuntime });
     if (entry.caseId === 'P16') for (const row of p16) evidence.record(row);
     if (entry.caseId === 'P42O') for (const row of canvas) evidence.record(row);
     evidence.finish(outcome);
@@ -80,7 +83,7 @@ test('integrated repository prepares both suites and all 50 source-bound IDs wit
   const ids: string[] = [];
   for (const suite of ['web-browser', 'public-callbacks'] as const) {
     // Availability check only: these placeholders do not assert an executed candidate or native binary.
-    const capture = prepareSyntheticCapture(sourceRoot, suite, { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {});
+    const capture = prepareSyntheticCapture(sourceRoot, suite, { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {}, suite === 'web-browser' ? installerRuntime : undefined);
     t.after(() => rmSync(capture.directory, { recursive: true, force: true }));
     ids.push(...capture.configuration.cases.map(entry => entry.caseId));
     assert.ok(capture.configuration.cases.every(entry => /^[a-f0-9]{64}$/.test(entry.sourceSha256)));
@@ -116,9 +119,9 @@ test('the artifact validates complete suite identity and saved-record digests', 
   completeAll(capture); const receipt = collectSyntheticEvidence(output, capture);
   assert.equal(receipt.status, 'complete'); assert.ok(receipt.file);
   assert.equal(receipt.sha256, sha256(readFileSync(join(output, receipt.file))));
-  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root);
-  assert.throws(() => verifySyntheticEvidence(output, { ...receipt, bytes: receipt.bytes + 1 }, capture.configuration.binding, root));
-  assert.throws(() => verifySyntheticEvidence(output, receipt, { ...capture.configuration.binding, runId: 'd'.repeat(32) }, root));
+  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+  assert.throws(() => verifySyntheticEvidence(output, { ...receipt, bytes: receipt.bytes + 1 }, capture.configuration.binding, root, capture.configuration.installerRuntime));
+  assert.throws(() => verifySyntheticEvidence(output, receipt, { ...capture.configuration.binding, runId: 'd'.repeat(32) }, root, capture.configuration.installerRuntime));
 });
 test('observer throws and invalidation never alter the original thrown value', t => {
   const { capture, saved } = fixture(t); const evidence = beginSyntheticCase('P04', capture.env);
@@ -231,12 +234,12 @@ test('collector setup/output errors are closed UNKNOWN with no thrown diagnostic
 test('full verifier detects source-dependency mutation after capture', t => {
   const { root, output, capture } = fixture(t); completeAll(capture); const receipt = collectSyntheticEvidence(output, capture);
   writeFileSync(join(root, SYNTHETIC_CASE_MANIFEST.P16.sources[1]), 'changed corpus');
-  assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root));
+  assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime));
 });
 test('callback manifest cannot contain public cases', t => {
   const { root, output, capture } = fixture(t, 'public-callbacks'); completeAll(capture);
   assert.deepEqual(capture.configuration.cases.map(item => item.caseId), ['C01', 'C02']);
-  verifySyntheticEvidence(output, collectSyntheticEvidence(output, capture), capture.configuration.binding, root);
+  verifySyntheticEvidence(output, collectSyntheticEvidence(output, capture), capture.configuration.binding, root, capture.configuration.installerRuntime);
 });
 test('P16 byte cap is independent of record cap and preserves truncation evidence', t => {
   const { capture, saved } = fixture(t); const evidence = beginSyntheticCase('P16', capture.env);
@@ -310,7 +313,7 @@ for (const mutation of ['missing-coverage', 'duplicate-coverage', 'missing-count
     // Forge every public status and re-hash all saved artifact bytes: semantic checks must still reject.
     item.status = 'complete'; item.reasons = []; result.value.status = 'complete';
     const bytes = Buffer.from(JSON.stringify(result.value)); writeFileSync(join(output, result.receipt.file!), bytes);
-    assert.throws(() => verifySyntheticEvidence(output, { ...result.receipt, status: 'complete', sha256: sha256(bytes), bytes: bytes.length }, capture.configuration.binding, root));
+    assert.throws(() => verifySyntheticEvidence(output, { ...result.receipt, status: 'complete', sha256: sha256(bytes), bytes: bytes.length }, capture.configuration.binding, root, capture.configuration.installerRuntime));
   });
 }
 
@@ -328,7 +331,7 @@ test('P16 summary categories and physical expected lines are derived independent
   counts.total += 2; counts.emitted += 2;
   completeAll(capture, facts);
   const receipt = collectSyntheticEvidence(output, capture); assert.equal(receipt.status, 'complete');
-  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root);
+  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
 });
 
 for (const mutation of ['wrong-line', 'comment-line', 'wrong-coordinate', 'wrong-category', 'duplicate-summary', 'missing-todo', 'unexpected-nonzero-line'] as const) {
@@ -380,7 +383,7 @@ test('P16 can retain complete zero-mismatch coverage with all stale and TODO row
   if (footer.kind === 'footer') footer.outcome.body = 'failed';
   writeFileSync(path, records.map(record => JSON.stringify(record)).join('\n') + '\n');
   const receipt = collectSyntheticEvidence(output, capture); assert.equal(receipt.status, 'complete');
-  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root);
+  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
 });
 
 test('P16 refuses a correctly re-bound but different corpus instead of using another root\'s cached table', t => {
@@ -389,7 +392,7 @@ test('P16 refuses a correctly re-bound but different corpus instead of using ano
   writeFileSync(path, readFileSync(path, 'utf8') + '\n// Different source, same coordinates.\n');
   // A fresh configuration binds the altered corpus, but the loaded validator's fixed source gate still closes.
   const { sourceRevision, testSourceDigest, binarySha256 } = capture.configuration.binding;
-  const next = prepareSyntheticCapture(root, 'web-browser', { sourceRevision, testSourceDigest, binarySha256 }, {});
+  const next = prepareSyntheticCapture(root, 'web-browser', { sourceRevision, testSourceDigest, binarySha256 }, {}, installerRuntime);
   t.after(() => rmSync(next.directory, { recursive: true, force: true }));
   completeAll(next);
   const receipt = collectSyntheticEvidence(join(root, 'output'), next);
@@ -416,7 +419,7 @@ for (const mutation of ['missing-all', 'missing-one', 'duplicate-target', 'extra
     // A forged green status and recomputed artifact hash cannot bypass the target set requirement.
     oracle.status = 'complete'; oracle.reasons = []; result.value.status = 'complete';
     const bytes = Buffer.from(JSON.stringify(result.value)); writeFileSync(join(output, result.receipt.file!), bytes);
-    assert.throws(() => verifySyntheticEvidence(output, { ...result.receipt, status: 'complete', sha256: sha256(bytes), bytes: bytes.length }, capture.configuration.binding, root));
+    assert.throws(() => verifySyntheticEvidence(output, { ...result.receipt, status: 'complete', sha256: sha256(bytes), bytes: bytes.length }, capture.configuration.binding, root, capture.configuration.installerRuntime));
   });
 }
 
@@ -440,3 +443,50 @@ for (const source of ['packages/web/tests/helpers/canvas-oracle.ts', 'packages/w
     assert.equal(collectSyntheticEvidence(join(root, 'output'), undefined).reason, 'setup-failed');
   });
 }
+
+test('P14 closure includes the fixture and complete capture requires one exact independently expected secondary identity', t => {
+  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P14.sources, ['packages/web/tests/integration/cli.test.ts', 'packages/web/tests/helpers/installer-fixture.ts']);
+  const { root, output, capture } = fixture(t); completeAll(capture);
+  const receipt = collectSyntheticEvidence(output, capture);
+  assert.equal(receipt.status, 'complete');
+  assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root));
+  assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, { ...installerRuntime, binarySha256: 'f'.repeat(64) }));
+  assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, { ...installerRuntime, negotiationProofSha256: 'f'.repeat(64) }));
+});
+
+test('P14 missing duplicate foreign-proof and foreign-runtime facts cannot be collected as complete', t => {
+  for (const facts of [[], [installerRuntime, installerRuntime], [{ ...installerRuntime, binarySha256: 'c'.repeat(64) }], [{ ...installerRuntime, negotiationProofSha256: 'f'.repeat(64) }]]) {
+    const { capture, manifest } = fixture(t);
+    for (const entry of capture.configuration.cases) {
+      const evidence = beginSyntheticCase(entry.caseId, capture.env); evidence.record(phaseFact);
+      if (entry.caseId === 'P14') for (const fact of facts) evidence.record({ kind: 'installer-runtime', ...fact });
+      if (entry.caseId === 'P16') for (const fact of conformanceFacts(capture.sourceRoot)) evidence.record(fact);
+      if (entry.caseId === 'P42O') for (const fact of canvasFacts()) evidence.record(fact);
+      evidence.finish(outcome);
+    }
+    const result = manifest(); assert.equal(result.receipt.status, 'unknown');
+    assert.equal(result.value.cases.find(item => item.caseId === 'P14')!.status, 'unknown');
+  }
+});
+
+test('P14 runtime fact rejects wrong case and arbitrary metadata, including in a forged finalized sidecar', t => {
+  const { root, output, capture } = fixture(t); completeAll(capture); const result = collectSyntheticEvidence(output, capture);
+  assert.ok(result.file); const file = join(output, result.file); const original = readFileSync(file);
+  for (const mutate of [
+    (fact: Record<string, unknown>) => { fact['caseId'] = 'P13'; },
+    (fact: Record<string, unknown>) => { fact['binarySha256'] = 'c'.repeat(64); },
+    (fact: Record<string, unknown>) => { fact['negotiationProofSha256'] = 'f'.repeat(64); },
+    (fact: Record<string, unknown>) => { fact['path'] = '/not-allowed'; },
+  ]) {
+    const value = JSON.parse(original.toString()) as { cases: { caseId: string; records: SyntheticSavedRecord[]; recordsSha256: string }[] };
+    const item = value.cases.find(entry => entry.caseId === 'P14')!;
+    const record = item.records.find(entry => entry.kind === 'record' && entry.fact.kind === 'installer-runtime')!;
+    if (record.kind !== 'record') throw new Error('Expected installer fact'); mutate(record.fact as unknown as Record<string, unknown>);
+    item.recordsSha256 = sha256(Buffer.from(JSON.stringify(item.records)));
+    const bytes = Buffer.from(JSON.stringify(value)); writeFileSync(file, bytes);
+    assert.throws(() => verifySyntheticEvidence(output, { ...result, sha256: sha256(bytes), bytes: bytes.length }, capture.configuration.binding, root, installerRuntime));
+  }
+  const rejected = fixture(t); const wrong = beginSyntheticCase('P13', rejected.capture.env); wrong.record({ kind: 'installer-runtime', ...installerRuntime }); wrong.finish(outcome);
+  const footer = rejected.saved('P13').at(-1)!; assert.equal(footer.kind, 'footer');
+  if (footer.kind === 'footer') { assert.equal(footer.dropped, 1); assert.equal(footer.incomplete, true); }
+});

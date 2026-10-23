@@ -418,3 +418,85 @@ test('drops, caps, reordering, missing owners and changed preparation leave comp
   writeFileSync(path, original); assert.equal(collectSemanticTraceEvidence(root, false).status, 'incomplete');
   assert.equal(collectSemanticTraceEvidence(root).status, 'complete');
 });
+
+test('P14 independently checks fault negotiation, rejects primary aliases and rechecks binary/proof after failure', async t => {
+  const { verifyInstallerFixtureRuntime, verifyInstallerFixturePostRun } = await import('./candidate-web.ts');
+  const { sha256 } = await import('./bundle.ts');
+  const root = fixture(t); const production = join(root, 'production'); const secondary = join(root, 'fault'); const proofFile = join(root, 'proof.json');
+  writeFileSync(production, 'production bytes, never executed'); writeFileSync(secondary, 'feature bytes, never executed');
+  const primaryHash = sha256(readFileSync(production)); const secondaryHash = sha256(readFileSync(secondary));
+  const proof = { status: 'passed', binarySha256: secondaryHash, scopeExercisePassed: true, cleanupConfirmed: true, negotiation: { capabilities: [...REQUIRED_CAPABILITIES, 'acceptance.faults/1'] } };
+  writeFileSync(proofFile, JSON.stringify(proof));
+  for (const args of [[undefined, undefined], [secondary, undefined], [undefined, proofFile]] as const) assert.throws(() => verifyInstallerFixtureRuntime('web-browser', args[0], args[1], production, primaryHash), /Missing explicit/);
+  assert.equal(verifyInstallerFixtureRuntime('web-unit', undefined, undefined, production, primaryHash), undefined);
+  assert.throws(() => verifyInstallerFixtureRuntime('public-callbacks', secondary, proofFile, production, primaryHash), /only valid/);
+  assert.throws(() => verifyInstallerFixtureRuntime('web-browser', production, proofFile, production, primaryHash), /separate/);
+  const alias = join(root, 'alias'); symlinkSync(production, alias);
+  assert.throws(() => verifyInstallerFixtureRuntime('web-browser', alias, proofFile, production, primaryHash), /separate/);
+  const duplicate = join(root, 'duplicate'); writeFileSync(duplicate, readFileSync(production));
+  assert.throws(() => verifyInstallerFixtureRuntime('web-browser', duplicate, proofFile, production, primaryHash), /separate/);
+  for (const changed of [{ ...proof, status: 'failed' }, { ...proof, binarySha256: primaryHash }, { ...proof, cleanupConfirmed: false }, { ...proof, scopeExercisePassed: false }, { ...proof, negotiation: { capabilities: REQUIRED_CAPABILITIES } }]) {
+    writeFileSync(proofFile, JSON.stringify(changed));
+    assert.throws(() => verifyInstallerFixtureRuntime('web-browser', secondary, proofFile, production, primaryHash));
+  }
+  writeFileSync(proofFile, JSON.stringify(proof));
+  const verified = verifyInstallerFixtureRuntime('web-browser', secondary, proofFile, production, primaryHash)!;
+  assert.equal(verified.binding.negotiationProofSha256, sha256(readFileSync(proofFile)));
+  assert.equal(verifyInstallerFixturePostRun(verified).postRunIdentityVerified, true);
+  writeFileSync(secondary, 'mutated'); assert.equal(verifyInstallerFixturePostRun(verified).postRunIdentityVerified, false);
+  writeFileSync(secondary, 'feature bytes, never executed'); writeFileSync(proofFile, JSON.stringify({ ...proof, extra: true }));
+  assert.equal(verifyInstallerFixturePostRun(verified).postRunIdentityVerified, false);
+  rmSync(secondary); assert.equal(verifyInstallerFixturePostRun(verified).postRunIdentityVerified, false);
+});
+
+test('P14 dedicated verified environment is isolated from production and fixture spawn rehashes exact bytes', async t => {
+  const { candidateInstallerEnvironment, verifyInstallerFixtureRuntime } = await import('./candidate-web.ts');
+  const { INSTALLER_BINDING_ENV, INSTALLER_EXECUTABLE_ENV, INSTALLER_MANIFEST_ENV, installerRuntimeFromEnvironment, installerManifest, createInstallerFixture } = await import('../../packages/web/tests/helpers/installer-fixture.ts');
+  const { sha256 } = await import('./bundle.ts');
+  const root = fixture(t); const production = join(root, 'production'); const binary = join(root, 'secondary'); const proof = join(root, 'proof');
+  writeFileSync(production, 'production'); writeFileSync(binary, 'feature identity only, not executable');
+  writeFileSync(proof, JSON.stringify({ status: 'passed', binarySha256: sha256(readFileSync(binary)), scopeExercisePassed: true, cleanupConfirmed: true, negotiation: { capabilities: [...REQUIRED_CAPABILITIES, 'acceptance.faults/1'] } }));
+  const runtime = verifyInstallerFixtureRuntime('web-browser', binary, proof, production, sha256(readFileSync(production)))!;
+  const inherited = { HOME: '/original-home', E2E_AGENT_BROWSER_EXECUTABLE: production, [INSTALLER_MANIFEST_ENV]: 'foreign', [INSTALLER_EXECUTABLE_ENV]: 'foreign', [INSTALLER_BINDING_ENV]: 'unverified' };
+  const clean = candidateInstallerEnvironment(inherited, undefined);
+  assert.deepEqual(clean, { HOME: '/original-home', E2E_AGENT_BROWSER_EXECUTABLE: production });
+  const env = candidateInstallerEnvironment(inherited, runtime);
+  assert.equal(env['HOME'], '/original-home'); assert.equal(env['E2E_AGENT_BROWSER_EXECUTABLE'], production); assert.equal(env[INSTALLER_MANIFEST_ENV], undefined);
+  assert.deepEqual(installerRuntimeFromEnvironment(env), { binary: runtime.binary, binding: runtime.binding });
+  assert.equal(inherited[INSTALLER_BINDING_ENV], 'unverified');
+  const unused = createInstallerFixture('/not-spawned-wrapper', env); const closing = unused.close(); assert.equal(unused.close(), closing); await closing;
+  await assert.rejects(unused.start(), /closed/);
+  writeFileSync(binary, 'changed'); assert.throws(() => installerRuntimeFromEnvironment(env), /changed/);
+  assert.throws(() => installerRuntimeFromEnvironment(clean), /Missing/);
+  assert.deepEqual(installerManifest(80), { channels: { Stable: { version: '999.0.0.1', downloads: { chrome: ['linux64', 'mac-arm64', 'mac-x64', 'win64'].map(platform => ({ platform, url: 'http://127.0.0.1:80/archive.zip' })) } } } });
+  for (const port of [0, -1, 65536, 1.5]) assert.throws(() => installerManifest(port));
+  const fixtureSource = readFileSync(new URL('../../packages/web/tests/helpers/installer-fixture.ts', import.meta.url), 'utf8');
+  const testSource = readFileSync(new URL('../../packages/web/tests/integration/cli.test.ts', import.meta.url), 'utf8');
+  assert.match(fixtureSource, /detached: true/); assert.match(fixtureSource, /ownedProcessGroupSignal\(child.pid\)/);
+  assert.match(fixtureSource, /HOME: home/); assert.match(fixtureSource, /response.write\(Buffer.from\(\[0x50, 0x4b, 0x03, 0x04\]\), error =>/);
+  assert.ok(fixtureSource.indexOf("archive.once('close'") < fixtureSource.indexOf('archiveReady.resolve()'));
+  assert.ok(testSource.indexOf('cleanups.push') < testSource.indexOf('await fixture.start()'));
+  assert.ok(testSource.indexOf('await fixture.start()') < testSource.indexOf("evidence.passed('setup')"));
+  assert.match(fixtureSource, /child!\.kill\('SIGTERM'\)/); assert.match(testSource, /expect\(cancel\(\)\).toBe\(true\)/); assert.match(testSource, /expect\(await installerExited\(\)\).toEqual\(\{ code: 143, signal: null \}\)/);
+  assert.doesNotMatch(testSource, /PLAYWRIGHT_DOWNLOAD_HOST|PLAYWRIGHT_BROWSERS_PATH|SIGKILL/);
+});
+
+
+test('P14 permanently retires its PGID after absence and never signals a recycled group', async () => {
+  const { ownedProcessGroupSignal } = await import('../../packages/web/tests/helpers/installer-fixture.ts');
+  for (const first of [0, 'SIGTERM'] as const) {
+    const calls: [number, NodeJS.Signals | 0][] = [];
+    const signal = ownedProcessGroupSignal(12345, (pid, value) => {
+      calls.push([pid, value]);
+      if (calls.length === 1) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      return true; // A recycled group must never reach this branch.
+    });
+    assert.equal(signal(first), false);
+    assert.equal(signal(0), false);
+    assert.equal(signal('SIGTERM'), false);
+    assert.equal(signal('SIGKILL'), false);
+    assert.deepEqual(calls, [[-12345, first]]);
+  }
+  const denied = ownedProcessGroupSignal(12345, () => { throw Object.assign(new Error('denied'), { code: 'EPERM' }); });
+  assert.throws(() => denied('SIGTERM'), /denied/);
+});

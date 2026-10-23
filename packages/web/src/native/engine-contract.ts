@@ -17,6 +17,11 @@ export interface NativeImage extends NativeBlob {
   readonly scale: number;
   readonly maskedRegionCount: number;
 }
+export interface NativeTraceImage extends NativeImage {
+  readonly viewportRef: NodeRef;
+  readonly viewport: ViewportSize;
+  readonly location: string;
+}
 export interface NativeObservation extends Scoped {
   readonly revision: string;
   readonly location?: string;
@@ -64,7 +69,7 @@ export interface EngineCommandMap {
   'browser.pointer': { args: Scoped & { readonly point: ViewportPoint; readonly action: PointerAction }; result: null };
   'browser.keyboard.type': { args: Scoped & { readonly text: string; readonly replace: boolean }; result: null };
   'browser.keyboard.press': { args: Scoped & { readonly key: string }; result: null };
-  'capture.screenshot': { args: Scoped & { readonly secureFieldSelector: string }; result: NativeImage };
+  'capture.screenshot': { args: Scoped & { readonly secureFieldSelector: string; readonly purpose?: 'pixelsOnly' | 'trace' }; result: NativeImage };
   'state.capture': { args: Scoped; result: NativeBlob & { readonly format: 'agent-browser-storage-state'; readonly version: 1 } };
   'state.restore': { args: Scoped & { readonly format: 'agent-browser-storage-state' | 'playwright-storage-state'; readonly version: 1; readonly bodyHandle: string }; result: Scoped };
   'recording.start': { args: Scoped & { readonly size?: ViewportSize; readonly quality?: number }; result: null };

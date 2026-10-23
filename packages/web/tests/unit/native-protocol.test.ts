@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { NativeFrameError } from '../../src/native/frames.ts';
 import { serverMessage } from '../../src/native/protocol.ts';
+import { serverMessage as legacyServerMessage } from '../fixtures/client-protocol-ci17.ts';
 
-const vectors = JSON.parse(readFileSync(new URL('../fixtures/client-protocol-v1.json', import.meta.url), 'utf8')) as { server: Record<string, unknown>[]; errorCodes: string[] };
+const vectors = JSON.parse(readFileSync(new URL('../fixtures/client-protocol-v1.json', import.meta.url), 'utf8')) as { server: Record<string, unknown>[]; errorCodes: string[]; frameErrors: Record<string, unknown>[]; invalidFrameErrors: Record<string, unknown>[] };
 
 describe('native session wire contract', () => {
   it('accepts byte-identical native server vectors', () => {
@@ -44,4 +45,29 @@ describe('native session wire contract', () => {
     for (let depth = 0; depth < 130; depth++) payload = { child: payload };
     expect(() => serverMessage({ ...event, payload })).toThrow(NativeFrameError);
   });
+});
+
+it('requires a coordinated decoder update: the legacy decoder rejects every new result', () => {
+  for (const message of vectors.frameErrors) {
+    expect(() => legacyServerMessage(message)).toThrow(NativeFrameError);
+    const error = message['error'] as Record<string, unknown>;
+    // Either extension independently fails the old closed decoder.
+    expect(() => legacyServerMessage({ ...message, error: { code: error['code'] } })).toThrow(NativeFrameError);
+    expect(() => legacyServerMessage({ ...message, error: { ...error, code: 'invalid-arguments' } })).toThrow(NativeFrameError);
+  }
+  for (const code of vectors.errorCodes) expect(() => legacyServerMessage({ type: 'error', error: { code }, scopeState: 'quarantined' })).not.toThrow();
+});
+
+it('accepts bounded terminal frame facts and rejects every paired invalid vector', () => {
+  for (const message of vectors.frameErrors) expect(serverMessage(message)).toBe(message);
+  for (const message of vectors.invalidFrameErrors) expect(() => serverMessage(message)).toThrow(NativeFrameError);
+});
+
+it('refuses non-JSON, non-integer, and contradictory frame facts', () => {
+  const message = vectors.frameErrors[0]!;
+  for (const field of ['index', 'count']) for (const value of [NaN, Infinity, -Infinity, undefined, null, true, [], {}]) {
+    expect(() => serverMessage({ ...message, error: { code: 'frame-not-found', frameSelection: { index: 0, count: 0, [field]: value } } })).toThrow(NativeFrameError);
+  }
+  expect(() => serverMessage({ ...message, effects: 'unknown' })).toThrow(NativeFrameError);
+  expect(() => serverMessage({ ...message, data: {} })).toThrow(NativeFrameError);
 });

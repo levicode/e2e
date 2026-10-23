@@ -368,12 +368,16 @@ describe('native fallback adapter ownership', () => {
       expect(failure).toBeInstanceOf(EngineError);
       expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
       const frames = peer.frames.length;
-      await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
       expect(peer.frames).toHaveLength(frames);
       expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe']);
     } finally {
       surfaces.delete(surface);
-      await expect(surface.dispose({ signal: operation().signal, timeoutMs: 1000 })).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+      // terminal.close/1 permits confirmed cleanup, never application reuse or
+      // relabeling the original ACTION_MAY_HAVE_COMMITTED outcome as success.
+      await expect(surface.dispose({ signal: operation().signal, timeoutMs: 1000 })).resolves.toBeUndefined();
+      expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe']);
     }
   });
 });

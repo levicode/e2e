@@ -4,6 +4,7 @@ import { mkdtempSync, opendirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { validInstallerRuntimeBinding, type InstallerRuntimeBinding } from '../../packages/web/tests/helpers/installer-fixture.ts';
 import { sha256 } from './bundle.ts';
 import { hashFile } from './candidate-native.ts';
 import { conformanceCoordinateKey, conformanceSourceDomain, loadConformanceTables } from '../../packages/web/tests/helpers/conformance-evidence.ts';
@@ -96,14 +97,21 @@ function completeCanvasEvidence(records: readonly SyntheticSavedRecord[]): boole
   const targets = records.flatMap(record => record.kind === 'record' && record.fact.kind === 'canvas-oracle' ? [record.fact.targetOrdinal] : []);
   return targets.length === 4 && new Set(targets).size === 4 && [0, 1, 2, 3].every(target => targets.includes(target as 0 | 1 | 2 | 3));
 }
+/** P14 must name the independently verified secondary runtime, never the primary suite binary. */
+function completeInstallerEvidence(records: readonly SyntheticSavedRecord[], expected: InstallerRuntimeBinding | undefined): boolean {
+  if (!validInstallerRuntimeBinding(expected)) return false;
+  const facts = records.flatMap(record => record.kind === 'record' && record.fact.kind === 'installer-runtime' ? [record.fact] : []);
+  return facts.length === 1 && facts[0]!.caseId === expected.caseId && facts[0]!.purpose === expected.purpose
+    && facts[0]!.binarySha256 === expected.binarySha256 && facts[0]!.negotiationProofSha256 === expected.negotiationProofSha256;
+}
 /** Explicit suite ownership fixes the maximum aggregate budget before any fixture can write. */
-export function prepareSyntheticCapture(root: string, suite: SyntheticSuite, identity: Omit<SyntheticBinding, 'runId' | 'suite'>, inherited: NodeJS.ProcessEnv): SyntheticCapture {
+export function prepareSyntheticCapture(root: string, suite: SyntheticSuite, identity: Omit<SyntheticBinding, 'runId' | 'suite'>, inherited: NodeJS.ProcessEnv, installerRuntime?: InstallerRuntimeBinding): SyntheticCapture {
   if (SYNTHETIC_TOTAL_BYTES > SYNTHETIC_MANIFEST_BYTES) throw new Error('Synthetic evidence exceeds aggregate budget');
   const binding: SyntheticBinding = { runId: randomBytes(16).toString('hex'), suite, ...identity };
   if (!validSyntheticBinding(binding)) throw new Error('Invalid synthetic binding');
   const cases = (Object.keys(SYNTHETIC_CASE_MANIFEST) as SyntheticCaseId[]).filter(caseId => SYNTHETIC_CASE_MANIFEST[caseId].suite === suite)
     .map(caseId => ({ caseId, sourceSha256: syntheticCaseSourceDigest(root, caseId) }));
-  const configuration: SyntheticConfiguration = { schemaVersion: 1, binding, cases };
+  const configuration: SyntheticConfiguration = { schemaVersion: 1, binding, cases, ...(installerRuntime === undefined ? {} : { installerRuntime }) };
   if (!validSyntheticConfiguration(configuration)) throw new Error('Invalid synthetic configuration');
   const directory = mkdtempSync(join(tmpdir(), 'e2e-synthetic-evidence-'));
   requireSyntheticDirectory(directory);
@@ -111,7 +119,7 @@ export function prepareSyntheticCapture(root: string, suite: SyntheticSuite, ide
   const env = { ...cleanSyntheticEnvironment(inherited), [SYNTHETIC_BATCH_ENV]: '1', [SYNTHETIC_DIRECTORY_ENV]: directory, [SYNTHETIC_BINDING_ENV]: JSON.stringify(binding) };
   return { sourceRoot: root, directory, configuration, env };
 }
-function inspectCase(directory: string, entry: SyntheticConfiguration['cases'][number], binding: SyntheticBinding, unexpected: boolean, sourceRoot: string): CaseEvidence {
+function inspectCase(directory: string, entry: SyntheticConfiguration['cases'][number], binding: SyntheticBinding, unexpected: boolean, sourceRoot: string, installerRuntime: InstallerRuntimeBinding | undefined): CaseEvidence {
   const reasons: Reason[] = unexpected ? ['unexpected-entry'] : []; const records: SyntheticSavedRecord[] = [];
   const budget = SYNTHETIC_CASE_MANIFEST[entry.caseId]; let bytes: Buffer | undefined;
   try { bytes = readSyntheticFile(join(directory, `${entry.caseId}.jsonl`), budget.maxBytes); }
@@ -144,6 +152,7 @@ function inspectCase(directory: string, entry: SyntheticConfiguration['cases'][n
   if (facts.some(({ fact }) => ('truncated' in fact && fact.truncated) || ('unavailable' in fact && fact.unavailable))) reasons.push('incomplete');
   const slots = facts.flatMap(({ fact }) => fact.kind === 'native-result' ? [fact.slot] : fact.kind === 'request-rejected-without-result' ? [fact.kind] : []);
   if (new Set(slots).size !== slots.length) reasons.push('invalid-record');
+  if (entry.caseId === 'P14' && !completeInstallerEvidence(records, installerRuntime)) reasons.push('wrong-binding');
   if (entry.caseId === 'P16' && !completeConformanceEvidence(records, sourceRoot, entry.sourceSha256)) reasons.push('incomplete');
   if (entry.caseId === 'P42O' && !completeCanvasEvidence(records)) reasons.push('incomplete');
   return { caseId: entry.caseId, sourceSha256: entry.sourceSha256, status: reasons.length ? 'unknown' : 'complete', reasons: [...new Set(reasons)], records, recordsSha256: sha256(Buffer.from(JSON.stringify(records))) };
@@ -164,7 +173,7 @@ export function collectSyntheticEvidence(output: string, capture: SyntheticCaptu
         if (++count > allowed.size || !allowed.has(entry.name)) { unexpected = true; break; }
       }
     } finally { directory.closeSync(); }
-    const cases = current.cases.map(entry => inspectCase(capture.directory, entry, current.binding, unexpected, capture.sourceRoot));
+    const cases = current.cases.map(entry => inspectCase(capture.directory, entry, current.binding, unexpected, capture.sourceRoot, current.installerRuntime));
     const manifest: Manifest = { schemaVersion: 1, binding: current.binding, status: cases.every(item => item.status === 'complete') ? 'complete' : 'unknown', cases };
     const bytes = Buffer.from(JSON.stringify(manifest));
     if (bytes.length > SYNTHETIC_MANIFEST_BYTES) return unavailable('collection-failed');
@@ -174,11 +183,12 @@ export function collectSyntheticEvidence(output: string, capture: SyntheticCaptu
   } catch { return unavailable('collection-failed'); }
 }
 /** Final acceptance requires complete diagnostics only when this one batch was explicitly requested. */
-export function verifySyntheticEvidence(output: string, value: unknown, expected: SyntheticBinding, root: string): void {
+export function verifySyntheticEvidence(output: string, value: unknown, expected: SyntheticBinding, root: string, installerRuntime?: InstallerRuntimeBinding): void {
   const fail = (): never => { throw new Error('Synthetic evidence is missing, invalid or incomplete'); };
   if (!validSyntheticBinding(expected) || !syntheticObject(value) || !syntheticKeys(value, ['schemaVersion', 'status', 'file', 'sha256', 'bytes', 'reason'])
     || value['schemaVersion'] !== 1 || value['status'] !== 'complete' || value['reason'] !== 'collected'
     || value['file'] !== syntheticArtifactFile(expected.suite) || !syntheticDigest(value['sha256']) || !syntheticCount(value['bytes'], SYNTHETIC_MANIFEST_BYTES)) fail();
+  if (expected.suite === 'web-browser' ? !validInstallerRuntimeBinding(installerRuntime) || installerRuntime.binarySha256 === expected.binarySha256 : installerRuntime !== undefined) fail();
   const receipt = value as SyntheticEvidenceReceipt;
   const bytes = readSyntheticFile(join(output, receipt.file!), SYNTHETIC_MANIFEST_BYTES);
   if (bytes.length !== receipt.bytes || sha256(bytes) !== receipt.sha256) fail();
@@ -199,6 +209,7 @@ export function verifySyntheticEvidence(output: string, value: unknown, expected
       || sha256(Buffer.from(JSON.stringify(recordItems))) !== item.recordsSha256) fail();
     const slots = recordItems.flatMap(record => record.kind === 'record' && record.fact.kind === 'native-result' ? [record.fact.slot] : record.kind === 'record' && record.fact.kind === 'request-rejected-without-result' ? [record.fact.kind] : []);
     if (new Set(slots).size !== slots.length) fail();
+    if (item.caseId === 'P14' && !completeInstallerEvidence(recordItems, installerRuntime)) fail();
     if (item.caseId === 'P16' && !completeConformanceEvidence(recordItems, root, item.sourceSha256)) fail();
     if (item.caseId === 'P42O' && !completeCanvasEvidence(recordItems)) fail();
     const first = recordItems[0]; const last = recordItems.at(-1);

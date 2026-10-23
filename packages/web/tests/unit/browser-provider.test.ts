@@ -416,10 +416,10 @@ describe('worker scope', () => {
     await expect(worker.endAttempt(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
     expect(cloud.acquired).toHaveLength(1);
     expect(cloud.released).toEqual([]);
-    await worker.startAttempt(attempt('a2'));
-    expect(endpoints()).toEqual(['wss://0.example', 'wss://0.example']);
+    await expect(worker.startAttempt(attempt('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(endpoints()).toEqual(['wss://0.example']);
     expect(cloud.acquired).toHaveLength(1);
-    await worker.dispose(cleanup());
+    await expect(worker.dispose(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
     expect(cloud.released).toEqual([]);
     await runner.finish(finishInfo());
     expect(cloud.released.map(lease => lease.id)).toEqual(['lease-0']);
@@ -626,17 +626,21 @@ describe('attempt scope', () => {
     }
   });
 
-  it('reports a release that failed as a cleanup error, once, and never holds the lease again', async () => {
+  it('retains a failed release as the same cleanup error without releasing or acquiring again', async () => {
     const cloud = provider({ scope: 'attempt', failRelease: true });
     const worker = new NativeSurface({ browser: cloud.impl });
     await worker.init(initInfo(0, (await prepared(cloud.impl, 1)).env));
     await worker.startAttempt(attempt('a1'));
-    await expect(worker.endAttempt(cleanup())).rejects.toMatchObject({
+    const first = await worker.endAttempt(cleanup()).catch((cause: unknown) => cause);
+    expect(first).toMatchObject({
       code: 'ENGINE_FAILURE',
       message: expect.stringContaining('browser provider "toy-cloud" could not release browser lease-0: stop failed'),
     });
-    await worker.endAttempt(cleanup());
+    await expect(worker.endAttempt(cleanup())).rejects.toBe(first);
+    await expect(worker.dispose(cleanup())).rejects.toBe(first);
+    await expect(worker.startAttempt(attempt('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     expect(cloud.released).toHaveLength(1);
+    expect(cloud.acquired).toHaveLength(1);
   });
 
   it('reattaches through the lease\'s reconnectEndpoint after the transport drops, and through cdpEndpoint without one', async () => {

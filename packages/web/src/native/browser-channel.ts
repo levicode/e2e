@@ -4,7 +4,7 @@ import type { BrowserCommandMap, BrowserDecision, BrowserEventMap } from './brow
 import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs, validateBrowserDecision } from './browser-decode.ts';
 import type { NativeClient } from './client.ts';
 import type { NativeEvent, NativeResult } from './protocol.ts';
-import type { QueryDiagnostic } from './query-diagnostic.ts';
+import type { FrameQueryDiagnostic, QueryDiagnostic } from './query-diagnostic.ts';
 
 /** The lifecycle surface supplies current attempt identity and bounded cleanup context. */
 export interface BrowserChannelContext {
@@ -115,14 +115,19 @@ export class BrowserChannel {
 const cleanRejections = new WeakSet<EngineError | TestError>();
 /** Internal lifecycle evidence, never inferred from a public error string or caller-supplied code. */
 export function isNativeNotDispatched(cause: unknown): boolean { return (cause instanceof EngineError || cause instanceof TestError) && cleanRejections.has(cause); }
-export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic): EngineError | TestError {
-  const failure = classifyResultError(result, checkedAction, queryDiagnostic);
+export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic): EngineError | TestError {
+  const failure = classifyResultError(result, checkedAction, queryDiagnostic, frameDiagnostic);
   if (result.effects === 'not-dispatched' && result.scopeState === 'usable') cleanRejections.add(failure);
   return failure;
 }
-function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic): EngineError | TestError {
+function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic): EngineError | TestError {
   if (result.effects === 'unknown') return new EngineError('ACTION_MAY_HAVE_COMMITTED', 'The native browser action outcome is unknown', { retryable: false });
   const reason = result.error?.code;
+  if (!result.ok && result.effects === 'not-dispatched' && result.scopeState === 'usable' && frameDiagnostic !== undefined
+    && result.error?.frameSelection?.index === frameDiagnostic.index && result.error.frameSelection.count === frameDiagnostic.count) {
+    if (reason === 'frame-not-found') return new EngineError('FRAME_NOT_FOUND', `no frame matches ${frameDiagnostic.selector}`, { retryable: true });
+    if (reason === 'frame-ambiguous') return new EngineError('FRAME_AMBIGUOUS', `${frameDiagnostic.count} frames match ${frameDiagnostic.selector}`, { retryable: false });
+  }
   // Only a settled clean refusal carries public policy semantics. A policy
   // label cannot hide completed effects or make a dirty scope reusable.
   if (reason === 'policy-denied' && result.effects === 'not-dispatched' && result.scopeState === 'usable') return new TestError('POLICY_DENIED', 'The native browser operation was denied by policy', { retryable: false });

@@ -464,14 +464,15 @@ describe('contenteditable editing hosts', () => {
       bodyPhase = 'assertion';
       evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'enter' });
       const roles = Object.fromEntries(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId, node.role]));
-      // A canvas, with no role, name, or text, is not a node at all; an svg has the image role, so it is listed.
+      // The pinned d7 reader keeps testId nodes even without semantics. CI18 P42O
+      // confirms this canvas is present; contenteditable must not invent a textbox role.
       expect(roles, nodeProjection('embedded-surfaces',
         new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), [
-          { testId: 'canvas', included: false },
+          { testId: 'canvas', included: true, role: undefined },
           { testId: 'svg', role: 'image' },
           { testId: 'frame', role: 'iframe' },
           { testId: 'host', role: 'textbox' },
-        ])).toEqual({ svg: 'image', frame: 'iframe', host: 'textbox' });
+        ])).toStrictEqual({ canvas: undefined, svg: 'image', frame: 'iframe', host: 'textbox' });
       outcome.body = 'passed';
     } finally {
       if (outcome.body !== 'not-started') evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: outcome.body === 'passed' ? 'passed' : 'failed' });

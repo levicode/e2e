@@ -1,6 +1,7 @@
 /** One concentrated synthetic evidence batch. Never imported by published runtime code. */
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { validInstallerRuntimeBinding, type InstallerRuntimeBinding } from './installer-fixture.ts';
 
 export const SYNTHETIC_BATCH_ENV = 'E2E_SYNTHETIC_EVIDENCE_BATCH';
 export const SYNTHETIC_DIRECTORY_ENV = 'E2E_SYNTHETIC_EVIDENCE_DIRECTORY';
@@ -20,7 +21,7 @@ export const SYNTHETIC_CASE_MANIFEST = {
   P11: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cdp-recovery.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P12: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cdp-recovery.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P13: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cdp-recovery.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P14: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cli.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P14: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cli.test.ts", "packages/web/tests/helpers/installer-fixture.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P15: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/closed-shadow-locators.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P16: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/conformance.test.ts", "packages/web/tests/conformance/axe-core/implicit-role.cjs", "packages/web/tests/conformance/axe-core/accessible-text.cjs", "packages/web/tests/conformance/expected.txt", "packages/web/tests/helpers/conformance-evidence.ts", "packages/web/tests/crosscheck/expectations.ts"], maxRecords: 256, maxBytes: 64 * 1024 },
   P17: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/evaluate.test.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
@@ -129,6 +130,7 @@ export interface SyntheticNativeResult {
   effects: 'not-dispatched' | 'completed' | 'unknown'; scopeState: 'usable' | 'quarantined' | 'closed';
 }
 export type SyntheticFact =
+  | ({ kind: 'installer-runtime' } & InstallerRuntimeBinding)
   | { kind: 'phase'; section: 'setup' | 'body' | 'cleanup' | 'backstop'; phase: SyntheticPhase; state: 'enter' | 'passed' | 'failed' }
   | { kind: 'native-result'; slot: 'first-refusal' | 'first-terminal'; phase: SyntheticPhase; command: typeof SYNTHETIC_COMMANDS[number]; result: SyntheticNativeResult | null }
   | { kind: 'request-rejected-without-result'; phase: SyntheticPhase; command: SyntheticCommand }
@@ -147,10 +149,11 @@ export type SyntheticFact =
 export type SyntheticOutcomeState = 'not-started' | 'passed' | 'failed' | 'incomplete';
 export interface SyntheticOutcome { setup: SyntheticOutcomeState; body: SyntheticOutcomeState; cleanup: SyntheticOutcomeState }
 export interface SyntheticBinding {
+  // binarySha256 always identifies the primary suite runtime, not P14’s secondary child.
   runId: string; suite: SyntheticSuite; sourceRevision: string; testSourceDigest: string; binarySha256: string;
 }
 export interface SyntheticCaseBinding { caseId: SyntheticCaseId; sourceSha256: string }
-export interface SyntheticConfiguration { schemaVersion: 1; binding: SyntheticBinding; cases: SyntheticCaseBinding[] }
+export interface SyntheticConfiguration { schemaVersion: 1; binding: SyntheticBinding; cases: SyntheticCaseBinding[]; installerRuntime?: InstallerRuntimeBinding }
 export type SyntheticSavedRecord =
   | { kind: 'header'; schemaVersion: 1; binding: SyntheticBinding; caseId: SyntheticCaseId; sourceSha256: string }
   | { kind: 'record'; sequence: number; fact: SyntheticFact }
@@ -180,9 +183,10 @@ export function validSyntheticBinding(value: unknown): value is SyntheticBinding
 }
 /** The runner cannot grant arbitrary case IDs or skip any registered case in the selected suite. */
 export function validSyntheticConfiguration(value: unknown): value is SyntheticConfiguration {
-  if (!syntheticObject(value) || !syntheticKeys(value, ['schemaVersion', 'binding', 'cases']) || value['schemaVersion'] !== 1
+  if (!syntheticObject(value) || !syntheticKeys(value, Object.hasOwn(value, 'installerRuntime') ? ['schemaVersion', 'binding', 'cases', 'installerRuntime'] : ['schemaVersion', 'binding', 'cases']) || value['schemaVersion'] !== 1
     || !validSyntheticBinding(value['binding']) || !Array.isArray(value['cases'])) return false;
   const suite = value['binding'].suite;
+  if (suite === 'web-browser' ? !validInstallerRuntimeBinding(value['installerRuntime']) || value['installerRuntime'].binarySha256 === value['binding'].binarySha256 : Object.hasOwn(value, 'installerRuntime')) return false;
   const expected = Object.keys(SYNTHETIC_CASE_MANIFEST).filter(id => SYNTHETIC_CASE_MANIFEST[id as SyntheticCaseId].suite === suite);
   return value['cases'].length === expected.length && value['cases'].every((item: unknown, index: number) => syntheticObject(item)
     && syntheticKeys(item, ['caseId', 'sourceSha256']) && item['caseId'] === expected[index] && syntheticDigest(item['sourceSha256']));
@@ -199,6 +203,10 @@ export function validSyntheticNativeResult(value: unknown): value is SyntheticNa
 export function validSyntheticFact(value: unknown, caseId: SyntheticCaseId): value is SyntheticFact {
   if (!syntheticObject(value)) return false;
   switch (value['kind']) {
+    case 'installer-runtime': {
+      if (caseId !== 'P14' || !syntheticKeys(value, ['kind', 'caseId', 'purpose', 'binarySha256', 'negotiationProofSha256'])) return false;
+      const { kind: _kind, ...binding } = value; return validInstallerRuntimeBinding(binding);
+    }
     case 'phase': return syntheticKeys(value, ['kind', 'section', 'phase', 'state'])
       && member(['setup', 'body', 'cleanup', 'backstop'], value['section']) && member(SYNTHETIC_PHASES, value['phase']) && member(['enter', 'passed', 'failed'], value['state']);
     case 'native-result': return syntheticKeys(value, ['kind', 'slot', 'phase', 'command', 'result']) && member(['first-refusal', 'first-terminal'], value['slot']) && member(SYNTHETIC_PHASES, value['phase'])

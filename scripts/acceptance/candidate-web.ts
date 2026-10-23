@@ -1,6 +1,6 @@
 /** Existing real public suites, with one explicit acceptance-only fault partition. */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_SEMANTIC_FAULT_ASSERTIONS, CANDIDATE_WEB_SUITES, OPTIONAL_CANDIDATE_WEB_SUITES, type CandidateSuite } from './candidate-manifest.ts';
@@ -10,6 +10,7 @@ import { verifyReport, type TestReport } from './report.ts';
 import { NATIVE_TRACE_FILE, SEMANTIC_TRACE_CASES, tsTraceFile } from '../../packages/web/tests/helpers/acceptance-trace-files.ts';
 import { collectSemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { REPO_ROOT } from '../public-packages.ts';
+import { cleanInstallerEnvironment, INSTALLER_EXECUTABLE_ENV, INSTALLER_BINDING_ENV, type InstallerRuntimeBinding, type InstallerRuntimeReceipt } from '../../packages/web/tests/helpers/installer-fixture.ts';
 import { SYNTHETIC_BATCH_ENV } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 import { cleanSyntheticEnvironment, collectSyntheticEvidence, prepareSyntheticCapture, type SyntheticCapture } from './candidate-synthetic-evidence.ts';
 
@@ -69,9 +70,39 @@ export function verifyCandidateRuntime(proof: unknown, binarySha256: string, fau
   if (fault) { if (!capabilities.includes('acceptance.faults/1')) throw new Error('Semantic fault suite needs the separate acceptance-faults binary'); }
   else assertProductionCapabilities(capabilities);
 }
+export interface VerifiedInstallerRuntime { binary: string; proof: string; binding: InstallerRuntimeBinding }
+/** Only P14 receives a separately negotiated feature runtime; equal bytes or aliased paths fail. */
+export function verifyInstallerFixtureRuntime(id: string, binaryArg: string | undefined, proofArg: string | undefined, productionBinary: string, productionSha256: string | undefined): VerifiedInstallerRuntime | undefined {
+  if (id !== 'web-browser') {
+    if (binaryArg !== undefined || proofArg !== undefined) throw new Error('Installer fixture runtime is only valid for web-browser');
+    return undefined;
+  }
+  if (!binaryArg || !proofArg || !productionSha256) throw new Error('Missing explicit installer fixture runtime and negotiation proof');
+  const binary = realpathSync(resolve(binaryArg)); const proof = realpathSync(resolve(proofArg));
+  const binarySha256 = sha256(readFileSync(binary)); const proofBytes = readFileSync(proof);
+  if (binary === realpathSync(productionBinary) || binarySha256 === productionSha256) throw new Error('Installer fixture runtime must be separate from production');
+  verifyCandidateRuntime(JSON.parse(proofBytes.toString('utf8')), binarySha256, true);
+  return { binary, proof, binding: { caseId: 'P14', purpose: 'installer-cancellation-loopback', binarySha256, negotiationProofSha256: sha256(proofBytes) } };
+}
+/** Called in finally, including Vitest/setup failures; proof and executable must both remain unchanged. */
+export function verifyInstallerFixturePostRun(runtime: VerifiedInstallerRuntime): InstallerRuntimeReceipt {
+  let postRunIdentityVerified = false;
+  try {
+    postRunIdentityVerified = realpathSync(runtime.binary) === runtime.binary && realpathSync(runtime.proof) === runtime.proof
+      && sha256(readFileSync(runtime.binary)) === runtime.binding.binarySha256
+      && sha256(readFileSync(runtime.proof)) === runtime.binding.negotiationProofSha256;
+  } catch { /* An unavailable final read is not verified identity. */ }
+  return { ...runtime.binding, postRunIdentityVerified };
+}
+/** Dedicated fixture variables do not replace the suite's production executable or HOME. */
+export function candidateInstallerEnvironment(inherited: NodeJS.ProcessEnv, runtime: VerifiedInstallerRuntime | undefined): NodeJS.ProcessEnv {
+  const env = cleanInstallerEnvironment(inherited);
+  if (runtime) { env[INSTALLER_EXECUTABLE_ENV] = runtime.binary; env[INSTALLER_BINDING_ENV] = JSON.stringify(runtime.binding); }
+  return env;
+}
 /** Fault diagnostics are bounded by the native sink and never enabled for production suites. */
 export function candidatePhaseEnvironment(id: string, inherited: NodeJS.ProcessEnv, output: string): NodeJS.ProcessEnv {
-  const env = { ...inherited };
+  const env = cleanInstallerEnvironment(inherited);
   delete env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
   if (id === 'semantic-faults') {
     const file = resolve(output, NATIVE_TRACE_FILE);
@@ -83,9 +114,9 @@ export function candidatePhaseEnvironment(id: string, inherited: NodeJS.ProcessE
   return env;
 }
 function main(args: string[]): void {
-  const [id, binaryArg, proofArg, outputArg] = args;
+  const [id, binaryArg, proofArg, outputArg, installerBinaryArg, installerProofArg] = args;
   const suite = [...CANDIDATE_WEB_SUITES, ...OPTIONAL_CANDIDATE_WEB_SUITES].find(item => item.id === id);
-  if (!suite || !binaryArg || !proofArg || !outputArg) throw new Error('usage: candidate-web.ts suite native-binary negotiation.json output');
+  if (!suite || !binaryArg || !proofArg || !outputArg || args.length > 6) throw new Error('usage: candidate-web.ts suite native-binary negotiation.json output [installer-fault-binary installer-negotiation.json]');
   const output = resolve(outputArg); mkdirSync(output, { recursive: true });
   const cwd = join(REPO_ROOT, 'packages', suite.package); const binary = resolve(binaryArg);
   const rawReport = join(output, `${suite.id}.vitest.json`);
@@ -94,10 +125,11 @@ function main(args: string[]): void {
   const fingerprint = (files: readonly string[]) => sha256(Buffer.from(files.map(file => `${file}\0${sha256(readFileSync(file))}`).join('\n')));
   const syntheticRequested = process.env[SYNTHETIC_BATCH_ENV] === '1' && (suite.id === 'web-browser' || suite.id === 'public-callbacks');
   let syntheticCapture: SyntheticCapture | undefined;
-  let phaseEnvironment: NodeJS.ProcessEnv = cleanSyntheticEnvironment(process.env);
+  let phaseEnvironment: NodeJS.ProcessEnv = cleanInstallerEnvironment(cleanSyntheticEnvironment(process.env));
   delete phaseEnvironment['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
   let capturePrepared = suite.id !== 'semantic-faults';
   try { phaseEnvironment = candidatePhaseEnvironment(suite.id, cleanSyntheticEnvironment(process.env), output); capturePrepared = true; } catch { /* Capture setup must not change the functional suite outcome. */ }
+  let installerRuntime: VerifiedInstallerRuntime | undefined; let installerFixtureRuntime: InstallerRuntimeReceipt | undefined;
   let files: string[] = []; let testSourceDigest: string | undefined;
   let status = 'failed'; let problem: string | undefined; let assertions = 0; let binarySha256: string | undefined; let runtimeBuild: ReturnType<typeof candidateDistInventory> | undefined;
   try {
@@ -107,6 +139,7 @@ function main(args: string[]): void {
       binarySha256 = sha256(readFileSync(binary));
       verifyCandidateRuntime(JSON.parse(readFileSync(proofArg, 'utf8')), binarySha256, suite.id === 'semantic-faults');
     }
+    installerRuntime = verifyInstallerFixtureRuntime(suite.id, installerBinaryArg, installerProofArg, binary, binarySha256);
     if (process.env['E2E_CROSSCHECK_UPDATE'] === '1') throw new Error('Acceptance must not rewrite oracle expectations');
     for (const name of suite.prerequisites) if (!process.env[name]) throw new Error(`Missing prerequisite ${name}`);
     const directory = join(cwd, suite.directory);
@@ -114,11 +147,11 @@ function main(args: string[]): void {
     files = candidateFiles(suite, directory, discovered); testSourceDigest = fingerprint(files);
     if (syntheticRequested && binarySha256 !== undefined && (suite.id === 'web-browser' || suite.id === 'public-callbacks')) {
       try {
-        syntheticCapture = prepareSyntheticCapture(REPO_ROOT, suite.id, { sourceRevision, testSourceDigest, binarySha256 }, phaseEnvironment);
+        syntheticCapture = prepareSyntheticCapture(REPO_ROOT, suite.id, { sourceRevision, testSourceDigest, binarySha256 }, phaseEnvironment, installerRuntime?.binding);
         phaseEnvironment = syntheticCapture.env;
       } catch { /* Missing capture remains UNKNOWN without changing the original functional outcome. */ }
     }
-    const env: NodeJS.ProcessEnv = { ...phaseEnvironment, E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
+    const env: NodeJS.ProcessEnv = { ...candidateInstallerEnvironment(phaseEnvironment, installerRuntime), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
     if (suite.id === 'crosscheck-benchmark') {
       if (env['CROSSCHECK_BENCHMARK_URL'] !== 'http://127.0.0.1:4280') throw new Error('Optional benchmark must be the explicitly served local synthetic app');
     } else delete env['CROSSCHECK_BENCHMARK_URL'];
@@ -133,10 +166,16 @@ function main(args: string[]): void {
     if (JSON.stringify(candidateDistInventory(REPO_ROOT)) !== JSON.stringify(runtimeBuild)) throw new Error('Built packages changed during suite execution');
     status = 'passed';
   } catch (error) { problem = String(error); process.stderr.write(`${problem}\n`); }
+  finally {
+    if (installerRuntime) {
+      installerFixtureRuntime = verifyInstallerFixturePostRun(installerRuntime);
+      if (!installerFixtureRuntime.postRunIdentityVerified) { status = 'failed'; problem ??= 'Installer fixture runtime/proof changed or could not be verified after execution'; }
+    }
+  }
   const diagnostics = suite.id === 'semantic-faults' ? collectSemanticTraceEvidence(output, capturePrepared) : undefined;
   const syntheticDiagnostics = syntheticRequested ? collectSyntheticEvidence(output, syntheticCapture) : undefined;
   const syntheticBinding = syntheticCapture?.configuration.binding;
-  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, diagnostics, syntheticDiagnostics, syntheticBinding, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
+  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, diagnostics, syntheticDiagnostics, syntheticBinding, installerFixtureRuntime, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
   if (status !== 'passed') process.exitCode = 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main(process.argv.slice(2));

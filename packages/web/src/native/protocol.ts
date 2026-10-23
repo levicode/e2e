@@ -1,4 +1,5 @@
 import { NativeFrameError } from './frames.ts';
+import { CONTINUE_EXACT_OWNER_CAPABILITY } from './capabilities.ts';
 
 export const NATIVE_PROTOCOL = 'agent-browser-session/1';
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -6,7 +7,8 @@ export const MAX_TIMEOUT_MS = 3_600_000;
 
 export type ScopeState = 'usable' | 'quarantined' | 'closed';
 export type Effects = 'not-dispatched' | 'completed' | 'unknown';
-export interface WireError { readonly code: string }
+export interface FrameSelection { readonly index: number; readonly count: number }
+export interface WireError { readonly code: string; readonly frameSelection?: FrameSelection }
 export interface NativeLimits {
   readonly maxFrameBytes: number;
   readonly maxPendingOperations: number;
@@ -18,10 +20,19 @@ export interface NativeReady {
   readonly sessionId: string; readonly generation: number; readonly capabilities: readonly string[];
   readonly limits: NativeLimits; readonly scopeState: ScopeState;
 }
+/** Informational snapshot of exact-operation retirement, never live admission authority. */
+export interface OperationRetention {
+  readonly version: 1;
+  readonly retiredOperationSeq: number;
+  readonly producerState: 'retired' | 'retiring';
+  readonly inputDebt: number;
+  readonly objectDebt: number;
+}
 export interface NativeResult {
   readonly type: 'result'; readonly id: string; readonly generation: number; readonly operationSeq: number;
   readonly ok: boolean; readonly data?: unknown; readonly error?: WireError;
   readonly effects: Effects; readonly scopeState: ScopeState;
+  readonly retention?: OperationRetention;
 }
 export interface NativeControlResult {
   readonly type: 'control-result'; readonly id: string; readonly generation: number;
@@ -36,6 +47,7 @@ export type ServerMessage = NativeReady | NativeResult | NativeControlResult | N
   { readonly type: 'error'; readonly id?: string; readonly error: WireError; readonly scopeState: ScopeState } |
   { readonly type: 'closed'; readonly id: string; readonly generation: number; readonly scopeState: 'closed' };
 
+const FRAME_ERROR_CODES = new Set(['frame-not-found', 'frame-ambiguous']);
 const ERROR_CODES = new Set([
   'invalid-frame', 'unsupported-protocol', 'unsupported-capability', 'stale-generation', 'scope-unavailable',
   'sequence-reused', 'invalid-sequence', 'invalid-timeout', 'capacity-exceeded', 'operation-missing',
@@ -45,12 +57,12 @@ const STATES = new Set(['usable', 'quarantined', 'closed']);
 const EFFECTS = new Set(['not-dispatched', 'completed', 'unknown']);
 
 /** Validate the negotiated server envelope before it can mutate client state. */
-export function serverMessage(value: Record<string, unknown>): ServerMessage {
-  if (!isServerMessage(value)) throw new NativeFrameError();
+export function serverMessage(value: Record<string, unknown>, negotiatedCapabilities: readonly string[] = []): ServerMessage {
+  if (!isServerMessage(value, negotiatedCapabilities)) throw new NativeFrameError();
   return value;
 }
 
-function isServerMessage(value: Record<string, unknown>): value is Record<string, unknown> & ServerMessage {
+function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities: readonly string[]): value is Record<string, unknown> & ServerMessage {
   if (typeof value['type'] !== 'string') throw new NativeFrameError();
   validateJson(value);
   switch (value['type']) {
@@ -66,16 +78,23 @@ function isServerMessage(value: Record<string, unknown>): value is Record<string
       break;
     }
     case 'result':
-      keys(value, ['type', 'id', 'generation', 'operationSeq', 'ok', 'effects', 'scopeState'], ['data', 'error']);
+      keys(value, ['type', 'id', 'generation', 'operationSeq', 'ok', 'effects', 'scopeState'], ['data', 'error', 'retention']);
       identifier(value['id']); positive(value['generation']); positive(value['operationSeq']); state(value['scopeState']);
       if (typeof value['ok'] !== 'boolean' || (typeof value['effects'] !== 'string' || !EFFECTS.has(value['effects']))) throw new NativeFrameError();
       if (value['ok']) {
         if (!Object.hasOwn(value, 'data') || Object.hasOwn(value, 'error')) throw new NativeFrameError();
       } else {
-        error(value['error']);
+        error(value['error'], true);
         if (Object.hasOwn(value, 'data')) throw new NativeFrameError();
       }
-      if (value['effects'] === 'unknown' && (value['ok'] || value['scopeState'] === 'usable')) throw new NativeFrameError();
+      if (Object.hasOwn(value, 'retention')) {
+        if (!negotiatedCapabilities.includes(CONTINUE_EXACT_OWNER_CAPABILITY) || value['effects'] !== 'unknown' || value['ok'] || value['scopeState'] !== 'usable') throw new NativeFrameError();
+        const retention = record(value['retention']);
+        keys(retention, ['version', 'retiredOperationSeq', 'producerState', 'inputDebt', 'objectDebt']);
+        if (retention['version'] !== 1 || retention['retiredOperationSeq'] !== value['operationSeq'] || (retention['producerState'] !== 'retired' && retention['producerState'] !== 'retiring')) throw new NativeFrameError();
+        boundedCount(retention['inputDebt'], 32); boundedCount(retention['objectDebt'], 32);
+      }
+      if (value['effects'] === 'unknown' && (value['ok'] || (value['scopeState'] === 'usable' && !Object.hasOwn(value, 'retention')))) throw new NativeFrameError();
       break;
     case 'control-result':
       keys(value, ['type', 'id', 'generation', 'accepted', 'scopeState'], ['error']);
@@ -136,11 +155,27 @@ function identifier(value: unknown): void {
 function positive(value: unknown): void {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) throw new NativeFrameError();
 }
+function boundedCount(value: unknown, maximum: number): void {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > maximum) throw new NativeFrameError();
+}
 function state(value: unknown): void {
   if (typeof value !== 'string' || !STATES.has(value)) throw new NativeFrameError();
 }
-function error(value: unknown): void {
+function error(value: unknown, terminalFailure = false): void {
   const object = record(value);
-  keys(object, ['code']);
-  if (typeof object['code'] !== 'string' || !ERROR_CODES.has(object['code'])) throw new NativeFrameError();
+  const code = object['code'];
+  if (typeof code !== 'string') throw new NativeFrameError();
+  if (FRAME_ERROR_CODES.has(code)) {
+    if (!terminalFailure) throw new NativeFrameError();
+    keys(object, ['code', 'frameSelection']);
+    const facts = record(object['frameSelection']);
+    keys(facts, ['index', 'count']);
+    const index = facts['index']; const count = facts['count'];
+    if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0 || index >= 64
+      || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 || count > 100_000
+      || (code === 'frame-not-found' ? count !== 0 : count < 2)) throw new NativeFrameError();
+  } else {
+    keys(object, ['code']);
+    if (!ERROR_CODES.has(code)) throw new NativeFrameError();
+  }
 }

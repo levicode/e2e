@@ -9,7 +9,7 @@ export interface PeerRequest {
   readonly operationSeq: number; readonly command: string; readonly args: Record<string, JsonValue>;
 }
 export type PeerOutcome = { readonly data: JsonValue } | {
-  readonly error: string; readonly effects?: Effects; readonly scopeState?: ScopeState;
+  readonly error: string; readonly frameSelection?: unknown; readonly effects?: Effects; readonly scopeState?: ScopeState;
 };
 
 /** Keeps the real NativeClient parser, sequence checks, cancellation, and result decoding in the test. */
@@ -29,6 +29,8 @@ export class NativeProtocolPeer {
         if (frame['type'] === 'hello') this.send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic-provider-peer', generation: 1,
           capabilities: this.capabilities, scopeState: 'usable', limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 } });
         else if (frame['type'] === 'decision') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
+        // Native's control lane ACKs cancellation independently of retained work.
+        else if (frame['type'] === 'cancel') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
         else if (frame['type'] === 'close') this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
         else if (frame['type'] === 'request') {
           const call = frame as unknown as PeerRequest;
@@ -36,9 +38,9 @@ export class NativeProtocolPeer {
           void Promise.resolve().then(() => request(call)).then(outcome => this.send({
             type: 'result', id: call.id, generation: call.generation, operationSeq: call.operationSeq,
             ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed', scopeState: 'usable' }
-              : { ok: false, error: { code: outcome.error }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable' }),
+              : { ok: false, error: { code: outcome.error, ...(outcome.frameSelection === undefined ? {} : { frameSelection: outcome.frameSelection }) }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable' }),
           })).catch(error => this.output.destroy(error instanceof Error ? error : new Error('Synthetic peer failed')));
-        } else if (frame['type'] !== 'cancel') throw new Error(`Unexpected synthetic peer frame ${String(frame['type'])}`);
+        } else throw new Error(`Unexpected synthetic peer frame ${String(frame['type'])}`);
         done();
       } catch (cause) { done(cause instanceof Error ? cause : new Error('Invalid synthetic peer frame')); }
     } });

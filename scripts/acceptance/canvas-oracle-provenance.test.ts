@@ -175,21 +175,32 @@ test('paired native data is four closed facts; absent or mismatched fixture pair
   assert.doesNotMatch(JSON.stringify(pair), /do not retain|testId|ref|unexpected/);
 });
 
-test('original fixture and exact assertion are preserved; companion never reacquires native state', () => {
+test('original fixture and reviewed canvas assertion are preserved; companion never reacquires native state', () => {
   const path = 'packages/web/tests/integration/read-node-roles.test.ts';
   const source = readFileSync(join(root, path), 'utf8');
   const baseline = original(path).toString('utf8');
   // Reviewed pre-diagnostic native test obligations, not a claim of whole-test d7 equality.
   const originalDirectItCount = 12;
   const originalAssertionSha256 = 'eee7c20fd38a018bbda8f8474ec6576e312a8a9ece8b259944e2fe4fbcdd5a34';
+  // f33ec749f corrects only canvas inclusion and strict own-key equality. The d7
+  // reader retains testId nodes; CI18 P42O confirmed baseline/native inclusion
+  // (artifact 12441352372, SHA256 664a97aef391248d7d05423b79a28e203b1ff635e5eb96562b8cab456afe8591).
+  const reviewedAssertionSha256 = '89f383dde0c278dc4a6077320886dafe43f537fcdbd99445f54299552cc140d4';
+  assert.match(original('packages/web/src/in-page/read-semantics.ts').toString('utf8'),
+    /const isInteresting = \(el: Element\): boolean => \{\s*if \(el\.hasAttribute\(options\.testIdAttribute\)\) return true;/);
   const name = "it('never makes a drawn or embedded surface a textbox, whatever its contenteditable says'";
   const oldFixture = baseline.slice(baseline.indexOf(name)).match(/await page\.setContent\(`([\s\S]*?)`\);/)?.[1];
   const fixture = source.match(/const embeddedSurfaceHtml = `([\s\S]*?)`;/)?.[1];
   assert.ok(oldFixture); assert.equal(fixture, oldFixture);
   const currentCase = source.slice(source.indexOf(name), source.indexOf("it('P42O:"));
-  const assertion = (text: string) => text.match(/expect\(roles,[\s\S]*?\.toEqual\(\{ svg: 'image', frame: 'iframe', host: 'textbox' \}\);/)?.[0].replace(/^\s+/gm, '');
+  const assertion = (text: string) => text.match(/expect\(roles,[\s\S]*?\.toStrictEqual\(\{ canvas: undefined, svg: 'image', frame: 'iframe', host: 'textbox' \}\);/)?.[0].replace(/^\s+/gm, '');
   const currentAssertion = assertion(currentCase); assert.ok(currentAssertion);
-  assert.equal(sha256(currentAssertion), originalAssertionSha256);
+  assert.equal(sha256(currentAssertion), reviewedAssertionSha256);
+  // Reversing precisely the reviewed correction must recover the frozen assertion.
+  const originalAssertion = currentAssertion
+    .replace("{ testId: 'canvas', included: true, role: undefined }", "{ testId: 'canvas', included: false }")
+    .replace(".toStrictEqual({ canvas: undefined, svg: 'image', frame: 'iframe', host: 'textbox' })", ".toEqual({ svg: 'image', frame: 'iframe', host: 'textbox' })");
+  assert.equal(sha256(originalAssertion), originalAssertionSha256);
   assert.doesNotMatch(currentCase, /await recordCanvasOracle/);
   const companion = source.slice(source.indexOf("it('P42O:"), source.indexOf("it('drops a name taken", source.indexOf("it('P42O:")));
   assert.doesNotMatch(companion, /nativeDocument|\.engine\.|await capture\(/);

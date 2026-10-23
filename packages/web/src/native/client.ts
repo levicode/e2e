@@ -20,6 +20,7 @@ interface Pending {
   readonly kind: 'hello' | 'request' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
   readonly cancelTarget?: number;
+  readonly callbackToken?: string;
   readonly callbackTransition?: number;
   readonly command?: string;
   readonly generation?: number;
@@ -40,6 +41,8 @@ export class NativeClient {
   private readonly frames = new NativeFrames(MAX_FRAME_BYTES);
   private readonly callback = new AsyncLocalStorage<CallbackOwner>();
   private callbackEpoch = 0;
+  private publicationEpoch = 0;
+  private retirementHandler: (() => void) | undefined;
   private transitionEpoch: number | undefined;
   private publishingEpoch: number | undefined;
   private publishingCommand: string | undefined;
@@ -50,6 +53,8 @@ export class NativeClient {
   private ready: NativeReady | undefined;
   private failure: EngineError | undefined;
   private closed = false;
+  private terminal = false;
+  private closing: Promise<void> | undefined;
   private disposed = false;
   private nextId = 0;
   private operationSeq = 0;
@@ -65,7 +70,7 @@ export class NativeClient {
         for (const frame of this.frames.read(chunk)) {
           channel.acceptanceTrace?.observe('FrameComplete');
           let message: ServerMessage;
-          try { message = serverMessage(frame); }
+          try { message = serverMessage(frame, this.requiredCapabilities.filter(capability => this.ready?.capabilities.includes(capability))); }
           catch { channel.acceptanceTrace?.observe('FrameRefused', { reason: 'schema' }); this.fail('The native browser protocol became invalid (schema)'); return; }
           try { this.receive(message); }
           catch (cause) {
@@ -109,6 +114,12 @@ export class NativeClient {
     return { protocol: this.ready!.protocol, capabilities: [...this.ready!.capabilities], limits: { ...this.ready!.limits } };
   }
 
+  /** Snapshot local publication freshness without changing native owner identity or admission. */
+  publicationCheckpoint(): number { return this.publicationEpoch; }
+
+  /** Installs the owning surface's synchronous cache invalidation, before result resolution. */
+  onOperationRetired(handler: () => void): void { this.retirementHandler = handler; }
+
   /** Captures only this invocation's native revocation state; does not grant new scope authority. */
   callbackRevocationGuard(): () => boolean {
     const owner = this.callback.getStore();
@@ -145,7 +156,7 @@ export class NativeClient {
       throw this.failure!;
     }
     const callback = this.callback.getStore();
-    if (callback !== undefined && !callback.active) throw new EngineError('INVALID_STATE', 'The native callback has already completed', { retryable: false });
+    if (callback !== undefined && (!callback.active || callback.selected)) throw new EngineError('INVALID_STATE', 'The native callback has already completed', { retryable: false });
     if (callback !== undefined) {
       context = { ...context, timeoutMs: Math.min(context.timeoutMs, callback.expiresAt - performance.now()) };
     }
@@ -156,7 +167,7 @@ export class NativeClient {
     const sequence = ++this.operationSeq;
     let message: ServerMessage;
     try {
-      message = await this.exchange('request', { type: 'request', generation: this.ready!.generation, operationSeq: sequence, timeoutMs: this.timeout(context), command, args, ...(callback === undefined || callback.selected ? {} : { callbackToken: callback.token }) }, context, sequence, callbackTransition);
+      message = await this.exchange('request', { type: 'request', generation: this.ready!.generation, operationSeq: sequence, timeoutMs: this.timeout(context), command, args, ...(callback === undefined ? {} : { callbackToken: callback.token }) }, context, sequence, callbackTransition);
     } catch (cause) {
       if (callbackTransition !== undefined && this.publishingEpoch === undefined && this.transitionEpoch === callbackTransition) this.transitionEpoch = undefined;
       throw cause;
@@ -179,24 +190,49 @@ export class NativeClient {
   }
 
   /** Requires explicit native scope closure; killing a proxy alone is not successful browser cleanup. */
-  async close(context: OperationContext): Promise<void> {
-    if (this.failure !== undefined) throw this.failure;
-    if (this.closed) return;
+  close(context: OperationContext): Promise<void> {
+    if (this.closing !== undefined) return this.closing;
+    if (this.failure !== undefined) return Promise.reject(this.failure);
+    // Mandatory retirement has independent authority and a single fixed budget.
+    // Never spread an operation context: its deadline getter may already throw.
     const started = performance.now();
-    this.assertUsable();
-    const message = await this.exchange('close', { type: 'close', generation: this.ready!.generation }, context);
-    if (message.type !== 'closed') throw this.fail('The native browser did not confirm scope closure');
-    this.closed = true;
+    const cleanup: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs: 15000 };
+    this.closing = this.finishClose(cleanup, started);
+    void this.closing.catch(() => {});
+    return this.closing;
+  }
+
+  /** Validated terminal state revokes commands, but retains exact cleanup authority. */
+  isTerminal(): boolean { return this.terminal; }
+
+  private async finishClose(context: OperationContext, started: number): Promise<void> {
     try {
-      await this.channel.settle?.({ ...context, timeoutMs: Math.max(0, context.timeoutMs - (performance.now() - started)) });
-    } catch {
-      throw this.fail('The native browser proxy did not finish acknowledged cleanup');
+      if (this.ready === undefined) throw this.fail('The native browser session is not available');
+      const message = await this.exchange('close', { type: 'close', generation: this.ready.generation }, context);
+      if (message.type !== 'closed') throw this.fail('The native browser did not confirm scope closure');
+      await this.channel.settle?.({ runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: context.signal, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
+      if (this.failure !== undefined) throw this.failure;
+    } catch (cause) {
+      throw this.failure ?? this.fail(cause instanceof EngineError ? cause.message : 'The native browser proxy did not finish acknowledged cleanup');
     } finally { this.dispose(); }
+  }
+
+  private beginTerminalCleanup(): void {
+    this.terminal = true;
+    for (const callback of this.callbacks) {
+      callback.revoked = true; callback.active = false;
+      if (callback.timer !== undefined) clearTimeout(callback.timer);
+    }
+    this.stagedEvents.length = 0;
+    this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
+    // The one cleanup exchange bounds remaining correlation bookkeeping.
+    for (const pending of this.pending.values()) if (pending.kind !== 'close') pending.clear();
+    void this.close({ runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 }).catch(() => {});
   }
 
   private assertUsable(): void {
     if (this.failure !== undefined) throw this.failure;
-    if (this.closed || this.ready === undefined) throw new EngineError('INVALID_STATE', 'The native browser session is not available', { retryable: false });
+    if (this.terminal || this.closing !== undefined || this.closed || this.ready === undefined) throw new EngineError('INVALID_STATE', 'The native browser session is not available', { retryable: false });
   }
 
   private timeout(context: OperationContext): number {
@@ -277,7 +313,7 @@ export class NativeClient {
         if (settled !== undefined) throw new ReceiveFailure('response-correlation');
         settled = reply; complete();
       };
-      this.pending.set(id, { kind, ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
+      this.pending.set(id, { kind, ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
       context.signal.addEventListener('abort', abort, { once: true });
       if (context.signal.aborted) { abort(); return; }
       if (trace === undefined) {
@@ -307,6 +343,7 @@ export class NativeClient {
     if (message.type === 'event') {
       if (this.ready === undefined || message.generation !== this.ready.generation || message.sequence !== this.eventSequence + 1) throw new ReceiveFailure('event-order');
       this.eventSequence = message.sequence;
+      if (this.terminal) return;
       if (message.event === 'scope.callbacks-retired') { this.retireProvenCallbacks(message); return; }
       const bytes = Buffer.byteLength(JSON.stringify(message));
       if (++this.activeEvents > Math.min(this.ready.limits.maxPendingDecisions, 256) || this.eventBytes + bytes > 4 * MAX_FRAME_BYTES) throw new ReceiveFailure('capacity');
@@ -328,6 +365,7 @@ export class NativeClient {
       this.ready = message;
       if (message.capabilities.includes('acceptance.faults/1')) this.channel.acceptanceTrace?.enable();
     }
+    if (message.type === 'result' && message.retention !== undefined) this.retireOperation(pending);
     if (!pending.draining) { this.pending.delete(message.id); pending.clear(); }
     if (message.type === 'closed') {
       this.closed = true;
@@ -341,7 +379,23 @@ export class NativeClient {
     pending.resolve(message);
     if (message.type === 'result') this.channel.acceptanceTrace?.observe('ResultValidated', { operationSeq: message.operationSeq, generation: message.generation });
     if (pending.kind === 'cancel' && message.type === 'control-result') this.channel.acceptanceTrace?.observe('CancelAckValidated', { ...(pending.cancelTarget === undefined ? {} : { operationSeq: pending.cancelTarget }), generation: message.generation, accepted: message.accepted });
-    if (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed')) this.fail('The native browser scope is no longer reusable');
+    if (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed')) {
+      if ((message.type === 'result' || message.type === 'control-result') && this.requiredCapabilities.includes('terminal.close/1') && this.ready?.capabilities.includes('terminal.close/1')) this.beginTerminalCleanup();
+      else if (!this.terminal) this.fail('The native browser scope is no longer reusable');
+    }
+  }
+
+  /** Revoke the exact callback source and its children, never unrelated scope services. */
+  private retireOperation(pending: Pending): void {
+    if (this.publicationEpoch === Number.MAX_SAFE_INTEGER) throw new ReceiveFailure('capacity');
+    // CallbackOwner.sequence is an event sequence, not an operation sequence.
+    if (pending.callbackToken !== undefined) for (const owner of this.callbacks) {
+      if (owner.generation !== pending.generation || owner.token !== pending.callbackToken) continue;
+      owner.revoked = true; owner.active = false;
+      if (owner.timer !== undefined) clearTimeout(owner.timer);
+    }
+    this.publicationEpoch++;
+    this.retirementHandler?.();
   }
 
   /** Terminal proof is consumed on the framing stack, before queued user callbacks can run. */
@@ -378,7 +432,7 @@ export class NativeClient {
     if (callback !== undefined && callbackTimer !== undefined) callback.timer = callbackTimer;
     callbackTimer?.unref();
     void Promise.resolve().then(() => {
-      if (this.failure !== undefined || this.closed || this.ready?.generation !== message.generation || callback?.revoked) return;
+      if (this.failure !== undefined || this.terminal || this.closing !== undefined || this.closed || this.ready?.generation !== message.generation || callback?.revoked) return;
       if (callback !== undefined && callback.expiresAt <= performance.now()) {
         callback.active = false; this.fail('The native browser callback exceeded its operation budget', 'OPERATION_TIMEOUT'); return;
       }

@@ -5,15 +5,18 @@ import type { BrowserCommandMap } from './browser-contract.ts';
 import { resultError } from './browser-channel.ts';
 import { decodeBrowserResult } from './browser-decode.ts';
 import { decodeEngineResult } from './engine-decode.ts';
-import type { EngineCommandMap, NativeBlob } from './engine-contract.ts';
+import type { EngineCommandMap, NativeBlob, NativeTraceImage } from './engine-contract.ts';
 import type { NativeClient } from './client.ts';
-import { queryDiagnostic } from './query-diagnostic.ts';
+import { frameQuerySnapshot, queryDiagnostic, type FrameQueryDiagnostic } from './query-diagnostic.ts';
 
 /** No retries, backend implementation, or alternative process transport. */
 export class EngineChannel {
   constructor(private readonly client: NativeClient, private readonly captureScope: (scope: string) => () => boolean = () => () => true) {}
 
+  command(name: 'capture.screenshot', args: EngineCommandMap['capture.screenshot']['args'] & { readonly purpose: 'trace' }, operation: OperationContext, callbackTransition?: number): Promise<NativeTraceImage>;
+  command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number): Promise<EngineCommandMap[K]['result']>;
   async command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number): Promise<EngineCommandMap[K]['result']> {
+    args = { ...args }; // Freeze dispatch purpose before asynchronous native work.
     const scope = (args as { identityScope?: string }).identityScope;
     const owns = scope === undefined ? () => true : this.captureScope(scope);
     this.assertOwner(owns);
@@ -21,6 +24,8 @@ export class EngineChannel {
     // Later caller mutation cannot change the classification of this request.
     const diagnostic = name === 'browser.query' || name === 'fixture.query'
       ? queryDiagnostic((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
+    const frames = name === 'browser.query' || name === 'fixture.query'
+      ? frameQuerySnapshot((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
@@ -31,10 +36,18 @@ export class EngineChannel {
       throw cause;
     }
     if (!result.ok) {
+      let frameDiagnostic: FrameQueryDiagnostic | undefined;
+      if (result.error?.code === 'frame-not-found' || result.error?.code === 'frame-ambiguous') {
+        const facts = result.error.frameSelection;
+        const selector = facts === undefined ? undefined : frames?.[facts.index];
+        // Contradictory request context is a broken contract, never a guessed selector.
+        if (facts === undefined || selector === undefined) throw this.client.invalidate();
+        frameDiagnostic = { selector, index: facts.index, count: facts.count };
+      }
       const action = name === 'browser.perform' ? (args as EngineCommandMap['browser.perform']['args']).action.kind : undefined;
-      throw resultError(result, action === 'check' || action === 'uncheck' ? action : undefined, diagnostic);
+      throw resultError(result, action === 'check' || action === 'uncheck' ? action : undefined, diagnostic, frameDiagnostic);
     }
-    try { return decodeEngineResult(name, result.data); }
+    try { return decodeEngineResult(name, result.data, args); }
     catch { throw this.client.invalidate(); }
   }
 

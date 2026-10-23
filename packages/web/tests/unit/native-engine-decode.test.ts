@@ -52,3 +52,14 @@ describe('native engine result boundary', () => {
   });
 
 });
+
+it('requires native trace metadata only for trace purpose and never fabricates a semantic revision', () => {
+  const plain = { identityScope: 'scope-1', handle: 'image-1', size: 1, sha256: '0'.repeat(64), mediaType: 'image/png', width: 100, height: 80, scale: 1, maskedRegionCount: 0 };
+  const args = { identityScope: 'scope-1', secureFieldSelector: 'input', purpose: 'trace' as const };
+  const trace = { ...plain, viewportRef: { id: '@e7', revision: '18446744073709551615' }, viewport: { width: 100, height: 80 }, location: 'https://synthetic.test/' };
+  expect(decodeEngineResult('capture.screenshot', plain)).toEqual(plain);
+  expect(decodeEngineResult('capture.screenshot', trace, args)).toEqual(trace);
+  for (const key of ['viewportRef', 'viewport', 'location'] as const) expect(() => decodeEngineResult('capture.screenshot', { ...trace, [key]: undefined }, args)).toThrow();
+  for (const revision of ['0', '01', '-1', '18446744073709551616']) expect(() => decodeEngineResult('capture.screenshot', { ...trace, viewportRef: { id: '@e7', revision } }, args)).toThrow();
+  expect(decodeEngineResult('capture.screenshot', trace)).toEqual(plain);
+});

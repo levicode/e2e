@@ -120,30 +120,36 @@ describe('native session client', () => {
     await close({ ...fixture, client });
   });
 
-  it('allows reads after an accepted callback decision without reusing its consumed token', async () => {
+  it('refuses reads from a selected callback without promoting its consumed token to ordinary authority', async () => {
     const fixture = harness();
     let client: NativeClient;
-    let finished!: () => void;
+    let finished!: () => void; let decisionSent!: () => void;
     const done = new Promise<void>(resolve => { finished = resolve; });
+    const decisionWritten = new Promise<void>(resolve => { decisionSent = resolve; });
     const connecting = fixture.connect(async event => {
-      await client.decide(event.decision!.token, { kind: 'continue' }, context());
-      await client.request('page.title', {}, context());
+      const deciding = client.decide(event.decision!.token, { kind: 'continue' }, context());
+      decisionSent();
+      await deciding;
+      await expect(client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
       finished();
     });
     fixture.send(fixture.ready());
     client = await connecting;
     fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'selected-token', timeoutMs: 500 } });
-    await Promise.resolve();
+    await decisionWritten;
     const decision = fixture.requests.at(-1)!;
+    expect(decision['type']).toBe('decision');
     fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
-    await Promise.resolve();
-    await Promise.resolve();
+    await done;
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'decision']);
+    // A genuinely new caller outside the completed callback still owns ordinary admission.
+    const ordinary = client.request('page.title', {}, context());
     const read = fixture.requests.at(-1)!;
     expect(read['command']).toBe('page.title');
     expect(read).not.toHaveProperty('callbackToken');
-    expect(Number(read['timeoutMs'])).toBeLessThanOrEqual(500);
+    expect(read['timeoutMs']).toBe(1000);
     fixture.send(fixture.result(read));
-    await done;
+    await ordinary;
     await close({ ...fixture, client });
   });
 
@@ -709,5 +715,120 @@ describe('acceptance scalar accounting', () => {
     const write = trace.writeObserver({ kind: 'cancel', operationSeq: 2, start: 0, end: 1, length: 1 });
     trace.finish(); expect(records.at(-1)?.pendingWriteCallbacks).toBe(1);
     write.complete(); expect(records.at(-1)?.phase).toBe('CaptureFinished');
+  });
+});
+
+
+describe('terminal cleanup control', () => {
+  async function terminalPeer(settle?: (context: OperationContext) => Promise<void>) {
+    const peer = harness();
+    const connecting = NativeClient.connect({ readable: peer.output, writable: peer.input, dispose: peer.dispose, ...(settle === undefined ? {} : { settle }) }, ['terminal.close/1'], context(), () => {});
+    peer.send(peer.ready({ capabilities: ['terminal.close/1'] }));
+    return { ...peer, client: await connecting };
+  }
+  function unknown(peer: Awaited<ReturnType<typeof terminalPeer>>, request: Record<string, unknown>, code = 'browser-failure') {
+    peer.send(peer.result(request, { ok: false, data: undefined, error: { code }, effects: 'unknown', scopeState: 'quarantined' }));
+  }
+  function receipt(peer: Awaited<ReturnType<typeof terminalPeer>>, generation = 1) {
+    peer.send({ type: 'closed', id: peer.requests.find(request => request['type'] === 'close')!['id'], generation, scopeState: 'closed' });
+  }
+  it.each(['before', 'after'] as const)('shares one close receipt when explicit close starts %s Unknown', async order => {
+    const settle = vi.fn(async () => {});
+    const peer = await terminalPeer(settle);
+    const action = peer.client.request('page.navigate', {}, context());
+    const request = peer.requests.at(-1)!;
+    const early = order === 'before' ? peer.client.close(context()) : undefined;
+    unknown(peer, request);
+    expect(peer.client.isTerminal()).toBe(true);
+    expect((await action).effects).toBe('unknown');
+    expect(peer.dispose).not.toHaveBeenCalled();
+    await expect(peer.client.request('scope.reconnect', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(peer.client.decide('retired', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    const expired = { ...context(AbortSignal.abort()), get timeoutMs(): number { throw new Error('expired getter'); } };
+    const first = peer.client.close(expired);
+    const second = peer.client.close(context());
+    expect(first).toBe(second);
+    if (early !== undefined) expect(first).toBe(early);
+    expect(peer.requests.filter(item => item['type'] === 'close')).toHaveLength(1);
+    receipt(peer);
+    await first;
+    expect(settle).toHaveBeenCalledOnce();
+    expect(peer.dispose).toHaveBeenCalledOnce();
+    expect(peer.client.close(expired)).toBe(first);
+  });
+  it.each(['before', 'after'] as const)('preserves Unknown with cancel ACK %s result', async order => {
+    const peer = await terminalPeer();
+    const controller = new AbortController();
+    const action = peer.client.request('page.navigate', {}, context(controller.signal));
+    const request = peer.requests.at(-1)!;
+    controller.abort();
+    const cancel = peer.requests.at(-1)!;
+    const ack = () => peer.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: false, error: { code: 'scope-unavailable' }, scopeState: 'quarantined' });
+    if (order === 'before') ack();
+    unknown(peer, request);
+    if (order === 'after') ack();
+    expect((await action).effects).toBe('unknown');
+    receipt(peer);
+    await peer.client.close(context());
+  });
+  it.each(['eof', 'stale', 'cleanup-failed', 'malformed'] as const)('retains cleanup failure for %s without rewriting Unknown', async fault => {
+    const peer = await terminalPeer();
+    const action = peer.client.request('page.navigate', {}, context());
+    unknown(peer, peer.requests.at(-1)!);
+    const closing = peer.client.close(context());
+    const rejection = expect(closing).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    if (fault === 'eof') peer.output.end();
+    else if (fault === 'stale') receipt(peer, 2);
+    else if (fault === 'cleanup-failed') peer.send({ type: 'error', id: peer.requests.at(-1)!['id'], error: { code: 'cleanup-failed' }, scopeState: 'quarantined' });
+    else peer.output.write('{invalid}\n');
+    await rejection;
+    expect((await action).effects).toBe('unknown');
+    expect(peer.client.close(context())).toBe(closing);
+    expect(peer.dispose).toHaveBeenCalledOnce();
+  });
+  it('does not treat a valid receipt as success when proxy settlement fails', async () => {
+    const peer = await terminalPeer(async () => { throw new Error('exit failed'); });
+    const action = peer.client.request('page.navigate', {}, context());
+    unknown(peer, peer.requests.at(-1)!);
+    const closing = peer.client.close(context());
+    const rejected = expect(closing).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    receipt(peer); await rejected;
+    expect((await action).effects).toBe('unknown');
+    expect(peer.client.close(context())).toBe(closing);
+  });
+  it('settles already pending outcomes and suppresses late callbacks without reviving requests', async () => {
+    const peer = await terminalPeer();
+    const first = peer.client.request('first', {}, context()); const one = peer.requests.at(-1)!;
+    const second = peer.client.request('second', {}, context()); const two = peer.requests.at(-1)!;
+    unknown(peer, one);
+    peer.send({ type: 'event', generation: 1, sequence: 1, event: 'network.request', payload: {}, decision: { token: 'late', timeoutMs: 1 } });
+    peer.send(peer.result(two, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'quarantined' }));
+    receipt(peer);
+    expect((await first).effects).toBe('unknown');
+    expect((await second).effects).toBe('not-dispatched');
+    await peer.client.close(context());
+    expect(peer.requests.filter(item => item['type'] === 'close')).toHaveLength(1);
+  });
+  it('bounds missing close receipt independently of an expired action budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const peer = await terminalPeer();
+      const action = peer.client.request('page.navigate', {}, context());
+      unknown(peer, peer.requests.at(-1)!);
+      const closing = peer.client.close(context());
+      const rejection = expect(closing).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(15001);
+      await rejection;
+      expect((await action).effects).toBe('unknown');
+      expect(peer.requests.filter(item => item['type'] === 'close')).toHaveLength(1);
+    } finally { vi.useRealTimers(); }
+  });
+  it('does not authorize a cleanup exchange from malformed terminal-shaped input', async () => {
+    const peer = await terminalPeer();
+    const action = peer.client.request('page.navigate', {}, context());
+    const rejected = expect(action).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    peer.send(peer.result(peer.requests.at(-1)!, { effects: 'unknown', scopeState: 'quarantined' }));
+    await rejected;
+    expect(peer.requests.filter(item => item['type'] === 'close')).toHaveLength(0);
   });
 });

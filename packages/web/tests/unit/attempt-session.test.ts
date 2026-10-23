@@ -646,7 +646,7 @@ describe('AttemptSession', () => {
     }
   });
 
-  it.each(['scope.configure', 'network.routes.replace'])('does not publish failed %s setup and permits a new attempt after retirement', async command => {
+  it.each(['scope.configure', 'network.routes.replace'])('does not publish failed %s setup or reuse an owner whose cleanup is unconfirmed', async command => {
     let reject = true;
     const engine = await nativeAttempt({}, frame => {
       if (frame.command !== command || !reject) return undefined;
@@ -660,12 +660,13 @@ describe('AttemptSession', () => {
       expect(peers[0]!.requests.filter(frame => frame.command === 'browser.observe' || frame.command === 'page.title')).toEqual([]);
       // Failed setup already quarantines its native client; preserve that cleanup failure.
       await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
-      await engine.startAttempt!(nativeContext('a2'));
-      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2');
-    } finally { await engine.dispose!(cleanup()); }
+      await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers).toHaveLength(1);
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toEqual([]);
+    } finally { await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' }); }
   });
 
-  it.each(['scope.configure', 'network.routes.replace'])('keeps late %s success out of the next attempt after retirement', async command => {
+  it.each(['scope.configure', 'network.routes.replace'])('keeps late %s success from reviving an owner after failed retirement', async command => {
     const result = deferred<PeerOutcome>();
     const reached = deferred<void>();
     let hold = true;
@@ -681,13 +682,15 @@ describe('AttemptSession', () => {
       await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' });
       await starting;
       expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
-      await engine.startAttempt!(nativeContext('a2'));
+      // Closed retires the peer, but must not erase the earlier scope.end failure.
+      await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       result.resolve({ data: null });
       await new Promise(resolve => setImmediate(resolve));
-      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2');
+      expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+      await expect(engine.startAttempt!(nativeContext('a3'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       expect(peers[0]!.requests.filter(frame => frame.command === 'page.title')).toEqual([]);
-      expect(peers[1]!.requests.filter(frame => frame.command === 'network.routes.replace')).toHaveLength(1);
-    } finally { result.resolve({ data: null }); await engine.dispose!(cleanup()); }
+      expect(peers).toHaveLength(1);
+    } finally { result.resolve({ data: null }); await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' }); }
   });
 
   it('does not publish configuration after an unhandled setup callback failure', async () => {
@@ -848,7 +851,7 @@ describe('AttemptSession', () => {
     } finally { await engine.dispose!(cleanup()); }
   });
 
-  it('keeps late reconnect completion out of a new attempt after recovery owner cancellation', async () => {
+  it('keeps late reconnect completion from reviving an owner after failed retirement', async () => {
     const reconnect = deferred<PeerOutcome>();
     const requested = deferred<void>();
     let hold = true;
@@ -871,13 +874,15 @@ describe('AttemptSession', () => {
       await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' });
       expect(old.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
       hold = false;
-      const next = await disconnected(engine);
+      await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } });
-      await new Promise(resolve => setTimeout(resolve, 0));
-      expect(await nativeBrowser(engine, operation).title()).toBe('attempt-2-reconnected');
-      expect(next.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+      await new Promise(resolve => setImmediate(resolve));
+      expect(() => nativeBrowser(engine, operation)).toThrow(/No native browser attempt is ready/);
+      await expect(engine.startAttempt!(nativeContext('a3'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers).toHaveLength(1);
+      expect(old.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'page.title' || frame.command === 'browser.observe')).toEqual([]);
-    } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await engine.dispose!(cleanup()); }
+    } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' }); }
   });
 
   it('snapshots a public viewport before waiting for recovery', async () => {
@@ -942,7 +947,9 @@ describe('AttemptSession', () => {
       // Invalid protocol data quarantines the client; never pretend it ACKed native cleanup.
       await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
       expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toEqual([]);
-    } finally { await engine.dispose!(cleanup()); }
+      await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(peers).toHaveLength(1);
+    } finally { await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' }); }
   });
 
 });

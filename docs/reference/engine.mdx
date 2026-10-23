@@ -923,8 +923,12 @@ also retire pending acquisitions before dispatch. Engines omitting the opt-in
 continue to receive the existing runner revision format unchanged. Trace-only `s<number>` references are never actionable. Pixel-only trace
 snapshots do not advance semantic reference authority or replace the model's
 observation. Native Web uses protected screenshot capture for optional action
-traces, without an independent semantic observation; before it has an exact
-native reference for a trace anchor, it omits that optional trace.
+traces, including the first action before any observation. Native capture issues
+an exact Page viewport capability and returns its captured viewport and location;
+the adapter does not invent a semantic root or reuse a cached observation reference.
+This publication does not advance semantic revisions or replace node membership.
+A newer observation, recovery, cancellation, or owner change discards a pending
+trace after its original image handle is released.
 
 Core
 presentation revisions use the reserved `b<number>`, `l<number>`, and

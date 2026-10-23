@@ -228,12 +228,12 @@ jobs:
           setsid pnpm --filter @e2e-dev/web-benchmark run start > .artifacts/native-candidate/benchmark.log 2>&1 &
           echo "$!" > .artifacts/native-candidate/benchmark.pid
           node --input-type=module -e "const end = Date.now() + 60000; let ready = false; while (Date.now() < end) { try { const r = await fetch('http://127.0.0.1:4280', { signal: AbortSignal.timeout(2000) }); if (r.ok) { ready = true; break; } } catch {} await new Promise(r => setTimeout(r, 500)); } if (!ready) throw new Error('Benchmark did not become ready');"
-      - name: Run genuine complete web-browser production suite
+      - name: Run production web-browser contracts and isolated P14 installer fixture
         id: web-browser
-        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' && steps.fault-proxy.outcome == 'success' }}
         env:
           E2E_SYNTHETIC_EVIDENCE_BATCH: '1'
-        run: node scripts/acceptance/candidate-web.ts web-browser "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
+        run: node scripts/acceptance/candidate-web.ts web-browser "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate/fault-negotiation.json
       - name: Run requested optional local synthetic benchmark sweep
         id: crosscheck-benchmark
         if: ${{ !cancelled() && steps.source.outputs.benchmark_sweep == 'true' && steps.native-proxy.outcome == 'success' && steps.benchmark.outcome == 'success' }}

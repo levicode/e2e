@@ -1,6 +1,6 @@
 /** Decode only the typed engine wire contract; no backend objects enter e2e. */
 import type { SemanticNode } from 'e2e/engine';
-import type { EngineCommandMap, NativeBlob, NativeImage, NativeObservation, Scoped } from './engine-contract.ts';
+import type { EngineCommandMap, NativeBlob, NativeImage, NativeObservation, NativeTraceImage, Scoped } from './engine-contract.ts';
 
 const invalid = (): never => { throw new Error('Invalid native engine contract'); };
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid();
@@ -23,6 +23,14 @@ function image(value: unknown): NativeImage {
   const item = record(value);
   if (item['mediaType'] !== 'image/png' || number(item['scale']) <= 0) invalid();
   return { ...blob(item), ...viewport(item), mediaType: 'image/png', scale: number(item['scale']), maskedRegionCount: count(item['maskedRegionCount']) };
+}
+function traceImage(value: unknown): NativeTraceImage {
+  const item = record(value);
+  const viewportRef = node({ ref: item['viewportRef'] }).ref;
+  if (!/^[1-9][0-9]{0,19}$/.test(viewportRef.revision) || BigInt(viewportRef.revision) > 18446744073709551615n) invalid();
+  const capturedViewport = viewport(item['viewport']);
+  if (capturedViewport.width === 0 || capturedViewport.height === 0) invalid();
+  return { ...image(item), viewportRef, viewport: capturedViewport, location: text(item['location']) };
 }
 function node(value: unknown, depth = 0): SemanticNode {
   if (depth > 512) invalid();
@@ -86,6 +94,7 @@ const decoders = {
   'blob.read': (value: unknown) => { const item = record(value); const base64 = text(item['base64']); if (Buffer.from(base64, 'base64').toString('base64') !== base64) invalid(); return { base64, nextOffset: count(item['nextOffset']), eof: bool(item['eof']) }; },
 } satisfies { [K in keyof EngineCommandMap]: (value: unknown) => EngineCommandMap[K]['result'] };
 
-export function decodeEngineResult<K extends keyof EngineCommandMap>(name: K, value: unknown): EngineCommandMap[K]['result'] {
+export function decodeEngineResult<K extends keyof EngineCommandMap>(name: K, value: unknown, args?: EngineCommandMap[K]['args']): EngineCommandMap[K]['result'] {
+  if (name === 'capture.screenshot' && (args as EngineCommandMap['capture.screenshot']['args'] | undefined)?.purpose === 'trace') return traceImage(value) as EngineCommandMap[K]['result'];
   return decoders[name](value) as EngineCommandMap[K]['result'];
 }

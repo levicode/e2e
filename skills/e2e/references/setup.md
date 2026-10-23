@@ -225,6 +225,8 @@ start a script that brings them up and serves the app.
   session state. Recovery never repeats a dispatched operation; exhausting
   the budget is `OPERATION_TIMEOUT`. Without `reconnectEndpoint` a dropped
   connection is reacquired at the next attempt.
+  Recovery retires in-flight observation presentation after its pixel blob cleanup;
+  only fresh observations can be published after a successful reconnect.
 
 Two browsers, one app declaration:
 
