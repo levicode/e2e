@@ -1,0 +1,32 @@
+{
+  "oldSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+  "newSource": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+  "unchangedInputs": {
+    "pnpm-lock.yaml": {
+      "oldBlobOrTree": "8349d73b3c17d02ce3823b5e242555361a0de82a",
+      "newBlobOrTree": "8349d73b3c17d02ce3823b5e242555361a0de82a"
+    },
+    "package.json": {
+      "oldBlobOrTree": "ca316eecf5b42873bdbf96e2114639c697db8470",
+      "newBlobOrTree": "ca316eecf5b42873bdbf96e2114639c697db8470"
+    },
+    "scripts/tsconfig.json": {
+      "oldBlobOrTree": "c1aefa2dbdd0de7066b5954bc69b7ee35dec3a3f",
+      "newBlobOrTree": "c1aefa2dbdd0de7066b5954bc69b7ee35dec3a3f"
+    },
+    "scripts/acceptance/candidate-cleanup-diagnostics.test.ts": {
+      "oldBlobOrTree": "dcbda4b0dd510597b9f07f5dffb9521c4eddfb97",
+      "newBlobOrTree": "dcbda4b0dd510597b9f07f5dffb9521c4eddfb97"
+    },
+    "packages/e2e": {
+      "oldBlobOrTree": "c2c7993bf767f89fb22233eaeb10e8deb92e3155",
+      "newBlobOrTree": "c2c7993bf767f89fb22233eaeb10e8deb92e3155"
+    },
+    "packages/web": {
+      "oldBlobOrTree": "4dda829c4dff2e20b8579a2ed7ea4efd8a321740",
+      "newBlobOrTree": "4dda829c4dff2e20b8579a2ed7ea4efd8a321740"
+    }
+  },
+  "dependencyInstallRepeated": false,
+  "coreOrWebBuildRepeated": false
+}

@@ -1,0 +1,39 @@
+{
+  "rustc": {
+    "command": [
+      "rustc",
+      "-vV"
+    ],
+    "stdout": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+    "stderr": "",
+    "exitCode": 0
+  },
+  "cargo": {
+    "command": [
+      "cargo",
+      "--version"
+    ],
+    "stdout": "cargo 1.99.1 (5f94df478 2026-08-27)\n",
+    "stderr": "",
+    "exitCode": 0
+  },
+  "node": {
+    "command": [
+      "node",
+      "--version"
+    ],
+    "stdout": "v24.19.0\n",
+    "stderr": "",
+    "exitCode": 0
+  },
+  "pnpm": {
+    "command": [
+      "corepack",
+      "pnpm",
+      "--version"
+    ],
+    "stdout": "12.3.4\n",
+    "stderr": "",
+    "exitCode": 0
+  }
+}

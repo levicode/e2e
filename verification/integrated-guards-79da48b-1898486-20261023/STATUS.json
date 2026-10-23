@@ -1,0 +1,57 @@
+{
+  "observedAt": "2026-10-23T18:09:45.467659+00:00",
+  "native": "79da48b64c275a09adb852b89de099d891941049",
+  "e2e": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+  "gates": {
+    "nativeDefaultStrictClippy": {
+      "exitCode": 0,
+      "pid": 33927,
+      "durationSeconds": 64.2129060599982
+    },
+    "scriptsTypes": {
+      "exitCode": 0,
+      "pid": 33910,
+      "durationSeconds": 0.7579510469986417
+    },
+    "collectorUnits": {
+      "exitCode": 0,
+      "tests": 43,
+      "pass": 43,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  },
+  "unitHarness": {
+    "status": "building",
+    "started": {
+      "stage": "native-unit-harness",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--bin",
+        "agent-browser",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+      "pid": 34130,
+      "runnerPid": 34124,
+      "startedAt": "2026-10-23T18:08:17.130276+00:00"
+    },
+    "testsExecutedFromNewHarness": 0
+  },
+  "productionRebuilt": false,
+  "productionSha256": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+  "browserExecuted": false,
+  "restartProbeExecuted": false,
+  "old28ResultsRelabeled": false,
+  "priorEvidenceCommit": "2aa0faa05372adeb1bf05677c3e6e0ddf31a4c2c",
+  "fullCandidateVerified": false,
+  "releaseEligible": false
+}

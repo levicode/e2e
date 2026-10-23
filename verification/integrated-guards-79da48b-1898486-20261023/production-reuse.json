@@ -1,0 +1,117 @@
+{
+  "oldBuiltSource": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+  "newSource": "79da48b64c275a09adb852b89de099d891941049",
+  "trackedTreeOutsideTwoTestFilesIdentical": true,
+  "excludedTestFiles": [
+    "cli/src/native/client_capture_frame_owner_deadline_tests.rs",
+    "cli/src/native/client_capture_mask_failure_tests.rs"
+  ],
+  "unchangedTrackedEntries": 550,
+  "testModuleBoundary": {
+    "path": "cli/src/native/client_observation_dispatch.rs",
+    "lines": [
+      36,
+      37,
+      38
+    ],
+    "cfg": "#[cfg(test)]",
+    "module": "supersession_tests"
+  },
+  "productionRebuilt": false,
+  "productionExecuted": false,
+  "productionInputsClaim": "Tracked production inputs match; existing executable retains its original build-source binding. No new build reproducibility claim.",
+  "executables": [
+    {
+      "path": "/workspace/ci27-integrated-build/bin/production",
+      "bytes": 31040336,
+      "sha256Before": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca"
+    },
+    {
+      "path": "/workspace/c03-build/target/ci/agent-browser",
+      "bytes": 31040336,
+      "sha256Before": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca"
+    }
+  ],
+  "testOnlyRegistrations": {
+    "dispatcher": {
+      "blob": "1b20ab9d0a1fd6d1b6ea846191e2722e194ef357",
+      "path": "cli/src/native/client_observation_dispatch.rs",
+      "cfgTestLine": 36,
+      "moduleLine": 38
+    },
+    "supersession": {
+      "blob": "8149b85504b446f2c4ef0069b9211d9835c658d6",
+      "path": "cli/src/native/client_capture_supersession_tests.rs",
+      "frameOwnerRegistrationLines": [
+        16,
+        17
+      ],
+      "maskRegistrationLines": [
+        19,
+        20
+      ]
+    }
+  },
+  "originalBuildBinding": {
+    "kind": "production",
+    "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+    "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+    "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+    "features": [],
+    "stage": "native-production",
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--message-format=json"
+    ],
+    "compilerArtifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file:///workspace/agent-browser-integrated-32ccc5c/cli#agent-browser@0.39.1",
+      "manifest_path": "/workspace/agent-browser-integrated-32ccc5c/cli/Cargo.toml",
+      "target": {
+        "kind": [
+          "bin"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "agent-browser",
+        "src_path": "/workspace/agent-browser-integrated-32ccc5c/cli/src/main.rs",
+        "edition": "2021",
+        "doc": true,
+        "doctest": false,
+        "test": true
+      },
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": false
+      },
+      "features": [],
+      "filenames": [
+        "/workspace/c03-build/target/ci/agent-browser"
+      ],
+      "executable": "/workspace/c03-build/target/ci/agent-browser",
+      "fresh": false
+    },
+    "compilerJsonSha256": "1143db202ff28d7798ea7b50466cb67c821a112c8084d18368e3dab1239a8bb5",
+    "stageReceiptSha256": "61bf1d0c155eb485be8990035662ecee6ff4b5b9cc7dd9d6c38b8b1d3245502a",
+    "originalExecutable": "/workspace/c03-build/target/ci/agent-browser",
+    "preservedExecutable": "/workspace/ci27-integrated-build/bin/production",
+    "sha256": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+    "bytes": 31040336,
+    "releaseEligible": false,
+    "embeddedDashboardIndexSha256": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c"
+  },
+  "embeddedDashboardIndexSha256Now": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c",
+  "versionStampSourceAudit": {
+    "buildScriptUnchanged": true,
+    "trackedGitRevisionStampFoundInBuildScript": false
+  }
+}

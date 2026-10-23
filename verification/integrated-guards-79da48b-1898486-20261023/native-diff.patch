@@ -1,0 +1,92 @@
+diff --git a/cli/src/native/client_capture_frame_owner_deadline_tests.rs b/cli/src/native/client_capture_frame_owner_deadline_tests.rs
+index cb20148..7abf77d 100644
+--- a/cli/src/native/client_capture_frame_owner_deadline_tests.rs
++++ b/cli/src/native/client_capture_frame_owner_deadline_tests.rs
+@@ -347,23 +347,24 @@ async fn frame_owner_deadline(withhold_release_ack: bool) {
+     assert_eq!(client.pending_len().await, 0);
+     assert!(owner.targets.inventory().is_ok());
+     owner.blobs.check_budget_integrity().unwrap();
+-    let log = commands.lock().unwrap();
+-    assert_eq!(
+-        log.iter()
+-            .map(|r| r["method"].as_str().unwrap())
+-            .collect::<Vec<_>>(),
+-        [
+-            "Page.getFrameTree",
+-            "Page.getFrameTree",
+-            "Page.createIsolatedWorld",
+-            "Page.createIsolatedWorld",
+-            "DOM.getFrameOwner",
+-            "Page.createIsolatedWorld",
+-            "DOM.resolveNode",
+-            "Runtime.releaseObject",
+-        ]
+-    );
+-    drop(log);
++    {
++        let log = commands.lock().unwrap();
++        assert_eq!(
++            log.iter()
++                .map(|r| r["method"].as_str().unwrap())
++                .collect::<Vec<_>>(),
++            [
++                "Page.getFrameTree",
++                "Page.getFrameTree",
++                "Page.createIsolatedWorld",
++                "Page.createIsolatedWorld",
++                "DOM.getFrameOwner",
++                "Page.createIsolatedWorld",
++                "DOM.resolveNode",
++                "Runtime.releaseObject",
++            ]
++        );
++    }
+     stop.send(()).unwrap();
+     assert!(
+         server.await.unwrap() >= deadline,
+diff --git a/cli/src/native/client_capture_mask_failure_tests.rs b/cli/src/native/client_capture_mask_failure_tests.rs
+index 30f91e1..9a3035e 100644
+--- a/cli/src/native/client_capture_mask_failure_tests.rs
++++ b/cli/src/native/client_capture_mask_failure_tests.rs
+@@ -305,23 +305,24 @@ impl MaskFailurePeer {
+             Err(BlobError::QuotaExceeded)
+         ));
+         drop((first, second));
+-        let log = self.commands.lock().unwrap();
+-        assert!(!log
+-            .iter()
+-            .any(|request| request["method"] == "Page.captureScreenshot"));
+-        assert!(!log
+-            .iter()
+-            .any(|request| request["method"] == "Runtime.evaluate"));
+-        assert!(!log.iter().any(|request| request["params"]["objectGroup"]
+-            .as_str()
+-            .is_some_and(|group| group.starts_with("capture-source-"))));
+-        assert_eq!(
+-            log.iter()
+-                .filter(|request| request["method"] == "DOMSnapshot.captureSnapshot")
+-                .count(),
+-            1
+-        );
+-        drop(log);
++        {
++            let log = self.commands.lock().unwrap();
++            assert!(!log
++                .iter()
++                .any(|request| request["method"] == "Page.captureScreenshot"));
++            assert!(!log
++                .iter()
++                .any(|request| request["method"] == "Runtime.evaluate"));
++            assert!(!log.iter().any(|request| request["params"]["objectGroup"]
++                .as_str()
++                .is_some_and(|group| group.starts_with("capture-source-"))));
++            assert_eq!(
++                log.iter()
++                    .filter(|request| request["method"] == "DOMSnapshot.captureSnapshot")
++                    .count(),
++                1
++            );
++        }
+         self.stop.send(()).unwrap();
+         let released = self.server.await.unwrap();
+         let mask_group = format!("capture-{sequence}-frame");

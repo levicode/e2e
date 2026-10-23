@@ -1,0 +1,43 @@
+{
+  "sources": {
+    "native": {
+      "root": "/workspace/agent-browser-integrated-32ccc5c",
+      "commit": "79da48b64c275a09adb852b89de099d891941049",
+      "tree": "1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad",
+      "parent": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+      "changedFiles": [
+        "cli/src/native/client_capture_frame_owner_deadline_tests.rs",
+        "cli/src/native/client_capture_mask_failure_tests.rs"
+      ],
+      "instructionBlobsUnchanged": {
+        "AGENTS.md": true
+      }
+    },
+    "e2e": {
+      "root": "/workspace/e2e-integrated-983c3ee",
+      "commit": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+      "tree": "60eee9d9fc0585731c6e0dd6440ec16d0a3b8ac2",
+      "parent": "983c3ee8232bef9f73061f3821c50f3111f722df",
+      "changedFiles": [
+        "scripts/acceptance/candidate-cleanup-diagnostics.ts"
+      ],
+      "instructionBlobsUnchanged": {
+        "AGENTS.md": true,
+        ".dev/skills/verify/SKILL.md": true,
+        ".github/workflows/native-candidate.yml": true
+      }
+    }
+  },
+  "cargoBuildJobs": 2,
+  "resourceLimits": {
+    "cpu.max": "400000 100000",
+    "cpuset.cpus.effective": "0-4",
+    "memory.max": "17179869184",
+    "memory.peak": "14688477184",
+    "memory.swap.max": "max"
+  },
+  "cpuCount": 5,
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "browserExecuted": false,
+  "productionBuildRequested": false
+}

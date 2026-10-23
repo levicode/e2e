@@ -1,0 +1,5 @@
+The two previously failing compile gates now pass on native `79da48b64c275a09adb852b89de099d891941049` and e2e `18984864a8a65127b662c28cb6e0c06d63131e6b`. Strict clippy exited 0 in 64.21 seconds; scripts TypeScript exited 0 in 0.76 seconds; the synthetic cleanup collector unit file passed 43 tests with no skips.
+
+A new unit-test harness is compiling for the two frame-owner and four mask fixtures. No new harness test result is claimed in this checkpoint. The previous 28 results and failing gate logs remain bound to their original sources in [the prior evidence commit](https://github.com/levicode/e2e/tree/2aa0faa05372adeb1bf05677c3e6e0ddf31a4c2c/verification/integrated-32ccc5c-983c3ee-20261023).
+
+Production was neither rebuilt nor executed. Its original source binding and hash remain in `production-reuse.json`; tracked production inputs and the embedded dashboard index are unchanged. No browser, restart probe, full default test run, ignored test, PR, CI run or release was requested by this verification.

@@ -1,0 +1,27 @@
+{
+  "native": "79da48b64c275a09adb852b89de099d891941049",
+  "e2e": "18984864a8a65127b662c28cb6e0c06d63131e6b",
+  "defaultExact": [
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_reader_exception_has_typed_independent_coverage_provenance",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_reader_command_remains_typed_browser_failure",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::detached_mask_probe_preserves_original_semantic_timeout_without_pixels",
+    "native::client_observation_dispatch::supersession_tests::mask_failure_tests::rejected_mask_probe_does_not_hide_browser_failure_behind_semantic_timeout"
+  ],
+  "acceptanceFaultsExact": [],
+  "executionScope": "Only two frame-owner and four mask fixtures in the new test-only unit harness.",
+  "listArguments": [
+    "<test-name>",
+    "--list",
+    "--exact"
+  ],
+  "executionArguments": [
+    "<test-name>",
+    "--exact",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "allTestsOrIgnoredAuthorized": false,
+  "browserAuthorized": false
+}
