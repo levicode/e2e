@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "kind": "acquisition-deadlines-directed-test-result",
+  "status": "failed",
+  "completedAt": "2026-10-23T13:19:23.319613+00:00",
+  "source": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+  "parent": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+  "tree": "273a9ca40e1c4c444f759a924e98dc37fd004203",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "exitCode": 101,
+  "discovered": 4,
+  "executed": 4,
+  "passed": 2,
+  "failed": 2,
+  "ignored": 0,
+  "filteredOut": 2579,
+  "testDurationSeconds": 0.08,
+  "cases": [
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+      "status": "failed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+      "status": "failed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+      "status": "passed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+      "status": "passed"
+    }
+  ],
+  "originalParentBudgetMs": 80,
+  "sourceUnchanged": true,
+  "productionChanges": false,
+  "testChanges": false,
+  "compileErrors": false,
+  "harness": {
+    "path": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "d7ccaf053328830727bec91ba4c56daf91191b6fe41268931316b5b8fbd7b3fa",
+    "bytes": 77916344
+  },
+  "C03ProductionBinarySha256": "34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325",
+  "failure": {
+    "kind": "test-peer acquisition arrival-order assertion",
+    "primaryFile": "cli/src/native/client_capture_acquisition_deadline_tests.rs",
+    "primaryLine": 199,
+    "actualStarted": 1,
+    "expectedStarted": 2,
+    "secondaryLine": 367,
+    "secondaryError": "reached oneshot RecvError after peer panic",
+    "sourceCause": "Graph::read visits child nodes before pushing the parent id; metadata candidates follow graph.ids. This fixture produces node 7 before node 1, but its node-7 branch assumes both acquisitions have started.",
+    "productionEvidenceLocations": [
+      "cli/src/native/client_observation/author_projection.rs:85",
+      "cli/src/native/client_observation/author_projection.rs:162",
+      "cli/src/native/client_observation.rs:2118",
+      "cli/src/native/client_observation.rs:3600"
+    ],
+    "deadlineOrUnknownAssertionsReachedInFailedCases": false
+  },
+  "coverage": {
+    "firstNativeAcquisitionCleanFallbackWithin80ms": "passed",
+    "startedSiblingAcksBeforeGroupReleaseWithin80ms": "passed",
+    "candidateStopsMetadataBeforeFallback": "not established because fixture failed earlier",
+    "missingAckUnknownQuarantineZeroPublication": "not established because fixture failed earlier",
+    "legacyObligations1_3_4Complete": false
+  },
+  "limits": [
+    "loopback resource-producing CDP peer with production observation dispatcher; no Chromium renderer in these four tests",
+    "does not establish successful-terminal-before-manual-late-resource-ACK behavior",
+    "does not establish full equivalence with the old engine"
+  ],
+  "oldModulesRemoved": false,
+  "fullCandidateVerified": false,
+  "rawStdoutSha256": "a15d37751973163594aed433cbc38149774312e70809ef387675e0d497452026",
+  "rawStderrSha256": "aae6d3ad225432b555e20ed197e2b81b3bc37038064bc9382e7d8946d1aab5e9"
+}

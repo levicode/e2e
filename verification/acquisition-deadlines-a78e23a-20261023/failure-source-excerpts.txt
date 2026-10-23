@@ -1,0 +1,141 @@
+cli/src/native/client_capture_acquisition_deadline_tests.rs:169
+  169                 "DOM.resolveNode" => {
+  170                     assert!(
+  171                         held_released_at.is_none(),
+  172                         "retired reader acquired another handle"
+  173                     );
+  174                     let group = group.unwrap();
+  175                     assert!(group == peer_metadata_group || group == peer_security_group);
+  176                     let backend = request["params"]["backendNodeId"].as_i64().unwrap();
+  177                     let object = format!("{group}-node-{backend}");
+  178                     groups
+  179                         .entry(group.to_owned())
+  180                         .or_default()
+  181                         .push(object.clone());
+  182                     let value = json!({"object":{"objectId":object,"subtype":"node"}});
+  183                     if group == peer_held_group {
+  184                         assert!(!started.contains(&backend), "acquisition replayed");
+  185                         started.push(backend);
+  186                         if backend == 1 || boundary == Boundary::StartedSiblings {
+  187                             assert!(held
+  188                                 .insert(
+  189                                     backend,
+  190                                     json!({"id":request["id"],"sessionId":"session","result":value})
+  191                                 )
+  192                                 .is_none());
+  193                             if started.len() == expected_started {
+  194                                 reached_tx.take().unwrap().send(Instant::now()).unwrap();
+  195                             }
+  196                             continue;
+  197                         }
+  198                         acknowledgements.push(backend);
+  199                         assert_eq!(started.len(), expected_started);
+  200                         reached_tx.take().unwrap().send(Instant::now()).unwrap();
+  201                     }
+  202                     value
+
+cli/src/native/client_capture_acquisition_deadline_tests.rs:344
+  344     let refs = Arc::new(Mutex::new(RefMap::new()));
+  345     let dispatch = ObservationDispatch::new(refs.clone());
+  346     let (mut operation, _cancel) = operation(sequence);
+  347     let started = Instant::now();
+  348     operation.deadline = started + Duration::from_millis(80);
+  349     let original_deadline = operation.deadline;
+  350     let timing = semantic_lease_at(&operation, false, started);
+  351     let mut task = dispatch.clone().start(
+  352         owner.context(),
+  353         DispatchRequest::Observe(ObserveRequest {
+  354             options: ObserveFlags {
+  355                 pixels: false,
+  356                 pixel_fallback: true,
+  357                 comparable: false,
+  358             },
+  359             test_id_attribute: "data-testid".into(),
+  360             secure_field_selector: "input[type=password]".into(),
+  361         }),
+  362         operation,
+  363     );
+  364     let acquisitions_started_at = tokio::time::timeout_at(original_deadline.into(), reached)
+  365         .await
+  366         .expect("all required native acquisitions must start inside the original budget")
+  367         .unwrap();
+
+cli/src/native/client_observation/author_projection.rs:78
+   78             let kind = node["nodeType"]
+   79                 .as_i64()
+   80                 .ok_or(ObservationError::BackendFailure)?;
+   81             if ![1, 3, 9, 11].contains(&kind) {
+   82                 return Ok(Vec::new());
+   83             }
+   84             let mut children = Vec::new();
+   85             for child in node["children"].as_array().into_iter().flatten() {
+   86                 children.extend(visit(child, graph, depth + 1, visited)?);
+   87             }
+
+cli/src/native/client_observation/author_projection.rs:141
+  141             let id = node["backendNodeId"]
+  142                 .as_i64()
+  143                 .ok_or(ObservationError::BackendFailure)?;
+  144             if graph
+  145                 .entries
+  146                 .insert(
+  147                     id,
+  148                     Entry {
+  149                         id,
+  150                         kind,
+  151                         pseudo: node["pseudoType"].is_string(),
+  152                         assigned_slot,
+  153                         distributed,
+  154                         children,
+  155                         rendered,
+  156                     },
+  157                 )
+  158                 .is_some()
+  159             {
+  160                 return Err(ObservationError::BackendFailure);
+  161             }
+  162             graph.ids.push(id);
+  163             Ok(vec![id])
+  164         }
+  165         graph.roots = visit(root, &mut graph, 0, &mut 0)?;
+
+cli/src/native/client_observation.rs:2112
+ 2112         let ax_by_backend: HashMap<i64, &AXNode> = tree
+ 2113             .nodes
+ 2114             .iter()
+ 2115             .filter(|ax| ax_string(&ax.role).as_deref() != Some("InlineTextBox"))
+ 2116             .filter_map(|ax| ax.backend_d_o_m_node_id.map(|id| (id, ax)))
+ 2117             .collect();
+ 2118         let candidates: Vec<AXNode> = graph
+ 2119             .ids
+ 2120             .iter()
+ 2121             .map(|id| {
+ 2122                 ax_by_backend
+ 2123                     .get(id)
+ 2124                     .map(|ax| (*ax).clone())
+ 2125                     .unwrap_or(AXNode {
+ 2126                         node_id: String::new(),
+ 2127                         role: None,
+ 2128                         name: None,
+ 2129                         value: None,
+ 2130                         description: None,
+ 2131                         properties: None,
+ 2132                         child_ids: None,
+ 2133                         backend_d_o_m_node_id: Some(*id),
+ 2134                         ignored: None,
+ 2135                     })
+ 2136             })
+ 2137             .collect();
+
+cli/src/native/client_observation.rs:3596
+ 3596     let result=async {
+ 3597         let world=command(client,session,"Page.createIsolatedWorld",json!({"frameId":frame.binding.frame,"worldName":"agent-browser-native-observation"}),lease).await?;
+ 3598         let context=world["executionContextId"].as_i64().ok_or("Missing isolated realm")?;
+ 3599         metadata_stage!(Resolve);
+ 3600         let backend_ids:Vec<Option<i64>>=nodes.iter().map(|ax|ax.backend_d_o_m_node_id).collect();
+ 3601         let resolved:Vec<Result<Value,ObservationError>>=stream::iter(backend_ids.into_iter().map(|backend| {
+ 3602             let group=&group;
+ 3603             async move {
+ 3604                 command(client,session,"DOM.resolveNode",json!({"backendNodeId":backend,"executionContextId":context,"objectGroup":group}),lease).await
+ 3605             }
+ 3606         })).buffered(16).collect().await;

@@ -1,0 +1,30 @@
+{
+  "source": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+  "parent": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+  "tree": "273a9ca40e1c4c444f759a924e98dc37fd004203",
+  "changes": [
+    "546\t0\tcli/src/native/client_capture_acquisition_deadline_tests.rs",
+    "3\t0\tcli/src/native/client_capture_supersession_tests.rs"
+  ],
+  "productionChanges": false,
+  "C03Merged": false,
+  "P27Changed": false,
+  "metadataChanged": false,
+  "defaultFeatures": false,
+  "originalParentBudgetMs": 80,
+  "fixture": "loopback WebSocket CDP peer with held resource-producing DOM.resolveNode replies; production dispatcher and real acknowledgement flow",
+  "scopeLimits": [
+    "partial safe coverage of legacy capture obligations #1/#3/#4",
+    "does not establish successful terminal before a manually withheld late resource ACK",
+    "does not establish full equivalence with the legacy engine",
+    "does not establish real Chromium renderer garbage collection"
+  ],
+  "oldModulesRemoved": false,
+  "sourcePatchSha256": "9c409f4fadb9e5d54cbc670fb87f0adb147a67651e54f73435f234ad6d887725",
+  "intendedAssertionCoverage": [
+    "first resource late ACK drains before fresh fallback",
+    "candidate late ACK prevents metadata execution before fresh fallback",
+    "both already-started sibling ACKs precede object-group release",
+    "missing ACK yields unknown effects, quarantine and zero publication; terminal-late ACK cannot resume work"
+  ]
+}
