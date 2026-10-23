@@ -35,15 +35,17 @@ jobs:
       NATIVE_SHA: 79da48b64c275a09adb852b89de099d891941049
       NATIVE_TREE: 1d32c2559decc5a7a3cf2ce0e138ccd87a1ad6ad
       NATIVE_LOCK_SHA256: 652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1
-      EVIDENCE_DIR: ${{ runner.temp }}/native-macos-compile
-      CARGO_TARGET_DIR: ${{ runner.temp }}/native-macos-compile-target
-      CARGO_HOME: ${{ runner.temp }}/native-macos-compile-cargo
       CARGO_BUILD_JOBS: '1'
       RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Initialize compile-only diagnostics
+        id: initialize
         run: |
           set -euo pipefail
+          export EVIDENCE_DIR="$RUNNER_TEMP/native-macos-compile"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/native-macos-compile-target"
+          export CARGO_HOME="$RUNNER_TEMP/native-macos-compile-cargo"
+          printf 'EVIDENCE_DIR=%s\nCARGO_TARGET_DIR=%s\nCARGO_HOME=%s\n' "$EVIDENCE_DIR" "$CARGO_TARGET_DIR" "$CARGO_HOME" >> "$GITHUB_ENV"
           mkdir -p "$EVIDENCE_DIR" "$RUNNER_TEMP/native-macos-compile-bin"
           printf '%s\n' \
             'COMPILE ONLY / NONRELEASE. No runtime or test harness was executed.' \
@@ -200,6 +202,7 @@ jobs:
         env:
           STEP_OUTCOMES: ${{ toJSON(steps) }}
         run: |
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-macos-compile}"
           mkdir -p "$EVIDENCE_DIR"
           printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
       - name: Preserve compile diagnostics even on failure (not a pass receipt)
