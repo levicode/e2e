@@ -1,0 +1,30 @@
+{
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "passed",
+  "identity": {
+    "repository": "levicode/agent-browser",
+    "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "harness": {
+    "name": "agent-browser",
+    "source": "/workspace/e2e/.artifacts/native-source/cli/src/main.rs",
+    "kind": [
+      "bin"
+    ],
+    "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "aa3ab075d823d5613e46fe88d079e9046e099c7f7d140ab934c0173aa345b13a"
+  },
+  "compilerSha256": "65b14c3741c08f6b0d5f7e82ac005bfc75c65ee4981ebcea34928a2b0f162def",
+  "identityUnchanged": true,
+  "results": [
+    {
+      "name": "native::auth::tests::test_encrypt_decrypt_roundtrip",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    }
+  ]
+}

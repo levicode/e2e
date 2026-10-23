@@ -1,0 +1,24 @@
+{
+  "stage": "readiness-feature-check",
+  "command": [
+    "cargo",
+    "check",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--features",
+    "acceptance-faults",
+    "--tests"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-readiness-native/cli",
+  "startedAt": "2026-10-23T13:19:25.358191+00:00",
+  "elapsedSeconds": 61.356,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 4598624256,
+  "maximumChildRssKiB": 4423100,
+  "sampledPeakCgroupMemoryBytes": 12881371136,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

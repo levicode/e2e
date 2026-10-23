@@ -1,0 +1,19 @@
+{
+  "stage": "readiness-format-final",
+  "command": [
+    "cargo",
+    "fmt",
+    "--",
+    "--check"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-readiness-native/cli",
+  "startedAt": "2026-10-23T13:17:44.627488+00:00",
+  "elapsedSeconds": 2.681,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 247758848,
+  "maximumChildRssKiB": 240220,
+  "sampledPeakCgroupMemoryBytes": 8866181120,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

@@ -1,0 +1,23 @@
+{
+  "stage": "readiness-default-baseline",
+  "command": [
+    "node",
+    "scripts/acceptance/candidate-native.ts",
+    "baseline",
+    "/workspace/e2e/.artifacts/restart-readiness-native",
+    "/workspace/e2e/.artifacts/restart-native-target",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/compiler.jsonl",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/default",
+    "fce932e38faced7af762dabe4bd45f4ab9f633c5"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-e2e",
+  "startedAt": "2026-10-23T13:11:22.444244+00:00",
+  "elapsedSeconds": 459.904,
+  "exitCode": 1,
+  "sampledPeakProcessGroupRssBytes": 439676928,
+  "maximumChildRssKiB": 258940,
+  "sampledPeakCgroupMemoryBytes": 13102022656,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

@@ -1,0 +1,36 @@
+{
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "failed",
+  "identity": {
+    "repository": "levicode/agent-browser",
+    "commit": "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+    "tree": "a553b4285fe05cafe59729a9927ebfd8dcfb7faa",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "harness": {
+    "name": "agent-browser",
+    "source": "/workspace/e2e/.artifacts/restart-readiness-native/cli/src/main.rs",
+    "kind": [
+      "bin"
+    ],
+    "executable": "/workspace/e2e/.artifacts/restart-native-target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "6d05fc8f6256de45ed1a9baf68b91fa16416820b98f7c8e9e53d1d21942c4398"
+  },
+  "compilerSha256": "30d5fef8a3b00038de174f3835ff768bee6f51f0b3c33d9c83e5e63c7821fbba",
+  "identityUnchanged": true,
+  "results": [
+    {
+      "name": "native::actions::tests::test_credentials_roundtrip_via_actions",
+      "exitCode": 101,
+      "signal": null,
+      "passed": false
+    },
+    {
+      "name": "native::actions::tests::test_handle_har_stop_without_path_uses_default_location",
+      "exitCode": 101,
+      "signal": null,
+      "passed": false
+    }
+  ]
+}

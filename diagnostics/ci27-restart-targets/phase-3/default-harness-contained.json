@@ -1,0 +1,9 @@
+{
+  "time": 1792761541.9100497,
+  "action": "SIGTERM exact task-owned default harness",
+  "pid": 59372,
+  "ppid": 58430,
+  "executable": "/workspace/e2e/.artifacts/restart-native-target/ci/deps/agent_browser-c37a2bcef2943f57",
+  "reason": "Legacy unignored parity test attempts real Chromium. Browser execution approval review is denied; stop this pre-existing baseline stage rather than continue browser attempts.",
+  "gate": "incomplete, not passed"
+}

@@ -1,0 +1,17 @@
+
+running 12 tests
+test batch_close_clears_session_trust ... ok
+test batch_read_uses_session_trust_without_a_browser ... ok
+test install_fetches_manifest_with_explicit_and_native_trust ... ok
+test install_rejects_an_invalid_explicit_ca_before_network_or_daemon ... ok
+test read_follows_ca_symlink_rotation ... ok
+test read_trust_changes_rotate_and_clear_without_browser_or_daemon_restart ... ok
+test read_trust_survives_a_daemon_restart_until_close ... ok
+test rejected_ca_cert_keeps_the_saved_selection ... ok
+test stdin_batch_read_uses_session_trust_without_a_browser ... ok
+test system_roots_refresh_and_explicit_false_overrides_environment ... ok
+test trust_option_transition_matrix_preserves_effective_roots ... ok
+test trust_preserves_hostname_and_expiry_validation ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+

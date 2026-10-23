@@ -1,0 +1,24 @@
+{
+  "stage": "readiness-filesystem-exact",
+  "command": [
+    "node",
+    ".artifacts/native-candidate/focused-native.mts",
+    "/workspace/e2e/.artifacts/restart-readiness-native",
+    "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+    "/workspace/e2e/.artifacts/restart-native-target",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/compiler.jsonl",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/fs-patched",
+    "native::actions::tests::test_credentials_roundtrip_via_actions",
+    "native::actions::tests::test_handle_har_stop_without_path_uses_default_location"
+  ],
+  "cwd": "/workspace/e2e",
+  "startedAt": "2026-10-23T13:21:13.225052+00:00",
+  "elapsedSeconds": 0.567,
+  "exitCode": 1,
+  "sampledPeakProcessGroupRssBytes": 36892672,
+  "maximumChildRssKiB": 216748,
+  "sampledPeakCgroupMemoryBytes": 8570023936,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

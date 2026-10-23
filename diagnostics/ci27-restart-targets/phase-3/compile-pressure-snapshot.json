@@ -1,0 +1,14 @@
+{
+  "atUnixSeconds": 1792760590.0087836,
+  "context": "default restricted exec, compile in progress",
+  "memoryCurrent": "15807909888",
+  "memoryPeak": "17179869184",
+  "memoryMax": "17179869184",
+  "memoryEvents": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cpuMax": "400000 100000",
+  "executionStatus": {
+    "Uid": "1000\t1000\t1000\t1000",
+    "NoNewPrivs": "1",
+    "Seccomp": "2"
+  }
+}

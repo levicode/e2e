@@ -1,0 +1,6 @@
+
+running 1 test
+test native::client_restart::tests::explicit_persistent_restart_closes_context_pages_without_adopting_host_pages ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2589 filtered out; finished in 0.01s
+

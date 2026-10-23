@@ -1,0 +1,33 @@
+{
+  "stage": "readiness-exact-units",
+  "command": [
+    "node",
+    ".artifacts/native-candidate/focused-native.mts",
+    "/workspace/e2e/.artifacts/restart-readiness-native",
+    "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+    "/workspace/e2e/.artifacts/restart-native-target",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/compiler.jsonl",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/units",
+    "native::client_enrollment::tests::restart_readiness::all_observed_sibling_acks_are_required_without_kind_exemptions",
+    "native::client_enrollment::tests::restart_readiness::child_received_after_first_ready_check_blocks_final_publication",
+    "native::client_enrollment::tests::restart_readiness::held_ack_obeys_original_cancellation_and_deadline",
+    "native::client_enrollment::tests::restart_readiness::held_ack_failure_preserves_cause_and_cannot_publish",
+    "native::client_enrollment::tests::restart_readiness::stored_failure_precedes_its_secondary_stop_cancellation",
+    "native::client_enrollment::tests::restart_readiness::seal_wakes_waiter_and_never_becomes_a_pending_configuration",
+    "native::client_enrollment::tests::restart_readiness::unknown_inventory_and_same_id_reattachment_refuse_without_publication",
+    "native::cdp::client::tests::exact_tap_publication_fence_retains_reader_admission_lock",
+    "native::client_restart::tests::restart_replaces_only_pages_and_keeps_context_worker_and_route_tenure",
+    "native::client_restart::tests::explicit_persistent_restart_closes_context_pages_without_adopting_host_pages",
+    "native::client_restart::tests::restart_failure_preserves_exact_close_or_create_ownership_without_success_proof"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-e2e",
+  "startedAt": "2026-10-23T13:10:25.179992+00:00",
+  "elapsedSeconds": 0.526,
+  "exitCode": 1,
+  "sampledPeakProcessGroupRssBytes": 14680064,
+  "maximumChildRssKiB": 27136,
+  "sampledPeakCgroupMemoryBytes": 7554015232,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

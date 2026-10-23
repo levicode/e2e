@@ -1,0 +1,7 @@
+
+running 2 tests
+test cdp_pin_tab_precedes_attach_in_existing_daemon ... ignored
+test tab_gone_exposes_safe_recovery_data_in_cli_and_batch ... ignored
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

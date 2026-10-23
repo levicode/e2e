@@ -1,0 +1,144 @@
+Restart repair delivered; new Chromium validation remains blocked by automatic approval review.
+
+Native support/ci27-restart-readiness HEAD is fce932e38faced7af762dabe4bd45f4ab9f633c5,
+tree a553b4285fe05cafe59729a9927ebfd8dcfb7faa. Its diagnostic parent is dc723253;
+the original candidate 49903189 and e2e candidate b3a23a07 remain clean/unchanged.
+Metadata bdf09c9e, callback support 776b93b and P27 b530d60c were not merged or edited.
+No PR, candidate promotion, GitHub CI, new subtask or OS/SUID/namespace change occurred.
+
+The complete RED/GREEN evidence remains in phase-2. RED PID48364 restart seq28
+published while newly admitted browser-ui attachments12/13 were unconfigured;
+the immediate page.url seq29 was refused/quarantined. They were not old retained
+registry entries. GREEN PID48740 had both configure/resume ACKs before Ready.
+The replacement-only readiness check, rather than the full inventory gate, was
+the publication gap. No browser-ui exclusion or settlement weakening is used.
+
+The repair changes six files, including one separate synthetic fixture file:
+cdp/client.rs, client_targets.rs, client_enrollment.rs, client_restart.rs,
+client_browser.rs and client_restart_readiness_tests.rs. behavior-only.patch is
+the delta from diagnostic dc723253 to fce932e, SHA256
+a416c36aa914be5cff20a9b68b95b6324a79e74b721e90e99bdc14dc8c2c623e.
+It passed git apply --check against clean original49903189 without applying it.
+It has no dependency on diagnostic ordinals, metadata or callback half-work.
+The compiled/tested identity is dc723253 plus the repair, not a separately built
+diagnostics-free tree; applying/merging the patch still requires integrated checks.
+
+ClientBrowser::restart_pages waits before recording is reopened, then fences
+again after asynchronous recording hooks before setting page_active and building
+the successful result. RestartedPage retains the exact OwnedTarget insertion
+ticket and validates captured coordinator/registry/scope/operation authority.
+ClientEnrollment::publish_restart_ready registers/enables both existing Notify
+receivers before inspecting state. It joins only authoritative pending tasks or
+reader-admitted/unapplied events, under the ORIGINAL deadline and cancellation.
+Stored failure, seal, unknown/mismatched inventory and missing tenure refuse.
+Independent target sealing wakes the wait too. Stored failure takes precedence
+over the coordinator's secondary stop cancellation.
+
+Final synchronous lock order is enrollment index -> bounded reader routes ->
+target registry, followed by short existing scope/UI permit checks. No mutex,
+new UI permit or capture protected barrier is held across await. Configuration
+tasks keep their original independent path. BoundedEventWatermark::with_received
+retains publish_bounded's existing route mutex through the final predicate and
+result construction: received==applied, pending empty, exact replacement tenure,
+known full inventory, configured/resumed state, zero reservation/resume debt.
+Late reader admission before this boundary causes another wait. This proves a
+reader-admission linearization point, never renderer quiescence or the absence
+of post-publication targets. ClientTasks and ordinary settlement are unchanged.
+If a later real P33 trace proves genuinely post-publication incompleteness, the
+generic settlement boundary needs separate review; this patch does not expand it.
+
+Successful validation, same clean fce932e:
+- Optimized locked default production + six harness compilation: 600.225s.
+  A subsequent cargo build confirmed reusable production bytes in 0.526s.
+- Separate-target acceptance-faults runtime, jobs=1: 345.209s, exit0.
+- Final cargo fmt check, strict all-target Clippy -D warnings, feature --tests
+  check and client-proxy-fixture check all exit0. Exact commands/resources are
+  in the matching *.resource.json files, with original failure logs retained.
+- 11 exact fixtures passed, zero failed/ignored, 2.573s total runner time:
+  eight new tests cover held zero/one/all sibling ACKs across browser-ui/worker/
+  service-worker/iframe; a child queued after an earlier ready pass; original
+  cancellation/deadline; configure failure; stop/failure precedence; seal wake;
+  unknown inventory/same-ID reattachment; and final reader-route lock retention.
+  Three original tests cover owned restart, explicit persistent restart and
+  failed close/create ownership. No original assertion or budget was relaxed.
+- Production SHA256 c75c6c2387808f7f8504f442987509d0fcfdbae3fd81a587f782b2f266fe2484.
+  Fault SHA256 366b20069f6e699bafd77483ab6aa70101bdb6e0eb42bb108b6f3dd5202023a8.
+  Compiler manifests are retained as deterministic gzip, with selected harness
+  identity/hashes in exact-11-tests.result.json and units/.
+
+Failures and incomplete gates are not hidden. The first test compilation failed
+with fixture E0308, then was corrected and rebuilt. The first exact runner setup
+failed because its driver had not been copied into this worktree; no fixture ran
+on that attempt. Both failures have logs/resources in this directory.
+
+The original default six-harness wrapper exited1, with main harness SIGTERM after
+459.904s. It is FAILED/INCOMPLETE, not passed. Partial output already had eight
+auth/HAR FAILED rows. Discovery that unignored legacy parity launches real Chrome
+required stopping only the verified task-owned harness after the probe approval
+denial. The other processes/resources were not killed or deleted. The complete
+original baseline remains the earlier2409/0/198 result under its historical
+execution context; it cannot be copied forward as this repair's acceptance.
+
+Minimal same-restricted-context comparison retained the observed failures:
+credentials and HAR exact fixtures fail2/2 on BOTH original49903189 and fce932e.
+HAR explicitly reports Read-only file system (os error30); credentials reports
+success=false. Standalone AES roundtrip passes on both. This proves that at least
+these failures reproduce without the repair; it does not assign a cause to all
+remaining partial-suite failures. Auth/actions files were not modified or fixed.
+
+Resource facts: 4-CPU quota, 16-GiB memory limit. The optimized parallel compile
+reached the exact17179869184-byte cgroup limit, max events1332, OOM=0 and
+OOM kill=0. Sampled process-group RSS peak10363367424 bytes. Subsequent heavy
+compilation used one job; the separate fault build sampled12389076992-byte
+total cgroup memory and did not add max/OOM events. Existing Rust1.99.1,
+Node24.19.0, pnpm12.3.4 and system Chromium154.0.8037.57 remain the environment.
+Canonical Chromium156 download HTTP403 was not bypassed or retried elsewhere.
+Earlier local hosted33/37 is not CI26 hosted36/37 parity. Phase-1 lists the four
+local input/evaluate, protected-observe/check, popup-enrollment and borrowed-detach
+failures; neither browser version nor repair regression is proven as their cause.
+
+Browser approval blocker: the parent user permission for this round's temporary,
+local synthetic --no-sandbox tests was received. Nevertheless, exec_command
+require_escalated for reproduce.sh probe was rejected BEFORE PROCESS CREATION.
+The automatic reviewer stated that it did not see a trusted override of the
+initial no-security-disable instruction. See BROWSER_APPROVAL_BLOCK.txt.
+There was NO retry or indirect/default-context browser fallback. New production
+and fault negotiation, patched P33 repetitions and P34 are NOT RUN. There is no
+new actual Chromium argv or CI-variable capture; those values remain UNKNOWN.
+run-browser-stage.py is prepared to capture exact descendant argv, CI variables,
+Chromium ELF/version and helper owner/mode before/after, if a newly recognized
+authorization permits execution. Historical sandbox uncertainty is not repaired
+by this unexecuted recorder or by the parent's later permission.
+
+Exact completed targeted command in this environment:
+bash /workspace/e2e/.artifacts/restart-readiness-evidence/reproduce.sh units
+
+Prepared browser commands, currently blocked and NOT executed:
+bash /workspace/e2e/.artifacts/restart-readiness-evidence/reproduce.sh probe
+bash /workspace/e2e/.artifacts/restart-readiness-evidence/reproduce.sh fault-probe
+bash /workspace/e2e/.artifacts/restart-readiness-evidence/reproduce.sh p33 UNIQUE_ROUND
+bash /workspace/e2e/.artifacts/restart-readiness-evidence/reproduce.sh p34 UNIQUE_ROUND
+
+P33 source is packages/web/tests/integration/lifecycle.test.ts, exact name
+round-trips persisted state through capture and restore, and reset drops it.
+P34 in the same file is records a video per page at the viewport size: a restart
+and a state reset each continue in a new segment. The prepared runner preserves
+the original built Web wrapper, all17 production/18 fault capabilities, negotiation,
+source/binary/dist identities, --maxWorkers=1, original assertions and budgets.
+It does not run a naked production binary as a substitute for negotiation.
+
+Remaining ownership: the total owner merges this restart-only delta and reviews
+cdp/client.rs admission ordering together with C03's reader work. Our cdp hunks
+are around originaldc lines202-209 and tests2307; enrollment adds the readiness
+method after1991, one test hook after701 and fixture include after5258. Exact
+ranges for all six files are in merge-footprint.json. No C03 branch was fetched.
+Metadata and P27 can stay with their separate owners. P19 remains a separate
+dispose/retiring-native cleanup failure, not a title/negated-query assertion fix.
+No new task was automatically created. Source retirement and the original306
+gate are not waived; releaseEligible remains false.
+
+At final process sampling there were no active Chromium/native/compiler
+processes. PID1-owned zombies were counted and left alone. Before any browser
+retry the parent must resolve the automatic review's authorization recognition;
+the denied probe is known not to have executed. No authorization is inferred
+from elapsed time, alternative wording or an indirect entry point.

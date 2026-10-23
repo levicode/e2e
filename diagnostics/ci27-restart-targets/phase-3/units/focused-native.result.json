@@ -1,0 +1,90 @@
+{
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "passed",
+  "identity": {
+    "repository": "levicode/agent-browser",
+    "commit": "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+    "tree": "a553b4285fe05cafe59729a9927ebfd8dcfb7faa",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "harness": {
+    "name": "agent-browser",
+    "source": "/workspace/e2e/.artifacts/restart-readiness-native/cli/src/main.rs",
+    "kind": [
+      "bin"
+    ],
+    "executable": "/workspace/e2e/.artifacts/restart-native-target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "6d05fc8f6256de45ed1a9baf68b91fa16416820b98f7c8e9e53d1d21942c4398"
+  },
+  "compilerSha256": "30d5fef8a3b00038de174f3835ff768bee6f51f0b3c33d9c83e5e63c7821fbba",
+  "identityUnchanged": true,
+  "results": [
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::all_observed_sibling_acks_are_required_without_kind_exemptions",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::child_received_after_first_ready_check_blocks_final_publication",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::held_ack_obeys_original_cancellation_and_deadline",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::held_ack_failure_preserves_cause_and_cannot_publish",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::stored_failure_precedes_its_secondary_stop_cancellation",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::seal_wakes_waiter_and_never_becomes_a_pending_configuration",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_enrollment::tests::restart_readiness::unknown_inventory_and_same_id_reattachment_refuse_without_publication",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::cdp::client::tests::exact_tap_publication_fence_retains_reader_admission_lock",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_restart::tests::restart_replaces_only_pages_and_keeps_context_worker_and_route_tenure",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_restart::tests::explicit_persistent_restart_closes_context_pages_without_adopting_host_pages",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    },
+    {
+      "name": "native::client_restart::tests::restart_failure_preserves_exact_close_or_create_ownership_without_success_proof",
+      "exitCode": 0,
+      "signal": null,
+      "passed": true
+    }
+  ]
+}

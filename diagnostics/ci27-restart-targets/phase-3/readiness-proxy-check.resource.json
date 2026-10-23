@@ -1,0 +1,25 @@
+{
+  "stage": "readiness-proxy-check",
+  "command": [
+    "cargo",
+    "check",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--features",
+    "acceptance-faults",
+    "--test",
+    "client-proxy-fixture"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-readiness-native/cli",
+  "startedAt": "2026-10-23T13:20:26.740125+00:00",
+  "elapsedSeconds": 0.571,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 45551616,
+  "maximumChildRssKiB": 4475328,
+  "sampledPeakCgroupMemoryBytes": 8584859648,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

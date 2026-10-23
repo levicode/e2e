@@ -1,0 +1,24 @@
+{
+  "stage": "baseline-filesystem-exact",
+  "command": [
+    "node",
+    ".artifacts/native-candidate/focused-native.mts",
+    "/workspace/e2e/.artifacts/native-source",
+    "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "/workspace/e2e/.artifacts/native-candidate-target",
+    "/workspace/e2e/.artifacts/native-candidate/compiler.jsonl",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/fs-baseline",
+    "native::actions::tests::test_credentials_roundtrip_via_actions",
+    "native::actions::tests::test_handle_har_stop_without_path_uses_default_location"
+  ],
+  "cwd": "/workspace/e2e",
+  "startedAt": "2026-10-23T13:21:14.014500+00:00",
+  "elapsedSeconds": 0.568,
+  "exitCode": 1,
+  "sampledPeakProcessGroupRssBytes": 38334464,
+  "maximumChildRssKiB": 215744,
+  "sampledPeakCgroupMemoryBytes": 8571895808,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

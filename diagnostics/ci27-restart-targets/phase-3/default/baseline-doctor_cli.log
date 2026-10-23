@@ -1,0 +1,10 @@
+
+running 5 tests
+test cleanup_diagnostics_cli::cleanup_capture_is_absent_by_default_and_lookalikes_stay_scrubbed ... ok
+test cleanup_diagnostics_cli::cleanup_capture_survives_the_real_production_proxy ... ok
+test cleanup_diagnostics_cli::invalid_capture_values_cannot_change_the_transport_outcome ... ok
+test doctor_help_describes_flags_and_examples ... ok
+test doctor_offline_quick_json_emits_valid_payload ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+

@@ -1,0 +1,6 @@
+
+running 1 test
+test native::cdp::client::tests::exact_tap_publication_fence_retains_reader_admission_lock ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2589 filtered out; finished in 0.00s
+

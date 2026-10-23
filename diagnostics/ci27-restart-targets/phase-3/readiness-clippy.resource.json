@@ -1,0 +1,25 @@
+{
+  "stage": "readiness-clippy",
+  "command": [
+    "cargo",
+    "clippy",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-readiness-native/cli",
+  "startedAt": "2026-10-23T12:59:23.159668+00:00",
+  "elapsedSeconds": 62.704,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 6251487232,
+  "maximumChildRssKiB": 4480804,
+  "sampledPeakCgroupMemoryBytes": 13423980544,
+  "cgroupMemoryPeak": "14560587776",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+}

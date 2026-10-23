@@ -1,0 +1,23 @@
+{
+  "stage": "readiness-auth-exact",
+  "command": [
+    "node",
+    ".artifacts/native-candidate/focused-native.mts",
+    "/workspace/e2e/.artifacts/restart-readiness-native",
+    "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+    "/workspace/e2e/.artifacts/restart-native-target",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/compiler.jsonl",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/auth-patched",
+    "native::auth::tests::test_encrypt_decrypt_roundtrip"
+  ],
+  "cwd": "/workspace/e2e",
+  "startedAt": "2026-10-23T13:20:11.665162+00:00",
+  "elapsedSeconds": 0.568,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 36765696,
+  "maximumChildRssKiB": 219008,
+  "sampledPeakCgroupMemoryBytes": 12128636928,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

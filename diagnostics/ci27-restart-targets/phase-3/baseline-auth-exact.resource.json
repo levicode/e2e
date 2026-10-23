@@ -1,0 +1,23 @@
+{
+  "stage": "baseline-auth-exact",
+  "command": [
+    "node",
+    ".artifacts/native-candidate/focused-native.mts",
+    "/workspace/e2e/.artifacts/native-source",
+    "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "/workspace/e2e/.artifacts/native-candidate-target",
+    "/workspace/e2e/.artifacts/native-candidate/compiler.jsonl",
+    "/workspace/e2e/.artifacts/restart-readiness-evidence/auth-baseline",
+    "native::auth::tests::test_encrypt_decrypt_roundtrip"
+  ],
+  "cwd": "/workspace/e2e",
+  "startedAt": "2026-10-23T13:20:42.639462+00:00",
+  "elapsedSeconds": 0.568,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 37076992,
+  "maximumChildRssKiB": 215360,
+  "sampledPeakCgroupMemoryBytes": 8570142720,
+  "cgroupMemoryPeak": "17179869184",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0"
+}

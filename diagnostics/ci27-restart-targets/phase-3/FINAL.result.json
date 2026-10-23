@@ -1,0 +1,92 @@
+{
+  "nativeSha": "fce932e38faced7af762dabe4bd45f4ab9f633c5",
+  "nativeTree": "a553b4285fe05cafe59729a9927ebfd8dcfb7faa",
+  "nativeClean": true,
+  "candidateBaseSha": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+  "candidateBaseClean": true,
+  "e2eCandidateSha": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+  "e2eCandidateClean": true,
+  "productionSha256": "c75c6c2387808f7f8504f442987509d0fcfdbae3fd81a587f782b2f266fe2484",
+  "faultSha256": "366b20069f6e699bafd77483ab6aa70101bdb6e0eb42bb108b6f3dd5202023a8",
+  "compilerSha256": "30d5fef8a3b00038de174f3835ff768bee6f51f0b3c33d9c83e5e63c7821fbba",
+  "checks": {
+    "readiness-format-final": {
+      "exitCode": 0,
+      "elapsedSeconds": 2.681
+    },
+    "readiness-clippy-final": {
+      "exitCode": 0,
+      "elapsedSeconds": 97.975
+    },
+    "readiness-feature-check": {
+      "exitCode": 0,
+      "elapsedSeconds": 61.356
+    },
+    "readiness-proxy-check": {
+      "exitCode": 0,
+      "elapsedSeconds": 0.571
+    },
+    "compile-readiness-tests-fixed": {
+      "exitCode": 0,
+      "elapsedSeconds": 600.225
+    },
+    "readiness-production-build": {
+      "exitCode": 0,
+      "elapsedSeconds": 0.526
+    },
+    "readiness-fault-build": {
+      "exitCode": 0,
+      "elapsedSeconds": 345.209
+    }
+  },
+  "exactPureFixtures": {
+    "status": "passed",
+    "passed": 11,
+    "failed": 0,
+    "ignored": 0
+  },
+  "browserProbe": {
+    "status": "denied-before-execution",
+    "reason": "automatic reviewer did not recognize parent temporary synthetic --no-sandbox authorization",
+    "retried": false,
+    "newActualChromiumArgv": "UNKNOWN, no new browser launch authorized by reviewer"
+  },
+  "patchedP33": "not-run, blocked",
+  "patchedP34": "not-run, blocked",
+  "defaultGate": {
+    "status": "failed/incomplete",
+    "wrapperExitCode": 1,
+    "harnessSignal": "SIGTERM",
+    "containment": "exact task-owned harness, after discovering unignored legacy parity launches real Chrome",
+    "observedFailuresBeforeTermination": [
+      "native::actions::tests::test_credentials_roundtrip_via_actions",
+      "native::actions::tests::test_handle_har_stop_without_path_uses_default_location",
+      "native::auth::tests::test_decrypt_json_payload_format",
+      "native::auth::tests::test_encrypt_decrypt_roundtrip",
+      "native::auth::tests::test_encrypted_output_is_json_format",
+      "native::auth::tests::test_get_encryption_key_from_env",
+      "native::parity_tests::test_auth_profile_name_validation",
+      "native::parity_tests::test_auth_save_and_show"
+    ],
+    "notWaived": true
+  },
+  "sameRestrictedContextComparison": {
+    "isolatedAES": {
+      "baseline": "passed",
+      "patched": "passed"
+    },
+    "credentialsAndHar": {
+      "baseline": "failed 2/2",
+      "patched": "failed 2/2",
+      "harError": "Read-only file system (os error 30)",
+      "credentialsObservation": "success Bool(false); no blanket cause attributed to remaining partial failures"
+    }
+  },
+  "memoryPeakBytes": "17179869184",
+  "memoryEvents": "low 0\nhigh 0\nmax 1332\noom 0\noom_kill 0\noom_group_kill 0",
+  "sourceIdentityUnchanged": true,
+  "sourceRetirementGate": "not repaired/waived",
+  "original306Gate": "not rerun/waived",
+  "canonicalChromium156": "previous official download HTTP403 remains unresolved, no bypass attempted",
+  "releaseEligible": false
+}

@@ -1,0 +1,10 @@
+
+running 5 tests
+test obscura_existing_daemon_does_not_reuse_stale_proxy_bypass ... ok
+test obscura_existing_daemon_rejects_cli_proxy_bypass ... ok
+test obscura_existing_daemon_rejects_config_proxy_bypass ... ok
+test obscura_existing_daemon_rejects_no_proxy ... ok
+test obscura_proxy_bypass_fix_preserves_other_engine_validation ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s
+
