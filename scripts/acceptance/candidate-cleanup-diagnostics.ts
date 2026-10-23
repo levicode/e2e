@@ -1,4 +1,4 @@
-/** Optional closed cleanup evidence. Never a functional acceptance gate or PID attestation. */
+/** Optional closed cleanup, trace-screenshot and read-only preparation evidence. Never an acceptance gate or PID attestation. */
 import { closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,10 @@ export const CLEANUP_RECORDS = 2048;
 const common = ['schemaVersion', 'source', 'pid', 'record', 'operationSeq', 'phase', 'droppedBefore', 'emittedBefore', 'suppressedBefore', 'overflow'];
 const identity = ['generation', 'cleanupOwner', 'cleanupAttempt', 'cleanupLifecycle'];
 const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inventoryIntegrityLost', 'inventoryReservations', 'inventoryUnconfigured', 'inventoryObserved'];
+const screenshotFields = ['generation', 'screenshotStage', 'capturePhase', 'inventoryAfterFailure', 'error'];
+const readonlyFields = ['generation', 'entryUs', 'ack', 'window', 'deadline', 'zeroInput', 'cleanup', 'error'];
+const screenshotStages = new Set(['prepare-scope', 'prepare-permit', 'prepare-policy', 'prepare-owner', 'prepare-fence', 'run-scope', 'debt-admission', 'ui-admission', 'publication-admission', 'producer-reservation', 'initial-frames', 'frame-inventory-fence', 'protected-barrier', 'animation-stabilization', 'protected-frames', 'geometry', 'trace-metadata', 'capture', 'restoration', 'final-geometry', 'final-barrier', 'final-frames', 'final-viewport', 'blob-publication', 'publication']);
+const capturePhases = new Set(['not-entered', 'admission', 'independent-coverage', 'source-protection', 'raw-capture', 'post-capture-validation']);
 const components = new Set(['callback', 'dialog', 'interception', 'script', 'detach', 'recording', 'upload', 'containment', 'release', 'input', 'download', 'blob', 'enrollment-fallback', 'retained-task-fallback', 'owner-fallback']);
 const errors = new Set<string>([...SYNTHETIC_CODES, 'frame-not-found', 'frame-ambiguous']);
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -23,13 +27,31 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   if (typeof phase !== 'string') return false;
   const lifecycle = ['CleanupStarted', 'CleanupFirstFailure', 'CleanupResult'].includes(phase);
   const inventory = phase === 'InventorySnapshot';
-  if (!lifecycle && !inventory && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
-  const allowed = new Set([...required, ...(phase === 'CleanupResult' ? ['error'] : [])]);
+  const screenshot = phase === 'ScreenshotFirstFailure';
+  const readonly = phase === 'ReadonlyPrepareFailure';
+  if (!lifecycle && !inventory && !screenshot && !readonly && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(readonly ? readonlyFields : []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
+  const allowed = new Set([...required, ...(phase === 'CleanupResult' ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
-  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory ? ['generation'] : [])]) if (!natural(item[key])) return false;
+  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || readonly ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
-  if (!lifecycle && !inventory && item.operationSeq !== 0) return false;
+  if (!lifecycle && !inventory && !screenshot && !readonly && item.operationSeq !== 0) return false;
+  if (readonly) {
+    if (item.operationSeq === 0 || typeof item.ack !== 'string' || !['none', 'current', 'retired'].includes(item.ack)) return false;
+    if (typeof item.window !== 'string' || !['entered', 'not-entered'].includes(item.window)) return false;
+    if (typeof item.deadline !== 'boolean' || item.zeroInput !== true) return false;
+    if (typeof item.cleanup !== 'string' || !['failure-observed', 'not-observed'].includes(item.cleanup)) return false;
+    if (typeof item.error !== 'string' || !errors.has(item.error)) return false;
+    if ((item.ack === 'none') === Object.hasOwn(item, 'ackUs')) return false;
+    for (const key of ['entryUs', 'ackUs', 'wakeUs', 'failUs']) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] > 60_000_000)) return false;
+  }
+  if (screenshot) {
+    if (item.operationSeq === 0 || typeof item.screenshotStage !== 'string' || !screenshotStages.has(item.screenshotStage)) return false;
+    if (typeof item.capturePhase !== 'string' || !capturePhases.has(item.capturePhase)) return false;
+    if (item.screenshotStage !== 'capture' && item.capturePhase !== 'not-entered') return false;
+    if (typeof item.inventoryAfterFailure !== 'string' || !['not-sampled', 'unavailable', 'unchanged', 'changed'].includes(item.inventoryAfterFailure)) return false;
+    if (typeof item.error !== 'string' || !errors.has(item.error)) return false;
+  }
   if (inventory) {
     if (typeof item.inventoryPoint !== 'string' || !['restart-ready', 'settlement-refused'].includes(item.inventoryPoint)) return false;
     for (const key of ['inventorySealed', 'inventoryIntegrityLost', 'inventoryObserved']) if (typeof item[key] !== 'boolean') return false;
@@ -79,6 +101,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
     if (value.phase === 'CaptureLimitReached') reasons.add('capture-limit');
     if (value.phase === 'CaptureStarted') { if (ordinal !== 0) reasons.add('reused-pid'); continue; }
     if (value.phase === 'CaptureLimitReached') continue;
+    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
     if (value.phase === 'InventorySnapshot') {
       // Lock-unavailable placeholders and saturated counts both explicitly lack a complete observation.
       if (value.inventoryObserved === false) reasons.add('inventory-unobserved');

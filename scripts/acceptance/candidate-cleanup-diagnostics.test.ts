@@ -66,6 +66,82 @@ test('concurrent growth cannot make the collector read beyond its fixed byte cap
 function inventory(ordinal: number, facts: Record<string, unknown> = {}) {
   return record('InventorySnapshot', ordinal, { generation: 0, inventoryPoint: 'restart-ready', inventorySealed: false, inventoryIntegrityLost: false, inventoryReservations: 0, inventoryUnconfigured: 0, inventoryObserved: true, ...facts });
 }
+function screenshot(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('ScreenshotFirstFailure', ordinal, { generation: 1, screenshotStage: 'capture', capturePhase: 'post-capture-validation', inventoryAfterFailure: 'changed', error: 'stale-scope', ...facts });
+}
+function readonlyPreparation(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('ReadonlyPrepareFailure', ordinal, { generation: 1, entryUs: 900_000, ack: 'none', window: 'not-entered', deadline: true, zeroInput: true, cleanup: 'not-observed', error: 'deadline-exceeded', ...facts });
+}
+test('readonly preparation timing has bounded closed fields and explicit receipt currency', () => {
+  assert.equal(validCleanupRecord(readonlyPreparation(1)), true);
+  for (const ack of ['current', 'retired']) assert.equal(validCleanupRecord(readonlyPreparation(1, { ack, ackUs: 0, wakeUs: 40_000, failUs: 0 })), true);
+  for (const facts of [{ entryUs: -1 }, { entryUs: 60_000_001 }, { ackUs: 20 }, { ack: 'current' }, { ack: ['current'] }, { ack: 'private' }, { wakeUs: null }, { failUs: 0.5 }, { failUs: 60_000_001 }, { window: 'private' }, { deadline: 'true' }, { zeroInput: false }, { cleanup: 'clean' }, { error: 'private' }, { target: 'private' }, { operationSeq: 0 }]) {
+    assert.equal(validCleanupRecord(readonlyPreparation(1, facts)), false);
+  }
+  const maximal = readonlyPreparation(Number.MAX_SAFE_INTEGER, { generation: Number.MAX_SAFE_INTEGER, operationSeq: Number.MAX_SAFE_INTEGER, emittedBefore: Number.MAX_SAFE_INTEGER, droppedBefore: Number.MAX_SAFE_INTEGER, suppressedBefore: Number.MAX_SAFE_INTEGER, pid: 4294967295, entryUs: 60_000_000, ackUs: 60_000_000, ack: 'retired', wakeUs: 60_000_000, failUs: 60_000_000, deadline: false, cleanup: 'failure-observed', error: 'redirect-body-unavailable' });
+  assert.equal(validCleanupRecord(maximal), true);
+  assert.equal(lines(maximal).length, 505);
+  assert.equal(lines({ ...maximal, error: 'unsupported-capability' }).length, 502);
+  assert.ok(lines(maximal).length <= 512);
+});
+test('readonly preparation failure is retained after failed assertion without deadline or cleanup inference', t => {
+  const out = directory(t); const capture = prepareCleanupCapture(binding, {});
+  const failure = new Error('original preparation assertion'); let observed: unknown;
+  try {
+    appendFileSync(capture.file, lines(...completed(), readonlyPreparation(4, { ack: 'current', ackUs: 280_000, wakeUs: 42_000, failUs: 275_000, window: 'entered' })));
+    throw failure;
+  } catch (error) { observed = error; }
+  collectCleanupCapture(out, 'web-browser', capture, true);
+  assert.equal(observed, failure);
+  const saved = JSON.parse(readFileSync(join(out, 'web-browser.cleanup-diagnostics.json'), 'utf8'));
+  const fact = saved.records.at(-1);
+  assert.equal(fact.phase, 'ReadonlyPrepareFailure'); assert.equal(fact.failUs, 275_000);
+  assert.equal(fact.deadline, true); assert.equal(fact.cleanup, 'not-observed');
+  assert.equal(saved.caseAssociation, 'unproven'); assert.equal(saved.processCoverage, 'unproven'); assert.equal(saved.releaseEligible, false);
+  assert.deepEqual(inspectCleanupBytes(lines(record('CaptureStarted', 0), readonlyPreparation(1))).reasons, ['no-cleanup-attempt']);
+});
+test('readonly preparation gaps and private fields remain unknown', () => {
+  for (const value of [readonlyPreparation(4, { droppedBefore: 1 }), readonlyPreparation(4, { overflow: true }), readonlyPreparation(5), readonlyPreparation(4, { sessionId: 'private-marker' })]) {
+    const result = inspectCleanupBytes(lines(...completed(), value));
+    assert.equal(result.status, 'unknown');
+    assert.ok(!JSON.stringify(result.records).includes('private-marker'));
+  }
+});
+test('screenshot failures use only closed stages, capture phases and aftermath relationships', () => {
+  for (const inventoryAfterFailure of ['not-sampled', 'unavailable', 'unchanged', 'changed']) {
+    assert.equal(validCleanupRecord(screenshot(1, { inventoryAfterFailure })), true);
+  }
+  for (const facts of [{ screenshotStage: 'private' }, { capturePhase: 'private' }, { inventoryAfterFailure: 'private' }, { error: 'private' }, { screenshotStage: ['capture'] }, { capturePhase: ['admission'] }, { inventoryAfterFailure: ['changed'] }, { operationSeq: 0 }, { targetId: 'private' }, { revision: 7 }, { screenshotStage: 'prepare-scope', capturePhase: 'admission' }]) {
+    assert.equal(validCleanupRecord(screenshot(1, facts)), false);
+  }
+  const maximal = screenshot(Number.MAX_SAFE_INTEGER, { generation: Number.MAX_SAFE_INTEGER, operationSeq: Number.MAX_SAFE_INTEGER, emittedBefore: Number.MAX_SAFE_INTEGER, droppedBefore: Number.MAX_SAFE_INTEGER, suppressedBefore: Number.MAX_SAFE_INTEGER, screenshotStage: 'animation-stabilization', capturePhase: 'not-entered', pid: 4294967295, error: 'unsupported-capability' });
+  assert.equal(validCleanupRecord(maximal), true);
+  assert.ok(lines(maximal).length <= 512);
+});
+test('screenshot evidence survives a failed assertion without becoming cleanup or case proof', t => {
+  const out = directory(t); const capture = prepareCleanupCapture(binding, {});
+  const failure = new Error('original assertion'); let observed: unknown;
+  try {
+    appendFileSync(capture.file, lines(...completed(), screenshot(4)));
+    throw failure;
+  } catch (error) { observed = error; }
+  const result = collectCleanupCapture(out, 'web-browser', capture, true);
+  assert.equal(observed, failure); assert.equal(result.status, 'complete-observed-snapshots');
+  const saved = JSON.parse(readFileSync(join(out, 'web-browser.cleanup-diagnostics.json'), 'utf8'));
+  assert.equal(saved.records.at(-1).phase, 'ScreenshotFirstFailure');
+  assert.equal(saved.records.at(-1).error, 'stale-scope');
+  assert.equal(saved.caseAssociation, 'unproven'); assert.equal(saved.processCoverage, 'unproven'); assert.equal(saved.releaseEligible, false);
+  const only = inspectCleanupBytes(lines(record('CaptureStarted', 0), screenshot(1)));
+  assert.deepEqual(only.reasons, ['no-cleanup-attempt']);
+  assert.equal(only.records.length, 2);
+});
+test('screenshot evidence gaps and private fields cannot be repaired by a later cleanup result', () => {
+  for (const value of [screenshot(4, { droppedBefore: 1 }), screenshot(4, { overflow: true }), screenshot(5), screenshot(4, { sessionId: 'private-marker' })]) {
+    const result = inspectCleanupBytes(lines(...completed(), value));
+    assert.equal(result.status, 'unknown');
+    assert.ok(!JSON.stringify(result.records).includes('private-marker'));
+  }
+});
 test('inventory snapshots accept only the two closed points and bounded observed facts', () => {
   for (const inventoryPoint of ['restart-ready', 'settlement-refused']) {
     for (const count of [0, 8192]) {
