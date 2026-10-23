@@ -1,0 +1,296 @@
+{
+  "updatedAt": "2026-10-23T17:45:45.929812+00:00",
+  "stage": "acceptance-faults-harness-compiling",
+  "native": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+  "e2e": "983c3ee8232bef9f73061f3821c50f3111f722df",
+  "active": {
+    "stage": "native-feature-harness",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--features",
+      "acceptance-faults",
+      "--bin",
+      "agent-browser",
+      "--no-run",
+      "--message-format=json"
+    ],
+    "cwd": "/workspace/agent-browser-integrated-32ccc5c/cli",
+    "pid": 31718,
+    "runnerPid": 31712,
+    "startedAt": "2026-10-23T17:45:44.598340+00:00"
+  },
+  "stages": {
+    "web12-dependencies": {
+      "pid": 26558,
+      "exitCode": 0,
+      "durationSeconds": 0.28211310999904526,
+      "completedAt": "2026-10-23T17:33:14.061294+00:00"
+    },
+    "web12-scripts-types": {
+      "pid": 26884,
+      "exitCode": 1,
+      "durationSeconds": 1.7831587069995294,
+      "completedAt": "2026-10-23T17:34:41.547693+00:00"
+    },
+    "native-feature-check": {
+      "pid": 26246,
+      "exitCode": 0,
+      "durationSeconds": 60.531307838999055,
+      "completedAt": "2026-10-23T17:30:06.473568+00:00"
+    },
+    "native-format": {
+      "pid": 24849,
+      "exitCode": 0,
+      "durationSeconds": 2.8499110949996975,
+      "completedAt": "2026-10-23T17:26:23.284609+00:00"
+    },
+    "web12-manager-version": {
+      "pid": 26530,
+      "exitCode": 0,
+      "durationSeconds": 0.09510830300132511,
+      "completedAt": "2026-10-23T17:33:13.740780+00:00"
+    },
+    "web-types": {
+      "pid": 26077,
+      "exitCode": 0,
+      "durationSeconds": 2.636340174001816,
+      "completedAt": "2026-10-23T17:27:53.710297+00:00"
+    },
+    "web12-core-types": {
+      "pid": 26859,
+      "exitCode": 0,
+      "durationSeconds": 4.2963815680013795,
+      "completedAt": "2026-10-23T17:34:44.026614+00:00"
+    },
+    "web12-web-build": {
+      "pid": 26740,
+      "exitCode": 0,
+      "durationSeconds": 0.6016319659975125,
+      "completedAt": "2026-10-23T17:34:29.219817+00:00"
+    },
+    "web-manager-version": {
+      "pid": 24866,
+      "exitCode": 0,
+      "durationSeconds": 0.44666789099937887,
+      "completedAt": "2026-10-23T17:26:20.908088+00:00"
+    },
+    "web-build": {
+      "pid": 25947,
+      "exitCode": 0,
+      "durationSeconds": 0.9411975689981773,
+      "completedAt": "2026-10-23T17:27:27.488129+00:00"
+    },
+    "web12-web-types": {
+      "pid": 26870,
+      "exitCode": 0,
+      "durationSeconds": 2.8502746490012214,
+      "completedAt": "2026-10-23T17:34:42.591664+00:00"
+    },
+    "web12-core-build": {
+      "pid": 26623,
+      "exitCode": 0,
+      "durationSeconds": 2.0726930480013834,
+      "completedAt": "2026-10-23T17:33:24.048544+00:00"
+    },
+    "native-default-clippy": {
+      "pid": 24947,
+      "exitCode": 101,
+      "durationSeconds": 87.45752844200251,
+      "completedAt": "2026-10-23T17:28:06.940843+00:00"
+    },
+    "web-dependencies": {
+      "pid": 24895,
+      "exitCode": 0,
+      "durationSeconds": 15.082152516999486,
+      "completedAt": "2026-10-23T17:26:36.030609+00:00"
+    },
+    "scripts-types": {
+      "pid": 26057,
+      "exitCode": 1,
+      "durationSeconds": 1.6888898920005886,
+      "completedAt": "2026-10-23T17:27:52.752653+00:00"
+    },
+    "native-default-harness": {
+      "pid": 28687,
+      "exitCode": 0,
+      "durationSeconds": 441.3125170909989,
+      "completedAt": "2026-10-23T17:43:38.205553+00:00"
+    },
+    "native-production": {
+      "pid": 26401,
+      "exitCode": 0,
+      "durationSeconds": 204.77701479399911,
+      "completedAt": "2026-10-23T17:35:27.070172+00:00"
+    },
+    "native-proxy-check": {
+      "pid": 26367,
+      "exitCode": 0,
+      "durationSeconds": 0.5448973209968244,
+      "completedAt": "2026-10-23T17:31:19.088737+00:00"
+    },
+    "core-build": {
+      "pid": 25869,
+      "exitCode": 0,
+      "durationSeconds": 2.2800001109972072,
+      "completedAt": "2026-10-23T17:27:21.091262+00:00"
+    },
+    "core-types": {
+      "pid": 26080,
+      "exitCode": 0,
+      "durationSeconds": 3.886683050001011,
+      "completedAt": "2026-10-23T17:27:54.963857+00:00"
+    }
+  },
+  "fixtures": {
+    "default": {
+      "expected": 25,
+      "completed": 25,
+      "passed": 25,
+      "ignored": 0
+    },
+    "acceptanceFaults": {
+      "expected": 3,
+      "completed": 0
+    }
+  },
+  "production": {
+    "kind": "production",
+    "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+    "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+    "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+    "features": [],
+    "stage": "native-production",
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--message-format=json"
+    ],
+    "compilerArtifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file:///workspace/agent-browser-integrated-32ccc5c/cli#agent-browser@0.39.1",
+      "manifest_path": "/workspace/agent-browser-integrated-32ccc5c/cli/Cargo.toml",
+      "target": {
+        "kind": [
+          "bin"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "agent-browser",
+        "src_path": "/workspace/agent-browser-integrated-32ccc5c/cli/src/main.rs",
+        "edition": "2021",
+        "doc": true,
+        "doctest": false,
+        "test": true
+      },
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": false
+      },
+      "features": [],
+      "filenames": [
+        "/workspace/c03-build/target/ci/agent-browser"
+      ],
+      "executable": "/workspace/c03-build/target/ci/agent-browser",
+      "fresh": false
+    },
+    "compilerJsonSha256": "1143db202ff28d7798ea7b50466cb67c821a112c8084d18368e3dab1239a8bb5",
+    "stageReceiptSha256": "61bf1d0c155eb485be8990035662ecee6ff4b5b9cc7dd9d6c38b8b1d3245502a",
+    "originalExecutable": "/workspace/c03-build/target/ci/agent-browser",
+    "preservedExecutable": "/workspace/ci27-integrated-build/bin/production",
+    "sha256": "60d8d13c6a62e829941189ffaffe77463dadeea63eea99066fde5a373563abca",
+    "bytes": 31040336,
+    "releaseEligible": false,
+    "embeddedDashboardIndexSha256": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c"
+  },
+  "defaultHarness": {
+    "kind": "default",
+    "source": "32ccc5c0548162016586bbef59ea2e78c6745bf9",
+    "tree": "c509da2b86ea0d40959c1d38e68ea60fbec80954",
+    "e2eSource": "983c3ee8232bef9f73061f3821c50f3111f722df",
+    "features": [],
+    "stage": "native-default-harness",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--profile",
+      "ci",
+      "--no-default-features",
+      "--no-run",
+      "--message-format=json"
+    ],
+    "compilerArtifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file:///workspace/agent-browser-integrated-32ccc5c/cli#agent-browser@0.39.1",
+      "manifest_path": "/workspace/agent-browser-integrated-32ccc5c/cli/Cargo.toml",
+      "target": {
+        "kind": [
+          "bin"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "agent-browser",
+        "src_path": "/workspace/agent-browser-integrated-32ccc5c/cli/src/main.rs",
+        "edition": "2021",
+        "doc": true,
+        "doctest": false,
+        "test": true
+      },
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "filenames": [
+        "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57"
+      ],
+      "executable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+      "fresh": false
+    },
+    "compilerJsonSha256": "6db88d7909f539a1e568152021c83158245e313ff9b7005e33abbe94e0cbc834",
+    "stageReceiptSha256": "40a338de55bc9887b896e4de4d983a6e148f16018f876397d7ff7bbf08ebc819",
+    "originalExecutable": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "preservedExecutable": "/workspace/ci27-integrated-build/bin/default-harness",
+    "sha256": "0c77068b7e77672f789230c4a0e96efdd513d56ce7bee508e8a768dd6f64dfed",
+    "bytes": 76374512,
+    "releaseEligible": false,
+    "embeddedDashboardIndexSha256": "9d0ef25400d77e3deeb9dc218cb26b02948059ce4a1c5a49e290a76d4297e14c"
+  },
+  "firstErrors": [
+    {
+      "stage": "scripts-types",
+      "file": "scripts/acceptance/candidate-cleanup-diagnostics.ts",
+      "line": 182,
+      "error": "TS2412"
+    },
+    {
+      "stage": "native-default-clippy",
+      "files": [
+        "client_capture_frame_owner_deadline_tests.rs:350",
+        "client_capture_mask_failure_tests.rs:308"
+      ],
+      "error": "clippy::await_holding_lock"
+    }
+  ],
+  "environmentAuthDiskBlocked": false,
+  "browserExecuted": false,
+  "restartProbeExecuted": false,
+  "overallStatus": "incomplete-with-known-compile-gate-failures"
+}
