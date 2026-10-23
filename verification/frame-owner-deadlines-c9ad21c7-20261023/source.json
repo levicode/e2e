@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-23T13:52:13.328727+00:00",
+  "source": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+  "parent": "219c37358cf2c947846bb907da689429f720bd72",
+  "tree": "53e79dda59a615e374fba6d9587c590500c2a442",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "CARGO_BUILD_JOBS": 2,
+  "CARGO_TARGET_DIR": "/workspace/c03-build/target",
+  "cases": [
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack"
+  ],
+  "files": {
+    "cli/src/native/client_capture_frame_owner_deadline_tests.rs": "efc76e7109d85f46a7a9d618d2b1021ee4bbb4779d162845dd674858b289aa5f",
+    "cli/src/native/client_capture_supersession_tests.rs": "73df4af7a631e3c245ae139eab1baa0c806f8652fc83cfd85cae1e38c8190713",
+    "cli/src/native/client_capture_acquisition_deadline_tests.rs": "7f19adfc64dce0d486bcd68dbaf63089a5e6a15ba6e1bea0ed13b1612dbb1d3f",
+    "cli/src/native/client_actions.rs": "94e404ccdd40999d574d191785e608c6b746931796030bc68590ddbb3505acbf",
+    "cli/src/native/client_observation.rs": "0007152abc120afedc1a209f64bedc06325cd3c34439f654f190454582470f2a",
+    "cli/src/native/client_debt.rs": "65063fbbcd05c4f7bb24d3b4aa9806f2d6201673cec0f6dd258bb89feb4affb1",
+    "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+    "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "changes": [
+    "369\t0\tcli/src/native/client_capture_frame_owner_deadline_tests.rs",
+    "3\t0\tcli/src/native/client_capture_supersession_tests.rs"
+  ],
+  "originalParentDeadlineMs": 80,
+  "scope": "full production observation dispatcher with installed real OwnerDebtLedger and loopback resource-producing CDP peer; no browser",
+  "previousPassedParent": {
+    "source": "219c37358cf2c947846bb907da689429f720bd72",
+    "executed": 4,
+    "passed": 4,
+    "ignored": 0,
+    "evidenceCommit": "099d8ba12749c3c0c5b31e76948d0efc7cf549cb",
+    "preservedHarnessSha256": "469c0daaae8fb0371423fea6fe3ccbda8ea8c40ed337b141849dc1ee5511481f"
+  }
+}

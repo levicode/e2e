@@ -1,0 +1,36 @@
+{
+  "source": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+  "parent": "219c37358cf2c947846bb907da689429f720bd72",
+  "tree": "53e79dda59a615e374fba6d9587c590500c2a442",
+  "newTestFile": "cli/src/native/client_capture_frame_owner_deadline_tests.rs",
+  "newTestFileLines": 369,
+  "testModuleRegistrationLines": 3,
+  "productionChanges": false,
+  "assertionsOrBudgetsModifiedLocally": false,
+  "originalParentDeadlineMs": 80,
+  "protectedFilesUnchanged": [
+    "AGENTS.md",
+    "cli/src/native/client_actions.rs",
+    "cli/src/native/client_observation.rs",
+    "cli/src/native/client_debt.rs",
+    "cli/src/native/client_capture_acquisition_deadline_tests.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock"
+  ],
+  "fixture": "complete observation dispatcher plus real installed OwnerDebtLedger over loopback WebSocket CDP peer; no Chromium",
+  "intendedAssertions": [
+    "hold actual DOM.resolveNode owner reply beyond the unchanged parent deadline",
+    "release the exact late owner object once with exact session ownership",
+    "missing release ACK leaves accounted object_debt=1 and outstanding_commands=1, input_debt=0 and integrity_lost=false",
+    "terminal is DeadlineExceeded with NotDispatched effects, zero publication, and no dirty/quarantine claim for accounted object-only debt",
+    "a new operation does not clear the old owner debt",
+    "exact late cleanup ACK clears debt without resuming old enumeration, geometry, screenshot or duplicate release"
+  ],
+  "limits": [
+    "safe resource-ownership portion of legacy capture obligation #5 only",
+    "not equivalent to the old 60 ms successful fallback",
+    "not evidence of renderer garbage collection or real browser behavior"
+  ],
+  "oldModulesRemoved": false,
+  "sourcePatchSha256": "05cec9d4af5a406c99088ec84e2e1ba06ad11be187fd18d482d55c07185b8db6"
+}

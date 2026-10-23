@@ -1,0 +1,208 @@
+cli/src/native/client_capture_frame_owner_deadline_tests.rs:24
+   24 async fn fence(client: &CdpClient) {
+   25     tokio::time::timeout(
+   26         Duration::from_secs(1),
+   27         client.send_command("Browser.getVersion", None, None),
+   28     )
+   29     .await
+   30     .expect("transport fence must finish")
+   31     .unwrap();
+
+cli/src/native/client_capture_frame_owner_deadline_tests.rs:156
+  156     let client = Arc::new(CdpClient::connect(&endpoint).await.unwrap());
+  157     let owner = Owner::new(client.clone(), "session", "target", "scope").await;
+  158     let ledger = OwnerDebtLedger::new(1, "scope".into());
+  159     client.install_debt_ledger(ledger.clone()).unwrap();
+  160     let sequence = 8301;
+  161     let journal = ledger
+  162         .operation(
+  163             OperationKey {
+  164                 generation: 1,
+  165                 operation_seq: sequence,
+  166             },
+  167             "target".into(),
+  168             "session".into(),
+  169         )
+  170         .unwrap();
+  171     let refs = Arc::new(Mutex::new(RefMap::new()));
+  172     let dispatch = ObservationDispatch::new(refs.clone());
+  173     let (mut operation, _cancel) = operation(sequence);
+  174     operation.deadline = Instant::now() + Duration::from_millis(80);
+  175     let deadline = operation.deadline;
+  176     journal.bind_operation(&operation).unwrap();
+  177     let mut task = journal
+  178         .scope(async {
+  179             dispatch.clone().start(
+  180                 owner.context(),
+  181                 DispatchRequest::Observe(ObserveRequest {
+  182                     options: ObserveFlags {
+  183                         pixels: false,
+  184                         pixel_fallback: true,
+  185                         comparable: false,
+  186                     },
+  187                     test_id_attribute: "data-testid".into(),
+  188                     secure_field_selector: "input[type=password]".into(),
+  189                 }),
+  190                 operation,
+  191             )
+  192         })
+  193         .await;
+  194     tokio::time::timeout_at(deadline.into(), reached)
+
+cli/src/native/client_capture_frame_owner_deadline_tests.rs:239
+  239     let (output, cleanup) = tokio::time::timeout(Duration::from_secs(1), async {
+  240         tokio::join!(task.result, task.join)
+  241     })
+  242     .await
+  243     .expect("native retained ownership settlement must finish");
+  244     let terminal = Instant::now();
+  245     assert!(terminal >= deadline);
+  246     eprintln!(
+  247         "frame-owner-deadline: release_ack_withheld={withhold_release_ack}, terminal_after_parent_us={}",
+  248         terminal.saturating_duration_since(deadline).as_micros()
+  249     );
+  250     assert!(matches!(&cleanup, Ok(Ok(()))));
+  251     let (settled, dirty) = settle_observation_dispatch(output, cleanup);
+  252     assert_eq!(settled.result, Err(ProtocolError::DeadlineExceeded));
+  253     assert_eq!(settled.effects, Effects::NotDispatched);
+  254     assert!(
+  255         !dirty,
+  256         "accounted release debt is not untracked cleanup uncertainty"
+  257     );
+  258     assert!(owner.targets.inventory().is_ok());
+  259     assert!(refs.lock().unwrap().ref_ids().is_empty());
+  260     {
+  261         let publication = dispatch.publication.lock().await;
+  262         assert_eq!(
+  263             (
+  264                 publication.published_revision,
+  265                 publication.observed_revision
+  266             ),
+  267             (0, 0)
+  268         );
+  269     }
+  270     let retained = ledger.snapshot();
+  271     let outstanding = u32::from(withhold_release_ack);
+  272     assert_eq!(
+  273         (
+  274             retained.input_debt,
+  275             retained.object_debt,
+  276             retained.outstanding_commands
+  277         ),
+  278         (0, outstanding, outstanding)
+  279     );
+  280     assert!(!retained.integrity_lost);
+  281     assert_eq!(journal.snapshot().object_debt, outstanding);
+  282     assert_eq!(
+  283         ledger.accounted_object_release("session", OBJECT),
+  284         withhold_release_ack
+  285     );
+  286     // Existing admission allows bounded object-only debt below its capacity
+  287     // limit. Input debt and lost integrity are different, blocking contracts.
+  288     assert_eq!(ledger.check_admission(AdmissionClass::Reference), Ok(()));
+  289     let next_journal = ledger
+  290         .operation(
+  291             OperationKey {
+  292                 generation: 1,
+  293                 operation_seq: sequence + 1,
+  294             },
+  295             "target".into(),
+  296             "session".into(),
+  297         )
+  298         .unwrap();
+  299     assert_eq!(next_journal.snapshot().object_debt, 0);
+  300     assert_eq!(
+  301         journal.snapshot().object_debt,
+  302         outstanding,
+  303         "a new operation must not clear the exact old owner's debt"
+  304     );
+  305     assert_eq!(ledger.snapshot().object_debt, outstanding);
+  306     let terminal_commands = commands.lock().unwrap().clone();
+  307     if withhold_release_ack {
+  308         release_cleanup.take().unwrap().send(()).unwrap();
+  309     }
+  310     tokio::time::timeout(Duration::from_secs(1), cleanup_acked)
+  311         .await
+  312         .unwrap()
+  313         .unwrap();
+  314     fence(&client).await;
+  315     let cleared = ledger.snapshot();
+  316     assert_eq!(
+  317         (
+  318             cleared.input_debt,
+  319             cleared.object_debt,
+  320             cleared.outstanding_commands
+  321         ),
+  322         (0, 0, 0)
+  323     );
+  324     assert!(!cleared.integrity_lost);
+  325     assert_eq!(journal.snapshot().object_debt, 0);
+  326     assert_eq!(next_journal.snapshot().object_debt, 0);
+  327     assert!(!ledger.accounted_object_release("session", OBJECT));
+  328     assert_eq!(
+  329         *commands.lock().unwrap(),
+  330         terminal_commands,
+  331         "late cleanup ACK must not resume enumeration, geometry, screenshot or duplicate release"
+  332     );
+  333     assert!(refs.lock().unwrap().ref_ids().is_empty());
+  334     {
+  335         let publication = dispatch.publication.lock().await;
+  336         assert_eq!(
+  337             (
+  338                 publication.published_revision,
+  339                 publication.observed_revision
+  340             ),
+  341             (0, 0)
+  342         );
+
+cli/src/native/cdp/client.rs:1187
+ 1187     pub(crate) fn reserve_tracked_command(
+ 1188         &self,
+ 1189         method: &str,
+ 1190         params: Option<&Value>,
+ 1191         session: Option<&str>,
+ 1192     ) -> Result<Option<CommandReservation>, String> {
+ 1193         let Some(ledger) = self.debt_ledger() else {
+ 1194             return Ok(None);
+ 1195         };
+ 1196         let journal = current_operation();
+ 1197         self.check_cleanup_owner(&Some(ledger.clone()))
+ 1198             .map_err(|_| "Native CDP owner changed".to_string())?;
+ 1199         // Legacy handles cease being ambient native-service authority when a
+ 1200         // managed owner is installed. Operation journals remain exact-bound.
+ 1201         if self.owner.is_none() && journal.is_none() {
+ 1202             return Err("Native CDP requires an owner-bound view".into());
+ 1203         }
+ 1204         ledger
+ 1205             .reserve_command(journal.as_ref(), method, params, session)
+ 1206             .map(Some)
+ 1207             .map_err(|_| "Native CDP command admission refused".to_string())
+
+cli/src/native/cdp/client.rs:1248
+ 1248     pub async fn send_command(
+ 1249         &self,
+ 1250         method: &str,
+ 1251         params: Option<Value>,
+ 1252         session_id: Option<&str>,
+ 1253     ) -> Result<Value, String> {
+ 1254         let reservation = self.reserve_tracked_command(method, params.as_ref(), session_id)?;
+ 1255         self.send_reserved_command(method, params, session_id, reservation)
+ 1256             .await
+ 1257     }
+ 1258
+ 1259     pub(crate) async fn send_reserved_command(
+ 1260         &self,
+
+cli/src/native/client_debt.rs:293
+  293 pub(crate) fn current_operation() -> Option<OperationJournalHandle> {
+  294     CURRENT_OPERATION.try_with(Clone::clone).ok()
+  295 }
+
+cli/src/native/client_debt.rs:332
+  332     pub(crate) fn ledger(&self) -> Arc<OwnerDebtLedger> {
+  333         self.ledger.clone()
+  334     }
+  335     pub(crate) async fn scope<F: Future>(&self, future: F) -> F::Output {
+  336         CURRENT_OPERATION.scope(self.clone(), future).await
+  337     }
+  338     pub(crate) fn check_application_submission(&self) -> Result<(), ProtocolError> {

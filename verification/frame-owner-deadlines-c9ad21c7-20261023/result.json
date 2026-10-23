@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "kind": "frame-owner-deadline-directed-verification",
+  "status": "failed",
+  "completedAt": "2026-10-23T14:01:30.666919+00:00",
+  "source": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+  "parent": "219c37358cf2c947846bb907da689429f720bd72",
+  "tree": "53e79dda59a615e374fba6d9587c590500c2a442",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "exitCode": 101,
+  "discovered": 2,
+  "executed": 2,
+  "passed": 0,
+  "failed": 2,
+  "ignored": 0,
+  "cases": [
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+      "status": "failed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+      "status": "failed"
+    }
+  ],
+  "harnessSummaries": [
+    {
+      "status": "FAILED",
+      "passed": 0,
+      "failed": 2,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 2583,
+      "durationSeconds": 0.34
+    }
+  ],
+  "originalParentDeadlineMs": 80,
+  "allOriginalCoreAssertionsPassed": false,
+  "terminalTimingObservations": [
+    {
+      "releaseAckWithheld": false,
+      "terminalAfterParentDeadlineMicroseconds": 1390
+    },
+    {
+      "releaseAckWithheld": true,
+      "terminalAfterParentDeadlineMicroseconds": 253437
+    }
+  ],
+  "sourceUnchangedDuringRun": true,
+  "localSourceFixes": false,
+  "productionChanges": false,
+  "oldModulesRemoved": false,
+  "harness": {
+    "path": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "b3805cad069a356ff52f94c9df8295e900f22619ffd9a96fb695d865bc15cbc9",
+    "bytes": 75186336
+  },
+  "previousPassedParent": {
+    "source": "219c37358cf2c947846bb907da689429f720bd72",
+    "executed": 4,
+    "passed": 4,
+    "ignored": 0,
+    "evidenceCommit": "099d8ba12749c3c0c5b31e76948d0efc7cf549cb",
+    "preservedHarnessSha256": "469c0daaae8fb0371423fea6fe3ccbda8ea8c40ed337b141849dc1ee5511481f"
+  },
+  "C03Rerun": false,
+  "previousAcquisitionTestsRerun": false,
+  "C03ProductionBinarySha256": "34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325",
+  "browserUsed": false,
+  "scope": "full production observation dispatcher with installed real OwnerDebtLedger and loopback resource-producing CDP peer; no browser",
+  "ledgerAssertionSemantics": {
+    "atWithheldReleaseAck": {
+      "inputDebt": 0,
+      "objectDebt": 1,
+      "outstandingCommands": 1,
+      "integrityLost": false,
+      "assertedBeforeFailure": true
+    },
+    "terminal": {
+      "error": "DeadlineExceeded",
+      "effects": "NotDispatched",
+      "dirty": false,
+      "publishedRevision": 0,
+      "observedRevision": 0,
+      "assertedBeforeFailure": true
+    },
+    "afterExactLateReleaseAck": {
+      "inputDebt": 0,
+      "objectDebt": 0,
+      "outstandingCommands": 0,
+      "continuedOldWork": false,
+      "assertionReached": false
+    },
+    "assertionsActuallyPassed": false
+  },
+  "coverage": "Safe resource-ownership portion of legacy capture obligation #5 only; not equivalent to the old 60 ms successful fallback.",
+  "fullCandidateVerified": false,
+  "releaseEligible": false,
+  "rawStdoutSha256": "d7bc08e2de51e45fac61715f5020c7aab77be9d3b67a4a4df0e4b1b77d519a5d",
+  "rawStderrSha256": "eedc086ec6b633afe2b3392fb55985a06c7551fdc399433f1cac211779053ce2",
+  "failure": {
+    "kind": "fixture post-ACK transport fence lacks an owner-bound view or active journal",
+    "message": "Native CDP requires an owner-bound view",
+    "panicFile": "cli/src/native/client_capture_frame_owner_deadline_tests.rs",
+    "panicLine": 31,
+    "callSiteLine": 314,
+    "productionGuard": "cli/src/native/cdp/client.rs:1201",
+    "cause": "The installed real ledger rejects ambient CdpClient commands. journal.scope covers dispatch startup, but the later raw-client Browser.getVersion fence runs outside that scope with self.owner and current_operation both absent.",
+    "enteredCoreAssertions": true,
+    "confirmedBeforeFailure": [
+      "actual late owner reached its exact release command after the original 80 ms deadline",
+      "pending exact release was accounted with input_debt=0, object_debt=1, outstanding_commands=1 and intact integrity",
+      "terminal DeadlineExceeded, NotDispatched effects, dirty=false, usable inventory and zero publication",
+      "withheld-ACK terminal retained the old accounted object debt; a new operation did not clear it",
+      "cleanup_acked notification confirmed the peer sent the release ACK"
+    ],
+    "notEstablishedAfterFailure": [
+      "transport-fence proof that the client processed the late release ACK",
+      "final old-owner and global ledger debt/command counts all zero",
+      "final no-resumed-enumeration, geometry, screenshot or duplicate release assertion",
+      "final post-ACK publication and command-log assertions"
+    ],
+    "notAn80msTimeoutFailure": true
+  }
+}
