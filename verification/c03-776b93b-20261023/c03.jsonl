@@ -1,0 +1,3 @@
+{"kind":"header","schemaVersion":1,"binding":{"runId":"702d0f34fedc7bb85fef569fdefb088c","suite":"public-callbacks","sourceRevision":"b3a23a07c3f9068e7c0b122873b94f28cbb2e40b","testSourceDigest":"b3ecaa8d40495f836b0d4e314d23d2ace6c2d33316104c880547cfd8945b21fb","binarySha256":"34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325"},"caseId":"C03","sourceSha256":"74dc3f705dda206b60b0c23351a67a2f7e0f218bff07e05b1890d23fcb5a55ad"}
+{"kind":"record","sequence":0,"fact":{"kind":"phase","section":"body","phase":"route","state":"enter"}}
+{"kind":"footer","sequence":1,"dropped":0,"truncated":false,"incomplete":false,"outcome":{"setup":"passed","body":"passed","cleanup":"not-started"}}

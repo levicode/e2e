@@ -1,0 +1,38 @@
+{
+  "e2e": {
+    "head": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+    "tree": "dee016549a4b9a9918a401291932a4cafd008a1d",
+    "status": ""
+  },
+  "agentBrowser": {
+    "head": "776b93b23902ceb1b38e965d1207f111d85fdd0d",
+    "tree": "05fef3451b4a1263628942aefef778b0dc05e2be",
+    "status": ""
+  },
+  "files": {
+    "e2e": {
+      ".github/workflows/native-candidate.yml": "0d5d4ffd60a2408c69550776e2e9d5d7253712951067c686686d5355ed3f7855",
+      "packages/e2e/tests/integration/web-callback-contract.test.ts": "b3ecaa8d40495f836b0d4e314d23d2ace6c2d33316104c880547cfd8945b21fb",
+      "packages/e2e/tests/integration/web-native-primitives-contract.test.ts": "0efd8993b88d9e304b7e85c683a3ad7e7c43d90ef36ab440f809e22823eb7d78",
+      "packages/e2e/tests/helpers/run-project.ts": "8d442ec57a5c9cb24ed7a94d22c5ffcdaf73920898a0262dca6783b165a7443e",
+      "packages/e2e/dist/.build.json": "735a297c8a00896640863f3a6cba79c91e0e1cae7a2e258ccd25e10ebc60bb79",
+      "packages/web/dist/.build.json": "1ee31061e307447f7177fe656856b8c7aceb7cd9175ba9cb7bf79adab7c0442b"
+    },
+    "agentBrowser": {
+      "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+      "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1",
+      "cli/src/native/cdp/client.rs": "818847e0f5d5694834d2568773cabaab0458213d72f8165a335e96b8624050f5",
+      "cli/src/native/client_browser.rs": "63b6f4e295c1040ebfb64b0b654052cb4bab477bb316b3261fc1fa8e20d4b8ef",
+      "cli/src/native/client_debt.rs": "300a841626fd5191905ae5eb729a6d407cf010e252ae97fc047acdcb0818ee45",
+      "cli/src/native/client_enrollment.rs": "7c4de3df557ce84c6346a016c3a30264fbf878068d276d1953c058f1376586de",
+      "cli/src/native/client_network.rs": "4529a85ff71981d4a5881e51201963f129705e5d341ec4b8272baf86b51384ca",
+      "cli/src/native/client_operation_state.rs": "fbe4c3b2af6609b2f35c372897cb0d0a4eefdff0c2f57c7e3e1e3926109ba5d6",
+      "cli/src/native/client_session.rs": "427bf41663d38653f56982a796597ffe8bc2d676c2dcbebd2717b16ac026767c",
+      "cli/src/native/client_targets.rs": "2f85368e50c47d01ce9e59c64b838db708c76a736c34475982ec90badd44bd22",
+      "cli/src/native/client_tasks.rs": "10ae066d0441f22b54c130c32ea3679e7357a85a39eebb5242899e357335a323",
+      "cli/src/native/client_actions.rs": "94e404ccdd40999d574d191785e608c6b746931796030bc68590ddbb3505acbf",
+      "cli/src/native/client_observation.rs": "0007152abc120afedc1a209f64bedc06325cd3c34439f654f190454582470f2a",
+      "cli/src/native/cdp/chrome.rs": "6c3f4132c749741d26d8b445e7c54fa1f55ab4038e64e87688000576b4c5a236"
+    }
+  }
+}

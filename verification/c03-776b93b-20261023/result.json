@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "kind": "C03-directed-browser-verification",
+  "status": "passed",
+  "verifiedAt": "2026-10-23T12:57:24Z",
+  "e2eSource": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+  "nativeSource": "776b93b23902ceb1b38e965d1207f111d85fdd0d",
+  "sourceUnchanged": true,
+  "binarySha256": "34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325",
+  "capabilitiesPassed": 17,
+  "callbackPassed": 6,
+  "nativePrimitivesPassed": 8,
+  "failed": 0,
+  "ignored": 0,
+  "c03": {
+    "name": "route callback reads the live page while evaluate awaits fetch",
+    "originalTimeoutMs": 8000,
+    "stage3": "original h1 textContent assertion",
+    "stage4": "original arbitrary JavaScript evaluate assertion",
+    "sourceUnchanged": true,
+    "setup": "passed",
+    "body": "passed",
+    "caseEvidence": "complete"
+  },
+  "chromium": {
+    "executable": "/usr/lib/chromium/chromium",
+    "sha256": "4dc9f9f9b20e9bd95bf201f43d2d643f48938f36a70ddcb6fce3dd611a178180",
+    "version": "Chromium 154.0.8037.57",
+    "launcher": "/usr/bin/chromium",
+    "launcherSha256": "2c8d32d29dc6781c35ae196ea83299d507ac88fc339301abe74672feda299779",
+    "sandboxHelper": {
+      "uid": 65534,
+      "mode": 35309
+    }
+  },
+  "environment": {
+    "CI": "1",
+    "CODEX_CI": "1",
+    "AGENT_BROWSER_SOCKET_DIR": "/tmp/c03s-3qfnjM",
+    "E2E_AGENT_BROWSER_EXECUTABLE": "/workspace/c03-build/bin/production",
+    "E2E_CHROMIUM_EXECUTABLE": "/usr/lib/chromium/chromium",
+    "E2E_TELEMETRY_DISABLED": "1",
+    "E2E_UPDATE_CHECK_DISABLED": "1",
+    "E2E_CACHE_DIR": ""
+  },
+  "fixtureCI": "",
+  "sandboxEnabled": false,
+  "scope": "loopback synthetic fixtures",
+  "socketIsolation": "explicit per-run /tmp/c03s-* directory",
+  "observedChromiumProcessesAtEnd": {
+    "count": 75,
+    "remaining": 0
+  },
+  "syntheticAggregation": {
+    "callbackCapture": {
+      "C01": "absent from this file",
+      "C02": "absent from this file",
+      "C03": "complete"
+    },
+    "primitivesCapture": {
+      "C01": "complete",
+      "C02": "complete",
+      "C03": "absent from this file"
+    },
+    "suiteAggregate": "unknown because the original files ran separately"
+  },
+  "completeCandidateVerified": false,
+  "releaseEligible": false,
+  "remaining": "Official Chromium 156 and complete source validation remain outside this directed result."
+}

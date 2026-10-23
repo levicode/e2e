@@ -1,0 +1,69 @@
+{
+  "nativeSource": "776b93b23902ceb1b38e965d1207f111d85fdd0d",
+  "tree": "05fef3451b4a1263628942aefef778b0dc05e2be",
+  "command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--message-format=json"
+  ],
+  "cwd": "/workspace/agent-browser/cli",
+  "CARGO_BUILD_JOBS": 2,
+  "clearedEnvironment": [
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "RUSTFLAGS",
+    "CARGO_ENCODED_RUSTFLAGS"
+  ],
+  "binarySha256": "34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325",
+  "compilerJsonSha256": "0e378cfbee76ca0697036c511938890bf7bc30012d4b1ddb4ad0710138ac1b2b",
+  "compilerArtifact": {
+    "reason": "compiler-artifact",
+    "package_id": "path+file:///workspace/agent-browser/cli#agent-browser@0.39.1",
+    "manifest_path": "/workspace/agent-browser/cli/Cargo.toml",
+    "target": {
+      "kind": [
+        "bin"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "agent-browser",
+      "src_path": "/workspace/agent-browser/cli/src/main.rs",
+      "edition": "2021",
+      "doc": true,
+      "doctest": false,
+      "test": true
+    },
+    "profile": {
+      "opt_level": "3",
+      "debuginfo": 0,
+      "debug_assertions": false,
+      "overflow_checks": false,
+      "test": false
+    },
+    "features": [],
+    "filenames": [
+      "/workspace/c03-build/target/ci/agent-browser"
+    ],
+    "executable": "/workspace/c03-build/target/ci/agent-browser",
+    "fresh": false
+  },
+  "rustc": [
+    "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "binary: rustc",
+    "commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67",
+    "commit-date: 2026-10-13",
+    "host: x86_64-unknown-linux-gnu",
+    "release: 1.99.1",
+    "LLVM version: 23.1.1"
+  ],
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "distBuilds": [
+    "pnpm --filter e2e run build",
+    "pnpm --filter @e2e-dev/web run build"
+  ]
+}

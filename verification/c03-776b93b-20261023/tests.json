@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "kind": "original-public-callbacks-test-results",
+  "suites": [
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "pending": 0,
+      "rawReportSha256": "dfb2c5979c658f6a02618a14f6b718ac6b84cf90dd6e23e5f8d08fd36fb55742",
+      "cases": [
+        {
+          "name": "route callback reads the live page while evaluate awaits fetch",
+          "status": "passed"
+        },
+        {
+          "name": "route removal keeps the paused fallback chain",
+          "status": "passed"
+        },
+        {
+          "name": "response subscription does not block its trigger",
+          "status": "passed"
+        },
+        {
+          "name": "dialog decisions settle an awaiting evaluation",
+          "status": "passed"
+        },
+        {
+          "name": "download subscription runs its trigger",
+          "status": "passed"
+        },
+        {
+          "name": "custom executor uses checked actions and the test verifies the response",
+          "status": "passed"
+        }
+      ],
+      "execution": {
+        "command": "pnpm",
+        "args": [
+          "exec",
+          "vitest",
+          "run",
+          "--project",
+          "integration",
+          "--maxWorkers=1",
+          "tests/integration/web-callback-contract.test.ts",
+          "--reporter=default",
+          "--reporter=json",
+          "--outputFile=/workspace/c03-evidence/isolated-sockets/callback/vitest.json"
+        ],
+        "cwd": "/workspace/e2e/packages/e2e",
+        "code": 0,
+        "signal": null,
+        "durationMs": 4046
+      }
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "passed": 8,
+      "failed": 0,
+      "pending": 0,
+      "rawReportSha256": "fa31ba36ff2fb19838601a6680f3ecef3d4f6e401621492ee316564b5680a98e",
+      "cases": [
+        {
+          "name": "navigation history reload and browser expectations preserve document readiness",
+          "status": "passed"
+        },
+        {
+          "name": "evaluate supports JSON arguments async functions and string expressions",
+          "status": "passed"
+        },
+        {
+          "name": "cookies retain context scope and start isolated in every attempt",
+          "status": "passed"
+        },
+        {
+          "name": "init scripts and partial media updates cover frames and new tabs",
+          "status": "passed"
+        },
+        {
+          "name": "viewport and keyboard preserve actual input and key events",
+          "status": "passed"
+        },
+        {
+          "name": "pointer primitives preserve coordinates buttons and wheel events",
+          "status": "passed"
+        },
+        {
+          "name": "frame locators and class assertions use the shared public query contract",
+          "status": "passed"
+        },
+        {
+          "name": "large fulfill and continued request bodies use verified native storage",
+          "status": "passed"
+        }
+      ],
+      "execution": {
+        "command": "pnpm",
+        "args": [
+          "exec",
+          "vitest",
+          "run",
+          "--project",
+          "integration",
+          "--maxWorkers=1",
+          "tests/integration/web-native-primitives-contract.test.ts",
+          "--reporter=default",
+          "--reporter=json",
+          "--outputFile=/workspace/c03-evidence/isolated-sockets/primitives/vitest.json"
+        ],
+        "cwd": "/workspace/e2e/packages/e2e",
+        "code": 0,
+        "signal": null,
+        "durationMs": 6712
+      }
+    }
+  ]
+}
