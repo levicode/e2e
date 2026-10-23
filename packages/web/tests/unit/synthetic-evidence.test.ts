@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validSyntheticFact, validSyntheticNativeResult, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
+import { serviceWorkerPromiseFact, validSyntheticFact, validSyntheticNativeResult, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
 const result = { operationSeq: 1, ok: false, code: 'cancelled', effects: 'unknown', scopeState: 'quarantined' };
 describe('closed concentrated synthetic evidence schemas', () => {
   it('accepts validated scalar result facts but never payload or exception text', () => {
@@ -58,6 +58,43 @@ describe('closed concentrated synthetic evidence schemas', () => {
     expect(validSyntheticFact(item, 'P42')).toBe(false);
     for (const invalid of [{ ...item, targetOrdinal: 4 }, { ...item, baselineIncluded: null }, { ...item, rawNode: 'private' }]) expect(validSyntheticFact(invalid, 'P42O')).toBe(false);
     expect(validSyntheticFact({ ...item, unavailable: true }, 'P42O')).toBe(true);
+  });
+  it('owns closed Promise-stage facts only in P41 without implying a successful registration', () => {
+    for (const branch of ['plain', 'headers-blocked'] as const) {
+      for (const stage of ['register-invoked', 'register-settled', 'get-invoked', 'get-settled'] as const) {
+        const fact: SyntheticFact = { kind: 'service-worker-promise', branch, stage };
+        expect(validSyntheticFact(fact, 'P41')).toBe(true);
+        expect(validSyntheticFact(fact, 'P40')).toBe(false);
+        for (const invalid of [{ ...fact, branch: 'other' }, { ...fact, stage: 'register-succeeded' }, { ...fact, text: 'private' }, { ...fact, url: 'private' }, { ...fact, registeredCount: 1 }, { ...fact, stage: undefined }]) {
+          expect(validSyntheticFact(invalid, 'P41')).toBe(false);
+        }
+      }
+    }
+  });
+  it('projects only the four exact info markers and immediately discards optional native locations', () => {
+    for (const branch of ['plain', 'headers-blocked'] as const) {
+      for (const stage of ['register-invoked', 'register-settled', 'get-invoked', 'get-settled'] as const) {
+        for (const suffix of ['', ' (at https://private.invalid/secret?token=private:12)', ' (at http://127.0.0.1:1234/:1)']) {
+          const fact = serviceWorkerPromiseFact(branch, { source: 'console', level: 'info', text: `P41:service-worker:${stage}${suffix}` });
+          expect(fact).toEqual({ kind: 'service-worker-promise', branch, stage });
+          expect(JSON.stringify(fact)).not.toMatch(/private|127\.0\.0\.1|token|text|url/);
+        }
+      }
+    }
+  });
+  it('ignores unrelated logs, marker lookalikes and unknown or payload-bearing fields without reading getters', () => {
+    const entry = { source: 'console', level: 'info', text: 'P41:service-worker:register-invoked' };
+    for (const text of ['private', `prefix ${entry.text}`, `${entry.text} suffix`, `${entry.text}\n`, `${entry.text}\r`, `${entry.text} (at :1)`, `${entry.text} (at private:line)`, `${entry.text} (at private:1) suffix`, `${entry.text} (at private:1) (at private:2)`, `${entry.text} (at private\n:1)`, 'P41:service-worker:register-succeeded']) {
+      expect(serviceWorkerPromiseFact('plain', { ...entry, text })).toBeNull();
+    }
+    for (const invalid of [null, 'private', { ...entry, source: 'network' }, { ...entry, level: 'debug' }, { ...entry, level: 'warning' }, { ...entry, level: 'log' }, { ...entry, text: {} }, { ...entry, payload: 'private' }, Object.assign(Object.create({ inherited: true }), entry), { ...entry, [Symbol('private')]: 'private' }]) {
+      expect(serviceWorkerPromiseFact('plain', invalid)).toBeNull();
+    }
+    let reads = 0;
+    for (const key of ['source', 'level', 'text']) {
+      expect(serviceWorkerPromiseFact('plain', Object.defineProperty({ ...entry }, key, { get: () => { reads++; return 'private'; }, enumerable: true }))).toBeNull();
+    }
+    expect(reads).toBe(0);
   });
 });
 

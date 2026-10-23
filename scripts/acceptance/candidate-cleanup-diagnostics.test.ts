@@ -366,3 +366,35 @@ test('atomic inventory maximal closed line is 507 bytes and the unchanged 512 ca
   const tooLong = Buffer.from(JSON.stringify(item) + ' '.repeat(6) + '\n'); assert.equal(tooLong.length, 513);
   const rejected = inspectCleanupBytes(tooLong); assert.ok(rejected.reasons.includes('invalid-record')); assert.equal(rejected.records.length, 0);
 });
+
+function workerAdmission(ordinal: number, admissionStep = 'network-enable', admissionState = 'enter', facts = {}) {
+  return record('ServiceWorkerAdmission', ordinal, { operationSeq: 0, generation: 1, workerOrdinal: 1, waitingForDebugger: true, admissionStep, admissionState, ...facts });
+}
+test('worker admission accepts only closed scalar facts, tri-state debugger wait and autonomous seq0', () => {
+  for (const waitingForDebugger of [true, false, 'unknown']) assert.equal(validCleanupRecord(workerAdmission(1, 'network-enable', 'enter', { waitingForDebugger })), true);
+  for (const facts of [{ operationSeq: 10 }, { workerOrdinal: 0 }, { workerOrdinal: 9 }, { waitingForDebugger: null }, { waitingForDebugger: 'true' }, { admissionState: 'submitted' }, { admissionStep: 'private' }, { sessionId: 'private' }, { url: 'private' }, { error: 'browser-failure' }]) assert.equal(validCleanupRecord(workerAdmission(1, 'network-enable', 'enter', facts)), false);
+  const maximal = workerAdmission(Number.MAX_SAFE_INTEGER, 'auxiliary-classification', 'failed', { generation: Number.MAX_SAFE_INTEGER, pid: 4294967295, emittedBefore: Number.MAX_SAFE_INTEGER, droppedBefore: Number.MAX_SAFE_INTEGER, suppressedBefore: Number.MAX_SAFE_INTEGER, waitingForDebugger: 'unknown' });
+  assert.equal(validCleanupRecord(maximal), true); assert.ok(lines(maximal).length <= 512);
+});
+test('worker progress persists without a cleanup attempt or inferred wire submission', () => {
+  const result = inspectCleanupBytes(lines(record('CaptureStarted', 0), workerAdmission(1, 'owned-attachment', 'done'), workerAdmission(2)));
+  assert.equal(result.status, 'unknown'); assert.ok(result.reasons.includes('no-cleanup-attempt')); assert.ok(result.reasons.includes('worker-admission-incomplete'));
+  assert.equal(result.records.at(-1)!.admissionState, 'enter');
+});
+test('worker completion and failure remain independent from cleanup coverage', () => {
+  for (const [step, terminal] of [['configuration-committed', 'done'], ['network-enable', 'failed']]) {
+    const result = inspectCleanupBytes(lines(...completed(), workerAdmission(4, 'owned-attachment', 'done'), workerAdmission(5, step, 'enter'), workerAdmission(6, step, terminal)));
+    assert.equal(result.status, 'complete-observed-snapshots'); assert.equal(result.records[3]!.cleanupResult, 'failed');
+    const alone = inspectCleanupBytes(lines(record('CaptureStarted', 0), workerAdmission(1, 'owned-attachment', 'done'), workerAdmission(2, step, 'enter'), workerAdmission(3, step, terminal)));
+    assert.equal(alone.status, 'unknown'); assert.deepEqual(alone.reasons, ['no-cleanup-attempt']);
+  }
+});
+test('missing, mixed or over-budget worker observations remain unknown', () => {
+  const cases = [
+    [workerAdmission(4, 'network-enable', 'done')],
+    [workerAdmission(4, 'owned-attachment', 'done'), workerAdmission(5), workerAdmission(6, 'network-enable', 'done', { waitingForDebugger: false })],
+    [workerAdmission(4, 'owned-attachment', 'done'), ...Array.from({ length: 32 }, (_, index) => workerAdmission(5 + index, 'network-enable', index % 2 ? 'done' : 'enter'))],
+    [workerAdmission(4, 'owned-attachment', 'done'), workerAdmission(5, 'configuration-committed', 'enter'), workerAdmission(6, 'configuration-committed', 'done', { droppedBefore: 1 })],
+  ];
+  for (const extra of cases) assert.equal(inspectCleanupBytes(lines(...completed(), ...extra)).status, 'unknown');
+});

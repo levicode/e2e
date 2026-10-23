@@ -174,6 +174,7 @@ export type SyntheticFact =
   | { kind: 'popup-readiness'; phase: 'open-return' | 'ready-sample' | 'post-failure'; sampleOrdinal: number; present: boolean | null; closed: boolean | null; pathMatches: boolean | null; complete: boolean | null; activationActive: boolean | null; activationEver: boolean | null; predicate: boolean | null; readState: 'ok' | 'failed' | 'not-read' }
   | { kind: 'script-boot'; phase: 'main' | 'frame' | 'popup' | 'reset'; fixtureLifecycleOrdinal: 0 | 1 | 2 | 3; scriptOrdinal: 0 | 1 | 2 | 3; executionCount: number | null; exactOrder: boolean | null }
   | { kind: 'service-worker'; branch: 'plain' | 'headers-blocked'; phase: 'boot' | 'navigate' | 'register-count' | 'shutdown-end' | 'shutdown-dispose'; state: 'enter' | 'passed' | 'failed'; headersConfigured: boolean; registeredCount: number | null }
+  | { kind: 'service-worker-promise'; branch: 'plain' | 'headers-blocked'; stage: 'register-invoked' | 'register-settled' | 'get-invoked' | 'get-settled' }
   | { kind: 'wheel-sample'; phase: 'original-sample' | 'post-result-sample' | 'delivery-witness'; sampleOrdinal: 0 | 1 | 2; downCount: number | null; upCount: number | null; wheelCount: number | null; expectedDeltaSeen: boolean | null; nativePublicResultObserved: boolean; cdpAckObserved: null }
   | { kind: 'frame-hit'; phase: 'pre-tap' | 'post-tap'; available: boolean; leafHitInput: boolean | null; leafHitButton: boolean | null; ancestorHitOwner: boolean | null; clickSeen: boolean | null; nativePointProven: false; nativeDispatchCount: null };
 export type SyntheticOutcomeState = 'not-started' | 'passed' | 'failed' | 'incomplete';
@@ -306,6 +307,8 @@ export function validSyntheticFact(value: unknown, caseId: SyntheticCaseId): val
     case 'service-worker': return caseId === 'P41' && syntheticKeys(value, ['kind', 'branch', 'phase', 'state', 'headersConfigured', 'registeredCount'])
       && member(['plain', 'headers-blocked'], value['branch']) && member(['boot', 'navigate', 'register-count', 'shutdown-end', 'shutdown-dispose'], value['phase'])
       && member(['enter', 'passed', 'failed'], value['state']) && value['headersConfigured'] === (value['branch'] === 'headers-blocked') && (value['registeredCount'] === null || syntheticCount(value['registeredCount'], 2));
+    case 'service-worker-promise': return caseId === 'P41' && syntheticKeys(value, ['kind', 'branch', 'stage'])
+      && member(['plain', 'headers-blocked'], value['branch']) && member(['register-invoked', 'register-settled', 'get-invoked', 'get-settled'], value['stage']);
     case 'wheel-sample': return member(['C01', 'C01N', 'C01PW'], caseId) && syntheticKeys(value, ['kind', 'phase', 'sampleOrdinal', 'downCount', 'upCount', 'wheelCount', 'expectedDeltaSeen', 'nativePublicResultObserved', 'cdpAckObserved'])
       && member(['original-sample', 'post-result-sample', 'delivery-witness'], value['phase']) && syntheticCount(value['sampleOrdinal'], 2)
       && value['phase'] === ['original-sample', 'post-result-sample', 'delivery-witness'][value['sampleOrdinal'] as number]
@@ -386,6 +389,18 @@ export function callbackFailureFact(stageOrdinal: number, error: unknown): Extra
   };
   const cause = own(error, 'cause');
   return { kind: 'callback-failure', stageOrdinal, code: code(error), causeCode: cause === undefined ? null : code(cause), reason: reason(error), causeReason: cause === undefined ? null : reason(cause) };
+}
+/** Whitelist four P41 markers, discard the native projector's optional location, and retain only closed enums. */
+export function serviceWorkerPromiseFact(branch: 'plain' | 'headers-blocked', entry: unknown): Extract<SyntheticFact, { kind: 'service-worker-promise' }> | null {
+  if (!member(['plain', 'headers-blocked'], branch) || !syntheticObject(entry) || !syntheticKeys(entry, ['source', 'level', 'text'])
+    || entry['source'] !== 'console' || entry['level'] !== 'info' || typeof entry['text'] !== 'string') return null;
+  switch (entry['text'].replace(/ \(at [^\s]+:-?\d+\)$/u, '')) {
+    case 'P41:service-worker:register-invoked': return { kind: 'service-worker-promise', branch, stage: 'register-invoked' };
+    case 'P41:service-worker:register-settled': return { kind: 'service-worker-promise', branch, stage: 'register-settled' };
+    case 'P41:service-worker:get-invoked': return { kind: 'service-worker-promise', branch, stage: 'get-invoked' };
+    case 'P41:service-worker:get-settled': return { kind: 'service-worker-promise', branch, stage: 'get-settled' };
+    default: return null;
+  }
 }
 /** Shared writer/collector checks prevent forged duplicate or prematurely completed summaries. */
 export function syntheticFactSlot(fact: SyntheticFact): string | undefined {

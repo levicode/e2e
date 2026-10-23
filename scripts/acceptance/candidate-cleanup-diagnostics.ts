@@ -13,6 +13,8 @@ const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inv
 const screenshotFields = ['generation', 'screenshotStage', 'capturePhase', 'inventoryAfterFailure', 'error'];
 const frameFields = ['generation', 'pass', 'sealed', 'revisionMismatch', 'reservations', 'exact', 'lastEvent', 'lastTarget'];
 const revisionEvents = ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'];
+const workerFields = ['generation', 'workerOrdinal', 'admissionStep', 'admissionState', 'waitingForDebugger'];
+const workerSteps = new Set(['owned-attachment', 'auxiliary-classification', 'register', 'purpose', 'config-gate', 'network-enable', 'network-bypass', 'fetch-enable', 'runtime-enable', 'recursive-autoattach', 'configured', 'resume-permit', 'resume-debugger', 'configuration-committed']);
 const readonlyFields = ['generation', 'entryUs', 'ack', 'window', 'deadline', 'zeroInput', 'cleanup', 'error'];
 // Native restart diagnostics use process-local bounded ordinals, never native IDs.
 const targetFields: Record<string, readonly string[]> = {
@@ -49,13 +51,21 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const frame = phase === 'FrameInventoryRejection';
   const readonly = phase === 'ReadonlyPrepareFailure';
   const target = Object.hasOwn(targetFields, phase);
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
+  const worker = phase === 'ServiceWorkerAdmission';
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
   const allowed = new Set([...required, ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
-  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target ? ['generation'] : [])]) if (!natural(item[key])) return false;
+  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && item.operationSeq !== 0) return false;
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && item.operationSeq !== 0) return false;
+  if (worker) {
+    if (item.operationSeq !== 0 || !natural(item.workerOrdinal) || item.workerOrdinal < 1 || item.workerOrdinal > 8) return false;
+    if (typeof item.admissionStep !== 'string' || !workerSteps.has(item.admissionStep)) return false;
+    if (typeof item.admissionState !== 'string' || !['enter', 'done', 'failed'].includes(item.admissionState)) return false;
+    if (item.waitingForDebugger !== true && item.waitingForDebugger !== false && item.waitingForDebugger !== 'unknown') return false;
+    if (item.admissionStep === 'owned-attachment' && item.admissionState !== 'done') return false;
+  }
   if (inventory || target) {
     for (const key of ['inventoryOrdinal', 'attachmentOrdinal', 'targetOrdinal', 'parentAttachmentOrdinal', 'rootAttachmentOrdinal']) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] > 65535)) return false;
     if (Object.hasOwn(item, 'inventoryPoint') && (typeof item.inventoryPoint !== 'string' || !inventoryPoints.has(item.inventoryPoint))) return false;
@@ -136,6 +146,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
   const lines = bytes.toString('utf8').split('\n'); if (lines.at(-1) === '') lines.pop();
   if (lines.length > CLEANUP_RECORDS) return { status: 'unknown' as const, reasons: ['record-limit'], records };
   const pids = new Map<number, number>(); const attempts = new Map<string, { phase: string; identity: string }>();
+  const workers = new Map<string, { identity: string; count: number; pending?: string; terminal: boolean }>();
   // At most CLEANUP_RECORDS groups, each with at most 16 sampled attachments.
   // This checks only one declared inventory, not target lifetime or ancestry.
   const targetInventories = new Map<string, { identity: string; snapshot: boolean; sampled?: number; attribution: Set<number>; inventory: Set<number> }>();
@@ -153,6 +164,27 @@ export function inspectCleanupBytes(bytes: Buffer) {
     if (value.phase === 'CaptureLimitReached') reasons.add('capture-limit');
     if (value.phase === 'CaptureStarted') { if (ordinal !== 0) reasons.add('reused-pid'); continue; }
     if (value.phase === 'CaptureLimitReached') continue;
+    if (value.phase === 'ServiceWorkerAdmission') {
+      const key = `${pid}:${value.workerOrdinal}`;
+      const exact = JSON.stringify([value.generation, value.waitingForDebugger]);
+      let worker = workers.get(key);
+      if (!worker) {
+        worker = { identity: exact, count: 0, terminal: false }; workers.set(key, worker);
+        if (value.admissionStep !== 'owned-attachment' || value.admissionState !== 'done') reasons.add('worker-admission-unobserved');
+      } else if (value.admissionStep === 'owned-attachment') reasons.add('invalid-worker-admission');
+      if (worker.identity !== exact || ++worker.count > 32 || worker.terminal) reasons.add('invalid-worker-admission');
+      if (value.admissionStep !== 'owned-attachment') {
+        if (value.admissionState === 'enter') {
+          if (worker.pending !== undefined) reasons.add('invalid-worker-admission');
+          worker.pending = value.admissionStep as string;
+        } else {
+          if (worker.pending !== value.admissionStep) reasons.add('worker-admission-unobserved');
+          worker.pending = undefined;
+          worker.terminal = value.admissionState === 'failed' || value.admissionStep === 'configuration-committed';
+        }
+      }
+      continue; // A stage observation never creates or repairs cleanup/case association.
+    }
     if (value.phase === 'FrameInventoryRejection') {
       if (!value.exact) reasons.add('frame-inventory-inexact');
       continue; // Atomic rejection evidence, never cleanup coverage or case association.
@@ -205,6 +237,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
   for (const group of targetInventories.values()) {
     if (!group.snapshot || group.sampled === undefined || group.attribution.size !== group.sampled || group.inventory.size !== group.sampled || [...group.attribution].some(attachment => !group.inventory.has(attachment))) reasons.add('incomplete-target-inventory');
   }
+  if ([...workers.values()].some(worker => worker.pending !== undefined || !worker.terminal)) reasons.add('worker-admission-incomplete');
   if (!attempts.size) reasons.add('no-cleanup-attempt');
   if ([...attempts.values()].some(value => value.phase !== 'CleanupResult')) reasons.add('missing-terminal');
   return { status: reasons.size ? 'unknown' as const : 'complete-observed-snapshots' as const, reasons: [...reasons], records };
