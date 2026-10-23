@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "kind": "acquisition-deadlines-arrival-order-fix-verification",
+  "status": "passed",
+  "completedAt": "2026-10-23T13:37:13.428978+00:00",
+  "source": "219c37358cf2c947846bb907da689429f720bd72",
+  "parent": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+  "tree": "3a27ef57c607cc4c7fa2ead39fbf3bd9343fc2df",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "exitCode": 0,
+  "discovered": 4,
+  "executed": 4,
+  "passed": 4,
+  "failed": 0,
+  "ignored": 0,
+  "cases": [
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+      "status": "passed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+      "status": "passed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+      "status": "passed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback",
+      "status": "passed"
+    }
+  ],
+  "harnessSummaries": [
+    {
+      "status": "ok",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 2579,
+      "durationSeconds": 0.32
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 4,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 5,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 5,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 2,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 12,
+      "durationSeconds": 0.0
+    }
+  ],
+  "originalParentBudgetMs": 80,
+  "allOriginalCoreAssertionsPassed": true,
+  "sourceUnchangedDuringRun": true,
+  "localSourceFixes": false,
+  "productionChangesInReviewedFix": false,
+  "oldModulesRemoved": false,
+  "previousRun": {
+    "source": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+    "executed": 4,
+    "passed": 2,
+    "failed": 2,
+    "ignored": 0,
+    "evidenceCommit": "c815e3c900585100f0b5f683a46f4f4b8d1544d8",
+    "preservedHarnessSha256": "d7ccaf053328830727bec91ba4c56daf91191b6fe41268931316b5b8fbd7b3fa"
+  },
+  "harness": {
+    "path": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "469c0daaae8fb0371423fea6fe3ccbda8ea8c40ed337b141849dc1ee5511481f",
+    "bytes": 77916056
+  },
+  "C03Rerun": false,
+  "C03ProductionBinarySha256": "34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325",
+  "scope": "loopback resource-producing CDP peer and production observation dispatcher; no Chromium renderer in these four tests",
+  "coverage": "Safe portions of legacy capture obligations #1/#3/#4 only; no claim of successful-terminal-before-manual-late-resource-ACK behavior or complete old-engine equivalence.",
+  "fullCandidateVerified": false,
+  "releaseEligible": false,
+  "rawStdoutSha256": "f8aa0d691dfbc798ec693fe7f976d47d8028f9d6238767ffe6a849fd6323fb1e",
+  "rawStderrSha256": "8747a0323237dbcc6514b5ebd538c34c5d393f68ec8d4f82937ba84169021b66"
+}

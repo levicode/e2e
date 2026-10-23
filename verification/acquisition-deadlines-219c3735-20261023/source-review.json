@@ -1,0 +1,25 @@
+{
+  "source": "219c37358cf2c947846bb907da689429f720bd72",
+  "parent": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+  "tree": "3a27ef57c607cc4c7fa2ead39fbf3bd9343fc2df",
+  "changedFile": "cli/src/native/client_capture_acquisition_deadline_tests.rs",
+  "insertions": 12,
+  "deletions": 7,
+  "change": "Record held or immediate-ACK ownership before notifying reached, and notify only after expected_started requests have arrived. Both candidate arrival orders are supported.",
+  "coreTestBodyUnchanged": true,
+  "coreTestBodySha256": "08473d282c107865026fa41a012dd133723d2f633f575f834a688ea992071ec4",
+  "originalParentBudgetMs": 80,
+  "oldLateAckDrainUnknownQuarantineAssertionsUnchanged": true,
+  "productionFilesChanged": false,
+  "testModuleRegistrationChangedInThisFix": false,
+  "sourceWorktreeClean": true,
+  "protectedFilesUnchanged": [
+    "cli/src/native/client_capture_supersession_tests.rs",
+    "cli/src/native/client_actions.rs",
+    "cli/src/native/client_observation.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock"
+  ],
+  "C03Merged": false,
+  "oldModulesRemoved": false
+}

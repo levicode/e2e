@@ -1,0 +1,45 @@
+{
+  "startedAt": "2026-10-23T13:26:55.562458+00:00",
+  "source": "219c37358cf2c947846bb907da689429f720bd72",
+  "parent": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+  "tree": "3a27ef57c607cc4c7fa2ead39fbf3bd9343fc2df",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "CARGO_BUILD_JOBS": 2,
+  "CARGO_TARGET_DIR": "/workspace/c03-build/target",
+  "cases": [
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::first_native_acquisition_deadline_cleans_before_fresh_fallback",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_acquisition_deadline_stops_metadata_before_fresh_fallback",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::candidate_deadline_drains_all_started_siblings_before_group_release",
+    "native::client_observation_dispatch::supersession_tests::acquisition_deadline_tests::unacknowledged_candidate_deadline_never_becomes_clean_fallback"
+  ],
+  "files": {
+    "cli/src/native/client_capture_acquisition_deadline_tests.rs": "7f19adfc64dce0d486bcd68dbaf63089a5e6a15ba6e1bea0ed13b1612dbb1d3f",
+    "cli/src/native/client_capture_supersession_tests.rs": "dca2c6698a0fac0c36ff565f1992269ab08e83c94a4fe75db989b834788cb879",
+    "cli/src/native/client_actions.rs": "94e404ccdd40999d574d191785e608c6b746931796030bc68590ddbb3505acbf",
+    "cli/src/native/client_observation.rs": "0007152abc120afedc1a209f64bedc06325cd3c34439f654f190454582470f2a",
+    "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+    "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "originalParentBudgetMs": 80,
+  "scope": "loopback resource-producing CDP peer and production observation dispatcher; no Chromium renderer in these four tests",
+  "previousRun": {
+    "source": "a78e23a491fcd5ae3c53db00075b12e292622aa5",
+    "executed": 4,
+    "passed": 2,
+    "failed": 2,
+    "ignored": 0,
+    "evidenceCommit": "c815e3c900585100f0b5f683a46f4f4b8d1544d8",
+    "preservedHarnessSha256": "d7ccaf053328830727bec91ba4c56daf91191b6fe41268931316b5b8fbd7b3fa"
+  }
+}
