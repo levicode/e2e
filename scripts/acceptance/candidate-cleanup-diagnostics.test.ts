@@ -232,3 +232,137 @@ test('saturated native inventory counts are retained as unknown, never healthy o
     assert.deepEqual(result.records.at(-1), value);
   }
 });
+
+function targetAttribution(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('TargetAttribution', ordinal, { generation: 1, operationSeq: 0, attachmentOrdinal: 2, targetOrdinal: 1, targetKind: 'page', targetOrigin: 'initial-discovery', parentAttachmentOrdinal: 0, rootAttachmentOrdinal: 0, ...facts });
+}
+function targetLifecycle(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('TargetLifecycle', ordinal, { generation: 1, operationSeq: 0, attachmentOrdinal: 2, targetStage: 'configure-failed', targetPurpose: 'unclassified', targetClassification: 'pending-reservation', targetConfigured: false, targetResumed: false, ...facts });
+}
+function targetInventory(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('TargetInventory', ordinal, { generation: 1, operationSeq: 0, inventoryPoint: 'restart-begin', inventoryOrdinal: 3, attachmentOrdinal: 2, targetPurpose: 'unclassified', targetClassification: 'pending-reservation', targetConfigured: false, targetResumed: false, ...facts });
+}
+function targetSummary(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('TargetInventorySummary', ordinal, { generation: 1, operationSeq: 0, inventoryPoint: 'restart-begin', inventoryOrdinal: 3, targetCount: 1, targetSampled: 1, targetObserved: true, ...facts });
+}
+function targetSnapshot(ordinal: number, facts: Record<string, unknown> = {}) {
+  return inventory(ordinal, { generation: 1, operationSeq: 0, inventoryPoint: 'restart-begin', inventoryOrdinal: 3, ...facts });
+}
+function targetGroup(first = 4) {
+  return [targetSnapshot(first), targetSummary(first + 1), targetAttribution(first + 2, { inventoryPoint: 'restart-begin', inventoryOrdinal: 3 }), targetInventory(first + 3)];
+}
+function reindex(values: Record<string, unknown>[]) { return values.map((value, index) => ({ ...value, record: index, emittedBefore: index })); }
+
+test('restart target phases match native closed fields, enum values and ordinal bounds', () => {
+  const examples = [targetAttribution(1), targetLifecycle(2), targetLifecycle(3, { error: 'browser-failure' }), ...targetGroup(), record('TargetObservationLost', 8, { generation: 0, operationSeq: 0 })];
+  for (const value of examples) assert.equal(validCleanupRecord(value), true);
+  for (const targetKind of ['other', 'page', 'iframe', 'worker', 'shared-worker', 'service-worker', 'browser', 'browser-ui', 'tab', 'webview', 'background-page']) assert.equal(validCleanupRecord(targetAttribution(1, { targetKind })), true);
+  for (const targetOrigin of ['unclassified', 'initial-discovery', 'auto-attach']) assert.equal(validCleanupRecord(targetAttribution(1, { targetOrigin })), true);
+  for (const targetStage of ['registered', 'configure-started', 'configure-ack', 'configure-failed', 'resumed', 'detached', 'restart-retiring', 'purpose-assigned']) assert.equal(validCleanupRecord(targetLifecycle(1, { targetStage })), true);
+  for (const targetPurpose of ['unclassified', 'application', 'state-bootstrap']) assert.equal(validCleanupRecord(targetLifecycle(1, { targetPurpose })), true);
+  for (const targetClassification of ['pending-reservation', 'unreserved-application', 'reserved-application', 'reserved-bootstrap', 'reservation-remainder']) assert.equal(validCleanupRecord(targetLifecycle(1, { targetClassification })), true);
+  assert.equal(validCleanupRecord(targetAttribution(1, { attachmentOrdinal: 65535, targetOrdinal: 0, parentAttachmentOrdinal: 65535, rootAttachmentOrdinal: 65535 })), true);
+  assert.equal(validCleanupRecord(targetSummary(1, { targetCount: 8192, targetSampled: 16, targetObserved: false })), true);
+});
+test('target schema rejects missing fields, arbitrary payloads, false complete samples and invalid pairs', () => {
+  for (const original of [targetAttribution(1), targetLifecycle(1), targetInventory(1), targetSummary(1), record('TargetObservationLost', 1, { generation: 1 })]) {
+    for (const key of Object.keys(original)) { const value = { ...original } as Record<string, unknown>; delete value[key]; assert.equal(validCleanupRecord(value), false, key); }
+    assert.equal(validCleanupRecord({ ...original, targetId: 'private-marker' }), false);
+  }
+  for (const value of [
+    targetAttribution(1, { inventoryPoint: 'restart-begin' }), targetAttribution(1, { inventoryOrdinal: 3 }), targetAttribution(1, { targetKind: 'shared_worker' }), targetAttribution(1, { targetOrigin: ['auto-attach'] }), targetAttribution(1, { attachmentOrdinal: 65536 }), targetAttribution(1, { parentAttachmentOrdinal: -1 }),
+    targetLifecycle(1, { targetStage: 'private' }), targetLifecycle(1, { targetPurpose: 'private' }), targetLifecycle(1, { targetClassification: [] }), targetLifecycle(1, { targetConfigured: 1 }), targetLifecycle(1, { targetResumed: 'false' }), targetLifecycle(1, { error: 'private' }),
+    targetSummary(1, { targetCount: 8193 }), targetSummary(1, { targetCount: 17, targetSampled: 17 }), targetSummary(1, { targetCount: 0 }), targetSummary(1, { targetCount: 2, targetObserved: true }), targetSummary(1, { targetObserved: 'true' }), targetSummary(1, { inventoryOrdinal: 65536 }), targetInventory(1, { inventoryPoint: 'private' }), targetSnapshot(1, { inventoryOrdinal: -1 }),
+  ]) assert.equal(validCleanupRecord(value), false);
+});
+test('complete target sample with unknown ancestry does not alter cleanup or case coverage', t => {
+  const capture = prepareCleanupCapture(binding, {}); const out = directory(t);
+  appendFileSync(capture.file, lines(...completed(), ...targetGroup(), targetAttribution(8), targetLifecycle(9, { error: 'browser-failure' })));
+  assert.equal(collectCleanupCapture(out, 'web-browser', capture, true).status, 'complete-observed-snapshots');
+  const saved = JSON.parse(readFileSync(join(out, 'web-browser.cleanup-diagnostics.json'), 'utf8'));
+  assert.equal(saved.records.length, 10); assert.equal(saved.caseAssociation, 'unproven'); assert.equal(saved.processCoverage, 'unproven'); assert.equal(saved.releaseEligible, false);
+  const only = inspectCleanupBytes(lines(...reindex([record('CaptureStarted', 0), ...targetGroup()])));
+  assert.deepEqual(only.reasons, ['no-cleanup-attempt']);
+});
+test('target inventory joins require snapshot summary and exact paired sampled ordinals', () => {
+  const group = targetGroup();
+  for (const values of [group.slice(1), group.filter((_, index) => index !== 1), group.filter((_, index) => index !== 2), group.slice(0, -1), [...group, group[2]!], [...group, group[1]!], group.map((value, index) => index === 3 ? { ...value, attachmentOrdinal: 9 } : value), group.map((value, index) => index === 3 ? { ...value, generation: 2 } : value), group.map((value, index) => index === 3 ? { ...value, operationSeq: 2 } : value), group.map((value, index) => index === 3 ? { ...value, inventoryPoint: 'restart-ready' } : value), group.map((value, index) => index === 3 ? { ...value, inventoryOrdinal: 4 } : value)]) {
+    const result = inspectCleanupBytes(lines(...reindex([...completed(), ...values])));
+    assert.equal(result.status, 'unknown'); assert.ok(result.reasons.some(reason => reason.endsWith('target-inventory')));
+  }
+});
+test('target zero ordinals loss and partial samples remain unknown without losing valid records', () => {
+  for (const extra of [targetAttribution(4, { attachmentOrdinal: 0 }), targetAttribution(4, { targetOrdinal: 0 }), record('TargetObservationLost', 4, { generation: 1, operationSeq: 0 }), targetSnapshot(4, { inventoryOrdinal: 0 })]) {
+    const result = inspectCleanupBytes(lines(...completed(), extra));
+    assert.equal(result.status, 'unknown'); assert.equal(result.records.length, 5);
+  }
+  const incomplete = targetGroup().map(value => value.phase === 'TargetInventorySummary' ? { ...value, targetObserved: false, targetCount: 17 } : value);
+  assert.ok(inspectCleanupBytes(lines(...completed(), ...incomplete)).reasons.includes('target-inventory-unobserved'));
+  const truncated = lines(...completed(), ...targetGroup()).subarray(0, -8);
+  assert.equal(inspectCleanupBytes(truncated).status, 'unknown');
+  const privateRow = inspectCleanupBytes(lines(...completed(), targetAttribution(4, { sessionId: 'private-marker' })));
+  assert.ok(!JSON.stringify(privateRow.records).includes('private-marker'));
+});
+test('target inventories can interleave and remain process-local without inventing order', () => {
+  const first = targetGroup(); const second = targetGroup().map(value => ({ ...value, inventoryOrdinal: 4, inventoryPoint: 'restart-ready', operationSeq: 2 }));
+  const values = reindex([...completed(), ...first.flatMap((value, index) => [value, second[index]!])]);
+  assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
+  const otherProcess = reindex([record('CaptureStarted', 0), ...targetGroup()]).map(value => ({ ...value, pid: 43 }));
+  assert.equal(inspectCleanupBytes(lines(...completed(), ...targetGroup(), ...otherProcess)).status, 'complete-observed-snapshots');
+  assert.equal(inspectCleanupBytes(lines(...completed(), targetSnapshot(4), targetSummary(5, { targetCount: 0, targetSampled: 0 }))).status, 'complete-observed-snapshots');
+});
+test('target sample and serialized line limits remain unchanged', () => {
+  const pairs = Array.from({ length: 16 }, (_, index) => [targetAttribution(0, { inventoryPoint: 'restart-begin', inventoryOrdinal: 3, attachmentOrdinal: index + 2, targetOrdinal: index + 1 }), targetInventory(0, { attachmentOrdinal: index + 2 })]).flat();
+  const full = [...completed(), targetSnapshot(0), targetSummary(0, { targetCount: 16, targetSampled: 16 }), ...pairs];
+  assert.equal(inspectCleanupBytes(lines(...reindex(full))).status, 'complete-observed-snapshots');
+  assert.equal(inspectCleanupBytes(lines(...reindex([...full, targetAttribution(0, { inventoryPoint: 'restart-begin', inventoryOrdinal: 3, attachmentOrdinal: 18, targetOrdinal: 17 }), targetInventory(0, { attachmentOrdinal: 18 })]))).status, 'unknown');
+  const limit = Number.MAX_SAFE_INTEGER;
+  const numeric = { generation: limit, operationSeq: limit, emittedBefore: limit, droppedBefore: limit, suppressedBefore: limit, pid: 4294967295 };
+  const oversized = [targetAttribution(limit, { ...numeric, inventoryPoint: 'settlement-refused', inventoryOrdinal: 65535, attachmentOrdinal: 65535, targetOrdinal: 65535, parentAttachmentOrdinal: 65535, rootAttachmentOrdinal: 65535, targetKind: 'background-page' }), targetLifecycle(limit, { ...numeric, attachmentOrdinal: 65535, targetStage: 'configure-started', targetPurpose: 'state-bootstrap', targetClassification: 'unreserved-application', error: 'redirect-body-unavailable' })];
+  for (const row of oversized) {
+    assert.equal(validCleanupRecord(row), true); assert.ok(lines(row).length > 512);
+    const result = inspectCleanupBytes(lines(...completed(), row));
+    assert.ok(result.reasons.includes('invalid-record')); assert.equal(result.records.length, 4);
+  }
+});
+
+const atomicFacts = { generation: 1, pass: 'protected', sealed: false, revisionMismatch: true, reservations: false, delta: 3, events: [1, 0, 1, 1, 0, 0, 0], exact: true, lastEvent: 'info', lastTarget: 'other' };
+function atomicPair() { return [record('CaptureStarted', 0), record('ScreenshotFirstFailure', 1, { generation: 1, screenshotStage: 'frame-inventory-fence', capturePhase: 'not-entered', inventoryAfterFailure: 'changed', error: 'stale-scope' }), record('FrameInventoryRejection', 2, atomicFacts)]; }
+test('atomic inventory schema accepts every closed cause and retains legacy screenshot rows', () => {
+  for (let mask = 1; mask < 8; mask++) assert.equal(validCleanupRecord(record('FrameInventoryRejection', 2, { ...atomicFacts, sealed: !!(mask & 1), revisionMismatch: !!(mask & 2), reservations: !!(mask & 4), ...(!(mask & 2) ? { delta: 0, events: Array(7).fill(0), lastEvent: 'none', lastTarget: 'unknown' } : {}) })), true);
+  for (const [index, lastEvent] of ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'].entries()) { const events = Array(7).fill(0); events[index] = 1; assert.equal(validCleanupRecord(record('FrameInventoryRejection', 2, { ...atomicFacts, delta: 1, events, lastEvent, exact: index !== 6, lastTarget: index === 6 ? 'unknown' : 'same' })), true); }
+  assert.equal(validCleanupRecord(atomicPair()[1]), true);
+  assert.deepEqual(inspectCleanupBytes(lines(...atomicPair().slice(0, 2))).reasons, ['no-cleanup-attempt']);
+});
+test('atomic inventory rejects arbitrary payload, malformed tuple, false exactness and empty causes', () => {
+  const bad = [{ url: 'private' }, { targetId: 'private' }, { pass: 'retry' }, { sealed: false, revisionMismatch: false, reservations: false }, { operationSeq: 0 }, { delta: -1 }, { delta: 65536 }, { delta: 0 }, { events: [] }, { events: Array(8).fill(0) }, { events: [1, 0, 1, 1, 0, 0, 'private'] }, { events: [1, 0, 1, 1, 0, 0, 65536] }, { events: [0, 0, 0, 0, 0, 0, 3] }, { delta: 2 }, { lastEvent: 'none' }, { lastEvent: 'detach' }, { lastEvent: 'unknown', lastTarget: 'same' }, { lastTarget: 'private' }, { exact: 'true' }];
+  for (const fields of bad) assert.equal(validCleanupRecord(record('FrameInventoryRejection', 2, { ...atomicFacts, ...fields })), false, JSON.stringify(fields));
+  for (const key of ['delta', 'events', 'sealed', 'pass', 'lastEvent']) { const item: Record<string, unknown> = record('FrameInventoryRejection', 2, atomicFacts); delete item[key]; assert.equal(validCleanupRecord(item), false); }
+});
+test('atomic inventory missing baseline and unknown bucket remain unknown without zero filling', () => {
+  const unknown: Record<string, unknown> = { ...atomicFacts, exact: false, lastEvent: 'unknown', lastTarget: 'unknown' }; delete unknown.events; delete unknown.delta;
+  const result = inspectCleanupBytes(lines(...atomicPair().slice(0, 2), record('FrameInventoryRejection', 2, unknown)));
+  assert.equal(result.status, 'unknown'); assert.ok(result.reasons.includes('frame-inventory-inexact')); assert.equal(Object.hasOwn(result.records.at(-1)!, 'events'), false); assert.equal(Object.hasOwn(result.records.at(-1)!, 'delta'), false);
+  const withUnknown = inspectCleanupBytes(lines(...atomicPair().slice(0, 2), record('FrameInventoryRejection', 2, { ...atomicFacts, exact: false, delta: 1, events: [0, 0, 0, 0, 0, 0, 1], lastEvent: 'unknown', lastTarget: 'unknown' })));
+  assert.equal(withUnknown.status, 'unknown'); assert.deepEqual(withUnknown.records.at(-1)!.events, [0, 0, 0, 0, 0, 0, 1]);
+});
+test('atomic inventory needs its matching first failure and cannot fabricate cleanup coverage', () => {
+  const paired = inspectCleanupBytes(lines(...atomicPair()));
+  assert.equal(paired.status, 'unknown'); assert.deepEqual(paired.reasons, ['no-cleanup-attempt']);
+  for (const values of [[record('CaptureStarted', 0), record('FrameInventoryRejection', 1, atomicFacts)], [...atomicPair(), record('FrameInventoryRejection', 3, atomicFacts)], [...atomicPair(), { ...atomicPair()[1], record: 3, emittedBefore: 3 }], [...atomicPair().slice(0, 2), record('FrameInventoryRejection', 2, { ...atomicFacts, operationSeq: 8 })], [...atomicPair().slice(0, 2), record('FrameInventoryRejection', 2, { ...atomicFacts, generation: 2 })]]) { const result = inspectCleanupBytes(lines(...values)); assert.equal(result.status, 'unknown'); assert.ok(result.reasons.includes('unpaired-frame-inventory')); }
+  const pending = inspectCleanupBytes(lines(...atomicPair(), record('CleanupStarted', 3)));
+  assert.equal(pending.status, 'unknown');
+});
+test('atomic inventory preserves failed-assert evidence and source binding without acceptance promotion', t => {
+  const out = directory(t); const capture = prepareCleanupCapture(binding, {}); appendFileSync(capture.file, lines(...atomicPair()));
+  collectCleanupCapture(out, 'web-browser', capture, true);
+  const saved = JSON.parse(readFileSync(join(out, 'web-browser.cleanup-diagnostics.json'), 'utf8'));
+  assert.equal(saved.releaseEligible, false); assert.equal(saved.caseAssociation, 'unproven'); assert.equal(saved.processCoverage, 'unproven'); assert.deepEqual(saved.records.at(-1).events, atomicFacts.events); assert.deepEqual(saved.binding, binding);
+});
+test('atomic inventory maximal closed line is 507 bytes and the unchanged 512 cap rejects longer data', () => {
+  const n = Number.MAX_SAFE_INTEGER;
+  const item = record('FrameInventoryRejection', n, { ...atomicFacts, pid: 4294967295, generation: n, operationSeq: n, droppedBefore: n, emittedBefore: n, suppressedBefore: n, delta: 65535, events: Array(7).fill(65535), exact: false, lastEvent: 'same-document', lastTarget: 'unknown' });
+  assert.equal(lines(item).length, 507); assert.equal(validCleanupRecord(item), true);
+  const tooLong = Buffer.from(JSON.stringify(item) + ' '.repeat(6) + '\n'); assert.equal(tooLong.length, 513);
+  const rejected = inspectCleanupBytes(tooLong); assert.ok(rejected.reasons.includes('invalid-record')); assert.equal(rejected.records.length, 0);
+});
