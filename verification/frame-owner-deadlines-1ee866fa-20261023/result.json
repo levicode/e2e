@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "kind": "frame-owner-deadline-owner-bound-fence-verification",
+  "status": "passed",
+  "completedAt": "2026-10-23T14:18:46.115839+00:00",
+  "source": "1ee866faeb8f41d996c6ef7bb29517d0d840f563",
+  "parent": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+  "tree": "0630d722f45f14ae9d3971a3be47c539d1e6fdf1",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "exitCode": 0,
+  "discovered": 2,
+  "executed": 2,
+  "passed": 2,
+  "failed": 0,
+  "ignored": 0,
+  "cases": [
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+      "status": "passed"
+    },
+    {
+      "name": "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+      "status": "passed"
+    }
+  ],
+  "harnessSummaries": [
+    {
+      "status": "ok",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 2583,
+      "durationSeconds": 0.33
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 4,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 5,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 5,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 2,
+      "durationSeconds": 0.0
+    },
+    {
+      "status": "ok",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filteredOut": 12,
+      "durationSeconds": 0.0
+    }
+  ],
+  "originalParentDeadlineMs": 80,
+  "allOriginalCoreAssertionsPassed": true,
+  "postAckAssertions": {
+    "exactOldOwnerAndGlobalDebtsZero": true,
+    "outstandingCommandsZero": true,
+    "noOldWorkResumed": true,
+    "noDuplicateRelease": true,
+    "publicationRemainsZero": true
+  },
+  "terminalTimingObservations": [
+    {
+      "releaseAckWithheld": false,
+      "terminalAfterParentDeadlineMicroseconds": 1416
+    },
+    {
+      "releaseAckWithheld": true,
+      "terminalAfterParentDeadlineMicroseconds": 252015
+    }
+  ],
+  "terminalAssertionSemantics": {
+    "result": "DeadlineExceeded",
+    "effects": "NotDispatched",
+    "dirty": false,
+    "assertionsPassed": true
+  },
+  "sourceUnchangedDuringRun": true,
+  "localSourceFixes": false,
+  "productionChanged": false,
+  "assertionsChanged": false,
+  "expiredJournalRestarted": false,
+  "previousRedRun": {
+    "source": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+    "discovered": 2,
+    "executed": 2,
+    "passed": 0,
+    "failed": 2,
+    "ignored": 0,
+    "exitCode": 101,
+    "evidenceCommit": "a79c88e252f7e30503acf5fcb58ad590bb3ec9ec",
+    "preservedHarnessSha256": "b3805cad069a356ff52f94c9df8295e900f22619ffd9a96fb695d865bc15cbc9"
+  },
+  "harness": {
+    "path": "/workspace/c03-build/target/ci/deps/agent_browser-c37a2bcef2943f57",
+    "sha256": "83427fc4f96d62e968b4e32d1de491b644b683b6de45c7b82575d13cdbfbee3a",
+    "bytes": 75134952
+  },
+  "browserUsed": false,
+  "scope": "fixture verification with full production observation dispatcher, real installed OwnerDebtLedger and loopback CDP peer; no browser",
+  "oldModulesRemoved": false,
+  "C03Rerun": false,
+  "acquisitionTestsRerun": false,
+  "C03ProductionBinarySha256": "34259ec5aace51e3fd2a4d4fcb721a96e5af73a904e25fa28e0b98b2cb8c5325",
+  "coverage": "Safe resource-ownership portion of legacy capture obligation #5 only; not equivalent to the old 60 ms successful fallback.",
+  "fullCandidateVerified": false,
+  "releaseEligible": false,
+  "rawStdoutSha256": "07e6cdce5aa2dd8de28524c24850f7052d29617e1289c7e27725787618936148",
+  "rawStderrSha256": "5332550a8f2ff94c50f86dd2824b1230fb1a5334510c1a27096ee5e81f6f37e0"
+}

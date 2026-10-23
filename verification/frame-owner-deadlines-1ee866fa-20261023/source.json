@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-23T14:11:02.088444+00:00",
+  "source": "1ee866faeb8f41d996c6ef7bb29517d0d840f563",
+  "parent": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+  "tree": "0630d722f45f14ae9d3971a3be47c539d1e6fdf1",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/workspace/agent-browser-acquisition-a78e23a/cli",
+  "CARGO_BUILD_JOBS": 2,
+  "CARGO_TARGET_DIR": "/workspace/c03-build/target",
+  "cases": [
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack"
+  ],
+  "files": {
+    "cli/src/native/client_capture_frame_owner_deadline_tests.rs": "978f2aabf9d203f55e382749b4af73b0815d3d48d2353828cab1482af985bf8f",
+    "cli/src/native/client_capture_supersession_tests.rs": "73df4af7a631e3c245ae139eab1baa0c806f8652fc83cfd85cae1e38c8190713",
+    "cli/src/native/client_actions.rs": "94e404ccdd40999d574d191785e608c6b746931796030bc68590ddbb3505acbf",
+    "cli/src/native/client_observation.rs": "0007152abc120afedc1a209f64bedc06325cd3c34439f654f190454582470f2a",
+    "cli/src/native/client_debt.rs": "65063fbbcd05c4f7bb24d3b4aa9806f2d6201673cec0f6dd258bb89feb4affb1",
+    "cli/src/native/cdp/client.rs": "316b2685e0505888bd6a205427ce49d280d88bb6ef7ca776411c7c285574c2bc",
+    "cli/Cargo.toml": "a660c0fab36f6c80890dc4418e27d91ac2bc79e4db29a4cac5928d5e6eb3236e",
+    "cli/Cargo.lock": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "originalParentDeadlineMs": 80,
+  "scope": "fixture verification with full production observation dispatcher, real installed OwnerDebtLedger and loopback CDP peer; no browser",
+  "previousRedRun": {
+    "source": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+    "discovered": 2,
+    "executed": 2,
+    "passed": 0,
+    "failed": 2,
+    "ignored": 0,
+    "exitCode": 101,
+    "evidenceCommit": "a79c88e252f7e30503acf5fcb58ad590bb3ec9ec",
+    "preservedHarnessSha256": "b3805cad069a356ff52f94c9df8295e900f22619ffd9a96fb695d865bc15cbc9"
+  }
+}

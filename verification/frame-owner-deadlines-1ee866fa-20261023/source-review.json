@@ -1,0 +1,29 @@
+{
+  "source": "1ee866faeb8f41d996c6ef7bb29517d0d840f563",
+  "parent": "c9ad21c72460e6a2ffc21f046c1a745baacedc78",
+  "tree": "0630d722f45f14ae9d3971a3be47c539d1e6fdf1",
+  "changedFile": "cli/src/native/client_capture_frame_owner_deadline_tests.rs",
+  "insertions": 4,
+  "deletions": 1,
+  "change": "Bind only the harness Browser.getVersion fence using client.owner_view(ledger.clone()); do not re-enter the expired operation journal.",
+  "allPreFenceTestCodeUnchanged": true,
+  "allPostFenceAssertionsByteIdentical": true,
+  "postFenceAssertionsSha256": "be081f4fc6019c5fd1693c98129382f79f8a3033b5f1e1444fae290d516c93d7",
+  "journalScopeCountBeforeAndAfter": 1,
+  "originalParentDeadlineMs": 80,
+  "protectedFilesUnchanged": [
+    "AGENTS.md",
+    "cli/src/native/client_capture_supersession_tests.rs",
+    "cli/src/native/client_actions.rs",
+    "cli/src/native/client_observation.rs",
+    "cli/src/native/client_debt.rs",
+    "cli/src/native/cdp/client.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock"
+  ],
+  "productionChanged": false,
+  "assertionsModified": false,
+  "deadlineModified": false,
+  "browserUsed": false,
+  "oldModulesRemoved": false
+}
