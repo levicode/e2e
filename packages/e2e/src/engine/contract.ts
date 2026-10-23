@@ -111,6 +111,12 @@ export type LocatorExpression =
       readonly source: LocatorExpression;
     };
 
+/** Pure fixture value projections never carry reference or geometry authority. */
+export type EngineReadField = Exclude<keyof SemanticNode, 'ref' | 'rect' | 'children'>;
+export type EngineFieldValues = Pick<SemanticNode, EngineReadField> & {
+  readonly states: NonNullable<SemanticNode['states']> & { readonly secure: boolean };
+};
+
 export interface NodeRef {
   readonly id: string;
   readonly revision: string;

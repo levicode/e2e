@@ -74,7 +74,7 @@ test('static case groups have exact source dependencies and a 1720 KiB total har
   assert.equal(SYNTHETIC_CASE_MANIFEST.P16.maxRecords, 256);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P16.sources.length, 6);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P42.sources.length, 2);
-  assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.sources.length, 30);
+  assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.sources.length, 31);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.maxRecords, 32);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.maxBytes, 16 * 1024);
   assert.equal(entries.some(([id]) => id.startsWith('N')), false);
@@ -91,12 +91,12 @@ test('integrated repository prepares both suites and all 54 source-bound IDs wit
   assert.equal(ids.length, 54);
   assert.deepEqual(new Set(ids), new Set(Object.keys(SYNTHETIC_CASE_MANIFEST)));
 });
-test('P42O hard-coded sources exactly bind its reviewed 26-file oracle closure without importing page code', () => {
+test('P42O hard-coded sources exactly bind its reviewed 27-file oracle closure without importing page code', () => {
   const declared = SYNTHETIC_CASE_MANIFEST.P42O.sources;
   const manifest = JSON.parse(readFileSync(join(sourceRoot, 'packages/web/tests/helpers/canvas-oracle-manifest.json'), 'utf8')) as { schemaVersion: number; sources: { path: string }[] };
   assert.equal(manifest.schemaVersion, 1);
   const closure = manifest.sources.map(source => source.path);
-  assert.equal(closure.length, 26); assert.equal(new Set(closure).size, 26);
+  assert.equal(closure.length, 27); assert.equal(new Set(closure).size, 27);
   assert.deepEqual(declared, [
     'packages/web/tests/integration/read-node-roles.test.ts',
     'packages/web/tests/helpers/canvas-oracle.ts',
@@ -104,7 +104,7 @@ test('P42O hard-coded sources exactly bind its reviewed 26-file oracle closure w
     'packages/web/tests/helpers/canvas-oracle-manifest.json',
     ...closure,
   ]);
-  assert.equal(new Set(declared).size, 30);
+  assert.equal(new Set(declared).size, 31);
   assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P42.sources, ['packages/web/tests/integration/read-node-roles.test.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts']);
 });
 test('fresh private capture retains passing and failing body/cleanup independently', t => {
@@ -474,7 +474,7 @@ test('P42O has its own exclusive file and 32-row/16-KiB budget', t => {
   assert.ok(readFileSync(join(capture.directory, 'P42O.jsonl')).length <= 16 * 1024);
 });
 
-for (const source of ['packages/web/tests/helpers/canvas-oracle.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts', 'packages/web/tests/helpers/canvas-oracle-manifest.json', 'packages/web/src/runtime-support.ts']) {
+for (const source of ['packages/web/tests/helpers/canvas-oracle.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts', 'packages/web/tests/helpers/canvas-oracle-manifest.json', 'packages/web/src/runtime-support.ts', 'packages/e2e/src/engine/field-values.ts']) {
   test(`P42O source binding fails closed when ${source} is missing`, t => {
     const { root } = fixture(t); rmSync(join(root, source));
     assert.throws(() => prepareSyntheticCapture(root, 'web-browser', { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {}));

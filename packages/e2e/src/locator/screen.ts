@@ -3,7 +3,7 @@
 import nodePath from 'node:path';
 import { describeValue } from '../config/validate.ts';
 import { isKeyModifier, KEY_MODIFIERS, type KeyModifier } from '../engine/contract.ts';
-import type { LocatorAction, LocatorExpression, Observation, SemanticNode } from '../engine/surface.ts';
+import type { EngineReadField, LocatorAction, LocatorExpression, Observation, SemanticNode } from '../engine/surface.ts';
 import { locatorBrand } from '../internal/brands.ts';
 import { isSecret } from '../secrets.ts';
 import { TestError } from '../internal/errors.ts';
@@ -554,23 +554,23 @@ class LocatorImpl extends ScreenImpl implements Locator {
   }
 
   async textContent(): Promise<string | null> {
-    const node = await this.readGuarded();
+    const node = await this.readFieldsGuarded(['text']);
     if (node.text === undefined) return null;
     return normalizeText(node.text);
   }
 
   async inputValue(): Promise<string> {
-    const node = await this.readGuarded();
+    const node = await this.readFieldsGuarded(['value']);
     return node.value ?? '';
   }
 
   async getAttribute(name: string): Promise<string | null> {
-    const node = await this.readGuarded();
+    const node = await this.readFieldsGuarded(['attributes']);
     return attributeOf(node, name);
   }
 
   async isVisible(): Promise<boolean> {
-    return isNodeVisible(await this.context.engine.readNow(this.expression));
+    return isNodeVisible(await this.context.engine.readFieldsNow(this.expression, ['states']));
   }
 
   async isHidden(): Promise<boolean> {
@@ -578,7 +578,7 @@ class LocatorImpl extends ScreenImpl implements Locator {
   }
 
   async isEnabled(): Promise<boolean> {
-    const node = await this.readGuarded(false);
+    const node = await this.readFieldsGuarded(['states'], false);
     return node.states?.disabled !== true;
   }
 
@@ -587,7 +587,7 @@ class LocatorImpl extends ScreenImpl implements Locator {
   }
 
   async isChecked(): Promise<boolean> {
-    const node = await this.readGuarded(false);
+    const node = await this.readFieldsGuarded(['states'], false);
     return node.states?.checked === true;
   }
 
@@ -607,7 +607,7 @@ class LocatorImpl extends ScreenImpl implements Locator {
   }
 
   async allTextContents(): Promise<string[]> {
-    const nodes = await this.context.engine.readAllNow(this.expression);
+    const nodes = await this.context.engine.readAllFieldsNow(this.expression, ['text']);
     denySecureRead(nodes, this.label);
     return nodes.map((node) => normalizeText(node.text ?? ''));
   }
@@ -675,6 +675,11 @@ class LocatorImpl extends ScreenImpl implements Locator {
     const node = await this.context.engine.read(this.expression);
     if (guardSecure) denySecureRead([node], this.label);
     return node;
+  }
+  private async readFieldsGuarded(fields: readonly EngineReadField[], guardSecure = true): Promise<Pick<SemanticNode, EngineReadField>> {
+    const value = await this.context.engine.readFields(this.expression, fields);
+    if (guardSecure) denySecureRead([value], this.label);
+    return value;
   }
 }
 

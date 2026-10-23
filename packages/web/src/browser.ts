@@ -587,35 +587,39 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
       };
     },
     async waitForDownload(trigger, options) {
-      const scope = surface.identityScope;
+      let scope: string | undefined;
       const operation = context.operation(options?.timeout);
       const deadline = new Deadline(operation.timeoutMs);
       let saved: Promise<{ path: string; absolutePath: string; suggestedFilename: string }> | undefined;
-      const waiter = waitNativeEvent(surface, 'download.started', event => event.activePage, operation, download => {
-        saved = (async () => {
-          const { relative, absolute } = surface.artifactPath('downloads', download.suggestedFilename, '');
-          const file = await openFile(absolute, 'wx');
-          try {
-            try {
-              await readNativeChunks(surface, 'download.read', download.handle, { ...operation, timeoutMs: deadline.remaining() }, async bytes => { await file.writeFile(bytes); }, download.identityScope);
-            } finally { await file.close(); }
-            assertSurfaceScope(surface, download.identityScope);
-            context.attachArtifact('download', relative);
-            return { path: relative, absolutePath: absolute, suggestedFilename: download.suggestedFilename };
-          } catch (cause) { await unlink(absolute).catch(() => undefined); throw cause; }
-        })();
-        return saved.then(() => undefined, () => undefined);
-      });
       let subscriptionId: string | undefined;
+      let cancelWaiter = (): void => undefined;
       let failed = false;
       try {
         ({ subscriptionId } = await command('download.subscribe', {}, operation));
+        // Subscription admission recovers first; bind the waiter and cleanup to that scope.
+        scope = surface.identityScope;
+        const waiter = waitNativeEvent(surface, 'download.started', event => event.activePage, { ...operation, timeoutMs: deadline.remaining() }, download => {
+          saved = (async () => {
+            const { relative, absolute } = surface.artifactPath('downloads', download.suggestedFilename, '');
+            const file = await openFile(absolute, 'wx');
+            try {
+              try {
+                await readNativeChunks(surface, 'download.read', download.handle, { ...operation, timeoutMs: deadline.remaining() }, async bytes => { await file.writeFile(bytes); }, download.identityScope);
+              } finally { await file.close(); }
+              assertSurfaceScope(surface, download.identityScope);
+              context.attachArtifact('download', relative);
+              return { path: relative, absolutePath: absolute, suggestedFilename: download.suggestedFilename };
+            } catch (cause) { await unlink(absolute).catch(() => undefined); throw cause; }
+          })();
+          return saved.then(() => undefined, () => undefined);
+        });
+        cancelWaiter = waiter.cancel;
         await trigger();
         await waiter.promise;
         return await saved!;
       } catch (cause) { failed = true; throw cause; } finally {
-        waiter.cancel();
-        if (subscriptionId !== undefined) {
+        cancelWaiter();
+        if (subscriptionId !== undefined && scope !== undefined) {
           const id = subscriptionId;
           await cleanupResource(surface, failed, () => surface.command('download.unsubscribe', { subscriptionId: id }, context.operation()), scope);
         }

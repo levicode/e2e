@@ -1,6 +1,6 @@
 /** Engine hooks over the same native command lane as the public Browser fixture. */
 import type {
-  EngineObserveOptions, LocatorAction, LocatorExpression, NodeRef, PointerAction,
+  EngineFieldValues, EngineReadField, EngineObserveOptions, LocatorAction, LocatorExpression, NodeRef, PointerAction,
   SemanticNode, ViewportPoint, ViewportSize,
 } from 'e2e/engine';
 
@@ -64,6 +64,7 @@ export interface EngineCommandMap {
 
   'browser.observe': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };
   'fixture.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };
+  'fixture.read-fields': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression; readonly fields: readonly EngineReadField[] }; result: Scoped & { readonly values: readonly EngineFieldValues[] } };
   'browser.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };
   'browser.perform': { args: Scoped & { readonly ref: NodeRef; readonly action: NativeLocatorAction }; result: null };
   'browser.pointer': { args: Scoped & { readonly point: ViewportPoint; readonly action: PointerAction }; result: null };

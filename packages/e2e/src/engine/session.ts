@@ -1,4 +1,5 @@
 import { ReferenceEvidence } from './reference-evidence.ts';
+import { decodeEngineFieldValues, validateEngineReadFields } from './field-values.ts';
 /**
  * The engine-to-session adapter. One adapter per attempt satisfies
  * the internal `TargetSession` surface over the engine contract, so the agent
@@ -303,6 +304,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
   };
 
   const locateRaw = guard('locators (screen)', engine?.locate);
+  const readFieldsRaw = guard('fixture field reads', engine?.readFields);
   const observeRaw = guard('observation', engine?.observe);
   const performRaw = guard('actions', engine?.perform);
   const actions: ReadonlySet<LocatorActionKind> = new Set(engine?.actions ?? []);
@@ -468,6 +470,16 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
       }
       return refs;
     },
+    ...(engine?.readFields === undefined ? {} : {
+      readFields: async (expression, fields, operation) => {
+        const epoch = evidence.checkpoint();
+        validateEngineReadFields(fields);
+        fields = Object.freeze([...fields]);
+        const values = await readFieldsRaw(expression, fields, operation, { purpose: 'fixture' });
+        evidence.assert(epoch);
+        return decodeEngineFieldValues(values, fields);
+      },
+    } satisfies Pick<TargetSession, 'readFields'>),
     async read(ref) {
       if (engine?.locate === undefined) unsupported('locators (screen)');
       const node = located.get(ref.id);

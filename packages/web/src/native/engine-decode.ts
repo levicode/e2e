@@ -1,5 +1,5 @@
 /** Decode only the typed engine wire contract; no backend objects enter e2e. */
-import type { SemanticNode } from 'e2e/engine';
+import { decodeEngineFieldValues, type SemanticNode } from 'e2e/engine';
 import type { EngineCommandMap, NativeBlob, NativeImage, NativeObservation, NativeTraceImage, Scoped } from './engine-contract.ts';
 
 const invalid = (): never => { throw new Error('Invalid native engine contract'); };
@@ -78,6 +78,7 @@ const decoders = {
   'scope.configure': empty, 'scope.end': empty, 'scope.restart': recoveryScope, 'scope.reset': scoped, 'scope.reconnect': scoped,
   'browser.observe': observation,
   'fixture.query': (value: unknown) => { const item = record(value); return { ...scoped(item), revision: text(item['revision']), nodes: list(item['nodes']).map(child => node(child)) }; },
+  'fixture.read-fields': (_value: unknown): EngineCommandMap['fixture.read-fields']['result'] => invalid(),
   'browser.query': (value: unknown) => { const item = record(value); return { ...scoped(item), revision: text(item['revision']), nodes: list(item['nodes']).map(child => node(child)) }; },
   'browser.perform': empty, 'browser.pointer': empty, 'browser.keyboard.type': empty, 'browser.keyboard.press': empty,
   'capture.screenshot': image,
@@ -95,6 +96,13 @@ const decoders = {
 } satisfies { [K in keyof EngineCommandMap]: (value: unknown) => EngineCommandMap[K]['result'] };
 
 export function decodeEngineResult<K extends keyof EngineCommandMap>(name: K, value: unknown, args?: EngineCommandMap[K]['args']): EngineCommandMap[K]['result'] {
+  if (name === 'fixture.read-fields') {
+    const item = record(value);
+    if (Object.keys(item).length !== 2 || Object.keys(item).some(key => key !== 'identityScope' && key !== 'values')) invalid();
+    const fields = (args as EngineCommandMap['fixture.read-fields']['args'] | undefined)?.fields;
+    if (fields === undefined) return invalid();
+    return { ...scoped(item), values: decodeEngineFieldValues(item['values'], fields) } as EngineCommandMap[K]['result'];
+  }
   if (name === 'capture.screenshot' && (args as EngineCommandMap['capture.screenshot']['args'] | undefined)?.purpose === 'trace') return traceImage(value) as EngineCommandMap[K]['result'];
   return decoders[name](value) as EngineCommandMap[K]['result'];
 }

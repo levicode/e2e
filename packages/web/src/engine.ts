@@ -94,6 +94,7 @@ export function web(options: WebOptions = {}): EngineHandle {
     dispose: (context) => surface.dispose(context),
     observe: (operation, observeOptions) => surface.observe(operation, observeOptions),
     locate: (expression, operation, locateOptions) => surface.locate(expression, operation, locateOptions),
+    readFields: (expression, fields, operation) => surface.readFields(expression, fields, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
     // A browser honors every action kind of the contract; `actions.ts` dispatches each.
     actions: LOCATOR_ACTION_KINDS,

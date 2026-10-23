@@ -457,3 +457,5 @@ A `route`, `unroute`, or `waitForResponse` pattern is a glob string or
 - No sleeps or polling loops; a matcher with a longer `timeout` instead.
 - `await` every step call and `expect.poll`, else `STEP_NOT_AWAITED` at the line of the call.
 - Assert the fact a model produced with `toContain`, not its exact sentence.
+
+Native Web callback locator value reads use a negotiated pure-value contract. They preserve secure-field restrictions and do not grant action or reference authority while another operation is pending. Do not treat a successful callback read or a cancellation acknowledgment as permission to resume input; native settlement and scope health still govern reuse.

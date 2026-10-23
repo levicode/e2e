@@ -10,6 +10,8 @@
 
 import type {
   LocatorAction,
+  EngineReadField,
+  EngineFieldValues,
   LocatorActionKind,
   LocatorExpression,
   Momentum,
@@ -177,6 +179,8 @@ export interface TargetSession {
   locate(expression: LocatorExpression, operation: OperationContext, options?: EngineLocateOptions): Promise<readonly NodeRef[]>;
   /** Reads one node from the resolution that minted its ref. */
   read(ref: NodeRef, operation: OperationContext): Promise<SemanticNode>;
+  /** Optional value-only fixture path; no reference cache or revision changes. */
+  readFields?(expression: LocatorExpression, fields: readonly EngineReadField[], operation: OperationContext): Promise<readonly EngineFieldValues[]>;
   /** Performs exactly one action on a located or observed node. */
   perform(ref: NodeRef, action: LocatorAction, operation: OperationContext): Promise<void>;
   /**

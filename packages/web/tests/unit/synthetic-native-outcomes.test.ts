@@ -390,3 +390,52 @@ describe('shared-fixture diagnostic cleanup isolation', () => {
     expect(sink.facts.find(fact => fact.kind === 'selected-operation')).toMatchObject({ adapter: 'fulfilled', assertion: 'failed' });
   });
 });
+
+describe('PromiseLike assertion evidence', () => {
+  it.each(['resolve', 'reject'] as const)('observes a %s thenable without replacing it or its rejection cause', async settlement => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    observer.select(0, 'browser.query', () => 1);
+    const cause = new Error('original matcher failure');
+    let resolve!: () => void; let reject!: (cause: unknown) => void;
+    const pending = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    // oxlint-disable-next-line unicorn/no-thenable -- Reproduce Vitest's non-Promise matcher return.
+    const matcher: PromiseLike<void> = { then: pending.then.bind(pending) };
+    expect(matcher).not.toBeInstanceOf(Promise);
+    const returned = observer.assert(0, () => matcher);
+    expect(returned).toBe(matcher);
+    if (settlement === 'resolve') { resolve(); await returned; }
+    else { reject(cause); await expect(returned).rejects.toBe(cause); }
+    observer.close();
+    expect(sink.facts.find(fact => fact.kind === 'selected-operation')).toMatchObject({ adapter: 'fulfilled', assertion: settlement === 'resolve' ? 'passed' : 'failed' });
+  });
+
+  it('observes the actual Vitest rejects matcher thenable and preserves its original failure', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    observer.select(0, 'browser.query', () => 1);
+    const matcher = expect(Promise.reject(new Error('actual'))).rejects.toThrow('expected');
+    expect(matcher).not.toBeInstanceOf(Promise);
+    const returned = observer.assert(0, () => matcher);
+    expect(returned).toBe(matcher);
+    const original = await matcher.then(() => undefined, cause => cause);
+    const observed = await returned.then(() => undefined, cause => cause);
+    expect(original).toBeInstanceOf(Error); expect(observed).toBe(original);
+    observer.close();
+    expect(sink.facts.find(fact => fact.kind === 'selected-operation')).toMatchObject({ assertion: 'failed' });
+  });
+
+  it('keeps an unsettled thenable pending at the footer and ignores its late rejection', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'locate');
+    observer.select(0, 'browser.query', () => 1);
+    let reject!: (cause: unknown) => void;
+    const pending = new Promise<void>((_resolve, no) => { reject = no; });
+    // oxlint-disable-next-line unicorn/no-thenable -- Reproduce an unsettled non-Promise matcher.
+    const matcher: PromiseLike<void> = { then: pending.then.bind(pending) };
+    expect(observer.assert(0, () => matcher)).toBe(matcher);
+    observer.close();
+    expect(sink.facts.find(fact => fact.kind === 'selected-operation')).toMatchObject({ assertion: 'pending' });
+    const before = JSON.stringify(sink.facts);
+    const cause = new Error('late matcher'); reject(cause);
+    await expect(matcher).rejects.toBe(cause);
+    expect(JSON.stringify(sink.facts)).toBe(before);
+  });
+});

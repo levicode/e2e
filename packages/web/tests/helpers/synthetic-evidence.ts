@@ -65,6 +65,7 @@ export const SYNTHETIC_CASE_MANIFEST = {
     'packages/web/tests/helpers/canvas-oracle-manifest.json',
     'packages/e2e/src/config/secrets.ts',
     'packages/e2e/src/engine/contract.ts',
+    'packages/e2e/src/engine/field-values.ts',
     'packages/e2e/src/engine/index.ts',
     'packages/e2e/src/engine/manifest.ts',
     'packages/e2e/src/engine/recording.ts',

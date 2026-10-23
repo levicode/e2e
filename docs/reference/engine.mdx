@@ -88,9 +88,10 @@ rules:
 | `spiVersion` | Anything but `1`. |
 | `platform` | Empty. |
 | `workers` | Not a positive safe integer. |
-| `observe`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
+| `observe`, `locate`, `readFields`, `perform`, `performAt`, `prepare`, `finish`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
 | any other top-level key | On an object literal, `app` included: declare the app on the target and check it in `validateApp`. A class instance's own fields are not checked. |
 | `perform`, `locate`, `performAt`, `keyboard` | Declared without `observe`. |
+| `readFields` | Declared without `locate`. |
 | `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
@@ -196,6 +197,13 @@ export interface Engine {
     context: OperationContext,
     options?: { readonly purpose: 'protected' | 'fixture' },
   ): Promise<readonly SemanticNode[]>;
+  /** Optional fixture-only current values, without refs or geometry. */
+  readFields?(
+    expression: LocatorExpression,
+    fields: readonly EngineReadField[],
+    context: OperationContext,
+    options: { readonly purpose: 'fixture' },
+  ): Promise<readonly EngineFieldValues[]>;
   /**
    * capability: pointer - requires observation. Performs one pointer action
    * at a viewport point, in the CSS pixels of `SemanticNode.rect`, with no
@@ -2305,3 +2313,9 @@ scope, filter, or index too.
 `@e2e-dev/web` ([reference](/reference/web)) and `@e2e-dev/mobile`
 ([reference](/reference/mobile)) implement this contract with the same
 public `defineEngine`.
+
+### Pure fixture field reads
+
+An engine may implement `readFields` alongside `locate`, using the same matcher, policy, cancellation, and owner checks. It resolves once and returns only requested fields plus mandatory `states.secure`. `EngineReadField` excludes `ref`, `rect`, and `children`; `EngineFieldValues` never establishes action authority. Core validates the closed projection without capturing references, advancing presentation revisions, or replacing an existing locate cache. Unknown or repeated fields, unrequested output, missing secure metadata, and leaked secure values are refused.
+
+Fixture `textContent`, `inputValue`, `getAttribute`, value/state predicates, and `allTextContents` use the hook when present. Polling, strict cardinality, missing frames, normalization, missing values, and secure-read denial retain their existing contracts. Geometry, actions, protected expectations, `count`, and `all` keep the reference path. Engines without the optional hook retain the earlier read behavior. Native Web requires negotiated `browser.fixture-read-fields/1`, and never falls back when the native capability or read authority is absent. A live native callback may independently read current values while input debt remains, without forgiving that debt or promising transaction consistency.

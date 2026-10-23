@@ -45,7 +45,7 @@ test('manifest covers the exact runtime source import closure, with all original
   assert.equal(manifest.baselineRevision, CANVAS_BASELINE_REVISION);
   assert.equal(manifest.claim, 'source-equivalent-primitive-oracle');
   const sources = new Map(manifest.sources.map(source => [source.path, source]));
-  assert.equal(sources.size, 26);
+  assert.equal(sources.size, 27);
   let unequal = 0;
   const visited = new Set<string>();
   const queue = [manifest.entry];
@@ -70,8 +70,8 @@ test('manifest covers the exact runtime source import closure, with all original
     queue.push(...internal);
   }
   assert.deepEqual([...visited].toSorted(), [...sources.keys()].toSorted());
-  assert.equal(unequal, 6);
-  assert.equal(manifest.runtime.length, 20);
+  assert.equal(unequal, 7);
+  assert.equal(manifest.runtime.length, 21);
   assert.deepEqual(manifest.runtime.map(item => item.sourcePath).toSorted(), [...sources.keys()].filter(path => path.startsWith('packages/e2e/')).toSorted());
 });
 

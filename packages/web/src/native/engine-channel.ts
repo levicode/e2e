@@ -22,9 +22,9 @@ export class EngineChannel {
     this.assertOwner(owns);
     // Capture only a bounded diagnostic fact before awaiting native authority.
     // Later caller mutation cannot change the classification of this request.
-    const diagnostic = name === 'browser.query' || name === 'fixture.query'
+    const diagnostic = name === 'browser.query' || name === 'fixture.query' || name === 'fixture.read-fields'
       ? queryDiagnostic((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
-    const frames = name === 'browser.query' || name === 'fixture.query'
+    const frames = name === 'browser.query' || name === 'fixture.query' || name === 'fixture.read-fields'
       ? frameQuerySnapshot((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);

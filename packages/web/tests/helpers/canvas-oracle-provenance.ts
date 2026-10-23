@@ -35,7 +35,7 @@ function boundedFile(root: string, relative: string, maxBytes: number): Buffer {
   return bytes;
 }
 
-/** The complete build inventory, not just the twenty imported core modules, must agree with the receipt. */
+/** The complete build inventory, not just the imported core modules, must agree with the receipt. */
 export function canvasCoreInventory(root: string): { path: string; sha256: string }[] {
   const directory = join(root, 'packages/e2e/dist');
   if (realpathSync(directory) !== directory) throw new Error('Unavailable core build');
@@ -77,7 +77,7 @@ export function canvasOracleAvailable(env: NodeJS.ProcessEnv = process.env): boo
     const manifest = JSON.parse(boundedFile(ROOT, MANIFEST_PATH, 64 * 1024).toString('utf8')) as CanvasOracleManifest;
     if (manifest.baselineRevision !== CANVAS_BASELINE_REVISION || manifest.claim !== 'source-equivalent-primitive-oracle'
       || manifest.entry !== 'packages/web/src/observation.ts' || manifest.runtimeEntry !== 'packages/e2e/dist/engine/index.js'
-      || manifest.sources.length !== 26 || manifest.runtime.length !== 20) return false;
+      || manifest.sources.length !== 27 || manifest.runtime.length !== 21) return false;
     const paths = new Set(manifest.sources.map(source => source.path));
     if (paths.size !== manifest.sources.length) return false;
     for (const source of manifest.sources) {

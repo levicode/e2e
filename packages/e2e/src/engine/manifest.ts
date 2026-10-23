@@ -22,6 +22,7 @@ const KNOWN_KEYS = [
   'workers',
   'observe',
   'locate',
+  'readFields',
   'perform',
   'actions',
   'performAt',
@@ -64,6 +65,7 @@ const RETIRED_HOOKS: Readonly<Partial<Record<keyof typeof NESTED_HOOKS, readonly
 const FUNCTION_MEMBERS = [
   'observe',
   'locate',
+  'readFields',
   'perform',
   'performAt',
   'prepare',
@@ -221,6 +223,9 @@ export function defineEngine(spec: Engine): EngineHandle {
       throw invalid(name, 'declares locate without observe: located nodes share the observation id space');
     }
     capabilities.add('location');
+  }
+  if (spec.readFields !== undefined && spec.locate === undefined) {
+    throw invalid(name, 'declares readFields without locate: fixture fields use the same locator contract');
   }
   if (spec.performAt !== undefined) {
     if (!capabilities.has('observation')) {

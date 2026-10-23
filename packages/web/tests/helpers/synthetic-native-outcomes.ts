@@ -71,7 +71,7 @@ export class SyntheticNativeObserver {
     });
   }
 
-  /** Mark the actual matcher only; resolution of an API never implies assertion success. */
+  /** Track a synchronous or explicitly awaited eager matcher, never API resolution. */
   assert<T>(ordinal: number, body: () => T): T {
     let fact = this.operations.get(ordinal);
     this.safely(() => { if (fact && !this.closed && fact.assertion !== 'failed') fact.assertion = 'pending'; });
@@ -83,7 +83,14 @@ export class SyntheticNativeObserver {
     }
     fact ??= this.operations.get(ordinal);
     this.safely(() => { if (fact && !this.closed && fact.assertion !== 'failed') fact.assertion = 'pending'; });
-    this.watch(value, () => { if (fact && fact.assertion !== 'failed') fact.assertion = 'passed'; }, () => { if (fact) fact.assertion = 'failed'; });
+    this.safely(() => {
+      // Vitest's eager PromiseLike subscribes to existing work and marks it awaited;
+      // callers must still explicitly await it. This is not for cold thenables.
+      // Assimilate only this matcher observation; return its exact original value.
+      const matcher = value !== null && (typeof value === 'object' || typeof value === 'function') && 'then' in value
+        ? Promise.resolve(value) : value;
+      this.watch(matcher, () => { if (fact && fact.assertion !== 'failed') fact.assertion = 'passed'; }, () => { if (fact) fact.assertion = 'failed'; });
+    });
     return value;
   }
 
@@ -107,7 +114,7 @@ export class SyntheticNativeObserver {
 
   private watch<T>(value: T, passed: () => void, failed: (cause: unknown) => void): void {
     this.safely(() => {
-      // Selected APIs and matchers return native Promises. Never inspect arbitrary then getters.
+      // Selected APIs return native Promises; assert normalizes known matcher thenables.
       if (value instanceof Promise) void value.then(() => this.safely(() => { if (!this.closed) passed(); }),
         cause => this.safely(() => { if (!this.closed) failed(cause); })).catch(() => this.safely(() => this.evidence.invalidate()));
       else if (!this.closed) passed();

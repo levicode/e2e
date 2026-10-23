@@ -8,6 +8,7 @@ import {
   EngineError, raceAbort, validateJsonValue, stopProviderRecording,
   type EngineAppInfo, type EngineAttemptContext, type EngineCleanupContext,
   type EngineFinishInfo, type EngineInitInfo, type EngineLocateOptions,
+  type EngineFieldValues, type EngineReadField,
   type EngineObserveOptions, type EnginePrepareInfo, type EnginePrepareResult,
   type EngineSnapshot, type EngineState, type VideoSegment, type LocatorAction, type LocatorExpression, type NodeRef,
   type OperationContext, type PointerAction, type SemanticNode, type ViewportPoint,
@@ -176,6 +177,7 @@ export class NativeSurface implements NativeWebSurface {
     const operation = this.operation(startupSignal);
     let openDispatched = false;
     let attemptLeaseAcquired = false;
+    let policyRejectedClient: NativeClient | undefined;
     try {
       if (this.options.basicAuth !== undefined) attempt.credentials = await raceAbort(() => httpCredentials(this.options.basicAuth!, context.resolveSecret), startupSignal, 'resolving browser credentials');
       this.assertAttempt(attempt);
@@ -206,7 +208,12 @@ export class NativeSurface implements NativeWebSurface {
       this.assertAttempt(attempt);
       attempt.scope = opened.identityScope; attempt.recovery = opened.recoveryIdentity;
       if (this.persistent && this.leases === undefined) {
-        if (this.usedContexts.has(opened.recoveryIdentity.context)) throw invalidState('A persistent browser context was reused across attempts');
+        if (this.usedContexts.has(opened.recoveryIdentity.context)) {
+          const client = this.requireClient();
+          client.negotiation(); // Only a confirmed usable open can take policy-only retirement.
+          policyRejectedClient = client;
+          throw invalidState('The endpoint reused a browser context across attempts');
+        }
         this.usedContexts.add(opened.recoveryIdentity.context);
       }
       this.openedBefore = true;
@@ -228,8 +235,13 @@ export class NativeSurface implements NativeWebSurface {
       this.registryCurrent = version;
       attempt.ready = true;
     } catch (cause) {
-      // A partially opened scope is not reusable. Teardown uses the runner's fresh cleanup signal.
-      if (openDispatched && this.attempt === attempt && this.client !== undefined && !this.client.isTerminal() && !(attempt.scope === '' && isNativeNotDispatched(cause))) this.client.invalidate();
+      // A healthy, fully opened scope rejected only by local policy still needs scope.end.
+      // The existing retirement owner fences business work and preserves cleanup failures.
+      if (policyRejectedClient !== undefined && this.client === policyRejectedClient && this.attempt === attempt) {
+        void this.retireAttempt().catch(() => {});
+      }
+      // Unknown or partially opened scopes remain unusable; do not generalize the policy exception.
+      else if (openDispatched && this.attempt === attempt && this.client !== undefined && !this.client.isTerminal() && !(attempt.scope === '' && isNativeNotDispatched(cause))) this.client.invalidate();
       if (!openDispatched && !attemptLeaseAcquired && this.attempt === attempt) { attempt.credentials = undefined; this.attempt = undefined; }
       throw cause;
     }
@@ -642,6 +654,16 @@ export class NativeSurface implements NativeWebSurface {
     if (result.identityScope !== scope) throw this.invalidate();
     this.assertPublication(client, publication);
     return result.nodes;
+  }
+  async readFields(expression: LocatorExpression, fields: readonly EngineReadField[], operation: OperationContext): Promise<readonly EngineFieldValues[]> {
+    fields = Object.freeze([...fields]);
+    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
+    const scope = admitted.scope; const client = this.requireClient(); const publication = client.publicationCheckpoint();
+    const result = await this.engineCommand('fixture.read-fields', { identityScope: scope, expression, fields, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
+    if (result.identityScope !== scope) throw this.invalidate();
+    this.assertScope(admitted.attempt, scope);
+    this.assertPublication(client, publication);
+    return result.values;
   }
   async perform(ref: NodeRef, action: LocatorAction, operation: OperationContext): Promise<void> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;

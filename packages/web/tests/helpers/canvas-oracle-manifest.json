@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baselineRevision": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8",
-  "candidateSourceBase": "889e3ae5348ecb792754ddd6cfbb40476a1b1d89",
+  "candidateSourceBase": "178794771ad0d2e7ad8b65d77fa9cd4173a8ea25",
   "claim": "source-equivalent-primitive-oracle",
   "entry": "packages/web/src/observation.ts",
   "sources": [
@@ -15,20 +15,32 @@
     },
     {
       "path": "packages/e2e/src/engine/contract.ts",
-      "currentSha256": "80e22401d3bfa23f929fe07ae9e248d27bce5ef12a92753efb7b84da5763a2f7",
+      "currentSha256": "539da3d5d27c3e605bd808d833fff50e55a83646984f563e6917aff8987d9452",
       "baselineSha256": "bb84292b254644676ff611a625daeeac5304aa6e4f4f9e6e3694420e90494ee5",
       "byteEqual": false,
       "imports": [],
       "external": [],
-      "differenceReview": "Only viewport documentation changed. EngineError, retryable-code set, observed limits and every runtime statement are unchanged."
+      "differenceReview": "Added EngineReadField/EngineFieldValues type aliases and changed viewport documentation. EngineError, retryable-code set, observed limits and every runtime statement are unchanged."
+    },
+    {
+      "path": "packages/e2e/src/engine/field-values.ts",
+      "currentSha256": "d02406102fb8c81deb38c0b7d06382165b726a556183d8ce337a49096336c0de",
+      "baselineSha256": null,
+      "byteEqual": false,
+      "imports": [
+        "packages/e2e/src/engine/contract.ts"
+      ],
+      "external": [],
+      "differenceReview": "No baseline file. Barrel-loaded reference-free fixture validators are not invoked by capture. Module initialization only creates local field literals, a local state-name Set and function bindings; its sole runtime dependency is the unchanged EngineError in contract.ts. It does not mutate shared state or acquire browser/native resources."
     },
     {
       "path": "packages/e2e/src/engine/index.ts",
-      "currentSha256": "a0e6a76dba156b58956e47a238ed2576a0565615d258758353ac55cf2e68f615",
+      "currentSha256": "e9fc85cb6c37d4bfd5a117827141cda14c4c4fdf0c41caf01343d29992c4aaa9",
       "baselineSha256": "f0644d48279326e37b0b791bdab5648f92fcae54593341e630121dff4ca7cb93",
       "byteEqual": false,
       "imports": [
         "packages/e2e/src/engine/contract.ts",
+        "packages/e2e/src/engine/field-values.ts",
         "packages/e2e/src/engine/manifest.ts",
         "packages/e2e/src/engine/recording.ts",
         "packages/e2e/src/engine/resolve.ts",
@@ -44,11 +56,11 @@
         "packages/e2e/src/secrets.ts"
       ],
       "external": [],
-      "differenceReview": "Relevant runtime exports unchanged. Added jsonValueProblem export and type/comment extensions do not change the primitive capture path."
+      "differenceReview": "Called runtime exports are unchanged. Added jsonValueProblem and fixture-field validator exports, plus type/comment extensions. The new field-values dependency is separately inventoried; neither validator is invoked by the primitive capture path."
     },
     {
       "path": "packages/e2e/src/engine/manifest.ts",
-      "currentSha256": "03951659751f796b79450a2c86161d26df41e7cbbab971d6f92bd19467f9ce84",
+      "currentSha256": "a8a0cff0dc4fadf27f9e4a95406f1bd6e54c4e647fb1594072bcf8d246a5be3d",
       "baselineSha256": "c675388c928f780e187d6035876991610bcd2cf2a359d64aa571a80e3b25a0f0",
       "byteEqual": false,
       "imports": [
@@ -59,7 +71,7 @@
         "packages/e2e/src/secrets.ts"
       ],
       "external": [],
-      "differenceReview": "Barrel-loaded but defineEngine is not invoked by this oracle. Changes are referenceRevisions known-key/validation/copy only."
+      "differenceReview": "Barrel-loaded, but defineEngine is not invoked by this oracle. Local known-key/function-member arrays add readFields/referenceRevisions; validation and handle binding/copy changes run only when defineEngine is called."
     },
     {
       "path": "packages/e2e/src/engine/recording.ts",
@@ -310,6 +322,10 @@
     {
       "path": "packages/e2e/dist/engine/contract.js",
       "sourcePath": "packages/e2e/src/engine/contract.ts"
+    },
+    {
+      "path": "packages/e2e/dist/engine/field-values.js",
+      "sourcePath": "packages/e2e/src/engine/field-values.ts"
     },
     {
       "path": "packages/e2e/dist/engine/index.js",

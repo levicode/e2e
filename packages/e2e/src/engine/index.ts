@@ -36,6 +36,7 @@ export { describePattern, matchesText, toTextPattern } from '../internal/text.ts
 export { resolveExpression, type ResolveExpressionOptions } from './resolve.ts';
 export type { TextMatch } from '../types.ts';
 export { raceAbort } from './timing.ts';
+export { decodeEngineFieldValues, validateEngineReadFields } from './field-values.ts';
 export { isProviderRecording, stopProviderRecording } from './recording.ts';
 export type {
   ProviderRecordContext,
@@ -50,6 +51,8 @@ export { obj, type WithoutUndefined } from '../internal/objects.ts';
 import type { AppPermissionState, Expectable, Locator, Screen, Secret } from '../types.ts';
 import type {
   EngineSpiVersion,
+  EngineReadField,
+  EngineFieldValues,
   LocatorAction,
   LocatorActionKind,
   LocatorExpression,
@@ -765,6 +768,18 @@ export interface Engine {
     context: OperationContext,
     options?: EngineLocateOptions,
   ): Promise<readonly SemanticNode[]>;
+  /**
+   * Optional pure fixture reads. Resolve once with the same matcher and policy
+   * as locate, but return only requested fields plus states.secure. Never mint
+   * refs, publish an observation, or imply transaction consistency. Geometry,
+   * actions, and protected assertions keep their reference-backed paths.
+   */
+  readFields?(
+    expression: LocatorExpression,
+    fields: readonly EngineReadField[],
+    context: OperationContext,
+    options: { readonly purpose: 'fixture' },
+  ): Promise<readonly EngineFieldValues[]>;
   /**
    * capability: pointer - requires observation. Performs one pointer action
    * at a viewport point, in the CSS pixels of `SemanticNode.rect`, with no

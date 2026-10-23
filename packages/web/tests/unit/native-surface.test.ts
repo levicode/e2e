@@ -93,6 +93,14 @@ beforeEach(() => {
         if (command === 'scope.open') { currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, recoveryIdentity: { browser: 'browser-owner', context: repeatContextIdentity ? 'snapshot-default-context' : `context-${scopes}`, page: `page-${scopes}` } }; }
         else if (command === 'scope.reset' || command === 'scope.restart' || command === 'scope.reconnect') { if (!(command === 'scope.restart' && preserveRestartScope)) currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, ...(command === 'scope.restart' ? { recoveryIdentity: { browser: 'browser-owner', context: 'context-1', page: 'restarted-page' } } : {}) }; }
         else if (command === 'fixture.query' || command === 'browser.query') data = { identityScope: currentScope, revision: '1', nodes: queryNodes };
+        else if (command === 'fixture.read-fields') {
+          const fields = (frame['args'] as { fields: string[] }).fields;
+          data = { identityScope: currentScope, values: queryNodes.map(entry => {
+            const node = entry as Record<string, unknown>;
+            const states = node['states'] as Record<string, boolean> | undefined;
+            return { ...Object.fromEntries(Object.entries(node).filter(([key]) => fields.includes(key))), states: { ...(fields.includes('states') ? states : {}), secure: states?.['secure'] === true } };
+          }) };
+        }
         else if (command === 'network.responses.subscribe' || command === 'download.subscribe') data = { subscriptionId: 'synthetic-subscription' };
         else if (command === 'download.metadata') data = { identityScope: currentScope, source: 'provider', basename: downloadBasename };
         else if (command === 'blob.release') data = { released: true };
@@ -742,7 +750,7 @@ describe('native surface ownership and fixed policy binding', () => {
       const browser = nativeBrowser(engine, operation);
       await browser.frameLocator('iframe').getByRole('button', { name: 'Button D' }).waitFor();
       expect(await browser.frameLocator('iframe').frameLocator('#nested').locator('body').getAttribute('data-clicked')).toBe('D');
-      const queries = frames.filter(frame => frame['command'] === 'fixture.query');
+      const queries = frames.filter(frame => frame['command'] === 'fixture.query' || frame['command'] === 'fixture.read-fields');
       expect(queries.length).toBeGreaterThanOrEqual(2);
       expect(queries[0]?.['args']).toMatchObject({ expression: { kind: 'frame', selector: 'iframe', source: { kind: 'query' } } });
       expect(queries.at(-1)?.['args']).toMatchObject({ expression: { kind: 'frame', selector: 'iframe', source: { kind: 'frame', selector: '#nested', source: { kind: 'selector', selector: 'body' } } } });
@@ -952,6 +960,31 @@ describe('native surface ownership and fixed policy binding', () => {
     expect(frames.filter(frame => String(frame['command']).endsWith('.query')).map(frame => frame['command'])).toEqual(['browser.query', 'fixture.query']);
     await surface.dispose(cleanup());
   });
+  it('sends only selected field values under the original native callback token', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    queryNodes = [{ ref: { id: '@e2', revision: '1' }, text: 'current value', selector: '#not-requested', states: { secure: false } }];
+    expect(vi.mocked(connectNativeProcess).mock.calls[0]?.[0].capabilities).toContain('browser.fixture-read-fields/1');
+    const seen: unknown[] = [];
+    const stop = surface.subscribe('network.request', async () => {
+      seen.push(await surface.readFields({ kind: 'selector', selector: '#field' }, ['text'], operation()));
+    });
+    await sendEvent('network.request', { identityScope: currentScope, version: 1, registrationIds: [], request: { url: 'http://fixture.test/data', method: 'GET', headers: {} } }, { token: 'native-live-decision', timeoutMs: 1000 });
+    expect(seen).toEqual([[{ text: 'current value', states: { secure: false } }]]);
+    expect(frames.find(frame => frame['command'] === 'fixture.read-fields')).toMatchObject({ callbackToken: 'native-live-decision', args: { fields: ['text'] } });
+    expect(frames.some(frame => ['fixture.query', 'browser.query', 'browser.observe', 'page.evaluate'].includes(String(frame['command'])))).toBe(false);
+    stop(); await surface.dispose(cleanup());
+  });
+  it('does not fall back or emit a business operation when native field authority refuses', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'fixture.read-fields') return false;
+      reply({ ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'usable' }); return true;
+    };
+    await expect(surface.readFields({ kind: 'selector', selector: '#field' }, ['text'], operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(frames.filter(frame => frame['command'] === 'fixture.read-fields')).toHaveLength(1);
+    expect(frames.some(frame => ['fixture.query', 'browser.query', 'browser.observe', 'page.evaluate'].includes(String(frame['command'])))).toBe(false);
+    await surface.dispose(cleanup());
+  });
   it('uses fresh cleanup context even after the attempt signal aborts', async () => {
     const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
     const controller = new AbortController(); await surface.startAttempt(context('aborted', controller.signal)); controller.abort();
@@ -1049,6 +1082,55 @@ describe('native surface ownership and fixed policy binding', () => {
     await sendEvent('app.navigation', { identityScope: currentScope, kind: 'popup-navigation', url: '/help' });
     expect(navigation).toHaveBeenCalledWith('the new tab navigated to /help');
     await surface.dispose(cleanup());
+  });
+
+  it('arms a download waiter only after subscription recovery and cleans the recovered scope', async () => {
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
+    await start(surface);
+    const artifactsDir = await mkdtemp(path.join(tmpdir(), 'download-recovery-'));
+    await surface.endAttempt(cleanup()); await surface.startAttempt({ ...context('download'), artifactsDir });
+    const attachArtifact = vi.fn();
+    const fixtureContext = {
+      operation, signal, timeouts: { action: 1000, test: 5000, assertion: 1000 }, attachArtifact,
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext;
+    const browser = createBrowserFixture(surface.fixtureSurface(), fixtureContext);
+    const oldScope = currentScope;
+    const bytes = Buffer.from('recovered download');
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'download.metadata') { reply({ data: { identityScope: currentScope, source: 'local' } }); return true; }
+      if (frame['command'] !== 'download.read') return false;
+      reply({ data: { base64: bytes.toString('base64'), nextOffset: bytes.length, eof: true } }); return true;
+    };
+    await sendEvent('scope.disconnected', { identityScope: oldScope, reason: 'browser-connection-closed' });
+    const trigger = vi.fn(async () => {
+      expect(currentScope).not.toBe(oldScope);
+      expect(frames.findLast(frame => frame['command'] === 'download.subscribe')?.['args']).toMatchObject({ identityScope: currentScope });
+      await sendEvent('download.started', { identityScope: oldScope, activePage: true, handle: 'retired-download', suggestedFilename: 'retired.txt' });
+      await sendEvent('download.started', { identityScope: currentScope, activePage: false, handle: 'other-page-download', suggestedFilename: 'other.txt' });
+      await sendEvent('download.started', { identityScope: currentScope, activePage: true, handle: 'recovered-download', suggestedFilename: 'kept.txt' });
+    });
+    try {
+      const download = await browser.waitForDownload(trigger);
+      expect(trigger).toHaveBeenCalledOnce();
+      expect(await readFile(download.absolutePath, 'utf8')).toBe('recovered download');
+      expect(attachArtifact).toHaveBeenCalledExactlyOnceWith('download', download.path);
+      expect(frames.filter(frame => frame['command'] === 'download.read')).toHaveLength(1);
+      expect(frames.findLast(frame => frame['command'] === 'download.read')?.['args']).toMatchObject({ identityScope: currentScope, handle: 'recovered-download' });
+      expect(frames.findLast(frame => frame['command'] === 'download.unsubscribe')?.['args']).toMatchObject({ identityScope: currentScope, subscriptionId: 'synthetic-subscription' });
+      const failure = new Error('trigger failed');
+      await expect(browser.waitForDownload(async () => { throw failure; })).rejects.toBe(failure);
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe')).toHaveLength(2);
+      // Recovery before arming is allowed; a scope replacement after arming is not.
+      await expect(browser.waitForDownload(async () => {
+        await sendEvent('scope.disconnected', { identityScope: currentScope, reason: 'browser-connection-closed' });
+        await surface.command('page.title', {}, operation());
+        await sendEvent('download.started', { identityScope: currentScope, activePage: true, handle: 'replacement-download', suggestedFilename: 'replacement.txt' });
+      })).rejects.toMatchObject({ code: 'ACTION_FAILED' });
+      expect(frames.filter(frame => frame['command'] === 'download.read')).toHaveLength(1);
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe')).toHaveLength(2);
+    } finally { await surface.dispose(cleanup()); await rm(artifactsDir, { recursive: true, force: true }); }
   });
 
   it.each(['reset', 'restart'] as const)('retains Browser route closure and exact registry across %s without registering again', async transition => {
@@ -1442,7 +1524,38 @@ describe('native surface ownership and fixed policy binding', () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface); await surface.endAttempt(cleanup());
     await expect(surface.startAttempt(context('reused-context'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
-    await expect(surface.dispose(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    await expect(surface.dispose(cleanup())).resolves.toBeUndefined();
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(2);
+  });
+  it('retires a policy-rejected known scope once while refusing unpublished business work', async () => {
+    repeatContextIdentity = true;
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
+    await start(surface); await surface.endAttempt(cleanup()); holdScopeEnd = true;
+    await expect(surface.startAttempt(context('reused-context'))).rejects.toThrow(/reused a browser/);
+    await vi.waitFor(() => expect(releaseScopeEnd).toBeDefined());
+    await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    const first = surface.endAttempt(cleanup()); const second = surface.endAttempt(cleanup());
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(2);
+    releaseScopeEnd!(); await Promise.all([first, second]); await surface.dispose(cleanup());
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(2);
+    expect(frames.filter(frame => frame['command'] === 'scope.configure')).toHaveLength(1);
+    expect(frames.some(frame => frame['command'] === 'page.title')).toBe(false);
+  });
+  it('preserves cleanup failure after a known policy rejection and never grants a new attempt', async () => {
+    repeatContextIdentity = true;
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
+    await start(surface); await surface.endAttempt(cleanup());
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'scope.end') return false;
+      reply({ ok: false, error: { code: 'cleanup-failed' }, effects: 'unknown', scopeState: 'quarantined' }); return true;
+    };
+    await expect(surface.startAttempt(context('reused-context'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    const failure = await surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+    await expect(surface.startAttempt(context('must-remain-blocked'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(2);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(2);
   });
   it('replaces a worker provider lease only after a native-proven browser connection loss', async () => {
     let leases = 0; const acquire = vi.fn(async () => ({ id: `lease-${++leases}`, cdpEndpoint: `ws://synthetic.test/browser-${leases}` }));

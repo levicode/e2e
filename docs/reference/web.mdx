@@ -179,6 +179,10 @@ The remote browser:
 
 - Every attempt, retries included, needs its own fresh browser from
   `cdpEndpoint`. One long-lived browser cannot serve a suite.
+- Reusing a browser context across attempts is rejected before business work.
+  If native attachment succeeded and remains healthy, the engine still retires
+  that known scope and detaches; cleanup failure remains fatal and does not
+  authorize another attempt.
 - The remote must have only its default context.
 - The host must delete the browser when the attempt ends. Engine cleanup
   detaches its connection and does not terminate the host's browser.
@@ -889,7 +893,10 @@ const file = await browser.waitForDownload(() =>
   hosted browser.
 - On a hosted browser the file comes back through the provider's
   [`downloads`](/browser#downloads-on-the-provider).
-- The wait includes the trigger's own time.
+- Pending connection recovery completes before the waiter is armed and the
+  trigger runs. The waiter remains bound to that recovered scope; a later
+  scope replacement cannot satisfy it.
+- The wait includes recovery and the trigger's own time.
 
 | Throws | When |
 | --- | --- |
@@ -1265,3 +1272,7 @@ original failure and the worker stays unusable. There is no automatic retry loop
 An already-started mandatory native close retains its separate, existing
 15-second upper bound; a late close acknowledgement cannot undo the adapter's
 owner deadline or restore reuse.
+
+### Locator values inside native callbacks
+
+Native Web negotiates `browser.fixture-read-fields/1` for pure locator field reads. A live, native-verified callback can read current values in its own scope while an outer request is pending. Secure-field denial still applies, and the read does not publish references, clear input debt, permit actions, or promise a transaction-consistent snapshot. Stale, expired, cancelled, or cross-scope callbacks fail closed. This is a fixed native matcher/projection, not an evaluation or alternate query engine. Older native binaries lacking the capability are unsupported; there is no fallback.
