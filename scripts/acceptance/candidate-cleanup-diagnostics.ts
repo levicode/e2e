@@ -179,7 +179,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
           worker.pending = value.admissionStep as string;
         } else {
           if (worker.pending !== value.admissionStep) reasons.add('worker-admission-unobserved');
-          worker.pending = undefined;
+          delete worker.pending;
           worker.terminal = value.admissionState === 'failed' || value.admissionStep === 'configuration-committed';
         }
       }
