@@ -1,0 +1,22 @@
+{
+  "stage": "restart-production-build",
+  "command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--message-format=json"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-native/cli",
+  "startedAt": "2026-10-23T12:27:28.917340+00:00",
+  "elapsedSeconds": 202.662,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 4410826752,
+  "maximumChildRssKiB": 4251016,
+  "sampledPeakCgroupMemoryBytes": 11806212096,
+  "cgroupMemoryPeak": "13412315136",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+}

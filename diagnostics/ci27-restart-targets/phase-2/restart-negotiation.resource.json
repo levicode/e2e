@@ -1,0 +1,20 @@
+{
+  "stage": "restart-negotiation",
+  "command": [
+    "node",
+    "scripts/acceptance/probe-native.ts",
+    "/workspace/e2e/.artifacts/restart-evidence/production",
+    "/workspace/e2e/.artifacts/restart-evidence/required-capabilities.json",
+    "/workspace/e2e/.artifacts/restart-evidence/negotiation.json"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-e2e",
+  "startedAt": "2026-10-23T12:31:20.958104+00:00",
+  "elapsedSeconds": 1.055,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 66977792,
+  "maximumChildRssKiB": 90380,
+  "sampledPeakCgroupMemoryBytes": 7938093056,
+  "cgroupMemoryPeak": "13412315136",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+}

@@ -1,0 +1,32 @@
+✔ disabled environment removes inherited path without mutating caller (1.386182ms)
+✔ closed schema rejects payloads, arbitrary components and error messages (0.574026ms)
+✔ original failed lifecycle is complete evidence, not a passing product result (0.571792ms)
+✔ empty, truncated, dropped, overflow and missing terminal remain unknown (0.57017ms)
+✔ duplicate PID/start, changed identity and out of order facts remain unknown (0.402052ms)
+✔ independent process records can interleave without inventing case association (0.310096ms)
+✔ collector persists closed failure evidence with binding after failed functional suite (1.906227ms)
+✔ source mutation cannot produce complete evidence (0.84834ms)
+✔ symlink replacement and oversized raw files are refused (0.842651ms)
+✔ invalid record content never enters collected artifact (1.999856ms)
+✔ collector write failure never throws over original outcome (0.673291ms)
+✔ parsed arrays and objects cannot impersonate closed string fields or terminal results (0.551422ms)
+✔ concurrent growth cannot make the collector read beyond its fixed byte cap (1.528141ms)
+✔ inventory snapshots accept only the reviewed closed points and bounded observed facts (0.282125ms)
+✔ independent inventory snapshots interleave without changing cleanup lifecycle state (0.284559ms)
+✔ inventory-only evidence cannot invent cleanup coverage or a capture start (0.141969ms)
+✔ unobserved inventory remains unknown even alongside completed cleanup (0.642225ms)
+✔ inventory rejects missing fields, extra payload or cleanup identity, and wrong closed types (1.818578ms)
+✔ inventory preserves sequence, overflow, emission and pending cleanup refusal rules (0.578963ms)
+✔ saturated native inventory counts are retained as unknown, never healthy or silently truncated by collector (0.409443ms)
+✔ target evidence joins exact PID, inventory ordinal and attachment without claiming a product pass (0.713281ms)
+✔ target diagnostics refuse raw IDs, URLs, wrong enums and impersonated scalar fields (1.386241ms)
+✔ target partial rows, conflicting joins, dropped observations and count mismatch stay unknown (0.746119ms)
+✔ configuration failure, ACK and detach stages accept only closed failure codes (1.37793ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 149.259156

@@ -1,0 +1,147 @@
+{
+  "baseline": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+  "diagnosticCommit": "dc7232538ee42cd9444cab5de5570af122d909a0",
+  "changes": [
+    {
+      "file": "cli/src/native/client_cleanup_diagnostic_tests.rs",
+      "hunk": "@@ -518,0 +519 @@ fn inventory_failure_snapshot_does_not_require_active_cleanup() {"
+    },
+    {
+      "file": "cli/src/native/client_cleanup_diagnostic_tests.rs",
+      "hunk": "@@ -582,0 +584,109 @@ fn unobserved_or_oversized_inventory_never_claims_healthy_snapshot() {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -2003,0 +2004,8 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -2031,0 +2040,9 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -2523,0 +2541,5 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -2529,0 +2552,28 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -2630,0 +2681,6 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -2679,0 +2736,6 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_enrollment.rs",
+      "hunk": "@@ -3921 +3983,8 @@ impl ClientEnrollment {"
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -23,0 +24,5 @@ pub(crate) enum SettlementPhase {"
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -157,0 +163,30 @@ pub(crate) struct Facts {"
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -219,0 +255,5 @@ impl Facts {"
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -452,0 +493 @@ pub(crate) enum InventoryPoint {"
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -462,0 +504,190 @@ pub(crate) struct InventorySnapshot {"
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -485,0 +717,3 @@ fn inventory_snapshot_into("
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -491,0 +726 @@ fn inventory_snapshot_into("
+    },
+    {
+      "file": "cli/src/native/client_settlement_trace.rs",
+      "hunk": "@@ -502,0 +738,46 @@ fn inventory_snapshot_into("
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -4,0 +5 @@ use super::client_protocol::ProtocolError;"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -25,0 +27 @@ pub struct OwnedTarget {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -29,0 +32,14 @@ impl OwnedTarget {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -62,0 +79,2 @@ struct Registry {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -66,0 +85,61 @@ impl Registry {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -166,0 +246,4 @@ impl ResumePermit {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -167,0 +251,4 @@ impl ResumePermit {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -642,0 +730 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -653,0 +742 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -808,0 +898,8 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -816 +913,2 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -823,0 +922,4 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -931,0 +1034,72 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -947,11 +1121 @@ impl ClientTargets {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -1287,0 +1452,12 @@ impl CreationReservation {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -1290,0 +1467,3 @@ impl CreationReservation {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -1317,0 +1497,5 @@ impl Drop for CreationReservation {"
+    },
+    {
+      "file": "cli/src/native/client_targets.rs",
+      "hunk": "@@ -1736,0 +1921,48 @@ mod tests {"
+    }
+  ],
+  "c03Status": "No C03 branch or half-finished changes fetched. These exact hunk ranges are for parent merge coordination."
+}

@@ -1,0 +1,18 @@
+{
+  "stage": "restart-acceptance-scripts",
+  "command": [
+    "node",
+    "--test",
+    "scripts/acceptance/*.test.ts"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-e2e",
+  "startedAt": "2026-10-23T12:25:00.342712+00:00",
+  "elapsedSeconds": 15.585,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 404520960,
+  "maximumChildRssKiB": 304340,
+  "sampledPeakCgroupMemoryBytes": 9782607872,
+  "cgroupMemoryPeak": "13412315136",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+}

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "passed",
+  "sourceRevision": "2690813b6660dd9be45788161d16217a1ad27ea9",
+  "nativeIdentity": {
+    "repository": "levicode/agent-browser",
+    "commit": "dc7232538ee42cd9444cab5de5570af122d909a0",
+    "tree": "fd4cadc6f0cb597158fbfa567139d5829e8a2644",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "binarySha256": "32091e0b8f30879c4b4d40315339b3f2d07cce6f410c710e39d9451a3ff643c7",
+  "proofSha256": "39794be40ef095c1f2e635234e0f57e0f70d188397e22881baff432eae983e39",
+  "file": "tests/integration/lifecycle.test.ts",
+  "exactTestName": "round-trips persisted state through capture and restore, and reset drops it",
+  "command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--project",
+    "integration",
+    "--maxWorkers=1",
+    "tests/integration/lifecycle.test.ts",
+    "-t",
+    "round-trips persisted state through capture and restore, and reset drops it$",
+    "--reporter=verbose",
+    "--reporter=json",
+    "--outputFile=/workspace/e2e/.artifacts/restart-diagnostic-e2e/.artifacts/native-candidate/restart-diagnostic-3/vitest.json"
+  ],
+  "exitCode": 0,
+  "signal": null,
+  "identityUnchanged": true,
+  "selected": [
+    {
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "fullName": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+      "status": "passed",
+      "title": "round-trips persisted state through capture and restore, and reset drops it",
+      "duration": 2172.758174,
+      "failureMessages": [],
+      "meta": {},
+      "tags": [],
+      "benchmarks": []
+    }
+  ],
+  "suiteSuccess": true,
+  "syntheticDiagnostics": {
+    "schemaVersion": 1,
+    "status": "unknown",
+    "file": "web-browser.synthetic-evidence.json",
+    "sha256": "084102800aa751d730311e97423b8307647ad113f14e5e49101bbb4df29437f4",
+    "bytes": 21075,
+    "reason": "collected"
+  },
+  "cleanupDiagnostics": {
+    "status": "complete-observed-snapshots",
+    "reasons": [],
+    "file": "web-browser.cleanup-diagnostics.json",
+    "sha256": "0539d0babbcc9cc2d1eb000ff19d64664ac723c62280abf666cb947779996c0f",
+    "bytes": 54614,
+    "binding": {
+      "sourceRevision": "2690813b6660dd9be45788161d16217a1ad27ea9",
+      "nativeSourceRevision": "dc7232538ee42cd9444cab5de5570af122d909a0",
+      "testSourceDigest": "fb9298ebd9d049f64f8ca6eb63c2df0cb529aafe742306fe35ec623ba94fee86",
+      "binarySha256": "32091e0b8f30879c4b4d40315339b3f2d07cce6f410c710e39d9451a3ff643c7",
+      "collectorSha256": "a232060f302dbd8cbaed4e0958e795a7e4e4e43eac16b7d08aff3d8abba0a0cf"
+    },
+    "diagnosticOnly": true,
+    "releaseEligible": false
+  },
+  "officialPlaywrightDownloadPassed": false,
+  "chromiumExecutable": "/usr/bin/chromium"
+}

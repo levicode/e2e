@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "failed",
+  "sourceRevision": "2690813b6660dd9be45788161d16217a1ad27ea9",
+  "nativeIdentity": {
+    "repository": "levicode/agent-browser",
+    "commit": "dc7232538ee42cd9444cab5de5570af122d909a0",
+    "tree": "fd4cadc6f0cb597158fbfa567139d5829e8a2644",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "binarySha256": "32091e0b8f30879c4b4d40315339b3f2d07cce6f410c710e39d9451a3ff643c7",
+  "proofSha256": "39794be40ef095c1f2e635234e0f57e0f70d188397e22881baff432eae983e39",
+  "file": "tests/integration/lifecycle.test.ts",
+  "exactTestName": "round-trips persisted state through capture and restore, and reset drops it",
+  "command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--project",
+    "integration",
+    "--maxWorkers=1",
+    "tests/integration/lifecycle.test.ts",
+    "-t",
+    "round-trips persisted state through capture and restore, and reset drops it$",
+    "--reporter=verbose",
+    "--reporter=json",
+    "--outputFile=/workspace/e2e/.artifacts/restart-diagnostic-e2e/.artifacts/native-candidate/restart-diagnostic-1/vitest.json"
+  ],
+  "exitCode": 1,
+  "signal": null,
+  "identityUnchanged": true,
+  "selected": [
+    {
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "fullName": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+      "status": "failed",
+      "title": "round-trips persisted state through capture and restore, and reset drops it",
+      "duration": 1931.392712,
+      "failureMessages": [
+        "EngineError: The native browser protocol became invalid (native-refusal:cleanup-failed)\n    at NativeClient.fail (/workspace/e2e/.artifacts/restart-diagnostic-e2e/packages/web/src/native/client.ts:452:22)\n    at Socket.<anonymous> (/workspace/e2e/.artifacts/restart-diagnostic-e2e/packages/web/src/native/client.ts:79:18)\n    at Socket.emit (node:events:509:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Socket.Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"
+      ],
+      "meta": {},
+      "tags": [],
+      "benchmarks": []
+    }
+  ],
+  "suiteSuccess": false,
+  "syntheticDiagnostics": {
+    "schemaVersion": 1,
+    "status": "unknown",
+    "file": "web-browser.synthetic-evidence.json",
+    "sha256": "59754542b56a0ec023ed537212b65f3807564a2d51eebb604d607214005b047f",
+    "bytes": 19232,
+    "reason": "collected"
+  },
+  "cleanupDiagnostics": {
+    "status": "unknown",
+    "reasons": [
+      "record-gap",
+      "emission-gap",
+      "dropped-or-overflow"
+    ],
+    "file": "web-browser.cleanup-diagnostics.json",
+    "sha256": "2ba4c7e16a0ad889d094e3aee80fdd9d3dcb3178066afbf5bed3e9e961940c88",
+    "bytes": 55108,
+    "binding": {
+      "sourceRevision": "2690813b6660dd9be45788161d16217a1ad27ea9",
+      "nativeSourceRevision": "dc7232538ee42cd9444cab5de5570af122d909a0",
+      "testSourceDigest": "fb9298ebd9d049f64f8ca6eb63c2df0cb529aafe742306fe35ec623ba94fee86",
+      "binarySha256": "32091e0b8f30879c4b4d40315339b3f2d07cce6f410c710e39d9451a3ff643c7",
+      "collectorSha256": "a232060f302dbd8cbaed4e0958e795a7e4e4e43eac16b7d08aff3d8abba0a0cf"
+    },
+    "diagnosticOnly": true,
+    "releaseEligible": false
+  },
+  "officialPlaywrightDownloadPassed": false,
+  "chromiumExecutable": "/usr/bin/chromium"
+}

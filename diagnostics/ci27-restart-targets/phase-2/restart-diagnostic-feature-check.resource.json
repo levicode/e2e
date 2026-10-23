@@ -1,0 +1,24 @@
+{
+  "stage": "restart-diagnostic-feature-check",
+  "command": [
+    "cargo",
+    "check",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--features",
+    "acceptance-faults",
+    "--tests"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-native/cli",
+  "startedAt": "2026-10-23T12:20:00.859563+00:00",
+  "elapsedSeconds": 63.438,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 4592066560,
+  "maximumChildRssKiB": 4416740,
+  "sampledPeakCgroupMemoryBytes": 12073824256,
+  "cgroupMemoryPeak": "12425617408",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+}

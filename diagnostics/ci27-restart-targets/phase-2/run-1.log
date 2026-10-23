@@ -1,0 +1,55 @@
+
+ RUN  v5.0.1 /workspace/e2e/.artifacts/restart-diagnostic-e2e/packages/web
+
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > declares the full deterministic tier plus the browser fixture
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > serves consecutive attempts from one browser and survives an attempt close
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > relaunches after dispose and stays idempotent
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > observes a semantic tree and locates by display value in one round trip
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > reports pressed and heading level, queries by them, and performs pointer actions on nodes and at points
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > keeps tree attributes bounded while node reads expose every attribute
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > selects positionally among display-value matches and keeps composition honest
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > excludes hidden twins from a visible query, for every query kind and under an index
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > applies visible before an index, filter, or scope, so a hidden twin is never selected
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > takes a display-value position among shown matches when the query is visible
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > keeps a node id across observations while its element lives, and reports it stale once it is gone
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > reports a located ref stale once a second element matches it, and acts on neither
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > reports a drag whose drop target turns ambiguous after the press as possibly committed
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > mints native document ids and keeps a separate viewport ref across navigation for swipes
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > refuses to swipe a node with no box even when its child is under aim
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > walks through a display:contents element to the fields it lays out
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > masks a password inside a closed shadow root in artifact screenshots
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > on one shared browser, a fresh attempt per test > masks a password inside an iframe in artifact screenshots and observed pixels
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > reports an unopened page as INVALID_STATE, never as a missing node
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > refuses a second startAttempt while one is running and keeps the first intact
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > treats endAttempt before startAttempt and dispose on a cold engine as no-ops
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > stops waiting on cleanup once its budget is aborted, and recovers on the next attempt
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > cancels an in-flight native operation when its signal aborts
+ × |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > round-trips persisted state through capture and restore, and reset drops it 1931ms
+   → The native browser protocol became invalid (native-refusal:cleanup-failed)
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > follows the window under viewport: null, reports the measured size, and swipes by it
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > reports the configured test-id attribute as testId, on observed and located nodes alike
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > records a video per page at the viewport size: a restart and a state reset each continue in a new segment
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > records a video started mid-attempt at the viewport size, each time it starts
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > rejects a video that cannot start and leaves the session working
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > opens the attempt page when the video starts
+ ↓ |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > masks secure fields in artifact screenshots and restarts the counter per attempt
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| tests/integration/lifecycle.test.ts > web engine lifecycle > round-trips persisted state through capture and restore, and reset drops it
+EngineError: The native browser protocol became invalid (native-refusal:cleanup-failed)
+ ❯ NativeClient.fail src/native/client.ts:452:22
+
+ ❯ Socket.<anonymous> src/native/client.ts:79:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ENGINE_FAILURE', retryable: false }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 30 skipped (31)
+   Start at  12:31:22
+   Duration  3.14s (tests 64%, transform 28%, import 8%)
+
+JSON report written to /workspace/e2e/.artifacts/restart-diagnostic-e2e/.artifacts/native-candidate/restart-diagnostic-1/vitest.json

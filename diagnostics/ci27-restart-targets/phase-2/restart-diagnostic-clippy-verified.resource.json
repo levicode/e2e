@@ -1,0 +1,25 @@
+{
+  "stage": "restart-diagnostic-clippy-verified",
+  "command": [
+    "cargo",
+    "clippy",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "cwd": "/workspace/e2e/.artifacts/restart-diagnostic-native/cli",
+  "startedAt": "2026-10-23T12:25:01.784744+00:00",
+  "elapsedSeconds": 61.184,
+  "exitCode": 0,
+  "sampledPeakProcessGroupRssBytes": 4726460416,
+  "maximumChildRssKiB": 4470484,
+  "sampledPeakCgroupMemoryBytes": 12109279232,
+  "cgroupMemoryPeak": "13412315136",
+  "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+  "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+}
