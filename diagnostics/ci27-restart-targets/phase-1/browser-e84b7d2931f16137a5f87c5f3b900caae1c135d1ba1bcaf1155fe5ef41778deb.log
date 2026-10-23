@@ -1,0 +1,37 @@
+
+running 1 test
+test native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot ... FAILED
+
+failures:
+
+---- native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot stdout ----
+native-observe-action-stage command.start scope.open
+native-observe-action-stage command.settled scope.open effects=Completed
+native-observe-action-stage command.start scope.configure
+native-observe-action-stage command.settled scope.configure effects=Completed
+native-observe-action-stage command.start page.activate
+native-observe-action-stage command.settled page.activate effects=Completed
+native-observe-action-stage command.start page.evaluate
+native-observe-action-stage command.settled page.evaluate effects=Completed
+native-observe-action-stage command.start page.evaluate
+native-observe-action-stage command.settled page.evaluate effects=Completed
+native-observe-action-stage command.start browser.observe
+native-observe-action-stage command.settled browser.observe effects=Completed
+native-observe-action-stage command.start page.evaluate
+native-observe-action-stage command.settled page.evaluate effects=Completed
+native-observe-action-stage command.start browser.observe
+native-metadata-first-failure stage=Projection
+native-observe-semantic-first-failure stage=Metadata frameKind=Main
+native-observe-first-failure stage=SemanticRead
+native-observe-action-stage command.settled browser.observe effects=NotDispatched
+
+thread 'native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot' (27747) panicked at src/native/client_actions.rs:9425:9:
+observe/action boundary: Err("browser.observe: BrowserFailure")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2578 filtered out; finished in 0.89s
+

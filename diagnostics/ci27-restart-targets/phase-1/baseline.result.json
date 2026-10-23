@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "source": {
+    "repository": "levicode/agent-browser",
+    "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "productionBinarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+  "compilerSha256": "65b14c3741c08f6b0d5f7e82ac005bfc75c65ee4981ebcea34928a2b0f162def",
+  "harnesses": [
+    {
+      "name": "doctor_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/doctor_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/doctor_cli-fd45c268c1b76d03",
+      "sha256": "afb148e4b13534939e6dab7a429d4cb3e69062f6ba19e1dae2918ac58419e27c"
+    },
+    {
+      "name": "pin_tab_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/pin_tab_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/pin_tab_cli-fa31bf1ae2ed861d",
+      "sha256": "a2925d1eea1c054098b98fd4b446f8dfdcbdebd90548ebacbbc6bfddaf0fc243"
+    },
+    {
+      "name": "dashboard_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/dashboard_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/dashboard_cli-10e647715864c8a2",
+      "sha256": "df53269ec798d48d84f4ebf0b0e7ae7578227433f46d74b7521265c8f7308173"
+    },
+    {
+      "name": "obscura_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/obscura_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/obscura_cli-7f0f943bd0268304",
+      "sha256": "a798faacd1481793780e856e03279b10f775b6729b98d8fc5bbc821d407145d7"
+    },
+    {
+      "name": "tls_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/tls_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/tls_cli-d69bee1ddaf62325",
+      "sha256": "588dfc24dbee7bdb70569209ae4b7e3e7d214007150ea65b2c179537de25e66c"
+    },
+    {
+      "name": "agent-browser",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/src/main.rs",
+      "kind": [
+        "bin"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/agent_browser-c37a2bcef2943f57",
+      "sha256": "aa3ab075d823d5613e46fe88d079e9046e099c7f7d140ab934c0173aa345b13a"
+    }
+  ],
+  "required": [
+    "doctor_cli",
+    "pin_tab_cli",
+    "dashboard_cli",
+    "obscura_cli",
+    "tls_cli",
+    "agent-browser"
+  ],
+  "discovered": [],
+  "excludedDiagnostics": [
+    "native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment",
+    "native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable",
+    "native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline"
+  ],
+  "results": [
+    {
+      "name": "doctor_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/doctor_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/doctor_cli-fd45c268c1b76d03",
+      "sha256": "afb148e4b13534939e6dab7a429d4cb3e69062f6ba19e1dae2918ac58419e27c",
+      "file": "baseline-doctor_cli.log",
+      "logSha256": "c33529e8049981e906a7b4999b192ad3eb188e1ea16ce5ea682b8e095b8468bf",
+      "exitCode": 0
+    },
+    {
+      "name": "pin_tab_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/pin_tab_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/pin_tab_cli-fa31bf1ae2ed861d",
+      "sha256": "a2925d1eea1c054098b98fd4b446f8dfdcbdebd90548ebacbbc6bfddaf0fc243",
+      "file": "baseline-pin_tab_cli.log",
+      "logSha256": "b6dfe67c0c6985159b4e75d7c6e156a352d76b0594bd795a5aa8cee05652a87b",
+      "exitCode": 0
+    },
+    {
+      "name": "dashboard_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/dashboard_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/dashboard_cli-10e647715864c8a2",
+      "sha256": "df53269ec798d48d84f4ebf0b0e7ae7578227433f46d74b7521265c8f7308173",
+      "file": "baseline-dashboard_cli.log",
+      "logSha256": "357a9586b1e325cd6fd4eaff1b1623d367655e5df8edfdb9926a68324278fff5",
+      "exitCode": 0
+    },
+    {
+      "name": "obscura_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/obscura_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/obscura_cli-7f0f943bd0268304",
+      "sha256": "a798faacd1481793780e856e03279b10f775b6729b98d8fc5bbc821d407145d7",
+      "file": "baseline-obscura_cli.log",
+      "logSha256": "e6ef67afba6ae86d35a9dbb874735cf4f7b23e59bc1e45fef46efc530dc97a8f",
+      "exitCode": 0
+    },
+    {
+      "name": "tls_cli",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/tests/tls_cli.rs",
+      "kind": [
+        "test"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/tls_cli-d69bee1ddaf62325",
+      "sha256": "588dfc24dbee7bdb70569209ae4b7e3e7d214007150ea65b2c179537de25e66c",
+      "file": "baseline-tls_cli.log",
+      "logSha256": "1a6d864f1d7c39dd10616fcebd71a902795462adcbc3bd7b930905ac4bf9c595",
+      "exitCode": 0
+    },
+    {
+      "name": "agent-browser",
+      "source": "/workspace/e2e/.artifacts/native-source/cli/src/main.rs",
+      "kind": [
+        "bin"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-candidate-target/ci/deps/agent_browser-c37a2bcef2943f57",
+      "sha256": "aa3ab075d823d5613e46fe88d079e9046e099c7f7d140ab934c0173aa345b13a",
+      "file": "baseline-agent-browser.log",
+      "logSha256": "06eed4aa8a97cea85d3b622b57c289c6b6fd22a392c8fd52eb7bb919a59e4a04",
+      "exitCode": 0
+    }
+  ],
+  "failures": [],
+  "releaseEligible": false
+}

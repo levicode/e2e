@@ -1,0 +1,18 @@
+
+running 1 test
+test native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page ... FAILED
+
+failures:
+
+---- native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page stdout ----
+
+thread 'native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page' (29878) panicked at src/native/client_enrollment.rs:12694:10:
+unclassified host target remained paused after detach: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2578 filtered out; finished in 5.59s
+

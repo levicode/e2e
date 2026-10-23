@@ -1,0 +1,18 @@
+
+running 1 test
+test native::client_page::tests::e2e_client_page_input_context_and_evaluate ... FAILED
+
+failures:
+
+---- native::client_page::tests::e2e_client_page_input_context_and_evaluate stdout ----
+
+thread 'native::client_page::tests::e2e_client_page_input_context_and_evaluate' (27255) panicked at src/native/client_page.rs:4063:281:
+called `Result::unwrap()` on an `Err` value: BrowserFailure
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    native::client_page::tests::e2e_client_page_input_context_and_evaluate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2578 filtered out; finished in 0.51s
+

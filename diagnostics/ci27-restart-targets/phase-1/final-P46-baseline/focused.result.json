@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "failed",
+  "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+  "nativeIdentity": {
+    "repository": "levicode/agent-browser",
+    "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+  "proofSha256": "f780677b5509fc854079926b4af021607307e8858c512c2cfb470f9d623aaa62",
+  "file": "tests/integration/visibility.test.ts",
+  "exactTestName": "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+  "command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--project",
+    "integration",
+    "--maxWorkers=1",
+    "tests/integration/visibility.test.ts",
+    "-t",
+    "leaves the tree, as Chrome drops it, while Playwright still calls it visible$",
+    "--reporter=verbose",
+    "--reporter=json",
+    "--outputFile=/workspace/e2e/.artifacts/native-candidate/final-P46-baseline/vitest.json"
+  ],
+  "exitCode": 1,
+  "signal": null,
+  "identityUnchanged": true,
+  "selected": [
+    {
+      "ancestorTitles": [
+        "an inert subtree"
+      ],
+      "fullName": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "status": "failed",
+      "title": "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "duration": 40.26222000000007,
+      "failureMessages": [
+        "EngineError: The native browser operation failed (browser-failure)\n    at classifyResultError (/workspace/e2e/packages/web/src/native/browser-channel.ts:156:10)\n    at resultError (/workspace/e2e/packages/web/src/native/browser-channel.ts:119:19)\n    at EngineChannel.command (/workspace/e2e/packages/web/src/native/engine-channel.ts:48:13)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at NativeSurface.engineCommand (/workspace/e2e/packages/web/src/native-surface.ts:612:20)\n    at NativeSurface.observe (/workspace/e2e/packages/web/src/native-surface.ts:621:22)"
+      ],
+      "meta": {},
+      "tags": [],
+      "benchmarks": []
+    }
+  ],
+  "suiteSuccess": false,
+  "syntheticDiagnostics": {
+    "schemaVersion": 1,
+    "status": "unknown",
+    "file": "web-browser.synthetic-evidence.json",
+    "sha256": "d5daab86630fb23f19b87cf07764ad3c4f29da347b8cd5d4447316ec572e7ffd",
+    "bytes": 16773,
+    "reason": "collected"
+  },
+  "cleanupDiagnostics": {
+    "status": "complete-observed-snapshots",
+    "reasons": [],
+    "file": "web-browser.cleanup-diagnostics.json",
+    "sha256": "0f573d1548151319bd1bb347d36b064867ecc00ab9f201fd2de6df3da8af8cf8",
+    "bytes": 1299,
+    "binding": {
+      "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "testSourceDigest": "eec415ad554f182e8cab686c00723e71d84a20798872c584f45699677824af7e",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+    },
+    "diagnosticOnly": true,
+    "releaseEligible": false
+  },
+  "officialPlaywrightDownloadPassed": false,
+  "chromiumExecutable": "/usr/bin/chromium"
+}

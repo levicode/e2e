@@ -1,0 +1,40 @@
+云端真实构建与定向浏览器验证已完成。全程没有修改产品源码、发布候选、触发 GitHub CI、创建子任务或接手 P27/C03。原 work 分支指针保持不变，两仓和补丁 worktree 目前为干净的 detached HEAD。
+
+固定源码为 e2e b3a23a07c3f9068e7c0b122873b94f28cbb2e40b，remote https://github.com/levicode/e2e.git；agent-browser 49903189a6a8fc1b39c8ec503737d000fdde9d44，remote https://github.com/levicode/agent-browser.git。metadata 补丁为 bdf09c9ef802511fd435445d4fd32993d61bc22e，parent 正是 49903189，且只改 client_observation.rs。官方只读 oracle 为 tester-army/e2e d7c6b5e5a4c27fac7633e66866fd367b0351ead8。
+
+环境暴露 5 个逻辑 CPU，cgroup 配额 4 核，内存上限 16 GiB。Node 24.19.0、pnpm 12.3.4、rustc/cargo 1.99.1、系统 Chromium 154.0.8037.57。工作盘最初可用约 30 GiB，最终约 25 GiB。cgroup 累计内存峰值 12,425,617,408 bytes，约 11.57 GiB；OOM、OOM kill 和 memory max 事件均为 0。
+
+沿用 workflow 的 locked 依赖、profile ci、no-default-features、2 个 Cargo jobs，清除外部 Rust wrappers/flags。完整 packages build 通过，耗时 5 秒。原生产 native build 252 秒，默认六个测试 harness 编译 432 秒；补丁生产 build 210 秒、补丁测试 harness 编译 436 秒；独立 acceptance-faults build 199 秒。默认、补丁和 fault target 分离，默认生产路径没有被 feature binary 覆盖。
+
+core/Web/scripts 类型检查、package-imports gate、native format/strict Clippy/feature/proxy 编译边界均通过。acceptance 自检使用真实官方 oracle 后 367/367 通过。最初从 fork 建立的 oracle worktree 被 provenance 守卫拒绝，该日志保留；没有改写 remote 冒充官方来源。
+
+原 probe-native.ts 通过 built Web wrapper 验证了默认生产 17 项 capability、补丁生产 17 项、fault 18 项；三者均完成 scope.open、页面往返、显式页面激活与确认 scope/proxy 清理。默认受限执行在 scope.open 失败，完全相同的 probe 在获准执行上下文通过。没有增加关闭浏览器安全机制的参数。原 cdp-host 测试自身已有的容器启动参数保持原样。
+
+原 candidate-native.ts baseline 完整执行六个 harness，2409 passed、0 failed、198 ignored，耗时 283 秒。原 browser 包装完成全部 37 条，33 passed、4 failed，耗时 73 秒。四个失败是 page input/evaluate、protected observe/action、双 tenant popup enrollment、borrowed-host detach，两条 BrowserFailure、两条 enrollment Elapsed。它们保留为独立失败，不能与官方 Chromium 156 的 CI26 数字直接等同；browser 阶段与补丁 production 编译有重叠，未将这些失败归因为新回归。
+
+P33 在 4.1 秒内再次复现。scope.restart seq 28 返回 completed/usable，随后 page.url seq 29 返回 scope-unavailable、unknown、quarantined。RestartReady 与 SettlementRefused 都是 sealed=false、integrityLost=false、reservations=0、unconfigured=1；第一次运行对应计数为 2。restart cleanup 本身 passed。未配置条目的具体来源尚未证明，不能删 inventory 门禁或加 sleep。
+
+P19 在 21.0 秒内再次复现。闭集 TS 证据确认 setup passed、body passed、cleanup failed；title deadline-exceeded 与 negated browser.query 的两条 OPERATION_TIMEOUT 断言均 passed。cleanup end passed，dispose failed，最终异常为 retiring native attempt timed out。不能把它归因为正文 timeout 断言失败。
+
+inert 的原 visibility.test.ts 用例完成两轮 RED→GREEN。最后一轮基线约 3.1 秒，observe 返回 browser-failure，body failed、cleanup passed；补丁约 3.1 秒，observe completed/usable、原断言 passed、setup/body/cleanup 全 passed。两者都使用记录在 system-chromium-binding.json 的同一 Chromium 154 路径、版本和 ELF 哈希。补丁新增四个纯 fixture 每个精确发现并执行一次，共 4 passed、0 ignored。保护了 malformed content-fact、explicit role、pseudo、editing host 和父级 inert 剪枝。源码中的最小原因是 DOM heading content-name fact 与 AX 省略的 role 不一致，原投影在父级剪枝前拒绝；补丁补齐 h1–h6 隐式 heading role，保留原校验。
+
+官方 Playwright Chrome for Testing 156.0.8078.4 下载操作被网络策略拒绝，HTTP 403 Domain forbidden，目标 https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux64/chrome-linux64.zip。未换域重试。本地使用显式系统 Chromium 154 依赖绑定，只是诊断，官方浏览器安装门禁仍失败。source-retirement 仍失败。CI-only focused-artifact capture 因没有真实 GitHub producer identity 被拒，没有伪造 run-id，没有生成 CI 复用或发布包。本地定向通过不代表完整验收通过。
+
+最终进程表没有仍运行的 Chromium/native 进程，但 PID 1 保留 261 个已死亡 zombie。该观察不是全局 PID 所有权证明，也不是 P19 产品清理问题的归因。没有修改 PID 1、OS 或安全设置。pids.max 为 max，详见 final-process-inventory.json。
+
+复现入口是本目录 reproduce.sh，浏览器模式需要使用已经验证通过的执行上下文。该入口复用原 source/byte/capability 守卫并执行原测试，不改断言或预算。每次定向运行使用新 artifact 目录，既有证据保持不变。
+
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh probe
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh p33
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh p19
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh inert-baseline
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh inert-patched
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh heading-fixtures
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh baseline
+  bash /workspace/e2e/.artifacts/native-candidate/reproduce.sh browser
+
+原 Vitest 精确文件与名称、--project integration、--maxWorkers=1 均固定在 focused-vitest.mts、run-final-focus.sh 以及每条 resource/result JSON 的 command 字段。CARGO_TARGET_DIR、精确 native HEAD、生产/测试/fault compiler JSONL、三个 binary SHA256、全部原始失败日志和最终闭集案例证据都在本目录。SHA256SUMS 固定本包全部文件，未打包 target、二进制、个人 HOME 或凭据。
+
+建议由 restart 生命周期 owner 单独负责新增有界诊断，文件范围为 native client_targets.rs、client_enrollment.rs、client_settlement_trace.rs 与 e2e candidate-cleanup-diagnostics.ts 及其 schema 测试。为当前未配置条目记录进程内 ordinal、kind/purpose/分类来源闭集枚举及 attached/configure-started/configure-acked/detached 阶段，关联 generation、operationSeq 和现有两个 snapshot；不记录 URL、原始 target ID 或业务 payload，不改变 admission/settlement。此新增代码范围需要父任务另行授权，本轮只提出具体 ownership。
+
+metadata 仍归现有补丁作者，下一步是官方 Chromium 156 与完整原门禁。P19 的后续 owner 可只读跟进 closeAttempt、scope.end 进入及 client closure 的阶段关联。P27 留另一云任务，C03 归当前作者，均未改动。

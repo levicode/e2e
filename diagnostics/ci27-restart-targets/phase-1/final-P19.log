@@ -1,0 +1,33 @@
+
+ RUN  v5.0.1 /workspace/e2e/packages/web
+
+ × |integration| tests/integration/hung-page.test.ts > operations on a hung page > ends a browser assertion on a stuck page at its own timeout, not the action timeout 19327ms
+   → retiring native attempt timed out
+ ↓ |integration| tests/integration/hung-page.test.ts > operations on a hung page > times out a navigation to a server that never answers
+ ↓ |integration| tests/integration/hung-page.test.ts > operations on a hung page > times out a locate and a point tap on a page whose renderer is stuck in a script
+ ↓ |integration| tests/integration/hung-page.test.ts > operations on a hung page > keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| tests/integration/hung-page.test.ts > operations on a hung page > ends a browser assertion on a stuck page at its own timeout, not the action timeout
+EngineError: retiring native attempt timed out
+ ❯ timeout src/operation-budget.ts:76:25
+     74|   const signal = AbortSignal.any([budget.signal, controller.signal]);
+     75|   const endsAt = performance.now() + budget.timeoutMs;
+     76|   const timeout = () => new EngineError('OPERATION_TIMEOUT', `${label}…
+       |                         ^
+     77|   const timer = setTimeout(() => controller.abort(timeout()), Math.max…
+     78|   const remaining = (): ConnectionBudget => {
+ ❯ Timeout.<anonymous> src/operation-budget.ts:77:51
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'OPERATION_TIMEOUT', retryable: false }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 skipped (4)
+   Start at  12:01:21
+   Duration  20.14s (tests 96%, transform 3%, import 1%)
+
+JSON report written to /workspace/e2e/.artifacts/native-candidate/final-P19/vitest.json

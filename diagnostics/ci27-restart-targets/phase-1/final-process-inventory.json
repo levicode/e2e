@@ -1,0 +1,14 @@
+{
+  "count": 261,
+  "states": {
+    "Z": 196,
+    "Zs": 65
+  },
+  "live": [],
+  "zombieParentCounts": {
+    "1": 261
+  },
+  "pidsCurrent": "649",
+  "pidsMax": "max",
+  "note": "Observed process table only. Scope/proxy cleanup proofs do not attest PID-1 reaping or all process ownership."
+}

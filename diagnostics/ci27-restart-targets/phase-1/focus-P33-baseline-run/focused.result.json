@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "failed",
+  "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+  "nativeIdentity": {
+    "repository": "levicode/agent-browser",
+    "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+  "proofSha256": "f780677b5509fc854079926b4af021607307e8858c512c2cfb470f9d623aaa62",
+  "file": "tests/integration/lifecycle.test.ts",
+  "exactTestName": "round-trips persisted state through capture and restore, and reset drops it",
+  "command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--project",
+    "integration",
+    "--maxWorkers=1",
+    "tests/integration/lifecycle.test.ts",
+    "-t",
+    "round-trips persisted state through capture and restore, and reset drops it$",
+    "--reporter=verbose",
+    "--reporter=json",
+    "--outputFile=/workspace/e2e/.artifacts/native-candidate/focus-P33-baseline-run/vitest.json"
+  ],
+  "exitCode": 1,
+  "signal": null,
+  "identityUnchanged": true,
+  "selected": [
+    {
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "fullName": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+      "status": "failed",
+      "title": "round-trips persisted state through capture and restore, and reset drops it",
+      "duration": 2310.8066120000003,
+      "failureMessages": [
+        "EngineError: The native browser protocol became invalid (native-refusal:cleanup-failed)\n    at NativeClient.fail (/workspace/e2e/packages/web/src/native/client.ts:452:22)\n    at Socket.<anonymous> (/workspace/e2e/packages/web/src/native/client.ts:79:18)\n    at Socket.emit (node:events:509:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Socket.Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"
+      ],
+      "meta": {},
+      "tags": [],
+      "benchmarks": []
+    }
+  ],
+  "suiteSuccess": false,
+  "syntheticDiagnostics": {
+    "schemaVersion": 1,
+    "status": "unknown",
+    "file": null,
+    "sha256": null,
+    "bytes": 0,
+    "reason": "setup-failed"
+  },
+  "captureSetupProblem": "Error: Invalid synthetic configuration",
+  "cleanupDiagnostics": {
+    "status": "complete-observed-snapshots",
+    "reasons": [],
+    "file": "web-browser.cleanup-diagnostics.json",
+    "sha256": "135cf3b1a18c1fb217ac63769395f2b98111e434d5326b08e5800b55964a3b55",
+    "bytes": 2022,
+    "binding": {
+      "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "testSourceDigest": "d2f15fc8b82edfa0ccf6365866356dda1fb49a6408165ac454323104ec97095e",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+    },
+    "diagnosticOnly": true,
+    "releaseEligible": false
+  },
+  "officialPlaywrightDownloadPassed": false,
+  "chromiumExecutable": "/usr/bin/chromium"
+}

@@ -1,0 +1,117 @@
+{
+  "recordedAt": "2026-10-23T11:27:24.186375+00:00",
+  "kernel": "6.18.55",
+  "architecture": "x86_64",
+  "logicalCpus": 5,
+  "affinityCpus": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "cpuModel": "AMD EPYC 9V74 80-Core Processor",
+  "cgroup": {
+    "cpu.max": "400000 100000",
+    "memory.max": "17179869184",
+    "memory.current": "4276625408",
+    "memory.peak": "4703461376",
+    "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+  },
+  "memoryInfo": "MemTotal:       18440112 kB\nMemFree:        13532900 kB\nMemAvailable:   16969908 kB\nBuffers:          122288 kB\nCached:          3303088 kB\nSwapCached:            0 kB\nActive:           798692 kB\nInactive:        2979176 kB\nActive(anon):       4432 kB\nInactive(anon):   382836 kB\nActive(file):     794260 kB\nInactive(file):  2596340 kB\nUnevictable:       29924 kB\nMlocked:               0 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nDirty:            916624 kB\nWriteback:             0 kB\nAnonPages:        382604 kB\nMapped:           253076 kB\nShmem:              4692 kB\nKReclaimable:     398420 kB\nSlab:             469180 kB\nSReclaimable:     398420 kB\nSUnreclaim:        70760 kB\nKernelStack:        2596 kB\nPageTables:         4864 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:     9220056 kB\nCommitted_AS:     656768 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:        4868 kB\nVmallocChunk:          0 kB\nPercpu:             1296 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:   1800192 kB\nFilePmdMapped:     88064 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:       71680 kB\nDirectMap2M:     6404096 kB\nDirectMap1G:    29360128 kB",
+  "disk": {
+    "exitCode": 0,
+    "stdout": "Filesystem      Size  Used Avail Use% Mounted on\noverlay          32G  3.2G   27G  11% /workspace\nnone            8.8G  4.7M  8.8G   1% /tmp",
+    "stderr": ""
+  },
+  "versions": {
+    "node": {
+      "exitCode": 0,
+      "stdout": "v24.19.0",
+      "stderr": ""
+    },
+    "pnpm": {
+      "exitCode": 0,
+      "stdout": "12.3.4",
+      "stderr": ""
+    },
+    "rustc": {
+      "exitCode": 0,
+      "stdout": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+      "stderr": ""
+    },
+    "cargo": {
+      "exitCode": 0,
+      "stdout": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "stderr": ""
+    },
+    "chromium": {
+      "exitCode": 0,
+      "stdout": "Chromium 154.0.8037.57 built on Debian GNU/Linux 13 (trixie)",
+      "stderr": ""
+    }
+  },
+  "originalBranches": {
+    "e2e": {
+      "name": "work",
+      "sha": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8"
+    },
+    "agent-browser": {
+      "name": "work",
+      "sha": "fd93075"
+    }
+  },
+  "currentSources": {
+    "e2e": {
+      "remote": {
+        "exitCode": 0,
+        "stdout": "https://github.com/levicode/e2e.git",
+        "stderr": ""
+      },
+      "HEAD": {
+        "exitCode": 0,
+        "stdout": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "native": {
+      "remote": {
+        "exitCode": 0,
+        "stdout": "https://github.com/levicode/agent-browser.git",
+        "stderr": ""
+      },
+      "HEAD": {
+        "exitCode": 0,
+        "stdout": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "inertPatch": {
+      "remote": {
+        "exitCode": 0,
+        "stdout": "https://github.com/levicode/agent-browser.git",
+        "stderr": ""
+      },
+      "HEAD": {
+        "exitCode": 0,
+        "stdout": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+        "stderr": ""
+      },
+      "status": {
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  }
+}

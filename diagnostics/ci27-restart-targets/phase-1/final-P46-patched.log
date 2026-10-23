@@ -1,0 +1,47 @@
+
+ RUN  v5.0.1 /workspace/e2e/packages/web
+
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > an SVG with visibility: hidden
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a shown SVG
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a zero-size box with clipped content
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > the button clipped inside a zero-size box, which keeps a box of its own
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a sized box
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a button inside closed details
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > the summary of closed details
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a button inside open details
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > open details nested in the body of closed details
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > the summary of details nested in closed details
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a button inside open details nested in closed details
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > an empty display: contents element
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a display: contents element whose only child is hidden
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a display: contents element with a painted child
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a display: contents element with bare text
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a hidden display: contents element whose child inherits it
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a hidden display: contents element whose child is visible again
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > an aria-hidden spinner that paints
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a button under an aria-hidden container
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a content-visibility: hidden element, which keeps its box
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a button content-visibility: hidden skips
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a button slotted under a content-visibility: hidden host
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a visibility: hidden parent
+ ↓ |integration| tests/integration/visibility.test.ts > visibility agrees with Playwright > a child that sets visibility: visible under a hidden parent
+ ↓ |integration| tests/integration/visibility.test.ts > visibility where Playwright reads a range box alone > hides text under a display: contents element whose visibility is hidden, which Playwright calls visible
+ ↓ |integration| tests/integration/visibility.test.ts > the bounding box > display: none
+ ↓ |integration| tests/integration/visibility.test.ts > the bounding box > under a display: none ancestor
+ ↓ |integration| tests/integration/visibility.test.ts > the bounding box > an empty display: contents element
+ ↓ |integration| tests/integration/visibility.test.ts > the bounding box > display: contents around text
+ ↓ |integration| tests/integration/visibility.test.ts > the bounding box > visibility: hidden, which keeps its box
+ ↓ |integration| tests/integration/visibility.test.ts > the bounding box > a zero-size box
+ ↓ |integration| tests/integration/visibility.test.ts > the tree walk through a box with no size > lists the fixed controls under a zero-height page and wrapper, and neither the wrapper nor the root as hidden
+ ↓ |integration| tests/integration/visibility.test.ts > the tree walk through a box with no size > lists neither the document of a frame with no box nor the options of a select with none
+ ↓ |integration| tests/integration/visibility.test.ts > a frame's document > places its boxes past the frame's border and padding, where Playwright measures them
+ ✓ |integration| tests/integration/visibility.test.ts > an inert subtree > leaves the tree, as Chrome drops it, while Playwright still calls it visible 79ms
+ ↓ |integration| tests/integration/visibility.test.ts > an inert subtree > lists nothing under an inert document root, and nothing slotted into an inert slot of a closed root
+ ↓ |integration| tests/integration/visibility.test.ts > the tree walk through hidden content > walks into a visibility: hidden subtree for a child that shows again, and stops at aria-hidden and skipped content
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 36 skipped (37)
+   Start at  12:01:45
+   Duration  2.27s (tests 45%, transform 34%, import 21%)
+
+JSON report written to /workspace/e2e/.artifacts/native-candidate/final-P46-patched/vitest.json

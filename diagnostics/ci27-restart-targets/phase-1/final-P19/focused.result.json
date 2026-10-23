@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "status": "failed",
+  "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+  "nativeIdentity": {
+    "repository": "levicode/agent-browser",
+    "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+    "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+    "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+  },
+  "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+  "proofSha256": "f780677b5509fc854079926b4af021607307e8858c512c2cfb470f9d623aaa62",
+  "file": "tests/integration/hung-page.test.ts",
+  "exactTestName": "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+  "command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--project",
+    "integration",
+    "--maxWorkers=1",
+    "tests/integration/hung-page.test.ts",
+    "-t",
+    "ends a browser assertion on a stuck page at its own timeout, not the action timeout$",
+    "--reporter=verbose",
+    "--reporter=json",
+    "--outputFile=/workspace/e2e/.artifacts/native-candidate/final-P19/vitest.json"
+  ],
+  "exitCode": 1,
+  "signal": null,
+  "identityUnchanged": true,
+  "selected": [
+    {
+      "ancestorTitles": [
+        "operations on a hung page"
+      ],
+      "fullName": "operations on a hung page ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+      "status": "failed",
+      "title": "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+      "duration": 19327.161059,
+      "failureMessages": [
+        "EngineError: retiring native attempt timed out\n    at timeout (/workspace/e2e/packages/web/src/operation-budget.ts:76:25)\n    at Timeout.<anonymous> (/workspace/e2e/packages/web/src/operation-budget.ts:77:51)\n    at listOnTimeout (node:internal/timers:635:17)\n    at processTimers (node:internal/timers:571:7)"
+      ],
+      "meta": {},
+      "tags": [],
+      "benchmarks": []
+    }
+  ],
+  "suiteSuccess": false,
+  "syntheticDiagnostics": {
+    "schemaVersion": 1,
+    "status": "unknown",
+    "file": "web-browser.synthetic-evidence.json",
+    "sha256": "cf11b16b57320634bf5ed35c933bde03f20d9bce8dc74a1468e1bfe34236a0fd",
+    "bytes": 20170,
+    "reason": "collected"
+  },
+  "cleanupDiagnostics": {
+    "status": "unknown",
+    "reasons": [
+      "no-cleanup-attempt"
+    ],
+    "file": "web-browser.cleanup-diagnostics.json",
+    "sha256": "6c9ce9836259defb56e2dfecd05cd11cb4401a2a4eb9d1e63676c9208f662e50",
+    "bytes": 755,
+    "binding": {
+      "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "testSourceDigest": "4cb3d4041b242e44966abc7898353aa099816795580fb92553343969bcfe2d58",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+    },
+    "diagnosticOnly": true,
+    "releaseEligible": false
+  },
+  "officialPlaywrightDownloadPassed": false,
+  "chromiumExecutable": "/usr/bin/chromium"
+}

@@ -1,0 +1,2018 @@
+{
+  "schemaVersion": 1,
+  "kind": "local-native-environment-verification",
+  "createdAt": "2026-10-23T12:03:27.425Z",
+  "diagnosticOnly": true,
+  "releaseEligible": false,
+  "sources": {
+    "e2e": {
+      "path": "/workspace/e2e",
+      "remote": "https://github.com/levicode/e2e.git",
+      "commit": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "tree": "dee016549a4b9a9918a401291932a4cafd008a1d",
+      "status": ""
+    },
+    "nativeCheckout": {
+      "path": "/workspace/agent-browser",
+      "remote": "https://github.com/levicode/agent-browser.git",
+      "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+      "status": ""
+    },
+    "native": {
+      "path": "/workspace/e2e/.artifacts/native-source",
+      "remote": "https://github.com/levicode/agent-browser.git",
+      "commit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "tree": "f6c9e9ff7c5693db78d8841e26f4e0cffd5fbe6c",
+      "status": ""
+    },
+    "inertHeading": {
+      "path": "/workspace/e2e/.artifacts/native-inert-heading",
+      "remote": "https://github.com/levicode/agent-browser.git",
+      "commit": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+      "tree": "8ce64182f40dc0ae840a09e8981b33b876cfec55",
+      "status": ""
+    },
+    "officialOracle": {
+      "path": "/workspace/e2e/.artifacts/canvas-oracle-official",
+      "remote": "https://github.com/tester-army/e2e.git",
+      "commit": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8",
+      "tree": "fc6c5ae81c29dd1ce8c01fe3e36512d34eb5c3d7",
+      "status": ""
+    }
+  },
+  "originalWorkRefs": {
+    "e2e": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8",
+    "native": "fd93075e55a21a47fcb36d7433361daa867a0580"
+  },
+  "binaries": {
+    "production": {
+      "path": "/workspace/e2e/.artifacts/native-candidate-bin/production",
+      "sha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673"
+    },
+    "acceptance-faults": {
+      "path": "/workspace/e2e/.artifacts/native-candidate-bin/acceptance-faults",
+      "sha256": "b2cda40af8880ac44be06fed45e0552ada474c299f4af8cb2d30bfecedfef009"
+    },
+    "inert-heading-production": {
+      "path": "/workspace/e2e/.artifacts/native-candidate-bin/inert-heading-production",
+      "sha256": "388b1154b72470f97ff210deb928a8c44013e2d3714832d170c3dd6286cb9014"
+    }
+  },
+  "baseline": {
+    "status": "passed",
+    "harnesses": 6,
+    "passed": 2409,
+    "failed": 0,
+    "ignored": 198,
+    "failures": []
+  },
+  "nativeBrowser": {
+    "status": "failed",
+    "required": 37,
+    "passed": 33,
+    "failed": 4,
+    "failures": [
+      "native::client_page::tests::e2e_client_page_input_context_and_evaluate: Error: Native test execution was not successful",
+      "native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot: Error: Native test execution was not successful",
+      "native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script: Error: Native test execution was not successful",
+      "native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page: Error: Native test execution was not successful"
+    ]
+  },
+  "inertHeadingFixtures": {
+    "diagnosticOnly": true,
+    "releaseEligible": false,
+    "status": "passed",
+    "identity": {
+      "repository": "levicode/agent-browser",
+      "commit": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+      "tree": "8ce64182f40dc0ae840a09e8981b33b876cfec55",
+      "cargoLockSha256": "652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1"
+    },
+    "harness": {
+      "name": "agent-browser",
+      "source": "/workspace/e2e/.artifacts/native-inert-heading/cli/src/main.rs",
+      "kind": [
+        "bin"
+      ],
+      "executable": "/workspace/e2e/.artifacts/native-heading-target/ci/deps/agent_browser-c37a2bcef2943f57",
+      "sha256": "4d8c757979b49d8b4e1b8a961b3cd5592d3c24bd27d0426eba45deacfa4a5a5f"
+    },
+    "compilerSha256": "e3f29fad97f680f1a63eb52c04972b7fbb3342b9cbcad8b61bf1b0ceba9b0e20",
+    "identityUnchanged": true,
+    "results": [
+      {
+        "name": "native::client_observation::tests::html_heading_projection_keeps_original_tag_semantics_when_ax_omits_role",
+        "exitCode": 0,
+        "signal": null,
+        "passed": true
+      },
+      {
+        "name": "native::client_observation::tests::inert_heading_projection_reaches_existing_parent_subtree_suppression",
+        "exitCode": 0,
+        "signal": null,
+        "passed": true
+      },
+      {
+        "name": "native::client_observation::tests::html_heading_projection_preserves_explicit_roles_pseudo_and_editing_host",
+        "exitCode": 0,
+        "signal": null,
+        "passed": true
+      },
+      {
+        "name": "native::client_observation::tests::html_heading_projection_does_not_relax_content_fact_validation",
+        "exitCode": 0,
+        "signal": null,
+        "passed": true
+      }
+    ]
+  },
+  "finalCases": {
+    "final-P33": {
+      "caseId": "P33",
+      "evidenceStatus": "complete",
+      "reasons": [],
+      "footer": {
+        "kind": "footer",
+        "sequence": 27,
+        "dropped": 0,
+        "truncated": false,
+        "incomplete": false,
+        "outcome": {
+          "setup": "passed",
+          "body": "failed",
+          "cleanup": "failed"
+        }
+      },
+      "selectedOperations": [
+        {
+          "kind": "selected-operation",
+          "ordinal": 0,
+          "phase": "restart",
+          "command": "scope.restart",
+          "invoked": true,
+          "requestCount": 1,
+          "requestPending": 0,
+          "firstResult": {
+            "operationSeq": 28,
+            "ok": true,
+            "code": null,
+            "effects": "completed",
+            "scopeState": "usable"
+          },
+          "firstFailure": null,
+          "rejected": false,
+          "adapter": "fulfilled",
+          "code": null,
+          "causeCode": null,
+          "reason": null,
+          "causeReason": null,
+          "assertion": "not-observed"
+        },
+        {
+          "kind": "selected-operation",
+          "ordinal": 1,
+          "phase": "url",
+          "command": "page.url",
+          "invoked": true,
+          "requestCount": 1,
+          "requestPending": 0,
+          "firstResult": {
+            "operationSeq": 29,
+            "ok": false,
+            "code": "scope-unavailable",
+            "effects": "unknown",
+            "scopeState": "quarantined"
+          },
+          "firstFailure": {
+            "operationSeq": 29,
+            "ok": false,
+            "code": "scope-unavailable",
+            "effects": "unknown",
+            "scopeState": "quarantined"
+          },
+          "rejected": false,
+          "adapter": "rejected",
+          "code": "ACTION_MAY_HAVE_COMMITTED",
+          "causeCode": null,
+          "reason": "other",
+          "causeReason": null,
+          "assertion": "not-observed"
+        }
+      ],
+      "phases": [
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "init",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "start",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "start",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "navigate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "locate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "state-capture",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "state-reset",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "navigate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "locate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "state-restore",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "navigate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "locate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "restart",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "url",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "url",
+          "state": "failed"
+        },
+        {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "end",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "end",
+          "state": "failed"
+        }
+      ],
+      "inventorySnapshots": [
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 38610,
+          "record": 1,
+          "operationSeq": 28,
+          "phase": "InventorySnapshot",
+          "droppedBefore": 0,
+          "emittedBefore": 1,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "inventoryPoint": "restart-ready",
+          "inventoryObserved": true,
+          "inventorySealed": false,
+          "inventoryIntegrityLost": false,
+          "inventoryReservations": 0,
+          "inventoryUnconfigured": 1
+        },
+        {
+          "schemaVersion": 2,
+          "source": "native",
+          "pid": 38610,
+          "record": 4,
+          "operationSeq": 29,
+          "phase": "InventorySnapshot",
+          "droppedBefore": 0,
+          "emittedBefore": 4,
+          "suppressedBefore": 0,
+          "overflow": false,
+          "generation": 1,
+          "inventoryPoint": "settlement-refused",
+          "inventoryObserved": true,
+          "inventorySealed": false,
+          "inventoryIntegrityLost": false,
+          "inventoryReservations": 0,
+          "inventoryUnconfigured": 1
+        }
+      ],
+      "cleanupCaptureStatus": "complete-observed-snapshots"
+    },
+    "final-P19": {
+      "caseId": "P19",
+      "evidenceStatus": "complete",
+      "reasons": [],
+      "footer": {
+        "kind": "footer",
+        "sequence": 30,
+        "dropped": 0,
+        "truncated": false,
+        "incomplete": false,
+        "outcome": {
+          "setup": "passed",
+          "body": "passed",
+          "cleanup": "failed"
+        }
+      },
+      "selectedOperations": [
+        {
+          "kind": "selected-operation",
+          "ordinal": 0,
+          "phase": "assertion",
+          "command": "page.title",
+          "invoked": true,
+          "requestCount": 1,
+          "requestPending": 0,
+          "firstResult": {
+            "operationSeq": 12,
+            "ok": false,
+            "code": "deadline-exceeded",
+            "effects": "not-dispatched",
+            "scopeState": "usable"
+          },
+          "firstFailure": {
+            "operationSeq": 12,
+            "ok": false,
+            "code": "deadline-exceeded",
+            "effects": "not-dispatched",
+            "scopeState": "usable"
+          },
+          "rejected": false,
+          "adapter": "rejected",
+          "code": "OPERATION_TIMEOUT",
+          "causeCode": null,
+          "reason": "other",
+          "causeReason": null,
+          "assertion": "passed"
+        },
+        {
+          "kind": "selected-operation",
+          "ordinal": 1,
+          "phase": "assertion",
+          "command": "browser.query",
+          "invoked": true,
+          "requestCount": 1,
+          "requestPending": 0,
+          "firstResult": {
+            "operationSeq": 13,
+            "ok": false,
+            "code": "cancelled",
+            "effects": "unknown",
+            "scopeState": "quarantined"
+          },
+          "firstFailure": {
+            "operationSeq": 13,
+            "ok": false,
+            "code": "cancelled",
+            "effects": "unknown",
+            "scopeState": "quarantined"
+          },
+          "rejected": false,
+          "adapter": "rejected",
+          "code": "OPERATION_TIMEOUT",
+          "causeCode": null,
+          "reason": "other",
+          "causeReason": null,
+          "assertion": "passed"
+        }
+      ],
+      "phases": [
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "init",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "init",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "start",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "start",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "open",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "open",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "initial-observe",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "initial-observe",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "initial-locate",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "initial-locate",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "freeze-renderer",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "freeze-renderer",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "assertion",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "fixture-create",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "setup",
+          "phase": "fixture-create",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "assertion",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "end",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "end",
+          "state": "passed"
+        },
+        {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "dispose",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "dispose",
+          "state": "failed"
+        }
+      ],
+      "inventorySnapshots": [],
+      "cleanupCaptureStatus": "unknown"
+    },
+    "final-P46-baseline": {
+      "caseId": "P46",
+      "evidenceStatus": "complete",
+      "reasons": [],
+      "footer": {
+        "kind": "footer",
+        "sequence": 7,
+        "dropped": 0,
+        "truncated": false,
+        "incomplete": false,
+        "outcome": {
+          "setup": "passed",
+          "body": "failed",
+          "cleanup": "passed"
+        }
+      },
+      "selectedOperations": [
+        {
+          "kind": "selected-operation",
+          "ordinal": 0,
+          "phase": "observe",
+          "command": "browser.observe",
+          "invoked": true,
+          "requestCount": 1,
+          "requestPending": 0,
+          "firstResult": {
+            "operationSeq": 11,
+            "ok": false,
+            "code": "browser-failure",
+            "effects": "not-dispatched",
+            "scopeState": "usable"
+          },
+          "firstFailure": {
+            "operationSeq": 11,
+            "ok": false,
+            "code": "browser-failure",
+            "effects": "not-dispatched",
+            "scopeState": "usable"
+          },
+          "rejected": false,
+          "adapter": "rejected",
+          "code": "ENGINE_FAILURE",
+          "causeCode": null,
+          "reason": "other",
+          "causeReason": null,
+          "assertion": "not-observed"
+        }
+      ],
+      "phases": [
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "document",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "observe",
+          "state": "enter"
+        }
+      ],
+      "inventorySnapshots": [],
+      "cleanupCaptureStatus": "complete-observed-snapshots"
+    },
+    "final-P46-patched": {
+      "caseId": "P46",
+      "evidenceStatus": "complete",
+      "reasons": [],
+      "footer": {
+        "kind": "footer",
+        "sequence": 6,
+        "dropped": 0,
+        "truncated": false,
+        "incomplete": false,
+        "outcome": {
+          "setup": "passed",
+          "body": "passed",
+          "cleanup": "passed"
+        }
+      },
+      "selectedOperations": [
+        {
+          "kind": "selected-operation",
+          "ordinal": 0,
+          "phase": "observe",
+          "command": "browser.observe",
+          "invoked": true,
+          "requestCount": 1,
+          "requestPending": 0,
+          "firstResult": {
+            "operationSeq": 11,
+            "ok": true,
+            "code": null,
+            "effects": "completed",
+            "scopeState": "usable"
+          },
+          "firstFailure": null,
+          "rejected": false,
+          "adapter": "fulfilled",
+          "code": null,
+          "causeCode": null,
+          "reason": null,
+          "causeReason": null,
+          "assertion": "passed"
+        }
+      ],
+      "phases": [
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "document",
+          "state": "enter"
+        },
+        {
+          "kind": "phase",
+          "section": "body",
+          "phase": "observe",
+          "state": "enter"
+        }
+      ],
+      "inventorySnapshots": [],
+      "cleanupCaptureStatus": "complete-observed-snapshots"
+    }
+  },
+  "focus": [
+    {
+      "directory": "final-P19",
+      "status": "failed",
+      "exitCode": 1,
+      "nativeCommit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "exactTestName": "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "operations on a hung page ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+          "status": "failed",
+          "duration": 19327.161059,
+          "failureMessages": [
+            "EngineError: retiring native attempt timed out\n    at timeout (/workspace/e2e/packages/web/src/operation-budget.ts:76:25)\n    at Timeout.<anonymous> (/workspace/e2e/packages/web/src/operation-budget.ts:77:51)\n    at listOnTimeout (node:internal/timers:635:17)\n    at processTimers (node:internal/timers:571:7)"
+          ]
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": "web-browser.synthetic-evidence.json",
+        "sha256": "cf11b16b57320634bf5ed35c933bde03f20d9bce8dc74a1468e1bfe34236a0fd",
+        "bytes": 20170,
+        "reason": "collected"
+      },
+      "cleanupDiagnostics": {
+        "status": "unknown",
+        "reasons": [
+          "no-cleanup-attempt"
+        ],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "6c9ce9836259defb56e2dfecd05cd11cb4401a2a4eb9d1e63676c9208f662e50",
+        "bytes": 755,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+          "testSourceDigest": "4cb3d4041b242e44966abc7898353aa099816795580fb92553343969bcfe2d58",
+          "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "final-P33",
+      "status": "failed",
+      "exitCode": 1,
+      "nativeCommit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "exactTestName": "round-trips persisted state through capture and restore, and reset drops it",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+          "status": "failed",
+          "duration": 1909.484052,
+          "failureMessages": [
+            "EngineError: The native browser protocol became invalid (native-refusal:cleanup-failed)\n    at NativeClient.fail (/workspace/e2e/packages/web/src/native/client.ts:452:22)\n    at Socket.<anonymous> (/workspace/e2e/packages/web/src/native/client.ts:79:18)\n    at Socket.emit (node:events:509:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Socket.Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"
+          ]
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": "web-browser.synthetic-evidence.json",
+        "sha256": "e9978783233e06c893c7b24e529dab16a9decd52077d34c80162e98549e4276c",
+        "bytes": 19232,
+        "reason": "collected"
+      },
+      "cleanupDiagnostics": {
+        "status": "complete-observed-snapshots",
+        "reasons": [],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "160d61af08c90cf2caacfc5ba564a11195cdd33ed1cb86eaaf6380e34e107cb5",
+        "bytes": 2022,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+          "testSourceDigest": "d2f15fc8b82edfa0ccf6365866356dda1fb49a6408165ac454323104ec97095e",
+          "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "final-P46-baseline",
+      "status": "failed",
+      "exitCode": 1,
+      "nativeCommit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "exactTestName": "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+          "status": "failed",
+          "duration": 40.26222000000007,
+          "failureMessages": [
+            "EngineError: The native browser operation failed (browser-failure)\n    at classifyResultError (/workspace/e2e/packages/web/src/native/browser-channel.ts:156:10)\n    at resultError (/workspace/e2e/packages/web/src/native/browser-channel.ts:119:19)\n    at EngineChannel.command (/workspace/e2e/packages/web/src/native/engine-channel.ts:48:13)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at NativeSurface.engineCommand (/workspace/e2e/packages/web/src/native-surface.ts:612:20)\n    at NativeSurface.observe (/workspace/e2e/packages/web/src/native-surface.ts:621:22)"
+          ]
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": "web-browser.synthetic-evidence.json",
+        "sha256": "d5daab86630fb23f19b87cf07764ad3c4f29da347b8cd5d4447316ec572e7ffd",
+        "bytes": 16773,
+        "reason": "collected"
+      },
+      "cleanupDiagnostics": {
+        "status": "complete-observed-snapshots",
+        "reasons": [],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "0f573d1548151319bd1bb347d36b064867ecc00ab9f201fd2de6df3da8af8cf8",
+        "bytes": 1299,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+          "testSourceDigest": "eec415ad554f182e8cab686c00723e71d84a20798872c584f45699677824af7e",
+          "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "final-P46-patched",
+      "status": "passed",
+      "exitCode": 0,
+      "nativeCommit": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+      "binarySha256": "388b1154b72470f97ff210deb928a8c44013e2d3714832d170c3dd6286cb9014",
+      "exactTestName": "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+          "status": "passed",
+          "duration": 78.63172599999984,
+          "failureMessages": []
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": "web-browser.synthetic-evidence.json",
+        "sha256": "1e419300b401f286faf924504fb9e5f769f088ff4b11ed600a1b9485bfd4ab23",
+        "bytes": 16353,
+        "reason": "collected"
+      },
+      "cleanupDiagnostics": {
+        "status": "complete-observed-snapshots",
+        "reasons": [],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "8025c74a4a9a60cc4773b8dc9231fa42f320e1dfd0edfc844387193bb8cd3ab6",
+        "bytes": 1299,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+          "testSourceDigest": "eec415ad554f182e8cab686c00723e71d84a20798872c584f45699677824af7e",
+          "binarySha256": "388b1154b72470f97ff210deb928a8c44013e2d3714832d170c3dd6286cb9014",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "focus-P19-baseline",
+      "status": "failed",
+      "exitCode": 1,
+      "nativeCommit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "exactTestName": "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "operations on a hung page ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+          "status": "failed",
+          "duration": 19462.418293000002,
+          "failureMessages": [
+            "EngineError: retiring native attempt timed out\n    at timeout (/workspace/e2e/packages/web/src/operation-budget.ts:76:25)\n    at Timeout.<anonymous> (/workspace/e2e/packages/web/src/operation-budget.ts:77:51)\n    at listOnTimeout (node:internal/timers:635:17)\n    at processTimers (node:internal/timers:571:7)"
+          ]
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": null,
+        "sha256": null,
+        "bytes": 0,
+        "reason": "setup-failed"
+      },
+      "cleanupDiagnostics": {
+        "status": "unknown",
+        "reasons": [
+          "no-cleanup-attempt"
+        ],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "3dd93ebfcbf61663c2c30a2a8a7e0f3e8c15c72d5db84b46ba3f2bb6f9a1ffb6",
+        "bytes": 755,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+          "testSourceDigest": "4cb3d4041b242e44966abc7898353aa099816795580fb92553343969bcfe2d58",
+          "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "focus-P33-baseline-run",
+      "status": "failed",
+      "exitCode": 1,
+      "nativeCommit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "exactTestName": "round-trips persisted state through capture and restore, and reset drops it",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+          "status": "failed",
+          "duration": 2310.8066120000003,
+          "failureMessages": [
+            "EngineError: The native browser protocol became invalid (native-refusal:cleanup-failed)\n    at NativeClient.fail (/workspace/e2e/packages/web/src/native/client.ts:452:22)\n    at Socket.<anonymous> (/workspace/e2e/packages/web/src/native/client.ts:79:18)\n    at Socket.emit (node:events:509:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Socket.Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"
+          ]
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": null,
+        "sha256": null,
+        "bytes": 0,
+        "reason": "setup-failed"
+      },
+      "cleanupDiagnostics": {
+        "status": "complete-observed-snapshots",
+        "reasons": [],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "135cf3b1a18c1fb217ac63769395f2b98111e434d5326b08e5800b55964a3b55",
+        "bytes": 2022,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+          "testSourceDigest": "d2f15fc8b82edfa0ccf6365866356dda1fb49a6408165ac454323104ec97095e",
+          "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "focus-P46-baseline",
+      "status": "failed",
+      "exitCode": 1,
+      "nativeCommit": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+      "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+      "exactTestName": "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+          "status": "failed",
+          "duration": 36.450550999999905,
+          "failureMessages": [
+            "EngineError: The native browser operation failed (browser-failure)\n    at classifyResultError (/workspace/e2e/packages/web/src/native/browser-channel.ts:156:10)\n    at resultError (/workspace/e2e/packages/web/src/native/browser-channel.ts:119:19)\n    at EngineChannel.command (/workspace/e2e/packages/web/src/native/engine-channel.ts:48:13)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at NativeSurface.engineCommand (/workspace/e2e/packages/web/src/native-surface.ts:612:20)\n    at NativeSurface.observe (/workspace/e2e/packages/web/src/native-surface.ts:621:22)"
+          ]
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": null,
+        "sha256": null,
+        "bytes": 0,
+        "reason": "setup-failed"
+      },
+      "cleanupDiagnostics": {
+        "status": "complete-observed-snapshots",
+        "reasons": [],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "f8c8b8042ac4f5ac96e9a4920a7ef9e635c4f106883d803d59cff92df30f7a77",
+        "bytes": 1299,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+          "testSourceDigest": "eec415ad554f182e8cab686c00723e71d84a20798872c584f45699677824af7e",
+          "binarySha256": "a980b20a4f4836cd86241c537fc755f0e1e06d2fb509ed4d661ba0b192187673",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    },
+    {
+      "directory": "focus-P46-patched",
+      "status": "passed",
+      "exitCode": 0,
+      "nativeCommit": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+      "binarySha256": "388b1154b72470f97ff210deb928a8c44013e2d3714832d170c3dd6286cb9014",
+      "exactTestName": "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "identityUnchanged": true,
+      "selected": [
+        {
+          "name": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+          "status": "passed",
+          "duration": 81.09700500000008,
+          "failureMessages": []
+        }
+      ],
+      "syntheticDiagnostics": {
+        "schemaVersion": 1,
+        "status": "unknown",
+        "file": null,
+        "sha256": null,
+        "bytes": 0,
+        "reason": "setup-failed"
+      },
+      "cleanupDiagnostics": {
+        "status": "complete-observed-snapshots",
+        "reasons": [],
+        "file": "web-browser.cleanup-diagnostics.json",
+        "sha256": "bc12bc3ee698308cc9033a01417b5c3f35727001e5b8668cd37c6bc47b2c3a54",
+        "bytes": 1299,
+        "binding": {
+          "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+          "nativeSourceRevision": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+          "testSourceDigest": "eec415ad554f182e8cab686c00723e71d84a20798872c584f45699677824af7e",
+          "binarySha256": "388b1154b72470f97ff210deb928a8c44013e2d3714832d170c3dd6286cb9014",
+          "collectorSha256": "196b7261ef52b89792aa3d242be609cef26193e0fec6b45a20a9241f71ec95a3"
+        },
+        "diagnosticOnly": true,
+        "releaseEligible": false
+      }
+    }
+  ],
+  "resources": [
+    {
+      "file": "acceptance-scripts-official.resource.json",
+      "stage": "acceptance-scripts-official",
+      "command": [
+        "node",
+        "--test",
+        "scripts/acceptance/*.test.ts"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:32:42.110461+00:00",
+      "elapsedSeconds": 16.7,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 482156544,
+      "maximumChildRssKiB": 304420,
+      "sampledPeakCgroupMemoryBytes": 7419416576,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "acceptance-scripts.resource.json",
+      "stage": "acceptance-scripts",
+      "command": [
+        "node",
+        "--test",
+        "scripts/acceptance/*.test.ts"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:31:30.287191+00:00",
+      "elapsedSeconds": 16.126,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 406433792,
+      "maximumChildRssKiB": 304348,
+      "sampledPeakCgroupMemoryBytes": 8567857152,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "acceptance-typecheck.resource.json",
+      "stage": "acceptance-typecheck",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsc",
+        "--project",
+        "scripts"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:28:18.391558+00:00",
+      "elapsedSeconds": 0.502,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 950272,
+      "maximumChildRssKiB": 217952,
+      "sampledPeakCgroupMemoryBytes": 8216317952,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "core-typecheck.resource.json",
+      "stage": "core-typecheck",
+      "command": [
+        "pnpm",
+        "--filter",
+        "e2e",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:28:14.319484+00:00",
+      "elapsedSeconds": 3.015,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 1000734720,
+      "maximumChildRssKiB": 959716,
+      "sampledPeakCgroupMemoryBytes": 9006780416,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "default-harness-build.resource.json",
+      "stage": "default-harness-build",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:33:35.431535+00:00",
+      "elapsedSeconds": 432.483,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 7037341696,
+      "maximumChildRssKiB": 6861696,
+      "sampledPeakCgroupMemoryBytes": 11762597888,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "fault-build.resource.json",
+      "stage": "fault-build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:57:41.683388+00:00",
+      "elapsedSeconds": 198.656,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 4401651712,
+      "maximumChildRssKiB": 4252584,
+      "sampledPeakCgroupMemoryBytes": 10599772160,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "fault-negotiation.resource.json",
+      "stage": "fault-negotiation",
+      "command": [
+        "node",
+        "scripts/acceptance/probe-native.ts",
+        "/workspace/e2e/.artifacts/native-candidate-bin/acceptance-faults",
+        "/workspace/e2e/.artifacts/native-candidate/fault-capabilities.json",
+        "/workspace/e2e/.artifacts/native-candidate/fault-negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T12:01:00.407554+00:00",
+      "elapsedSeconds": 1.548,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 77426688,
+      "maximumChildRssKiB": 90332,
+      "sampledPeakCgroupMemoryBytes": 6791450624,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "final-P19.resource.json",
+      "stage": "final-P19",
+      "command": [
+        "node",
+        "/workspace/e2e/.artifacts/native-candidate/focused-vitest.mts",
+        "final-P19",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        "/workspace/e2e/.artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/hung-page.test.ts",
+        "ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+        "/workspace/e2e/.artifacts/native-candidate-bin/acceptance-faults",
+        "/workspace/e2e/.artifacts/native-candidate/fault-negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T12:01:21.111788+00:00",
+      "elapsedSeconds": 20.987,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 560427008,
+      "maximumChildRssKiB": 317268,
+      "sampledPeakCgroupMemoryBytes": 7334268928,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "final-P33.resource.json",
+      "stage": "final-P33",
+      "command": [
+        "node",
+        "/workspace/e2e/.artifacts/native-candidate/focused-vitest.mts",
+        "final-P33",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        "/workspace/e2e/.artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/lifecycle.test.ts",
+        "round-trips persisted state through capture and restore, and reset drops it",
+        "/workspace/e2e/.artifacts/native-candidate-bin/acceptance-faults",
+        "/workspace/e2e/.artifacts/native-candidate/fault-negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T12:01:16.977812+00:00",
+      "elapsedSeconds": 4.108,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 624922624,
+      "maximumChildRssKiB": 362936,
+      "sampledPeakCgroupMemoryBytes": 7393734656,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "final-P46-baseline.resource.json",
+      "stage": "final-P46-baseline",
+      "command": [
+        "node",
+        "/workspace/e2e/.artifacts/native-candidate/focused-vitest.mts",
+        "final-P46-baseline",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        "/workspace/e2e/.artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/visibility.test.ts",
+        "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+        "/workspace/e2e/.artifacts/native-candidate-bin/acceptance-faults",
+        "/workspace/e2e/.artifacts/native-candidate/fault-negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T12:01:42.124973+00:00",
+      "elapsedSeconds": 3.085,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 1376849920,
+      "maximumChildRssKiB": 336356,
+      "sampledPeakCgroupMemoryBytes": 7430782976,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "final-P46-patched.resource.json",
+      "stage": "final-P46-patched",
+      "command": [
+        "node",
+        "/workspace/e2e/.artifacts/native-candidate/focused-vitest.mts",
+        "final-P46-patched",
+        ".artifacts/native-inert-heading",
+        "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+        ".artifacts/native-candidate-bin/inert-heading-production",
+        "/workspace/e2e/.artifacts/native-candidate/inert-heading-negotiation.json",
+        "tests/integration/visibility.test.ts",
+        "leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+        "/workspace/e2e/.artifacts/native-candidate-bin/acceptance-faults",
+        "/workspace/e2e/.artifacts/native-candidate/fault-negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T12:01:45.237304+00:00",
+      "elapsedSeconds": 3.098,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 1375465472,
+      "maximumChildRssKiB": 328100,
+      "sampledPeakCgroupMemoryBytes": 7428591616,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "focus-P19-baseline.resource.json",
+      "stage": "focus-P19-baseline",
+      "command": [
+        "node",
+        ".artifacts/native-candidate/focused-vitest.mts",
+        "focus-P19-baseline",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/hung-page.test.ts",
+        "ends a browser assertion on a stuck page at its own timeout, not the action timeout"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:36:23.428895+00:00",
+      "elapsedSeconds": 21.248,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 508223488,
+      "maximumChildRssKiB": 298264,
+      "sampledPeakCgroupMemoryBytes": 11795558400,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "focus-P33-baseline-run.resource.json",
+      "stage": "focus-P33-baseline-run",
+      "command": [
+        "node",
+        ".artifacts/native-candidate/focused-vitest.mts",
+        "focus-P33-baseline-run",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/lifecycle.test.ts",
+        "round-trips persisted state through capture and restore, and reset drops it"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:35:58.049917+00:00",
+      "elapsedSeconds": 4.592,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 560766976,
+      "maximumChildRssKiB": 326000,
+      "sampledPeakCgroupMemoryBytes": 11708325888,
+      "cgroupMemoryPeak": "11734888448",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "focus-P33-baseline.resource.json",
+      "stage": "focus-P33-baseline",
+      "command": [
+        "node",
+        ".artifacts/native-candidate/focused-vitest.mts",
+        "focus-P33-baseline",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/lifecycle.test.ts",
+        "round-trips persisted state through capture and restore, and reset drops it"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:35:09.416309+00:00",
+      "elapsedSeconds": 0.508,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 5373952,
+      "maximumChildRssKiB": 107456,
+      "sampledPeakCgroupMemoryBytes": 11377479680,
+      "cgroupMemoryPeak": "11457200128",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "focus-P46-baseline.resource.json",
+      "stage": "focus-P46-baseline",
+      "command": [
+        "node",
+        ".artifacts/native-candidate/focused-vitest.mts",
+        "focus-P46-baseline",
+        ".artifacts/native-source",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate/negotiation-sandbox.json",
+        "tests/integration/visibility.test.ts",
+        "leaves the tree, as Chrome drops it, while Playwright still calls it visible"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:37:29.186864+00:00",
+      "elapsedSeconds": 3.547,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 1377755136,
+      "maximumChildRssKiB": 364404,
+      "sampledPeakCgroupMemoryBytes": 9539952640,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "focus-P46-patched.resource.json",
+      "stage": "focus-P46-patched",
+      "command": [
+        "node",
+        "/workspace/e2e/.artifacts/native-candidate/focused-vitest.mts",
+        "focus-P46-patched",
+        ".artifacts/native-inert-heading",
+        "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+        "/workspace/e2e/.artifacts/native-candidate-bin/inert-heading-production",
+        "/workspace/e2e/.artifacts/native-candidate/inert-heading-negotiation.json",
+        "tests/integration/visibility.test.ts",
+        "leaves the tree, as Chrome drops it, while Playwright still calls it visible"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:51:13.387275+00:00",
+      "elapsedSeconds": 3.609,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 1237053440,
+      "maximumChildRssKiB": 298264,
+      "sampledPeakCgroupMemoryBytes": 10842517504,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "focused-build-capture.resource.json",
+      "stage": "focused-build-capture",
+      "command": [
+        "node",
+        "scripts/acceptance/candidate-focused-artifact.ts",
+        "capture",
+        ".artifacts/native-source",
+        "/workspace/e2e/.artifacts/native-candidate-target",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:42:03.574787+00:00",
+      "elapsedSeconds": 0.509,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 6160384,
+      "maximumChildRssKiB": 69620,
+      "sampledPeakCgroupMemoryBytes": 4759699456,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "inert-heading-fixtures.resource.json",
+      "stage": "inert-heading-fixtures",
+      "command": [
+        "node",
+        "/workspace/e2e/.artifacts/native-candidate/focused-native.mts",
+        "/workspace/e2e/.artifacts/native-inert-heading",
+        "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+        "/workspace/e2e/.artifacts/native-heading-target",
+        "/workspace/e2e/.artifacts/native-candidate/inert-heading-compiler.jsonl",
+        "/workspace/e2e/.artifacts/native-candidate/inert-heading-fixtures",
+        "native::client_observation::tests::html_heading_projection_keeps_original_tag_semantics_when_ax_omits_role",
+        "native::client_observation::tests::inert_heading_projection_reaches_existing_parent_subtree_suppression",
+        "native::client_observation::tests::html_heading_projection_preserves_explicit_roles_pseudo_and_editing_host",
+        "native::client_observation::tests::html_heading_projection_does_not_relax_content_fact_validation"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:57:29.524397+00:00",
+      "elapsedSeconds": 1.031,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 138006528,
+      "maximumChildRssKiB": 211056,
+      "sampledPeakCgroupMemoryBytes": 5806632960,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "inert-heading-format.resource.json",
+      "stage": "inert-heading-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-inert-heading/cli",
+      "startedAt": "2026-10-23T11:46:41.428177+00:00",
+      "elapsedSeconds": 2.543,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 246935552,
+      "maximumChildRssKiB": 239336,
+      "sampledPeakCgroupMemoryBytes": 5965529088,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "inert-heading-harness-build.resource.json",
+      "stage": "inert-heading-harness-build",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--bin",
+        "agent-browser",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-inert-heading/cli",
+      "startedAt": "2026-10-23T11:50:13.683586+00:00",
+      "elapsedSeconds": 435.81,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 7031349248,
+      "maximumChildRssKiB": 6856216,
+      "sampledPeakCgroupMemoryBytes": 12366426112,
+      "cgroupMemoryPeak": "12425617408",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "inert-heading-negotiation.resource.json",
+      "stage": "inert-heading-negotiation",
+      "command": [
+        "node",
+        "scripts/acceptance/probe-native.ts",
+        "/workspace/e2e/.artifacts/native-candidate-bin/inert-heading-production",
+        "/workspace/e2e/.artifacts/native-candidate/required-capabilities.json",
+        "/workspace/e2e/.artifacts/native-candidate/inert-heading-negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:51:12.306625+00:00",
+      "elapsedSeconds": 1.055,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 66207744,
+      "maximumChildRssKiB": 90432,
+      "sampledPeakCgroupMemoryBytes": 10151972864,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "inert-heading-production-build.resource.json",
+      "stage": "inert-heading-production-build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-inert-heading/cli",
+      "startedAt": "2026-10-23T11:46:43.998799+00:00",
+      "elapsedSeconds": 209.648,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 4415639552,
+      "maximumChildRssKiB": 4271552,
+      "sampledPeakCgroupMemoryBytes": 10177175552,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "native-baseline.resource.json",
+      "stage": "native-baseline",
+      "command": [
+        "node",
+        "scripts/acceptance/candidate-native.ts",
+        "baseline",
+        ".artifacts/native-source",
+        "/workspace/e2e/.artifacts/native-candidate-target",
+        ".artifacts/native-candidate/compiler.jsonl",
+        ".artifacts/native-candidate",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:42:21.474417+00:00",
+      "elapsedSeconds": 282.96,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 337887232,
+      "maximumChildRssKiB": 257396,
+      "sampledPeakCgroupMemoryBytes": 7567048704,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "native-browser.resource.json",
+      "stage": "native-browser",
+      "command": [
+        "node",
+        "scripts/acceptance/candidate-native.ts",
+        "browser",
+        ".artifacts/native-source",
+        "/workspace/e2e/.artifacts/native-candidate-target",
+        ".artifacts/native-candidate/compiler.jsonl",
+        ".artifacts/native-candidate",
+        "49903189a6a8fc1b39c8ec503737d000fdde9d44"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:47:04.461370+00:00",
+      "elapsedSeconds": 73.025,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 297349120,
+      "maximumChildRssKiB": 290692,
+      "sampledPeakCgroupMemoryBytes": 10180489216,
+      "cgroupMemoryPeak": "11817385984",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "native-default-clippy.resource.json",
+      "stage": "native-default-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:26:43.165274+00:00",
+      "elapsedSeconds": 103.785,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 6387650560,
+      "maximumChildRssKiB": 4455928,
+      "sampledPeakCgroupMemoryBytes": 9737084928,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "native-feature-check.resource.json",
+      "stage": "native-feature-check",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--tests"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:28:26.975676+00:00",
+      "elapsedSeconds": 55.103,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 4580978688,
+      "maximumChildRssKiB": 4402988,
+      "sampledPeakCgroupMemoryBytes": 8290607104,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "native-format-check.resource.json",
+      "stage": "native-format-check",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:26:40.118401+00:00",
+      "elapsedSeconds": 3.016,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 246882304,
+      "maximumChildRssKiB": 239284,
+      "sampledPeakCgroupMemoryBytes": 4029206528,
+      "cgroupMemoryPeak": "4703461376",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "native-proxy-check.resource.json",
+      "stage": "native-proxy-check",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--test",
+        "client-proxy-fixture"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:29:22.106165+00:00",
+      "elapsedSeconds": 1.003,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 409600,
+      "maximumChildRssKiB": 233116,
+      "sampledPeakCgroupMemoryBytes": 3987316736,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "package-imports.resource.json",
+      "stage": "package-imports",
+      "command": [
+        "node",
+        "scripts/acceptance/candidate-web.ts",
+        "package-imports",
+        "-",
+        "-",
+        ".artifacts/native-candidate"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:28:18.919229+00:00",
+      "elapsedSeconds": 1.003,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 264507392,
+      "maximumChildRssKiB": 959716,
+      "sampledPeakCgroupMemoryBytes": 8405360640,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "packages-build.resource.json",
+      "stage": "packages-build",
+      "command": [
+        "pnpm",
+        "run",
+        "build"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:26:39.297263+00:00",
+      "elapsedSeconds": 5.025,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 556310528,
+      "maximumChildRssKiB": 577372,
+      "sampledPeakCgroupMemoryBytes": 4085374976,
+      "cgroupMemoryPeak": "4703461376",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "playwright-browser-install.resource.json",
+      "stage": "playwright-browser-install",
+      "command": [
+        "pnpm",
+        "--filter",
+        "@e2e-dev/web",
+        "exec",
+        "playwright-core",
+        "install",
+        "chromium"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:28:31.503293+00:00",
+      "elapsedSeconds": 2.009,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 233639936,
+      "maximumChildRssKiB": 110588,
+      "sampledPeakCgroupMemoryBytes": 5233377280,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "pnpm12-install.resource.json",
+      "stage": "pnpm12-install",
+      "command": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile",
+        "--store-dir",
+        "/workspace/.native-tools/pnpm-store"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:26:38.754062+00:00",
+      "elapsedSeconds": 0.504,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 950272,
+      "maximumChildRssKiB": 45720,
+      "sampledPeakCgroupMemoryBytes": 3412582400,
+      "cgroupMemoryPeak": "4703461376",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "production-build.resource.json",
+      "stage": "production-build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--message-format=json"
+      ],
+      "cwd": "/workspace/e2e/.artifacts/native-source/cli",
+      "startedAt": "2026-10-23T11:29:23.136416+00:00",
+      "elapsedSeconds": 252.264,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 4425019392,
+      "maximumChildRssKiB": 4259448,
+      "sampledPeakCgroupMemoryBytes": 8558882816,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "production-negotiation-sandbox.resource.json",
+      "stage": "production-negotiation-sandbox",
+      "command": [
+        "node",
+        "scripts/acceptance/probe-native.ts",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate/required-capabilities.json",
+        ".artifacts/native-candidate/negotiation-sandbox.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:34:31.470799+00:00",
+      "elapsedSeconds": 1.521,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 67629056,
+      "maximumChildRssKiB": 90232,
+      "sampledPeakCgroupMemoryBytes": 9078005760,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "production-negotiation.resource.json",
+      "stage": "production-negotiation",
+      "command": [
+        "node",
+        "scripts/acceptance/probe-native.ts",
+        "/workspace/e2e/.artifacts/native-candidate-bin/production",
+        ".artifacts/native-candidate/required-capabilities.json",
+        ".artifacts/native-candidate/negotiation.json"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:33:58.675975+00:00",
+      "elapsedSeconds": 2.037,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 66199552,
+      "maximumChildRssKiB": 86768,
+      "sampledPeakCgroupMemoryBytes": 7230377984,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "source-retirement.resource.json",
+      "stage": "source-retirement",
+      "command": [
+        "node",
+        "scripts/acceptance/candidate-source.ts",
+        ".artifacts/native-candidate"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:28:15.707099+00:00",
+      "elapsedSeconds": 0.507,
+      "exitCode": 1,
+      "sampledPeakProcessGroupRssBytes": 6160384,
+      "maximumChildRssKiB": 52696,
+      "sampledPeakCgroupMemoryBytes": 8851349504,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    },
+    {
+      "file": "web-typecheck.resource.json",
+      "stage": "web-typecheck",
+      "command": [
+        "pnpm",
+        "--filter",
+        "@e2e-dev/web",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "/workspace/e2e",
+      "startedAt": "2026-10-23T11:28:17.360824+00:00",
+      "elapsedSeconds": 1.005,
+      "exitCode": 0,
+      "sampledPeakProcessGroupRssBytes": 306442240,
+      "maximumChildRssKiB": 419032,
+      "sampledPeakCgroupMemoryBytes": 8388640768,
+      "cgroupMemoryPeak": "9747456000",
+      "cgroupMemoryEventsBefore": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "cgroupMemoryEventsAfter": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+    }
+  ],
+  "finalResources": {
+    "cpu.max": "400000 100000",
+    "memory.max": "17179869184",
+    "memory.current": "6738518016",
+    "memory.peak": "12425617408",
+    "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "pids.current": "655",
+    "pids.max": "max"
+  },
+  "finalProcesses": {
+    "count": 261,
+    "states": {
+      "Z": 196,
+      "Zs": 65
+    },
+    "live": [],
+    "zombieParentCounts": {
+      "1": 261
+    },
+    "pidsCurrent": "649",
+    "pidsMax": "max",
+    "note": "Observed process table only. Scope/proxy cleanup proofs do not attest PID-1 reaping or all process ownership."
+  },
+  "sourceIntegrityConfirmed": true,
+  "files": {
+    "environment.json": "83625af655a0ce2b0d91611eec6f5434906f90843a0afe79544d4ae25bd72b05",
+    "compiler.jsonl": "65b14c3741c08f6b0d5f7e82ac005bfc75c65ee4981ebcea34928a2b0f162def",
+    "production-compiler.jsonl": "9658657d8fdc0f3cef0948eaa61258873ebe6bc74c80fac6e3b90639b44aeb80",
+    "fault-compiler.jsonl": "ebce37d541e4e31b133e1be8d72c5930d7e85a7cec3a624e7baae61e856987f5",
+    "inert-heading-compiler.jsonl": "e3f29fad97f680f1a63eb52c04972b7fbb3342b9cbcad8b61bf1b0ceba9b0e20",
+    "inert-heading-production-compiler.jsonl": "c303bdb26ee94e40837ef6a0b4f1d76b08bf257545f89dd21ddc360032986b42",
+    "required-capabilities.json": "6f162c226c6f3849cc00422a96e015aba4e122835221ab8c6d69826505ea7213",
+    "negotiation.json": "bebacee0213a6744ca8aaa5a84cade8414ccb12d63928b59254a0495d2bee205",
+    "negotiation-sandbox.json": "f780677b5509fc854079926b4af021607307e8858c512c2cfb470f9d623aaa62",
+    "fault-negotiation.json": "bd14da918b71b7b4c25f10c58f89f76883ffe2e8fb29da401919ee2086e63f8c",
+    "inert-heading-negotiation.json": "bb72d1b8c6ed336aaaed8e2afb9abc760dcb1113f0e4d522d4a5f6dd013adb6e",
+    "source-removal.result.json": "4c4e6b21349484d86296f4a9871a839ff746f0c370b9094177b51f08b9812d88",
+    "system-chromium-binding.json": "8d9bde6a2fa7f7adf5076c2828761e9ed0d5b23b6dee3d6b33f331e1b3010b56",
+    "final-process-inventory.json": "219e28f0e428927787e3fe907f29b39258e31dd59ab1c389f3306ee18b34379c",
+    "reproduce.sh": "40cff07e332f2732b27407d94b542984e457da123330e6b1a60d48fa43bc3b0b",
+    "focused-vitest.mts": "028a11eed652d9a185777f0d314c0a09450e7cd0ea880e756eb1ea0be586cf74",
+    "focused-native.mts": "0bc4f4a986131bb68c157b26c9012fe170a36e0f8aad7f8a8ca5403feb049f1e",
+    "run-stage.py": "7cf24f98204c7fb19ed4ee4985b1fa9d61998947ecf835c5f9c4758ed76d227a",
+    "run.env": "2243efe07de7683c3147c569481e7e709348cf78d0514a465c0425b5c76a9827",
+    "build-inert-heading.sh": "4a9763a58547c72abf7397180e2b0b1e6e5e1b010f829e5f2bcab542c288b44a",
+    "build-fault.sh": "b4941c54a26ea6756d7dcc8b872096fd4a296494954a6b4fcfd11f531f4bf8d9",
+    "run-final-focus.sh": "c0a84a994e4cccff569b9acdcf71c3bad029e4bb0128cc7e213fe19135e40ed5"
+  },
+  "knownLimits": [
+    "Official Playwright Chrome for Testing 156.0.8078.4 download denied by network policy: HTTP 403 Domain forbidden. No retry through another domain.",
+    "Original inert fixture used an explicit diagnostic binding to system Chromium 154.0.8037.57; official browser install remains failed. Existing fixture launch arguments are unchanged.",
+    "Default restricted execution failed production scope.open. The identical production probe passed in the approved execution context without adding browser security-disable arguments.",
+    "CI-only focused-artifact capture refused absent real GitHub producer identity. No GitHub run identity was fabricated and no CI reuse or release artifact was produced.",
+    "Source retirement remains failed. Focused successes do not waive any complete acceptance gate.",
+    "Earlier focused runs lacked the required P14 installer identity and retain unknown TS capture status. Final focused runs use the verified separate fault identity; the selected case evidence is complete, while unexecuted cases in the full-suite manifest remain unknown.",
+    "Final process inventory observed no live Chromium/native processes, but 261 dead zombie processes were owned by PID 1. Scope/proxy cleanup does not attest init reaping. No attempt was made to modify PID 1 or OS safety settings."
+  ],
+  "nextOwnership": [
+    {
+      "owner": "restart lifecycle investigator",
+      "files": [
+        "cli/src/native/client_targets.rs",
+        "cli/src/native/client_enrollment.rs",
+        "cli/src/native/client_settlement_trace.rs",
+        "scripts/acceptance/candidate-cleanup-diagnostics.ts"
+      ],
+      "proposal": "A separately authorized bounded diagnostic change: per-process attachment ordinal plus closed enums for target kind, classification source, purpose and attached/configure-started/configure-acked/detached transitions, joined by generation and operationSeq. Snapshot only currently unconfigured ordinals at RestartReady and SettlementRefused; no raw target IDs, URLs, payloads, sleeps or admission changes."
+    },
+    {
+      "owner": "existing metadata author",
+      "commit": "bdf09c9ef802511fd435445d4fd32993d61bc22e",
+      "proposal": "Retain one heading role mapping and four fixture groups; verify the same pair on official Chromium 156 once its download is permitted, then retain the full original acceptance gates."
+    },
+    {
+      "owner": "cleanup investigator",
+      "files": [
+        "packages/web/src/native-surface.ts",
+        "packages/web/tests/integration/hung-page.test.ts"
+      ],
+      "proposal": "Read-only phase correlation for closeAttempt retirement, scope.end entry and client closure. Preserve original P19 body assertions and cleanup budgets; coordinate source ownership before changes."
+    },
+    {
+      "owner": "separate P27 task / existing C03 author",
+      "proposal": "P27 and C03 were not modified or taken over in this task."
+    }
+  ]
+}

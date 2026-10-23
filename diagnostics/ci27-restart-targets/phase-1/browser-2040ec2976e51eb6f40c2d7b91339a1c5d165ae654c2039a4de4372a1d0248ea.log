@@ -1,0 +1,18 @@
+
+running 1 test
+test native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script ... FAILED
+
+failures:
+
+---- native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script stdout ----
+
+thread 'native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script' (29153) panicked at src/native/client_enrollment.rs:13416:10:
+called `Result::unwrap()` on an `Err` value: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2578 filtered out; finished in 10.65s
+
