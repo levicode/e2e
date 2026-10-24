@@ -53,7 +53,7 @@ observed_command() {
   COMMAND_STATUS=$status
 }
 selectors() {
-  "$NODE" "$HERE/selection.mjs" "$REPO" "$OUT"
+  "$NODE" "$HERE/selection.mjs" "$REPO" "$OUT" --first-cause-three
 }
 observed_cleanup_check() {
   "$NODE" --input-type=module - "$HERE/identity.mjs" "$OUT/$1.processes.jsonl.summary.json" "$(cat "$OUT/$1.observer.exit")" <<'JS'
@@ -67,6 +67,7 @@ JS
 run_batch() {
   local name=$1 package=$2 cap; local -a files project=() command
   case "$name" in
+    first-cause-three) cap=600 ;;
     priority-p41-1) cap=150 ;;
     priority-upstream-5) cap=300 ;;
     paired-canvas-2) cap=180 ;;
@@ -81,83 +82,23 @@ run_batch() {
   command=("$NODE" "$REPO/packages/$package/node_modules/vitest/vitest.mjs" run "${project[@]}" --maxWorkers=2 --bail=0
     --reporter=verbose --reporter=json "--outputFile.json=$OUT/$name.vitest.json"
     --testNamePattern "$(cat "$OUT/$name.regex.txt")" "${files[@]}")
-  if [[ "$name" == cli-cancel-P14-1 ]]; then
-    command=("$NODE" "$HERE/p14.mjs" "$REPO" "$PRODUCTION" "$FAULT" "$OUT/fault-negotiation.json" "$OUT/P14-installer-binding.json" "${command[@]}")
-  fi
-  if [[ "$name" == paired-canvas-2 ]]; then
-    command=("$NODE" "$HERE/canvas-pair.mjs" run "$REPO" "$PRODUCTION" "$FAULT" "$OUT/production-negotiation.json" "$OUT/fault-negotiation.json" "$OUT" "${command[@]}")
-  fi
+  [[ "$name" == first-cause-three && "$package" == web ]] || { printf 'Only original P01/P04/P06 allowed\n' >&2; return 2; }
+  command=("$NODE" "$HERE/first-cause.mjs" run "$REPO" "$PRODUCTION" "$FAULT" "$OUT/production-negotiation.json" "$OUT/fault-negotiation.json" "$OUT/first-cause-capture" "${command[@]}")
   state "$name" running
   (cd "$REPO/packages/$package" && observed_command "$name" /usr/bin/timeout --foreground --signal=TERM --kill-after=5s "$cap" "${command[@]}")
   state "$name" finished '' "$(cat "$OUT/$name.exit")"
   observed_cleanup_check "$name"
-  "$NODE" "$HERE/reconcile.mjs" "$HERE/runtime-manifest.json" "$OUT" "$REPO" "$name"
 }
 case "${1:-}" in
-  probe)
-    cd "$REPO"
-    "$NODE" --input-type=module -e 'import {REQUIRED_CAPABILITIES} from "./packages/web/dist/native/capabilities.js";console.log(JSON.stringify(REQUIRED_CAPABILITIES))' > "$OUT/required-capabilities.json"
-    "$NODE" --input-type=module -e 'import {REQUIRED_CAPABILITIES} from "./packages/web/dist/native/capabilities.js";console.log(JSON.stringify([...REQUIRED_CAPABILITIES,"acceptance.faults/1"]))' > "$OUT/fault-capabilities.json"
-    for label in production fault; do
-      fresh_environment
-      binary="$PRODUCTION"; capabilities="$OUT/required-capabilities.json"; verify=verify-proof
-      if [[ "$label" == fault ]]; then binary="$FAULT"; capabilities="$OUT/fault-capabilities.json"; verify=verify-fault-proof; fi
-      observed_command "$label-probe" "E2E_CHROMIUM_EXECUTABLE=$CHROME" /usr/bin/timeout --foreground --signal=TERM --kill-after=5s 300         "$NODE" scripts/acceptance/probe-native.ts "$binary" "$capabilities" "$OUT/$label-negotiation.json"
-      test "$COMMAND_STATUS" = 0
-      observed_cleanup_check "$label-probe"
-      "$NODE" "$HERE/identity.mjs" "$verify"
-    done
-    ;;
   cases)
     "$NODE" "$HERE/identity.mjs" verify-proof
     "$NODE" "$HERE/identity.mjs" verify-fault-proof
     selectors
-    # Original P41 is one ordinary Vitest batch, counted once within333.
-    # No focused collector completeness is an admission prerequisite.
     fresh_environment
-    run_batch priority-p41-1 web
-    # Existing wrapper executes only suite web-unit and verifies the already produced proof.
-    # It does not launch probe/installer/browser stages; no stdout-derived receipt is manufactured.
-    fresh_environment
-    test ! -e "$REPO/.artifacts/native-candidate/web-unit.result.json"
-    observed_command canvas-web-unit /usr/bin/timeout --foreground --signal=TERM --kill-after=5s 600 "$NODE" "$REPO/scripts/acceptance/candidate-web.ts" web-unit "$PRODUCTION" "$OUT/production-negotiation.json" "$REPO/.artifacts/native-candidate"
-    for kind in result vitest; do [[ ! -e "$REPO/.artifacts/native-candidate/web-unit.$kind.json" ]] || cp "$REPO/.artifacts/native-candidate/web-unit.$kind.json" "$OUT/canvas-web-unit.$kind.json"; done
-    test "$COMMAND_STATUS" = 0
-    observed_cleanup_check canvas-web-unit
-    for group in priority-upstream-5 priority-old-failures-6 original-remaining-296 paired-canvas-2 new-controls-3 callbacks-14; do
-      fresh_environment
-      package=web; [[ "$group" == callbacks-14 ]] && package=e2e
-      run_batch "$group" "$package"
-    done
-    "$NODE" "$HERE/canvas-pair.mjs" verify "$REPO" "$PRODUCTION" "$FAULT" "$OUT/production-negotiation.json" "$OUT/fault-negotiation.json" "$OUT"
-    fresh_environment
-    observed_command official-install /usr/bin/timeout --foreground --signal=TERM --kill-after=5s 1800 "$PRODUCTION" install
-    observed_cleanup_check official-install
-    if [[ "$COMMAND_STATUS" == 0 ]]; then
-      if "${ENV[@]}" "$NODE" "$REPO/scripts/acceptance/installed-chromium.ts" "$ROOT/home/.agent-browser/browsers" "$OUT/cli-cache-before.json" > "$OUT/cli-cache-executable.txt" 2> "$OUT/cli-cache-preflight.stderr"; then
-        CACHE_CHROME=$(cat "$OUT/cli-cache-executable.txt")
-        "${ENV[@]}" "$CACHE_CHROME" --version > "$OUT/cli-cache-version.txt"
-        "${ENV[@]}" /usr/bin/ldd "$CACHE_CHROME" > "$OUT/cli-cache.ldd.txt" 2>&1
-        ! grep -Fq 'not found' "$OUT/cli-cache.ldd.txt"
-        run_batch cli-installed-1 web
-        set +e
-        "${ENV[@]}" "$NODE" "$REPO/scripts/acceptance/installed-chromium.ts" "$ROOT/home/.agent-browser/browsers" "$OUT/cli-cache-after.json" > "$OUT/cli-cache-executable-after.txt" 2> "$OUT/cli-cache-final.stderr"
-        CACHE_STATUS=$?
-        if [[ "$CACHE_STATUS" == 0 ]]; then cmp "$OUT/cli-cache-before.json" "$OUT/cli-cache-after.json"; CACHE_STATUS=$?; fi
-        printf '%s\n' "$CACHE_STATUS" > "$OUT/cli-cache-unchanged.exit"
-        set -e
-        test "$CACHE_STATUS" = 0
-      else
-        state cli-installed-1 not-run 'Official installer did not establish a verified exact warm-cache identity'
-      fi
-    else
-      state cli-installed-1 not-run 'Official native install failed; no fake warm cache'
-    fi
-    fresh_environment
-    "$NODE" "$HERE/identity.mjs" verify-fault-proof
-    run_batch cli-cancel-P14-1 web
-    fresh_environment
-    run_batch decision-cli-4 decision
+    mkdir -m700 "$OUT/first-cause-capture"
+    run_batch first-cause-three web
+    # Preserve the original Vitest exit, including assertion/cleanup failures.
+    exit "$(cat "$OUT/first-cause-three.exit")"
     ;;
-  *) printf '%s\n' 'Explicit probe or cases command required' >&2; exit 2 ;;
+  *) printf '%s\n' 'Only explicit cases command permitted' >&2; exit 2 ;;
 esac

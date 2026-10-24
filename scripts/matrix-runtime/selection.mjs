@@ -1,5 +1,6 @@
 // Data-only preparation. Imports Vitest's pure task-name utilities, never test files.
 import assert from 'node:assert/strict';
+import { firstCauseManifest } from './first-cause.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -7,9 +8,12 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const [source, output, priorEvidence] = process.argv.slice(2);
+const [source, output, mode] = process.argv.slice(2);
+assert.ok(process.argv.slice(2).length<=3);
+const priorEvidence=mode==='--first-cause-three'?undefined:mode;
 assert.ok(source && output, 'Usage: node selection.mjs SOURCE OUTPUT [PRIOR_EVIDENCE]');
-const manifest = JSON.parse(readFileSync(path.join(here, 'runtime-manifest.json')));
+const originalManifest = JSON.parse(readFileSync(path.join(here, 'runtime-manifest.json')));
+const manifest=mode==='--first-cause-three'?firstCauseManifest(originalManifest):originalManifest;
 const require = createRequire(path.join(path.resolve(source), 'packages/web/package.json'));
 const packageFile = require.resolve('vitest/package.json');
 assert.equal(JSON.parse(readFileSync(packageFile)).version, '5.0.1');
