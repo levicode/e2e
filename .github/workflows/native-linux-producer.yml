@@ -1,0 +1,213 @@
+# Local recipe, pinned to the published and read-back-verified producer source tree.
+# This is producer-unit evidence, never browser/production acceptance or release evidence.
+name: native Linux six producer witnesses (not acceptance or release)
+on:
+  push:
+    branches: [implement/native-linux-producer-ci]
+permissions:
+  contents: read
+concurrency:
+  group: native-linux-producer-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  producer-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      NATIVE_SHA: 0c61010f6f12c273c16af8a00c072ff2c278718c
+      NATIVE_TREE: 5b5378fad4f4465811f4052e1cfd1c8a9e589092
+      NATIVE_LOCK_SHA256: 652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1
+      CARGO_BUILD_JOBS: '1'
+      RUST_MIN_STACK: '16777216'
+      RUSTUP_TOOLCHAIN: stable
+      RUST_BACKTRACE: '1'
+    steps:
+      - name: Initialize failure-preserving diagnostics
+        id: initialize
+        run: |
+          set -euo pipefail
+          export EVIDENCE_DIR="$RUNNER_TEMP/native-linux-producer"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/native-linux-producer-target"
+          export CARGO_HOME="$RUNNER_TEMP/native-linux-producer-cargo"
+          printf 'EVIDENCE_DIR=%s\nCARGO_TARGET_DIR=%s\nCARGO_HOME=%s\n' "$EVIDENCE_DIR" "$CARGO_TARGET_DIR" "$CARGO_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' \
+            'Six pure native producer witnesses only, using mock CDP on loopback.' \
+            'No browser/download, broad harness execution, production build or formal acceptance.' \
+            'Cargo test --no-run compiles the default harness; only six exact names may execute.' \
+            'Clippy profile: dev. Harness profile: test (dev-derived). No default features.' \
+            'Native build.rs may create an ignored dashboard placeholder, not a dashboard build.' \
+            'not-run, zero matched, ignored, timeout and nonzero exits are never success.' \
+            > "$EVIDENCE_DIR/SCOPE.txt"
+          printf 'RUST_MIN_STACK=%s\nCARGO_BUILD_JOBS=%s\nRUSTUP_TOOLCHAIN=%s\n' "$RUST_MIN_STACK" "$CARGO_BUILD_JOBS" "$RUSTUP_TOOLCHAIN" > "$EVIDENCE_DIR/build-environment.txt"
+          for phase in binding source-before toolchain format clippy default-test-build exact-tests source-after receipt; do
+            printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+            : > "$EVIDENCE_DIR/$phase.stdout.log"
+            : > "$EVIDENCE_DIR/$phase.stderr.log"
+          done
+      - name: Require an immutable published native commit binding
+        id: binding
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/binding.exit"' EXIT
+          [[ "$NATIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$NATIVE_TREE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$NATIVE_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]
+      - name: Check out the actual workflow recipe separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - name: Check out the frozen native source, never a moving branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: ${{ env.NATIVE_SHA }}
+          path: native-source
+          persist-credentials: false
+      - name: Verify clean immutable source and host before compiling
+        id: source
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/source-before.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/source-before.stdout.log") 2> >(tee "$EVIDENCE_DIR/source-before.stderr.log" >&2)
+          date -u > "$EVIDENCE_DIR/started-at-utc.txt"
+          cat /etc/os-release > "$EVIDENCE_DIR/linux-version.txt"
+          uname -a > "$EVIDENCE_DIR/linux-host.txt"
+          lscpu > "$EVIDENCE_DIR/linux-resources.txt"
+          free -h >> "$EVIDENCE_DIR/linux-resources.txt"
+          df -h "$RUNNER_TEMP" > "$EVIDENCE_DIR/runner-disk.txt"
+          python3 --version > "$EVIDENCE_DIR/python-version.txt"
+          test "$RUNNER_OS" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(git -C recipe rev-parse HEAD)" = "$RECIPE_SHA"
+          test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SHA"
+          test "$(git -C native-source rev-parse HEAD^{tree})" = "$NATIVE_TREE"
+          test "$(sha256sum native-source/cli/Cargo.lock | cut -d' ' -f1)" = "$NATIVE_LOCK_SHA256"
+          for repo in recipe native-source; do
+            git -C "$repo" rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/$repo-before.identity.txt"
+            git -C "$repo" status --porcelain --untracked-files=all > "$EVIDENCE_DIR/$repo-before.status.txt"
+            test ! -s "$EVIDENCE_DIR/$repo-before.status.txt"
+          done
+          sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/lock-before.sha256"
+          sha256sum recipe/.github/workflows/native-linux-producer.yml recipe/scripts/run-producer-tests.py > "$EVIDENCE_DIR/recipe-before.sha256"
+          cp recipe/scripts/run-producer-tests.py "$EVIDENCE_DIR/runner-reviewed.py.txt"
+          printf 'event_commit=%s\nrecipe_commit=%s\n' "$GITHUB_SHA" "$RECIPE_SHA" > "$EVIDENCE_DIR/recipe-context.txt"
+      - name: Set up and record the exact native Rust host toolchain
+        id: toolchain
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/toolchain.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/toolchain.stdout.log") 2> >(tee "$EVIDENCE_DIR/toolchain.stderr.log" >&2)
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup show active-toolchain > "$EVIDENCE_DIR/active-toolchain.txt"
+          rustc -Vv > "$EVIDENCE_DIR/rustc-version.txt"
+          cargo -Vv > "$EVIDENCE_DIR/cargo-version.txt"
+          cargo clippy --version > "$EVIDENCE_DIR/clippy-version.txt"
+          cargo fmt --version > "$EVIDENCE_DIR/rustfmt-version.txt"
+          test "$(sed -n 's/^host: //p' "$EVIDENCE_DIR/rustc-version.txt")" = x86_64-unknown-linux-gnu
+      - name: Check formatting, strict all-target Clippy and build the default harness
+        id: compile
+        working-directory: native-source/cli
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+          failed=0
+          check_boundary() {
+            local name="$1" status=0
+            shift
+            printf '%q ' "$@" > "$EVIDENCE_DIR/$name.command.txt"
+            printf '\n' >> "$EVIDENCE_DIR/$name.command.txt"
+            if "$@" > "$EVIDENCE_DIR/$name.stdout.log" 2> "$EVIDENCE_DIR/$name.stderr.log"; then status=0; else status=$?; failed=1; fi
+            printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.exit"
+            cat "$EVIDENCE_DIR/$name.stdout.log" "$EVIDENCE_DIR/$name.stderr.log"
+          }
+          check_boundary format cargo fmt -- --check
+          check_boundary clippy cargo clippy --locked --profile dev --no-default-features --all-targets -- -D warnings
+          check_boundary default-test-build cargo test --locked --profile test --no-default-features --no-run --message-format=json
+          test "$failed" -eq 0
+      - name: List and run only the six exact producer tests, preserving every exit
+        id: exact
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/exact-tests.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/exact-tests.stdout.log") 2> >(tee "$EVIDENCE_DIR/exact-tests.stderr.log" >&2)
+          python3 recipe/scripts/run-producer-tests.py \
+            --cargo-json "$EVIDENCE_DIR/default-test-build.stdout.log" \
+            --build-exit "$EVIDENCE_DIR/default-test-build.exit" \
+            --manifest "$GITHUB_WORKSPACE/native-source/cli/Cargo.toml" \
+            --target-dir "$CARGO_TARGET_DIR" \
+            --evidence-dir "$EVIDENCE_DIR/exact" \
+            --timeout-seconds 30
+      - name: Verify unchanged source, lock and recipe even after failures
+        id: source_final
+        if: ${{ always() }}
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-linux-producer}"
+          mkdir -p "$EVIDENCE_DIR"
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/source-after.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/source-after.stdout.log") 2> >(tee "$EVIDENCE_DIR/source-after.stderr.log" >&2)
+          failed=0
+          for repo in recipe native-source; do
+            git -C "$repo" rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/$repo-after.identity.txt" || failed=1
+            git -C "$repo" status --porcelain --untracked-files=all > "$EVIDENCE_DIR/$repo-after.status.txt" || failed=1
+            git -C "$repo" ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/$repo-after.ignored.txt" || failed=1
+            test ! -s "$EVIDENCE_DIR/$repo-after.status.txt" || failed=1
+            cmp "$EVIDENCE_DIR/$repo-before.identity.txt" "$EVIDENCE_DIR/$repo-after.identity.txt" || failed=1
+          done
+          sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/lock-after.sha256" || failed=1
+          sha256sum recipe/.github/workflows/native-linux-producer.yml recipe/scripts/run-producer-tests.py > "$EVIDENCE_DIR/recipe-after.sha256" || failed=1
+          cmp "$EVIDENCE_DIR/lock-before.sha256" "$EVIDENCE_DIR/lock-after.sha256" || failed=1
+          cmp "$EVIDENCE_DIR/recipe-before.sha256" "$EVIDENCE_DIR/recipe-after.sha256" || failed=1
+          test "$(git -C recipe rev-parse HEAD)" = "$RECIPE_SHA" || failed=1
+          test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SHA" || failed=1
+          test "$(git -C native-source rev-parse HEAD^{tree})" = "$NATIVE_TREE" || failed=1
+          test "$(sha256sum native-source/cli/Cargo.lock | cut -d' ' -f1)" = "$NATIVE_LOCK_SHA256" || failed=1
+          test "$failed" -eq 0
+      - name: Require all six executed passes and every prerequisite for the scoped receipt
+        id: receipt
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-linux-producer}"
+          mkdir -p "$EVIDENCE_DIR"
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/receipt.exit"' EXIT
+          for phase in binding source-before toolchain format clippy default-test-build exact-tests source-after; do
+            test "$(cat "$EVIDENCE_DIR/$phase.exit")" = 0
+          done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          result = json.loads(Path(os.environ['EVIDENCE_DIR'], 'exact/summary.json').read_text())
+          assert result['passed'] is True
+          assert len(result['tests']) == 6
+          assert all(row['passed'] is True and row['list']['unique_match'] is True and row['run']['exit'] == 0 for row in result['tests'])
+          assert result['harness']['sha256_before'] == result['harness']['sha256_after']
+          PY
+          printf '%s\n' 'Six exact native producer tests passed. Not formal production acceptance or release evidence.' > "$EVIDENCE_DIR/SCOPED-PASS.txt"
+      - name: Record actual step outcomes, not assumed success
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-linux-producer}"
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+      - name: Preserve all diagnostics even when a phase failed or never ran
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: linux-six-producer-diagnostics-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-linux-producer/
+          if-no-files-found: error
+          retention-days: 7
