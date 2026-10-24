@@ -86,7 +86,7 @@ jobs:
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: 8b535d4339cf15776755c56998016e248f4b6cf6
+        ref: ffcfad2a81012f22c7d1f03f726dd7b6e920ce5e
         fetch-depth: 2
         path: source
         persist-credentials: false

@@ -1,21 +1,29 @@
 diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
 --- a/cli/src/native/cdp/client.rs
 +++ b/cli/src/native/cdp/client.rs
-@@ -642,6 +642,13 @@
+@@ -618,6 +618,12 @@
+     owner: Option<Arc<OwnerDebtLedger>>,
+ }
+ 
++#[cfg(test)]
++type WorkerStartupNoReceiptGate = (
++    oneshot::Sender<(String, std::time::Instant)>,
++    oneshot::Receiver<()>,
++);
++
+ struct CdpTransport {
+     ws_tx: WsTx,
+     socket: socket2::Socket,
+@@ -642,6 +648,8 @@
      #[cfg(test)]
      worker_startup_decision_gate:
          std::sync::Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
 +    #[cfg(test)]
-+    worker_startup_no_receipt_gate: std::sync::Mutex<
-+        Option<(
-+            oneshot::Sender<(String, std::time::Instant)>,
-+            oneshot::Receiver<()>,
-+        )>,
-+    >,
++    worker_startup_no_receipt_gate: std::sync::Mutex<Option<WorkerStartupNoReceiptGate>>,
  }
  
  /// Removes a pending entry if `send_command` is cancelled mid-await (e.g. an
-@@ -1153,6 +1160,8 @@
+@@ -1153,6 +1161,8 @@
                  next_tap_id: AtomicU64::new(1),
                  #[cfg(test)]
                  worker_startup_decision_gate: std::sync::Mutex::new(None),
@@ -24,7 +32,7 @@ diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
              }),
          })
      }
-@@ -1694,6 +1703,21 @@
+@@ -1694,6 +1704,21 @@
              } else {
                  None
              };
@@ -46,7 +54,7 @@ diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
              return Err(ServiceWorkerStartupFailure {
                  message: errors.join("; "),
                  error: ProtocolError::BrowserFailure,
-@@ -2297,6 +2321,23 @@
+@@ -2297,6 +2322,23 @@
          let (entered, observed) = oneshot::channel();
          let (release, waiting) = oneshot::channel();
          *self.transport.worker_startup_decision_gate.lock().unwrap() = Some((entered, waiting));
