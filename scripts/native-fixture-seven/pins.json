@@ -1,0 +1,156 @@
+{
+  "formalNativeSha": "88a7b674d45b784f5578369b8d2bb9a07e430eae",
+  "formalNativeTree": "37e8593d44f514afcfa633c94a374b3213ab7dda",
+  "candidateTree": "c0f32f260978e3631c4fce79513780820dc7218d",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "patchSha256": "f55cab84b438e84e7c11ad64b20bc3e072974f12c3d44071365430b44e197ca6",
+  "rustToolchain": "1.99.1",
+  "nodeVersion": "v24.19.0",
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_actions.rs",
+      "beforeSha256": "04bf29ab3a00252cf5ed425a0107b40c27f98c7497c1b78d365477f2356b2214",
+      "afterSha256": "e88116ced75fb9c9382e55900a245588e3bfac3114ab3e6d7308da6ad8ff799e"
+    },
+    {
+      "path": "cli/src/native/client_browser_point_debt_tests.rs",
+      "beforeSha256": "4d5ea06e90e960cbc28d42275ae0c15d604cf0e3545dfebd8e5da8c25224abae",
+      "afterSha256": "c5a658ebd17b4d0810802315e06dded6d2e3550f9649cda273cfc41afc38bb79"
+    },
+    {
+      "path": "cli/src/native/client_browser_reconnect_tests.rs",
+      "beforeSha256": "528a283295ce82c054e095384c90b0f9de8b6f395fee1f80c8f15c88a28cd48b",
+      "afterSha256": "8940c3f6ef1a29f0fcfb2eae9022b1448cc7e9afe0cc1874eecd50a5f71afc9e"
+    },
+    {
+      "path": "cli/src/native/client_browser_restart_transport_tests.rs",
+      "beforeSha256": "94f9b06ec72efaab040e461aa7fd1cf371b86f724e4505e798a3fb2adcef6e9d",
+      "afterSha256": "35d9e74d34c208c0eb3c522cb48db691c189cb31eca7a7678cda0d9bf79b3209"
+    },
+    {
+      "path": "cli/src/native/client_browser_state_tests.rs",
+      "beforeSha256": "a67ffd06dd87102bf0b5a3211d6a34678f5b175b33aec0122bc02c152f644d60",
+      "afterSha256": "cbeb0e0d789638677730e616fbe2cc387619096d04cf71b1c397cec89d65e908"
+    },
+    {
+      "path": "cli/src/native/client_browser_trace_retirement_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "9322afeec46692cc7feddba344d64b5b1306f1e921290a229e9db7557efda6ee"
+    },
+    {
+      "path": "cli/src/native/client_enrollment.rs",
+      "beforeSha256": "761f0b3b4fd65e29d97b5d1d63eb2a0d7be7252472af9e22f32340b2d56a6fb9",
+      "afterSha256": "1995ebed5552723f6ec923072aebb598743740957f7ff6f0416e463eaf0323e7"
+    },
+    {
+      "path": "cli/src/native/client_eval_network_watermark_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "a4ffe0cf35972fa34122c0fe56123f56984d56ebf460ec3daf8791652932c000"
+    },
+    {
+      "path": "cli/tests/fixtures/native-observation-query-matcher.cjs",
+      "beforeSha256": "e6005ddf8176bfa660f38faa57de2d1d73b4d888098a46e532a6d4bf7cfc1358",
+      "afterSha256": "a7863239fb499e57ba6d4948ac9ed2710dbb914b31478ba375d3c32aa3ec3fd0"
+    }
+  ],
+  "originalPatchInputs": [
+    {
+      "name": "p06-v2",
+      "path": "/workspace/shared/agent-browser-p06-framed-eof-red-20261024-v2.patch",
+      "sha256": "7cc199530e567c3412e9b784e95a83ed9cec32586046b82e5b83ace334d7ee05"
+    },
+    {
+      "name": "cold-unarmed",
+      "path": "/workspace/shared/e2e-cold-unarmed-review-20261024/unarmed-recording-producer.patch",
+      "sha256": "6791c10e9488a3594445789ba24469dd44008b5e95ddb035a0082b88b7f61464"
+    },
+    {
+      "name": "misleading-query",
+      "path": "/workspace/shared/e2e-retirement-misleading-query-20261024/native-producer-draft.patch",
+      "sha256": "9f4d4cd7eafb9a3ce6492d69cf99fcfd5a0b5ee66a7c47d15fa3fcc94ffa3dca"
+    },
+    {
+      "name": "response-watermark",
+      "path": "/workspace/shared/agent-browser-response-watermark-test-20261024.patch",
+      "sha256": "e0f0f2fa348167aa146b3a49cb5a37b118824b53e6d1434eea420ba53527fd27"
+    },
+    {
+      "name": "trace-retirement",
+      "path": "/workspace/shared/trace-retirement-characterization-20261024/trace-retirement-test-only.patch",
+      "sha256": "5e74e516f5361809c68c77e663cf1a6ef62b567ed33b37e83b975ff765bc41b5"
+    },
+    {
+      "name": "p06-v2-format-only",
+      "path": "/tmp/native-fixture-seven-20261024/p06-v2-format-only.patch",
+      "sha256": "b6b9e07ff93df7b7b0f863768d33ace6b82a57346242d18936ca42cb0699ea36"
+    }
+  ],
+  "cases": [
+    {
+      "id": "p06-characterization",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_currently_quarantines_before_reconnect_verification",
+      "expected": "passed",
+      "category": "current-behavior-characterization",
+      "configuration": "default"
+    },
+    {
+      "id": "p06-recovery-red",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay",
+      "expected": "failed",
+      "failureMarker": "P06 exact-identity reconnect never reached verification:",
+      "category": "intentional-unfixed-recovery-entry-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "cold-unarmed",
+      "name": "native::client_actions::tests::recording_unarmed_page_hooks_and_stop_are_resource_free_noops",
+      "expected": "passed",
+      "category": "retirement-producer-candidate-not-retired",
+      "configuration": "default"
+    },
+    {
+      "id": "misleading-query",
+      "name": "native::client_actions::tests::live_query_publication_then_tap_refuses_ambiguity_without_input",
+      "expected": "passed",
+      "category": "retirement-producer-candidate-not-retired",
+      "configuration": "default"
+    },
+    {
+      "id": "response-watermark",
+      "name": "native::client_enrollment::tests::eval_capture_network_reader_ahead_of_apply_is_scope_unavailable",
+      "expected": "passed",
+      "category": "scope-unavailable-characterization-not-e2e-root-cause",
+      "configuration": "default"
+    },
+    {
+      "id": "trace-raw-ack-restoration",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_raw_ack_then_restore_past_transport_grace_preserves_owner",
+      "expected": "passed",
+      "category": "trace-retirement-characterization-not-e2e-root-cause",
+      "configuration": "faults"
+    },
+    {
+      "id": "trace-unacknowledged-raw",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_unacknowledged_raw_capture_cannot_regain_owner",
+      "expected": "passed",
+      "category": "trace-retirement-negative-control",
+      "configuration": "faults"
+    }
+  ],
+  "pendingScreenshotPatch": false,
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    },
+    "faults": {
+      "features": [
+        "acceptance-faults"
+      ],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "publishedNativeSha": "64315733808267b10be34f179f2a2daf4fd644ee"
+}
