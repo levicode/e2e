@@ -1,0 +1,3322 @@
+{
+  "schemaVersion": 1,
+  "kind": "original-matrix-continuation",
+  "diagnosticOnly": true,
+  "prior": {
+    "runId": 40116161447,
+    "artifactId": 12568383052,
+    "artifactUrl": "https://github.com/levicode/e2e/actions/runs/40116161447/artifacts/12568383052",
+    "artifactZipSha256": "70086671cd064a4ef08b3077c8a2ee1ba42ad85178820b2bbf4e3af4e2c4ba28",
+    "artifactZipBytes": 188432,
+    "recipeSha": "1cc24a8c8dbbdce028511e0b2e879bb0ab1283fc",
+    "recipeTree": "73d71b51fa6353fd356dd63732ee169475315868",
+    "repoRoot": "/home/runner/work/e2e/e2e/e2e-source",
+    "sourceSha": "0e19094382c3959d3c52c865c1066c3e59b911b7",
+    "sourceTree": "238ef7ffdabc655885385846531d4e3ee2dc2ad2",
+    "nativeSha": "2647b4c5e9439dcf620ce6726883bab65b0fc2ca",
+    "nativeTree": "f61baf5f27586108a7ac6c8bde7e9aa985428ad1",
+    "binarySha256": "fa5fbad01243472bb82db38a3a4790b072fe9e1114e7f0adc6dc2a494b3edd02",
+    "artifacts": {
+      "original-noncli-304.vitest.json": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "new-4.vitest.json": "3dfd5e4bd103130498575b3eb8a1fc37da5edb3f72d6f7e120058455532a2dae",
+      "callbacks-14.vitest.json": "122f1535258d189bbf86ee9d977067609d2f50957c956026f09ef0e9427a15b0",
+      "cli-installed-1.vitest.json": "da8488bdfbd29626968fdb15483c13fdd9f869e585dc8ad53e78602a7a1bcb74",
+      "original-noncli-304.state.json": "f8727b417a15cea8aa78fae944d2360f597a1eba9455e795725fdd06159a79c5",
+      "new-4.state.json": "58fc094a954c28bb61f021f2b8d5cc3f8e1a7f54ef563811abdbe946d6714de4",
+      "callbacks-14.state.json": "58fc094a954c28bb61f021f2b8d5cc3f8e1a7f54ef563811abdbe946d6714de4",
+      "cli-installed-1.state.json": "58fc094a954c28bb61f021f2b8d5cc3f8e1a7f54ef563811abdbe946d6714de4",
+      "cli-cancel-P14-1.state.json": "d99998a7019d82206a55c9cd150bbdd3bad6bdfeba40f296739c06d5331ef600",
+      "source-before.json": "193dd7a5c311971b22d9a2a18fde60a26854edbb3bf15097fae3f4d3ea4a26ce",
+      "source-after.json": "193dd7a5c311971b22d9a2a18fde60a26854edbb3bf15097fae3f4d3ea4a26ce",
+      "images-before.json": "a87c1982dc9336083b48df1f7de0dd2c907d7bee4493f1725e3c977779286a6a",
+      "images-after.json": "a87c1982dc9336083b48df1f7de0dd2c907d7bee4493f1725e3c977779286a6a",
+      "artifact-identity.json": "9ac00fbc3c3e99eed4b0c900823ca5861985eaa6b86bf3cab6642d27c2502bf0",
+      "dist-before.json": "103883777ac7b58f13769166e6802b7544f04c65e991c295826a54a21a9155da",
+      "dist-after.json": "103883777ac7b58f13769166e6802b7544f04c65e991c295826a54a21a9155da",
+      "postrun-identities.json": "9fd8c1661c978a1ebd3a3b29c7ecfa72f250502e11a214a85c0263c62f6cb39c",
+      "production-negotiation.json": "a66239ede5843913d8e0c69ebe51de2708aab5fd0629ad16d0412710921aa8a3",
+      "required-capabilities.json": "c91063135ec7c97a8cd0ecac6a0da597b980e9bf644c25dfee2a617c076d8b3b",
+      "case-ledger.json": "e0c38e779e1c3aef7fcfac1366db51194f0ac7021de252ba2ff306548dfbe343",
+      "summary.json": "5aa2de9c67ba802209696ff2e6c2732adf859ed41b319aa9cf3aa38eee573752"
+    }
+  },
+  "retained": [
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "does not mistake the iframe host for an editable control when its button has focus",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 10,
+      "assertionIndex": 8
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads a sentence with an inline link whole and keeps the link as its own node under it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 0
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads emphasis, code, and spans in place and lists none of them again",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 1
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "keeps an inline node named by a test id while its words stay in the sentence",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 2
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "keeps an inline element that offers an action listed, its words still in the sentence",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 3
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "lists the children of a wrapper with no text of its own, as before",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 4
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "separates words at block children, line breaks, and form controls, and reads no hidden inline text",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 5
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads the shadow tree an inline custom element renders, open or closed, and the light text it slots",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 6
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads no slotted text a hidden slot hides, and lists a slotted child that shows itself again",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 7
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "keeps listing the inline text of a line too long for the text bound, so nothing past the cut is lost",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 14,
+      "assertionIndex": 8
+    },
+    {
+      "file": "packages/web/tests/integration/native-capture-contract.test.ts",
+      "fullName": "masks iframe password pixels in both observations and artifacts without blanking public pixels",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 16,
+      "assertionIndex": 0
+    },
+    {
+      "file": "packages/web/tests/integration/native-capture-contract.test.ts",
+      "fullName": "protects closed-shadow password pixels and restores the live field after capture",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 16,
+      "assertionIndex": 1
+    },
+    {
+      "file": "packages/web/tests/integration/native-state-roundtrip.test.ts",
+      "fullName": "restores cookies, local storage and structured IndexedDB before the first app script without bootstrap requests",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 17,
+      "assertionIndex": 0
+    },
+    {
+      "file": "packages/web/tests/integration/observation-hrefs.test.ts",
+      "fullName": "reports link targets as origin and whole path, marking a dropped query, fragment, or opaque payload",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 19,
+      "assertionIndex": 0
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides stringify",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "failed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 20,
+      "assertionIndex": 0
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides bound-stringify",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 20,
+      "assertionIndex": 1
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides object-toJSON",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 20,
+      "assertionIndex": 2
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides array-toJSON",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 20,
+      "assertionIndex": 3
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides function-toString",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 20,
+      "assertionIndex": 4
+    },
+    {
+      "file": "packages/web/tests/integration/observation.test.ts",
+      "fullName": "collects captured metadata while published element handles stay actionable",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 21,
+      "assertionIndex": 0
+    },
+    {
+      "file": "packages/web/tests/integration/route-announcer.test.ts",
+      "fullName": "omits the announcer empty or populated and keeps the app alert",
+      "caseId": "P43",
+      "partition": "original-noncli-304",
+      "status": "passed",
+      "report": "original-noncli-304.vitest.json",
+      "reportSha256": "1adc6b28c0b2efed779d5df7659bb54575a2c9579caa8d2ffc8c168cf7f93294",
+      "suiteIndex": 30,
+      "assertionIndex": 0
+    }
+  ],
+  "selected": [
+    {
+      "file": "packages/web/tests/integration/app-log.test.ts",
+      "fullName": "app log reports console output, uncaught exceptions, and error responses, one line each",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "app log"
+      ],
+      "title": "reports console output, uncaught exceptions, and error responses, one line each"
+    },
+    {
+      "file": "packages/web/tests/integration/app-log.test.ts",
+      "fullName": "app log tells where the page went, apart from its own navigations, the screen each action left, and the browser",
+      "caseId": "P01",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "app log"
+      ],
+      "title": "tells where the page went, apart from its own navigations, the screen each action left, and the browser"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-attach.test.ts",
+      "fullName": "web engine over CDP attaches to the remote, drives an attempt, and detaches on dispose without killing it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine over CDP"
+      ],
+      "title": "attaches to the remote, drives an attempt, and detaches on dispose without killing it"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-attach.test.ts",
+      "fullName": "web engine over CDP reacquires a dropped remote at the next attempt by resolving the endpoint again",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine over CDP"
+      ],
+      "title": "reacquires a dropped remote at the next attempt by resolving the endpoint again"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-attach.test.ts",
+      "fullName": "web engine over CDP never caches a browser that connects after the init was cancelled",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine over CDP"
+      ],
+      "title": "never caches a browser that connects after the init was cancelled"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "native CDP fault relay forwards traffic, drops only its connected peers, and accepts a fresh connection",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "native CDP fault relay"
+      ],
+      "title": "forwards traffic, drops only its connected peers, and accepts a fresh connection"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery fixes host oracle defaults before its first attachment (noDefaults: false)",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "fixes host oracle defaults before its first attachment (noDefaults: false)"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery fixes host oracle defaults before its first attachment (noDefaults: true)",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "fixes host oracle defaults before its first attachment (noDefaults: true)"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery leaves the host untouched until first open and allows a pre-open dialog handler",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "leaves the host untouched until first open and allows a pre-open dialog handler"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery leaves the host untouched until first video and allows a pre-open dialog handler",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "leaves the host untouched until first video and allows a pre-open dialog handler"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery activates the borrowed first page through the registered dialog handler before provider recording",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "activates the borrowed first page through the registered dialog handler before provider recording"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery dismisses an unhandled activated beforeunload on first open instead of silently accepting it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "dismisses an unhandled activated beforeunload on first open instead of silently accepting it"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery dismisses an unhandled activated beforeunload on first video instead of silently accepting it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "dismisses an unhandled activated beforeunload on first video instead of silently accepting it"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery keeps the exact page, document state, storage, viewport, routes, and dialog handlers",
+      "caseId": "P04",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "keeps the exact page, document state, storage, viewport, routes, and dialog handlers"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery emulates the configured and requested media on the persistent page, after reconnect too",
+      "caseId": "P05",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "emulates the configured and requested media on the persistent page, after reconnect too"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery runs configured and test init scripts once per document, after reconnect too",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "runs configured and test init scripts once per document, after reconnect too"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery fails an uncertain click without reconnecting or dispatching it twice",
+      "caseId": "P06",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "fails an uncertain click without reconnecting or dispatching it twice"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery rejects a different browser and never falls back to the provisioning resolver",
+      "caseId": "P07",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "rejects a different browser and never falls back to the provisioning resolver"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery rejects a missing active target even when another tab has the same URL",
+      "caseId": "P08",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "rejects a missing active target even when another tab has the same URL"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery bounds a hung reconnect resolver and propagates cancellation to it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "bounds a hung reconnect resolver and propagates cancellation to it"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery provisions a fresh browser for each attempt and refuses accidental reuse",
+      "caseId": "P09",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "provisions a fresh browser for each attempt and refuses accidental reuse"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery shares recovery between concurrent operations while a cancelled waiter dispatches nothing",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "shares recovery between concurrent operations while a cancelled waiter dispatches nothing"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery counts reconnect time against the operation budget",
+      "caseId": "P10",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "counts reconnect time against the operation budget"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery resumes video recording on the recovered page",
+      "caseId": "P11",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "resumes video recording on the recovered page"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery recovers before arming a download waiter and runs its trigger once",
+      "caseId": "P12",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "recovers before arming a download waiter and runs its trigger once"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery allows direct test-code mouse input using current geometry while observation-derived taps stay stale",
+      "caseId": "P44",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "allows direct test-code mouse input using current geometry while observation-derived taps stay stale"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery requires new evidence for focused engine keyboard input after recovery while direct test input remains available",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "requires new evidence for focused engine keyboard input after recovery while direct test input remains available"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery rejects an observation that finishes during recovery and still requires new evidence",
+      "caseId": "P13",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "rejects an observation that finishes during recovery and still requires new evidence"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery masks password fields in light and closed shadow DOM before and after reconnect",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "masks password fields in light and closed shadow DOM before and after reconnect"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery captures masked pixels from a borrowed background page without changing either tab focus or visibility",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "captures masked pixels from a borrowed background page without changing either tab focus or visibility"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery masks a new closed root after disconnected navigation without relying on a JavaScript tracking hook",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "CDP session recovery"
+      ],
+      "title": "masks a new closed root after disconnected navigation without relying on a JavaScript tracking hook"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks a radio the app replaces with its selected view",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "checks a radio the app replaces with its selected view"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target leaves what replaced the control to the next read, even an unchecked copy",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "leaves what replaced the control to the next read, even an unchecked copy"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks a radio that navigates on change",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "checks a radio that navigates on change"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks and unchecks a checkbox, and clicks nothing already in the wanted state",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "checks and unchecks a checkbox, and clicks nothing already in the wanted state"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks an ARIA checkbox",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "checks an ARIA checkbox"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target waits for a controlled checkbox that commits its state after a timer",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "waits for a controlled checkbox that commits its state after a timer"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target waits for a switch whose aria-checked flips after a timer",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "waits for a switch whose aria-checked flips after a timer"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target fails a rejected click on a control a later re-render replaces",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "fails a rejected click on a control a later re-render replaces"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target fails a click that left the control as it was",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "fails a click that left the control as it was"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target refuses to uncheck a radio without clicking it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "refuses to uncheck a radio without clicking it"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target refuses a control that cannot be checked",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the locator target"
+      ],
+      "title": "refuses a control that cannot be checked"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks a radio the app replaces with its selected view",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "checks a radio the app replaces with its selected view"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target leaves what replaced the control to the next read, even an unchecked copy",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "leaves what replaced the control to the next read, even an unchecked copy"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks a radio that navigates on change",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "checks a radio that navigates on change"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks and unchecks a checkbox, and clicks nothing already in the wanted state",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "checks and unchecks a checkbox, and clicks nothing already in the wanted state"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks an ARIA checkbox",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "checks an ARIA checkbox"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target waits for a controlled checkbox that commits its state after a timer",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "waits for a controlled checkbox that commits its state after a timer"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target waits for a switch whose aria-checked flips after a timer",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "waits for a switch whose aria-checked flips after a timer"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target fails a rejected click on a control a later re-render replaces",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "fails a rejected click on a control a later re-render replaces"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target fails a click that left the control as it was",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "fails a click that left the control as it was"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target refuses to uncheck a radio without clicking it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "refuses to uncheck a radio without clicking it"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target refuses a control that cannot be checked",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "through the element target"
+      ],
+      "title": "refuses a control that cannot be checked"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "a control gone before the click stays a retryable stale node: nothing was dispatched",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "a control gone before the click"
+      ],
+      "title": "stays a retryable stale node: nothing was dispatched"
+    },
+    {
+      "file": "packages/web/tests/integration/cli.test.ts",
+      "fullName": "e2e-web exits 0 when the browser is already installed",
+      "caseId": null,
+      "partition": "cli-installed-1",
+      "ancestorTitles": [
+        "e2e-web"
+      ],
+      "title": "exits 0 when the browser is already installed"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots resolves every query kind to the node the observed tree names",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "resolves every query kind to the node the observed tree names"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots reaches roots nested either way round: open inside closed, closed inside open",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "reaches roots nested either way round: open inside closed, closed inside open"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots finds a node once, whether Playwright or the closed-root path reaches it, so counts stay strict",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "finds a node once, whether Playwright or the closed-root path reaches it, so counts stay strict"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots applies the visible flag and the hidden exclusion of a role query inside the root",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "applies the visible flag and the hidden exclusion of a role query inside the root"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots scopes a child query to a root inside the closed root, and lets has cross the boundary",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "scopes a child query to a root inside the closed root, and lets has cross the boundary"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots reads hasText as Playwright does, so text inside a closed root does not count toward the host",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "reads hasText as Playwright does, so text inside a closed root does not count toward the host"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots matches a label an aria-labelledby id names in the control's own tree, in a closed root and an open one below it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "matches a label an aria-labelledby id names in the control's own tree, in a closed root and an open one below it"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots reports focus on the node that holds it, inside a closed root and inside an open root below it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "reports focus on the node that holds it, inside a closed root and inside an open root below it"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots fills, presses, taps, and reads the nodes it located",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "locators inside closed shadow roots"
+      ],
+      "title": "fills, presses, taps, and reads the nodes it located"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "match order across one closed root lists light-DOM matches first and the closed root after, where the observed tree lists them in place",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "match order across one closed root"
+      ],
+      "title": "lists light-DOM matches first and the closed root after, where the observed tree lists them in place"
+    },
+    {
+      "file": "packages/web/tests/integration/conformance.test.ts",
+      "fullName": "axe-core conformance implicit-role: every case",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "axe-core conformance"
+      ],
+      "title": "implicit-role: every case"
+    },
+    {
+      "file": "packages/web/tests/integration/conformance.test.ts",
+      "fullName": "axe-core conformance accessible-text: every case",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "axe-core conformance"
+      ],
+      "title": "accessible-text: every case"
+    },
+    {
+      "file": "packages/web/tests/integration/conformance.test.ts",
+      "fullName": "axe-core conformance matches the expectations",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "axe-core conformance"
+      ],
+      "title": "matches the expectations"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw new Error(\"cart is empty\"); }",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves the message of a page exception: () => { throw new Error(\"cart is empty\"); }"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw \"cart is empty\"; }",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves the message of a page exception: () => { throw \"cart is empty\"; }"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw { message: \"cart is empty\" }; }",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves the message of a page exception: () => { throw { message: \"cart is empty\" }; }"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw Object.create(null); }",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves the message of a page exception: () => { throw Object.create(null); }"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw null; }",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves the message of a page exception: () => { throw null; }"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw new Error(\"page.evaluate: Target closed\"); }",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves the message of a page exception: () => { throw new Error(\"page.evaluate: Target closed\"); }"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves JSON results, explicit arguments, and zero-argument invocation",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "preserves JSON results, explicit arguments, and zero-argument invocation"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries evaluates a string as an expression and calls a function it evaluates to",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "evaluates a string as an expression and calls a function it evaluates to"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries rejects invalid JSON results and syntax as test errors",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.evaluate error boundaries"
+      ],
+      "title": "rejects invalid JSON results and syntax as test errors"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "native evaluation interrupted by external target loss reports the uncertain outcome after page closure without replaying evaluation",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "native evaluation interrupted by external target loss"
+      ],
+      "title": "reports the uncertain outcome after page closure without replaying evaluation"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "native evaluation interrupted by external target loss reports the uncertain outcome after owned browser termination without replaying evaluation",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "native evaluation interrupted by external target loss"
+      ],
+      "title": "reports the uncertain outcome after owned browser termination without replaying evaluation"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+      "caseId": "P19",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "operations on a hung page"
+      ],
+      "title": "ends a browser assertion on a stuck page at its own timeout, not the action timeout"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page times out a navigation to a server that never answers",
+      "caseId": "P20",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "operations on a hung page"
+      ],
+      "title": "times out a navigation to a server that never answers"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page times out a locate and a point tap on a page whose renderer is stuck in a script",
+      "caseId": "P21",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "operations on a hung page"
+      ],
+      "title": "times out a locate and a point tap on a page whose renderer is stuck in a script"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "operations on a hung page"
+      ],
+      "title": "keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content reads generated text into a name, reads icon glyphs as spaces, and names a glyph-only link by its title or not at all",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names with CSS generated content"
+      ],
+      "title": "reads generated text into a name, reads icon glyphs as spaces, and names a glyph-only link by its title or not at all"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content finds each control by the name the tree reports",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names with CSS generated content"
+      ],
+      "title": "finds each control by the name the tree reports"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content matches a substring across a glyph and stays exact where asked",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names with CSS generated content"
+      ],
+      "title": "matches a substring across a glyph and stays exact where asked"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content matches a name with quotes and >> however the query is chained",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names with CSS generated content"
+      ],
+      "title": "matches a name with quotes and >> however the query is chained"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content keeps generated content out of label text, as getByLabel reads it, and drops a glyph from it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names with CSS generated content"
+      ],
+      "title": "keeps generated content out of label text, as getByLabel reads it, and drops a glyph from it"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts runs the configured scripts in order before the page, in frames, new tabs, and replaced contexts",
+      "caseId": "P22",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "init scripts"
+      ],
+      "title": "runs the configured scripts in order before the page, in frames, new tabs, and replaced contexts"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts adds a test script after the configured ones, from the next document on, for the rest of the attempt",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "init scripts"
+      ],
+      "title": "adds a test script after the configured ones, from the next document on, for the rest of the attempt"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts refuses a script it cannot run, and a secret argument",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "init scripts"
+      ],
+      "title": "refuses a script it cannot run, and a secret argument"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts fails the run, and a worker, with INVALID_CONFIG when a configured file cannot be read",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "init scripts"
+      ],
+      "title": "fails the run, and a worker, with INVALID_CONFIG when a configured file cannot be read"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus refuses a noneditable focused leaf: <button>Stop</button>",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "open shadow focus"
+      ],
+      "title": "refuses a noneditable focused leaf: <button>Stop</button>"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus refuses a noneditable focused leaf: <input readonly value=\"kept\">",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "open shadow focus"
+      ],
+      "title": "refuses a noneditable focused leaf: <input readonly value=\"kept\">"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus types into a nested editable leaf",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "open shadow focus"
+      ],
+      "title": "types into a nested editable leaf"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus retains focused custom widgets that opt into keystrokes",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "open shadow focus"
+      ],
+      "title": "retains focused custom widgets that opt into keystrokes"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus refuses a noneditable focused leaf: <button>Stop</button>",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "closed shadow focus"
+      ],
+      "title": "refuses a noneditable focused leaf: <button>Stop</button>"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus refuses a noneditable focused leaf: <input readonly value=\"kept\">",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "closed shadow focus"
+      ],
+      "title": "refuses a noneditable focused leaf: <input readonly value=\"kept\">"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus types into a nested editable leaf",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "closed shadow focus"
+      ],
+      "title": "types into a nested editable leaf"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus retains focused custom widgets that opt into keystrokes",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "closed shadow focus"
+      ],
+      "title": "retains focused custom widgets that opt into keystrokes"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard.test.ts",
+      "fullName": "held keyboard input keeps a modifier held across another key and releases it for later input",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "held keyboard input"
+      ],
+      "title": "keeps a modifier held across another key and releases it for later input"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard.test.ts",
+      "fullName": "held keyboard input marks a second down as repeat and a later release ends the held sequence",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "held keyboard input"
+      ],
+      "title": "marks a second down as repeat and a later release ends the held sequence"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter keeps the exact predicate: one row for the exact label, two for the substring, as standalone",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "an exact label query composed as a has filter"
+      ],
+      "title": "keeps the exact predicate: one row for the exact label, two for the substring, as standalone"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter reads the label as the standalone query does: an aria-hidden marker never hides the row",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "an exact label query composed as a has filter"
+      ],
+      "title": "reads the label as the standalone query does: an aria-hidden marker never hides the row"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter keeps the visible flag when composed: a row whose matching input is hidden drops out",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "an exact label query composed as a has filter"
+      ],
+      "title": "keeps the visible flag when composed: a row whose matching input is hidden drops out"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter composes onto a position and a child query, and acts on the row it picked",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "an exact label query composed as a has filter"
+      ],
+      "title": "composes onto a position and a child query, and acts on the row it picked"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle declares the full deterministic tier plus the browser fixture",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "declares the full deterministic tier plus the browser fixture"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle serves consecutive attempts from one browser and survives an attempt close",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "serves consecutive attempts from one browser and survives an attempt close"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle relaunches after dispose and stays idempotent",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "relaunches after dispose and stays idempotent"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test observes a semantic tree and locates by display value in one round trip",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "observes a semantic tree and locates by display value in one round trip"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test reports pressed and heading level, queries by them, and performs pointer actions on nodes and at points",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "reports pressed and heading level, queries by them, and performs pointer actions on nodes and at points"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test keeps tree attributes bounded while node reads expose every attribute",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "keeps tree attributes bounded while node reads expose every attribute"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test selects positionally among display-value matches and keeps composition honest",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "selects positionally among display-value matches and keeps composition honest"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test excludes hidden twins from a visible query, for every query kind and under an index",
+      "caseId": "P24",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "excludes hidden twins from a visible query, for every query kind and under an index"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test applies visible before an index, filter, or scope, so a hidden twin is never selected",
+      "caseId": "P25",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "applies visible before an index, filter, or scope, so a hidden twin is never selected"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test takes a display-value position among shown matches when the query is visible",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "takes a display-value position among shown matches when the query is visible"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test keeps a node id across observations while its element lives, and reports it stale once it is gone",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "keeps a node id across observations while its element lives, and reports it stale once it is gone"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test reports a located ref stale once a second element matches it, and acts on neither",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "reports a located ref stale once a second element matches it, and acts on neither"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test reports a drag whose drop target turns ambiguous after the press as possibly committed",
+      "caseId": "P26",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "reports a drag whose drop target turns ambiguous after the press as possibly committed"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test mints native document ids and keeps a separate viewport ref across navigation for swipes",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "mints native document ids and keeps a separate viewport ref across navigation for swipes"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test refuses to swipe a node with no box even when its child is under aim",
+      "caseId": "P27",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "refuses to swipe a node with no box even when its child is under aim"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test walks through a display:contents element to the fields it lays out",
+      "caseId": "P28",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "walks through a display:contents element to the fields it lays out"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test masks a password inside a closed shadow root in artifact screenshots",
+      "caseId": "P29",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "masks a password inside a closed shadow root in artifact screenshots"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test masks a password inside an iframe in artifact screenshots and observed pixels",
+      "caseId": "P30",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle",
+        "on one shared browser, a fresh attempt per test"
+      ],
+      "title": "masks a password inside an iframe in artifact screenshots and observed pixels"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle reports an unopened page as INVALID_STATE, never as a missing node",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "reports an unopened page as INVALID_STATE, never as a missing node"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle refuses a second startAttempt while one is running and keeps the first intact",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "refuses a second startAttempt while one is running and keeps the first intact"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle treats endAttempt before startAttempt and dispose on a cold engine as no-ops",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "treats endAttempt before startAttempt and dispose on a cold engine as no-ops"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle stops waiting on cleanup once its budget is aborted, and recovers on the next attempt",
+      "caseId": "P31",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "stops waiting on cleanup once its budget is aborted, and recovers on the next attempt"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle cancels an in-flight native operation when its signal aborts",
+      "caseId": "P32",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "cancels an in-flight native operation when its signal aborts"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+      "caseId": "P33",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "round-trips persisted state through capture and restore, and reset drops it"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle follows the window under viewport: null, reports the measured size, and swipes by it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "follows the window under viewport: null, reports the measured size, and swipes by it"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle reports the configured test-id attribute as testId, on observed and located nodes alike",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "reports the configured test-id attribute as testId, on observed and located nodes alike"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle records a video per page at the viewport size: a restart and a state reset each continue in a new segment",
+      "caseId": "P34",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "records a video per page at the viewport size: a restart and a state reset each continue in a new segment"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle records a video started mid-attempt at the viewport size, each time it starts",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "records a video started mid-attempt at the viewport size, each time it starts"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle rejects a video that cannot start and leaves the session working",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "rejects a video that cannot start and leaves the session working"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle opens the attempt page when the video starts",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "opens the attempt page when the video starts"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle masks secure fields in artifact screenshots and restarts the counter per attempt",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web engine lifecycle"
+      ],
+      "title": "masks secure fields in artifact screenshots and restarts the counter per attempt"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation loads every page with the configured media, after a restart and a context reset too",
+      "caseId": "P45",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "media emulation"
+      ],
+      "title": "loads every page with the configured media, after a restart and a context reset too"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation leaves the browser's own media when none is configured",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "media emulation"
+      ],
+      "title": "leaves the browser's own media when none is configured"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation emulates media set before the first navigation from first paint, and holds a change for the rest of the attempt",
+      "caseId": "P35",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "media emulation"
+      ],
+      "title": "emulates media set before the first navigation from first paint, and holds a change for the rest of the attempt"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation gives a tab the app opens itself a test's change as it appears and later",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "media emulation"
+      ],
+      "title": "gives a tab the app opens itself a test's change as it appears and later"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation refuses a feature it does not emulate and a value outside the ones it takes, changing nothing",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "media emulation"
+      ],
+      "title": "refuses a feature it does not emulate and a value outside the ones it takes, changing nothing"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators resolves a two-level chain and taps inside the innermost frame",
+      "caseId": "P36",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "nested frame locators"
+      ],
+      "title": "resolves a two-level chain and taps inside the innermost frame"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators reports a located node's box in the top-level viewport, past each frame's border and padding",
+      "caseId": "P37",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "nested frame locators"
+      ],
+      "title": "reports a located node's box in the top-level viewport, past each frame's border and padding"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators resolves a three-level chain, counting the last frame inside the second",
+      "caseId": "P38",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "nested frame locators"
+      ],
+      "title": "resolves a three-level chain, counting the last frame inside the second"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators names the inner selector when the outer frame holds no such frame, even though the page does",
+      "caseId": "P39",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "nested frame locators"
+      ],
+      "title": "names the inner selector when the outer frame holds no such frame, even though the page does"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators reports two matching frames inside the outer document as ambiguous, though the page holds one",
+      "caseId": "P40",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "nested frame locators"
+      ],
+      "title": "reports two matching frames inside the outer document as ambiguous, though the page holds one"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) sends the headers to the app's site only, on every context of the attempt",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "sends the headers to the app's site only, on every context of the attempt"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) keeps the headers on a request an attempt route lets through",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "keeps the headers on a request an attempt route lets through"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) blocks service workers under headers, since routing never sees a worker's requests",
+      "caseId": "P41",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "blocks service workers under headers, since routing never sees a worker's requests"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) answers a basic-auth challenge wherever one is issued",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "answers a basic-auth challenge wherever one is issued"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) answers the challenge with a secrets.get() password the attempt resolves",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "answers the challenge with a secrets.get() password the attempt resolves"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) reports the configured user agent to the page, after a context reset too",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "reports the configured user agent to the page, after a context reset too"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) runs the page in the configured locale and time zone, after a context reset too",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "web({ headers, basicAuth })"
+      ],
+      "title": "runs the page in the configured locale and time zone, after a context reset too"
+    },
+    {
+      "file": "packages/web/tests/integration/provider-downloads.test.ts",
+      "fullName": "downloads through a provider, worker scope saves the file on the browser's disk and reads it back through the provider",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "downloads through a provider, worker scope"
+      ],
+      "title": "saves the file on the browser's disk and reads it back through the provider"
+    },
+    {
+      "file": "packages/web/tests/integration/provider-downloads.test.ts",
+      "fullName": "downloads through a provider, attempt scope saves the file on the browser's disk and reads it back through the provider",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "downloads through a provider, attempt scope"
+      ],
+      "title": "saves the file on the browser's disk and reads it back through the provider"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action unchanged strict reference clicks A, with a baseline public locator smoke",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "unchanged strict reference clicks A, with a baseline public locator smoke"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action an observed live A remains actionable after a new observation, like the retained source handle",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "an observed live A remains actionable after a new observation, like the retained source handle"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action the same observed DOM object detached and reinserted remains A, not a replacement object",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "the same observed DOM object detached and reinserted remains A, not a replacement object"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action the original viewport survives same-Page navigation like the retained source Page",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "the original viewport survives same-Page navigation like the retained source Page"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action observed ElementHandle refuses a detached A instead of clicking replacement B",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "observed ElementHandle refuses a detached A instead of clicking replacement B"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action displayValue pinned handle after new match still clicks original A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "displayValue pinned handle after new match still clicks original A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action displayValue pinned handle after predicate change still clicks original A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "displayValue pinned handle after predicate change still clicks original A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action displayValue pinned handle after detach refuses without clicking B",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "displayValue pinned handle after detach refuses without clicking B"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action exact-label pinned handle after new match still clicks original A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "exact-label pinned handle after new match still clicks original A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action exact-label pinned handle after predicate change still clicks original A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "exact-label pinned handle after predicate change still clicks original A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action exact-label pinned handle after detach refuses without clicking B",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "exact-label pinned handle after detach refuses without clicking B"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action strict unique query becoming ambiguous refuses without clicking either match",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "strict unique query becoming ambiguous refuses without clicking either match"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action strict query after replace A resolves the unique replacement B, not cached A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "strict query after replace A resolves the unique replacement B, not cached A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action strict query after connected A loses class resolves the unique replacement B, not cached A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "strict query after connected A loses class resolves the unique replacement B, not cached A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action multi-result ref[1] keeps logical index 1: prepending X changes the action from cached B to A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "multi-result ref[1] keeps logical index 1: prepending X changes the action from cached B to A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action explicit nth(1) keeps logical index 1: prepending X changes the action from cached B to A",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "explicit nth(1) keeps logical index 1: prepending X changes the action from cached B to A"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action nested FrameLocator re-resolves same-document child replacement B",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "nested FrameLocator re-resolves same-document child replacement B"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action same-name sibling iframe makes the retained ancestor FrameLocator ambiguous and refuses all clicks",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "retained query-reference replacement matches the frozen source action"
+      ],
+      "title": "same-name sibling iframe makes the retained ancestor FrameLocator ambiguous and refuses all clicks"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "checked and selected reads selected boolean values without case sensitivity while native option state wins",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "checked and selected"
+      ],
+      "title": "reads selected boolean values without case sensitivity while native option state wins"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "checked and selected excludes uppercase hidden subtrees from observations and names but reads hidden references whole",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "checked and selected"
+      ],
+      "title": "excludes uppercase hidden subtrees from observations and names but reads hidden references whole"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "checked and selected reads a native checkbox, radio, and option from the control even when a stale aria attribute disagrees, as Playwright does",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "checked and selected"
+      ],
+      "title": "reads a native checkbox, radio, and option from the control even when a stale aria attribute disagrees, as Playwright does"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "a checkable control's value reads the value attribute, `on` by default, whatever the checked state, as Playwright's inputValue does",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "a checkable control's value"
+      ],
+      "title": "reads the value attribute, `on` by default, whatever the checked state, as Playwright's inputValue does"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "placeholder names names text controls by placeholder in HTML-AAM order and carries the attribute",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "placeholder names"
+      ],
+      "title": "names text controls by placeholder in HTML-AAM order and carries the attribute"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag reports a walk the node budget stopped, and a whole read as not truncated",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "truncated flag"
+      ],
+      "title": "reports a walk the node budget stopped, and a whole read as not truncated"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag reports a child frame the budget could not enter",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "truncated flag"
+      ],
+      "title": "reports a child frame the budget could not enter"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag does not count an off-site frame it leaves out by design, even with no budget left",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "truncated flag"
+      ],
+      "title": "does not count an off-site frame it leaves out by design, even with no budget left"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag reports an on-site frame past the depth limit as truncation",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "truncated flag"
+      ],
+      "title": "reports an on-site frame past the depth limit as truncation"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence names a control from its descendants the way the role selector does: aria-label, alt, content, then title",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "names a control from its descendants the way the role selector does: aria-label, alt, content, then title"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence reads an embedded control by its value, as the role selector does",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "reads an embedded control by its value, as the role selector does"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence keeps an embedded control's value out of label text and a secure field's value out of every name",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "keeps an embedded control's value out of label text and a secure field's value out of every name"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence reads aria-labelledby before aria-label, and either before a label element",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "reads aria-labelledby before aria-label, and either before a label element"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence reads a referenced target whole when it is hidden, by its own aria-label, and drops hidden parts of a shown one",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "reads a referenced target whole when it is hidden, by its own aria-label, and drops hidden parts of a shown one"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence resolves an aria-labelledby id in the element's own shadow tree, not the document",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "resolves an aria-labelledby id in the element's own shadow tree, not the document"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence follows a descendant reference in a name from content, once per element and never from inside another",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "follows a descendant reference in a name from content, once per element and never from inside another"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence names every role accname allows from content, a shadow tree included, and a reset input by its value or default",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "names from content and precedence"
+      ],
+      "title": "names every role accname allows from content, a shadow tree included, and a reset input by its value or default"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping uses the first recognized role token and falls back to native semantics",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "uses the first recognized role token and falls back to native semantics"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping scopes nested shadow landmarks to their outer article (open)",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "scopes nested shadow landmarks to their outer article (open)"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping scopes nested shadow landmarks to their outer article (closed)",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "scopes nested shadow landmarks to their outer article (closed)"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping reports ARIA img as image, alongside the img element",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "reports ARIA img as image, alongside the img element"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping infers row headers from data-cell neighbors and respects explicit scopes",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "infers row headers from data-cell neighbors and respects explicit scopes"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping reports an inline svg as an image, named by its title child, as Playwright does",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "reports an inline svg as an image, named by its title child, as Playwright does"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping passes the composite widget roles through from role attributes and names their items from content",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "passes the composite widget roles through from role attributes and names their items from content"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping derives the vocabulary roles from HTML semantics the way HTML-AAM does",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "role mapping"
+      ],
+      "title": "derives the vocabulary roles from HTML semantics the way HTML-AAM does"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts reports the host as a textbox named by aria-label, aria-placeholder, or the editor placeholder, with its document as the value",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "reports the host as a textbox named by aria-label, aria-placeholder, or the editor placeholder, with its document as the value"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts keeps the whitespace an editor renders as its value, and reads an empty editor as an empty value",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "keeps the whitespace an editor renders as its value, and reads an empty editor as an empty value"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts makes an editing host a textbox whatever role its tag carries, and leaves a native control its own",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "makes an editing host a textbox whatever role its tag carries, and leaves a native control its own"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts never makes a drawn or embedded surface a textbox, whatever its contenteditable says",
+      "caseId": "P42",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "never makes a drawn or embedded surface a textbox, whatever its contenteditable says"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts drops a name taken from a block placeholder once the editor has content, and keeps one from the host",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "drops a name taken from a block placeholder once the editor has content, and keeps one from the host"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts follows the document as it is edited and focused, as a textarea value does",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "follows the document as it is edited and focused, as a textarea value does"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-selection.test.ts",
+      "fullName": "selection reports the selected text of the focused input or editing host and nothing for a caret, an unfocused field, or a secure one",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "selection"
+      ],
+      "title": "reports the selected text of the focused input or editing host and nothing for a caret, an unfocused field, or a secure one"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-states.test.ts",
+      "fullName": "disabled state inherits from a disabled fieldset, except inside its first legend",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "disabled state"
+      ],
+      "title": "inherits from a disabled fieldset, except inside its first legend"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-states.test.ts",
+      "fullName": "disabled state follows nested fieldsets: an inner legend frees nothing from an outer disabled fieldset",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "disabled state"
+      ],
+      "title": "follows nested fieldsets: an inner legend frees nothing from an outer disabled fieldset"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-states.test.ts",
+      "fullName": "disabled state inherits aria-disabled from an ancestor, across a shadow root, until an aria-disabled=\"false\" cuts the chain",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "disabled state"
+      ],
+      "title": "inherits aria-disabled from an ancestor, across a shadow root, until an aria-disabled=\"false\" cuts the chain"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions clears every test route, keeps configured site headers, and can register again",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "clears every test route, keeps configured site headers, and can register again"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions routes real native dialogs by kind even when their messages are identical",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "routes real native dialogs by kind even when their messages are identical"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions answers with the route registered last when two fulfill",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "answers with the route registered last when two fulfill"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue goes to the network past an earlier route",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue goes to the network past an earlier route"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions fallback hands the request to the route before it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "fallback hands the request to the route before it"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions keeps the configured site header through continue",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "keeps the configured site header through continue"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions keeps the configured site header through fallback",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "keeps the configured site header through fallback"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue replaces the request headers and adds the site header on top",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue replaces the request headers and adds the site header on top"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue sends a rewritten url, method, and body without touching the original",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue sends a rewritten url, method, and body without touching the original"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to another site leaves the site header behind",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue to another site leaves the site header behind"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to a forbidden scheme aborts the request and fails the next step",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue to a forbidden scheme aborts the request and fails the next step"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to a wrapped scheme aborts the request and fails the next step",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue to a wrapped scheme aborts the request and fails the next step"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to about:blank aborts the request and fails the next step",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue to about:blank aborts the request and fails the next step"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to another scheme aborts the request and fails the next step",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "continue to another scheme aborts the request and fails the next step"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions fulfills a project file with its bytes and a type from its extension",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "fulfills a project file with its bytes and a type from its extension"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions fulfills under the given contentType or a content-type header",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "fulfills under the given contentType or a content-type header"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects an unknown fulfill key before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects an unknown fulfill key before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects two fulfill sources before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects two fulfill sources before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a missing fulfill file before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects a missing fulfill file before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a fulfill status out of range before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects a fulfill status out of range before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects an unknown continue key before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects an unknown continue key before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects non-string continue headers before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects non-string continue headers before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a continue header name outside the token grammar before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects a continue header name outside the token grammar before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a line break in a fulfill header value before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects a line break in a fulfill header value before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects an abort error code before deciding, and aborts the request",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "rejects an abort error code before deciding, and aborts the request"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions aborts the request when the handler returns without deciding, and fails the next step",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "aborts the request when the handler returns without deciding, and fails the next step"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions keeps the first decision when the handler decides twice, and fails the next step",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "keeps the first decision when the handler decides twice, and fails the next step"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions takes the decision the moment fulfill is called, awaited or not",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "takes the decision the moment fulfill is called, awaited or not"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions sets a cookie with a relative url on the base URL",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.route decisions"
+      ],
+      "title": "sets a cookie with a relative url on the base URL"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright an SVG with visibility: hidden",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "an SVG with visibility: hidden"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a shown SVG",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a shown SVG"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a zero-size box with clipped content",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a zero-size box with clipped content"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright the button clipped inside a zero-size box, which keeps a box of its own",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "the button clipped inside a zero-size box, which keeps a box of its own"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a sized box",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a sized box"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button inside closed details",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a button inside closed details"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright the summary of closed details",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "the summary of closed details"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button inside open details",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a button inside open details"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright open details nested in the body of closed details",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "open details nested in the body of closed details"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright the summary of details nested in closed details",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "the summary of details nested in closed details"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button inside open details nested in closed details",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a button inside open details nested in closed details"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright an empty display: contents element",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "an empty display: contents element"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a display: contents element whose only child is hidden",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a display: contents element whose only child is hidden"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a display: contents element with a painted child",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a display: contents element with a painted child"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a display: contents element with bare text",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a display: contents element with bare text"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a hidden display: contents element whose child inherits it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a hidden display: contents element whose child inherits it"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a hidden display: contents element whose child is visible again",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a hidden display: contents element whose child is visible again"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright an aria-hidden spinner that paints",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "an aria-hidden spinner that paints"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button under an aria-hidden container",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a button under an aria-hidden container"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a content-visibility: hidden element, which keeps its box",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a content-visibility: hidden element, which keeps its box"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button content-visibility: hidden skips",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a button content-visibility: hidden skips"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button slotted under a content-visibility: hidden host",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a button slotted under a content-visibility: hidden host"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a visibility: hidden parent",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a visibility: hidden parent"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a child that sets visibility: visible under a hidden parent",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility agrees with Playwright"
+      ],
+      "title": "a child that sets visibility: visible under a hidden parent"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility where Playwright reads a range box alone hides text under a display: contents element whose visibility is hidden, which Playwright calls visible",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "visibility where Playwright reads a range box alone"
+      ],
+      "title": "hides text under a display: contents element whose visibility is hidden, which Playwright calls visible"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box display: none",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the bounding box"
+      ],
+      "title": "display: none"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box under a display: none ancestor",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the bounding box"
+      ],
+      "title": "under a display: none ancestor"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box an empty display: contents element",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the bounding box"
+      ],
+      "title": "an empty display: contents element"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box display: contents around text",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the bounding box"
+      ],
+      "title": "display: contents around text"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box visibility: hidden, which keeps its box",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the bounding box"
+      ],
+      "title": "visibility: hidden, which keeps its box"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box a zero-size box",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the bounding box"
+      ],
+      "title": "a zero-size box"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the tree walk through a box with no size lists the fixed controls under a zero-height page and wrapper, and neither the wrapper nor the root as hidden",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the tree walk through a box with no size"
+      ],
+      "title": "lists the fixed controls under a zero-height page and wrapper, and neither the wrapper nor the root as hidden"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the tree walk through a box with no size lists neither the document of a frame with no box nor the options of a select with none",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the tree walk through a box with no size"
+      ],
+      "title": "lists neither the document of a frame with no box nor the options of a select with none"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "a frame's document places its boxes past the frame's border and padding, where Playwright measures them",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "a frame's document"
+      ],
+      "title": "places its boxes past the frame's border and padding, where Playwright measures them"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "caseId": "P46",
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "an inert subtree"
+      ],
+      "title": "leaves the tree, as Chrome drops it, while Playwright still calls it visible"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "an inert subtree lists nothing under an inert document root, and nothing slotted into an inert slot of a closed root",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "an inert subtree"
+      ],
+      "title": "lists nothing under an inert document root, and nothing slotted into an inert slot of a closed root"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the tree walk through hidden content walks into a visibility: hidden subtree for a child that shows again, and stops at aria-hidden and skipped content",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "the tree walk through hidden content"
+      ],
+      "title": "walks into a visibility: hidden subtree for a child that shows again, and stops at aria-hidden and skipped content"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies observes the first navigation before any public page command with one opened scope",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "observes the first navigation before any public page command with one opened scope"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies reads a full body as text and JSON",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "reads a full body as text and JSON"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies resolves a genuinely empty body at /api/empty to an empty string",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "resolves a genuinely empty body at /api/empty to an empty string"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies resolves a genuinely empty body at /api/no-content to an empty string",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "resolves a genuinely empty body at /api/no-content to an empty string"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies keeps the status of a body the connection cut short and rejects reading it",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "keeps the status of a body the connection cut short and rejects reading it"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies matches on headers inside its timeout and lets text() wait for a slower body",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "matches on headers inside its timeout and lets text() wait for a slower body"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies rejects reading a body that never finishes once the action budget runs out",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "rejects reading a body that never finishes once the action budget runs out"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies keeps the status of a redirect and rejects reading its body",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "browser.waitForResponse bodies"
+      ],
+      "title": "keeps the status of a redirect and rejects reading its body"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "first navigation target inventory observes the response on the original target without leaving an extra blank page in its context",
+      "caseId": null,
+      "partition": "original-noncli-304",
+      "ancestorTitles": [
+        "first navigation target inventory"
+      ],
+      "title": "observes the response on the original target without leaving an extra blank page in its context"
+    },
+    {
+      "file": "packages/web/tests/integration/events-synthetic-controls.test.ts",
+      "fullName": "isolated synthetic event controls observes popup opening through pinned Playwright on a fresh host",
+      "caseId": "P05PW",
+      "partition": "new-4",
+      "ancestorTitles": [
+        "isolated synthetic event controls"
+      ],
+      "title": "observes popup opening through pinned Playwright on a fresh host"
+    },
+    {
+      "file": "packages/web/tests/integration/events-synthetic-controls.test.ts",
+      "fullName": "isolated synthetic event controls observes native wheel delivery at the immediate and one subsequent sample",
+      "caseId": "C01N",
+      "partition": "new-4",
+      "ancestorTitles": [
+        "isolated synthetic event controls"
+      ],
+      "title": "observes native wheel delivery at the immediate and one subsequent sample"
+    },
+    {
+      "file": "packages/web/tests/integration/events-synthetic-controls.test.ts",
+      "fullName": "isolated synthetic event controls observes pinned Playwright wheel delivery at the immediate and one subsequent sample",
+      "caseId": "C01PW",
+      "partition": "new-4",
+      "ancestorTitles": [
+        "isolated synthetic event controls"
+      ],
+      "title": "observes pinned Playwright wheel delivery at the immediate and one subsequent sample"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts P42O: records an isolated source-equivalent embedded-surface oracle",
+      "caseId": "P42O",
+      "partition": "new-4",
+      "ancestorTitles": [
+        "contenteditable editing hosts"
+      ],
+      "title": "P42O: records an isolated source-equivalent embedded-surface oracle"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract route callback reads the live page while evaluate awaits fetch",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public Web callback contract"
+      ],
+      "title": "route callback reads the live page while evaluate awaits fetch"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract route removal keeps the paused fallback chain",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public Web callback contract"
+      ],
+      "title": "route removal keeps the paused fallback chain"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract response subscription does not block its trigger",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public Web callback contract"
+      ],
+      "title": "response subscription does not block its trigger"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract dialog decisions settle an awaiting evaluation",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public Web callback contract"
+      ],
+      "title": "dialog decisions settle an awaiting evaluation"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract download subscription runs its trigger",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public Web callback contract"
+      ],
+      "title": "download subscription runs its trigger"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract custom executor uses checked actions and the test verifies the response",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public Web callback contract"
+      ],
+      "title": "custom executor uses checked actions and the test verifies the response"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract navigation history reload and browser expectations preserve document readiness",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "navigation history reload and browser expectations preserve document readiness"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract evaluate supports JSON arguments async functions and string expressions",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "evaluate supports JSON arguments async functions and string expressions"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract cookies retain context scope and start isolated in every attempt",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "cookies retain context scope and start isolated in every attempt"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract init scripts and partial media updates cover frames and new tabs",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "init scripts and partial media updates cover frames and new tabs"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract viewport and keyboard preserve actual input and key events",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "viewport and keyboard preserve actual input and key events"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract pointer primitives preserve coordinates buttons and wheel events",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "pointer primitives preserve coordinates buttons and wheel events"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract frame locators and class assertions use the shared public query contract",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "frame locators and class assertions use the shared public query contract"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract large fulfill and continued request bodies use verified native storage",
+      "caseId": null,
+      "partition": "callbacks-14",
+      "ancestorTitles": [
+        "public native Web primitive contract"
+      ],
+      "title": "large fulfill and continued request bodies use verified native storage"
+    }
+  ],
+  "notRun": [
+    {
+      "file": "packages/web/tests/integration/cli.test.ts",
+      "fullName": "e2e-web ends the download when the command gets SIGTERM, and exits 143",
+      "caseId": "P14",
+      "partition": "cli-cancel-P14-1",
+      "reason": "No separate source-bound acceptance-faults artifact/proof"
+    }
+  ]
+}

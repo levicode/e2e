@@ -49,16 +49,26 @@ observed_command() {
   COMMAND_STATUS=$status
 }
 selectors() {
-  "$NODE" --input-type=module - "$HERE/inventory" "$OUT" <<'JS'
+  "$NODE" --input-type=module - "$HERE" "$OUT" <<'JS'
 import {readFileSync,writeFileSync} from 'node:fs';
-const [input,out]=process.argv.slice(2),read=name=>JSON.parse(readFileSync(`${input}/${name}.json`)).cases;
-const original=read('original-306');
-const groups={'original-noncli-304':original.filter(c=>!c.file.endsWith('/cli.test.ts')),'new-4':read('new-4'),'callbacks-14':read('callbacks-14'),'cli-installed-1':original.filter(c=>c.file.endsWith('/cli.test.ts')&&c.caseId!=='P14')};
-for(const [name,cases] of Object.entries(groups)) {
- const prefix=name==='callbacks-14'?'packages/e2e/':'packages/web/';
+import {createRequire} from 'node:module';
+import {pathToFileURL} from 'node:url';
+const [here,out]=process.argv.slice(2);
+const {loadManifest,verifyPrior}=await import(pathToFileURL(here+'/prior-artifact.mjs'));
+const manifest=loadManifest();
+verifyPrior(out+'/prior-run40116161447',manifest);
+const require=createRequire(process.env.GITHUB_WORKSPACE+'/e2e-source/packages/web/package.json');
+const packageFile=require.resolve('vitest/package.json');
+if(JSON.parse(readFileSync(packageFile)).version!=='5.0.1') throw Error('Exact reviewed Vitest5.0.1 required');
+const {createTaskName}=await import(pathToFileURL(packageFile.replace('/package.json','/dist/task-utils.js')));
+for(const name of ['original-noncli-304','new-4','callbacks-14','cli-installed-1']) {
+ const cases=manifest.selected.filter(c=>c.partition===name),prefix=name==='callbacks-14'?'packages/e2e/':'packages/web/';
+ if(!cases.length) throw Error('Empty continuation partition');
  writeFileSync(`${out}/${name}.files.txt`,[...new Set(cases.map(c=>c.file.slice(prefix.length)))].sort().join('\n')+'\n');
- writeFileSync(`${out}/${name}.regex.txt`,'^(?:'+cases.map(c=>c.fullName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')$\n');
+ const names=cases.map(c=>createTaskName([...c.ancestorTitles,c.title]));
+ writeFileSync(`${out}/${name}.regex.txt`,'^(?:'+names.map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')$\n');
 }
+writeFileSync(out+'/continuation-selection.json',JSON.stringify({priorRun:manifest.prior.runId,selected:manifest.selected,retained:manifest.retained,P14:'not-run',sameExecution:false},null,2)+'\n');
 JS
 }
 run_batch() {

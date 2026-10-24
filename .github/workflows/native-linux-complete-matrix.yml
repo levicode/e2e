@@ -26,8 +26,8 @@ jobs:
           export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/complete-matrix-playwright"
           printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
           mkdir -m700 "$EVIDENCE_DIR"
-          printf '%s\n' 'Diagnostic only: original304 non-CLI + new4 + callbacks14 + independent actual-installer warm CLI1. P14 not-run pending distinct native2647 feature artifact/proof. Never full324, hard acceptance, source removal, release, or Chrome154 proof.' > "$EVIDENCE_DIR/SCOPE.txt"
-          for phase in sources artifact dependencies browser-install codec-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
+          printf '%s\n' 'Continuation of run40116161447: execute only283 original non-CLI + new4 + callbacks14 + CLI1 =302 skipped cases. Carry20 passed and1 failed from the distinct prior run unchanged. P14 remains not-run. Never same-run full324, hard acceptance, source removal, release, or Chrome154 proof.' > "$EVIDENCE_DIR/SCOPE.txt"
+          for phase in sources artifact prior-artifact dependencies browser-install codec-install browser-codecs production-probe runtime-matrix final-identities reconciliation combined-evidence; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
           for group in original-noncli-304 new-4 callbacks-14 cli-installed-1; do printf '%s\n' '{"status":"not-run","reason":"Workflow prerequisite or batch has not completed"}' > "$EVIDENCE_DIR/$group.state.json"; done
           printf '%s\n' '{"status":"not-run","reason":"Missing separate native2647 acceptance-faults artifact and genuine matching proof; this recipe does not execute P14"}' > "$EVIDENCE_DIR/cli-cancel-P14-1.state.json"
       - name: Check out immutable recipe separately from tested sources
@@ -76,6 +76,14 @@ jobs:
           set -euo pipefail
           trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/artifact.exit"' EXIT
           node recipe/scripts/matrix-runtime/identity.mjs download > "$EVIDENCE_DIR/artifact.log" 2>&1
+      - name: Read and verify exact prior raw evidence without rewriting it
+        id: prior_artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/prior-artifact.exit"' EXIT
+          node recipe/scripts/matrix-runtime/prior-artifact.mjs > "$EVIDENCE_DIR/prior-artifact.log" 2>&1
       - id: pnpm
         uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
         with:
@@ -167,7 +175,7 @@ jobs:
           set -euo pipefail
           trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/production-probe.exit"' EXIT
           bash recipe/scripts/matrix-runtime/run.sh probe
-      - name: Run all runnable original cases with isolated actual installer HOME
+      - name: Run only302 previously skipped cases, never replay the prior21
         id: matrix
         run: |
           set -euo pipefail
@@ -205,6 +213,16 @@ jobs:
             test "$(cat "$EVIDENCE_DIR/$name.observer.exit" 2>/dev/null || printf unknown)" = 0 || status=1
           done
           exit "$status"
+      - name: Bind distinct prior and continuation batches without clearing the prior real failure
+        id: combined_evidence
+        if: ${{ always() }}
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+          NEXT_ARTIFACT_NAME: original-matrix-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/combined-evidence.exit"' EXIT
+          node recipe/scripts/matrix-runtime/merge-evidence.mjs recipe/scripts/matrix-runtime/inventory "$EVIDENCE_DIR/prior-run40116161447" "$EVIDENCE_DIR" recipe/scripts/matrix-runtime/continuation-manifest.json "$EVIDENCE_DIR"
       - name: Preserve step outcomes and first failing phase
         if: ${{ always() }}
         env:
@@ -216,19 +234,19 @@ jobs:
           import json,os
           from pathlib import Path
           steps=json.loads(os.environ['STEP_OUTCOMES'])
-          order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','codec_install','browser_codecs','probe','matrix','final_identities','reconciliation']
+          order=['recipe','node','e2e','native','sources','artifact','prior_artifact','pnpm','dependencies','browser_install','codec_install','browser_codecs','probe','matrix','final_identities','reconciliation','combined_evidence']
           for name in order:
               outcome=steps.get(name,{}).get('outcome')
               if outcome in ('failure','cancelled'):
                   Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').write_text(f'{name}: {outcome}\n')
                   break
           PY
-          for phase in sources artifact dependencies browser-install codec-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do
+          for phase in sources artifact prior-artifact dependencies browser-install codec-install browser-codecs production-probe runtime-matrix final-identities reconciliation combined-evidence; do
             [[ ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]] || break
             status=$(cat "$EVIDENCE_DIR/$phase.exit" 2>/dev/null || printf unknown)
             if [[ "$status" != 0 && "$status" != not-run ]]; then printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"; break; fi
           done
-      - name: Upload only current synthetic diagnostic evidence, never profiles or old raw results
+      - name: Upload current and immutable prior synthetic evidence, never profiles or caches
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
