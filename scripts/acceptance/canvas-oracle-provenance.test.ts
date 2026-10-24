@@ -70,9 +70,65 @@ test('manifest covers the exact runtime source import closure, with all original
     queue.push(...internal);
   }
   assert.deepEqual([...visited].toSorted(), [...sources.keys()].toSorted());
-  assert.equal(unequal, 7);
+  assert.equal(unequal, 11);
   assert.equal(manifest.runtime.length, 21);
   assert.deepEqual(manifest.runtime.map(item => item.sourcePath).toSorted(), [...sources.keys()].filter(path => path.startsWith('packages/e2e/')).toSorted());
+});
+
+/** Reverse one reviewed source delta; a missing or repeated boundary is a provenance failure. */
+function replaceOnce(source: string, pattern: RegExp, replacement: string): string {
+  assert.equal([...source.matchAll(new RegExp(pattern.source, `${pattern.flags.replace('g', '')}g`))].length, 1);
+  return source.replace(pattern, replacement);
+}
+
+test('upstream reader changes are unreachable for the frozen canvas fixture, not equivalent for arbitrary HTML', () => {
+  const path = 'packages/web/src/in-page/read-semantics.ts';
+  let reader = readFileSync(join(root, path), 'utf8');
+  reader = replaceOnce(reader, /  const NAME_PROHIBITED_ROLES = \[[\s\S]*?(?=  const implicitRole = memoized)/, '');
+  reader = replaceOnce(reader,
+    /if \(explicit !== null && !\(\(explicit === 'presentation' \|\| explicit === 'none'\) && hasPresentationConflict\(el\)\)\)/,
+    'if (explicit !== null)');
+  reader = replaceOnce(reader,
+    /return el\.getAttribute\('alt'\) === '' && !el\.getAttribute\('title'\) && !hasGlobalAriaAttribute\(el, null\) && !hasTabIndex\(el\)\n          \? 'presentation'\n          : 'image';/,
+    "return el.getAttribute('alt') === '' ? 'presentation' : 'image';");
+  reader = replaceOnce(reader,
+    /  \/\*\* A closed select has no option boxes; explicit exclusions still remove choices it does not offer\. \*\/\n  const isOfferedOption = [\s\S]*?\n  };\n\n/, '');
+  reader = replaceOnce(reader,
+    /      let offered = 0;\n      for \(const option of Array\.from\(\(el as HTMLSelectElement\)\.options\)\) \{\n        if \(offered >= MAX_SELECT_OPTIONS\) break;\n        if \(!isOfferedOption\(option\)\) continue;\n        offered \+= 1;/,
+    '      const choices = Array.from((el as HTMLSelectElement).options).slice(0, MAX_SELECT_OPTIONS);\n      for (const option of choices) {');
+  assert.equal(reader, original(path).toString('utf8'), 'No other reader delta is approved for this oracle');
+  const fixtureSource = readFileSync(join(root, 'packages/web/tests/integration/read-node-roles.test.ts'), 'utf8');
+  const fixture = fixtureSource.match(/const embeddedSurfaceHtml = `([\s\S]*?)`;/)?.[1];
+  assert.ok(fixture);
+  // Includes srcdoc text. With no explicit role, the new conflict branch short-circuits;
+  // with no img/select, the other changed branches are unreachable. P42's other test
+  // below independently requires byte equality to the original d7 fixture.
+  assert.doesNotMatch(fixture, /\brole\s*=|<\s*(?:img|select|option|script)\b/i);
+});
+
+test('upstream barrel-loaded additions do not alter called primitive timing or cancellation', () => {
+  const current = (path: string): string => readFileSync(join(root, path), 'utf8');
+  const timePath = 'packages/e2e/src/internal/time.ts';
+  const time = replaceOnce(current(timePath),
+    /\/\*\* A budget as a message names it,[\s\S]*?export function budgetText\(ms: number\): string \{[\s\S]*?\n}\n\n/, '');
+  assert.equal(time, original(timePath).toString('utf8'));
+  const resolverPath = 'packages/e2e/src/engine/resolve.ts';
+  const resolver = replaceOnce(current(resolverPath), /    case 'union': \{[\s\S]*?\n    }\n/, '');
+  assert.equal(resolver, original(resolverPath).toString('utf8'));
+  const errorsPath = 'packages/e2e/src/internal/errors.ts';
+  let errors = replaceOnce(current(errorsPath), /export function errorMessage\(cause: unknown\): string \{[\s\S]*?\n}/,
+    "export function errorMessage(cause: unknown): string {\n  return cause instanceof Error ? cause.message : String(cause);\n}");
+  errors = replaceOnce(errors, /  \| 'filter'\n/, '');
+  assert.equal(errors, original(errorsPath).toString('utf8'));
+  const captureSources = ['packages/web/src/observation.ts', 'packages/web/src/capture-scope.ts'];
+  for (const path of captureSources) {
+    assert.equal(current(path), original(path).toString('utf8'));
+    assert.doesNotMatch(current(path), /\b(?:resolveExpression|errorMessage|asEngineError|budgetText|navigationStaleOr|staleOr)\b/);
+  }
+  const withTimeout = current(timePath).match(/export async function withTimeout[\s\S]*?^}/m)?.[0];
+  assert.ok(withTimeout);
+  assert.doesNotMatch(withTimeout, /\b(?:errorMessage|asEngineError|budgetText)\b/);
+  assert.equal(current('packages/e2e/src/engine/timing.ts'), original('packages/e2e/src/engine/timing.ts').toString('utf8'));
 });
 
 test('the only called primitive moved between changed modules is byte-identical to the fixed original', () => {
@@ -204,7 +260,32 @@ test('original fixture and reviewed canvas assertion are preserved; companion ne
   assert.doesNotMatch(currentCase, /await recordCanvasOracle/);
   const companion = source.slice(source.indexOf("it('P42O:"), source.indexOf("it('drops a name taken", source.indexOf("it('P42O:")));
   assert.doesNotMatch(companion, /nativeDocument|\.engine\.|await capture\(/);
-  assert.equal((source.match(/\bit\(/g) ?? []).length, originalDirectItCount + 1);
+  // Official 69e123 adds two role tests. Removing exactly those additions must
+  // recover the complete pre-upgrade native file (0e190943), not just its count.
+  const additions = [
+    ['ignores a presentational role a focusable control or a global ARIA attribute contradicts, as getByRole does',
+      '434efa130a9a21795c5dec5384529427778d533f63db2234d09ac320575fb249',
+      '90f7af73bb05c22c7232b4de19f195a203fe04f880ee99fe70ec49f92143bc7f'],
+    ['applies a presentational role inside an editing host, where only the host is focusable',
+      '6ef9979b4c524ab09e04f6091671d142c8f2d0746bf041105d28ebacebdcc6d0',
+      'efb82633c923b8e03a4d575879abbccdc84c1488255bfc911eec66b266a30b4e'],
+  ] as const;
+  let preUpgrade = source;
+  for (const [title, currentHash, officialHash] of additions) {
+    const start = preUpgrade.indexOf(`  it('${title}'`);
+    assert.ok(start >= 0);
+    const end = preUpgrade.indexOf('  it(', start + 5); assert.ok(end > start);
+    const added = preUpgrade.slice(start, end);
+    assert.equal(sha256(added), currentHash);
+    // Only the existing native setup and passive Playwright oracle bindings differ.
+    const official = added.replace('await nativeDocument(fixture!.browser, ', 'await page.setContent(')
+      .replaceAll('fixture!.oracle.getByRole', 'page.getByRole');
+    assert.equal(sha256(official), officialHash);
+    preUpgrade = preUpgrade.slice(0, start) + preUpgrade.slice(end);
+  }
+  assert.equal(sha256(preUpgrade), 'd048860fd0bd705cf6a3b6b5ea152f887a1655ffc77fe3038e9b355079136087');
+  assert.equal((preUpgrade.match(/\bit\(/g) ?? []).length, originalDirectItCount + 1);
+  assert.equal((source.match(/\bit\(/g) ?? []).length, originalDirectItCount + 1 + additions.length);
 });
 
 test('explicit reference reads need no candidate git objects and reject wrong origin, revision or dirty sources', t => {
