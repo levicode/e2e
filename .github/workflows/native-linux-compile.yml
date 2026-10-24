@@ -1,0 +1,254 @@
+# Frozen public source trees were verified before this compile-only recipe was published.
+# Derived from immutable macOS compile-only recipe c11dcffa, not a release workflow.
+# Compile evidence only. Never execute the produced runtime or test harnesses.
+name: native Linux compile only (not acceptance or release)
+on:
+  push:
+    branches: [implement/native-linux-compile-ci]
+permissions:
+  contents: read
+concurrency:
+  group: native-linux-compile-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compile-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      E2E_SHA: cb71b0a0168dc8fd57e644a32bd3617ff2b9bb3e
+      E2E_TREE: 5e345f7aec13fbd15389dde73a070a813436b383
+      NATIVE_SHA: 2647b4c5e9439dcf620ce6726883bab65b0fc2ca
+      NATIVE_TREE: f61baf5f27586108a7ac6c8bde7e9aa985428ad1
+      NATIVE_LOCK_SHA256: 652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1
+      CARGO_BUILD_JOBS: '1'
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Initialize compile-only diagnostics
+        id: initialize
+        run: |
+          set -euo pipefail
+          export EVIDENCE_DIR="$RUNNER_TEMP/native-linux-compile"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/native-linux-compile-target"
+          export CARGO_HOME="$RUNNER_TEMP/native-linux-compile-cargo"
+          printf 'EVIDENCE_DIR=%s\nCARGO_TARGET_DIR=%s\nCARGO_HOME=%s\n' "$EVIDENCE_DIR" "$CARGO_TARGET_DIR" "$CARGO_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$EVIDENCE_DIR" "$RUNNER_TEMP/native-linux-compile-bin"
+          printf '%s\n' \
+            'COMPILE ONLY / NONRELEASE. No runtime or test harness was executed.' \
+            'No browser, installed-consumer, acceptance, producer, or release evidence.' \
+            'Dashboard frontend is not built; the native build script may embed its placeholder.' \
+            'A zero compile exit is not a runtime or acceptance pass. not-run is not success.' \
+            > "$EVIDENCE_DIR/SCOPE.txt"
+          for phase in source-host toolchain native-format-check native-default-clippy native-feature-check native-proxy-check production-build production-capture default-test-build source-final artifact-verification; do
+            printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+            : > "$EVIDENCE_DIR/$phase.stdout.log"
+            : > "$EVIDENCE_DIR/$phase.stderr.log"
+            printf 'not-run\n' > "$EVIDENCE_DIR/$phase.command.txt"
+          done
+      - name: Check out the actual workflow recipe separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - name: Check out frozen e2e source (not the workflow commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/e2e
+          ref: cb71b0a0168dc8fd57e644a32bd3617ff2b9bb3e
+          path: e2e-source
+          persist-credentials: false
+      - name: Check out frozen native source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 2647b4c5e9439dcf620ce6726883bab65b0fc2ca
+          path: native-source
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          architecture: x64
+      - name: Verify clean frozen sources and Linux x86_64 host
+        id: source
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/source-host.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/source-host.log") 2>&1
+          date -u > "$EVIDENCE_DIR/started-at-utc.txt"
+          cat /etc/os-release > "$EVIDENCE_DIR/linux-version.txt"
+          uname -a > "$EVIDENCE_DIR/linux-host.txt"
+          lscpu > "$EVIDENCE_DIR/linux-resources.txt"
+          free -h >> "$EVIDENCE_DIR/linux-resources.txt"
+          df -h "$RUNNER_TEMP" > "$EVIDENCE_DIR/runner-disk.txt"
+          node -p 'JSON.stringify({platform:process.platform,architecture:process.arch,version:process.version})' > "$EVIDENCE_DIR/node-host.json"
+          for repo in recipe e2e-source native-source; do
+            git -C "$repo" rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/$repo.txt"
+            git -C "$repo" status --porcelain --untracked-files=all > "$EVIDENCE_DIR/$repo-status.txt"
+          done
+          sha256sum recipe/.github/workflows/native-linux-compile.yml > "$EVIDENCE_DIR/workflow-sha256.txt"
+          sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/native-lock-sha256.txt"
+          printf 'event_commit=%s\nrecipe_commit=%s\n' "$GITHUB_SHA" "$RECIPE_SHA" > "$EVIDENCE_DIR/recipe-context.txt"
+          SUFFIX=''
+          # BEGIN SOURCE IDENTITY ASSERTIONS
+          for repo in recipe e2e-source native-source; do
+            test -f "$EVIDENCE_DIR/$repo${SUFFIX}-status.txt"
+            test ! -s "$EVIDENCE_DIR/$repo${SUFFIX}-status.txt"
+          done
+          test "$(sed -n '1p' "$EVIDENCE_DIR/recipe${SUFFIX}.txt")" = "$RECIPE_SHA"
+          test "$(sed -n '1p' "$EVIDENCE_DIR/e2e-source${SUFFIX}.txt")" = "$E2E_SHA"
+          test "$(sed -n '2p' "$EVIDENCE_DIR/e2e-source${SUFFIX}.txt")" = "$E2E_TREE"
+          test "$(sed -n '1p' "$EVIDENCE_DIR/native-source${SUFFIX}.txt")" = "$NATIVE_SHA"
+          test "$(sed -n '2p' "$EVIDENCE_DIR/native-source${SUFFIX}.txt")" = "$NATIVE_TREE"
+          test "$(awk '{print $1}' "$EVIDENCE_DIR/native-lock${SUFFIX}-sha256.txt")" = "$NATIVE_LOCK_SHA256"
+          # END SOURCE IDENTITY ASSERTIONS
+          test "$RUNNER_OS" = Linux
+          test "$(node -p 'process.platform')" = linux
+          test "$(node -p 'process.arch')" = x64
+          test "$(uname -m)" = x86_64
+      - name: Require the native Rust host toolchain
+        id: toolchain
+        env:
+          EXPECTED_RUST_HOST: x86_64-unknown-linux-gnu
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/toolchain.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/toolchain.log") 2>&1
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustc -Vv > "$EVIDENCE_DIR/rustc-version.txt"
+          cargo -Vv > "$EVIDENCE_DIR/cargo-version.txt"
+          test "$(sed -n 's/^host: //p' "$EVIDENCE_DIR/rustc-version.txt")" = "$EXPECTED_RUST_HOST"
+      - name: Check all compile boundaries independently; never run harnesses
+        id: compile
+        working-directory: native-source/cli
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+          failed=0
+          check_boundary() {
+            local name="$1" status=0
+            shift
+            printf '%q ' "$@" > "$EVIDENCE_DIR/$name.command.txt"
+            printf '\n' >> "$EVIDENCE_DIR/$name.command.txt"
+            if "$@" > "$EVIDENCE_DIR/$name.stdout.log" 2> "$EVIDENCE_DIR/$name.stderr.log"; then status=0; else status=$?; failed=1; fi
+            printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.exit"
+            cat "$EVIDENCE_DIR/$name.stdout.log" "$EVIDENCE_DIR/$name.stderr.log"
+          }
+          check_boundary native-format-check cargo fmt -- --check
+          check_boundary native-default-clippy cargo clippy --locked --profile ci --no-default-features --all-targets -- -D warnings
+          check_boundary native-feature-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --tests
+          check_boundary native-proxy-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --test client-proxy-fixture
+          check_boundary production-build cargo build --locked --profile ci --no-default-features --message-format=json
+          if test "$(cat "$EVIDENCE_DIR/production-build.exit")" = 0; then
+            # Capture the exact feature-free binary before compiling any test harness.
+            check_boundary production-capture node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { copyFileSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const rows = readFileSync(join(process.env.EVIDENCE_DIR, 'production-build.stdout.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+          const completed = rows.filter(row => row.reason === 'build-finished');
+          assert.equal(completed.length, 1); assert.equal(completed[0].success, true);
+          const binaries = rows.filter(row => row.reason === 'compiler-artifact' && row.target?.name === 'agent-browser' && row.profile?.test === false);
+          assert.equal(binaries.length, 1);
+          const binary = binaries[0];
+          assert.deepEqual(binary.features, []); assert.deepEqual(binary.target.kind, ['bin']);
+          assert.equal(binary.manifest_path, join(process.cwd(), 'Cargo.toml'));
+          assert.equal(binary.target.src_path, join(process.cwd(), 'src/main.rs'));
+          assert.equal(binary.executable, join(process.env.CARGO_TARGET_DIR, 'ci/agent-browser'));
+          copyFileSync(binary.executable, join(process.env.RUNNER_TEMP, 'native-linux-compile-bin/agent-browser'));
+          NODE
+          fi
+          check_boundary default-test-build cargo test --locked --profile ci --no-default-features --no-run --message-format=json
+          test "$failed" -eq 0
+      - name: Record and verify unchanged sources even after failure or skipped work
+        id: source_final
+        if: ${{ always() }}
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-linux-compile}"
+          mkdir -p "$EVIDENCE_DIR"
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/source-final.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/source-final.log") 2>&1
+          failed=0
+          for repo in recipe e2e-source native-source; do
+            git -C "$repo" rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/$repo-final.txt" || failed=1
+            git -C "$repo" status --porcelain --untracked-files=all > "$EVIDENCE_DIR/$repo-final-status.txt" || failed=1
+          done
+          sha256sum recipe/.github/workflows/native-linux-compile.yml > "$EVIDENCE_DIR/workflow-final-sha256.txt" || failed=1
+          sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/native-lock-final-sha256.txt" || failed=1
+          test "$failed" -eq 0
+          SUFFIX=-final
+          # BEGIN SOURCE IDENTITY ASSERTIONS
+          for repo in recipe e2e-source native-source; do
+            test -f "$EVIDENCE_DIR/$repo${SUFFIX}-status.txt"
+            test ! -s "$EVIDENCE_DIR/$repo${SUFFIX}-status.txt"
+          done
+          test "$(sed -n '1p' "$EVIDENCE_DIR/recipe${SUFFIX}.txt")" = "$RECIPE_SHA"
+          test "$(sed -n '1p' "$EVIDENCE_DIR/e2e-source${SUFFIX}.txt")" = "$E2E_SHA"
+          test "$(sed -n '2p' "$EVIDENCE_DIR/e2e-source${SUFFIX}.txt")" = "$E2E_TREE"
+          test "$(sed -n '1p' "$EVIDENCE_DIR/native-source${SUFFIX}.txt")" = "$NATIVE_SHA"
+          test "$(sed -n '2p' "$EVIDENCE_DIR/native-source${SUFFIX}.txt")" = "$NATIVE_TREE"
+          test "$(awk '{print $1}' "$EVIDENCE_DIR/native-lock${SUFFIX}-sha256.txt")" = "$NATIVE_LOCK_SHA256"
+          # END SOURCE IDENTITY ASSERTIONS
+          for repo in recipe e2e-source native-source; do
+            cmp "$EVIDENCE_DIR/$repo.txt" "$EVIDENCE_DIR/$repo-final.txt"
+          done
+          cmp "$EVIDENCE_DIR/workflow-sha256.txt" "$EVIDENCE_DIR/workflow-final-sha256.txt"
+          cmp "$EVIDENCE_DIR/native-lock-sha256.txt" "$EVIDENCE_DIR/native-lock-final-sha256.txt"
+      - name: Statically verify ELF x86_64, hashes, and captured production artifact
+        id: verify
+        if: ${{ !cancelled() && steps.compile.outcome != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/artifact-verification.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/artifact-verification.log") 2>&1
+          test "$(cat "$EVIDENCE_DIR/production-capture.exit")" = 0
+          binary="$RUNNER_TEMP/native-linux-compile-bin/agent-browser"
+          # Static file inspection, not execution or a claim of static linkage.
+          LC_ALL=C file "$binary" > "$EVIDENCE_DIR/production-file.txt"
+          grep -Eq 'ELF 64-bit LSB (pie )?executable, x86-64' "$EVIDENCE_DIR/production-file.txt"
+          LC_ALL=C readelf -h "$binary" > "$EVIDENCE_DIR/production-elf-header.txt"
+          grep -Eq 'Class:[[:space:]]+ELF64' "$EVIDENCE_DIR/production-elf-header.txt"
+          grep -Eq 'Data:[[:space:]]+2.s complement, little endian' "$EVIDENCE_DIR/production-elf-header.txt"
+          grep -Eq 'Machine:[[:space:]]+Advanced Micro Devices X86-64' "$EVIDENCE_DIR/production-elf-header.txt"
+          grep -Eq 'Type:[[:space:]]+(EXEC|DYN)' "$EVIDENCE_DIR/production-elf-header.txt"
+          sha256sum "$binary" > "$EVIDENCE_DIR/production-sha256.txt"
+          cmp "$CARGO_TARGET_DIR/ci/agent-browser" "$binary"
+      - name: Record actual step outcomes, including failures and skipped work
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-linux-compile}"
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+      - name: Preserve compile diagnostics even on failure (not a pass receipt)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: linux-compile-only-diagnostics-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-linux-compile/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve verified compile-only binary (not acceptance or release)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.compile.outcome == 'success' && steps.source_final.outcome == 'success' && steps.verify.outcome == 'success' }}
+        with:
+          name: linux-compile-only-nonrelease-binary-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/native-linux-compile-bin/agent-browser
+            ${{ runner.temp }}/native-linux-compile/SCOPE.txt
+            ${{ runner.temp }}/native-linux-compile/production-*.txt
+            ${{ runner.temp }}/native-linux-compile/native-source.txt
+            ${{ runner.temp }}/native-linux-compile/e2e-source.txt
+            ${{ runner.temp }}/native-linux-compile/recipe.txt
+            ${{ runner.temp }}/native-linux-compile/workflow-sha256.txt
+            ${{ runner.temp }}/native-linux-compile/native-lock-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
