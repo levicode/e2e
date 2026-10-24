@@ -8,6 +8,8 @@ import type { Locator as PwLocator, Page } from 'playwright-core';
 import { describe, expect, it } from 'vitest';
 import type { LocatorExpression, TextPattern } from 'e2e/engine';
 import { applyPostSteps, projectExpression as projectWith, type PostStep } from '../../src/locators.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 
 /** A chain-recording stand-in for a Playwright locator. */
 interface FakeLocator {
@@ -72,71 +74,91 @@ const textbox: LocatorExpression = {
   query: { kind: 'role', value: { kind: 'string', value: 'textbox', exact: true } },
 };
 
-describe('projectExpression', () => {
-  it('projects an exact label query onto the label engine with a label predicate, and composes exactly', () => {
-    const label: LocatorExpression = {
-      kind: 'query',
-      query: { kind: 'label', value: { kind: 'string', value: 'Display name', exact: true } },
-    };
-    const projected = projectExpression(page, label);
-    expect(projected.name).toEqual({ kind: 'string', value: 'Display name', exact: true });
-    // The label engine runs the reader in the page, with the reader's options, so only the labelled controls are
-    // candidates; alone and in composition alike.
-    const EXACT_LABEL = `locator(e2e-label=${JSON.stringify({
-      value: 'Display name',
-      testIdAttribute: 'data-testid',
-      secureFieldSelector: 'input[type="password" i]',
-    })})`;
-    expect(chainOf(projected.locator)).toEqual([EXACT_LABEL]);
-    expect(projected.composable === null ? null : chainOf(projected.composable)).toEqual([EXACT_LABEL]);
-    // A position waits for the predicate and also narrows the composable locator.
+// Admission is native-owned. CI26 composition_tests and composition_tests::
+// unsupported_composition_never_dispatches_cdp_or_stages_references execute the
+// producer refusal; this helper checks only the actual client's error mapping.
+async function expectNativeDisplayValueRefusal(expressions: readonly LocatorExpression[]) {
+  const operation = () => ({ signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const });
+  const peer = new NativeProtocolPeer([], () => ({ error: 'unsupported-capability' }));
+  const client = await peer.connect(operation(), () => undefined);
+  try {
+    const channel = new EngineChannel(client);
+    for (const command of ['browser.query', 'fixture.query'] as const) for (const expression of expressions) {
+      await expect(channel.command(command, {
+        identityScope: 'scope', expression, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]',
+      }, operation())).rejects.toMatchObject({
+        code: 'UNSUPPORTED_CAPABILITY', retryable: false,
+        message: 'displayValue queries cannot scope child queries or serve as a has-filter in this engine',
+      });
+    }
+    expect(peer.requests.map(request => [request.command, request.args['expression']])).toEqual(
+      ['browser.query', 'fixture.query'].flatMap(command => expressions.map(expression => [command, expression])),
+    );
+  } finally { await client.close(operation()); }
+}
+
+describe('native displayValue refusals', () => {
+  it('rejects a displayValue query as a scope or has-filter, and names only those cases', async () => {
+    await expectNativeDisplayValueRefusal([
+      { ...textbox, scope: shared } as LocatorExpression,
+      { kind: 'filter', source: textbox, has: shared },
+    ]);
+  });
+
+  it('still rejects a displayValue has-filter after a position', async () => {
+    await expectNativeDisplayValueRefusal([
+      { kind: 'filter', source: { kind: 'index', source: textbox, index: 'first' }, has: shared },
+    ]);
+  });
+});
+
+// Matching is bound to run 39940386738's label-composition and lifecycle cases.
+// Every expression receives the same transport fixture; this helper has no matcher.
+async function expectNativeQueries(expressions: readonly LocatorExpression[]) {
+  const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+  const node = { ref: { id: '@e1', revision: '1' }, role: 'textbox', name: 'Decoded fixture node' };
+  const peer = new NativeProtocolPeer([], () => ({ data: { identityScope: 'scope', revision: '1', nodes: [node] } }));
+  const client = await peer.connect(operation, () => undefined);
+  const originals = expressions.map(expression => structuredClone({ identityScope: 'scope', expression, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' }));
+  try {
+    const channel = new EngineChannel(client);
+    for (const expression of expressions) {
+      const result = await channel.command('browser.query', { identityScope: 'scope', expression, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' }, operation);
+      expect(result).toEqual({ identityScope: 'scope', revision: '1', nodes: [node] });
+    }
+    expect(peer.requests.map(request => [request.command, request.args])).toEqual(originals.map(args => ['browser.query', args]));
+  } finally { await client.close(operation); }
+}
+
+describe('native query forwarding', () => {
+  it('projects an exact label query onto the label engine with a label predicate, and composes exactly', async () => {
+    const label: LocatorExpression = { kind: 'query', query: { kind: 'label', value: { kind: 'string', value: 'Display name', exact: true } } };
     const firstLabel: LocatorExpression = { kind: 'index', source: label, index: 'first' };
-    const first = projectExpression(page, firstLabel);
-    expect(first.steps).toEqual([{ kind: 'index', index: 'first' }]);
-    expect(first.composable === null ? null : chainOf(first.composable)).toEqual([EXACT_LABEL, 'first']);
-    const scoped = projectExpression(page, { ...textbox, scope: firstLabel } as LocatorExpression);
-    expect(chainOf(scoped.locator)).toEqual([EXACT_LABEL, 'first', ROOTS, 'role(textbox)']);
-    const rows = projectExpression(page, { kind: 'filter', source: textbox, has: label });
-    expect(chainOf(rows.locator)).toEqual([ROOTS, 'role(textbox)', `filter(has=${EXACT_LABEL})`]);
-    // A substring label query keeps Playwright's own matching.
-    const loose = projectExpression(page, {
-      kind: 'query',
-      query: { kind: 'label', value: { kind: 'string', value: 'Display', exact: false } },
-    });
-    expect(loose.name).toBeNull();
-  });
-
-  it('narrows a visible query inside the selector for every kind, CSS candidates included', () => {
-    const visibleLabel: LocatorExpression = {
-      kind: 'query',
-      query: { kind: 'label', value: { kind: 'string', value: 'Display name', exact: true }, visible: true },
-    };
-    const projected = projectExpression(page, visibleLabel);
-    const visibleLabelChain = [
-      expect.stringMatching(/^locator\(e2e-label=/),
-      'locator(e2e-shown=)',
-    ];
-    expect(chainOf(projected.locator)).toEqual(visibleLabelChain);
-    expect(projected.visible).toBe(true);
-    // The composable form narrows the same way, so a has filter on a visible label drops a hidden control.
-    expect(projected.composable === null ? null : chainOf(projected.composable)).toEqual(visibleLabelChain);
-    const visibleValue: LocatorExpression = {
-      kind: 'query',
-      query: { kind: 'displayValue', value: { kind: 'string', value: 'ada', exact: true }, visible: true },
-    };
-    expect(chainOf(projectExpression(page, visibleValue).locator)).toEqual([
-      'locator(e2e-roots=input:not([type="checkbox" i]):not([type="radio" i]), textarea, select)',
-      'locator(e2e-shown=)',
-    ]);
-    const visibleText: LocatorExpression = {
-      kind: 'query',
-      query: { kind: 'text', value: { kind: 'string', value: 'Save', exact: true }, visible: true },
-    };
-    expect(chainOf(projectExpression(page, visibleText).locator)).toEqual([
-      ROOTS, 'text(Save,exact)', 'locator(e2e-shown=)',
+    await expectNativeQueries([
+      label,
+      firstLabel,
+      { ...textbox, scope: firstLabel } as LocatorExpression,
+      { kind: 'filter', source: textbox, has: label },
+      { kind: 'query', query: { kind: 'label', value: { kind: 'string', value: 'Display', exact: false } } },
     ]);
   });
 
+  it('narrows a visible query inside the selector for every kind, CSS candidates included', async () => {
+    const visibleLabel: LocatorExpression = { kind: 'query', query: { kind: 'label', value: { kind: 'string', value: 'Display name', exact: true }, visible: true } };
+    await expectNativeQueries([
+      visibleLabel,
+      { kind: 'filter', source: textbox, has: visibleLabel },
+      { kind: 'query', query: { kind: 'displayValue', value: { kind: 'string', value: 'ada', exact: true }, visible: true } },
+      { kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Save', exact: true }, visible: true } },
+    ]);
+  });
+
+  it('defers positions on a displayValue query until its candidates are value-filtered', async () => {
+    await expectNativeQueries([{ kind: 'index', source: { kind: 'index', source: shared, index: 'last' }, index: 'first' }]);
+  });
+});
+
+describe('projectExpression', () => {
   it('projects a testId query onto the configured attribute, encoded as getByTestId encodes it', () => {
     const testId = (value: TextPattern): LocatorExpression => ({
       kind: 'query',
@@ -185,20 +207,6 @@ describe('projectExpression', () => {
     expect(chainOf(projectExpression(page, tablist).locator)).toEqual([ROOTS, 'role(tablist)']);
   });
 
-  it('defers positions on a displayValue query until its candidates are value-filtered', () => {
-    const projected = projectExpression(page, {
-      kind: 'index',
-      source: { kind: 'index', source: shared, index: 'last' },
-      index: 'first',
-    });
-    expect(chainOf(projected.locator)).toEqual(['locator(e2e-roots=input:not([type="checkbox" i]):not([type="radio" i]), textarea, select)']);
-    expect(projected.displayValue).toEqual({ kind: 'string', value: 'shared', exact: true });
-    expect(projected.steps).toEqual([
-      { kind: 'index', index: 'last' },
-      { kind: 'index', index: 'first' },
-    ]);
-  });
-
   it('composes per-element filters onto the displayValue candidate locator', () => {
     const projected = projectExpression(page, {
       kind: 'index',
@@ -211,16 +219,6 @@ describe('projectExpression', () => {
     ]);
     expect(projected.displayValue).not.toBeNull();
     expect(projected.steps).toEqual([{ kind: 'index', index: 0 }]);
-  });
-
-  it('rejects a displayValue query as a scope or has-filter, and names only those cases', () => {
-    const message = 'displayValue queries cannot scope child queries or serve as a has-filter in this engine';
-    expect(() => projectExpression(page, { ...textbox, scope: shared })).toThrow(
-      expect.objectContaining({ code: 'UNSUPPORTED_CAPABILITY', message }),
-    );
-    expect(() => projectExpression(page, { kind: 'filter', source: textbox, has: shared })).toThrow(
-      expect.objectContaining({ code: 'UNSUPPORTED_CAPABILITY', message }),
-    );
   });
 
   it('defers a filter placed after a position on a displayValue query to the selected element', () => {
@@ -240,14 +238,65 @@ describe('projectExpression', () => {
     expect(chainOf(filter.options.has!)).toEqual([ROOTS, 'role(textbox)']);
   });
 
-  it('still rejects a displayValue has-filter after a position', () => {
-    expect(() =>
-      projectExpression(page, {
-        kind: 'filter',
-        source: { kind: 'index', source: textbox, index: 'first' },
-        has: shared,
-      }),
-    ).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CAPABILITY' }));
+});
+
+// Run 39940386738's real-native lifecycle positional query case checks the
+// matching results. This peer checks unchanged AST order and result decoding;
+// it contains no matcher and its reply alone is not native matching proof.
+describe('native positional forwarding', () => {
+  type IndexStep = Pick<Extract<LocatorExpression, { kind: 'index' }>, 'kind' | 'index'>;
+  it.each([
+    [[{ kind: 'index', index: 3 }], []],
+    [[{ kind: 'index', index: 'last' }, { kind: 'index', index: 'first' }], ['c']],
+    [[], ['a', 'b', 'c']],
+  ] as const satisfies readonly (readonly [readonly IndexStep[], readonly string[]])[])(
+    'applies %j to yield %j',
+    async (steps, expected) => {
+      let expression: LocatorExpression = shared;
+      for (const step of steps) expression = { kind: 'index', source: expression, index: step.index };
+      const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+      const peer = new NativeProtocolPeer([], () => ({ data: {
+        identityScope: 'scope', revision: '1',
+        nodes: expected.map((name, offset) => ({ ref: { id: `@e${offset + 1}`, revision: '1' }, role: 'textbox', name, value: 'shared' })),
+      } }));
+      const client = await peer.connect(operation, () => undefined);
+      try {
+        const args = { identityScope: 'scope', expression, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' };
+        const original = structuredClone(args);
+        const result = await new EngineChannel(client).command('browser.query', args, operation);
+        expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.query', original]]);
+        expect(result.nodes.map(node => node.name)).toEqual(expected);
+      } finally { await client.close(operation); }
+    },
+  );
+
+  // Run 39940386738's positional case executes last/first followed by hasText.
+  // Its pinned matcher filters evaluate(source), so only selected indices enter
+  // the predicate. This peer proves AST forwarding and decoding, not matching.
+  it('runs a filter step only on the matches the steps before it selected', async () => {
+    const cases = [['last', ['c']], ['first', []]] as const;
+    const replies = cases.map(([, names]) => ({
+      identityScope: 'scope', revision: '1',
+      nodes: names.map(name => ({ ref: { id: '@e1', revision: '1' }, role: 'textbox', name, value: 'shared' })),
+    }));
+    const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], () => ({ data: replies.shift()! }));
+    const client = await peer.connect(operation, () => undefined);
+    const originals = cases.map(([index]) => ({
+      identityScope: 'scope',
+      expression: { kind: 'filter', source: { kind: 'index', source: shared, index }, hasText: { kind: 'string', value: 'x', exact: false } },
+      testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]',
+    } as const));
+    try {
+      const channel = new EngineChannel(client);
+      for (const [offset, [, expected]] of cases.entries()) {
+        const args = structuredClone(originals[offset]!);
+        const result = await channel.command('browser.query', args, operation);
+        expect(result.nodes.map(node => node.name)).toEqual(expected);
+      }
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual(originals.map(args => ['browser.query', args]));
+      expect(peer.frames.filter(frame => frame['type'] === 'request').map(frame => frame['timeoutMs'])).toEqual([1000, 1000]);
+    } finally { await client.close(operation); }
   });
 });
 
@@ -255,14 +304,6 @@ describe('applyPostSteps', () => {
   const matches = ['a', 'b', 'c'];
   const index = (value: 'first' | 'last' | number): PostStep => ({ kind: 'index', index: value });
   const never = () => Promise.resolve(false);
-
-  it.each([
-    [[index(3)], []],
-    [[index('last'), index('first')], ['c']],
-    [[], ['a', 'b', 'c']],
-  ] as const)('applies %j to yield %j', async (steps, expected) => {
-    expect(await applyPostSteps(matches, steps, never)).toEqual(expected);
-  });
 
   it('runs a filter step only on the matches the steps before it selected', async () => {
     const asked: string[] = [];

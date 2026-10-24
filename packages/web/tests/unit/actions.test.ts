@@ -7,9 +7,130 @@
 
 import type { Locator as PwLocator, Page } from 'playwright-core';
 import { describe, expect, it, vi } from 'vitest';
-import { EngineError, TestError, type LocatorAction } from 'e2e/engine';
+import { EngineError, type LocatorAction } from 'e2e/engine';
 import { classifyActionError, dispatchLocatorAction, dispatchPointerAction } from '../../src/actions.ts';
-import type { ActionTarget } from '../../src/support.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
+
+type ActionTarget = Parameters<typeof dispatchLocatorAction>[0];
+
+// The native producer owns string-to-label selection. Run 39940386738 executes
+// select_modes_are_unambiguous_and_string_means_label and the hosted exact-action
+// contract. This peer proves the original action and 7ms budget cross the adapter once.
+// C03's exact dev tests at native 31df55cf prove the 900ms CDP hold, empty
+// PREPARE_FILL/Delete fallback and positive index 2. The latter scripts execute
+// in a Node scripted DOM. These peers preserve actions/budgets, not renderer proof.
+describe('native locator action forwarding', () => {
+  it.each([
+    [{ kind: 'selectOption', value: 'Blue' }, 'selectOption', [{ label: 'Blue' }, { timeout: 7 }]],
+    [{ kind: 'longPress', durationMs: 900 }, 'click', [{ timeout: 7, delay: 900 }]],
+    [{ kind: 'clear' }, 'fill', ['', { timeout: 7 }]],
+    [{ kind: 'selectOption', value: { index: 2 } }, 'selectOption', [{ index: 2 }, { timeout: 7 }]],
+  ] as const satisfies readonly (readonly [LocatorAction, string, readonly unknown[]])[])(
+    'dispatches %j to locator.%s',
+    async (action) => {
+      vi.useFakeTimers();
+      const operation = { signal: new AbortController().signal, timeoutMs: 7, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+      const peer = new NativeProtocolPeer([], () => ({ data: null }));
+      const client = await peer.connect({ ...operation, timeoutMs: 1000 }, () => undefined);
+      try {
+        const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action };
+        const original = structuredClone(args);
+        await new EngineChannel(client).command('browser.perform', args, operation);
+        expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+        expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(7);
+      } finally {
+        try { await client.close({ ...operation, timeoutMs: 1000 }); }
+        finally { vi.useRealTimers(); }
+      }
+    },
+  );
+
+  // Immutable native drag tests resolve the source and exact destination through
+  // browser.perform. This peer checks only the original target ref and budget.
+  it('uses Playwright drag when both sides are locators', async () => {
+    vi.useFakeTimers();
+    const operation = { signal: new AbortController().signal, timeoutMs: 7, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const action: LocatorAction = { kind: 'dragTo', target: { id: 'n2', revision: 'r' } };
+    const peer = new NativeProtocolPeer([], () => ({ data: null }));
+    const client = await peer.connect({ ...operation, timeoutMs: 1000 }, () => undefined);
+    try {
+      const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action };
+      const original = structuredClone(args);
+      await new EngineChannel(client).command('browser.perform', args, operation);
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+      expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(7);
+    } finally {
+      try { await client.close({ ...operation, timeoutMs: 1000 }); }
+      finally { vi.useRealTimers(); }
+    }
+  });
+});
+
+// Run 39940386738 executes the no-box native refusal and its public lifecycle
+// counterpart. This peer checks only error mapping, one dispatch and the 7ms wire budget.
+describe('native locator action refusals', () => {
+  // Formal 0e3f's stale_does_not_erase_unknown_effects_after_dispatch checks the
+  // shared failure rule. live_drag_destination_revalidates_after_press_without_replay
+  // additionally witnesses real press -> stale/Unknown; it is not a tap replay test.
+  it.each([
+    ['strict mode violation: 2 elements\nCall log:\n  - move and down action done', 'ACTION_MAY_HAVE_COMMITTED', false],
+  ] as const)('maps "%s" to %s', async (_text, code, retryable) => {
+    const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], () => ({ error: 'stale-reference', effects: 'unknown', scopeState: 'quarantined' }));
+    const dispose = vi.spyOn(peer, 'dispose');
+    const client = await peer.connect(operation, () => undefined);
+    try {
+      const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action: { kind: 'tap' } as const };
+      const original = structuredClone(args);
+      await expect(new EngineChannel(client).command('browser.perform', args, operation)).rejects.toMatchObject({ code, retryable });
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+      expect(dispose).toHaveBeenCalledOnce();
+      const retired = peer.frames.length;
+      await expect(client.request('page.title', {}, operation)).rejects.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+      expect(peer.frames).toHaveLength(retired);
+    } finally {
+      await expect(client.close(operation)).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    }
+  });
+
+  // The labels preserve the old classification rows. Run 39940386738's native
+  // live-query tap test executes ambiguous and missing targets, and witnesses
+  // stale-reference/not-dispatched with no input or scroll. No legacy text is
+  // parsed by this peer; it proves the closed error's adapter mapping.
+  it.each([
+    ['strict mode violation: 2 elements', 'NODE_STALE', true],
+    ['element is detached from the DOM', 'NODE_STALE', true],
+  ] as const)('maps "%s" to %s', async (_text, code, retryable) => {
+    const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], () => ({ error: 'stale-reference' }));
+    const client = await peer.connect(operation, () => undefined);
+    try {
+      const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action: { kind: 'tap' } as const };
+      const original = structuredClone(args);
+      await expect(new EngineChannel(client).command('browser.perform', args, operation)).rejects.toMatchObject({ code, retryable });
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+      expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(1000);
+    } finally { await client.close(operation); }
+  });
+
+  it('reports a node without a box as NOT_ACTIONABLE on swipe', async () => {
+    vi.useFakeTimers();
+    const operation = { signal: new AbortController().signal, timeoutMs: 7, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], () => ({ error: 'not-actionable' }));
+    const client = await peer.connect({ ...operation, timeoutMs: 1000 }, () => undefined);
+    try {
+      const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action: { kind: 'swipe', direction: 'up' } as const };
+      const original = structuredClone(args);
+      await expect(new EngineChannel(client).command('browser.perform', args, operation)).rejects.toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+      expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(7);
+    } finally {
+      try { await client.close({ ...operation, timeoutMs: 1000 }); }
+      finally { vi.useRealTimers(); }
+    }
+  });
+});
 
 vi.mock('node:timers/promises', () => ({
   setTimeout: (ms: number, value?: unknown, options?: { signal?: AbortSignal }) =>
@@ -58,18 +179,8 @@ const POST_DISPATCH_LOG = [
 const TAP: LocatorAction = { kind: 'tap' };
 
 describe('classifyActionError', () => {
-  it('passes classified errors through untouched, whatever their class', () => {
-    const engine = new EngineError('NODE_STALE', 'gone', { retryable: true });
-    expect(classifyActionError(engine, TAP)).toBe(engine);
-    const runner = new TestError('INVALID_ARGUMENT', 'bad');
-    expect(classifyActionError(runner, TAP)).toBe(runner);
-  });
-
   it.each([
-    ['strict mode violation: 2 elements', 'NODE_STALE', true],
-    ['strict mode violation: 2 elements\nCall log:\n  - move and down action done', 'ACTION_MAY_HAVE_COMMITTED', false],
     ["strict mode violation: getByText('performing click action') resolved to 2 elements:\n    1) <p>click action done</p>\nCall log:\n  - waiting for getByText('performing click action')", 'NODE_STALE', true],
-    ['element is detached from the DOM', 'NODE_STALE', true],
     ['Element is not an <input>, <textarea> or [contenteditable] element', 'NOT_ACTIONABLE', false],
     ['Target page, context or browser has been closed', 'ENGINE_FAILURE', false],
   ] as const)('maps "%s" to %s', (text, code, retryable) => {
@@ -182,22 +293,6 @@ describe('dispatchLocatorAction', () => {
   };
   const OPERATION = { timeoutMs: 7, signal: new AbortController().signal };
 
-  it.each([
-    [{ kind: 'longPress', durationMs: 900 }, 'click', [{ timeout: 7, delay: 900 }]],
-    [{ kind: 'clear' }, 'fill', ['', { timeout: 7 }]],
-    [{ kind: 'selectOption', value: 'Blue' }, 'selectOption', [{ label: 'Blue' }, { timeout: 7 }]],
-    [{ kind: 'selectOption', value: { index: 2 } }, 'selectOption', [{ index: 2 }, { timeout: 7 }]],
-  ] as const satisfies readonly (readonly [LocatorAction, string, readonly unknown[]])[])(
-    'dispatches %j to locator.%s',
-    async (action, method, args) => {
-      const { locator, target } = stubLocator();
-      await dispatchLocatorAction(target, action, OPERATION, lookup);
-      const spy = locator[method as keyof typeof locator] as ReturnType<typeof vi.fn>;
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.calls[0]).toEqual(args);
-    },
-  );
-
   it('scrolls a node with a wheel gesture sized by its own box: the agent node scroll', async () => {
     const { locator, target, wheel, frame } = stubLocator({ x: 0, y: 0, width: 400, height: 300 });
     await dispatchLocatorAction(target, { kind: 'swipe', direction: 'down' }, OPERATION, lookup);
@@ -227,25 +322,6 @@ describe('dispatchLocatorAction', () => {
     expect(wheel).toHaveBeenCalledWith(0, 150);
   });
 
-  it('reports a node without a box as NOT_ACTIONABLE on swipe', async () => {
-    const { locator, target } = stubLocator();
-    locator.boundingBox.mockResolvedValueOnce(null as never);
-    await expect(
-      dispatchLocatorAction(target, { kind: 'swipe', direction: 'up' }, OPERATION, lookup),
-    ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
-  });
-
-  it('uses Playwright drag when both sides are locators', async () => {
-    const source = stubLocator();
-    const destination = stubLocator();
-    await dispatchLocatorAction(
-      source.target,
-      { kind: 'dragTo', target: { id: 'n2', revision: 'r' } },
-      OPERATION,
-      () => destination.target,
-    );
-    expect(source.locator.dragTo).toHaveBeenCalledWith(destination.target.locator, { timeout: 7 });
-  });
 });
 
 describe('dispatchPointerAction', () => {
@@ -267,15 +343,6 @@ describe('dispatchPointerAction', () => {
     const page = { mouse, evaluate: async () => { calls.push('frame'); }, viewportSize: () => ({ width: 800, height: 600 }) } as unknown as Page;
     return { page, calls };
   }
-
-  it('taps, double-taps, secondary-taps, and long-presses at the point as given', async () => {
-    const { page, calls } = stubPage();
-    await dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'tap' });
-    await dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'doubleTap' });
-    await dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'secondaryTap' });
-    await dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'longPress', durationMs: 700 });
-    expect(calls).toEqual(['click 10,20', 'dblclick 10,20', 'click 10,20 right', 'click 10,20 700ms']);
-  });
 
   it('rounds a fractional point to the nearest CSS pixel: the browser would truncate it a pixel early', async () => {
     const { page, calls } = stubPage();

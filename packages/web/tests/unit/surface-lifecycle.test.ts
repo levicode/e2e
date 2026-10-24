@@ -144,8 +144,8 @@ it('keeps a late route failure on the attempt that registered it', async () => {
   } finally { release(); await native.dispose(cleanup()); }
 });
 
-// Retained obligations 22/23/26: native reset-recording and exact focus-retirement
-// proof are still missing; the focus cases must remain on the legacy surface.
+// Retained obligations 22/26: native reset-recording and focus-reset proof
+// still need their own complete assertion transfers.
 it('collects saved video segments after ordinary context replacement fails', async () => {
   const { surface, browser } = await legacyLifecycle();
   await surface.startVideo(operation());
@@ -156,34 +156,6 @@ it('collects saved video segments after ordinary context replacement fails', asy
   expect(videos[0]).toMatchObject({ path: 'video/video.webm' });
   expect(readFileSync(path.join(artifactsDir, 'video/video.webm'), 'utf8')).toBe('recording');
   await expect(surface.open('https://example.test/', operation())).rejects.toThrow(/replacement failed/);
-});
-
-// Select-all/delete use the approved ACKed-prefix equivalence, not the old
-// unACKed promise-pause mechanics. Native client_actions' hosted prefix test
-// proves their effects/no later input; unACKed cases retain the public
-// ACTION_MAY_HAVE_COMMITTED outcome, not reusable CANCELLED.
-// NativeClient ACK/result-order tests and the Surface companion below cover the adapter.
-it('stops remaining typing after cancellation during focus', async () => {
-  const { surface, focus, press, type } = await legacyLifecycle();
-  await surface.open('https://example.test/', operation());
-  let release!: () => void;
-  let entered!: () => void;
-  const paused = new Promise<void>((resolve) => { release = resolve; });
-  const reached = new Promise<void>((resolve) => { entered = resolve; });
-  focus.mockImplementationOnce(async () => { entered(); await paused; return true; });
-  const controller = new AbortController();
-  const pending = surface.typeText('replacement', { replace: true }, { ...operation(), signal: controller.signal });
-  const rejected = expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
-  try {
-    await reached;
-    controller.abort();
-    await rejected;
-  } finally {
-    release();
-  }
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  expect(press.mock.calls.map(([key]) => key)).toEqual([]);
-  expect(type).not.toHaveBeenCalled();
 });
 
 it('rejects a focus read from a context replaced before typing dispatches', async () => {
@@ -304,10 +276,11 @@ async function nativeFocusCancellation() {
   };
 }
 
-// Obligation 23 remains above until its producer and adapter evidence is reviewed
-// and executed. This peer proves no adapter continuation, not native focus,
-// late remote-object cleanup, or the renderer's absence of Input dispatch.
-it.each(['ack-first', 'result-first'] as const)('settles clean undispatched focus cancellation in %s order without typing replay', async order => {
+// Obligation 23: this framed client proves adapter settlement and no continuation.
+// Native client_actions::tests::cancelled_focus_probe_discards_late_success_and_releases_exact_object_once
+// proves no Input dispatch before/after the held focus reply and exact cleanup.
+// That producer passed CI26 tests.log:1092; it is not browser proof from this peer.
+it.each(['ack-first', 'result-first'] as const)('stops remaining typing after cancellation during focus (%s)', async order => {
   const fixture = await nativeFocusCancellation();
   const screen = vi.fn();
   try {
@@ -343,6 +316,10 @@ it.each(['ack-first', 'result-first'] as const)('settles clean undispatched focu
       expect(published).not.toHaveBeenCalled();
       expect(screen).not.toHaveBeenCalled();
       expect(fixture.dispose).not.toHaveBeenCalled();
+      // The native command owns focus and replacement keystrokes. After its
+      // undispatched cancellation, the adapter must send no press/type follow-up.
+      const cancelIndex = fixture.frames.indexOf(cancel);
+      expect(fixture.frames.slice(cancelIndex + 1).filter(frame => frame['type'] === 'request' && String(frame['command']).startsWith('browser.keyboard.'))).toEqual([]);
       await expect(fixture.native.command('page.title', {}, operation())).resolves.toEqual({ title: 'clean' });
       expect(fixture.frames.slice(start).filter(frame => frame['type'] === 'request').map(frame => [frame['command'], frame['args']])).toEqual([
         ['browser.keyboard.type', { identityScope: 'scope-1', text: 'replacement', replace: true }],

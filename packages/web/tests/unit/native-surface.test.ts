@@ -219,6 +219,41 @@ describe('native environment report compatibility', () => {
   });
 });
 
+// This adapter witness complements the separately executed native direct-point
+// producer tests (private patch 3cdaad78). It is not renderer or hold-time proof.
+// The four legacy actions were transferred after both tests passed together.
+describe('native direct-point ordered forwarding', () => {
+  it('taps, double-taps, secondary-taps, and long-presses at the point as given', async () => {
+    const surface = new NativeSurface({});
+    await start(surface);
+    const point = { x: 10, y: 20 };
+    const actions = [
+      { kind: 'tap' },
+      { kind: 'doubleTap' },
+      { kind: 'secondaryTap' },
+      { kind: 'longPress', durationMs: 700 },
+    ] as const;
+    const originalActions = structuredClone(actions);
+    const scope = surface.identityScope;
+    try {
+      for (const action of actions) {
+        await expect(surface.performAt(point, action, operation())).resolves.toBeUndefined();
+      }
+      const requests = frames.filter(frame => frame['command'] === 'browser.pointer');
+      expect(requests.map(frame => frame['args'])).toEqual(originalActions.map(action => ({
+        identityScope: scope, point: { x: 10, y: 20 }, action,
+      })));
+      expect(requests.map(frame => frame['timeoutMs'])).toEqual([1000, 1000, 1000, 1000]);
+      expect(surface.identityScope).toBe(scope);
+      expect(point).toEqual({ x: 10, y: 20 });
+      expect(actions).toEqual(originalActions);
+    } finally {
+      try { await surface.endAttempt(cleanup()); }
+      finally { await surface.dispose(cleanup()); }
+    }
+  });
+});
+
 describe('retained exact-owner adapter publication and services', () => {
   it.each(['provider', 'native'] as const)('preserves configured routes, auth, dialogs, downloads and %s recording across Unknown', async mode => {
     continueExactOwner = true;
@@ -724,6 +759,20 @@ describe('native observation presentation ordering', () => {
 });
 
 describe('native surface ownership and fixed policy binding', () => {
+  it('passes classified errors through untouched, whatever their class', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    const command = vi.spyOn(EngineChannel.prototype, 'command');
+    const before = frames.length;
+    try {
+      for (const failure of [new EngineError('NODE_STALE', 'gone', { retryable: true }), new TestError('INVALID_ARGUMENT', 'bad')]) {
+        command.mockRejectedValueOnce(failure);
+        await expect(surface.perform({ id: '@e1', revision: '1' }, { kind: 'tap' }, operation())).rejects.toBe(failure);
+      }
+      expect(command.mock.calls.map(([name]) => name)).toEqual(['browser.perform', 'browser.perform']);
+      expect(frames.slice(before).filter(frame => frame['command'] === 'browser.perform')).toEqual([]);
+    } finally { command.mockRestore(); await surface.dispose(cleanup()); }
+  });
+
   it.each([false, true])('retains a failed-start provider lease only for private unresolved cleanup evidence (%s)', async unresolved => {
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic-attempt', scope: 'attempt', acquire: async () => ({ id: 'lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release } });
@@ -1620,6 +1669,40 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(await engine.artifacts!.stopVideo!(operation())).toEqual([]);
       expect(frames.filter(frame => frame['command'] === 'blob.release')).toHaveLength(ordinal === 1 ? 0 : 1);
     } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
+  });
+
+  // Original video.ts obligations, paired with CI27's executed producer ledger
+  // tests. This peer proves artifact collection/no adapter replay, not encoding,
+  // a real failed stop or producer-owned late page-hook cleanup.
+  it('keeps a segment whose stop failed but whose file exists', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'native-retained-video-'));
+    const engine = web({});
+    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    await engine.startAttempt!({ ...context('retained-video'), artifactsDir: directory });
+    try {
+      recordingSegments = [{ identityScope: currentScope, handle: 'retained-video', size: recordingBytes.length, sha256: createHash('sha256').update(recordingBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-10-21T00:00:01.000Z' }];
+      const segments = await engine.artifacts!.stopVideo!(operation());
+      expect(segments).toEqual([{ path: 'video/video.webm', startedAt: '2026-10-21T00:00:01.000Z' }]);
+      expect(await readFile(path.join(directory, 'video/video.webm'))).toEqual(recordingBytes);
+      expect(frames.filter(frame => frame['command'] === 'blob.release')).toHaveLength(1);
+      expect(await engine.artifacts!.stopVideo!(operation())).toEqual([]);
+    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
+  });
+
+  it('starts no segment for a page opened after the attempt abandoned its recording', async () => {
+    const surface = new NativeSurface({});
+    await start(surface);
+    try {
+      await surface.startVideo(operation());
+      await surface.endAttempt(cleanup());
+      const retired = frames.length;
+      await expect(surface.startVideo(operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(frames).toHaveLength(retired);
+      await surface.startAttempt(context('after-abandoned-recording'));
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(frames.filter(frame => frame['command'] === 'recording.start')).toHaveLength(1);
+      expect(frames.slice(retired).filter(frame => frame['command'] === 'recording.start' || frame['command'] === 'recording.stop')).toEqual([]);
+    } finally { await surface.dispose(cleanup()); }
   });
 
   it('preserves the documented per-attempt WebM filenames independently of generic artifact counters', async () => {
