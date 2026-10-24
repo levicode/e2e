@@ -577,7 +577,8 @@ describe('web engine lifecycle', () => {
         };
         await expect(engine.locate!(child, operation('dv1'))).rejects.toMatchObject({
           code: 'UNSUPPORTED_CAPABILITY',
-          message: 'displayValue queries cannot scope child queries or serve as a has-filter in this engine',
+          message: 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine',
+          retryable: false,
         });
         await expect(
           engine.locate!({ kind: 'filter', source: byRole('main'), has: shared }, operation('dv1')),
