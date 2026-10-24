@@ -211,7 +211,8 @@ def native_tests():
         binary = Path(row["executable"]).resolve(strict=True)
         assert row["manifest_path"] == str(root / "Cargo.toml") and row["features"] == []
         assert row["target"]["kind"] in (["bin"], ["test"])
-        assert binary.parent == target / "debug/deps" and binary.is_file() and os.access(binary, os.X_OK)
+        assert row["profile"]["opt_level"] == "3" and row["profile"]["debug_assertions"] is False
+        assert binary.parent == target / "ci/deps" and binary.is_file() and os.access(binary, os.X_OK)
         before = digest(binary)
         listed = execute(f"list-{name}", budget(60), [str(binary), "--list", "--format", "pretty", "--color", "never"])
         listing = (EVIDENCE / f"list-{name}.stdout.log").read_text()
@@ -227,6 +228,7 @@ def native_tests():
         ignored = {test for test, state in outcomes if state.startswith("ignored")}
         valid = (status == 0 and len(summaries) == 1 and len(outcomes) == len(inventory)
                  and {test for test, _ in outcomes} == set(inventory)
+                 and (passed | ignored) == set(inventory)
                  and summaries[0] == (str(len(passed)), str(len(ignored))))
         if name == "agent-browser":
             required_seen.update(passed.intersection(REQUIRED_TESTS))
@@ -272,6 +274,68 @@ def production(destination, label):
     print(json.dumps(result, indent=2))
 
 
+# The flat decision directory contains one real-browser suite. Keep its exact
+# obligations pending in the runtime ledger instead of relabeling them as units.
+DECISION_PURE_FILES = (
+    "ai-version.test.ts", "budget.test.ts", "elements.test.ts", "executor-vision.test.ts",
+    "executor.test.ts", "filter-runner.test.ts", "filter.test.ts", "openai.test.ts",
+    "overlay.test.ts", "text.test.ts",
+)
+DECISION_RUNTIME_CASES = (
+    "completes the todo flow in plain language",
+    "fills a runner-authorized secret without sending it anywhere",
+    "completes a long page past the choice cap",
+    "asks the operation first and the target in its own call",
+)
+
+
+def decision_selection():
+    directory = Path("packages/decision/tests")
+    assert {str(path.relative_to(directory)) for path in directory.rglob("*.test.ts")} == set(DECISION_PURE_FILES) | {"cli.test.ts"}, "decision inventory changed; reclassify instead of silently omitting files"
+    source = (directory / "cli.test.ts").read_text()
+    assert len(re.findall(r"\bit\(", source)) == 4
+    assert all("it('" + name + "'" in source for name in DECISION_RUNTIME_CASES)
+    record = {
+        "source_commit": os.environ["E2E_SHA"], "source_tree": os.environ["E2E_TREE"],
+        "pure_unit_files": [{"path": str(directory / name), "sha256": digest(directory / name)} for name in DECISION_PURE_FILES],
+        "required_runtime": [{
+            "file": str(directory / "cli.test.ts"), "sha256": digest(directory / "cli.test.ts"),
+            "suite": "decision executor through the built CLI and real Chromium",
+            "assertions": list(DECISION_RUNTIME_CASES), "required": True,
+            "status": "REQUIRED_PENDING_RUNTIME", "execution_status": "not-run", "passed": False, "outside_original_329": True,
+            "command": ["pnpm", "--filter", "@e2e-dev/decision", "exec", "vitest", "run", "tests/cli.test.ts"],
+            "prerequisites": ["built e2e, Web and decision packages", "verified matching production native executable", "real pinned Chromium"],
+            "prior_run": "40123162559", "prior_outcome": "setup failed before browser; missing native bundle; no runtime tests executed",
+        }],
+    }
+    save(EVIDENCE / "required-runtime.json", record)
+    print(json.dumps(record, indent=2))
+
+
+def reference_history():
+    revision = os.environ["CANVAS_BASELINE_SHA"]
+    tree = os.environ["CANVAS_BASELINE_TREE"]
+    assert subprocess.check_output(["git", "rev-parse", revision + "^{commit}"], text=True).strip() == revision
+    assert subprocess.check_output(["git", "rev-parse", revision + "^{tree}"], text=True).strip() == tree
+    manifest = json.loads(Path("packages/web/tests/helpers/canvas-oracle-manifest.json").read_text())
+    assert manifest["baselineRevision"] == revision
+    verified = []
+    for row in manifest["sources"]:
+        path = row["path"]
+        assert re.fullmatch(r"packages/(web|e2e)/[A-Za-z0-9_./-]+", path) and ".." not in path.split("/")
+        result = subprocess.run(["git", "show", revision + ":" + path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        expected = row["baselineSha256"]
+        assert (result.returncode != 0) if expected is None else (result.returncode == 0 and hashlib.sha256(result.stdout).hexdigest() == expected), path
+        verified.append({"path": path, "baseline_sha256": expected, "expected_absent": expected is None})
+    extra = "packages/web/tests/integration/read-node-roles.test.ts"
+    content = subprocess.check_output(["git", "show", revision + ":" + extra])
+    verified.append({"path": extra, "baseline_sha256": hashlib.sha256(content).hexdigest(), "expected_absent": False})
+    assert len(manifest["sources"]) == 27 and sum(row["baselineSha256"] is None for row in manifest["sources"]) == 2
+    record = {"commit": revision, "tree": tree, "source_files": verified, "baseline_code_executed": False}
+    save(EVIDENCE / "reference-history.json", record)
+    print(json.dumps(record, indent=2))
+
+
 def main():
     command, *args = sys.argv[1:]
     if command == "run":
@@ -282,6 +346,10 @@ def main():
         binding()
     elif command == "aggregate":
         aggregate(args)
+    elif command == "decision-selection":
+        decision_selection()
+    elif command == "reference-history":
+        reference_history()
     elif command == "native-tests":
         native_tests()
     elif command == "production":

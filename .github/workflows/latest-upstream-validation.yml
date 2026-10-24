@@ -1,4 +1,4 @@
-# Frozen public source pins. Local preparation only; publication and the single branch push are separate actions.
+# Local correction after run 40123162559 (dev RED). Do not publish until combined corrected source pins are frozen.
 name: Latest upstream Linux compile and unit validation (not acceptance)
 'on':
   push:
@@ -10,11 +10,11 @@ concurrency:
   group: latest-upstream-validation-${{ github.ref }}
   cancel-in-progress: false
 env:
-  NATIVE_SHA: e6c1a6055d710d089e3489dc469f1b1a334d1dd3
-  NATIVE_TREE: 18f0186c73edef0b8655d4cb7b8c146daf0769b2
+  NATIVE_SHA: 88a7b674d45b784f5578369b8d2bb9a07e430eae
+  NATIVE_TREE: 37e8593d44f514afcfa633c94a374b3213ab7dda
   NATIVE_LOCK_SHA256: 1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97
-  E2E_SHA: e6e080672d5aa326c7d57718b0238aa8f6080fef
-  E2E_TREE: 21bab78e7426a1830b35df438cf627a5cbd249c6
+  E2E_SHA: 8cc0f520280fcb64d0ea708d3bc99e4e1d05d482
+  E2E_TREE: e89d5f6502c368dd0b16264b3278cef33e7d0be7
   E2E_LOCK_SHA256: 3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f
   SEMANTIC_TESTS_FROZEN: 'yes'
   RUSTUP_TOOLCHAIN: 1.99.1
@@ -31,7 +31,8 @@ jobs:
   native:
     name: native-validation
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Command caps total 6840s; 1260s remains for actions and diagnostic uploads.
+    timeout-minutes: 135
     defaults:
       run:
         shell: bash
@@ -129,11 +130,11 @@ jobs:
         python3 -B "$VALIDATE" run clippy 900 cargo clippy --locked --profile dev --no-default-features --all-targets -- -D warnings || failed=1
         python3 -B "$VALIDATE" run acceptance-tests-check 900 cargo check --locked --profile dev --no-default-features --features acceptance-faults --tests || failed=1
         python3 -B "$VALIDATE" run proxy-feature-check 600 cargo check --locked --profile dev --no-default-features --features acceptance-faults --test client-proxy-fixture || failed=1
-        python3 -B "$VALIDATE" run default-no-run 900 cargo test --locked --profile test --no-default-features --no-run --message-format=json || failed=1
+        python3 -B "$VALIDATE" run default-no-run 1500 cargo test --locked --profile ci --no-default-features --no-run --message-format=json || failed=1
         exit "$failed"
       if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
       working-directory: source/cli
-    - name: Run all default harnesses and require exact regression witnesses
+    - name: Run all ci default harnesses and require exact regression witnesses
       id: tests
       run: |
         set -euo pipefail
@@ -179,8 +180,11 @@ jobs:
         shell: bash
     env:
       EVIDENCE_NAME: e2e-validation
-      PHASES: recipe-identity binding source-before tools dependencies core-build web-build packages-build lint workspace-types
-        scripts-types core-unit web-unit packages-unit scripts-tests source-after
+      PHASES: recipe-identity binding source-before reference-history decision-selection tools dependencies core-build web-build
+        packages-build lint workspace-types scripts-types core-unit web-unit packages-unit decision-pure-unit scripts-tests
+        source-after
+      CANVAS_BASELINE_SHA: d7c6b5e5a4c27fac7633e66866fd367b0351ead8
+      CANVAS_BASELINE_TREE: fc6c5ae81c29dd1ce8c01fe3e36512d34eb5c3d7
     outputs:
       validated: ${{ steps.gate.outputs.validated }}
     steps:
@@ -239,6 +243,22 @@ jobs:
       run: |
         python3 -B "$VALIDATE" run source-before 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$E2E_SHA" "$E2E_TREE" pnpm-lock.yaml "$E2E_LOCK_SHA256"
       if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+    - name: Fetch and verify only the immutable canvas reference tree
+      id: reference_history
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+      working-directory: source
+      run: |
+        python3 -B "$VALIDATE" run reference-history 180 bash -euc '
+        git fetch --no-tags --depth=1 https://github.com/tester-army/e2e.git "$CANVAS_BASELINE_SHA"
+        test "$(git rev-parse FETCH_HEAD)" = "$CANVAS_BASELINE_SHA"
+        python3 -B "$VALIDATE" reference-history
+        '
+    - name: Verify exact decision unit inventory and preserve required runtime obligations
+      id: decision_selection
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+      working-directory: source
+      run: |
+        python3 -B "$VALIDATE" run decision-selection 30 python3 -B "$VALIDATE" decision-selection
     - name: Set up pinned Node
       id: node
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -274,13 +294,25 @@ jobs:
       run: |
         set -uo pipefail
         failed=0
+        unset E2E_CANVAS_ORACLE_BASELINE_ROOT
         python3 -B "$VALIDATE" run lint 300 pnpm run lint || failed=1
-        python3 -B "$VALIDATE" run workspace-types 600 pnpm -r run typecheck || failed=1
+        python3 -B "$VALIDATE" run workspace-types 600 pnpm -r --no-bail run typecheck || failed=1
         python3 -B "$VALIDATE" run scripts-types 300 pnpm exec tsc -p scripts || failed=1
         python3 -B "$VALIDATE" run core-unit 600 pnpm --filter e2e run test:unit || failed=1
         python3 -B "$VALIDATE" run web-unit 600 pnpm --filter @e2e-dev/web run test:unit || failed=1
-        python3 -B "$VALIDATE" run packages-unit 600 bash -uc 'failed=0; for package in @e2e-dev/mobile @e2e-dev/github @e2e-dev/kernel @e2e-dev/lightpanda @e2e-dev/eas @e2e-dev/smol @e2e-dev/limrun @e2e-dev/testmu; do pnpm --filter "$package" run test:unit || failed=1; done; pnpm --filter @e2e-dev/decision run test || failed=1; exit "$failed"' || failed=1
-        python3 -B "$VALIDATE" run scripts-tests 600 pnpm run test:scripts || failed=1
+        python3 -B "$VALIDATE" run packages-unit 600 bash -uc 'failed=0; for package in @e2e-dev/mobile @e2e-dev/github @e2e-dev/kernel @e2e-dev/lightpanda @e2e-dev/eas @e2e-dev/smol @e2e-dev/limrun @e2e-dev/testmu; do pnpm --filter "$package" run test:unit || failed=1; done; exit "$failed"' || failed=1
+        if [[ "$(cat "$EVIDENCE_DIR/decision-selection.exit")" == 0 ]]; then
+          python3 -B "$VALIDATE" run decision-pure-unit 300 pnpm --filter @e2e-dev/decision exec vitest run tests/ai-version.test.ts tests/budget.test.ts tests/elements.test.ts tests/executor-vision.test.ts tests/executor.test.ts tests/filter-runner.test.ts tests/filter.test.ts tests/openai.test.ts tests/overlay.test.ts tests/text.test.ts || failed=1
+        else
+          printf '%s\n' 'decision-pure-unit NOT RUN: exact selection verification failed' >&2
+          failed=1
+        fi
+        if [[ "$(cat "$EVIDENCE_DIR/reference-history.exit")" == 0 ]]; then
+          python3 -B "$VALIDATE" run scripts-tests 600 pnpm run test:scripts || failed=1
+        else
+          printf '%s\n' 'scripts-tests NOT RUN: immutable reference history verification failed' >&2
+          failed=1
+        fi
         exit "$failed"
       if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       working-directory: source
