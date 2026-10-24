@@ -6,7 +6,7 @@ import type { EngineCommandMap } from '../../src/native/engine-contract.ts';
 import { queryDiagnostic } from '../../src/native/query-diagnostic.ts';
 import { NativeProtocolPeer, type PeerOutcome } from '../helpers/native-protocol-peer.ts';
 
-const message = 'displayValue queries cannot scope child queries or serve as a has-filter in this engine';
+const message = 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine';
 const operation = (): OperationContext => ({ signal: new AbortController().signal, timeoutMs: 1000, runId: 'synthetic', attemptId: 'synthetic', origin: 'test' });
 const query = (kind: SemanticQuery['kind']): LocatorExpression => ({ kind: 'query', query: { kind, value: { kind: 'string', value: 'synthetic', exact: true } } });
 const ordinary: LocatorExpression = { kind: 'selector', selector: 'section' };

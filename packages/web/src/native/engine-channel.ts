@@ -5,9 +5,10 @@ import type { BrowserCommandMap } from './browser-contract.ts';
 import { resultError } from './browser-channel.ts';
 import { decodeBrowserResult } from './browser-decode.ts';
 import { decodeEngineResult } from './engine-decode.ts';
+import { QUERY_UNION_CAPABILITY } from './capabilities.ts';
 import type { EngineCommandMap, NativeBlob, NativeTraceImage } from './engine-contract.ts';
 import type { NativeClient } from './client.ts';
-import { frameQuerySnapshot, queryDiagnostic, type FrameQueryDiagnostic } from './query-diagnostic.ts';
+import { frameQuerySnapshot, queryDiagnostic, queryUsesUnion, type FrameQueryDiagnostic } from './query-diagnostic.ts';
 
 /** No retries, backend implementation, or alternative process transport. */
 export class EngineChannel {
@@ -20,6 +21,14 @@ export class EngineChannel {
     const scope = (args as { identityScope?: string }).identityScope;
     const owns = scope === undefined ? () => true : this.captureScope(scope);
     this.assertOwner(owns);
+    if ((name === 'browser.query' || name === 'fixture.query' || name === 'fixture.read-fields')
+      && !this.client.negotiation().capabilities.includes(QUERY_UNION_CAPABILITY)) {
+      const union = queryUsesUnion((args as EngineCommandMap['browser.query']['args']).expression);
+      if (union === undefined) throw new EngineError('ENGINE_FAILURE', 'The native query feature check could not inspect the bounded expression', { retryable: false });
+      if (union) {
+        throw new EngineError('UNSUPPORTED_CAPABILITY', `Locator unions require ${QUERY_UNION_CAPABILITY}; update the native agent-browser runtime`, { retryable: false });
+      }
+    }
     // Capture only a bounded diagnostic fact before awaiting native authority.
     // Later caller mutation cannot change the classification of this request.
     const diagnostic = name === 'browser.query' || name === 'fixture.query' || name === 'fixture.read-fields'

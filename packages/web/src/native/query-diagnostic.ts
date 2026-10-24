@@ -19,6 +19,12 @@ export function queryDiagnostic(root: LocatorExpression): QueryDiagnostic | unde
         // not provenance carried through an otherwise ordinary child query.
         return { displayValue: query.kind === 'displayValue', unsupported: scope.unsupported || scope.displayValue };
       }
+      case 'union': {
+        const left = inspect(expression.left, depth + 1);
+        const right = inspect(expression.right, depth + 1);
+        if (left === undefined || right === undefined) return undefined;
+        return { displayValue: false, unsupported: left.unsupported || right.unsupported || left.displayValue || right.displayValue };
+      }
       case 'filter': {
         const source = inspect(expression.source, depth + 1);
         const has = expression.has === undefined ? { displayValue: false, unsupported: false } : inspect(expression.has, depth + 1);
@@ -32,6 +38,29 @@ export function queryDiagnostic(root: LocatorExpression): QueryDiagnostic | unde
     }
   };
   return inspect(root, 0)?.unsupported === true ? 'display-value-composition' : undefined;
+}
+
+/** Bounded feature detection only; undefined is not evidence that a query has no union. */
+export function queryUsesUnion(root: LocatorExpression): boolean | undefined {
+  let remaining = 4096;
+  const inspect = (value: unknown, depth: number): boolean | undefined => {
+    if (--remaining < 0 || depth > 64 || value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const expression = value as Record<string, unknown>;
+    const kind = expression['kind'];
+    if (kind === 'union') return true;
+    if (typeof kind !== 'string' || !['query', 'filter', 'index', 'frame', 'selector'].includes(kind)) return undefined;
+    let complete = !['filter', 'index', 'frame'].includes(kind) || expression['source'] !== undefined;
+    // Inspect only expression edges, never arbitrary query values or metadata.
+    // Even unexpected edges cannot conceal a union from an older runtime.
+    for (const key of ['source', 'scope', 'has', 'left', 'right']) {
+      if (expression[key] === undefined) continue;
+      const union = inspect(expression[key], depth + 1);
+      if (union === true) return true;
+      if (union === undefined) complete = false;
+    }
+    return complete ? false : undefined;
+  };
+  return inspect(root, 0);
 }
 
 /** Copied request context only, never a second query or source of native authority. */
@@ -66,6 +95,12 @@ export function frameQuerySnapshot(root: LocatorExpression): readonly string[] |
         if (bytes > MAX_FRAME_BYTES) return undefined;
         const source = inspect(expression.source, depth + 1);
         return source === undefined || source.length >= 64 ? undefined : [expression.selector, ...source];
+      }
+      case 'union': {
+        if (!shape(expression, ['kind', 'left', 'right'])) return undefined;
+        const left = inspect(expression.left, depth + 1);
+        const right = inspect(expression.right, depth + 1);
+        return left !== undefined && right !== undefined && left.length === right.length && left.every((selector, index) => selector === right[index]) ? left : undefined;
       }
       case 'index':
         if (!shape(expression, ['kind', 'source', 'index']) || !((expression.index === 'first' || expression.index === 'last') || (typeof expression.index === 'number' && Number.isSafeInteger(expression.index) && expression.index >= 0))) return undefined;

@@ -132,7 +132,7 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
   // label cannot hide completed effects or make a dirty scope reusable.
   if (reason === 'policy-denied' && result.effects === 'not-dispatched' && result.scopeState === 'usable') return new TestError('POLICY_DENIED', 'The native browser operation was denied by policy', { retryable: false });
   if (!result.ok && reason === 'unsupported-capability' && result.effects === 'not-dispatched' && result.scopeState === 'usable' && queryDiagnostic === 'display-value-composition') {
-    return new EngineError('UNSUPPORTED_CAPABILITY', 'displayValue queries cannot scope child queries or serve as a has-filter in this engine', { retryable: false });
+    return new EngineError('UNSUPPORTED_CAPABILITY', 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine', { retryable: false });
   }
   if (reason === 'intercepted-pointer') return new EngineError('NOT_ACTIONABLE', 'Another element intercepts pointer events', { retryable: false });
   if (reason === 'checked-state-unchanged' || reason === 'checked-control-replaced') {

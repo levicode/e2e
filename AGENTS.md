@@ -91,7 +91,10 @@ suites that consume the built packages the way a user would.
   vendor SDK and the engine it plugs into as peers. It implements that
   engine's provider seam (`BrowserProvider` for web, `DeviceProvider` for
   mobile) and imports the engine's types only; the engines never know it
-  exists.
+  exists. A service with providers for both engines ships them in that one
+  package, each engine an optional peer and each provider on its own entry
+  that never imports the other engine (`@e2e-dev/testmu` and
+  `@e2e-dev/testmu/web`).
   Its docs page under `docs/integrations/` ships with the vendor's logo as
   the sidebar icon and on its overview card (`authoring-docs`, "Page
   icons"); `scripts/check-docs-logos.ts` fails `pnpm docs:check` without
@@ -125,7 +128,15 @@ suites that consume the built packages the way a user would.
   questions with probability distributions, plus an optional small language
   model that writes field values when the decision model picks `type`.
   `minProbability` and `minConfidence` gate a chosen operation, target,
-  secret, or assertion verdict.
+  secret, or assertion verdict. It also exports `decisionFilter()`, a
+  `TestFilter` that asks a decision model whether the pull request's diff
+  can affect each test, packing test files into calls under the model's
+  size limit, 8 calls at a time, and leaves out the unlikely ones. It runs
+  every test on an `e2e.config` or lockfile change, and asks nothing about a
+  test whose test file, setup file, or stored screenshots changed. A failed
+  call leaves its tests in and the rest are still judged; after 3 failed
+  calls it stops asking. When every call fails, or git or a file read
+  fails, it throws, and the run warns and runs every test.
 - `packages/github` — the published `@e2e-dev/github` package: the reporter
   that posts the run as one pull request comment from GitHub Actions and
   keeps it current on reruns, writing the same text to the job summary. It
@@ -134,7 +145,8 @@ suites that consume the built packages the way a user would.
 - `packages/testmu` — the published `@e2e-dev/testmu` package: TestMu AI
   (formerly LambdaTest) hosted Android emulators, iOS simulators, and real
   devices for the mobile engine (`DeviceProvider`), through agent-device's
-  `@agent-device/testmu` plugin.
+  `@agent-device/testmu` plugin, and hosted Chrome and Edge for the web
+  engine (`BrowserProvider`) from `@e2e-dev/testmu/web`.
 - `apps/testbed` (`@e2e-dev/testbed`, private) — dogfood project that
   consumes the **built** packages like a real user would: the playground app
   where every runner feature (sessions, routes, downloads, frames, uploads,
@@ -234,11 +246,13 @@ suites that consume the built packages the way a user would.
   `core.symlinks=true` (CONTRIBUTING.md). The vendored third-party skills in `.claude/skills/` (`unbox-ai`,
   `unslop`, tracked by `skills-lock.json`) stay where they are: the CLI
   skips them as installed project skills.
-- `plugins/e2e/` — one skills-only package for Codex and Claude Code. The
-  root `.agents/plugins/marketplace.json` and `.claude-plugin/marketplace.json`
-  both point here. Edit skill Markdown in `skills/`, then run
-  `pnpm plugins:sync`; `pnpm plugins:check` checks the generated copies,
-  license, Claude manifest, and both manifests' `version`, which is the
+- `plugins/e2e/` — one skills-only package for Codex, Claude Code, and
+  Cursor; Grok Build reads the Claude files. The root
+  `.agents/plugins/marketplace.json`, `.claude-plugin/marketplace.json`, and
+  `.cursor-plugin/marketplace.json` all point here. Edit skill Markdown in
+  `skills/`, then run `pnpm plugins:sync`; `pnpm plugins:check` checks the
+  generated copies, license, the Claude and Cursor manifests (generated from
+  Codex's), and every manifest's `version`, which is the
   runner's (`version-packages` syncs it, so plugin
   installs update once per release; it does the same for
   `packages/e2e/server.json`, the MCP Registry entry). The Codex manifest's other fields,
@@ -339,6 +353,13 @@ thread handled, and labeled `Ready for Human Review`. "It compiles" and
   `E2E_MODEL=provider/model-id`, the testbed's own override) run only on the weekly
   `.github/workflows/agent.yml` schedule or by manual dispatch. Both run
   against local deterministic apps, so a failure there is ours.
+- The default testbed suite runs `decisionFilter` with Jev on a pull request
+  (`apps/testbed/e2e.config.ts`, with `--changed-since` from `spec.yml`), so a
+  PR's testbed check runs only the tests Jev rates the change can affect;
+  without the key, every test runs, and when a call fails, the tests no call
+  judged run. The merge queue and `main` pass no `--changed-since` and run
+  every test, so the merge gate stays deterministic. Locally, every test runs
+  unless you pass `--changed-since origin/main`.
 - Agentic assertions must be model-portable: assert on meaning (`toContain`)
   and pair each agentic step with a deterministic locator check.
 

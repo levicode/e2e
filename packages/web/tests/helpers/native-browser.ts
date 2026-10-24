@@ -27,7 +27,7 @@ export function nativeBrowserGraph(engine: EngineHandle, operation: () => Operat
     const { fixtures } = createFixtures({
       config, target: config.targets[0]!, session,
       steps, budget: new AttemptBudget(current.signal, new Deadline(30_000)), runId: current.runId, attemptId: current.attemptId,
-      attempt: { testId: 'native-browser-fixture', attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
+      attempt: { testId: 'native-browser-fixture', titlePath: ['native-browser-fixture'], attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
       artifacts: { dir: process.cwd(), register: (_kind, relativePath) => relativePath, link: (relativePath) => relativePath }, priorSteps: () => steps.completed(),
       agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
     });

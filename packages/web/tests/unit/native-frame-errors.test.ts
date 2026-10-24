@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { LocatorExpression, OperationContext } from 'e2e/engine';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { QUERY_UNION_CAPABILITY } from '../../src/native/capabilities.ts';
 import { isNativeNotDispatched, resultError } from '../../src/native/browser-channel.ts';
 import type { EngineCommandMap } from '../../src/native/engine-contract.ts';
 import { frameQuerySnapshot } from '../../src/native/query-diagnostic.ts';
@@ -174,4 +175,91 @@ test.each([{ index: 0, count: 1 }, { index: 64, count: 0 }, { index: 0, count: 0
     await expect(new EngineChannel(client).command('browser.query', args(), operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
     expect(peer.requests).toHaveLength(1);
   } finally { peer.dispose(); }
+});
+
+for (const command of ['browser.query', 'fixture.query', 'fixture.read-fields'] as const) {
+  test(`${command} snapshots a same-frame union once before dispatch mutation`, async () => {
+    const left = { kind: 'frame' as const, selector: '#outer', source: frame('#inner') };
+    const right = { kind: 'frame' as const, selector: '#outer', source: frame('#inner', { kind: 'selector', selector: 'input' }) };
+    const expression: LocatorExpression = { kind: 'union', left, right };
+    const peer = new NativeProtocolPeer([QUERY_UNION_CAPABILITY], sent => {
+      expect(sent.args['expression']).toEqual({ kind: 'union', left, right });
+      left.selector = '#changed-left';
+      right.selector = '#changed-right';
+      return outcome(0, 2);
+    });
+    const client = await peer.connect(operation(), () => {});
+    try {
+      await expect(new EngineChannel(client).command(command, { ...args(expression), ...(command === 'fixture.read-fields' ? { fields: ['value'] as const } : {}) }, operation())).rejects.toMatchObject({
+        code: 'FRAME_AMBIGUOUS', message: '2 frames match #outer', retryable: false,
+      });
+      expect(peer.requests).toHaveLength(1);
+    } finally { await client.close(operation()); }
+  });
+
+  test(`${command} retains every same-union-frame ordinal and exact native count`, async () => {
+    let index = 0; let count = 0;
+    const expression: LocatorExpression = { kind: 'union', left: nested(), right: nested() };
+    const peer = new NativeProtocolPeer([QUERY_UNION_CAPABILITY], () => outcome(index, count));
+    const client = await peer.connect(operation(), () => {});
+    try {
+      for (index = 0; index < 3; index++) for (count of [0, 2, 100_000]) {
+        const selector = ['#outer', '.middle', 'css=#deep'][index];
+        await expect(new EngineChannel(client).command(command, { ...args(expression), ...(command === 'fixture.read-fields' ? { fields: ['value'] as const } : {}) }, operation())).rejects.toMatchObject({
+          code: count === 0 ? 'FRAME_NOT_FOUND' : 'FRAME_AMBIGUOUS',
+          message: count === 0 ? `no frame matches ${selector}` : `${count} frames match ${selector}`, retryable: count === 0,
+        });
+      }
+      expect(peer.requests).toHaveLength(9);
+    } finally { await client.close(operation()); }
+  });
+}
+
+test('union frame evidence requires strict branch shapes, identical paths, and shared budgets', () => {
+  const union = (left: LocatorExpression, right: LocatorExpression): LocatorExpression => ({ kind: 'union', left, right });
+  expect(frameQuerySnapshot(union(nested(), nested()))).toEqual(['#outer', '.middle', 'css=#deep']);
+  expect(frameQuerySnapshot(frame('#parent', union(frame('#child'), frame('#child'))))).toEqual(['#parent', '#child']);
+  expect(frameQuerySnapshot(union(terminal, terminal))).toEqual([]);
+  expect(frameQuerySnapshot(union(frame('#left'), frame('#right')))).toBeUndefined();
+  expect(frameQuerySnapshot(union(frame('#left'), terminal))).toBeUndefined();
+  expect(frameQuerySnapshot(union(frame('#outer', frame('#inner')), frame('#inner', frame('#outer'))))).toBeUndefined();
+  expect(frameQuerySnapshot({ ...union(frame('#same'), frame('#same')), extra: true } as unknown as LocatorExpression)).toBeUndefined();
+  expect(frameQuerySnapshot({ kind: 'union', left: frame('#same') } as LocatorExpression)).toBeUndefined();
+  expect(frameQuerySnapshot(union(frame('#same'), { ...frame('#same'), extra: true } as unknown as LocatorExpression))).toBeUndefined();
+  expect(frameQuerySnapshot(union(frame('#same'), null as unknown as LocatorExpression))).toBeUndefined();
+  const selector = 'a'.repeat(MAX_FRAME_BYTES / 2);
+  expect(frameQuerySnapshot(union(frame(selector), frame(selector)))).toEqual([selector]);
+  expect(frameQuerySnapshot(union(frame(`${selector}b`), frame(`${selector}b`)))).toBeUndefined();
+  let broad: LocatorExpression = terminal;
+  for (let i = 0; i < 12; i++) broad = union(broad, broad);
+  expect(frameQuerySnapshot(broad)).toBeUndefined();
+  let deep: LocatorExpression = terminal;
+  for (let i = 0; i < 64; i++) deep = { kind: 'index', index: 'first', source: deep };
+  expect(frameQuerySnapshot(union(deep, terminal))).toBeUndefined();
+});
+
+test('a cross-document union cannot fabricate frame error authority', async () => {
+  const expression: LocatorExpression = { kind: 'union', left: frame('#left'), right: frame('#right') };
+  const peer = new NativeProtocolPeer([QUERY_UNION_CAPABILITY], () => outcome(0, 0));
+  const client = await peer.connect(operation(), () => {});
+  try {
+    await expect(new EngineChannel(client).command('browser.query', args(expression), operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+    await expect(client.request('synthetic.probe', {}, operation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(peer.requests).toHaveLength(1);
+  } finally { peer.dispose(); }
+});
+
+test('a native cross-document union refusal stays generic and leaves the client reusable', async () => {
+  const expression: LocatorExpression = { kind: 'union', left: frame('#left'), right: frame('#right') };
+  let call = 0;
+  const peer = new NativeProtocolPeer([QUERY_UNION_CAPABILITY], () => ++call === 1
+    ? { error: 'unsupported-capability' } : { data: { identityScope: 'scope', revision: '1', nodes: [] } });
+  const client = await peer.connect(operation(), () => {});
+  try {
+    const channel = new EngineChannel(client);
+    await expect(channel.command('browser.query', args(expression), operation())).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY',
+      message: 'The native browser operation failed (unsupported-capability)', retryable: false });
+    await expect(channel.command('browser.query', args(terminal), operation())).resolves.toMatchObject({ nodes: [] });
+    expect(peer.requests).toHaveLength(2);
+  } finally { await client.close(operation()); }
 });

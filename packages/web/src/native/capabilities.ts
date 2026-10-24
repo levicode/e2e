@@ -1,6 +1,9 @@
 /** Required coordinated native operation-retirement contract. */
 export const CONTINUE_EXACT_OWNER_CAPABILITY = 'operation.continue-exact-owner/1';
 
+/** Optional AST support across browser.query, fixture.query, and fixture.read-fields. */
+export const QUERY_UNION_CAPABILITY = 'browser.query-union/1';
+
 /** Full public Web candidate contract. Advertising handlers is not acceptance certification. */
 export const REQUIRED_CAPABILITIES = [
   CONTINUE_EXACT_OWNER_CAPABILITY,

@@ -70,6 +70,12 @@ describe('isTestErrorCode', () => {
 // These assertions cover the public projection of its closed stale-reference evidence;
 // native browser races remain separate required acceptance gates, not string matching here.
 describe('native read/capture error projection', () => {
+  it.each(['not-dispatched', 'completed'] as const)('preserves deadline classification after %s', (effects) => {
+    expect(failure('deadline-exceeded', effects)).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  });
+  it('does not downgrade an unknown action outcome to a retryable timeout', () => {
+    expect(failure('deadline-exceeded', 'unknown')).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+  });
   it('reports a capture that lost its document as retryable only before dispatch', () => {
     expect(failure('stale-reference')).toMatchObject({ code: 'NODE_STALE', retryable: true });
     expect(failure('stale-reference', 'completed')).toMatchObject({ code: 'NODE_STALE', retryable: false });
@@ -77,6 +83,17 @@ describe('native read/capture error projection', () => {
   it('keeps a timeout a timeout: a capture that ran out of budget is not a race', () => {
     expect(failure('deadline-exceeded')).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
   });
+
+  // Native transports classify by closed code; callback text never changes that authority.
+  it.each([
+    'Execution context was destroyed, most likely because of a navigation.',
+    'locator.evaluate: Frame was detached',
+  ])('keeps a timeout a timeout when its call log says %s', async (line) => {
+    const timeout = new EngineError('OPERATION_TIMEOUT', `Timeout 5000ms exceeded.\nCall log:\n  - ${line}`, { retryable: false });
+    expect(await fromCallback(timeout)).toBe(timeout);
+    expect(timeout).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  });
+
   it('leaves every other failure a non-retryable ENGINE_FAILURE', () => {
     expect(failure('browser-failure')).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
   });
@@ -97,4 +114,19 @@ describe('native read/capture error projection', () => {
   it('never retries a stale-looking error with an unknown action outcome', () => {
     expect(failure('stale-reference', 'unknown')).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
   });
+
+  it.each([
+    'resolved to hidden',
+    'element is not attached to the DOM',
+    'element was detached from the DOM',
+    'no element found',
+    'frame was detached',
+  ])(
+    'keeps a timeout a timeout when its call log says %s',
+    async (line) => {
+      const timeout = new EngineError('OPERATION_TIMEOUT', `Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('#x')\n  - locator ${line}`, { retryable: false });
+      expect(await fromCallback(timeout)).toBe(timeout);
+      expect(timeout).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+    },
+  );
 });

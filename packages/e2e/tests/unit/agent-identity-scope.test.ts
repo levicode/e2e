@@ -63,7 +63,7 @@ async function exercise(scopes: readonly (string | undefined)[], staleDuringActi
   const { fixtures } = createFixtures({
     config, target: config.targets[0]!, session: createEngineSession({ engine, targetName: 'fake' }), steps,
     budget: new AttemptBudget(signal, new Deadline(10_000)), runId: 'run', attemptId: 'attempt',
-    attempt: { testId: 'test', attemptId: 'attempt', index: 0, signal, memory: new Map() },
+    attempt: { titlePath: ['identity-scope'], testId: 'test', attemptId: 'attempt', index: 0, signal, memory: new Map() },
     artifacts: { dir: '/tmp', register: () => 'artifact', link: () => 'artifact' },
     priorSteps: () => steps.completed(), agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
   });
