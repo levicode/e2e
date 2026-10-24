@@ -1,0 +1,469 @@
+# Frozen public source pins. Local preparation only; publication and the single branch push are separate actions.
+name: Latest upstream Linux compile and unit validation (not acceptance)
+'on':
+  push:
+    branches:
+    - implement/latest-upstream-validation-ci
+permissions:
+  contents: read
+concurrency:
+  group: latest-upstream-validation-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  NATIVE_SHA: e6c1a6055d710d089e3489dc469f1b1a334d1dd3
+  NATIVE_TREE: 18f0186c73edef0b8655d4cb7b8c146daf0769b2
+  NATIVE_LOCK_SHA256: 1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97
+  E2E_SHA: e6e080672d5aa326c7d57718b0238aa8f6080fef
+  E2E_TREE: 21bab78e7426a1830b35df438cf627a5cbd249c6
+  E2E_LOCK_SHA256: 3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f
+  SEMANTIC_TESTS_FROZEN: 'yes'
+  RUSTUP_TOOLCHAIN: 1.99.1
+  RUST_MIN_STACK: '16777216'
+  RUST_BACKTRACE: '1'
+  CARGO_BUILD_JOBS: '2'
+  PYTHONDONTWRITEBYTECODE: '1'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: '1'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  CI: 'true'
+jobs:
+  native:
+    name: native-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      EVIDENCE_NAME: native-validation
+      PHASES: recipe-identity binding source-before toolchain format clippy acceptance-tests-check proxy-feature-check default-no-run
+        default-tests source-after
+    outputs:
+      validated: ${{ steps.gate.outputs.validated }}
+    steps:
+    - name: Initialize explicit not-run receipts
+      id: init
+      run: |
+        set -euo pipefail
+        export EVIDENCE_DIR="$RUNNER_TEMP/$EVIDENCE_NAME"
+        export CARGO_HOME="$RUNNER_TEMP/upstream-cargo"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/upstream-target"
+        export VALIDATE="$GITHUB_WORKSPACE/recipe/scripts/validate-latest-upstream.py"
+        printf 'EVIDENCE_DIR=%s\nCARGO_HOME=%s\nCARGO_TARGET_DIR=%s\nVALIDATE=%s\n' "$EVIDENCE_DIR" "$CARGO_HOME" "$CARGO_TARGET_DIR" "$VALIDATE" >> "$GITHUB_ENV"
+        mkdir -p "$EVIDENCE_DIR"
+        for phase in $PHASES; do
+          printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+          : > "$EVIDENCE_DIR/$phase.stdout.log"
+          : > "$EVIDENCE_DIR/$phase.stderr.log"
+        done
+        printf '%s\n' 'Compile/unit plus native artifact only. Browser runtime, installed-bundle, source-retirement, full acceptance, promotion and release remain NOT ESTABLISHED.' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf '%s\n' "$NEEDS_JSON" > "$EVIDENCE_DIR/upstream-job-results.json"
+        uname -a > "$EVIDENCE_DIR/host.txt"
+        cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+        id >> "$EVIDENCE_DIR/host.txt"
+        date -u >> "$EVIDENCE_DIR/host.txt"
+        test "$RUNNER_OS" = Linux
+        test "$(uname -m)" = x86_64
+        test "$(id -u)" -ne 0
+      env:
+        NEEDS_JSON: ${{ toJSON(needs) }}
+    - name: Check out this immutable recipe
+      id: recipe
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - name: Read back recipe identity and bind frozen source pins
+      id: binding
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" run recipe-identity 30 python3 -B "$VALIDATE" identity recipe "$GITHUB_WORKFLOW_SHA" - - -
+        sha256sum recipe/.github/workflows/latest-upstream-validation.yml recipe/scripts/validate-latest-upstream.py > "$EVIDENCE_DIR/recipe.sha256"
+        python3 -B "$VALIDATE" run binding 30 python3 -B "$VALIDATE" binding
+      if: ${{ !cancelled() && steps.recipe.outcome == 'success' }}
+    - name: Check out exact native source
+      id: source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SHA }}
+        path: source
+        persist-credentials: false
+      if: ${{ !cancelled() && steps.binding.outcome == 'success' }}
+    - name: Verify source commit, tree and lock before work
+      id: identity
+      run: |
+        python3 -B "$VALIDATE" run source-before 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$NATIVE_SHA" "$NATIVE_TREE" cli/Cargo.lock "$NATIVE_LOCK_SHA256"
+      if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+    - name: Cache registry bytes only, never target artifacts
+      id: registry
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |-
+          ${{ env.CARGO_HOME }}/registry
+          ${{ env.CARGO_HOME }}/git/db
+        key: upstream-registry-${{ runner.os }}-${{ runner.arch }}-rust1.99.1-${{ env.NATIVE_LOCK_SHA256 }}
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+    - name: Install and verify pinned official Rust toolchain
+      id: rust
+      run: |
+        python3 -B "$VALIDATE" run toolchain 600 bash -euc '
+        rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+        rustc -Vv
+        cargo -Vv
+        cargo clippy --version
+        cargo fmt --version
+        test "$(rustc -Vv | sed -n "s/^release: //p")" = "$RUSTUP_TOOLCHAIN"
+        test "$(rustc -Vv | sed -n "s/^host: //p")" = x86_64-unknown-linux-gnu
+        '
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+    - name: Run every independent native compile gate
+      id: compile
+      run: |
+        set -uo pipefail
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+        failed=0
+        python3 -B "$VALIDATE" run format 120 cargo fmt --all -- --check || failed=1
+        python3 -B "$VALIDATE" run clippy 900 cargo clippy --locked --profile dev --no-default-features --all-targets -- -D warnings || failed=1
+        python3 -B "$VALIDATE" run acceptance-tests-check 900 cargo check --locked --profile dev --no-default-features --features acceptance-faults --tests || failed=1
+        python3 -B "$VALIDATE" run proxy-feature-check 600 cargo check --locked --profile dev --no-default-features --features acceptance-faults --test client-proxy-fixture || failed=1
+        python3 -B "$VALIDATE" run default-no-run 900 cargo test --locked --profile test --no-default-features --no-run --message-format=json || failed=1
+        exit "$failed"
+      if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+      working-directory: source/cli
+    - name: Run all default harnesses and require exact regression witnesses
+      id: tests
+      run: |
+        set -euo pipefail
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/default-tests.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/default-tests.stdout.log") 2> >(tee "$EVIDENCE_DIR/default-tests.stderr.log" >&2)
+        python3 -B "$VALIDATE" native-tests
+      if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+      working-directory: source/cli
+    - name: Verify unchanged source even after failures
+      id: after
+      run: |
+        python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$NATIVE_SHA" "$NATIVE_TREE" cli/Cargo.lock "$NATIVE_LOCK_SHA256"
+      if: ${{ always() && steps.identity.outcome == 'success' }}
+    - name: Aggregate all required receipts without skip-as-pass
+      id: gate
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" aggregate $PHASES
+        echo 'validated=true' >> "$GITHUB_OUTPUT"
+      if: ${{ always() }}
+    - name: Record every actual step outcome
+      id: outcomes
+      run: |
+        printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+      if: ${{ always() }}
+      env:
+        STEP_OUTCOMES: ${{ toJSON(steps) }}
+    - name: Always retain diagnostics
+      id: diagnostics
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ env.EVIDENCE_DIR }}/
+        if-no-files-found: error
+        retention-days: 7
+      if: ${{ always() }}
+  e2e:
+    name: e2e-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      EVIDENCE_NAME: e2e-validation
+      PHASES: recipe-identity binding source-before tools dependencies core-build web-build packages-build lint workspace-types
+        scripts-types core-unit web-unit packages-unit scripts-tests source-after
+    outputs:
+      validated: ${{ steps.gate.outputs.validated }}
+    steps:
+    - name: Initialize explicit not-run receipts
+      id: init
+      run: |
+        set -euo pipefail
+        export EVIDENCE_DIR="$RUNNER_TEMP/$EVIDENCE_NAME"
+        export CARGO_HOME="$RUNNER_TEMP/upstream-cargo"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/upstream-target"
+        export VALIDATE="$GITHUB_WORKSPACE/recipe/scripts/validate-latest-upstream.py"
+        printf 'EVIDENCE_DIR=%s\nCARGO_HOME=%s\nCARGO_TARGET_DIR=%s\nVALIDATE=%s\n' "$EVIDENCE_DIR" "$CARGO_HOME" "$CARGO_TARGET_DIR" "$VALIDATE" >> "$GITHUB_ENV"
+        mkdir -p "$EVIDENCE_DIR"
+        for phase in $PHASES; do
+          printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+          : > "$EVIDENCE_DIR/$phase.stdout.log"
+          : > "$EVIDENCE_DIR/$phase.stderr.log"
+        done
+        printf '%s\n' 'Compile/unit plus native artifact only. Browser runtime, installed-bundle, source-retirement, full acceptance, promotion and release remain NOT ESTABLISHED.' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf '%s\n' "$NEEDS_JSON" > "$EVIDENCE_DIR/upstream-job-results.json"
+        uname -a > "$EVIDENCE_DIR/host.txt"
+        cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+        id >> "$EVIDENCE_DIR/host.txt"
+        date -u >> "$EVIDENCE_DIR/host.txt"
+        test "$RUNNER_OS" = Linux
+        test "$(uname -m)" = x86_64
+        test "$(id -u)" -ne 0
+      env:
+        NEEDS_JSON: ${{ toJSON(needs) }}
+    - name: Check out this immutable recipe
+      id: recipe
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - name: Read back recipe identity and bind frozen source pins
+      id: binding
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" run recipe-identity 30 python3 -B "$VALIDATE" identity recipe "$GITHUB_WORKFLOW_SHA" - - -
+        sha256sum recipe/.github/workflows/latest-upstream-validation.yml recipe/scripts/validate-latest-upstream.py > "$EVIDENCE_DIR/recipe.sha256"
+        python3 -B "$VALIDATE" run binding 30 python3 -B "$VALIDATE" binding
+      if: ${{ !cancelled() && steps.recipe.outcome == 'success' }}
+    - name: Check out exact e2e source
+      id: source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: ${{ env.E2E_SHA }}
+        path: source
+        persist-credentials: false
+      if: ${{ !cancelled() && steps.binding.outcome == 'success' }}
+    - name: Verify source commit, tree and lock before work
+      id: identity
+      run: |
+        python3 -B "$VALIDATE" run source-before 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$E2E_SHA" "$E2E_TREE" pnpm-lock.yaml "$E2E_LOCK_SHA256"
+      if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+    - name: Set up pinned Node
+      id: node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24.19.0
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+    - name: Set up pinned pnpm without automatic install
+      id: pnpm
+      uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        version: 12.3.4
+        run_install: false
+      if: ${{ !cancelled() && steps.node.outcome == 'success' }}
+    - name: Verify tools and install the actual frozen lock without lifecycle scripts
+      id: dependencies
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" run tools 30 bash -euc 'node --version; pnpm --version; test "$(node --version)" = v24.19.0; test "$(pnpm --version)" = 12.3.4; test "$(node -p "require(\"./package.json\").packageManager")" = pnpm@12.3.4'
+        python3 -B "$VALIDATE" run dependencies 600 pnpm install --frozen-lockfile --ignore-scripts --store-dir "$RUNNER_TEMP/upstream-pnpm-store"
+      if: ${{ !cancelled() && steps.pnpm.outcome == 'success' }}
+      working-directory: source
+    - name: Build core and Web, then every remaining published package
+      id: build
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" run core-build 300 pnpm --filter e2e run build
+        python3 -B "$VALIDATE" run web-build 300 pnpm --filter @e2e-dev/web run build
+        python3 -B "$VALIDATE" run packages-build 600 bash -uc 'failed=0; for package in @e2e-dev/mobile @e2e-dev/github @e2e-dev/kernel @e2e-dev/lightpanda @e2e-dev/eas @e2e-dev/smol @e2e-dev/limrun @e2e-dev/decision @e2e-dev/testmu; do pnpm --filter "$package" run build || failed=1; done; exit "$failed"'
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      working-directory: source
+    - name: Collect independent whole-workspace types and pure-unit checks
+      id: checks
+      run: |
+        set -uo pipefail
+        failed=0
+        python3 -B "$VALIDATE" run lint 300 pnpm run lint || failed=1
+        python3 -B "$VALIDATE" run workspace-types 600 pnpm -r run typecheck || failed=1
+        python3 -B "$VALIDATE" run scripts-types 300 pnpm exec tsc -p scripts || failed=1
+        python3 -B "$VALIDATE" run core-unit 600 pnpm --filter e2e run test:unit || failed=1
+        python3 -B "$VALIDATE" run web-unit 600 pnpm --filter @e2e-dev/web run test:unit || failed=1
+        python3 -B "$VALIDATE" run packages-unit 600 bash -uc 'failed=0; for package in @e2e-dev/mobile @e2e-dev/github @e2e-dev/kernel @e2e-dev/lightpanda @e2e-dev/eas @e2e-dev/smol @e2e-dev/limrun @e2e-dev/testmu; do pnpm --filter "$package" run test:unit || failed=1; done; pnpm --filter @e2e-dev/decision run test || failed=1; exit "$failed"' || failed=1
+        python3 -B "$VALIDATE" run scripts-tests 600 pnpm run test:scripts || failed=1
+        exit "$failed"
+      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      working-directory: source
+    - name: Verify unchanged source even after failures
+      id: after
+      run: |
+        python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$E2E_SHA" "$E2E_TREE" pnpm-lock.yaml "$E2E_LOCK_SHA256"
+      if: ${{ always() && steps.identity.outcome == 'success' }}
+    - name: Aggregate all required receipts without skip-as-pass
+      id: gate
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" aggregate $PHASES
+        echo 'validated=true' >> "$GITHUB_OUTPUT"
+      if: ${{ always() }}
+    - name: Record every actual step outcome
+      id: outcomes
+      run: |
+        printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+      if: ${{ always() }}
+      env:
+        STEP_OUTCOMES: ${{ toJSON(steps) }}
+    - name: Always retain diagnostics
+      id: diagnostics
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ env.EVIDENCE_DIR }}/
+        if-no-files-found: error
+        retention-days: 7
+      if: ${{ always() }}
+  production:
+    name: native-production-artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      EVIDENCE_NAME: native-production-artifact
+      PHASES: recipe-identity binding source-before toolchain production-build production-capture acceptance-faults-build
+        acceptance-faults-capture image-integrity source-after
+    outputs:
+      validated: ${{ steps.gate.outputs.validated }}
+    steps:
+    - name: Initialize explicit not-run receipts
+      id: init
+      run: |
+        set -euo pipefail
+        export EVIDENCE_DIR="$RUNNER_TEMP/$EVIDENCE_NAME"
+        export CARGO_HOME="$RUNNER_TEMP/upstream-cargo"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/upstream-target"
+        export VALIDATE="$GITHUB_WORKSPACE/recipe/scripts/validate-latest-upstream.py"
+        printf 'EVIDENCE_DIR=%s\nCARGO_HOME=%s\nCARGO_TARGET_DIR=%s\nVALIDATE=%s\n' "$EVIDENCE_DIR" "$CARGO_HOME" "$CARGO_TARGET_DIR" "$VALIDATE" >> "$GITHUB_ENV"
+        mkdir -p "$EVIDENCE_DIR"
+        for phase in $PHASES; do
+          printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+          : > "$EVIDENCE_DIR/$phase.stdout.log"
+          : > "$EVIDENCE_DIR/$phase.stderr.log"
+        done
+        printf '%s\n' 'Compile/unit plus native artifact only. Browser runtime, installed-bundle, source-retirement, full acceptance, promotion and release remain NOT ESTABLISHED.' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf '%s\n' "$NEEDS_JSON" > "$EVIDENCE_DIR/upstream-job-results.json"
+        uname -a > "$EVIDENCE_DIR/host.txt"
+        cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+        id >> "$EVIDENCE_DIR/host.txt"
+        date -u >> "$EVIDENCE_DIR/host.txt"
+        test "$RUNNER_OS" = Linux
+        test "$(uname -m)" = x86_64
+        test "$(id -u)" -ne 0
+      env:
+        NEEDS_JSON: ${{ toJSON(needs) }}
+    - name: Check out this immutable recipe
+      id: recipe
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+      if: ${{ !cancelled() && needs.native.outputs.validated == 'true' && needs.e2e.outputs.validated == 'true' && needs.native.result
+        == 'success' && needs.e2e.result == 'success' }}
+    - name: Read back recipe identity and bind frozen source pins
+      id: binding
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" run recipe-identity 30 python3 -B "$VALIDATE" identity recipe "$GITHUB_WORKFLOW_SHA" - - -
+        sha256sum recipe/.github/workflows/latest-upstream-validation.yml recipe/scripts/validate-latest-upstream.py > "$EVIDENCE_DIR/recipe.sha256"
+        python3 -B "$VALIDATE" run binding 30 python3 -B "$VALIDATE" binding
+      if: ${{ !cancelled() && steps.recipe.outcome == 'success' }}
+    - name: Check out exact native source
+      id: source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SHA }}
+        path: source
+        persist-credentials: false
+      if: ${{ !cancelled() && steps.binding.outcome == 'success' }}
+    - name: Verify source commit, tree and lock before work
+      id: identity
+      run: |
+        python3 -B "$VALIDATE" run source-before 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$NATIVE_SHA" "$NATIVE_TREE" cli/Cargo.lock "$NATIVE_LOCK_SHA256"
+      if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+    - name: Cache registry bytes only, never target artifacts
+      id: registry
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |-
+          ${{ env.CARGO_HOME }}/registry
+          ${{ env.CARGO_HOME }}/git/db
+        key: upstream-registry-${{ runner.os }}-${{ runner.arch }}-rust1.99.1-${{ env.NATIVE_LOCK_SHA256 }}
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+    - name: Install and verify pinned official Rust toolchain
+      id: rust
+      run: |
+        python3 -B "$VALIDATE" run toolchain 600 bash -euc '
+        rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+        rustc -Vv
+        cargo -Vv
+        cargo clippy --version
+        cargo fmt --version
+        test "$(rustc -Vv | sed -n "s/^release: //p")" = "$RUSTUP_TOOLCHAIN"
+        test "$(rustc -Vv | sed -n "s/^host: //p")" = x86_64-unknown-linux-gnu
+        '
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+    - name: Build a feature-free native ci image only after both jobs pass
+      id: build
+      run: |
+        set -euo pipefail
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+        python3 -B "$VALIDATE" run production-build 2100 cargo build --locked --profile ci --no-default-features --message-format=json
+        python3 -B "$VALIDATE" run production-capture 60 python3 -B "$VALIDATE" production "$RUNNER_TEMP/upstream-native-product" production
+        python3 -B "$VALIDATE" run acceptance-faults-build 1500 cargo build --locked --profile ci --no-default-features --features acceptance-faults --bin agent-browser --message-format=json
+        python3 -B "$VALIDATE" run acceptance-faults-capture 60 python3 -B "$VALIDATE" production "$RUNNER_TEMP/upstream-acceptance-faults-product" acceptance-faults
+        python3 -B "$VALIDATE" run image-integrity 60 python3 -B "$VALIDATE" image-integrity "$RUNNER_TEMP/upstream-native-product" "$RUNNER_TEMP/upstream-acceptance-faults-product"
+      if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+      working-directory: source/cli
+    - name: Verify unchanged source even after failures
+      id: after
+      run: |
+        python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" identity "$GITHUB_WORKSPACE/source" "$NATIVE_SHA" "$NATIVE_TREE" cli/Cargo.lock "$NATIVE_LOCK_SHA256"
+      if: ${{ always() && steps.identity.outcome == 'success' }}
+    - name: Aggregate all required receipts without skip-as-pass
+      id: gate
+      run: |
+        set -euo pipefail
+        python3 -B "$VALIDATE" aggregate $PHASES
+        echo 'validated=true' >> "$GITHUB_OUTPUT"
+      if: ${{ always() }}
+    - name: Record every actual step outcome
+      id: outcomes
+      run: |
+        printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+      if: ${{ always() }}
+      env:
+        STEP_OUTCOMES: ${{ toJSON(steps) }}
+    - name: Always retain diagnostics
+      id: diagnostics
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: production-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ env.EVIDENCE_DIR }}/
+        if-no-files-found: error
+        retention-days: 7
+      if: ${{ always() }}
+    - name: Retain test-only acceptance-faults image, never distributable
+      id: fault_binary
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: test-only-acceptance-faults-linux-x64-${{ env.NATIVE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/upstream-acceptance-faults-product/
+        if-no-files-found: error
+        retention-days: 7
+      if: ${{ !cancelled() && steps.gate.outcome == 'success' }}
+    - name: Retain unpromoted binary and exact provenance for later matrix
+      id: binary
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: unpromoted-native-linux-x64-${{ env.NATIVE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/upstream-native-product/
+        if-no-files-found: error
+        retention-days: 7
+      if: ${{ !cancelled() && steps.gate.outcome == 'success' }}
+    needs:
+    - native
+    - e2e
+    if: ${{ always() }}
