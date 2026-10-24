@@ -27,7 +27,7 @@ jobs:
           printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
           mkdir -m700 "$EVIDENCE_DIR"
           printf '%s\n' 'Diagnostic only: original304 non-CLI + new4 + callbacks14 + independent actual-installer warm CLI1. P14 not-run pending distinct native2647 feature artifact/proof. Never full324, hard acceptance, source removal, release, or Chrome154 proof.' > "$EVIDENCE_DIR/SCOPE.txt"
-          for phase in sources artifact dependencies browser-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
+          for phase in sources artifact dependencies browser-install codec-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
           for group in original-noncli-304 new-4 callbacks-14 cli-installed-1; do printf '%s\n' '{"status":"not-run","reason":"Workflow prerequisite or batch has not completed"}' > "$EVIDENCE_DIR/$group.state.json"; done
           printf '%s\n' '{"status":"not-run","reason":"Missing separate native2647 acceptance-faults artifact and genuine matching proof; this recipe does not execute P14"}' > "$EVIDENCE_DIR/cli-cancel-P14-1.state.json"
       - name: Check out immutable recipe separately from tested sources
@@ -106,12 +106,56 @@ jobs:
           env -i PATH="$(dirname "$(command -v node)"):/usr/bin:/bin" HOME="$install_root/home" TMPDIR="$install_root/tmp" XDG_CACHE_HOME="$install_root/cache" CI=1 LANG=C.UTF-8 \
             PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
             "$(command -v node)" packages/web/node_modules/playwright-core/cli.js install chromium > "$EVIDENCE_DIR/browser-install.log" 2>&1
+      - name: Install official Ubuntu recording codecs through the original project path
+        id: codec_install
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/codec-install.exit"' EXIT
+          printf 'not-run\n' > "$EVIDENCE_DIR/codec-apt-install.exit"
+          set +e
+          sudo apt-get update > "$EVIDENCE_DIR/codec-apt-update.log" 2>&1
+          status=$?
+          printf '%s\n' "$status" > "$EVIDENCE_DIR/codec-apt-update.exit"
+          set -e
+          test "$status" = 0 || exit "$status"
+          apt-cache policy ffmpeg > "$EVIDENCE_DIR/codec-package-policy.txt"
+          set +e
+          sudo apt-get install -y ffmpeg > "$EVIDENCE_DIR/codec-apt-install.log" 2>&1
+          status=$?
+          printf '%s\n' "$status" > "$EVIDENCE_DIR/codec-apt-install.exit"
+          set -e
+          test "$status" = 0 || exit "$status"
+          dpkg-query -W -f='${Package}\t${Version}\t${Status}\n' ffmpeg > "$EVIDENCE_DIR/codec-package-installed.txt"
       - name: Verify both real browser images and read system codec capabilities
         id: browser_codecs
         run: |
           set -euo pipefail
           trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-codecs.exit"' EXIT
+          missing=0
+          for tool in node pnpm git unzip python3 timeout which readlink ldd ffmpeg ffprobe; do
+            if executable=$(command -v "$tool"); then printf '%s\t%s\n' "$tool" "$executable"; else printf 'MISSING\t%s\n' "$tool"; missing=1; fi
+          done > "$EVIDENCE_DIR/required-executables.txt"
+          for executable in /usr/bin/python3 /usr/bin/timeout /usr/bin/which /usr/bin/readlink /usr/bin/ffmpeg /usr/bin/ffprobe; do
+            if [[ ! -x "$executable" ]]; then printf 'MISSING\t%s\n' "$executable" >> "$EVIDENCE_DIR/required-executables.txt"; missing=1; fi
+          done
+          test "$missing" = 0
           node recipe/scripts/matrix-runtime/identity.mjs browsers
+          node --input-type=module - <<'JS' > "$EVIDENCE_DIR/runtime-linkage-inputs.tsv"
+          import {readFileSync} from 'node:fs';
+          const images=JSON.parse(readFileSync(process.env.EVIDENCE_DIR+'/images-before.json'));
+          for(const name of ['production','full','shell']) console.log(name+'\t'+images[name].executable);
+          console.log('ffmpeg\t/usr/bin/ffmpeg'); console.log('ffprobe\t/usr/bin/ffprobe');
+          JS
+          linkage_failed=0
+          while IFS=$'\t' read -r name executable; do
+            set +e
+            env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ldd "$executable" > "$EVIDENCE_DIR/$name.ldd.txt" 2>&1
+            status=$?
+            set -e
+            printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.ldd.exit"
+            if [[ "$status" != 0 ]] || grep -Fq 'not found' "$EVIDENCE_DIR/$name.ldd.txt"; then linkage_failed=1; fi
+          done < "$EVIDENCE_DIR/runtime-linkage-inputs.tsv"
+          test "$linkage_failed" = 0
           env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffmpeg -version > "$EVIDENCE_DIR/ffmpeg-version.txt" 2>&1
           env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffprobe -version > "$EVIDENCE_DIR/ffprobe-version.txt" 2>&1
           env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffmpeg -hide_banner -encoders > "$EVIDENCE_DIR/ffmpeg-encoders.txt" 2>&1
@@ -172,14 +216,14 @@ jobs:
           import json,os
           from pathlib import Path
           steps=json.loads(os.environ['STEP_OUTCOMES'])
-          order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','browser_codecs','probe','matrix','final_identities','reconciliation']
+          order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','codec_install','browser_codecs','probe','matrix','final_identities','reconciliation']
           for name in order:
               outcome=steps.get(name,{}).get('outcome')
               if outcome in ('failure','cancelled'):
                   Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').write_text(f'{name}: {outcome}\n')
                   break
           PY
-          for phase in sources artifact dependencies browser-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do
+          for phase in sources artifact dependencies browser-install codec-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do
             [[ ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]] || break
             status=$(cat "$EVIDENCE_DIR/$phase.exit" 2>/dev/null || printf unknown)
             if [[ "$status" != 0 && "$status" != not-run ]]; then printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"; break; fi
