@@ -1,31 +1,31 @@
-# Isolated original three-case capture. No native rebuild or formal acceptance claim.
-name: Original P01 P04 P06 first-cause capture (not full acceptance)
+# Isolated original two-case capture. No native rebuild or formal acceptance claim.
+name: Original P01 P04 screenshot-stage capture (not full acceptance)
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: first-cause-three-${{ github.ref }}
+  group: screenshot-stage-two-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  first_cause_three:
-    if: ${{ github.ref == 'refs/heads/implement/first-cause-three-ci' }}
+  screenshot_stage_two:
+    if: ${{ github.ref == 'refs/heads/implement/screenshot-stage-two-ci' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 85
     defaults:
       run:
         shell: bash
     steps:
-    - name: Initialize only three original case observations; all others remain not-run
+    - name: Initialize only two original case observations; all others remain not-run
       run: |
         set -euo pipefail
         umask 077
-        export EVIDENCE_DIR="$RUNNER_TEMP/first-cause-three-evidence"
-        export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/first-cause-three-playwright"
+        export EVIDENCE_DIR="$RUNNER_TEMP/screenshot-stage-two-evidence"
+        export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/screenshot-stage-two-playwright"
         printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
         mkdir -m700 "$EVIDENCE_DIR"
-        printf '%s\n' 'Only original P01/P04/P06 once. Formal88a binaries and c98 source. Historical negotiation proofs are not current probe runs. Unselected330, sentinels, full suite and cleanup acceptance remain unknown/not-run; no prior pass carryover.' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf '%s\n' 'Only original P01/P04 once. Formal88a binaries and c98 source. Historical negotiation proofs are not current probe runs. Unselected331, sentinels, full suite and cleanup acceptance remain unknown/not-run; no prior pass carryover.' > "$EVIDENCE_DIR/SCOPE.txt"
         for phase in sources artifact dependencies browser-install codec-install browser-codecs historical-proofs runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
-        printf '%s\n' '{"status":"not-run","reason":"Prerequisites not completed"}' > "$EVIDENCE_DIR/first-cause-three.state.json"
+        for id in P01 P04; do printf '%s\n' '{"status":"not-run","reason":"Prerequisites not completed"}' > "$EVIDENCE_DIR/first-cause-$id.state.json"; done
       timeout-minutes: 1
     - name: Check out immutable recipe separately from tested sources
       id: recipe
@@ -181,7 +181,7 @@ jobs:
       timeout-minutes: 5
       env:
         GH_TOKEN: ${{ github.token }}
-    - name: Run only original P01 P04 P06 once with existing first-cause carrier
+    - name: Run only original P01 P04 once with existing first-cause carrier
       id: matrix
       run: |
         set -euo pipefail
@@ -199,7 +199,7 @@ jobs:
         trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/final-identities.exit"' EXIT
         node recipe/scripts/matrix-runtime/identity.mjs final > "$EVIDENCE_DIR/final-identities.log" 2>&1
       timeout-minutes: 3
-    - name: Reconcile only the selected three and keep full-suite capture unknown
+    - name: Reconcile only the selected two and keep full-suite capture unknown
       id: reconciliation
       if: ${{ always() }}
       run: |
@@ -236,16 +236,16 @@ jobs:
           if [[ "$status" != 0 && "$status" != not-run ]]; then printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"; break; fi
         done
       timeout-minutes: 1
-    - name: Always preserve synthetic evidence only, never profiles or caches
+    - name: Always preserve closed synthetic and native diagnostic evidence only, never profiles or caches
       if: ${{ always() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: first-cause-three-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/first-cause-three-evidence/
+        name: screenshot-stage-two-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/screenshot-stage-two-evidence/
         if-no-files-found: error
         retention-days: 7
       timeout-minutes: 5
 'on':
   push:
     branches:
-    - implement/first-cause-three-ci
+    - implement/screenshot-stage-two-ci

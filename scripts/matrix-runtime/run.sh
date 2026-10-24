@@ -53,7 +53,7 @@ observed_command() {
   COMMAND_STATUS=$status
 }
 selectors() {
-  "$NODE" "$HERE/selection.mjs" "$REPO" "$OUT" --first-cause-three
+  "$NODE" "$HERE/selection.mjs" "$REPO" "$OUT" --first-cause-two
 }
 observed_cleanup_check() {
   "$NODE" --input-type=module - "$HERE/identity.mjs" "$OUT/$1.processes.jsonl.summary.json" "$(cat "$OUT/$1.observer.exit")" <<'JS'
@@ -67,7 +67,7 @@ JS
 run_batch() {
   local name=$1 package=$2 cap; local -a files project=() command
   case "$name" in
-    first-cause-three) cap=600 ;;
+    first-cause-P01|first-cause-P04) cap=$((CAPTURE_DEADLINE-SECONDS)); (( cap > 0 )) || return 124 ;;
     priority-p41-1) cap=150 ;;
     priority-upstream-5) cap=300 ;;
     paired-canvas-2) cap=180 ;;
@@ -82,8 +82,8 @@ run_batch() {
   command=("$NODE" "$REPO/packages/$package/node_modules/vitest/vitest.mjs" run "${project[@]}" --maxWorkers=2 --bail=0
     --reporter=verbose --reporter=json "--outputFile.json=$OUT/$name.vitest.json"
     --testNamePattern "$(cat "$OUT/$name.regex.txt")" "${files[@]}")
-  [[ "$name" == first-cause-three && "$package" == web ]] || { printf 'Only original P01/P04/P06 allowed\n' >&2; return 2; }
-  command=("$NODE" "$HERE/first-cause.mjs" run "$REPO" "$PRODUCTION" "$FAULT" "$OUT/production-negotiation.json" "$OUT/fault-negotiation.json" "$OUT/first-cause-capture" "${command[@]}")
+  [[ "$name" =~ ^first-cause-P(01|04)$ && "$package" == web ]] || { printf 'Only original P01/P04 allowed\n' >&2; return 2; }
+  command=("$NODE" "$HERE/first-cause.mjs" run "${name#first-cause-}" "$REPO" "$PRODUCTION" "$FAULT" "$OUT/production-negotiation.json" "$OUT/fault-negotiation.json" "$OUT/$name-capture" "${command[@]}")
   state "$name" running
   (cd "$REPO/packages/$package" && observed_command "$name" /usr/bin/timeout --foreground --signal=TERM --kill-after=5s "$cap" "${command[@]}")
   state "$name" finished '' "$(cat "$OUT/$name.exit")"
@@ -94,11 +94,23 @@ case "${1:-}" in
     "$NODE" "$HERE/identity.mjs" verify-proof
     "$NODE" "$HERE/identity.mjs" verify-fault-proof
     selectors
-    fresh_environment
-    mkdir -m700 "$OUT/first-cause-capture"
-    run_batch first-cause-three web
-    # Preserve the original Vitest exit, including assertion/cleanup failures.
-    exit "$(cat "$OUT/first-cause-three.exit")"
+    # Two separate case-local sinks, one unchanged total 600s outer allowance.
+    CAPTURE_DEADLINE=$((SECONDS+600)); first_status=0
+    for id in P01 P04; do
+      name="first-cause-$id"
+      fresh_environment
+      mkdir -m700 "$OUT/$name-capture"
+      set +e
+      (set -e; run_batch "$name" web)
+      safety_status=$?
+      set -e
+      status=$(cat "$OUT/$name.exit" 2>/dev/null || printf '%s' "$safety_status")
+      if [[ "$first_status" == 0 && "$status" != 0 ]]; then first_status=$status; fi
+      # Diagnostic UNKNOWN does not stop P04. Existing identity/residue failures do.
+      if [[ "$safety_status" != 0 ]]; then [[ "$first_status" != 0 ]] || first_status=$safety_status; break; fi
+    done
+    # Preserve the earliest original Vitest failure, including body/finally failures.
+    exit "$first_status"
     ;;
   *) printf '%s\n' 'Only explicit cases command permitted' >&2; exit 2 ;;
 esac
