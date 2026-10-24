@@ -24,18 +24,19 @@ import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEviden
 const recoveryEvidence = new AsyncLocalStorage<RecoveryEvidence>();
 const recoveryTasks = new WeakMap<object, RecoveryEvidence>();
 interface RecoveryContract { schemaVersion: 1; caseId: SyntheticCaseId; invalid: boolean; facts: SyntheticFact[] }
-const p07Contracts = new WeakMap<object, RecoveryContract>();
+const recoveryContracts = new WeakMap<object, RecoveryContract>();
 
 /** Reuse the existing observer's bounded facts; this never enables the synthetic batch. */
 function recoveryContractSink(context: TestContext, id: SyntheticCaseId): SyntheticEvidence {
   const sink = beginSyntheticCase(id);
-  if (id !== 'P07' && (id !== 'P08' || process.env['E2E_CDP_RECOVERY_DIAGNOSTIC'] !== '1')) return sink;
+  if (id !== 'P07' && id !== 'P08') return sink;
+  const diagnostic = id === 'P08' && process.env['E2E_CDP_RECOVERY_DIAGNOSTIC'] === '1';
   const contract: RecoveryContract = { schemaVersion: 1, caseId: id, invalid: false, facts: [] };
-  if (id === 'P07') p07Contracts.set(context.task, contract);
-  Object.assign(context.task.meta, id === 'P07' ? { nativeRecoveryContract: contract } : { nativeRecoveryDiagnostic: contract });
+  recoveryContracts.set(context.task, contract);
+  Object.assign(context.task.meta, { nativeRecoveryContract: contract }, diagnostic ? { nativeRecoveryDiagnostic: contract } : {});
   const capture = (fact: SyntheticFact): void => {
-    if (fact.kind !== 'selected-operation' && fact.kind !== 'cleanup-native' && !(id === 'P08' && fact.kind === 'test-failure')) return;
-    if (contract.facts.length >= (id === 'P07' ? 3 : 5) || !validSyntheticFact(fact, id)) { contract.invalid = true; return; }
+    if (fact.kind !== 'selected-operation' && fact.kind !== 'cleanup-native' && !(diagnostic && fact.kind === 'test-failure')) return;
+    if (contract.facts.length >= (diagnostic ? 5 : 3) || !validSyntheticFact(fact, id)) { contract.invalid = true; return; }
     contract.facts.push(structuredClone(fact));
   };
   return {
@@ -218,8 +219,8 @@ describe('CDP session recovery', () => {
       diagnostic.finishBackstop(failures.length > 0);
       recoveryTasks.delete(context.task);
     }
-    const contract = p07Contracts.get(context.task);
-    p07Contracts.delete(context.task);
+    const contract = recoveryContracts.get(context.task);
+    recoveryContracts.delete(context.task);
     if (failures.length > 0) throw new AggregateError(failures, 'Recovery fixture cleanup failed');
     if (contract !== undefined) {
       expect(contract.invalid).toBe(false);
@@ -726,12 +727,28 @@ describe('CDP session recovery', () => {
     try {
       const original = await witness(engine, remote);
       const other = await original.page.context().newPage();
-      await other.goto(await fixtureOf(engine).url());
+      const originalUrl = await fixtureOf(engine).url();
+      await other.goto(originalUrl);
+      expect(other).not.toBe(original.page);
+      expect(original.page.url()).toBe(originalUrl);
+      expect(other.url()).toBe(originalUrl);
       recoveryPhase('target-close');
       await original.page.close();
+      expect(original.page.isClosed()).toBe(true);
+      expect(other.isClosed()).toBe(false);
       await disconnect(remote);
       recoveryPhase('observe');
-      await recoveryAssert(0, () => expect(recoverySelect(0, 'scope.reconnect', () => engine.observe!(operation()))).rejects.toThrow(/original page no longer exists/));
+      let firstFailure: unknown;
+      await recoveryAssert(0, async () => {
+        firstFailure = await recoverySelect(0, 'scope.reconnect', () => engine.observe!(operation())).catch((cause: unknown) => cause);
+        expect(firstFailure).toBeInstanceOf(EngineError);
+        expect(firstFailure).toMatchObject({ code: 'INVALID_STATE', retryable: false });
+      });
+      recoveryPhase('observe');
+      await recoveryAssert(1, () => expect(recoverySelect(1, 'scope.reconnect', () => engine.observe!(operation()))).rejects.toBe(firstFailure));
+      expect(original.page.isClosed()).toBe(true);
+      expect(other.isClosed()).toBe(false);
+      expect(other.url()).toBe(originalUrl);
     } catch (cause) {
       recoveryEvidence.getStore()?.failed('body', cause);
       throw cause;
