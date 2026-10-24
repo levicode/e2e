@@ -1,0 +1,291 @@
+# Prepared locally; publication and one standard-Linux runtime push belong to the integrator only.
+# Step caps total222min; job225min. Original test/hook/assertion budgets are unchanged.
+name: Same-source Linux runtime matrix (nonrelease)
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: same-source-runtime-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: ${{ github.ref == 'refs/heads/implement/latest-upstream-runtime-ci' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 225
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Initialize every required outcome; never import prior greens
+      run: |
+        set -euo pipefail
+        umask 077
+        export EVIDENCE_DIR="$RUNNER_TEMP/same-source-runtime-evidence"
+        export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/same-source-runtime-playwright"
+        printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+        mkdir -m700 "$EVIDENCE_DIR"
+        printf '%s\n' 'Fresh same-source329 + required decision4; HTTP500 and FIRST_EVENTS are separate sentinels. No prior pass carryover. Nonrelease, not installed-distribution/source-retirement/real-model acceptance.' > "$EVIDENCE_DIR/SCOPE.txt"
+        for phase in sources artifact dependencies browser-install codec-install browser-codecs runtime-probes focused runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
+        for group in priority-p41-1 priority-upstream-5 priority-old-failures-6 original-remaining-296 paired-canvas-2 new-controls-3 callbacks-14 cli-installed-1 cli-cancel-P14-1 decision-cli-4; do
+          printf '%s\n' '{"status":"not-run","reason":"Prerequisite or exact batch has not completed"}' > "$EVIDENCE_DIR/$group.state.json"
+        done
+      timeout-minutes: 1
+    - name: Check out immutable recipe separately from tested sources
+      id: recipe
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+      timeout-minutes: 1
+    - id: node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24.19.0
+        architecture: x64
+      timeout-minutes: 2
+    - name: Check out exact current public E2E source
+      id: e2e
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: c98be61c2c01a642c39c8951b466405090e39b04
+        path: e2e-source
+        persist-credentials: false
+      timeout-minutes: 3
+    - name: Check out native source for provenance only
+      id: native
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 88a7b674d45b784f5578369b8d2bb9a07e430eae
+        path: native-source
+        persist-credentials: false
+      timeout-minutes: 3
+    - name: Verify clean sources, exact trees and standard Linux host
+      id: sources
+      env:
+        RECIPE_SHA: ${{ github.workflow_sha }}
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/sources.exit"' EXIT
+        node recipe/scripts/matrix-runtime/identity.mjs sources
+        uname -a > "$EVIDENCE_DIR/host.txt"
+        cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+      timeout-minutes: 1
+    - name: Read strict-green same-source run and verify separate production/fault archives
+      id: artifact
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/artifact.exit"' EXIT
+        node recipe/scripts/matrix-runtime/identity.mjs download > "$EVIDENCE_DIR/artifact.log" 2>&1
+      timeout-minutes: 6
+    - id: pnpm
+      uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        version: 12.3.4
+        run_install: false
+      timeout-minutes: 2
+    - name: Install frozen graph and build actual core, Web and decision
+      id: dependencies
+      working-directory: e2e-source
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/dependencies.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/dependencies.log") 2>&1
+        test "$(node --version)" = v24.19.0
+        test "$(pnpm --version)" = 12.3.4
+        pnpm install --frozen-lockfile --ignore-scripts
+        pnpm --filter e2e run build
+        pnpm --filter @e2e-dev/web run build
+        pnpm --filter @e2e-dev/decision run build
+        node ../recipe/scripts/matrix-runtime/identity.mjs dist
+      timeout-minutes: 12
+    - name: Install official complete Playwright Chromium including headless shell
+      id: browser_install
+      working-directory: e2e-source
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-install.exit"' EXIT
+        test ! -e "$PLAYWRIGHT_BROWSERS_PATH"
+        install_root=$(mktemp -d /tmp/ep-XXXXXX)
+        mkdir -m700 "$install_root/home" "$install_root/tmp" "$install_root/cache"
+        env -i PATH="$(dirname "$(command -v node)"):/usr/bin:/bin" HOME="$install_root/home" TMPDIR="$install_root/tmp" XDG_CACHE_HOME="$install_root/cache" CI=1 LANG=C.UTF-8 \
+          PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+          "$(command -v node)" packages/web/node_modules/playwright-core/cli.js install chromium > "$EVIDENCE_DIR/browser-install.log" 2>&1
+      timeout-minutes: 10
+    - name: Install official Ubuntu recording codecs through the original project path
+      id: codec_install
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/codec-install.exit"' EXIT
+        printf 'not-run\n' > "$EVIDENCE_DIR/codec-apt-install.exit"
+        set +e
+        sudo apt-get update > "$EVIDENCE_DIR/codec-apt-update.log" 2>&1
+        status=$?
+        printf '%s\n' "$status" > "$EVIDENCE_DIR/codec-apt-update.exit"
+        set -e
+        test "$status" = 0 || exit "$status"
+        apt-cache policy ffmpeg > "$EVIDENCE_DIR/codec-package-policy.txt"
+        set +e
+        sudo apt-get install -y ffmpeg > "$EVIDENCE_DIR/codec-apt-install.log" 2>&1
+        status=$?
+        printf '%s\n' "$status" > "$EVIDENCE_DIR/codec-apt-install.exit"
+        set -e
+        test "$status" = 0 || exit "$status"
+        dpkg-query -W -f='${Package}\t${Version}\t${Status}\n' ffmpeg > "$EVIDENCE_DIR/codec-package-installed.txt"
+      timeout-minutes: 6
+    - name: Check both native ELF images, both real browsers and actual codec linkage
+      id: browser_codecs
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-codecs.exit"' EXIT
+        missing=0
+        for tool in node pnpm git unzip python3 timeout which readlink ldd ffmpeg ffprobe; do
+          if executable=$(command -v "$tool"); then printf '%s\t%s\n' "$tool" "$executable"; else printf 'MISSING\t%s\n' "$tool"; missing=1; fi
+        done > "$EVIDENCE_DIR/required-executables.txt"
+        for executable in /usr/bin/python3 /usr/bin/timeout /usr/bin/which /usr/bin/readlink /usr/bin/ffmpeg /usr/bin/ffprobe; do
+          if [[ ! -x "$executable" ]]; then printf 'MISSING\t%s\n' "$executable" >> "$EVIDENCE_DIR/required-executables.txt"; missing=1; fi
+        done
+        test "$missing" = 0
+        node recipe/scripts/matrix-runtime/identity.mjs browsers
+        node --input-type=module - <<'JS' > "$EVIDENCE_DIR/runtime-linkage-inputs.tsv"
+        import {readFileSync} from 'node:fs';
+        const images=JSON.parse(readFileSync(process.env.EVIDENCE_DIR+'/images-before.json'));
+        for(const name of ['production','fault','full','shell']) console.log(name+'\t'+images[name].executable);
+        console.log('ffmpeg\t/usr/bin/ffmpeg'); console.log('ffprobe\t/usr/bin/ffprobe');
+        JS
+        linkage_failed=0
+        while IFS=$'\t' read -r name executable; do
+          set +e
+          env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ldd "$executable" > "$EVIDENCE_DIR/$name.ldd.txt" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.ldd.exit"
+          if [[ "$status" != 0 ]] || grep -Fq 'not found' "$EVIDENCE_DIR/$name.ldd.txt"; then linkage_failed=1; fi
+        done < "$EVIDENCE_DIR/runtime-linkage-inputs.tsv"
+        test "$linkage_failed" = 0
+        env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffmpeg -version > "$EVIDENCE_DIR/ffmpeg-version.txt" 2>&1
+        env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffprobe -version > "$EVIDENCE_DIR/ffprobe-version.txt" 2>&1
+        env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffmpeg -hide_banner -encoders > "$EVIDENCE_DIR/ffmpeg-encoders.txt" 2>&1
+        grep -Eq '^[[:space:]]*V[^[:space:]]*[[:space:]]+libx264[[:space:]]' "$EVIDENCE_DIR/ffmpeg-encoders.txt"
+        grep -Eq '^[[:space:]]*V[^[:space:]]*[[:space:]]+libvpx[[:space:]]' "$EVIDENCE_DIR/ffmpeg-encoders.txt"
+      timeout-minutes: 3
+    - name: Generate and verify genuine production and acceptance-faults runtime proofs
+      id: probe
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime-probes.exit"' EXIT
+        bash recipe/scripts/matrix-runtime/run.sh probe
+      timeout-minutes: 12
+    - name: Run existing HTTP500, original P41 and first-event safety paths without new harness
+      id: focused
+      run: |
+        set -euo pipefail
+        printf 'safe_to_continue=false\n' >> "$GITHUB_OUTPUT"
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/focused.exit"' EXIT
+        mkdir -m700 "$EVIDENCE_DIR/focused"
+        cp "$EVIDENCE_DIR/production-identity.json" "$EVIDENCE_DIR/focused/production-identity.json"
+        set +e
+        EVIDENCE_DIR="$EVIDENCE_DIR/focused" RECIPE_SHA="${{ github.workflow_sha }}" node recipe/scripts/runtime-probe/runtime.mjs cases > "$EVIDENCE_DIR/focused.stdout-stderr.log" 2>&1
+        status=$?
+        set -e
+        if [[ -f "$EVIDENCE_DIR/focused/first-failed-case.json" && ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]]; then
+          node --input-type=module - <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const out=process.env.EVIDENCE_DIR,value=JSON.parse(readFileSync(out+'/focused/first-failed-case.json'));
+          writeFileSync(out+'/first-failed-phase.txt',`focused ${value.id}: ${value.status}\n`,{flag:'wx'});
+        JS
+        fi
+        # Copy only exact same-run original P41 raw reporter and actual launcher exit.
+        # Its original source/config/hash/fullName must match; no synthetic status translation.
+        p41_import=0
+        node recipe/scripts/matrix-runtime/identity.mjs import-p41 || p41_import=$?
+        if [[ "$p41_import" != 0 ]]; then status=1; fi
+        # Only exact reports plus complete identity/owned-cleanup evidence permit further observation.
+        # A red assertion remains red; unknown worker admission/cleanup never grants continuation.
+        if [[ "$p41_import" == 0 ]] && node recipe/scripts/matrix-runtime/identity.mjs focused-continuation; then
+          printf 'safe_to_continue=true\n' >> "$GITHUB_OUTPUT"
+        else
+          status=1
+        fi
+        exit "$status"
+      timeout-minutes: 6
+      env:
+        RECIPE_SHA: ${{ github.workflow_sha }}
+    - name: Run remaining original matrix exactly once plus all four decision CLI assertions
+      id: matrix
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime-matrix.exit"' EXIT
+        bash recipe/scripts/matrix-runtime/run.sh cases
+      timeout-minutes: 142
+      if: ${{ !cancelled() && steps.recipe.outcome == 'success' && steps.node.outcome == 'success' && steps.e2e.outcome == 'success' && steps.native.outcome == 'success' && steps.sources.outcome == 'success' && steps.artifact.outcome == 'success' && steps.pnpm.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.browser_install.outcome == 'success' && steps.codec_install.outcome == 'success' && steps.browser_codecs.outcome == 'success' && steps.probe.outcome == 'success' && steps.focused.outputs.safe_to_continue == 'true' }}
+    - name: Check all source, dist and image identities after success or failure
+      id: final_identities
+      if: ${{ always() && steps.sources.outcome == 'success' }}
+      env:
+        RECIPE_SHA: ${{ github.workflow_sha }}
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/final-identities.exit"' EXIT
+        node recipe/scripts/matrix-runtime/identity.mjs final > "$EVIDENCE_DIR/final-identities.log" 2>&1
+      timeout-minutes: 3
+    - name: Always reconcile all333 exact rows and independent runtime prerequisites
+      id: reconciliation
+      if: ${{ always() }}
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/reconciliation.exit"' EXIT
+        status=0
+        node recipe/scripts/matrix-runtime/reconcile.mjs recipe/scripts/matrix-runtime/runtime-manifest.json "$EVIDENCE_DIR" "$GITHUB_WORKSPACE/e2e-source" || status=1
+        node recipe/scripts/matrix-runtime/identity.mjs verify-proof || status=1
+        node recipe/scripts/matrix-runtime/identity.mjs verify-fault-proof || status=1
+        node recipe/scripts/matrix-runtime/canvas-pair.mjs verify "$GITHUB_WORKSPACE/e2e-source" "$GITHUB_WORKSPACE/agent-browser" "$GITHUB_WORKSPACE/agent-browser-acceptance-faults" "$EVIDENCE_DIR/production-negotiation.json" "$EVIDENCE_DIR/fault-negotiation.json" "$EVIDENCE_DIR" || status=1
+        if [[ "$status" == 0 ]]; then
+          node recipe/scripts/matrix-runtime/identity.mjs runtime-results || status=1
+        else
+          printf '%s\n' '{"status":"incomplete","reason":"Final assertion/proof/pair revalidation failed or unavailable","releaseEligible":false,"fullAcceptance":false}' > "$EVIDENCE_DIR/runtime-results.json"
+        fi
+        exit "$status"
+      timeout-minutes: 3
+    - name: Preserve step outcomes and first failing phase
+      if: ${{ always() }}
+      env:
+        STEP_OUTCOMES: ${{ toJSON(steps) }}
+      run: |
+        mkdir -p "$EVIDENCE_DIR"
+        printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+        /usr/bin/python3 - <<'PY'
+        import json,os
+        from pathlib import Path
+        steps=json.loads(os.environ['STEP_OUTCOMES'])
+        if Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').exists(): raise SystemExit(0)
+        order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','codec_install','browser_codecs','probe','focused','matrix','final_identities','reconciliation']
+        for name in order:
+            outcome=steps.get(name,{}).get('outcome')
+            if outcome in ('failure','cancelled'):
+                Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').write_text(f'{name}: {outcome}\n')
+                break
+        PY
+        for phase in sources artifact dependencies browser-install codec-install browser-codecs runtime-probes focused runtime-matrix final-identities reconciliation; do
+          [[ ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]] || break
+          status=$(cat "$EVIDENCE_DIR/$phase.exit" 2>/dev/null || printf unknown)
+          if [[ "$status" != 0 && "$status" != not-run ]]; then printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"; break; fi
+        done
+      timeout-minutes: 1
+    - name: Always preserve synthetic evidence only, never profiles or caches
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: same-source-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/same-source-runtime-evidence/
+        if-no-files-found: error
+        retention-days: 7
+      timeout-minutes: 5
+'on':
+  push:
+    branches:
+    - implement/latest-upstream-runtime-ci
