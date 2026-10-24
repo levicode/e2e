@@ -16,5 +16,122 @@
   "priorRawBytes": 33718,
   "relocatedFixtureSha256": "fe6b86153e822304eceaab1b30927fdd1440d8fdaddcc16478e1ddf4818993b8",
   "collectorSha256": "2fe2f8777f94f59cd559574cc2df98557177b788dd8b6821b60cf54207adc776",
-  "compileHelperSha256": "7784c35672be246b7f854404fe240a09e181c69e0d83e33aa5f1b7ac153bb422"
+  "compileHelperSha256": "7784c35672be246b7f854404fe240a09e181c69e0d83e33aa5f1b7ac153bb422",
+  "comparison": {
+    "schemaVersion": 1,
+    "experiment": "fixed-formal-versus-temporary-sw-diagnostic",
+    "caseIds": [
+      "HTTP500"
+    ],
+    "outerMaxMs": 45000,
+    "maxAttemptsPerCell": 1,
+    "conditionalRetries": false,
+    "additionalCasesAllowed": false,
+    "failFast": false,
+    "cells": [
+      {
+        "id": "formal-1",
+        "arm": "formal",
+        "replicate": 1
+      },
+      {
+        "id": "formal-2",
+        "arm": "formal",
+        "replicate": 2
+      },
+      {
+        "id": "diag-1",
+        "arm": "diag",
+        "replicate": 1
+      },
+      {
+        "id": "diag-2",
+        "arm": "diag",
+        "replicate": 2
+      }
+    ],
+    "products": {
+      "formal": {
+        "nativeSha": "88a7b674d45b784f5578369b8d2bb9a07e430eae",
+        "nativeTree": "37e8593d44f514afcfa633c94a374b3213ab7dda",
+        "runId": 40127812938,
+        "runAttempt": 1,
+        "recipeSha": "14f5e42e6f272edbb5fa81a43b027eacc20207ce",
+        "recipeTree": "80a5c204eee08031ad002da42611c653b6ad581e",
+        "branch": "implement/latest-upstream-validation-ci",
+        "artifactId": 12574131092,
+        "artifactSha256": "a352e83c9d5d21c2b72b74a29e1110fdbc3188ad135e3aa702b7ea797f13731b",
+        "artifactBytes": 13163457,
+        "artifactName": "unpromoted-native-linux-x64-88a7b674d45b784f5578369b8d2bb9a07e430eae-40127812938-1",
+        "binarySha256": "63e83b69bec322844aebc9572613714b846e57945acf11c8fd9827793fa30da5",
+        "binaryBytes": 31355712,
+        "artifactLabel": "production",
+        "helperSha256": "7852498c0b118ca634beaeaecae8e9e016fdebfdc403ed212498a39c98894897",
+        "requiredJobs": [
+          {
+            "id": 120972905714,
+            "name": "e2e-validation"
+          },
+          {
+            "id": 120972905951,
+            "name": "native-validation-reused-proof"
+          },
+          {
+            "id": 120973416234,
+            "name": "native-production-artifact"
+          }
+        ],
+        "nativeValidation": {
+          "mode": "historical-native-proof-reuse",
+          "proof": {
+            "run_id": 40125273477,
+            "run_attempt": 1,
+            "job_id": 120965243598,
+            "artifact_id": 12572773254,
+            "recipe_sha": "5968c0bcec64c9b0f57a5cdd9b8c77fbe129f771",
+            "recipe_tree": "f43be8fe437579c746438657d436cca7452f1e2d",
+            "archive_sha256": "c0334bde219e025b79ad2f482b02c35f695193e0a7f973b929d6b8afab34396d",
+            "archive_bytes": 291815,
+            "workflow_sha256": "fa25dea10df6090d1cf7b05572aa3c733dd0e98731f7b9b1f270e4d0dfc901fc",
+            "helper_sha256": "33a23d82c7ef2bf2404a1b92bd96d9cabe72677576256e90e3b0c3ed7a913713",
+            "check_contract_sha256": "48234415a67e0feeaa2469090c2bf2f901c53318ecdbce108ac2a70dba41d065"
+          },
+          "current_native_execution": false,
+          "receipt_file": "native-reuse.json",
+          "receipt_sha256": "c43b25610d1cc0cfdad9d793f3325e0b620bc41b763d5da5c0eb901a89453d04"
+        },
+        "causalHooksExpected": false
+      },
+      "diag": {
+        "nativeSha": "63964550fdc002834203b11343a46819185797a6",
+        "nativeTree": "8ba5e141fb1bb2b0e397152a5e1a9f740e48a46c",
+        "runId": 40134687015,
+        "runAttempt": 1,
+        "recipeSha": "aeb4a1e9bcfbc6c18ea0e49a6e379da5b335281a",
+        "recipeTree": "b098a3a71378905e74986b5017a5168fa9ea3404",
+        "artifactId": 12576479261,
+        "artifactSha256": "9a2d50efd7d671f1ba0c208009b04b157bfefbd9b70242fa16b53c91792da4a1",
+        "artifactBytes": 13244292,
+        "binarySha256": "5e1f187466fe30b4f05efc49f4588076595d43a3d221f78ba218e6deebaa6658",
+        "binaryBytes": 31384056,
+        "branch": "implement/sw-causal-diagnostic-ci",
+        "artifactName": "temporary-sw-causal-native-linux-x64-63964550fdc002834203b11343a46819185797a6-40134687015-1",
+        "artifactLabel": "temporary-sw-causal-diagnostic",
+        "helperSha256": "7784c35672be246b7f854404fe240a09e181c69e0d83e33aa5f1b7ac153bb422",
+        "requiredJobs": [
+          {
+            "id": 120993585843,
+            "name": "temporary-sw-causal-compile"
+          }
+        ],
+        "nativeValidation": {
+          "mode": "fresh-diagnostic-native-validation",
+          "current_native_execution": true,
+          "required_witnesses": 66,
+          "default_harnesses": 6
+        },
+        "causalHooksExpected": true
+      }
+    }
+  }
 }

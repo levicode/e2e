@@ -10,22 +10,57 @@ import { imageIdentity, pathPreflight, runObserved, sha256 } from './observer.mj
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pins = JSON.parse(readFileSync(path.join(here, 'pins.json'), 'utf8'));
 export const reusePins = JSON.parse(readFileSync(path.join(here, 'reuse-pins.json'), 'utf8'));
+export function comparisonCell(id, plan = reusePins.comparison) {
+  assert.deepEqual(plan.cells, ['formal', 'diag'].flatMap(arm => [1, 2].map(replicate => ({ id: `${arm}-${replicate}`, arm, replicate }))));
+  assert.equal(plan.schemaVersion, 1); assert.deepEqual(plan.caseIds, ['HTTP500']); assert.equal(plan.outerMaxMs, 45000);
+  assert.equal(plan.maxAttemptsPerCell, 1); assert.equal(plan.conditionalRetries, false); assert.equal(plan.additionalCasesAllowed, false); assert.equal(plan.failFast, false);
+  assert.deepEqual(Object.keys(plan.products).sort(), ['diag', 'formal']);
+  const selected = plan.cells.find(cell => cell.id === id); assert.ok(selected, 'Unknown fixed comparison cell');
+  return { ...selected, product: plan.products[selected.arm] };
+}
+const activeComparison = process.env.COMPARISON_CELL ? comparisonCell(process.env.COMPARISON_CELL) : null;
+function comparisonEnvironment() {
+  assert.ok(activeComparison, 'Explicit fixed comparison cell required');
+  assert.equal(process.env.GITHUB_RUN_ATTEMPT, '1', 'The fixed four-cell experiment has no reruns');
+  assert.equal(process.env.COMPARISON_ARM, activeComparison.arm);
+  assert.equal(process.env.NATIVE_SHA, activeComparison.product.nativeSha);
+  assert.equal(process.env.NATIVE_TREE, activeComparison.product.nativeTree);
+  return activeComparison;
+}
+export function verifyComparisonIdentity(built, cell) {
+  const product = cell.product;
+  assert.equal(built.comparisonCell, cell.id); assert.equal(built.comparisonArm, cell.arm); assert.equal(built.replicate, cell.replicate);
+  for (const key of ['nativeSha', 'nativeTree', 'artifactId', 'binarySha256', 'binaryBytes', 'recipeSha']) assert.equal(built[key], product[key]);
+  assert.equal(built.runId, String(product.runId)); assert.equal(built.runAttempt, String(product.runAttempt));
+  assert.equal(built.artifactDigest, 'sha256:' + product.artifactSha256);
+  assert.equal(built.artifactClass, cell.arm === 'formal' ? 'formal-production' : 'temporary-diagnostic');
+  assert.equal(built.causalHooksExpected, product.causalHooksExpected);
+  assert.equal(built.sameRunArtifactVerified, false); assert.equal(built.exactPriorArtifactVerified, true);
+  assert.equal(built.profile, 'ci'); assert.deepEqual(built.features, []);
+  assert.equal(built.nativeCompilationExecutedThisRun, false); assert.equal(built.nativeTestsExecutedThisRun, false);
+  assert.equal(built.experimentOnly, true); assert.equal(built.formalCandidateRuntimePass, false); assert.equal(built.releaseEligible, false);
+  return built;
+}
 if (process.env.EVIDENCE_DIR && existsSync(path.join(process.env.EVIDENCE_DIR, 'production-identity.json'))) {
   const built = JSON.parse(readFileSync(path.join(process.env.EVIDENCE_DIR, 'production-identity.json'), 'utf8'));
-  assert.equal(built.nativeSha, pins.nativeSha); assert.equal(built.nativeTree, pins.nativeTree);
-  assert.equal(built.profile, 'ci'); assert.deepEqual(built.features, []);
-  assert.equal(built.diagnosticOnly, true);
-  if (built.exactPriorArtifactVerified === true) {
-    assert.equal(built.sameRunArtifactVerified, false);
-    for (const key of ['artifactId', 'binarySha256', 'binaryBytes', 'recipeSha']) assert.equal(built[key], reusePins[key]);
-    assert.equal(built.runId, String(reusePins.runId)); assert.equal(built.runAttempt, String(reusePins.runAttempt));
-    assert.equal(built.artifactDigest, 'sha256:' + reusePins.artifactSha256);
-    assert.equal(built.consumerRunId, process.env.GITHUB_RUN_ID);
-    assert.equal(built.consumerRunAttempt, process.env.GITHUB_RUN_ATTEMPT);
+  if (activeComparison) {
+    verifyComparisonIdentity(built, activeComparison);
+    assert.equal(built.consumerRunId, process.env.GITHUB_RUN_ID); assert.equal(built.consumerRunAttempt, process.env.GITHUB_RUN_ATTEMPT);
     assert.equal(built.consumerRecipeSha, process.env.GITHUB_WORKFLOW_SHA);
-    assert.equal(built.nativeCompilationExecutedThisRun, false); assert.equal(built.nativeTestsExecutedThisRun, false);
-    assert.equal(built.formalCandidate, false); assert.equal(built.releaseEligible, false);
-  } else assert.equal(built.sameRunArtifactVerified, true);
+  } else {
+    assert.equal(built.nativeSha, pins.nativeSha); assert.equal(built.nativeTree, pins.nativeTree);
+    assert.equal(built.profile, 'ci'); assert.deepEqual(built.features, []); assert.equal(built.diagnosticOnly, true);
+    if (built.exactPriorArtifactVerified === true) {
+      assert.equal(built.sameRunArtifactVerified, false);
+      for (const key of ['artifactId', 'binarySha256', 'binaryBytes', 'recipeSha']) assert.equal(built[key], reusePins[key]);
+      assert.equal(built.runId, String(reusePins.runId)); assert.equal(built.runAttempt, String(reusePins.runAttempt));
+      assert.equal(built.artifactDigest, 'sha256:' + reusePins.artifactSha256);
+      assert.equal(built.consumerRunId, process.env.GITHUB_RUN_ID); assert.equal(built.consumerRunAttempt, process.env.GITHUB_RUN_ATTEMPT);
+      assert.equal(built.consumerRecipeSha, process.env.GITHUB_WORKFLOW_SHA);
+      assert.equal(built.nativeCompilationExecutedThisRun, false); assert.equal(built.nativeTestsExecutedThisRun, false);
+      assert.equal(built.formalCandidate, false); assert.equal(built.releaseEligible, false);
+    } else assert.equal(built.sameRunArtifactVerified, true);
+  }
   assert.match(built.binarySha256, /^[a-f0-9]{64}$/); pins.binarySha256 = built.binarySha256;
 }
 export const CASES = {
@@ -57,6 +92,47 @@ export function recoveryDiagnosticComplete(meta, validateFact = () => true) {
     && value.facts.some(fact => fact.kind === 'cleanup-native')
     && value.facts.every(fact => ['selected-operation', 'cleanup-native', 'test-failure'].includes(fact.kind) && validateFact(fact));
 }
+// Exact reviewed formal provenance function reused without weakening assertions.
+export function verifyProvenance(value, label, binaryBytes, expected = pins) {
+  const features = label === 'production' ? [] : ['acceptance-faults'];
+  assert.equal(value.NATIVE_SHA, expected.nativeSha); assert.equal(value.NATIVE_TREE, expected.nativeTree);
+  assert.equal(value.E2E_SHA, expected.e2eSha); assert.equal(value.E2E_TREE, expected.e2eTree);
+  assert.equal(value.NATIVE_LOCK_SHA256, expected.nativeLockSha256); assert.equal(value.E2E_LOCK_SHA256, expected.e2eLockSha256);
+  assert.equal(String(value.GITHUB_RUN_ID), String(expected.compileRunId));
+  assert.equal(String(value.GITHUB_RUN_ATTEMPT), String(expected.compileRunAttempt));
+  assert.equal(value.GITHUB_WORKFLOW_SHA, expected.compileRecipeSha); assert.equal(value.RUSTUP_TOOLCHAIN, expected.rustToolchain);
+  assert.equal(value.profile, 'ci'); assert.deepEqual(value.features, features);
+  assert.equal(value.artifact_label, label === 'production' ? 'production' : 'acceptance-faults');
+  assert.equal(value.binary_sha256, expected[label].binarySha256); assert.equal(digest(binaryBytes), expected[label].binarySha256);
+  assert.equal(value.binary_bytes, binaryBytes.length);
+  assert.equal(binaryBytes.subarray(0, 6).toString('hex'), '7f454c460201'); assert.equal(binaryBytes.readUInt16LE(18), 62);
+  const cargo = value.cargo_artifact;
+  assert.equal(cargo.target.name, 'agent-browser'); assert.deepEqual(cargo.target.kind, ['bin']);
+  assert.deepEqual(cargo.features, features); assert.equal(cargo.profile.test, false);
+  assert.equal(cargo.profile.opt_level, '3'); assert.equal(cargo.profile.debug_assertions, false);
+  assert.ok(cargo.target.src_path.endsWith('/source/cli/src/main.rs'));
+  assert.ok(cargo.manifest_path.endsWith('/source/cli/Cargo.toml'));
+  assert.ok(cargo.executable.endsWith('/ci/agent-browser'));
+  assert.equal(value.distribution_eligible, false);
+  assert.deepEqual(value.native_validation,expected.nativeValidation,'Fresh artifact must bind the exact reviewed historical-only native receipt');
+}
+export function formalExpected(product) {
+  return { ...pins, nativeSha: product.nativeSha, nativeTree: product.nativeTree,
+    compileRunId: product.runId, compileRunAttempt: product.runAttempt, compileRecipeSha: product.recipeSha,
+    rustToolchain: '1.99.1', production: { binarySha256: product.binarySha256 }, nativeValidation: product.nativeValidation };
+}
+export function verifyFormalEnvelope(value, binaryBytes, product) {
+  assert.equal(product.causalHooksExpected, false); assert.equal(product.artifactLabel, 'production');
+  verifyProvenance(value, 'production', binaryBytes, formalExpected(product));
+  assert.equal(binaryBytes.length, product.binaryBytes); assert.equal(value.helper_sha256, product.helperSha256);
+  assert.equal(value.dashboard_frontend_built, false);
+  for (const key of ['diagnostic_only', 'formal_candidate', 'validation_receipts']) assert.equal(Object.hasOwn(value, key), false, key);
+  return { verified: true, artifactClass: 'formal-production', nativeTestsExecutedThisRun: false, formalCandidateRuntimePass: false };
+}
+export function formalCausalAssessment() {
+  return { positiveControlVisible: false, status: 'unknown', reason: 'formal-image-has-no-sw-causal-hooks', causalHooksExpected: false,
+    globalLosslessCapture: false, diagnosticOnly: true, formalCleanupPass: false, formalAcceptance: false };
+}
 function sourceIdentity(root, sha, tree) {
   const result = { commit: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'rev-parse', 'HEAD^{tree}'), status: git(root, 'status', '--porcelain', '--untracked-files=all') };
   assert.equal(result.commit, sha); assert.equal(result.tree, tree); assert.equal(result.status, ''); return result;
@@ -66,7 +142,7 @@ function sourceCheck(workspace, evidence) {
   assert.equal(process.platform, 'linux'); assert.equal(process.arch, 'x64'); assert.equal(process.version, pins.nodeVersion);
   assert.match(readFileSync('/etc/os-release', 'utf8'), /^VERSION_ID="24\.04"$/m);
   const e2e = path.join(workspace, 'e2e-source'), native = path.join(workspace, 'native-source'), recipe = path.join(workspace, 'recipe');
-  const identities = { e2e: sourceIdentity(e2e, pins.e2eSha, pins.e2eTree), native: sourceIdentity(native, pins.nativeSha, pins.nativeTree),
+  const identities = { e2e: sourceIdentity(e2e, pins.e2eSha, pins.e2eTree), native: sourceIdentity(native, activeComparison?.product.nativeSha ?? pins.nativeSha, activeComparison?.product.nativeTree ?? pins.nativeTree),
     recipe: sourceIdentity(recipe, process.env.RECIPE_SHA, git(recipe, 'rev-parse', 'HEAD^{tree}')) };
   assert.equal(sha256(path.join(native, 'cli/src/native/cdp/chrome.rs')), pins.nativeChromeSourceSha256);
   assert.equal(sha256(path.join(native, 'cli/src/install.rs')), pins.nativeInstallSourceSha256);
@@ -108,7 +184,7 @@ async function runCase(id, workspace, evidence, chrome) {
   const collectorFile = path.join(source, 'scripts/acceptance/candidate-cleanup-diagnostics.ts');
   const collector = await import(pathToFileURL(collectorFile).href);
   const testSource = id === 'P41' ? path.join(web, 'tests/integration/protected-app.test.ts') : path.join(here, 'sw-startup-events.test.ts');
-  const binding = { sourceRevision: pins.e2eSha, nativeSourceRevision: pins.nativeSha, testSourceDigest: sha256(testSource), binarySha256: pins.binarySha256, collectorSha256: sha256(collectorFile) };
+  const binding = { sourceRevision: pins.e2eSha, nativeSourceRevision: activeComparison?.product.nativeSha ?? pins.nativeSha, testSourceDigest: sha256(testSource), binarySha256: pins.binarySha256, collectorSha256: sha256(collectorFile) };
   for (const name of ['home', 'cache', 'bin']) mkdirSync(path.join(root, name), { mode: 0o700 });
   symlinkSync(chrome.executable, path.join(root, 'bin/google-chrome'));
   assert.deepEqual(readdirSync(path.join(root, 'home')), []);
@@ -149,7 +225,7 @@ async function runCase(id, workspace, evidence, chrome) {
       copyFileSync(capture.file, path.join(output, 'native.jsonl'));
       json(path.join(output, 'capture-binding.json'), { binding, device:capture.device, inode:capture.inode, rawSha256:sha256(path.join(output,'native.jsonl')), bytes:st.size });
     } catch (error) { firstRunnerError ??= String(error); }
-    cleanup = { status:'unknown', reasons:['temporary-causal-schema-not-formal-cleanup-acceptance'], diagnosticOnly:true };
+    cleanup = { status:'unknown', reasons:[activeComparison?.arm === 'formal' ? 'comparison-does-not-run-formal-cleanup-acceptance' : 'temporary-causal-schema-not-formal-cleanup-acceptance'], diagnosticOnly:true };
     for (const name of readdirSync(root)) if (/^(program\.(stdout|stderr)|inventory.*\.json|state\.json|result\.json|socket-queues\.jsonl|observer-errors\.jsonl|vitest\.json|startup-events\.json|negotiation\.jsonl)$/.test(name)) {
       try { copyFileSync(path.join(root, name), path.join(output, name)); } catch (error) { firstRunnerError ??= String(error); }
     }
@@ -173,11 +249,16 @@ async function runCase(id, workspace, evidence, chrome) {
   const selectedEvidencePresent = id === 'P41' ? report?.selectionExact === true && sha256(testSource) === pins.p41SourceSha256 : existsSync(path.join(output, 'startup-events.json'));
   let causal={positiveControlVisible:false,status:'unknown',reason:'decode-not-completed'};
   try {
+    if (activeComparison?.arm === 'formal') {
+      causal = formalCausalAssessment();
+      json(path.join(output, 'causal-summary.json'), causal);
+    } else {
     execFileSync('/usr/bin/python3',['-B',path.join(here,'evidence.py'),'decode',output],{encoding:'utf8',timeout:15000});
     // Only booleans/closed status strings cross back into JS. All native integer
     // facts remain in Python-written decoded-native.json and the original JSONL.
     const decoded=JSON.parse(readFileSync(path.join(output,'causal-summary.json'),'utf8'));
     causal={positiveControlVisible:decoded.positiveControlVisible===true,status:decoded.status,reason:decoded.reason};
+    }
   } catch(error) { firstRunnerError ??= String(error); }
   const outcome = { id, browserScenario: spec.browserScenario, testPassed, report: report ?? null, firstRunnerError, observerFirstError: observed?.firstError ?? null,
     causal, selectedEvidencePresent, runtimeImagesUnchanged, actualBrowserImageConfirmed, browserProcesses, knownCleanupConfirmed: observed?.knownCleanupConfirmed ?? false, allDescendantsCoverage: 'unproven', cleanup,
@@ -202,7 +283,7 @@ export function mayContinueFocusedCase(result) {
 }
 export const REUSE_CASE_IDS = Object.freeze(['HTTP500']);
 export function requireReuseSelection(ids) {
-  assert.deepEqual(ids, REUSE_CASE_IDS, 'Historical positive control permits only one original HTTP500');
+  assert.deepEqual(ids, REUSE_CASE_IDS, 'Fixed selection permits only one original HTTP500');
   return ids;
 }
 export function requireHistoricalPositive(value) {
@@ -224,8 +305,42 @@ async function main() {
   const command = process.argv[2], workspace = process.env.GITHUB_WORKSPACE, evidence = process.env.EVIDENCE_DIR;
   if (command === 'guard') { requirePins(); console.log(`e2e_sha=${pins.e2eSha}`); return; }
   assert.ok(workspace && evidence, 'Explicit workflow workspace/evidence required');
-  if (command === 'sources') return sourceCheck(workspace, evidence);
+  if (command === 'sources') { if (activeComparison) comparisonEnvironment(); return sourceCheck(workspace, evidence); }
+  if (command === 'formal-provenance') {
+    const cell = comparisonEnvironment(); assert.equal(cell.arm, 'formal');
+    const directory = path.join(workspace, 'formal-artifact');
+    const value = JSON.parse(readFileSync(path.join(directory, 'provenance.json'), 'utf8'));
+    console.log(JSON.stringify(verifyFormalEnvelope(value, readFileSync(path.join(directory, 'agent-browser')), cell.product)));
+    return;
+  }
   if (command === 'browser') return browserPin(workspace, evidence);
+  if (command === 'cases-compare') {
+    const cell = comparisonEnvironment(); sourceCheck(workspace, evidence);
+    const built = verifyComparisonIdentity(JSON.parse(readFileSync(path.join(evidence, 'production-identity.json'), 'utf8')), cell);
+    assert.equal(sha256(path.join(workspace, 'agent-browser')), cell.product.binarySha256);
+    let historicalPositiveControl = null;
+    if (cell.arm === 'diag') {
+      historicalPositiveControl = requireHistoricalPositive(JSON.parse(readFileSync(path.join(evidence, 'historical-positive-control.json'), 'utf8')));
+      assert.equal(sha256(path.join(process.env.PRIOR_EVIDENCE_DIR, 'FIRST_EVENTS/native.jsonl')), reusePins.priorRawSha256);
+    }
+    const ids = requireReuseSelection([...REUSE_CASE_IDS]);
+    const experiment = { name: reusePins.comparison.experiment, cellId: cell.id, arm: cell.arm, replicate: cell.replicate,
+      plannedCellIds: reusePins.comparison.cells.map(item => item.id), plannedCasesPerCell: 1, conditionalRetries: false, additionalCasesAllowed: false };
+    writeFileSync(path.join(evidence, 'selection.json'), JSON.stringify({ ids, experiment, historicalPositiveControl, experimentOnly: true, formalAcceptance: false }) + '\n', { flag: 'wx', mode: 0o600 });
+    const chrome = await browserPin(workspace, evidence), results = [];
+    for (const id of ids) {
+      let result;
+      try { result = await runCase(id, workspace, evidence, chrome); }
+      catch (error) { result = { id, status: 'failed-or-incomplete', firstRunnerError: String(error.stack ?? error) }; json(path.join(evidence, `${id}-runner-error.json`), result); }
+      results.push(result);
+      if (result.status !== 'focused-test-passed') json(path.join(evidence, 'first-failed-case.json'), { id, status: result.status, firstRunnerError: result.firstRunnerError ?? null, firstAssertionFailure: result.report?.firstFailure ?? null });
+    }
+    json(path.join(evidence, 'summary.json'), { experiment, productionIdentity: built, historicalPositiveControl, focusedCases: results,
+      nativeCompilationExecutedThisRun: false, nativeTestsExecutedThisRun: false, experimentOnly: true, formalCandidateRuntimePass: false,
+      fullAcceptance: false, originalHTTP500Chrome154: 'not-run', releaseEligible: false });
+    if (results.some(result => result.status !== 'focused-test-passed')) process.exitCode = 1;
+    return;
+  }
   if (command === 'cases-reuse') {
     sourceCheck(workspace, evidence);
     const historicalPositiveControl = requireHistoricalPositive(JSON.parse(readFileSync(path.join(evidence, 'historical-positive-control.json'), 'utf8')));

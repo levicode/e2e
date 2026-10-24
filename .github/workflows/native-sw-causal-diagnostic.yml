@@ -1,6 +1,6 @@
-# Local-only preparation; publishing and triggering require integrator authorization.
-# Exact previous diagnostic image and positive control are reused, never reported as current native execution.
-name: Temporary SW scoped runtime reuse (not formal candidate)
+# Fixed four-cell comparison, precommitted before execution. Integrator is sole publisher.
+# No adaptive retries, new native builds, FIRST_EVENTS browser reruns or formal acceptance claims.
+name: Fixed formal versus SW diagnostic comparison (four cells only)
 'on':
   push:
     branches:
@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   runtime:
-    name: temporary-sw-scoped-runtime-reuse
+    name: fixed-sw-comparison-${{ matrix.cell }}
     if: ${{ github.ref == 'refs/heads/implement/sw-causal-diagnostic-ci' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -23,8 +23,8 @@ jobs:
       run:
         shell: bash
     env:
-      NATIVE_SHA: 63964550fdc002834203b11343a46819185797a6
-      NATIVE_TREE: 8ba5e141fb1bb2b0e397152a5e1a9f740e48a46c
+      NATIVE_SHA: ${{ matrix.nativeSha }}
+      NATIVE_TREE: ${{ matrix.nativeTree }}
       NATIVE_LOCK_SHA256: 1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97
       E2E_SHA: c98be61c2c01a642c39c8951b466405090e39b04
       E2E_TREE: daddbee93c4ea0b0e1483f892317d0603a2e5843
@@ -34,8 +34,10 @@ jobs:
       CI: 'true'
       E2E_TELEMETRY_DISABLED: '1'
       E2E_UPDATE_CHECK_DISABLED: '1'
+      COMPARISON_CELL: ${{ matrix.cell }}
+      COMPARISON_ARM: ${{ matrix.arm }}
     steps:
-    - name: Initialize diagnostic-only outcome, not formal acceptance
+    - name: Record fixed four-cell comparison, never an adaptive retry
       id: init
       run: 'set -euo pipefail
 
@@ -61,16 +63,22 @@ jobs:
 
         mkdir -m700 "$EVIDENCE_DIR"
 
-        printf ''%s\n'' ''Temporary native instrumentation only. Reuse pinned run40134687015 FIRST_EVENTS scope-specific
-        positive control, then execute only one original HTTP500; no Rust compilation or native tests this run; formal333
-        untouched. Missing/lost diagnostics remain unknown. No installed distribution, behavior fix, formal cleanup or
-        acceptance claim.'' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf ''%s\n'' ''Fixed formal-1/formal-2/diag-1/diag-2 experiment. One original HTTP500 per independent runner;
+        no conditional retries, replacement cases, FIRST_EVENTS browser run, native compilation or native tests. Formal
+        missing causal hooks is unknown, not a business gate. Global diagnostics, formal cleanup/acceptance and release
+        remain unproven.'' > "$EVIDENCE_DIR/SCOPE.txt"
 
         printf ''%s\n'' ''{"diagnosticOnly":true,"formalAcceptance":false,"FIRST_EVENTS":"not-executed-this-run; historical-proof-pending","HTTP500":"not-run"}''
         > "$EVIDENCE_DIR/required-runtime.json"
 
         for phase in sources artifact positive dependencies browser-install linkage cases final; do printf ''not-run\n''
         > "$EVIDENCE_DIR/$phase.exit"; done
+
+
+        test "$GITHUB_RUN_ATTEMPT" = 1
+
+        if [ "$COMPARISON_ARM" = formal ]; then printf ''not-required-formal-no-causal-hooks\n'' > "$EVIDENCE_DIR/positive.exit";
+        fi
 
         '
       timeout-minutes: 1
@@ -98,12 +106,12 @@ jobs:
         path: e2e-source
         persist-credentials: false
       timeout-minutes: 3
-    - name: Exact temporary diagnostic native source
+    - name: Exact selected formal or temporary diagnostic native source
       id: native
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 63964550fdc002834203b11343a46819185797a6
+        ref: ${{ matrix.nativeSha }}
         path: native-source
         persist-credentials: false
       timeout-minutes: 3
@@ -120,6 +128,9 @@ jobs:
         uname -a > "$EVIDENCE_DIR/host.txt"
 
         cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+
+
+        python3 -B recipe/scripts/sw-causal-runtime/reuse.py selection
 
         '
       timeout-minutes: 1
@@ -139,27 +150,32 @@ jobs:
 
         '
       timeout-minutes: 1
-    - name: Verify exact previously compiled diagnostic artifact, without compiling
+    - name: Verify exact selected original envelope and image without native compilation
       id: artifact
       run: 'set -euo pipefail
 
         trap ''printf "%s\n" "$?" > "$EVIDENCE_DIR/artifact.exit"'' EXIT
 
-        api=https://api.github.com/repos/levicode/e2e/actions
+        api=https://api.github.com/repos/levicode/e2e
 
         fetch() { curl --fail --silent --show-error --location --max-time 60 --proto ''=https'' -H "Authorization: Bearer
         $GH_TOKEN" -H ''Accept: application/vnd.github+json'' -H ''X-GitHub-Api-Version: 2022-11-28'' "$1" -o "$2"; }
 
-        fetch "$api/artifacts/12576479261" "$EVIDENCE_DIR/artifact-metadata.json"
+        fetch "$api/actions/artifacts/$PRODUCT_ARTIFACT_ID" "$EVIDENCE_DIR/artifact-metadata.json"
 
-        fetch "$api/runs/40134687015/attempts/1/jobs?per_page=100" "$EVIDENCE_DIR/compile-jobs.json"
+        fetch "$api/actions/runs/$PRODUCT_RUN_ID/attempts/$PRODUCT_RUN_ATTEMPT/jobs?per_page=100" "$EVIDENCE_DIR/compile-jobs.json"
 
-        fetch "$api/artifacts/12576479261/zip" "$EVIDENCE_DIR/diagnostic-artifact.zip"
+        fetch "$api/actions/runs/$PRODUCT_RUN_ID" "$EVIDENCE_DIR/producer-run.json"
 
-        python3 -B recipe/scripts/sw-causal-runtime/reuse.py artifact > "$EVIDENCE_DIR/artifact-verified.log" 2>&1
+        fetch "$api/git/commits/$PRODUCT_RECIPE_SHA" "$EVIDENCE_DIR/producer-commit.json"
+
+        fetch "$api/actions/artifacts/$PRODUCT_ARTIFACT_ID/zip" "$EVIDENCE_DIR/diagnostic-artifact.zip"
+
+        python3 -B recipe/scripts/sw-causal-runtime/reuse.py comparison-artifact > "$EVIDENCE_DIR/artifact-verified.log"
+        2>&1
 
         '
-      timeout-minutes: 4
+      timeout-minutes: 6
       env:
         GH_TOKEN: ${{ github.token }}
     - name: Validate historical FIRST_EVENTS assertion, owned cleanup and closed scoped witness
@@ -184,6 +200,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       timeout-minutes: 3
+      if: ${{ success() && matrix.arm == 'diag' }}
     - name: Pinned pnpm without implicit install
       id: pnpm
       uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
@@ -245,13 +262,13 @@ jobs:
 
         '
       timeout-minutes: 2
-    - name: Execute only original HTTP500 exactly once after historical positive gate
+    - name: One original HTTP500 in this precommitted cell, without retries
       id: cases
       run: 'set -euo pipefail
 
         trap ''printf "%s\n" "$?" > "$EVIDENCE_DIR/cases.exit"'' EXIT
 
-        node recipe/scripts/sw-causal-runtime/runtime.mjs cases-reuse
+        node recipe/scripts/sw-causal-runtime/runtime.mjs cases-compare
 
         '
       timeout-minutes: 3
@@ -303,12 +320,12 @@ jobs:
       if: ${{ always() }}
       env:
         STEP_OUTCOMES: ${{ toJSON(steps) }}
-    - name: Preserve new HTTP500 evidence and historical references, not prior raw capture
+    - name: Preserve this fixed cell result, including failures and unknowns
       if: ${{ always() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       timeout-minutes: 3
       with:
-        name: sw-scoped-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        name: sw-fixed-comparison-${{ matrix.cell }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: '${{ env.EVIDENCE_DIR }}/*.json
 
           ${{ env.EVIDENCE_DIR }}/*.log
@@ -320,3 +337,24 @@ jobs:
           ${{ env.EVIDENCE_DIR }}/HTTP500/'
         if-no-files-found: error
         retention-days: 7
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+        - cell: formal-1
+          arm: formal
+          nativeSha: 88a7b674d45b784f5578369b8d2bb9a07e430eae
+          nativeTree: 37e8593d44f514afcfa633c94a374b3213ab7dda
+        - cell: formal-2
+          arm: formal
+          nativeSha: 88a7b674d45b784f5578369b8d2bb9a07e430eae
+          nativeTree: 37e8593d44f514afcfa633c94a374b3213ab7dda
+        - cell: diag-1
+          arm: diag
+          nativeSha: 63964550fdc002834203b11343a46819185797a6
+          nativeTree: 8ba5e141fb1bb2b0e397152a5e1a9f740e48a46c
+        - cell: diag-2
+          arm: diag
+          nativeSha: 63964550fdc002834203b11343a46819185797a6
+          nativeTree: 8ba5e141fb1bb2b0e397152a5e1a9f740e48a46c

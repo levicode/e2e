@@ -3,6 +3,8 @@
 import copy
 import importlib.util
 import json
+import os
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
 import unittest
@@ -178,5 +180,75 @@ class HistoricalChecks(unittest.TestCase):
             root = Path(tmp); archive = root / 'prior.zip'
             with zipfile.ZipFile(archive, 'w') as bundle: bundle.writestr('FIRST_EVENTS/native.jsonl', b'{}')
             with self.assertRaises(AssertionError): R.safe_extract(archive, root / 'out')
+
+class ComparisonChecks(unittest.TestCase):
+    def synthetic_metadata(self, arm):
+        cell = R.comparison_cell(arm + '-1'); p = cell['product']
+        meta = dict(id=p['artifactId'], expired=False, digest='sha256:' + p['artifactSha256'], size_in_bytes=p['artifactBytes'],
+                    name=p['artifactName'], workflow_run=dict(id=p['runId'], head_sha=p['recipeSha'], head_branch=p['branch']))
+        job_rows = [dict(j, head_sha=p['recipeSha'], run_id=p['runId'], run_attempt=p['runAttempt'], status='completed', conclusion='success') for j in p['requiredJobs']]
+        jobs = dict(jobs=job_rows, total_count=len(job_rows))
+        run = dict(id=p['runId'], run_attempt=p['runAttempt'], head_sha=p['recipeSha'], status='completed', conclusion='success' if arm == 'formal' else 'failure')
+        commit = dict(sha=p['recipeSha'], tree=dict(sha=p['recipeTree']))
+        return [meta, jobs, run, commit, p['artifactSha256'], cell]
+
+    def test_fixed_four_cells_and_no_retry_or_extra_case(self):
+        self.assertEqual([c['id'] for c in U['comparison']['cells']], ['formal-1', 'formal-2', 'diag-1', 'diag-2'])
+        for key, value in [('maxAttemptsPerCell', 2), ('outerMaxMs', 50000), ('conditionalRetries', True),
+                           ('additionalCasesAllowed', True), ('failFast', True), ('caseIds', ['HTTP500', 'HTTP500'])]:
+            plan = copy.deepcopy(U['comparison']); plan[key] = value
+            with self.assertRaises(AssertionError): R.comparison_cell('formal-1', plan)
+        for cell in ('formal-0', 'formal-3', 'diag-3', '', 'HTTP500'):
+            with self.assertRaises(AssertionError): R.comparison_cell(cell)
+
+    def test_arm_environment_and_run_attempt_fail_closed(self):
+        for arm in ('formal', 'diag'):
+            cell = R.comparison_cell(arm + '-1'); p = cell['product']
+            env = dict(COMPARISON_CELL=cell['id'], COMPARISON_ARM=arm, NATIVE_SHA=p['nativeSha'], NATIVE_TREE=p['nativeTree'], GITHUB_RUN_ATTEMPT='1')
+            with patch.dict(os.environ, env): self.assertEqual(R.comparison_environment(), cell)
+            for key in env:
+                with patch.dict(os.environ, dict(env, **{key: 'wrong'})), self.assertRaises(AssertionError): R.comparison_environment()
+
+    def test_correct_formal_and_diag_metadata_keep_original_overall_results(self):
+        for arm in ('formal', 'diag'): R.verify_comparison_metadata(*self.synthetic_metadata(arm))
+        diag = U['comparison']['products']['diag']
+        for key in ('artifactId','artifactSha256','artifactBytes','binarySha256','binaryBytes','runId','runAttempt','recipeSha','recipeTree'):
+            self.assertEqual(diag[key], U[key])
+        self.assertEqual(U['comparison']['products']['formal']['artifactId'], 12574131092)
+        self.assertFalse(U['comparison']['products']['formal']['causalHooksExpected'])
+        self.assertTrue(diag['causalHooksExpected'])
+
+    def test_wrong_artifact_producer_tree_job_or_cross_arm_refused(self):
+        for arm in ('formal', 'diag'):
+            for key, value in [('id', 1), ('digest', 'sha256:' + '0' * 64), ('size_in_bytes', 1), ('name', 'wrong'), ('expired', True)]:
+                args = self.synthetic_metadata(arm); args[0][key] = value
+                with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+            for key in ('id', 'head_sha', 'head_branch'):
+                args = self.synthetic_metadata(arm); args[0]['workflow_run'][key] = 'wrong'
+                with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+            for key in ('id', 'run_attempt', 'head_sha', 'status', 'conclusion'):
+                args = self.synthetic_metadata(arm); args[2][key] = 'wrong'
+                with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+            for key in ('id', 'run_id', 'run_attempt', 'head_sha', 'status', 'conclusion'):
+                args = self.synthetic_metadata(arm); args[1]['jobs'][0][key] = 'wrong'
+                with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+            args = self.synthetic_metadata(arm); args[3]['tree']['sha'] = '0' * 40
+            with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+            args = self.synthetic_metadata(arm); args[5] = R.comparison_cell('diag-1' if arm == 'formal' else 'formal-1')
+            with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+            args = self.synthetic_metadata(arm); args[1]['jobs'].append(copy.deepcopy(args[1]['jobs'][0]))
+            with self.assertRaises(AssertionError): R.verify_comparison_metadata(*args)
+
+    def test_formal_archive_has_exact_different_envelope(self):
+        for names, accepted in [(('agent-browser', 'provenance.json'), True),
+                                (('agent-browser', 'provenance.json', 'native-gates.json'), False),
+                                (('agent-browser',), False), (('../agent-browser', 'provenance.json'), False)]:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); archive = root / 'formal.zip'
+                with zipfile.ZipFile(archive, 'w') as bundle:
+                    for name in names: bundle.writestr(name, b'synthetic bytes only')
+                if accepted: R.extract_formal(archive, root / 'out')
+                else:
+                    with self.assertRaises(AssertionError): R.extract_formal(archive, root / 'out')
 
 if __name__ == '__main__': unittest.main()
