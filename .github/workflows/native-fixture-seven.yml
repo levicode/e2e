@@ -1,19 +1,19 @@
-# Frozen source overlay pending recipe review. Test-only; never production.
-name: Seven native pure fixtures (default5 plus feature2; P06 recovery expected RED)
+# Dedicated support trigger only; expected architecture RED remains a failed workflow.
+name: SW late-detach architecture RED with two exact controls
 'on':
   push:
     branches:
-    - implement/native-fixture-seven-ci
+    - implement/sw-late-detach-architecture-ci
 permissions:
   contents: read
 concurrency:
-  group: native-fixture-seven-${{ github.ref }}
+  group: sw-late-detach-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   fixtures:
-    if: ${{ github.ref == 'refs/heads/implement/native-fixture-seven-ci' }}
+    if: ${{ github.ref == 'refs/heads/implement/sw-late-detach-architecture-ci' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 165
+    timeout-minutes: 110
     defaults:
       run:
         shell: bash
@@ -32,24 +32,26 @@ jobs:
 
         umask 077
 
-        export EVIDENCE_DIR="$RUNNER_TEMP/native-fixture-seven-evidence"
+        export EVIDENCE_DIR="$RUNNER_TEMP/sw-late-detach-evidence"
 
-        export CARGO_HOME="$RUNNER_TEMP/native-fixture-seven-cargo"
+        export CARGO_HOME="$RUNNER_TEMP/sw-late-detach-cargo"
 
-        export CARGO_TARGET_DIR="$RUNNER_TEMP/native-fixture-seven-target"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/sw-late-detach-target"
 
         export VALIDATE="$GITHUB_WORKSPACE/recipe/scripts/native-fixture-seven/fixture-recipe.py"
 
-        printf ''EVIDENCE_DIR=%s\nCARGO_HOME=%s\nCARGO_TARGET_DIR=%s\nVALIDATE=%s\n'' "$EVIDENCE_DIR" "$CARGO_HOME" "$CARGO_TARGET_DIR" "$VALIDATE" >> "$GITHUB_ENV"
+        printf ''EVIDENCE_DIR=%s\nCARGO_HOME=%s\nCARGO_TARGET_DIR=%s\nVALIDATE=%s\n'' "$EVIDENCE_DIR" "$CARGO_HOME" "$CARGO_TARGET_DIR" "$VALIDATE"
+        >> "$GITHUB_ENV"
 
         mkdir -m700 "$EVIDENCE_DIR"
 
-        for phase in recipe-identity source-before apply-overlay toolchain node-version format clippy acceptance-tests-check proxy-feature-check default-harness-compile
-        default-harness-inventory faults-harness-compile faults-harness-inventory p06-characterization p06-recovery-red cold-unarmed misleading-query response-watermark
-        trace-raw-ack-restoration trace-unacknowledged-raw query-matcher source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
+        for phase in recipe-identity parser-self-tests source-before apply-overlay toolchain format clippy acceptance-tests-check proxy-feature-check
+        default-harness-compile default-harness-inventory sw-error-terminal-control sw-applied-detach-control sw-late-detach-architecture-red
+        source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
 
-        printf ''%s\n'' ''Default5 + feature2 exact Rust pure-fixture tests. P06 characterization expected PASS; recovery entry expected genuine RED;2 retirement
-        producer candidates expected PASS. No production build/browser/full native suite/retirement count change.'' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf ''%s\n'' ''Exactly two existing SW controls and one new deterministic SW late-detach architecture RED. One default dev test harness.
+        No Rust/browser execution during local preparation; CI contains no product image, browser, seven-suite, query matcher, full native suite
+        or retirement change.'' > "$EVIDENCE_DIR/SCOPE.txt"
 
         uname -a > "$EVIDENCE_DIR/host.txt"
 
@@ -74,13 +76,17 @@ jobs:
       id: recipe_identity
       timeout-minutes: 1
       run: python3 -B "$VALIDATE" run recipe-identity 30 python3 -B "$VALIDATE" recipe "$GITHUB_WORKSPACE/recipe" "$GITHUB_WORKFLOW_SHA"
-    - name: Check out immutable reviewed native test-only source
+    - name: Run pure parser and source-identity negative tests
+      id: parser_tests
+      timeout-minutes: 1
+      run: python3 -B "$VALIDATE" run parser-self-tests 30 python3 -B "$(dirname "$VALIDATE")/test-recipe.py"
+    - name: Check out immutable reviewed SW test-only source
       id: source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: 64315733808267b10be34f179f2a2daf4fd644ee
+        ref: 8b535d4339cf15776755c56998016e248f4b6cf6
         fetch-depth: 2
         path: source
         persist-credentials: false
@@ -124,17 +130,6 @@ jobs:
         ''
 
         '
-    - name: Select pinned Node for browser-free production matcher fixture
-      id: node
-      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-      timeout-minutes: 2
-      with:
-        node-version: 24.19.0
-        architecture: x64
-    - name: Verify actual Node version
-      id: node_version
-      timeout-minutes: 1
-      run: python3 -B "$VALIDATE" run node-version 30 bash -euc 'test "$(node --version)" = v24.19.0; node --version'
     - name: Preserve strict format clippy and independent compile gates
       id: strict_compile
       timeout-minutes: 43
@@ -149,10 +144,11 @@ jobs:
 
         python3 -B "$VALIDATE" run clippy 900 cargo clippy --locked --profile dev --no-default-features --all-targets -- -D warnings || failed=1
 
-        python3 -B "$VALIDATE" run acceptance-tests-check 900 cargo check --locked --profile dev --no-default-features --features acceptance-faults --tests || failed=1
+        python3 -B "$VALIDATE" run acceptance-tests-check 900 cargo check --locked --profile dev --no-default-features --features acceptance-faults
+        --tests || failed=1
 
-        python3 -B "$VALIDATE" run proxy-feature-check 600 cargo check --locked --profile dev --no-default-features --features acceptance-faults --test client-proxy-fixture
-        || failed=1
+        python3 -B "$VALIDATE" run proxy-feature-check 600 cargo check --locked --profile dev --no-default-features --features acceptance-faults
+        --test client-proxy-fixture || failed=1
 
         exit "$failed"
 
@@ -166,20 +162,8 @@ jobs:
 
         unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
 
-        python3 -B "$VALIDATE" run default-harness-compile 1500 cargo test --locked --profile dev --no-default-features --bin agent-browser --no-run --message-format=json
-
-        '
-    - name: Compile faults exact-test harness only with dev profile
-      id: faults_compile
-      timeout-minutes: 26
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' }}
-      working-directory: source/cli
-      run: 'set -euo pipefail
-
-        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
-
-        python3 -B "$VALIDATE" run faults-harness-compile 1500 cargo test --locked --profile dev --no-default-features --features acceptance-faults --bin agent-browser
-        --no-run --message-format=json
+        python3 -B "$VALIDATE" run default-harness-compile 1500 cargo test --locked --profile dev --no-default-features --bin agent-browser --no-run
+        --message-format=json
 
         '
     - name: Verify default test ELF features and exact inventory
@@ -187,89 +171,42 @@ jobs:
       timeout-minutes: 2
       if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' }}
       run: python3 -B "$VALIDATE" run default-harness-inventory 90 python3 -B "$VALIDATE" harness "$GITHUB_WORKSPACE/source" default
-    - name: Verify faults test ELF features and exact inventory
-      id: faults_inventory
-      timeout-minutes: 2
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.faults_compile.outcome == 'success' }}
-      run: python3 -B "$VALIDATE" run faults-harness-inventory 90 python3 -B "$VALIDATE" harness "$GITHUB_WORKSPACE/source" faults
-    - name: P06 current behavior characterization must pass
-      id: characterization
+    - name: sw-error-terminal-control must pass exactly once with zero ignored
+      id: sw_error_terminal_control
       timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome == 'success'
-        }}
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case p06-characterization
+        python3 -B "$VALIDATE" case sw-error-terminal-control
 
         '
-    - name: P06 recovery entry remains a genuine failing assertion
-      id: recovery_red
+    - name: sw-applied-detach-control must pass exactly once with zero ignored
+      id: sw_applied_detach_control
       timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome == 'success'
-        && steps.characterization.outcome == 'success' }}
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case p06-recovery-red
+        python3 -B "$VALIDATE" case sw-applied-detach-control
 
         '
-    - name: Cold unarmed producer exact test must pass independently
-      id: cold_unarmed
+    - name: sw-late-detach-architecture-red must remain a genuine assertion failure
+      id: sw_late_detach_architecture_red
       timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome == 'success'
-        }}
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' && steps.sw_error_terminal_control.outcome == 'success' && steps.sw_applied_detach_control.outcome == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case cold-unarmed
+        python3 -B "$VALIDATE" case sw-late-detach-architecture-red
 
         '
-    - name: Misleading query producer exact test must pass independently
-      id: misleading_query
-      timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome == 'success'
-        }}
-      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
-
-        python3 -B "$VALIDATE" case misleading-query
-
-        '
-    - name: Network reader-ahead evaluation gate characterization must pass
-      id: response_watermark
-      timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome == 'success'
-        }}
-      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
-
-        python3 -B "$VALIDATE" case response-watermark
-
-        '
-    - name: Feature-gated pure trace fixture trace-raw-ack-restoration
-      id: trace_raw_ack_restoration
-      timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.faults_compile.outcome == 'success' && steps.faults_inventory.outcome == 'success'
-        }}
-      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
-
-        python3 -B "$VALIDATE" case trace-raw-ack-restoration'
-    - name: Feature-gated pure trace fixture trace-unacknowledged-raw
-      id: trace_unacknowledged_raw
-      timeout-minutes: 3
-      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.faults_compile.outcome == 'success' && steps.faults_inventory.outcome == 'success'
-        }}
-      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
-
-        python3 -B "$VALIDATE" case trace-unacknowledged-raw'
-    - name: Execute patched production MATCH_QUERY fixture without browser
-      id: query_matcher
-      timeout-minutes: 2
-      if: ${{ !cancelled() && steps.overlay.outcome == 'success' && steps.node_version.outcome == 'success' }}
-      working-directory: source
-      run: python3 -B "$VALIDATE" run query-matcher 60 node cli/tests/fixtures/native-observation-query-matcher.cjs
     - name: Verify exact source overlay after success or failure
       id: source_after
       timeout-minutes: 1
       if: ${{ always() && steps.overlay.outcome == 'success' }}
       run: python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" source "$GITHUB_WORKSPACE/source" applied
-    - name: Reconcile independent ledgers without turning expected RED green
+    - name: Reconcile controls and architectural RED without making failure green
       id: summary
       timeout-minutes: 1
       if: ${{ always() && steps.recipe.outcome == 'success' }}
@@ -280,12 +217,12 @@ jobs:
       env:
         STEP_OUTCOMES: ${{ toJSON(steps) }}
       run: printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
-    - name: Always retain fixture logs and identity receipts, not binaries
+    - name: Always retain raw logs, ledgers and source identities, never binaries
       timeout-minutes: 5
       if: ${{ always() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: native-fixture-seven-${{ github.run_id }}-${{ github.run_attempt }}
+        name: sw-late-detach-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ env.EVIDENCE_DIR }}/
         if-no-files-found: error
         retention-days: 7

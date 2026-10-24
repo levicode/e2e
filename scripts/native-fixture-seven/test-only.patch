@@ -1,1220 +1,238 @@
-diff --git a/cli/src/native/client_actions.rs b/cli/src/native/client_actions.rs
-index 7969e6e31be63fb2a8778a2087388e47128e8b2a..8af7be7ce71e106698b7689e9e954032e3bb7d63 100644
---- a/cli/src/native/client_actions.rs
-+++ b/cli/src/native/client_actions.rs
-@@ -4865,6 +4865,17 @@ mod tests {
-                 {
-                     break;
-                 }
-+                // These are author-controlled query facts, never dispatch receipts.
-+                let query_name = if mode == "strict-query-misleading-ambiguous" {
-+                    "click action done"
-+                } else {
-+                    "Save"
-+                };
-+                let query_text = if mode == "strict-query-misleading-ambiguous" {
-+                    "performing click action\nclick action done"
-+                } else {
-+                    "Save"
-+                };
-                 let result = match method {
-                     "Page.getFrameTree" => {
-                         json!({"frameTree":{"frame":{"id":"main","loaderId":"doc","url":"about:blank"}}})
-@@ -4924,13 +4935,21 @@ mod tests {
-                         json!({"root":{"nodeType":9,"backendNodeId":99,"children":children}})
-                     }
-                     "DOM.getDocument" if mode.starts_with("strict-query") => {
--                        json!({"root":{"nodeType":9,"backendNodeId":99,"children":[{"nodeType":1,"backendNodeId":42},{"nodeType":1,"backendNodeId":43}]}})
-+                        let mut children = vec![
-+                            json!({"nodeType":1,"backendNodeId":42}),
-+                            json!({"nodeType":1,"backendNodeId":43}),
-+                        ];
-+                        // The second genuine match appears only after publication.
-+                        if mode == "strict-query-misleading-ambiguous" && query_reads == 0 {
-+                            children.truncate(1);
-+                        }
-+                        json!({"root":{"nodeType":9,"backendNodeId":99,"children":children}})
-                     }
-                     "Runtime.getProperties" if mode.starts_with("strict-query") => {
-                         json!({"result":[{"name":"focused","value":{"type":"object","subtype":"null","value":null}}]})
-                     }
-                     "Accessibility.getPartialAXTree" if mode.starts_with("strict-query") => {
--                        json!({"nodes":[{"nodeId":"a","backendDOMNodeId":request["params"]["backendNodeId"],"role":{"type":"role","value":"button"},"name":{"type":"string","value":"Save"}}]})
-+                        json!({"nodes":[{"nodeId":"a","backendDOMNodeId":request["params"]["backendNodeId"],"role":{"type":"role","value":"button"},"name":{"type":"string","value":query_name}}]})
-                     }
-                     "Accessibility.getFullAXTree" => {
-                         if mode.starts_with("strict-query-drag-") {
-@@ -4948,10 +4967,14 @@ mod tests {
-                                 "strict-query-actionable-down" if query_reads > 0 => "RootWebArea",
-                                 _ => "button",
-                             };
--                            json!({"nodes":[
--                                {"nodeId":"a","backendDOMNodeId":42,"role":{"type":"role","value":role},"name":{"type":"string","value":"Save"}},
--                                {"nodeId":"b","backendDOMNodeId":43,"role":{"type":"role","value":role},"name":{"type":"string","value":"Save"}}
--                            ]})
-+                            let mut nodes = vec![
-+                                json!({"nodeId":"a","backendDOMNodeId":42,"role":{"type":"role","value":role},"name":{"type":"string","value":query_name}}),
-+                                json!({"nodeId":"b","backendDOMNodeId":43,"role":{"type":"role","value":role},"name":{"type":"string","value":query_name}}),
-+                            ];
-+                            if mode == "strict-query-misleading-ambiguous" && query_reads == 0 {
-+                                nodes.truncate(1);
-+                            }
-+                            json!({"nodes":nodes})
-                         } else if mode.starts_with("focus-root") {
-                             let mut nodes = vec![
-                                 json!({"backendDOMNodeId":1,"role":{"value":"RootWebArea"},"properties":[{"name":"focused","value":{"value":true}}]}),
-@@ -5014,7 +5037,8 @@ mod tests {
-                                     vec![0]
-                                 } else {
-                                     match mode {
--                                        "strict-query-ambiguous" => vec![0, 1],
-+                                        "strict-query-ambiguous"
-+                                        | "strict-query-misleading-ambiguous" => vec![0, 1],
-                                         "strict-query-missing" => vec![],
-                                         "strict-query-replaced" => vec![1],
-                                         _ => vec![0],
-@@ -5031,7 +5055,7 @@ mod tests {
-                         {
-                             let count =
-                                 request["params"]["arguments"].as_array().unwrap().len() - 2;
--                            let metadata = json!({"author":{"tag":"button","nodeType":1,"action":true,"visible":true},"attributes":{},"labels":["Save"],"states":{"secure":false,"hidden":false},"text":"Save","value":"Save","rect":{"x":0,"y":0,"width":100,"height":50}});
-+                            let metadata = json!({"author":{"tag":"button","nodeType":1,"action":true,"visible":true},"attributes":{},"labels":[query_name],"states":{"secure":false,"hidden":false},"text":query_text,"value":query_name,"rect":{"x":0,"y":0,"width":100,"height":50}});
-                             let mut batch = vec![metadata; count];
-                             if mode == "strict-query-output-filter"
-                                 && query_reads == 0
-@@ -5932,6 +5956,11 @@ mod tests {
-                 ProtocolError::StaleReference,
-                 false,
-             ),
-+            (
-+                "strict-query-misleading-ambiguous",
-+                ProtocolError::StaleReference,
-+                false,
-+            ),
-             ("strict-query-missing", ProtocolError::StaleReference, false),
-             ("strict-query-cancel", ProtocolError::Cancelled, false),
-             ("strict-query-cleanup", ProtocolError::CleanupFailed, true),
-@@ -5942,10 +5971,14 @@ mod tests {
-             ),
-         ] {
-             let mut f = fixture(mode).await;
--            let query =
--                publish_fixture_query(&mut f, json!({"kind":"query","query":{"kind":"role","value":{"kind":"string","value":"button","exact":true},"name":{"kind":"string","value":"Save","exact":true}}}))
--                    .await
--                    .unwrap();
-+            let expression = if mode == "strict-query-misleading-ambiguous" {
-+                json!({"kind":"query","query":{"kind":"text","value":{"kind":"string","value":"performing click action","exact":false}}})
-+            } else {
-+                json!({"kind":"query","query":{"kind":"role","value":{"kind":"string","value":"button","exact":true},"name":{"kind":"string","value":"Save","exact":true}}})
-+            };
-+            let query = publish_fixture_query(&mut f, expression.clone())
-+                .await
-+                .unwrap();
-             let reference = &query.nodes[0].reference;
-             assert_ne!(
-                 reference.id, "@e1",
-@@ -5972,6 +6005,34 @@ mod tests {
-             assert_eq!(f.refs.retained_identity_counts(), retained);
-             assert_eq!(logged_query_matches(&f), 2);
-             let log = f.log.lock().unwrap();
-+            if mode == "strict-query-misleading-ambiguous" {
-+                // Acquisition and action-time revalidation retain the text
-+                // query. The shared assertions below prove typed stale failure
-+                // and NotDispatched despite action-log words in author data.
-+                for (index, request) in log
-+                    .iter()
-+                    .filter(|request| {
-+                        request["params"]["functionDeclaration"]
-+                            .as_str()
-+                            .is_some_and(|source| source.starts_with("function(expression"))
-+                    })
-+                    .enumerate()
-+                {
-+                    assert_eq!(request["params"]["arguments"][0]["value"], expression);
-+                    let arguments = request["params"]["arguments"].as_array().unwrap();
-+                    assert_eq!(arguments[1]["value"].as_array().unwrap().len(), index + 1);
-+                    assert_eq!(arguments.len() - 6, index + 1);
-+                }
-+                assert!(f.replies.lock().unwrap().iter().any(|reply| {
-+                    reply["reply"]["result"]["result"]["value"]
-+                        .as_array()
-+                        .is_some_and(|metadata| {
-+                            metadata.iter().any(|node| {
-+                                node["text"] == "performing click action\nclick action done"
-+                            })
-+                        })
-+                }));
-+            }
-             assert!(
-                 !log.iter().any(|request| request["method"]
-                     .as_str()
-@@ -7749,6 +7810,104 @@ mod tests {
-         assert!(f.log.lock().unwrap().is_empty());
+diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
+--- a/cli/src/native/cdp/client.rs
++++ b/cli/src/native/cdp/client.rs
+@@ -642,6 +642,13 @@
+     #[cfg(test)]
+     worker_startup_decision_gate:
+         std::sync::Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
++    #[cfg(test)]
++    worker_startup_no_receipt_gate: std::sync::Mutex<
++        Option<(
++            oneshot::Sender<(String, std::time::Instant)>,
++            oneshot::Receiver<()>,
++        )>,
++    >,
+ }
+ 
+ /// Removes a pending entry if `send_command` is cancelled mid-await (e.g. an
+@@ -1153,6 +1160,8 @@
+                 next_tap_id: AtomicU64::new(1),
+                 #[cfg(test)]
+                 worker_startup_decision_gate: std::sync::Mutex::new(None),
++                #[cfg(test)]
++                worker_startup_no_receipt_gate: std::sync::Mutex::new(None),
+             }),
+         })
      }
-     #[tokio::test]
-+    async fn recording_unarmed_page_hooks_and_stop_are_resource_free_noops() {
-+        let mut f = fixture("normal").await;
-+        // Geometry setup already exercised this same peer. Its receipt makes
-+        // the subsequent complete empty request log a non-vacuous assertion.
-+        assert!(f.replies.lock().unwrap().iter().any(|entry| {
-+            entry["request"]["method"] == "Page.getLayoutMetrics"
-+                && entry["request"]["sessionId"] == "page"
-+                && entry["reply"]["id"] == entry["request"]["id"]
-+                && entry["reply"]["result"]["cssLayoutViewport"]["clientWidth"].as_f64()
-+                    == Some(100.0)
-+        }));
-+        let setup_replies = f.replies.lock().unwrap().len();
-+        f.blobs = BlobStore::new(BlobLimits {
-+            max_blob_bytes: 4096,
-+            max_total_bytes: 4096,
-+            max_handles: 1,
-+        })
-+        .unwrap();
-+        f.blobs.activate_scope(f.context().blob_scope()).unwrap();
-+        enroll_recording_fixture(&f.page).await;
-+        let owner = client_debt::OwnerDebtLedger::new(1, "scope".into());
-+        f.page.client.install_debt_ledger(owner.clone()).unwrap();
-+        f.page.client = f.page.client.owner_view(owner.clone()).unwrap();
-+        let journal = owner
-+            .operation(
-+                client_debt::OperationKey {
-+                    generation: 1,
-+                    operation_seq: 1,
-+                },
-+                "target".into(),
-+                "page".into(),
-+            )
-+            .unwrap();
-+        journal.bind_operation(&f.op).unwrap();
-+        let actions = ClientActions::default();
-+        assert!(!actions.is_recording_armed().await.unwrap());
-+        assert!(f.log.lock().unwrap().is_empty());
-+        let initial_owner = owner.snapshot();
-+        assert_eq!(initial_owner.outstanding_commands, 0);
-+        assert_eq!(initial_owner.input_debt, 0);
-+        assert_eq!(initial_owner.object_debt, 0);
-+        assert!(!initial_owner.integrity_lost);
-+        let initial_operation = journal.snapshot();
-+        assert!(!initial_operation.mutation_dispatched);
-+        // Do not seed or arm a recording. Check each real boundary separately,
-+        // so a later stop cannot hide resources or state created by either hook.
-+        for hook in ["pageOpened", "pageClosing", "recording.stop"] {
-+            f.context().check().unwrap();
-+            match hook {
-+                "pageOpened" => journal
-+                    .scope(actions.recording_page_opened(f.context()))
-+                    .await
-+                    .unwrap(),
-+                "pageClosing" => journal
-+                    .scope(actions.recording_page_closing("scope", &f.blobs))
-+                    .await
-+                    .unwrap(),
-+                "recording.stop" => assert_eq!(
-+                    journal
-+                        .scope(collect_recording(&actions, &f))
-+                        .await
-+                        .unwrap(),
-+                    json!({"identityScope":"scope","segments":[]})
-+                ),
-+                _ => unreachable!(),
-+            }
-+            // The complete request log excludes initial capture, attachment,
-+            // screencast start/stop, and frame ACKs, not just returned segments.
-+            assert!(f.log.lock().unwrap().is_empty(), "after {hook}");
-+            assert_eq!(
-+                f.replies.lock().unwrap().len(),
-+                setup_replies,
-+                "after {hook}"
-+            );
-+            assert_eq!(f.page.client.pending_len().await, 0, "after {hook}");
-+            assert_eq!(owner.snapshot(), initial_owner, "after {hook}");
-+            assert_eq!(journal.snapshot(), initial_operation, "after {hook}");
-+            assert!(!actions.is_recording_armed().await.unwrap());
-+            {
-+                let ledger = actions.recording.lock().await;
-+                assert!(ledger.authority.is_none());
-+                assert!(ledger.options.is_none());
-+                assert!(ledger.current.is_none());
-+                assert!(ledger.finished.is_empty());
-+                assert!(!ledger.armed);
-+                assert!(!ledger.abandoned);
-+                assert_eq!(ledger.ordinal, 0);
-+                assert!(ledger.lost.is_none());
-+                assert!(!ledger.cleanup_failed);
-+                assert!(!ledger.filesystem_cleanup_failed);
-+            }
-+            assert!(f.page.targets.auxiliary_cleanup_complete().unwrap());
-+            // A single full-budget handle exposes any retained reservation/blob.
-+            drop(f.blobs.reserve_producer(f.context().blob_scope()).unwrap());
-+            f.blobs.check_budget_integrity().unwrap();
-+        }
-+    }
-+    #[tokio::test]
-     async fn recording_first_start_failure_dispatch_disarms_without_stop_or_late_segment() {
-         let mut f = fixture("recording-first-start-error-ack").await;
-         // One full-budget handle makes any retained blob or reservation visible.
-diff --git a/cli/src/native/client_browser_point_debt_tests.rs b/cli/src/native/client_browser_point_debt_tests.rs
-index b07dc9c9bb4d3dc07766671ce388421806473a7e..0f775cfccbbfda651852a7274e885e91b053742f 100644
---- a/cli/src/native/client_browser_point_debt_tests.rs
-+++ b/cli/src/native/client_browser_point_debt_tests.rs
-@@ -453,3 +453,296 @@ async fn direct_point_already_submitted_without_ack_stays_unknown() {
-     assert_eq!(outcome.effects, Effects::Unknown);
-     f.finish().await;
- }
-+
-+// Minimal P06 entry-boundary RED, not the full post-click mutation scenario.
-+// Tap's first mouseMoved loses its ACK before any press/release is sent. This
-+// does not prove recovery with held buttons or unresolved input-release work.
-+// Use a real framed request, not a fabricated EOF, proof, or direct reconnect.
-+struct EofRecoveryObservation {
-+    original: Value,
-+    reconnect: Value,
-+    producer_drain: Result<(), ProtocolError>,
-+    cleanup: Result<(), String>,
-+    candidate_commands: Vec<Value>,
-+}
-+
-+async fn eof_recovery_result(framed: &mut FramedFixture, id: &str, sequence: u64) -> Value {
-+    bounded(async {
-+        for _ in 0..8 {
-+            let frame = framed.read().await.unwrap();
-+            assert_eq!(frame["generation"], 1);
-+            match frame["type"].as_str() {
-+                Some("event") => {
-+                    framed.event_sequence += 1;
-+                    assert_eq!(frame["sequence"], framed.event_sequence);
-+                    if frame["event"] == "browser.disconnected" {
-+                        assert_eq!(
-+                            frame["payload"],
-+                            json!({"reason":"browser-connection-closed"})
-+                        );
-+                        assert!(frame.get("decision").is_none());
-+                    } else {
-+                        assert_eq!(
-+                            frame["payload"]["identityScope"],
-+                            framed.scope.as_deref().unwrap()
-+                        );
-+                        validate_fixture_notice(&frame).unwrap();
-+                    }
+@@ -1694,6 +1703,21 @@
+             } else {
+                 None
+             };
++            #[cfg(test)]
++            if retirement.is_none() {
++                // The ErrorAck decision is already fixed. Let a test deliver
++                // exact detach before return, without reclassifying this failure.
++                let gate = self
++                    .transport
++                    .worker_startup_no_receipt_gate
++                    .lock()
++                    .unwrap()
++                    .take();
++                if let Some((entered, release)) = gate {
++                    let _ = entered.send((errors.join("; "), deadline));
++                    let _ = tokio::time::timeout_at(deadline.into(), release).await;
 +                }
-+                Some("result") => {
-+                    assert_eq!(frame["id"], id);
-+                    assert_eq!(frame["operationSeq"], sequence);
-+                    return frame;
-+                }
-+                _ => panic!("unexpected P06 frame: {frame}"),
 +            }
-+        }
-+        panic!("P06 correlated result missing")
-+    })
-+    .await
-+}
-+
-+async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
-+    use crate::native::client_browser::reconnect_tests::{peer as reconnect_peer, PeerMode};
-+    use crate::native::client_protocol::EXACT_OWNER_CONTINUATION;
-+
-+    let mut original = reconnect_peer(PeerMode::HoldInput).await;
-+    let broker = Arc::new(ClientSession::new());
-+    let browser = Arc::new(ClientBrowser::new(broker.clone()));
-+    // These are the existing NativeClient REQUIRED_CAPABILITIES, not a new
-+    // recovery capability. terminal.close/1 makes its refusal observable after
-+    // quarantine; continuation must not turn EOF into an input acknowledgement.
-+    let mut framed = FramedFixture::with_capabilities(
-+        broker.clone(),
-+        browser.clone(),
-+        vec![EXACT_OWNER_CONTINUATION.into(), "terminal.close/1".into()],
-+    );
-+    framed.ready().await.unwrap();
-+    let opened = framed
-+        .command(
-+            "scope.open",
-+            json!({"source":"connect","context":"persistent","endpoint":original.endpoint}),
-+            5,
-+        )
-+        .await
-+        .unwrap();
-+    let scope = opened["identityScope"].as_str().unwrap().to_owned();
-+    let identity = opened["recoveryIdentity"].clone();
-+    framed.scope = Some(scope.clone());
-+    framed
-+        .command("scope.configure", fixture_configuration(&scope, None), 5)
-+        .await
-+        .unwrap();
-+    framed
-+        .command("network.routes.replace", fixture_routes(&scope), 5)
-+        .await
-+        .unwrap();
-+    framed.registry = 1;
-+    framed
-+        .command("page.activate", json!({"identityScope":scope}), 5)
-+        .await
-+        .unwrap();
-+    let (client, ledger, enrollment, page_state) = {
-+        let owner = browser.owner.lock().await;
-+        let owner = owner.as_ref().unwrap();
-+        assert!(!owner.owns_context);
-+        assert_eq!(owner.recovery_identity(), identity);
-+        assert_eq!(
-+            owner.borrowed_targets.as_deref(),
-+            Some(&["host-page".to_owned()][..])
-+        );
-+        (
-+            owner.manager.client.clone(),
-+            owner.manager.client.debt_ledger().unwrap(),
-+            owner.runtime.as_ref().unwrap().enrollment.clone(),
-+            owner.page_state.clone(),
-+        )
-+    };
-+    assert_eq!(ledger.snapshot().input_debt, 0);
-+    assert!(!ledger.snapshot().integrity_lost);
-+    assert_eq!(page_state.mouse_state().unwrap().buttons, 0);
-+    framed.sequence += 1;
-+    let key = OperationKey {
-+        generation: 1,
-+        operation_seq: framed.sequence,
-+    };
-+    framed
-+        .write(json!({"type":"request","id":"p06-original","generation":1,
-+            "operationSeq":key.operation_seq,"timeoutMs":5000,"command":"browser.pointer",
-+            "args":{"identityScope":scope,"point":{"x":10,"y":10},"action":{"kind":"tap"}}}))
-+        .await
-+        .unwrap();
-+    bounded(async {
-+        while let Some(method) = original.received.recv().await {
-+            if method == "Input.dispatchMouseEvent" {
-+                return;
-+            }
-+        }
-+        panic!("P06 peer ended before receiving the original input")
-+    })
-+    .await;
-+    assert_eq!(
-+        browser
-+            .tasks
-+            .operation_retention_status(key)
-+            .mutation_dispatched(),
-+        Some(true)
-+    );
-+    assert_eq!(ledger.snapshot().input_debt, 1);
-+    assert!(!ledger.snapshot().integrity_lost);
-+    assert_eq!(page_state.mouse_state().unwrap().buttons, 0);
-+    {
-+        let commands = original.commands.lock().unwrap();
-+        let input = commands
-+            .iter()
-+            .find(|request| request["method"] == "Input.dispatchMouseEvent")
-+            .unwrap();
-+        assert_eq!(input["method"], "Input.dispatchMouseEvent");
-+        assert_eq!(input["sessionId"], "host-session");
-+        assert_eq!(input["params"]["type"], "mouseMoved");
-+        assert_eq!(input["params"]["buttons"], 0);
+             return Err(ServiceWorkerStartupFailure {
+                 message: errors.join("; "),
+                 error: ProtocolError::BrowserFailure,
+@@ -2297,6 +2321,23 @@
+         let (entered, observed) = oneshot::channel();
+         let (release, waiting) = oneshot::channel();
+         *self.transport.worker_startup_decision_gate.lock().unwrap() = Some((entered, waiting));
++        (observed, release)
 +    }
-+    // Only the websocket peer closes. The real CdpClient reader observes EOF;
-+    // do not call ledger.observe_remote_eof, drop a waiter, or forge retention.
-+    original.emit.send(Message::Close(None)).await.unwrap();
-+    bounded(original.task).await.unwrap();
-+    let mut closed = client.remote_connection_closed();
-+    bounded(async {
-+        while !*closed.borrow_and_update() {
-+            closed.changed().await.unwrap();
-+        }
-+    })
-+    .await;
-+    let original_result = eof_recovery_result(&mut framed, "p06-original", key.operation_seq).await;
-+    assert_eq!(original_result["ok"], false);
-+    assert_eq!(original_result["effects"], "unknown");
-+    assert!(original_result.get("retention").is_none());
-+    // Joining the actual producer is not an acknowledgement of its remote
-+    // command. Retain the outcome of this join for the characterization test.
-+    let producer_drain = bounded(browser.tasks.drain()).await;
-+    assert!(!matches!(
-+        browser.tasks.operation_retention_status(key),
-+        crate::native::client_operation_state::OperationRetentionStatus::NotRegistered
-+    ));
-+    bounded(enrollment.drain()).await.unwrap();
-+    enrollment
-+        .terminal_connection_proof()
-+        .unwrap()
-+        .check_client(&client)
-+        .unwrap();
-+    assert!(ledger.matches_owner(1, &scope));
-+    assert_eq!(ledger.snapshot().input_debt, 1);
-+    assert!(ledger.snapshot().integrity_lost);
-+    // This is not the stronger debt-free final-local cleanup proof.
-+    assert!(ledger.check_final_local_eof(1, &scope).is_err());
 +
-+    // A different transport advertising the exact retained browser/context/page
-+    // is eligible for verification, never a replacement page or input retry.
-+    let candidate = reconnect_peer(PeerMode::ReconnectCandidate).await;
-+    framed.sequence += 1;
-+    framed
-+        .write(json!({"type":"request","id":"p06-reconnect","generation":1,
-+            "operationSeq":framed.sequence,"timeoutMs":5000,"command":"scope.reconnect",
-+            "args":{"identityScope":scope,"endpoint":candidate.endpoint,
-+                "expectedBrowserIdentity":identity["browser"],
-+                "expectedContextIdentity":identity["context"],
-+                "expectedPageIdentity":identity["page"]}}))
-+        .await
-+        .unwrap();
-+    let reconnect_sequence = framed.sequence;
-+    let reconnect = eof_recovery_result(&mut framed, "p06-reconnect", reconnect_sequence).await;
-+    if reconnect["ok"] == true {
-+        assert_ne!(reconnect["data"]["identityScope"], scope);
-+    }
-+    let cleanup = tokio::time::timeout(Duration::from_secs(7), framed.finish())
-+        .await
-+        .expect("P06 native shutdown stalled");
-+    let candidate_commands = candidate.commands.lock().unwrap().clone();
-+    if reconnect["ok"] == true {
-+        // A claimed recovered scope must also finish its own native cleanup.
-+        // This does not clear or acknowledge the separately retained old debt.
-+        let peer = bounded(candidate.task).await;
-+        assert!(
-+            cleanup.is_ok() && peer.is_ok(),
-+            "recovered scope cleanup failed: {cleanup:?}; candidate peer: {peer:?}"
-+        );
-+    } else if candidate_commands.is_empty() {
-+        // Current refusal never opens the candidate. Stop its fixture listener,
-+        // but never mask a panic that completed before this explicit abort.
-+        candidate.task.abort();
-+        match candidate.task.await {
-+            Ok(()) => {}
-+            Err(error) if error.is_cancelled() => {}
-+            Err(error) => panic!("refused candidate peer failed: {error}"),
-+        }
-+    } else {
-+        bounded(candidate.task)
-+            .await
-+            .expect("rejected candidate transport did not finish cleanly");
-+    }
-+    assert!(!candidate_commands.iter().any(|request| matches!(
-+        request["method"].as_str(),
-+        Some("Page.navigate" | "Target.createTarget" | "Target.createBrowserContext")
-+    )));
-+    let commands = original.commands.lock().unwrap();
-+    assert_eq!(
-+        commands
-+            .iter()
-+            .filter(|r| r["method"] == "Input.dispatchMouseEvent")
-+            .count(),
-+        1,
-+        "the original action must never be replayed or continued after EOF"
-+    );
-+    assert!(!candidate_commands.iter().any(|r| r["method"]
-+        .as_str()
-+        .is_some_and(|m| m.starts_with("Input."))));
-+    assert_eq!(original_result["effects"], "unknown");
-+    assert_eq!(page_state.mouse_state().unwrap().buttons, 0);
-+    assert!(!matches!(
-+        browser.tasks.operation_retention_status(key),
-+        crate::native::client_operation_state::OperationRetentionStatus::NotRegistered
-+    ));
-+    assert!(ledger.matches_owner(1, &scope));
-+    assert_eq!(ledger.snapshot().input_debt, 1);
-+    assert!(ledger.snapshot().integrity_lost);
-+    EofRecoveryObservation {
-+        original: original_result,
-+        reconnect,
-+        producer_drain,
-+        cleanup,
-+        candidate_commands,
-+    }
-+}
-+
-+#[tokio::test]
-+async fn p06_framed_input_eof_currently_quarantines_before_reconnect_verification() {
-+    let observed = framed_input_eof_reconnect().await;
-+    assert_eq!(observed.original["scopeState"], "quarantined");
-+    assert_eq!(observed.producer_drain, Err(ProtocolError::CleanupFailed));
-+    assert_eq!(observed.reconnect["ok"], false);
-+    assert_eq!(observed.reconnect["effects"], "not-dispatched");
-+    assert_eq!(observed.reconnect["scopeState"], "quarantined");
-+    assert_eq!(observed.reconnect["error"]["code"], "scope-unavailable");
-+    assert!(observed.candidate_commands.is_empty());
-+    assert!(observed.cleanup.is_err());
-+}
-+
-+#[tokio::test]
-+async fn p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay() {
-+    let observed = framed_input_eof_reconnect().await;
-+    // Intentional RED on the current baseline. Recovery belongs only to the
-+    // session: the helper has already proved the original receipt stays Unknown,
-+    // its one dispatched input remains owned, and neither transport replays it.
-+    assert_eq!(
-+        observed.reconnect["ok"], true,
-+        "P06 exact-identity reconnect never reached verification: {}",
-+        observed.reconnect
-+    );
-+    assert_eq!(observed.reconnect["effects"], "completed");
-+    assert_eq!(observed.reconnect["scopeState"], "usable");
-+    assert!(observed.reconnect["data"]["identityScope"].is_string());
-+    assert!(observed
-+        .candidate_commands
-+        .iter()
-+        .any(|r| r["method"] == "Target.getTargetInfo"));
-+}
-diff --git a/cli/src/native/client_browser_reconnect_tests.rs b/cli/src/native/client_browser_reconnect_tests.rs
-index 8e1e03874ec6f31ee23664cde47c86ea31a99f87..4058194562644abc4f8741f192c8a094a2149cc1 100644
---- a/cli/src/native/client_browser_reconnect_tests.rs
-+++ b/cli/src/native/client_browser_reconnect_tests.rs
-@@ -16,23 +16,25 @@ use tokio::sync::mpsc;
- use tokio_tungstenite::tungstenite::Message;
++    #[cfg(test)]
++    pub(crate) fn hold_worker_startup_no_receipt(
++        &self,
++    ) -> (
++        oneshot::Receiver<(String, std::time::Instant)>,
++        oneshot::Sender<()>,
++    ) {
++        let (entered, observed) = oneshot::channel();
++        let (release, waiting) = oneshot::channel();
++        *self
++            .transport
++            .worker_startup_no_receipt_gate
++            .lock()
++            .unwrap() = Some((entered, waiting));
+         (observed, release)
+     }
  
- #[derive(Clone, Copy, PartialEq, Eq)]
--enum PeerMode {
-+pub(super) enum PeerMode {
-     Original,
-+    HoldInput,
-+    ReconnectCandidate,
-     WrongContext,
-     RefuseTargetInfo,
-     HoldAfterAttach,
-     Verified,
- }
- 
--struct Peer {
--    endpoint: String,
--    commands: Arc<Mutex<Vec<Value>>>,
--    received: mpsc::UnboundedReceiver<String>,
--    emit: mpsc::Sender<Message>,
--    task: tokio::task::JoinHandle<()>,
-+pub(super) struct Peer {
-+    pub(super) endpoint: String,
-+    pub(super) commands: Arc<Mutex<Vec<Value>>>,
-+    pub(super) received: mpsc::UnboundedReceiver<String>,
-+    pub(super) emit: mpsc::Sender<Message>,
-+    pub(super) task: tokio::task::JoinHandle<()>,
- }
- 
--async fn peer(mode: PeerMode) -> Peer {
-+pub(super) async fn peer(mode: PeerMode) -> Peer {
-     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-     let endpoint = format!("ws://{}", listener.local_addr().unwrap());
-     let commands = Arc::new(Mutex::new(Vec::new()));
-@@ -43,6 +45,7 @@ async fn peer(mode: PeerMode) -> Peer {
-         let (stream, _) = listener.accept().await.unwrap();
-         let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-         let mut attached = false;
-+        let mut loader = "host-loader";
-         let mut target = json!({"targetId":"host-page","type":"page",
-             "browserContextId":"host-context","url":"about:blank","title":""});
-         if mode == PeerMode::WrongContext {
-@@ -62,7 +65,14 @@ async fn peer(mode: PeerMode) -> Peer {
-                     let method = request["method"].as_str().unwrap();
-                     let _ = send.send(method.to_owned());
-                     let session = request["sessionId"].as_str().unwrap_or("");
--                    if mode != PeerMode::Original {
-+                    if mode == PeerMode::ReconnectCandidate {
-+                        assert!(!matches!(method,
-+                            "Page.navigate" | "Target.createTarget" | "Target.createBrowserContext"),
-+                            "reconnect candidate replaced or navigated retained objects: {request}");
-+                    }
-+                    if !matches!(mode,
-+                        PeerMode::Original | PeerMode::HoldInput | PeerMode::ReconnectCandidate)
-+                    {
-                         assert!(matches!(method,
-                             "Target.getBrowserContexts" | "Target.getTargetInfo"
-                             | "Target.attachToTarget" | "Target.detachFromTarget"),
-@@ -75,6 +85,11 @@ async fn peer(mode: PeerMode) -> Peer {
-                         // strict adopt helper's exact-page recheck.
-                         continue;
-                     }
-+                    if mode == PeerMode::HoldInput && method == "Input.dispatchMouseEvent" {
-+                        // The test closes this real socket only after observing
-+                        // submission in the native operation registry. No ACK.
-+                        continue;
-+                    }
-                     let mut response = if mode == PeerMode::RefuseTargetInfo
-                         && method == "Target.getTargetInfo"
-                     {
-@@ -98,8 +113,18 @@ async fn peer(mode: PeerMode) -> Peer {
-                                 json!({"sessionId":"host-session"})
-                             }
-                             "Page.getFrameTree" => json!({"frameTree":{"frame":{
--                                "id":format!("frame-{session}"),"loaderId":"host-loader",
-+                                "id":format!("frame-{session}"),"loaderId":loader,
-                                 "url":"about:blank"}}}),
-+                            "Page.navigate" => {
-+                                assert_eq!(request["params"]["url"], "about:blank");
-+                                loader = "host-activation-loader";
-+                                json!({"frameId":format!("frame-{session}"),
-+                                    "loaderId":"host-activation-loader"})
-+                            }
-+                            "Runtime.evaluate" => {
-+                                assert_eq!(request["params"]["expression"], "location.href");
-+                                json!({"result":{"type":"string","value":"about:blank"}})
-+                            }
-                             "Page.addScriptToEvaluateOnNewDocument" => json!({"identifier":"host-script"}),
-                             "Page.enable" | "Runtime.enable" | "Network.enable" | "WebMCP.enable"
-                             | "DOM.enable" | "DOM.disable" | "Network.setBypassServiceWorker"
-@@ -114,6 +139,18 @@ async fn peer(mode: PeerMode) -> Peer {
-                     };
-                     if !session.is_empty() { response["sessionId"] = session.into(); }
-                     if socket.send(Message::Text(response.to_string())).await.is_err() { break; }
-+                    if method == "Page.navigate" {
-+                        for event in [
-+                            json!({"method":"Page.frameNavigated","sessionId":session,"params":{
-+                                "frame":{"id":format!("frame-{session}"),"loaderId":"host-activation-loader",
-+                                    "url":"about:blank","securityOrigin":"null"}}}),
-+                            json!({"method":"Page.lifecycleEvent","sessionId":session,"params":{
-+                                "frameId":format!("frame-{session}"),"loaderId":"host-activation-loader",
-+                                "name":"DOMContentLoaded"}}),
-+                        ] {
-+                            if socket.send(Message::Text(event.to_string())).await.is_err() { return; }
-+                        }
-+                    }
-                 }
-             }
-         }
-diff --git a/cli/src/native/client_browser_restart_transport_tests.rs b/cli/src/native/client_browser_restart_transport_tests.rs
-index b9ddcb02ad7caefc5b93ac0a297048e9ac11af2a..9599d9d1f148aa43fe2ebbf4d73e3a26249d8fc8 100644
---- a/cli/src/native/client_browser_restart_transport_tests.rs
-+++ b/cli/src/native/client_browser_restart_transport_tests.rs
-@@ -479,6 +479,10 @@ mod input_waiter_tests;
- #[path = "client_browser_interruption_reason_tests.rs"]
- mod interruption_reason_tests;
- 
-+#[cfg(feature = "acceptance-faults")]
-+#[path = "client_browser_trace_retirement_tests.rs"]
-+mod trace_retirement_tests;
-+
- #[path = "client_browser_point_debt_tests.rs"]
- mod point_debt_tests;
- 
-diff --git a/cli/src/native/client_browser_state_tests.rs b/cli/src/native/client_browser_state_tests.rs
-index aa7c39eb1d51a0c5af59b2fc650b3f2e86e97c7e..404dbaa5489633aa436bbe54b6b96054b3909a25 100644
---- a/cli/src/native/client_browser_state_tests.rs
-+++ b/cli/src/native/client_browser_state_tests.rs
-@@ -146,6 +146,13 @@ struct FramedFixture {
- }
- impl FramedFixture {
-     fn new<E: ClientExecutor>(broker: Arc<ClientSession>, executor: Arc<E>) -> Self {
-+        Self::with_capabilities(broker, executor, Vec::new())
-+    }
-+    fn with_capabilities<E: ClientExecutor>(
-+        broker: Arc<ClientSession>,
-+        executor: Arc<E>,
-+        required_capabilities: Vec<String>,
-+    ) -> Self {
-         let (client, server) = tokio::io::duplex(64 * 1024);
-         let (reader, writer) = tokio::io::split(server);
-         let server = tokio::spawn(serve_with_executor(
-@@ -154,7 +161,7 @@ impl FramedFixture {
-             ClientMessage::Hello {
-                 id: "fixture-hello".into(),
-                 protocol: PROTOCOL.into(),
--                required_capabilities: vec![],
-+                required_capabilities,
-             },
-             broker,
-             executor,
-diff --git a/cli/src/native/client_browser_trace_retirement_tests.rs b/cli/src/native/client_browser_trace_retirement_tests.rs
-new file mode 100644
-index 0000000000000000000000000000000000000000..5b7974408bd75b43af830caf041ef3650f5a63cf
---- /dev/null
-+++ b/cli/src/native/client_browser_trace_retirement_tests.rs
-@@ -0,0 +1,323 @@
-+//! Real framed Observe -> Trace; only a finite CDP peer is synthetic.
-+//! No renderer, timer override, production change, or replacement executor.
-+use super::*;
-+use crate::native::client_capture::{retained_capture_test, CaptureReason};
-+use crate::native::client_debt::OperationKey;
-+use crate::native::client_protocol::EXACT_OWNER_CONTINUATION;
-+use tokio::sync::mpsc;
-+
-+async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
-+    tokio::time::timeout(Duration::from_secs(5), future)
-+        .await
-+        .expect("finite trace fixture did not reach its next protocol event")
-+}
-+
-+async fn stopped<T>(mut task: tokio::task::JoinHandle<T>) -> Result<T, String> {
-+    match tokio::time::timeout(Duration::from_secs(5), &mut task).await {
-+        Ok(result) => result.map_err(|error| format!("fixture task failed: {error}")),
-+        Err(_) => {
-+            // Only this test's task is cancelled, and cancellation is joined.
-+            task.abort();
-+            match task.await {
-+                Err(error) if error.is_cancelled() => {
-+                    Err("fixture task did not stop normally".into())
-+                }
-+                Err(error) => Err(format!("fixture task failed during shutdown: {error}")),
-+                Ok(value) => Ok(value),
-+            }
-+        }
-+    }
-+}
-+
-+fn trace_framed(browser: Arc<ClientBrowser>, broker: Arc<ClientSession>) -> FramedFixture {
-+    let (client, server) = tokio::io::duplex(64 * 1024);
-+    let (reader, writer) = tokio::io::split(server);
-+    let server = tokio::spawn(serve_with_executor(
-+        tokio::io::BufReader::new(reader),
-+        writer,
-+        ClientMessage::Hello {
-+            id: "fixture-hello".into(),
-+            protocol: PROTOCOL.into(),
-+            required_capabilities: vec![EXACT_OWNER_CONTINUATION.into()],
-+        },
-+        broker,
-+        browser,
-+    ));
-+    FramedFixture {
-+        stream: tokio::io::BufReader::new(client),
-+        server,
-+        sequence: 0,
-+        event_sequence: 0,
-+        scope: None,
-+        registry: 0,
-+        decisions: 0,
-+    }
-+}
-+
-+// Reuse the existing lifecycle peer without duplicating its enrollment protocol.
-+// Unrecognized commands and every lifecycle event pass through unchanged.
-+async fn trace_peer(
-+    hold_remove: bool,
-+) -> (
-+    String,
-+    mpsc::UnboundedReceiver<Value>,
-+    mpsc::UnboundedSender<Value>,
-+    Arc<Mutex<Vec<Value>>>,
-+    tokio::task::JoinHandle<()>,
-+    tokio::task::JoinHandle<()>,
-+) {
-+    let (backend, _, lifecycle) = peer(false).await;
-+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-+    let endpoint = format!("ws://{}", listener.local_addr().unwrap());
-+    let (seen, requests) = mpsc::unbounded_channel();
-+    let (release, mut replies) = mpsc::unbounded_channel::<Value>();
-+    let log = Arc::new(Mutex::new(Vec::new()));
-+    let recorded = log.clone();
-+    let relay = tokio::spawn(async move {
-+        let (stream, _) = listener.accept().await.unwrap();
-+        stream.set_nodelay(true).unwrap();
-+        let mut client = tokio_tungstenite::accept_async(stream).await.unwrap();
-+        let (mut backend, _) = tokio_tungstenite::connect_async(&backend).await.unwrap();
-+        loop {
-+            tokio::select! {
-+                Some(reply) = replies.recv() => {
-+                    client.send(Message::Text(reply.to_string())).await.unwrap();
-+                }
-+                message = backend.next() => {
-+                    let Some(Ok(message)) = message else { break };
-+                    if client.send(message).await.is_err() { break; }
-+                }
-+                message = client.next() => {
-+                    let Some(Ok(message)) = message else { break };
-+                    let Message::Text(text) = message else {
-+                        if backend.send(message).await.is_err() { break; }
-+                        continue;
-+                    };
-+                    let request: Value = serde_json::from_str(&text).unwrap();
-+                    recorded.lock().unwrap().push(request.clone());
-+                    let method = request["method"].as_str().unwrap();
-+                    let remove = method == "Runtime.callFunctionOn"
-+                        && request["params"]["functionDeclaration"] == "function(){return this.remove()}";
-+                    if method == "Page.captureScreenshot" || (hold_remove && remove) {
-+                        seen.send(request).unwrap();
-+                        continue;
-+                    }
-+                    let Some(result) = observation_reply(&request) else {
-+                        if backend.send(Message::Text(text)).await.is_err() { break; }
-+                        continue;
-+                    };
-+                    client.send(Message::Text(reply(&request, result).to_string())).await.unwrap();
-+                }
-+            }
-+        }
-+    });
-+    (endpoint, requests, release, log, relay, lifecycle)
-+}
-+
-+fn reply(request: &Value, result: Value) -> Value {
-+    assert_eq!(request["sessionId"], "session-1");
-+    json!({"id":request["id"],"sessionId":request["sessionId"],"result":result})
-+}
-+
-+// Root-only reduction of tree_observe_with_hidden_iframe's real DOM/AX protocol.
-+// Keep real source-holder creation, verification, removal and release separate.
-+fn observation_reply(request: &Value) -> Option<Value> {
-+    let value = match request["method"].as_str().unwrap() {
-+        "Page.getLayoutMetrics" => {
-+            json!({"cssVisualViewport":{"clientWidth":10,"clientHeight":10,"offsetX":0,"offsetY":0,"scale":1},"cssLayoutViewport":{"clientWidth":10,"clientHeight":10}})
-+        }
-+        "Page.createIsolatedWorld" => json!({"executionContextId":1}),
-+        "Animation.getPlaybackRate" => json!({"playbackRate":1}),
-+        "Animation.enable" | "Animation.setPlaybackRate" | "Animation.disable" => json!({}),
-+        "DOM.getDocument" => json!({"root":{"nodeType":9,"backendNodeId":1}}),
-+        "Accessibility.getFullAXTree" => {
-+            json!({"nodes":[{"nodeId":"document","backendDOMNodeId":1,"role":{"type":"role","value":"RootWebArea"}}]})
-+        }
-+        "DOM.resolveNode" => json!({"object":{"objectId":"node-1","subtype":"node"}}),
-+        "DOMSnapshot.captureSnapshot" => {
-+            json!({"strings":["frame-session-1"],"documents":[{"frameId":0,"nodes":{"nodeType":[9],"backendNodeId":[1]}}]})
-+        }
-+        "Runtime.getProperties" => {
-+            json!({"result":[{"name":"focused","value":{"type":"object","subtype":"null","value":null}}]})
-+        }
-+        "Runtime.evaluate"
-+            if request["params"]["objectGroup"]
-+                .as_str()
-+                .is_some_and(|g| g.starts_with("capture-source-")) =>
-+        {
-+            json!({"result":{"type":"object","objectId":"source-holder"}})
-+        }
-+        "Runtime.callFunctionOn" => {
-+            let declaration = request["params"]["functionDeclaration"].as_str().unwrap();
-+            if declaration.contains("Array.from(result)") {
-+                json!({"result":{"objectId":"security"}})
-+            } else if declaration.contains("const read=") {
-+                let values = request["params"]["arguments"].as_array().unwrap().iter().skip(2).map(|argument| {
-+                    assert_eq!(argument["objectId"], "node-1");
-+                    json!({"attributes":{},"labels":[],"states":{},"rect":null,"author":{"nodeType":9,"visible":true}})
-+                }).collect::<Vec<_>>();
-+                json!({"result":{"value":values}})
-+            } else if declaration.contains("frameOwner") {
-+                json!({"result":{"value":{"connected":true,"frameOwner":false}}})
-+            } else {
-+                assert!(
-+                    declaration == "function(){return this.verify()}"
-+                        || declaration == "function(){return this.remove()}"
-+                        || declaration.contains("documentElement")
-+                        || declaration.contains("nodeType"),
-+                    "unmodeled call: {declaration}"
-+                );
-+                json!({"result":{"value":true}})
-+            }
-+        }
-+        "Runtime.releaseObject" | "Runtime.releaseObjectGroup" => json!({}),
-+        _ => return None,
-+    };
-+    Some(value)
-+}
-+
-+async fn result_frame(fixture: &mut FramedFixture, sequence: u64) -> Value {
-+    for _ in 0..32 {
-+        let frame = bounded(fixture.read()).await.unwrap();
-+        assert_eq!(frame["generation"], 1);
-+        if frame["type"] == "result" {
-+            assert_eq!(frame["operationSeq"], sequence);
-+            return frame;
-+        }
-+        assert_eq!(frame["type"], "event");
-+        assert_eq!(frame["sequence"], fixture.event_sequence + 1);
-+        fixture.event_sequence += 1;
-+        validate_fixture_notice(&frame).unwrap();
-+    }
-+    panic!("trace result missing within finite event bound")
-+}
-+
-+async fn trace_retirement_case(raw_ack: bool) {
-+    let (endpoint, mut requests, release, log, relay, lifecycle) = trace_peer(raw_ack).await;
-+    let broker = Arc::new(ClientSession::new());
-+    let browser = Arc::new(ClientBrowser::new(broker.clone()));
-+    let mut fixture = trace_framed(browser.clone(), broker.clone());
-+    let test: Result<(), String> = async {
-+        fixture.ready().await?;
-+        let opened = fixture.command("scope.open", fixture_scope_open("connect", Some(&endpoint)), 5).await?;
-+        let scope = opened["identityScope"].as_str().unwrap().to_owned();
-+        fixture.scope = Some(scope.clone());
-+        fixture.command("scope.configure", fixture_configuration(&scope, None), 5).await?;
-+        fixture.command("network.routes.replace", fixture_routes(&scope), 5).await?;
-+        fixture.registry = 1;
-+        fixture.command("page.activate", json!({"identityScope":scope}), 5).await?;
-+        let observed = fixture.command("browser.observe", json!({"identityScope":scope,
-+            "testIdAttribute":"data-testid","secureFieldSelector":FIXTURE_SECURE_SELECTOR,
-+            "options":{"pixels":false,"pixelFallback":false,"comparable":false}}), 5).await?;
-+        assert_eq!(observed["root"]["role"], "document");
-+        assert!(observed["revision"].is_string());
-+        assert!(observed["viewportRef"]["id"].is_string());
-+        assert!(!log.lock().unwrap().iter().any(|r| r["method"] == "Page.captureScreenshot"));
-+        let page = browser.page_lease(false).await.map_err(|e| format!("page: {e:?}"))?;
-+        let client = page.client.clone();
-+        let targets = page.targets.clone();
-+        drop(page);
-+        let ui = browser.owner.lock().await.as_ref().unwrap().ui.clone();
-+        fixture.sequence += 1;
-+        let sequence = fixture.sequence;
-+        let key = OperationKey { generation: 1, operation_seq: sequence };
-+        let publication_fence = browser.observation.publication_fence().unwrap();
-+        let (_registration, retained) = retained_capture_test::register(&client, sequence);
-+        let mut png = std::io::Cursor::new(Vec::new());
-+        image::DynamicImage::new_rgba8(10, 10).write_to(&mut png, image::ImageFormat::Png).unwrap();
-+        let png = base64::engine::general_purpose::STANDARD.encode(png.into_inner());
-+        fixture.write(json!({"type":"request","id":"trace","generation":1,
-+            "operationSeq":sequence,"timeoutMs":1000,"command":"capture.screenshot",
-+            "args":{"identityScope":scope,"secureFieldSelector":FIXTURE_SECURE_SELECTOR,"purpose":"trace"}})).await?;
-+        let screenshot = bounded(requests.recv()).await.unwrap();
-+        assert_eq!(screenshot["method"], "Page.captureScreenshot");
-+        assert!(matches!(bounded(retained).await.unwrap(), CaptureReason::Deadline | CaptureReason::Cancelled));
-+        if raw_ack {
-+            release.send(reply(&screenshot, json!({"data":png}))).unwrap();
-+            let remove = bounded(requests.recv()).await.unwrap();
-+            assert_eq!(remove["params"]["functionDeclaration"], "function(){return this.remove()}");
-+            // Retirement advances this existing fence only after outer grace.
-+            // It then awaits the publication mutex still owned by restoration:
-+            // waiting for a wire result before this ACK would manufacture failure.
-+            bounded(async {
-+                while browser.observation.publication_fence().unwrap() == publication_fence {
-+                    tokio::task::yield_now().await;
-+                }
-+            }).await;
-+            let (_cancel, cancellation) = tokio::sync::watch::channel(CancelSignal::None);
-+            let admission = ui.enter(false, false, Instant::now() + Duration::from_secs(5), cancellation);
-+            tokio::pin!(admission);
-+            assert!(futures_util::poll!(admission.as_mut()).is_pending(), "restore still owns exclusive UI");
-+            assert!(matches!(browser.operation_retention_status(key),
-+                crate::native::client_operation_state::OperationRetentionStatus::KnownRetiring { .. }));
-+            release.send(reply(&remove, json!({"result":{"type":"boolean","value":true}}))).unwrap();
-+            drop(bounded(admission).await.map_err(|e| format!("UI not released: {e:?}"))?);
-+            let result = result_frame(&mut fixture, sequence).await;
-+            assert_eq!(result["id"], "trace");
-+            assert_eq!(result["ok"], false);
-+            assert_eq!(result["error"]["code"], "deadline-exceeded");
-+            assert_eq!(result["effects"], "unknown");
-+            assert_eq!(result["scopeState"], "usable");
-+            assert_eq!(result["retention"]["retiredOperationSeq"], sequence);
-+            assert_eq!(result["retention"]["producerState"], "retiring");
-+            // Raw success was acknowledged; only the held source holder remains.
-+            assert_eq!(result["retention"]["inputDebt"], 0);
-+            assert!(result["retention"]["objectDebt"].as_u64().unwrap() > 0);
-+            assert!(result.get("data").is_none());
-+            let fresh = fixture.command("browser.observe", json!({"identityScope":scope,
-+                "testIdAttribute":"data-testid","secureFieldSelector":FIXTURE_SECURE_SELECTOR,
-+                "options":{"pixels":false,"pixelFallback":false,"comparable":false}}), 5).await?;
-+            assert_eq!(fresh["root"]["role"], "document");
-+            assert_ne!(fresh["revision"], observed["revision"]);
-+            assert_eq!(broker.health().unwrap().1, ScopeState::Usable);
-+            fixture.command("scope.end", json!({"identityScope":scope}), 5).await?;
-+        } else {
-+            // No reply, including after the raw drain: this must not regain authority.
-+            let result = result_frame(&mut fixture, sequence).await;
-+            assert_eq!(result["id"], "trace");
-+            assert_eq!(result["ok"], false);
-+            assert_eq!(result["effects"], "unknown");
-+            assert!(result.get("data").is_none());
-+            bounded(async {
-+                while broker.health().unwrap().1 != ScopeState::Quarantined {
-+                    tokio::task::yield_now().await;
-+                }
-+            }).await;
-+            assert!(targets.inventory().is_err());
-+            fixture.sequence += 1;
-+            let refused_sequence = fixture.sequence;
-+            fixture.write(json!({"type":"request","id":"after-trace","generation":1,
-+                "operationSeq":refused_sequence,"timeoutMs":1000,"command":"page.url",
-+                "args":{"identityScope":scope}})).await?;
-+            let refused = result_frame(&mut fixture, refused_sequence).await;
-+            assert_eq!(refused["id"], "after-trace");
-+            assert_eq!(refused["ok"], false);
-+            assert_eq!(refused["scopeState"], "quarantined");
-+        }
-+        assert_eq!(log.lock().unwrap().iter().filter(|r| r["method"] == "Page.captureScreenshot").count(), 1);
-+        Ok(())
-+    }.await;
-+    // Same real EOF/shutdown path as FramedFixture::finish, with owned handles
-+    // retained so a failed teardown cannot detach tasks or hide peer panics.
-+    drop(fixture.stream);
-+    let cleanup = stopped(fixture.server).await;
-+    let relay_stopped = stopped(relay).await;
-+    let lifecycle_stopped = stopped(lifecycle).await;
-+    let cleanup = cleanup.unwrap();
-+    relay_stopped.unwrap();
-+    lifecycle_stopped.unwrap();
-+    test.unwrap();
-+    if raw_ack {
-+        assert!(cleanup, "native fixture shutdown was not proven");
-+    }
-+}
-+
-+#[tokio::test]
-+async fn trace_raw_ack_then_restore_past_transport_grace_preserves_owner() {
-+    trace_retirement_case(true).await;
-+}
-+
-+#[tokio::test]
-+async fn trace_unacknowledged_raw_capture_cannot_regain_owner() {
-+    trace_retirement_case(false).await;
-+}
 diff --git a/cli/src/native/client_enrollment.rs b/cli/src/native/client_enrollment.rs
-index 10d2ceef922089927a9e04bb91bd179cc085eabd..6d5f3fec5fb397d026168447e76e308a26aabb69 100644
 --- a/cli/src/native/client_enrollment.rs
 +++ b/cli/src/native/client_enrollment.rs
-@@ -6000,6 +6000,7 @@ mod tests {
-     type Notices = tokio::sync::mpsc::Receiver<ServerMessage>;
-     include!("client_restart_readiness_tests.rs");
-     include!("client_viewport_replacement_tests.rs");
-+    include!("client_eval_network_watermark_tests.rs");
-     fn coordinator(
-         client: Arc<CdpClient>,
-         context: &str,
-@@ -6261,7 +6262,7 @@ mod tests {
-                             "Target.getTargets" if mode=="observer-detached-live"=>json!({"targetInfos":[{"targetId":"other-host","type":"page","browserContextId":"owned-context"}]}),
-                             "Target.getTargets" if mode=="observer-controlled-acks" && request["params"]==json!({})=>json!({"targetInfos":[{"targetId":"other-host","type":"page","browserContextId":"owned-context"}]}),
-                             "Target.getTargets" if mode=="borrowed-capture"=>json!({"targetInfos":[{"targetId":"initial-target","type":"page","browserContextId":"owned-context"},{"targetId":"unadopted-host","type":"page","browserContextId":"owned-context"}]}),
--                            "Target.getTargets" if mode=="borrowed-initial"=>json!({"targetInfos":[{"targetId":"initial-target","type":"page","browserContextId":"owned-context"}]}),
-+                            "Target.getTargets" if mode=="borrowed-initial" || mode=="eval-network-watermark"=>json!({"targetInfos":[{"targetId":"initial-target","type":"page","browserContextId":"owned-context"}]}),
-                             "Target.getTargets" if mode.starts_with("attestation-complete")=>complete_capture_inventory(mode, &request, inventory_reads),
-                             "Target.getTargets" if mode=="attestation-missing-target" && inventory_reads>1=>json!({"targetInfos":[]}),
-                             "Target.getTargets" if mode=="attestation-missing-context" && inventory_reads>1=>json!({"targetInfos":[{"targetId":"target","type":"page"}]}),
-@@ -6275,7 +6276,7 @@ mod tests {
-                         };
-                         if method=="Target.getTargets" {if let Some(infos)=result.get_mut("targetInfos").and_then(Value::as_array_mut) {infos.retain(|info|!closed_targets.contains(info["targetId"].as_str().unwrap()) && !(mode=="late-popup" && info["targetId"]=="queued-popup" && !closed_targets.contains("initial-target")));}}
-                         let mut response = json!({"id":request["id"],"result":result});
--                        if (mode.starts_with("sw-startup-") || mode=="observer-controlled-acks") && request.get("sessionId").is_some() {
-+                        if (mode.starts_with("sw-startup-") || mode=="observer-controlled-acks" || mode=="eval-network-watermark") && request.get("sessionId").is_some() {
-                             response["sessionId"] = request["sessionId"].clone();
-                         }
-                         if socket.send(Message::Text(response.to_string())).await.is_err(){break;}
-diff --git a/cli/src/native/client_eval_network_watermark_tests.rs b/cli/src/native/client_eval_network_watermark_tests.rs
-new file mode 100644
-index 0000000000000000000000000000000000000000..1000b58a623f848be2a623696fdf75c58b2d440d
---- /dev/null
-+++ b/cli/src/native/client_eval_network_watermark_tests.rs
-@@ -0,0 +1,119 @@
-+// Included only inside client_enrollment::tests. This characterizes one possible
-+// source of page.evaluate's ScopeUnavailable, not the observed E2E's root cause.
-+// No browser, fabricated watermark, manual event application, or retry policy.
-+
-+#[tokio::test]
-+async fn eval_capture_network_reader_ahead_of_apply_is_scope_unavailable() {
-+    // Reuse the existing real websocket reader and managed owner fixture. Its
-+    // ledger is bound before enrollment; do not install a healthy ledger later.
-+    let (mut owner, _notices, log, emit, server, _broker, connection) =
-+        fixture_with_client("eval-network-watermark", true).await;
-+    owner.gate.begin_transition().unwrap();
-+    let authority = owner.gate.initialization(owner.targets.clone()).unwrap();
-+    let mutable = Arc::get_mut(&mut owner).unwrap();
-+    mutable.initialization = Some(authority.access());
-+    mutable.ownership = ScopeOwnership::BorrowedTargets(vec!["initial-target".into()]);
-+    owner
-+        .enroll_existing("initial-target", "initial", "page", &owner.operation())
-+        .await
-+        .unwrap();
-+    owner.start(&owner.operation()).await.unwrap();
-+    owner.publish_initialized(&authority).unwrap();
-+
-+    let entry = owner.index.lock().unwrap().sessions["initial"].clone();
-+    let page = owner.lease(&entry).unwrap();
-+    let ledger = owner.client.debt_ledger().unwrap();
-+    let mut operation = owner.operation();
-+    operation.sequence = 2;
-+    let baseline = owner.capture_eval_authority(&page, &operation).unwrap();
-+    let watermark = owner.realm_watermark().unwrap();
-+
-+    // Neither event changes the active page's frame, loader, or JavaScript realm.
-+    // No response subscriber/body reader is needed to exercise this admission
-+    // gate, which runs before the attempted evaluation can dispatch its fetch.
-+    for event in [
-+        json!({"method":"Network.responseReceived","sessionId":"initial","params":{
-+            "requestId":"background-response","loaderId":"synthetic-loader",
-+            "timestamp":1.0,"type":"Fetch","hasExtraInfo":false,
-+            "response":{"url":"https://synthetic.test/background","status":200,
-+                "statusText":"OK","headers":{},"mimeType":"application/json",
-+                "connectionReused":true,"connectionId":1,"encodedDataLength":11,
-+                "securityState":"secure"}
-+        }}),
-+        json!({"method":"Network.loadingFinished","sessionId":"initial","params":{
-+            "requestId":"background-response","timestamp":2.0,"encodedDataLength":11
-+        }}),
-+    ] {
-+        let gate = CaptureTestGate::new();
-+        assert!(owner
-+            .capture_test_gates
-+            .lock()
-+            .unwrap()
-+            .insert(CaptureTestPoint::BeforeEventApply, gate.clone())
-+            .is_none());
-+        let before = watermark.received().unwrap();
-+        assert_eq!(owner.index.lock().unwrap().applied_watermark, before);
-+        let commands_before = log.lock().unwrap().len();
-+        emit.send(event.clone()).await.unwrap();
-+        tokio::time::timeout(Duration::from_secs(2), gate.wait_entered())
-+            .await
-+            .expect("network event did not reach the existing before-apply gate");
-+
-+        // The production reader advanced received; the existing semaphore gate
-+        // stopped only the supervisor, before it could advance applied.
-+        assert_eq!(watermark.received().unwrap(), before + 1);
-+        {
-+            let index = owner.index.lock().unwrap();
-+            assert_eq!(index.applied_watermark, before);
-+            assert!(index.failure.is_none());
-+            assert!(index.reconciled);
-+            assert!(index.pending_enrollment.is_empty());
-+        }
-+        assert!(!ledger.snapshot().integrity_lost);
-+        assert_eq!(ledger.snapshot().input_debt, 0);
-+        assert_eq!(ledger.snapshot().outstanding_commands, 0);
-+        assert_eq!(
-+            ledger
-+                .capture_eval_revision(&page.page_session_id, &page.target_id)
-+                .unwrap(),
-+            baseline.revision,
-+            "network bookkeeping must not masquerade as realm revocation"
+@@ -12923,6 +12923,162 @@
+         );
+     }
+ 
++    // Architecture diagnostic RED, not a changed failed-live contract: the
++    // original error and no-receipt decision stay fixed while real exact detach
++    // catches up within the original deadline. No new business work is admitted.
++    #[tokio::test]
++    async fn service_worker_failed_live_exact_detach_after_decision_keeps_owner_healthy() {
++        let (owner, _notices, log, emit, mut server, _broker, connection) =
++            fixture_with_client("sw-startup-observer-fails", true).await;
++        let ledger = owner.client.debt_ledger().unwrap();
++        let (decided, release) = owner.client.hold_worker_startup_no_receipt();
++        let ready_gate = CaptureTestGate::new();
++        owner.capture_test_gates.lock().unwrap().insert(
++            CaptureTestPoint::BeforeWorkerReadyCommit,
++            ready_gate.clone(),
 +        );
-+        let refused = owner.capture_eval_authority(&page, &operation);
-+        assert_eq!(
-+            refused.err(),
-+            Some(ProtocolError::ScopeUnavailable),
-+            "unapplied {} must preserve the original refusal category",
-+            event["method"]
++        owner.ensure_supervisor().await.unwrap();
++        let attached = attach(
++            "owned-context",
++            "worker-target",
++            "worker-session",
++            "service_worker",
++            None,
 +        );
-+        assert_eq!(log.lock().unwrap().len(), commands_before);
-+
-+        // This is a test-controlled scheduling boundary, not production retry:
-+        // the first refusal remains fixed. Let the real supervisor apply once.
-+        gate.release();
-+        owner
-+            .drain_capture_watermark(&watermark, &operation)
++        emit.send(json!({"method":attached.method,"params":attached.params}))
 +            .await
 +            .unwrap();
-+        assert_eq!(owner.index.lock().unwrap().applied_watermark, before + 1);
-+        let after = owner.capture_eval_authority(&page, &operation).unwrap();
-+        assert_eq!(after.revision, baseline.revision);
-+        assert_eq!(after.target, baseline.target);
-+        assert_eq!(after.session, baseline.session);
-+        assert_eq!(after.frame, baseline.frame);
-+        assert_eq!(after.loader, baseline.loader);
++        let (joined_error, deadline) = tokio::time::timeout(Duration::from_secs(2), decided)
++            .await
++            .unwrap()
++            .unwrap();
++        // The existing peer emits one real typed Runtime ErrorAck and two
++        // successful replies. All three are settled before the fixed decision.
++        assert!(joined_error.contains("Runtime.enable: CDP error (Runtime.enable)"));
++        assert!(joined_error.contains("synthetic observer failure"));
++        assert_eq!(ledger.snapshot().outstanding_commands, 0);
 +        assert!(!ledger.snapshot().integrity_lost);
-+        assert_eq!(log.lock().unwrap().len(), commands_before);
++        assert!(!ledger
++            .worker_startup_session_unbound("worker-session")
++            .unwrap());
++        let original = owner.targets.owned_target("worker-target").unwrap();
++        assert!(!original.configured && !original.resumed);
++        assert!(owner.index.lock().unwrap().failure.is_none());
++        owner
++            .network
++            .check_worker_startup(&owner.operation())
++            .unwrap();
++        let watermark = owner.realm_watermark().unwrap();
++        let before = watermark.received().unwrap();
++        emit.send(json!({"method":"Target.detachedFromTarget","params":{
++            "sessionId":"worker-session","targetId":"worker-target"
++        }}))
++        .await
++        .unwrap();
++        tokio::time::timeout_at(deadline.into(), async {
++            loop {
++                let changed = owner.changed.notified();
++                tokio::pin!(changed);
++                changed.as_mut().enable();
++                let applied = {
++                    let index = owner.index.lock().unwrap();
++                    let received = watermark.received().unwrap();
++                    received > before
++                        && index.applied_watermark >= received
++                        && !index.sessions.contains_key("worker-session")
++                };
++                if applied {
++                    break;
++                }
++                changed.await;
++            }
++        })
++        .await
++        .expect("exact detach must really apply within the original deadline");
++        assert!(Instant::now() < deadline);
++        assert!(ledger
++            .worker_startup_session_unbound("worker-session")
++            .unwrap());
++        assert!(owner.targets.owned_target("worker-target").is_err());
++        assert!(owner
++            .index
++            .lock()
++            .unwrap()
++            .pending_enrollment
++            .contains("worker-session"));
++        // Release the already-fixed None unchanged. This is not a retry, a
++        // fabricated detach, a receipt grant, or a delayed business command.
++        release.send(()).unwrap();
++        tokio::time::timeout_at(deadline.into(), async {
++            loop {
++                let changed = owner.changed.notified();
++                tokio::pin!(changed);
++                changed.as_mut().enable();
++                if !owner
++                    .index
++                    .lock()
++                    .unwrap()
++                    .pending_enrollment
++                    .contains("worker-session")
++                {
++                    break;
++                }
++                changed.await;
++            }
++        })
++        .await
++        .unwrap();
++        let failure = owner.index.lock().unwrap().failure.clone();
++        let health = owner.targets.check_settlement_integrity();
++        let network = owner.network.check_worker_startup(&owner.operation());
++        let debt = ledger.snapshot();
++        let ready_gate_unused = ready_gate.entered.try_acquire().is_err();
++        let methods: Vec<String> = log
++            .lock()
++            .unwrap()
++            .iter()
++            .filter(|request| request["sessionId"] == "worker-session")
++            .map(|request| request["method"].as_str().unwrap().to_owned())
++            .collect();
++        // Save primary state and finish the owned synthetic peer before the
++        // intentional RED assertion, so RED cannot masquerade as leaked cleanup.
++        let cleanup = owner.close().await;
++        connection.close().await;
++        let peer = tokio::time::timeout(Duration::from_secs(2), &mut server).await;
++        if peer.is_err() {
++            server.abort();
++            let _ = server.await;
++        }
++        eprintln!("failed-live exact-detach after decision: joined_error={joined_error}; failure={failure:?}; health={health:?}; network={network:?}; debt={debt:?}; cleanup={cleanup:?}; peer={peer:?}");
++        assert!(ready_gate_unused);
++        assert_eq!(debt.outstanding_commands, 0);
++        assert_eq!(
++            methods,
++            [
++                "Fetch.enable",
++                "Target.setAutoAttach",
++                "Network.enable",
++                "Runtime.enable",
++                "Runtime.runIfWaitingForDebugger"
++            ]
++        );
++        assert!(
++            matches!(peer, Ok(Ok(()))),
++            "owned peer did not finish: {peer:?}"
++        );
++        // Current-behavior characterization, separate from the desired RED.
++        // A future production fix must move/remove this old-behavior assertion
++        // and instead prove the retained error in its failed-retired outcome.
++        assert_eq!(failure, Some(ProtocolError::BrowserFailure));
++        // A future design must retain that error/obligation until exact proof,
++        // never turn a still-live ErrorAck into Ready or wait past its budget.
++        assert_eq!(failure, None, "desired architectural RED: exact detach applied after the fixed no-receipt decision, but the whole owner was poisoned");
++        assert_eq!(health, Ok(()));
++        assert_eq!(network, Ok(()));
++        assert!(!debt.integrity_lost);
++        assert_eq!(cleanup, Ok(()));
 +    }
 +
-+    drop(page);
-+    tokio::time::timeout(CLEANUP_TIMEOUT * 3, owner.close())
-+        .await
-+        .expect("network watermark fixture supervisor did not join")
-+        .unwrap();
-+    connection.close().await;
-+    tokio::time::timeout(Duration::from_secs(2), server)
-+        .await
-+        .expect("network watermark fixture peer did not stop")
-+        .unwrap();
-+}
-diff --git a/cli/tests/fixtures/native-observation-query-matcher.cjs b/cli/tests/fixtures/native-observation-query-matcher.cjs
-index 6677376c43f7d467598519f687fa6cea5ab5aaf0..e108326fcbed230cc0c9059d744c73782e7d7e77 100644
---- a/cli/tests/fixtures/native-observation-query-matcher.cjs
-+++ b/cli/tests/fixtures/native-observation-query-matcher.cjs
-@@ -200,6 +200,20 @@ console.log('PASS: lazy/cached text acquisition, bounded per-root/aggregate leng
- 
- // Semantic text selection reads the same private fact, not rendered DTO text.
- const textQuery = (pattern, visible = false, scope) => ({ kind: 'query', query: { kind: 'text', value: pattern, ...(visible ? { visible: true } : {}) }, ...(scope ? { scope } : {}) });
-+// Legacy action classification must not mistake author-controlled text for
-+// dispatch evidence. Exercise real MATCH_QUERY with that exact text before the
-+// native action fixture revalidates the same expression as ambiguous.
-+const actionLogTwins = [0, 1].map(i => new Element('button', `action-log-${i}`).append(text('performing click action\nclick action done')));
-+const actionLogMetadata = actionLogTwins.map(() => semantic({ role: 'button', name: 'click action done', text: 'performing click action\nclick action done' }));
-+const actionLogQuery = textQuery(str('performing click action'));
-+assert.deepEqual(matched(actionLogQuery, actionLogTwins.slice(0, 1), actionLogMetadata.slice(0, 1)), [0]);
-+const actionLogResult = run(actionLogQuery, actionLogTwins, actionLogMetadata);
-+assert.deepEqual(actionLogResult, { indices: [0, 1], redacted: [] });
-+assert.deepEqual(matched(textQuery(str('click action done')), actionLogTwins, actionLogMetadata), [0, 1]);
-+assert.deepEqual(matched(textQuery(str('unrelated text')), actionLogTwins, actionLogMetadata), []);
-+assert.deepEqual(matched(index(actionLogQuery, 'first'), actionLogTwins, actionLogMetadata), [0]);
-+assert.equal(JSON.stringify(actionLogResult).includes('action'), false);
-+console.log('PASS: action-log words remain ordinary private query data, including ambiguity and exact indexing');
- const hiddenTwin = new Element('p', 'hidden-twin').append(text('Decorative twin'));
- const visibleTwin = new Element('p', 'visible-twin').append(text('Decorative twin'));
- const twinNodes = [hiddenTwin, visibleTwin];
+     #[tokio::test]
+     async fn service_worker_detach_rejects_conflicting_target_identity() {
+         let (owner, _notices, _log, _emit, server) = fixture("normal").await;
