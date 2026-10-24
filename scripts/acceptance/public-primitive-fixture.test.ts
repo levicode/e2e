@@ -29,7 +29,8 @@ function renderer() {
   const read = runInContext(`(${pointerEvents.toString()})`, context) as typeof pointerEvents;
   const wait = runInContext(`(${waitForPointerWheel.toString()})`, context) as typeof waitForPointerWheel;
   const notify = (type: string, event: Record<string, unknown>): void => {
-    for (const listener of [...(listeners.get(type) ?? [])]) listener(event);
+    const currentListeners = [...(listeners.get(type) ?? [])];
+    for (const listener of currentListeners) listener(event);
   };
   notify('mousedown', { clientX: 30, clientY: 130, buttons: 1 });
   notify('mouseup', { clientX: 30, clientY: 130, buttons: 0 });
@@ -72,7 +73,8 @@ test('already delivered wheel is read without another listener, timer, or input 
 test('missing delivery times out with unchanged evidence and still fails the exact event contract', async () => {
   const page = renderer();
   const pending = page.wait(1_000);
-  for (const timer of [...page.timers.values()]) timer.callback();
+  const pendingTimers = [...page.timers.values()];
+  for (const timer of pendingTimers) timer.callback();
   const events = Array.from(await pending);
   assert.deepEqual(events, EXACT_EVENTS.slice(0, 2));
   assert.throws(() => assert.deepEqual(events, EXACT_EVENTS));
@@ -87,7 +89,8 @@ test('untrusted wheel callbacks neither populate the ledger nor satisfy the deli
   assert.deepEqual(page.read(), EXACT_EVENTS.slice(0, 2));
   assert.equal(page.timers.size, 1);
   assert.equal(page.listeners.get('wheel')?.size, 2);
-  for (const timer of [...page.timers.values()]) timer.callback();
+  const pendingTimers = [...page.timers.values()];
+  for (const timer of pendingTimers) timer.callback();
   assert.throws(() => assert.deepEqual(Array.from(page.read()), EXACT_EVENTS));
   assert.deepEqual(Array.from(await pending), EXACT_EVENTS.slice(0, 2));
 });

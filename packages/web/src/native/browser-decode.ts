@@ -85,7 +85,7 @@ function correlationRef(value: unknown): NodeRef {
   const id = string(item['id']);
   const revision = string(item['revision']);
   if (!/^@e[1-9][0-9]*$/.test(id) || !/^[1-9][0-9]*$/.test(revision)) invalid();
-  const bounded = (value: string): boolean => value.length < MAX_U64.length || (value.length === MAX_U64.length && value <= MAX_U64);
+  const bounded = (digits: string): boolean => digits.length < MAX_U64.length || (digits.length === MAX_U64.length && digits <= MAX_U64);
   if (!bounded(id.slice(2)) || !bounded(revision)) invalid();
   return { id, revision };
 }
@@ -105,8 +105,8 @@ export function snapshotCorrelationArgs(value: unknown): CorrelationArgs {
     if (!Array.isArray(located) || !Array.isArray(observed) || located.length + observed.length > MAX_CORRELATION_CANDIDATES) return invalid();
     const refs = (values: unknown[]): NodeRef[] => {
       const seen = new Set<string>();
-      return Array.from(values, value => {
-        const ref = correlationRef(value);
+      return Array.from(values, candidate => {
+        const ref = correlationRef(candidate);
         if (seen.has(ref.id)) invalid();
         seen.add(ref.id);
         return ref;
@@ -126,9 +126,9 @@ function correlationResult(value: unknown, request: CorrelationArgs, expectedSco
   const matches = item['matches'];
   if (identityScope !== expectedScope || !Array.isArray(matches) || matches.length !== request.located.length) return invalid();
   const observed = new Map(request.observed.map(ref => [ref.id, ref.revision]));
-  return { identityScope, matches: Array.from(matches, value => {
-    if (value === null) return null;
-    const ref = correlationRef(value);
+  return { identityScope, matches: Array.from(matches, match => {
+    if (match === null) return null;
+    const ref = correlationRef(match);
     if (observed.get(ref.id) !== ref.revision) return invalid();
     return ref;
   }) };

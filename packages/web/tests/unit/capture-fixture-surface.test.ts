@@ -17,9 +17,9 @@ describe('synchronous native fixture facade capture', () => {
   it('forwards exact this/arguments, captures the returned facade and restores every descriptor field', () => {
     const receiver = new NativeSurface({});
     const args = [{ witness: true }, 'extra-test-argument'];
-    let seenThis: unknown;
+    const seenThis: { value?: unknown } = {};
     let seenArgs: unknown[] = [];
-    const before = method(function (this: unknown, ...actual) { seenThis = this; seenArgs = actual; return facade; }, { enumerable: true, writable: false });
+    const before = method(function (this: unknown, ...actual) { seenThis.value = this; seenArgs = actual; return facade; }, { enumerable: true, writable: false });
     const graph = { browser: 'synthetic-graph-witness' };
     const captured = captureFixtureSurface(() => {
       expect(Reflect.apply(receiver.fixtureSurface, receiver, args)).toBe(facade);
@@ -27,7 +27,7 @@ describe('synchronous native fixture facade capture', () => {
     });
     expect(captured).toEqual({ value: graph, surface: facade });
     expect(captured.surface).toBe(facade);
-    expect(seenThis).toBe(receiver);
+    expect(seenThis.value).toBe(receiver);
     expect(seenArgs).toEqual(args);
     expect(seenArgs[0]).toBe(args[0]);
     expect(Object.getOwnPropertyDescriptor(NativeSurface.prototype, 'fixtureSurface')).toEqual(before);

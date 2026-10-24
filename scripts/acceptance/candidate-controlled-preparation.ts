@@ -76,7 +76,7 @@ export function controlledPanic(stdout: string, stderr: string, source: string, 
     return line <= readFileSync(path, 'utf8').split('\n').length ? { file, line, column } : null;
   } catch { return null; }
 }
-export function controlledClassification(id: RowId, record: Value | null, observation: ReturnType<typeof assessExactTest>, process: ProcessFacts, panic: { line: number } | null): 'passed' | 'failed' | 'unknown' {
+export function controlledClassification(id: RowId, record: Value | null, observation: ReturnType<typeof assessExactTest>, process: ProcessFacts, _panic: { line: number } | null): 'passed' | 'failed' | 'unknown' {
   if (!finished(process) || observation.testStatus === 'unknown' || record === null || !validControlledRecord(record, id) || record.complete !== true || record.status === 'incomplete'
     || record.entry_ack !== true || record.entry_above_upper !== true || record.release_valid !== true || record.counts_bounded !== true
     || TIMES.some(key => record[key] === null)

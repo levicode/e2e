@@ -254,6 +254,93 @@ describe('native direct-point ordered forwarding', () => {
   });
 });
 
+// These companions keep the original pointer inputs and settlement boundary on
+// the real adapter. Native geometry, pacing, release, and render witnesses remain
+// separate requirements; all six original dispatchPointerAction tests stay.
+describe('native pointer path forwarding companions', () => {
+  it.each([
+    { label: 'fractional tap and swipe coordinates', calls: [
+      { point: { x: 332, y: 158.875 }, action: { kind: 'tap' } },
+      { point: { x: 10.4, y: 20.5 }, action: { kind: 'swipeTo', target: { x: 110.6, y: 20.5 } } },
+    ] },
+    { label: 'the no-duration swipe path', calls: [
+      { point: { x: 10, y: 20 }, action: { kind: 'swipeTo', target: { x: 110, y: 20 } } },
+    ] },
+    { label: 'the 48ms swipe path', calls: [
+      { point: { x: 10, y: 20 }, action: { kind: 'swipeTo', target: { x: 70, y: 20 }, durationMs: 48 } },
+    ] },
+    { label: 'the viewport-sized downward wheel intent', calls: [
+      { point: { x: 10, y: 20 }, action: { kind: 'swipe', direction: 'down' } },
+    ] },
+  ] as const)('forwards $label unchanged and waits for the producer result', async ({ calls }) => {
+    const surface = new NativeSurface({}); await start(surface);
+    const peer = holdRequests('browser.pointer'); const scope = surface.identityScope;
+    const original = structuredClone(calls);
+    try {
+      for (const [index, input] of calls.entries()) {
+        let finished = false;
+        const pending = surface.performAt(input.point, input.action, operation());
+        void pending.then(() => { finished = true; }, () => { finished = true; });
+        const held = await peer.next('browser.pointer');
+        try {
+          await new Promise(resolve => setImmediate(resolve));
+          expect(finished).toBe(false);
+          expect(held.args).toEqual({ identityScope: scope, ...original[index] });
+          const requests = frames.filter(frame => frame['command'] === 'browser.pointer');
+          expect(requests).toHaveLength(index + 1);
+          const timeoutMs = requests.at(-1)?.['timeoutMs'];
+          expect(Number.isInteger(timeoutMs)).toBe(true);
+          expect(timeoutMs).toBeGreaterThan(0); expect(timeoutMs).toBeLessThanOrEqual(1000);
+        } finally { held.succeed(null); await pending; }
+        await expect(pending).resolves.toBeUndefined();
+        expect(finished).toBe(true);
+      }
+      expect(calls).toEqual(original); expect(surface.identityScope).toBe(scope);
+      expect(frames.filter(frame => frame['command'] === 'browser.pointer').map(frame => frame['args']))
+        .toEqual(original.map(input => ({ identityScope: scope, ...input })));
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it.each([
+    ['not-dispatched', 'CANCELLED'],
+    ['unknown', 'ACTION_MAY_HAVE_COMMITTED'],
+  ] as const)('forwards timed-swipe cancellation once and preserves %s settlement', async (effects, code) => {
+    const surface = new NativeSurface({}); await start(surface);
+    const peer = holdRequests('browser.pointer'); const controller = new AbortController();
+    const point = { x: 10, y: 20 };
+    const action = { kind: 'swipeTo', target: { x: 70, y: 20 }, durationMs: 48 } as const;
+    let finished = false;
+    const pending = surface.performAt(point, action, { ...operation(), signal: controller.signal }).then(
+      value => { finished = true; return value; },
+      (cause: unknown) => { finished = true; return cause; },
+    );
+    try {
+      const held = await peer.next('browser.pointer');
+      const request = frames.find(frame => frame['command'] === 'browser.pointer')!;
+      let acknowledged = false;
+      try {
+        expect(held.args).toEqual({ identityScope: surface.identityScope, point, action });
+        expect(Number.isInteger(request['timeoutMs'])).toBe(true);
+        expect(request['timeoutMs']).toBeGreaterThan(0); expect(request['timeoutMs']).toBeLessThanOrEqual(1000);
+        controller.abort();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(frames.filter(frame => frame['type'] === 'cancel')).toEqual([
+          expect.objectContaining({ generation: request['generation'], operationSeq: request['operationSeq'] }),
+        ]);
+        expect(acknowledgeCancel).toBeTypeOf('function'); acknowledgeCancel!(); acknowledged = true;
+        await new Promise(resolve => setImmediate(resolve));
+        expect(finished).toBe(false);
+      } finally {
+        if (!acknowledged) acknowledgeCancel?.();
+        held.fail('cancelled', effects); await pending;
+      }
+      await expect(pending).resolves.toMatchObject({ code, retryable: false });
+      expect(frames.filter(frame => frame['command'] === 'browser.pointer')).toHaveLength(1);
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+    } finally { await surface.dispose(cleanup()); }
+  });
+});
+
 describe('retained exact-owner adapter publication and services', () => {
   it.each(['provider', 'native'] as const)('preserves configured routes, auth, dialogs, downloads and %s recording across Unknown', async mode => {
     continueExactOwner = true;
@@ -1699,6 +1786,35 @@ describe('native surface ownership and fixed policy binding', () => {
       if (ordinal === 2) expect(await readFile(path.join(directory, 'video/video.webm'))).toEqual(recordingBytes);
       expect(await engine.artifacts!.stopVideo!(operation())).toEqual([]);
       expect(frames.filter(frame => frame['command'] === 'blob.release')).toHaveLength(ordinal === 1 ? 0 : 1);
+    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
+  });
+
+  // CI26 run 39940386738 executed recording_failed_first_start_disarms_and_joins_owned_resources.
+  // Its seeded-ledger fixture proves disarm/cleanup, not a live first-start failure;
+  // this peer proves only public error/empty-stop decoding and no adapter replay.
+  it('reports a clean failed first recording start without replay or output collection', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'native-video-start-failure-'));
+    const engine = web({});
+    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    await engine.startAttempt!({ ...context('video-start-failure'), artifactsDir: directory });
+    const scope = currentScope;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'recording.start') return false;
+      reply({ ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'usable' });
+      return true;
+    };
+    try {
+      const failure = await engine.artifacts!.startVideo!(operation()).catch((cause: unknown) => cause);
+      expect(failure).toBeInstanceOf(EngineError);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false, message: 'The native browser operation failed (browser-failure)' });
+      expect(frames.filter(frame => frame['command'] === 'recording.start').map(frame => frame['args'])).toEqual([{ identityScope: scope }]);
+      expect(frames.filter(frame => frame['command'] === 'recording.stop')).toEqual([]);
+      await expect(engine.artifacts!.stopVideo!(operation())).resolves.toEqual([]);
+      expect(frames.filter(frame => frame['command'] === 'recording.stop').map(frame => frame['args'])).toEqual([{ identityScope: scope }]);
+      expect(frames.filter(frame => frame['command'] === 'recording.start')).toHaveLength(1);
+      expect(frames.filter(frame => frame['command'] === 'blob.read' || frame['command'] === 'blob.release')).toEqual([]);
+      expect(currentScope).toBe(scope);
+      expect(existsSync(path.join(directory, 'video'))).toBe(false);
     } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
   });
 

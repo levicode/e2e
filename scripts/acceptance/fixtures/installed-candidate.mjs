@@ -11,9 +11,22 @@ const server = createServer((_request, response) => {
   response.writeHead(200, { 'content-type': 'text/html' });
   response.end('<!doctype html><title>Installed native candidate</title><button onclick="this.textContent=\'Saved\'">Save</button><input type="password" value="synthetic-private-value">');
 });
-await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+await new Promise((ready, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', ready); });
 const url = `http://127.0.0.1:${server.address().port}`;
 let host; let session; let closed = false; let checks = 0;
+
+/** Retire resources with the existing cleanup-failure precedence. */
+async function cleanup() {
+  const failures = [];
+  if (!closed) {
+    try { if (session) failures.push(...await session.close()); } catch (error) { failures.push(error); }
+    try { if (host) failures.push(...await host.close()); } catch (error) { failures.push(error); }
+  }
+  server.closeAllConnections();
+  await new Promise(done => server.close(done));
+  if (failures.length) throw new AggregateError(failures, 'Installed consumer cleanup failed');
+}
+
 try {
   host = await openHost({ cwd: process.cwd(), config: { targets: [{ name: 'installed', engine: web(), app: { url } }] } });
   session = await host.openSession({ name: 'installed candidate public browser contract', timeout: 30_000 });
@@ -36,12 +49,5 @@ try {
   assert.deepEqual(await host.close(), []); closed = true; checks++;
   writeFileSync('installed-public-result.json', JSON.stringify({ status: 'passed', checks, runtimeOverrideAbsent: true, publicBrowserActionPassed: true, callbackPassed: true, cleanupConfirmed: true, report: session.report() }, null, 2));
 } finally {
-  const failures = [];
-  if (!closed) {
-    try { if (session) failures.push(...await session.close()); } catch (error) { failures.push(error); }
-    try { if (host) failures.push(...await host.close()); } catch (error) { failures.push(error); }
-  }
-  server.closeAllConnections();
-  await new Promise(resolve => server.close(resolve));
-  if (failures.length) throw new AggregateError(failures, 'Installed consumer cleanup failed');
+  await cleanup();
 }

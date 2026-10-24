@@ -53,9 +53,9 @@ function main(args: string[]): void {
   const harnesses = compilerHarnesses(readFileSync(compilation, 'utf8'), source, resolve(targetArg));
   const productionBinarySha256 = hashFile(join(resolve(targetArg), 'ci', 'agent-browser'));
   const failures: string[] = []; const results: unknown[] = [];
-  const run = (harness: Harness, args: string[], timeout: number) => {
+  const run = (harness: Harness, harnessArgs: string[], timeout: number) => {
     if (hashFile(harness.executable) !== harness.sha256) throw new Error('Compiled harness changed during acceptance');
-    return spawnSync(harness.executable, args, { cwd: join(source, 'cli'), env: process.env, encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024 });
+    return spawnSync(harness.executable, harnessArgs, { cwd: join(source, 'cli'), env: process.env, encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024 });
   };
   let discovered: string[] = [];
   if (mode === 'baseline') {
@@ -82,8 +82,8 @@ function main(args: string[]): void {
     for (const name of CANDIDATE_NATIVE_CONTRACTS) {
       const file = nativeContractLogName(name);
       try {
-        const listing = run(harness, [name, '--exact', '--ignored', '--list'], 30_000);
-        if (listing.status !== 0 || listing.stdout.split('\n').filter(line => line.endsWith(': test')).join('\n') !== `${name}: test`) throw new Error('Expected exactly one discovered contract');
+        const exactListing = run(harness, [name, '--exact', '--ignored', '--list'], 30_000);
+        if (exactListing.status !== 0 || exactListing.stdout.split('\n').filter(line => line.endsWith(': test')).join('\n') !== `${name}: test`) throw new Error('Expected exactly one discovered contract');
         const result = run(harness, [name, '--exact', '--ignored', '--test-threads=1'], 180_000);
         const log = result.stdout + result.stderr;
         writeFileSync(join(output, file), log); process.stdout.write(log);

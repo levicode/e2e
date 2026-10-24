@@ -16,7 +16,7 @@ function fixture(initialRegistryVersion = 0) {
   const responders = new Map<keyof BrowserCommandMap, (args: unknown) => unknown | Promise<unknown>>();
   const surface: NativeWebSurface = {
     latch: new ErrorLatch(), get identityScope() { return scope; },
-    latchCallbackFailure: (scope, error) => { if (scope === surface.identityScope) surface.latch.latch(error); },
+    latchCallbackFailure: (callbackScope, error) => { if (callbackScope === surface.identityScope) surface.latch.latch(error); },
     routeRegistryVersion: () => registryVersion,
     allocateRouteRegistryVersion: () => ++registryVersion,
     invalidate: () => invalidated ??= new EngineError('ENGINE_FAILURE', 'Native fixture contract invalidated', { retryable: false }),

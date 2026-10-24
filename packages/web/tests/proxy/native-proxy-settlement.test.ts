@@ -149,6 +149,26 @@ it.each(scenarios)('retains authoritative settlement through the production byte
   });
   peer.on('error', fail);
 
+  /** Retire resources with the existing cleanup-failure precedence. */
+  async function cleanup(): Promise<void> {
+    closing = true; clearTimeout(scheduled); restoreWrite?.();
+    let cleanupFailed = false;
+    if (child !== undefined && child.exitCode === null && child.signalCode === null) {
+      child.stdin.destroy(); child.kill('SIGTERM');
+      // Match the existing native-process cleanup policy: SIGKILL after 2s,
+      // definitive exit proof within 3s. This is not an operation extension.
+      const kill = setTimeout(() => { if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 2_000);
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([exited.promise, new Promise<void>(resolve => { deadline = setTimeout(() => { cleanupFailed = true; resolve(); }, 3_000); })]);
+      } finally { clearTimeout(kill); clearTimeout(deadline); }
+    }
+    socket?.destroy();
+    await new Promise<void>(resolve => peer.close(() => resolve()));
+    rmSync(directory, { recursive: true, force: true });
+    if (cleanupFailed) throw new Error('Proxy fixture child exit was not proven');
+  }
+
   try {
     await wait(new Promise<void>(resolve => peer.listen(join(directory, 'fixture.sock'), resolve)));
     child = spawn(executable, ['--proxy-session', 'fixture'], { shell: false, stdio: ['pipe', 'pipe', 'pipe'], env: { AGENT_BROWSER_SOCKET_DIR: directory } });
@@ -282,21 +302,6 @@ it.each(scenarios)('retains authoritative settlement through the production byte
     console.error(JSON.stringify({ scenario, observed, targetCount, statusCount, cancelCount, ackCount, tsAckCount, resultCount, freshCount, disposalCount, trace: diagnostics.snapshot() }));
     throw error;
   } finally {
-    closing = true; clearTimeout(scheduled); restoreWrite?.();
-    let cleanupFailed = false;
-    if (child !== undefined && child.exitCode === null && child.signalCode === null) {
-      child.stdin.destroy(); child.kill('SIGTERM');
-      // Match the existing native-process cleanup policy: SIGKILL after 2s,
-      // definitive exit proof within 3s. This is not an operation extension.
-      const kill = setTimeout(() => { if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 2_000);
-      let deadline: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([exited.promise, new Promise<void>(resolve => { deadline = setTimeout(() => { cleanupFailed = true; resolve(); }, 3_000); })]);
-      } finally { clearTimeout(kill); clearTimeout(deadline); }
-    }
-    socket?.destroy();
-    await new Promise<void>(resolve => peer.close(() => resolve()));
-    rmSync(directory, { recursive: true, force: true });
-    if (cleanupFailed) throw new Error('Proxy fixture child exit was not proven');
+    await cleanup();
   }
 });

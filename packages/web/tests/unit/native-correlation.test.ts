@@ -53,7 +53,9 @@ describe('test-only protected observation identity join', () => {
   });
 
   it('does not expand a bounded request with sparse candidate arrays', () => {
-    expect(() => snapshotCorrelationArgs({ located: new Array(1), observed: [] })).toThrow();
+    const located: unknown[] = [];
+    located.length = 1;
+    expect(() => snapshotCorrelationArgs({ located, observed: [] })).toThrow();
   });
 
   it('does not manufacture a protected semantic node from an absent matched ref', async () => {
