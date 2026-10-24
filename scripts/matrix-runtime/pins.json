@@ -1,0 +1,60 @@
+{
+  "playwrightVersion": "1.64.1",
+  "chromiumRevision": "1248",
+  "chromeVersion": "156.0.8078.4",
+  "nodeVersion": "v24.19.0",
+  "pnpmVersion": "12.3.4",
+  "chromeSha256": "377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025",
+  "enabled": true,
+  "e2eSha": "31fe36b41771ce2779bf01ccbb52dbb0c8ca1023",
+  "e2eTree": "8f59e1627b57fa6d894a853d30aae36d454246f8",
+  "nativeSha": "88a7b674d45b784f5578369b8d2bb9a07e430eae",
+  "nativeTree": "37e8593d44f514afcfa633c94a374b3213ab7dda",
+  "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "compileRecipeSha": "14f5e42e6f272edbb5fa81a43b027eacc20207ce",
+  "compileRecipeTree": "80a5c204eee08031ad002da42611c653b6ad581e",
+  "compileRunId": 40127812938,
+  "compileRunAttempt": 1,
+  "production": {
+    "artifactId": 12574131092,
+    "archiveSha256": "a352e83c9d5d21c2b72b74a29e1110fdbc3188ad135e3aa702b7ea797f13731b",
+    "binarySha256": "63e83b69bec322844aebc9572613714b846e57945acf11c8fd9827793fa30da5"
+  },
+  "fault": {
+    "artifactId": 12574056332,
+    "archiveSha256": "e85412e0a604d759d3977b9289863ffcbd8cdd3129f574107308f8683e545953",
+    "binarySha256": "7a0723a36b6492d2b2400f97344a7b001c94ba569318fdffd79d777efad46845"
+  },
+  "nativeInstallSourceSha256": "bcdbaf5db5dd16740af8f7e0c761ed8e842da14f13400ff429a9324a2914ffa6",
+  "nativeChromeSourceSha256": "9ee5b08e8a2359627794fab196310986fda1cfa7678d63149df1edebf96b83a6",
+  "rustToolchain": "1.99.1",
+  "nativeValidation": {
+    "mode": "historical-native-proof-reuse",
+    "proof": {
+      "run_id": 40125273477,
+      "run_attempt": 1,
+      "job_id": 120965243598,
+      "artifact_id": 12572773254,
+      "recipe_sha": "5968c0bcec64c9b0f57a5cdd9b8c77fbe129f771",
+      "recipe_tree": "f43be8fe437579c746438657d436cca7452f1e2d",
+      "archive_sha256": "c0334bde219e025b79ad2f482b02c35f695193e0a7f973b929d6b8afab34396d",
+      "archive_bytes": 291815,
+      "workflow_sha256": "fa25dea10df6090d1cf7b05572aa3c733dd0e98731f7b9b1f270e4d0dfc901fc",
+      "helper_sha256": "33a23d82c7ef2bf2404a1b92bd96d9cabe72677576256e90e3b0c3ed7a913713",
+      "check_contract_sha256": "48234415a67e0feeaa2469090c2bf2f901c53318ecdbce108ac2a70dba41d065"
+    },
+    "current_native_execution": false,
+    "receipt_file": "native-reuse.json",
+    "receipt_sha256": "c43b25610d1cc0cfdad9d793f3325e0b620bc41b763d5da5c0eb901a89453d04"
+  },
+  "artifactE2eSha": "c98be61c2c01a642c39c8951b466405090e39b04",
+  "artifactE2eTree": "daddbee93c4ea0b0e1483f892317d0603a2e5843",
+  "cliChromeVersion": "156.0.8078.47",
+  "testOnlyChange": {
+    "file": "packages/web/tests/integration/lifecycle.test.ts",
+    "diffSha256": "652246a16d772371c9019efc16eb2b4abc828a634bd6e8038227b8d70c9c4b88",
+    "beforeSha256": "49bae068338db49b8835626dde58a34a6dbf86748c6e6844c88f4d66f97bca1b",
+    "afterSha256": "d30b25cf8196ae99375fb50a6e62f8941225641bfd2db38dc5bade45de858b10"
+  }
+}
