@@ -344,19 +344,6 @@ describe('dispatchPointerAction', () => {
     return { page, calls };
   }
 
-  it('rounds a fractional point to the nearest CSS pixel: the browser would truncate it a pixel early', async () => {
-    const { page, calls } = stubPage();
-    await dispatchPointerAction(page, { x: 332, y: 158.875 }, { kind: 'tap' });
-    await dispatchPointerAction(page, { x: 10.4, y: 20.5 }, { kind: 'swipeTo', target: { x: 110.6, y: 20.5 } });
-    expect(calls).toEqual(['click 332,159', 'move 10,21', 'down', 'move 61,21', 'move 111,21', 'up']);
-  });
-
-  it('swipes along a path as a pointer drag: down at the point, through the midpoint, up at the end', async () => {
-    const { page, calls } = stubPage();
-    await dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'swipeTo', target: { x: 110, y: 20 } });
-    expect(calls).toEqual(['move 10,20', 'down', 'move 60,20', 'move 110,20', 'up']);
-  });
-
   it('swipes along a path with duration as a multi-step drag paced over time', async () => {
     vi.useFakeTimers();
     try {
@@ -376,43 +363,4 @@ describe('dispatchPointerAction', () => {
     }
   });
 
-  it('stops dispatching moves when aborted and releases the mouse', async () => {
-    vi.useFakeTimers();
-    try {
-      const { page, calls } = stubPage();
-      const controller = new AbortController();
-      const promise = dispatchPointerAction(
-        page,
-        { x: 10, y: 20 },
-        { kind: 'swipeTo', target: { x: 70, y: 20 }, durationMs: 48 },
-        controller.signal,
-      );
-      await vi.advanceTimersByTimeAsync(16);
-      expect(calls).toEqual(['move 10,20', 'down', 'move 30,20']);
-      controller.abort();
-      await expect(promise).rejects.toThrow();
-      expect(calls).toEqual(['move 10,20', 'down', 'move 30,20', 'up']);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('swipes in a direction as a wheel gesture over the point, sized by the viewport', async () => {
-    const { page, calls } = stubPage();
-    await dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'swipe', direction: 'down' });
-    expect(calls).toEqual(['move 10,20', 'wheel 0,300', 'frame']);
-  });
-
-  it('resolves a swipe only once the frame after the wheel rendered', async () => {
-    const { page } = stubPage();
-    let render!: () => void;
-    (page as unknown as { evaluate: () => Promise<void> }).evaluate = () => new Promise((resolve) => (render = resolve));
-    let done = false;
-    const swipe = dispatchPointerAction(page, { x: 10, y: 20 }, { kind: 'swipe', direction: 'down' }).then(() => (done = true));
-    await vi.waitFor(() => expect(render).toBeDefined());
-    expect(done).toBe(false);
-    render();
-    await swipe;
-    expect(done).toBe(true);
-  });
 });

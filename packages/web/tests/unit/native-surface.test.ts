@@ -255,8 +255,9 @@ describe('native direct-point ordered forwarding', () => {
 });
 
 // These companions keep the original pointer inputs and settlement boundary on
-// the real adapter. Native geometry, pacing, release, and render witnesses remain
-// separate requirements; all six original dispatchPointerAction tests stay.
+// the real adapter. Native producer witnesses at 0c61010f (run 40113180638) cover
+// geometry, cancellation/release, and post-wheel render-ACK settlement. Those five
+// original cases are transferred; the exact 48ms fake-clock pacing case remains.
 describe('native pointer path forwarding companions', () => {
   it.each([
     { label: 'fractional tap and swipe coordinates', calls: [
