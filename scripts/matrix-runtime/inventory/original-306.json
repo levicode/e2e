@@ -1,0 +1,1865 @@
+{
+  "metadata": {
+    "planOnly": true,
+    "executed": false,
+    "publicE2eCommit": "0e19094382c3959d3c52c865c1066c3e59b911b7",
+    "e2eTree": "238ef7ffdabc655885385846531d4e3ee2dc2ad2",
+    "inspectedLocalCommit": "e5dc03f5d1b7f1d5684bb5fc57b939e4cdfeeade",
+    "nativeCommit": "2647b4c5e9439dcf620ce6726883bab65b0fc2ca",
+    "nativeTree": "f61baf5f27586108a7ac6c8bde7e9aa985428ad1",
+    "productionSha256": "fa5fbad01243472bb82db38a3a4790b072fe9e1114e7f0adc6dc2a494b3edd02",
+    "releaseEligible": false
+  },
+  "count": 306,
+  "inventoryProvenance": {
+    "original306": {
+      "path": "/workspace/shared/native-first-rust/full-candidate-39782174498/web-browser.vitest.json",
+      "sourceRevision": "9d3508ca22717557482f9f4509643db3b7868dd3",
+      "sha256": "b7d01fe50628132d794216a640ca36cac2d85fbb61ccf0d707ce549e7fddcd81"
+    },
+    "expanded310": {
+      "path": "/workspace/shared/native-first-rust/full-candidate-39940386738/web-browser.vitest.json",
+      "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "sha256": "76ba069513d736a52e7be29b9852742798510228a0579a1ddd0042de7c6c9bb8"
+    },
+    "reconciliation": "All 306 historical file/fullName pairs are present in expanded report. Git diff b3a23a07..18984864 changes only protected-app Promise markers and no test registration. Inventory is static/report-reconciled, not fresh collection/execution."
+  },
+  "cases": [
+    {
+      "file": "packages/web/tests/integration/app-log.test.ts",
+      "fullName": "app log reports console output, uncaught exceptions, and error responses, one line each",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/app-log.test.ts",
+      "fullName": "app log tells where the page went, apart from its own navigations, the screen each action left, and the browser",
+      "caseId": "P01",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-attach.test.ts",
+      "fullName": "web engine over CDP attaches to the remote, drives an attempt, and detaches on dispose without killing it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-attach.test.ts",
+      "fullName": "web engine over CDP reacquires a dropped remote at the next attempt by resolving the endpoint again",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-attach.test.ts",
+      "fullName": "web engine over CDP never caches a browser that connects after the init was cancelled",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "native CDP fault relay forwards traffic, drops only its connected peers, and accepts a fresh connection",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery fixes host oracle defaults before its first attachment (noDefaults: false)",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery fixes host oracle defaults before its first attachment (noDefaults: true)",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery leaves the host untouched until first open and allows a pre-open dialog handler",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery leaves the host untouched until first video and allows a pre-open dialog handler",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery activates the borrowed first page through the registered dialog handler before provider recording",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery dismisses an unhandled activated beforeunload on first open instead of silently accepting it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery dismisses an unhandled activated beforeunload on first video instead of silently accepting it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery keeps the exact page, document state, storage, viewport, routes, and dialog handlers",
+      "caseId": "P04",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery emulates the configured and requested media on the persistent page, after reconnect too",
+      "caseId": "P05",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery runs configured and test init scripts once per document, after reconnect too",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery fails an uncertain click without reconnecting or dispatching it twice",
+      "caseId": "P06",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery rejects a different browser and never falls back to the provisioning resolver",
+      "caseId": "P07",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery rejects a missing active target even when another tab has the same URL",
+      "caseId": "P08",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery bounds a hung reconnect resolver and propagates cancellation to it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery provisions a fresh browser for each attempt and refuses accidental reuse",
+      "caseId": "P09",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery shares recovery between concurrent operations while a cancelled waiter dispatches nothing",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery counts reconnect time against the operation budget",
+      "caseId": "P10",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery resumes video recording on the recovered page",
+      "caseId": "P11",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery recovers before arming a download waiter and runs its trigger once",
+      "caseId": "P12",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery allows direct test-code mouse input using current geometry while observation-derived taps stay stale",
+      "caseId": "P44",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery requires new evidence for focused engine keyboard input after recovery while direct test input remains available",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery rejects an observation that finishes during recovery and still requires new evidence",
+      "caseId": "P13",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery masks password fields in light and closed shadow DOM before and after reconnect",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery captures masked pixels from a borrowed background page without changing either tab focus or visibility",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cdp-recovery.test.ts",
+      "fullName": "CDP session recovery masks a new closed root after disconnected navigation without relying on a JavaScript tracking hook",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks a radio the app replaces with its selected view",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target leaves what replaced the control to the next read, even an unchecked copy",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks a radio that navigates on change",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks and unchecks a checkbox, and clicks nothing already in the wanted state",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target checks an ARIA checkbox",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target waits for a controlled checkbox that commits its state after a timer",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target waits for a switch whose aria-checked flips after a timer",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target fails a rejected click on a control a later re-render replaces",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target fails a click that left the control as it was",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target refuses to uncheck a radio without clicking it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the locator target refuses a control that cannot be checked",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks a radio the app replaces with its selected view",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target leaves what replaced the control to the next read, even an unchecked copy",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks a radio that navigates on change",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks and unchecks a checkbox, and clicks nothing already in the wanted state",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target checks an ARIA checkbox",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target waits for a controlled checkbox that commits its state after a timer",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target waits for a switch whose aria-checked flips after a timer",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target fails a rejected click on a control a later re-render replaces",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target fails a click that left the control as it was",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target refuses to uncheck a radio without clicking it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "through the element target refuses a control that cannot be checked",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/check-actions.test.ts",
+      "fullName": "a control gone before the click stays a retryable stale node: nothing was dispatched",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cli.test.ts",
+      "fullName": "e2e-web exits 0 when the browser is already installed",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/cli.test.ts",
+      "fullName": "e2e-web ends the download when the command gets SIGTERM, and exits 143",
+      "caseId": "P14",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots resolves every query kind to the node the observed tree names",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots reaches roots nested either way round: open inside closed, closed inside open",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots finds a node once, whether Playwright or the closed-root path reaches it, so counts stay strict",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots applies the visible flag and the hidden exclusion of a role query inside the root",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots scopes a child query to a root inside the closed root, and lets has cross the boundary",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots reads hasText as Playwright does, so text inside a closed root does not count toward the host",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots matches a label an aria-labelledby id names in the control's own tree, in a closed root and an open one below it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots reports focus on the node that holds it, inside a closed root and inside an open root below it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "locators inside closed shadow roots fills, presses, taps, and reads the nodes it located",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/closed-shadow-locators.test.ts",
+      "fullName": "match order across one closed root lists light-DOM matches first and the closed root after, where the observed tree lists them in place",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/conformance.test.ts",
+      "fullName": "axe-core conformance implicit-role: every case",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/conformance.test.ts",
+      "fullName": "axe-core conformance accessible-text: every case",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/conformance.test.ts",
+      "fullName": "axe-core conformance matches the expectations",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw new Error(\"cart is empty\"); }",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw \"cart is empty\"; }",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw { message: \"cart is empty\" }; }",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw Object.create(null); }",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw null; }",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves the message of a page exception: () => { throw new Error(\"page.evaluate: Target closed\"); }",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries preserves JSON results, explicit arguments, and zero-argument invocation",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries evaluates a string as an expression and calls a function it evaluates to",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "browser.evaluate error boundaries rejects invalid JSON results and syntax as test errors",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "native evaluation interrupted by external target loss reports the uncertain outcome after page closure without replaying evaluation",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/evaluate.test.ts",
+      "fullName": "native evaluation interrupted by external target loss reports the uncertain outcome after owned browser termination without replaying evaluation",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page ends a browser assertion on a stuck page at its own timeout, not the action timeout",
+      "caseId": "P19",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page times out a navigation to a server that never answers",
+      "caseId": "P20",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page times out a locate and a point tap on a page whose renderer is stuck in a script",
+      "caseId": "P21",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/hung-page.test.ts",
+      "fullName": "operations on a hung page keeps the reason Playwright gives for a tap that cannot land, ahead of the deadline",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content reads generated text into a name, reads icon glyphs as spaces, and names a glyph-only link by its title or not at all",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content finds each control by the name the tree reports",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content matches a substring across a glyph and stays exact where asked",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content matches a name with quotes and >> however the query is chained",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/icon-glyph-names.test.ts",
+      "fullName": "names with CSS generated content keeps generated content out of label text, as getByLabel reads it, and drops a glyph from it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts runs the configured scripts in order before the page, in frames, new tabs, and replaced contexts",
+      "caseId": "P22",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts adds a test script after the configured ones, from the next document on, for the rest of the attempt",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts refuses a script it cannot run, and a secret argument",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/init-scripts.test.ts",
+      "fullName": "init scripts fails the run, and a worker, with INVALID_CONFIG when a configured file cannot be read",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus refuses a noneditable focused leaf: <button>Stop</button>",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus refuses a noneditable focused leaf: <input readonly value=\"kept\">",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus types into a nested editable leaf",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "open shadow focus retains focused custom widgets that opt into keystrokes",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus refuses a noneditable focused leaf: <button>Stop</button>",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus refuses a noneditable focused leaf: <input readonly value=\"kept\">",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus types into a nested editable leaf",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "closed shadow focus retains focused custom widgets that opt into keystrokes",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard-shadow-focus.test.ts",
+      "fullName": "does not mistake the iframe host for an editable control when its button has focus",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard.test.ts",
+      "fullName": "held keyboard input keeps a modifier held across another key and releases it for later input",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/keyboard.test.ts",
+      "fullName": "held keyboard input marks a second down as repeat and a later release ends the held sequence",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter keeps the exact predicate: one row for the exact label, two for the substring, as standalone",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter reads the label as the standalone query does: an aria-hidden marker never hides the row",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter keeps the visible flag when composed: a row whose matching input is hidden drops out",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/label-composition.test.ts",
+      "fullName": "an exact label query composed as a has filter composes onto a position and a child query, and acts on the row it picked",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle declares the full deterministic tier plus the browser fixture",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle serves consecutive attempts from one browser and survives an attempt close",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle relaunches after dispose and stays idempotent",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test observes a semantic tree and locates by display value in one round trip",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test reports pressed and heading level, queries by them, and performs pointer actions on nodes and at points",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test keeps tree attributes bounded while node reads expose every attribute",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test selects positionally among display-value matches and keeps composition honest",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test excludes hidden twins from a visible query, for every query kind and under an index",
+      "caseId": "P24",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test applies visible before an index, filter, or scope, so a hidden twin is never selected",
+      "caseId": "P25",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test takes a display-value position among shown matches when the query is visible",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test keeps a node id across observations while its element lives, and reports it stale once it is gone",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test reports a located ref stale once a second element matches it, and acts on neither",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test reports a drag whose drop target turns ambiguous after the press as possibly committed",
+      "caseId": "P26",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test mints native document ids and keeps a separate viewport ref across navigation for swipes",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test refuses to swipe a node with no box even when its child is under aim",
+      "caseId": "P27",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test walks through a display:contents element to the fields it lays out",
+      "caseId": "P28",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test masks a password inside a closed shadow root in artifact screenshots",
+      "caseId": "P29",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle on one shared browser, a fresh attempt per test masks a password inside an iframe in artifact screenshots and observed pixels",
+      "caseId": "P30",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle reports an unopened page as INVALID_STATE, never as a missing node",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle refuses a second startAttempt while one is running and keeps the first intact",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle treats endAttempt before startAttempt and dispose on a cold engine as no-ops",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle stops waiting on cleanup once its budget is aborted, and recovers on the next attempt",
+      "caseId": "P31",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle cancels an in-flight native operation when its signal aborts",
+      "caseId": "P32",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle round-trips persisted state through capture and restore, and reset drops it",
+      "caseId": "P33",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle follows the window under viewport: null, reports the measured size, and swipes by it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle reports the configured test-id attribute as testId, on observed and located nodes alike",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle records a video per page at the viewport size: a restart and a state reset each continue in a new segment",
+      "caseId": "P34",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle records a video started mid-attempt at the viewport size, each time it starts",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle rejects a video that cannot start and leaves the session working",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle opens the attempt page when the video starts",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/lifecycle.test.ts",
+      "fullName": "web engine lifecycle masks secure fields in artifact screenshots and restarts the counter per attempt",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads a sentence with an inline link whole and keeps the link as its own node under it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads emphasis, code, and spans in place and lists none of them again",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "keeps an inline node named by a test id while its words stay in the sentence",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "keeps an inline element that offers an action listed, its words still in the sentence",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "lists the children of a wrapper with no text of its own, as before",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "separates words at block children, line breaks, and form controls, and reads no hidden inline text",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads the shadow tree an inline custom element renders, open or closed, and the light text it slots",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "reads no slotted text a hidden slot hides, and lists a slotted child that shows itself again",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/line-text.test.ts",
+      "fullName": "keeps listing the inline text of a line too long for the text bound, so nothing past the cut is lost",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation loads every page with the configured media, after a restart and a context reset too",
+      "caseId": "P45",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation leaves the browser's own media when none is configured",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation emulates media set before the first navigation from first paint, and holds a change for the rest of the attempt",
+      "caseId": "P35",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation gives a tab the app opens itself a test's change as it appears and later",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/media.test.ts",
+      "fullName": "media emulation refuses a feature it does not emulate and a value outside the ones it takes, changing nothing",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/native-capture-contract.test.ts",
+      "fullName": "masks iframe password pixels in both observations and artifacts without blanking public pixels",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/native-capture-contract.test.ts",
+      "fullName": "protects closed-shadow password pixels and restores the live field after capture",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/native-state-roundtrip.test.ts",
+      "fullName": "restores cookies, local storage and structured IndexedDB before the first app script without bootstrap requests",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators resolves a two-level chain and taps inside the innermost frame",
+      "caseId": "P36",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators reports a located node's box in the top-level viewport, past each frame's border and padding",
+      "caseId": "P37",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators resolves a three-level chain, counting the last frame inside the second",
+      "caseId": "P38",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators names the inner selector when the outer frame holds no such frame, even though the page does",
+      "caseId": "P39",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/nested-frames.test.ts",
+      "fullName": "nested frame locators reports two matching frames inside the outer document as ambiguous, though the page holds one",
+      "caseId": "P40",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation-hrefs.test.ts",
+      "fullName": "reports link targets as origin and whole path, marking a dropped query, fragment, or opaque payload",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides stringify",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides bound-stringify",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides object-toJSON",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides array-toJSON",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation-metadata.test.ts",
+      "fullName": "captures live refs when the page overrides function-toString",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/observation.test.ts",
+      "fullName": "collects captured metadata while published element handles stay actionable",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) sends the headers to the app's site only, on every context of the attempt",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) keeps the headers on a request an attempt route lets through",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) blocks service workers under headers, since routing never sees a worker's requests",
+      "caseId": "P41",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) answers a basic-auth challenge wherever one is issued",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) answers the challenge with a secrets.get() password the attempt resolves",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) reports the configured user agent to the page, after a context reset too",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/protected-app.test.ts",
+      "fullName": "web({ headers, basicAuth }) runs the page in the configured locale and time zone, after a context reset too",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/provider-downloads.test.ts",
+      "fullName": "downloads through a provider, worker scope saves the file on the browser's disk and reads it back through the provider",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/provider-downloads.test.ts",
+      "fullName": "downloads through a provider, attempt scope saves the file on the browser's disk and reads it back through the provider",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action unchanged strict reference clicks A, with a baseline public locator smoke",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action an observed live A remains actionable after a new observation, like the retained source handle",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action the same observed DOM object detached and reinserted remains A, not a replacement object",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action the original viewport survives same-Page navigation like the retained source Page",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action observed ElementHandle refuses a detached A instead of clicking replacement B",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action displayValue pinned handle after new match still clicks original A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action displayValue pinned handle after predicate change still clicks original A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action displayValue pinned handle after detach refuses without clicking B",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action exact-label pinned handle after new match still clicks original A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action exact-label pinned handle after predicate change still clicks original A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action exact-label pinned handle after detach refuses without clicking B",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action strict unique query becoming ambiguous refuses without clicking either match",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action strict query after replace A resolves the unique replacement B, not cached A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action strict query after connected A loses class resolves the unique replacement B, not cached A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action multi-result ref[1] keeps logical index 1: prepending X changes the action from cached B to A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action explicit nth(1) keeps logical index 1: prepending X changes the action from cached B to A",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action nested FrameLocator re-resolves same-document child replacement B",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/query-reference-replacement.test.ts",
+      "fullName": "retained query-reference replacement matches the frozen source action same-name sibling iframe makes the retained ancestor FrameLocator ambiguous and refuses all clicks",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "checked and selected reads selected boolean values without case sensitivity while native option state wins",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "checked and selected excludes uppercase hidden subtrees from observations and names but reads hidden references whole",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "checked and selected reads a native checkbox, radio, and option from the control even when a stale aria attribute disagrees, as Playwright does",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-checked.test.ts",
+      "fullName": "a checkable control's value reads the value attribute, `on` by default, whatever the checked state, as Playwright's inputValue does",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "placeholder names names text controls by placeholder in HTML-AAM order and carries the attribute",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag reports a walk the node budget stopped, and a whole read as not truncated",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag reports a child frame the budget could not enter",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag does not count an off-site frame it leaves out by design, even with no budget left",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "truncated flag reports an on-site frame past the depth limit as truncation",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence names a control from its descendants the way the role selector does: aria-label, alt, content, then title",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence reads an embedded control by its value, as the role selector does",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence keeps an embedded control's value out of label text and a secure field's value out of every name",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence reads aria-labelledby before aria-label, and either before a label element",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence reads a referenced target whole when it is hidden, by its own aria-label, and drops hidden parts of a shown one",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence resolves an aria-labelledby id in the element's own shadow tree, not the document",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence follows a descendant reference in a name from content, once per element and never from inside another",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-names.test.ts",
+      "fullName": "names from content and precedence names every role accname allows from content, a shadow tree included, and a reset input by its value or default",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping uses the first recognized role token and falls back to native semantics",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping scopes nested shadow landmarks to their outer article (open)",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping scopes nested shadow landmarks to their outer article (closed)",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping reports ARIA img as image, alongside the img element",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping infers row headers from data-cell neighbors and respects explicit scopes",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping reports an inline svg as an image, named by its title child, as Playwright does",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping passes the composite widget roles through from role attributes and names their items from content",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "role mapping derives the vocabulary roles from HTML semantics the way HTML-AAM does",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts reports the host as a textbox named by aria-label, aria-placeholder, or the editor placeholder, with its document as the value",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts keeps the whitespace an editor renders as its value, and reads an empty editor as an empty value",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts makes an editing host a textbox whatever role its tag carries, and leaves a native control its own",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts never makes a drawn or embedded surface a textbox, whatever its contenteditable says",
+      "caseId": "P42",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts drops a name taken from a block placeholder once the editor has content, and keeps one from the host",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts follows the document as it is edited and focused, as a textarea value does",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-selection.test.ts",
+      "fullName": "selection reports the selected text of the focused input or editing host and nothing for a caret, an unfocused field, or a secure one",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-states.test.ts",
+      "fullName": "disabled state inherits from a disabled fieldset, except inside its first legend",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-states.test.ts",
+      "fullName": "disabled state follows nested fieldsets: an inner legend frees nothing from an outer disabled fieldset",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-states.test.ts",
+      "fullName": "disabled state inherits aria-disabled from an ancestor, across a shadow root, until an aria-disabled=\"false\" cuts the chain",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/route-announcer.test.ts",
+      "fullName": "omits the announcer empty or populated and keeps the app alert",
+      "caseId": "P43",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions clears every test route, keeps configured site headers, and can register again",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions routes real native dialogs by kind even when their messages are identical",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions answers with the route registered last when two fulfill",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue goes to the network past an earlier route",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions fallback hands the request to the route before it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions keeps the configured site header through continue",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions keeps the configured site header through fallback",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue replaces the request headers and adds the site header on top",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue sends a rewritten url, method, and body without touching the original",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to another site leaves the site header behind",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to a forbidden scheme aborts the request and fails the next step",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to a wrapped scheme aborts the request and fails the next step",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to about:blank aborts the request and fails the next step",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions continue to another scheme aborts the request and fails the next step",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions fulfills a project file with its bytes and a type from its extension",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions fulfills under the given contentType or a content-type header",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects an unknown fulfill key before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects two fulfill sources before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a missing fulfill file before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a fulfill status out of range before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects an unknown continue key before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects non-string continue headers before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a continue header name outside the token grammar before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects a line break in a fulfill header value before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions rejects an abort error code before deciding, and aborts the request",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions aborts the request when the handler returns without deciding, and fails the next step",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions keeps the first decision when the handler decides twice, and fails the next step",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions takes the decision the moment fulfill is called, awaited or not",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/routes.test.ts",
+      "fullName": "browser.route decisions sets a cookie with a relative url on the base URL",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright an SVG with visibility: hidden",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a shown SVG",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a zero-size box with clipped content",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright the button clipped inside a zero-size box, which keeps a box of its own",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a sized box",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button inside closed details",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright the summary of closed details",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button inside open details",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright open details nested in the body of closed details",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright the summary of details nested in closed details",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button inside open details nested in closed details",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright an empty display: contents element",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a display: contents element whose only child is hidden",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a display: contents element with a painted child",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a display: contents element with bare text",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a hidden display: contents element whose child inherits it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a hidden display: contents element whose child is visible again",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright an aria-hidden spinner that paints",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button under an aria-hidden container",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a content-visibility: hidden element, which keeps its box",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button content-visibility: hidden skips",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a button slotted under a content-visibility: hidden host",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a visibility: hidden parent",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility agrees with Playwright a child that sets visibility: visible under a hidden parent",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "visibility where Playwright reads a range box alone hides text under a display: contents element whose visibility is hidden, which Playwright calls visible",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box display: none",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box under a display: none ancestor",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box an empty display: contents element",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box display: contents around text",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box visibility: hidden, which keeps its box",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the bounding box a zero-size box",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the tree walk through a box with no size lists the fixed controls under a zero-height page and wrapper, and neither the wrapper nor the root as hidden",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the tree walk through a box with no size lists neither the document of a frame with no box nor the options of a select with none",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "a frame's document places its boxes past the frame's border and padding, where Playwright measures them",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "an inert subtree leaves the tree, as Chrome drops it, while Playwright still calls it visible",
+      "caseId": "P46",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "an inert subtree lists nothing under an inert document root, and nothing slotted into an inert slot of a closed root",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/visibility.test.ts",
+      "fullName": "the tree walk through hidden content walks into a visibility: hidden subtree for a child that shows again, and stops at aria-hidden and skipped content",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies observes the first navigation before any public page command with one opened scope",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies reads a full body as text and JSON",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies resolves a genuinely empty body at /api/empty to an empty string",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies resolves a genuinely empty body at /api/no-content to an empty string",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies keeps the status of a body the connection cut short and rejects reading it",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies matches on headers inside its timeout and lets text() wait for a slower body",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies rejects reading a body that never finishes once the action budget runs out",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "browser.waitForResponse bodies keeps the status of a redirect and rejects reading its body",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/wait-for-response.test.ts",
+      "fullName": "first navigation target inventory observes the response on the original target without leaving an extra blank page in its context",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    }
+  ]
+}

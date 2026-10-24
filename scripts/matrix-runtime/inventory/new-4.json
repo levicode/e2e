@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "planOnly": true,
+    "executed": false,
+    "publicE2eCommit": "0e19094382c3959d3c52c865c1066c3e59b911b7",
+    "e2eTree": "238ef7ffdabc655885385846531d4e3ee2dc2ad2",
+    "inspectedLocalCommit": "e5dc03f5d1b7f1d5684bb5fc57b939e4cdfeeade",
+    "nativeCommit": "2647b4c5e9439dcf620ce6726883bab65b0fc2ca",
+    "nativeTree": "f61baf5f27586108a7ac6c8bde7e9aa985428ad1",
+    "productionSha256": "fa5fbad01243472bb82db38a3a4790b072fe9e1114e7f0adc6dc2a494b3edd02",
+    "releaseEligible": false
+  },
+  "count": 4,
+  "inventoryProvenance": {
+    "original306": {
+      "path": "/workspace/shared/native-first-rust/full-candidate-39782174498/web-browser.vitest.json",
+      "sourceRevision": "9d3508ca22717557482f9f4509643db3b7868dd3",
+      "sha256": "b7d01fe50628132d794216a640ca36cac2d85fbb61ccf0d707ce549e7fddcd81"
+    },
+    "expanded310": {
+      "path": "/workspace/shared/native-first-rust/full-candidate-39940386738/web-browser.vitest.json",
+      "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "sha256": "76ba069513d736a52e7be29b9852742798510228a0579a1ddd0042de7c6c9bb8"
+    },
+    "reconciliation": "All 306 historical file/fullName pairs are present in expanded report. Git diff b3a23a07..18984864 changes only protected-app Promise markers and no test registration. Inventory is static/report-reconciled, not fresh collection/execution."
+  },
+  "cases": [
+    {
+      "file": "packages/web/tests/integration/events-synthetic-controls.test.ts",
+      "fullName": "isolated synthetic event controls observes popup opening through pinned Playwright on a fresh host",
+      "caseId": "P05PW",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/events-synthetic-controls.test.ts",
+      "fullName": "isolated synthetic event controls observes native wheel delivery at the immediate and one subsequent sample",
+      "caseId": "C01N",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/events-synthetic-controls.test.ts",
+      "fullName": "isolated synthetic event controls observes pinned Playwright wheel delivery at the immediate and one subsequent sample",
+      "caseId": "C01PW",
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/web/tests/integration/read-node-roles.test.ts",
+      "fullName": "contenteditable editing hosts P42O: records an isolated source-equivalent embedded-surface oracle",
+      "caseId": "P42O",
+      "runtimeStatus": "not-run-this-subtask"
+    }
+  ]
+}

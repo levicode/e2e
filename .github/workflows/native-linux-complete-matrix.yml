@@ -1,0 +1,194 @@
+# LOCAL REVIEW ONLY. No publication, dispatch, browser execution or Rust build performed.
+name: native Linux original matrix diagnostic (nonrelease)
+on:
+  push:
+    branches: [implement/native-linux-complete-matrix-ci]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: native-linux-complete-matrix-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: ${{ github.ref == 'refs/heads/implement/native-linux-complete-matrix-ci' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Initialize failure-preserving diagnostic evidence
+        run: |
+          set -euo pipefail
+          umask 077
+          export EVIDENCE_DIR="$RUNNER_TEMP/complete-matrix-evidence"
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/complete-matrix-playwright"
+          printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          mkdir -m700 "$EVIDENCE_DIR"
+          printf '%s\n' 'Diagnostic only: original304 non-CLI + new4 + callbacks14 + independent actual-installer warm CLI1. P14 not-run pending distinct native2647 feature artifact/proof. Never full324, hard acceptance, source removal, release, or Chrome154 proof.' > "$EVIDENCE_DIR/SCOPE.txt"
+          for phase in sources artifact dependencies browser-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
+          for group in original-noncli-304 new-4 callbacks-14 cli-installed-1; do printf '%s\n' '{"status":"not-run","reason":"Workflow prerequisite or batch has not completed"}' > "$EVIDENCE_DIR/$group.state.json"; done
+          printf '%s\n' '{"status":"not-run","reason":"Missing separate native2647 acceptance-faults artifact and genuine matching proof; this recipe does not execute P14"}' > "$EVIDENCE_DIR/cli-cancel-P14-1.state.json"
+      - name: Check out immutable recipe separately from tested sources
+        id: recipe
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - id: node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.19.0
+          architecture: x64
+      - name: Check out exact current public E2E source
+        id: e2e
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/e2e
+          ref: 0e19094382c3959d3c52c865c1066c3e59b911b7
+          path: e2e-source
+          persist-credentials: false
+      - name: Check out native source for provenance only
+        id: native
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 2647b4c5e9439dcf620ce6726883bab65b0fc2ca
+          path: native-source
+          persist-credentials: false
+      - name: Verify clean sources, exact trees and standard Linux host
+        id: sources
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/sources.exit"' EXIT
+          node recipe/scripts/matrix-runtime/identity.mjs sources
+          uname -a > "$EVIDENCE_DIR/host.txt"
+          cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+      - name: Fetch and verify existing production artifact, never rebuild
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/artifact.exit"' EXIT
+          node recipe/scripts/matrix-runtime/identity.mjs download > "$EVIDENCE_DIR/artifact.log" 2>&1
+      - id: pnpm
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+        with:
+          version: 12.3.4
+          run_install: false
+      - name: Install frozen JavaScript graph and build actual core and Web
+        id: dependencies
+        working-directory: e2e-source
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/dependencies.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/dependencies.log") 2>&1
+          test "$(node --version)" = v24.19.0
+          test "$(pnpm --version)" = 12.3.4
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter e2e run build
+          pnpm --filter @e2e-dev/web run build
+          node ../recipe/scripts/matrix-runtime/identity.mjs dist
+      - name: Install official complete Playwright Chromium including headless shell
+        id: browser_install
+        working-directory: e2e-source
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-install.exit"' EXIT
+          test ! -e "$PLAYWRIGHT_BROWSERS_PATH"
+          install_root=$(mktemp -d /tmp/ep-XXXXXX)
+          mkdir -m700 "$install_root/home" "$install_root/tmp" "$install_root/cache"
+          env -i PATH="$(dirname "$(command -v node)"):/usr/bin:/bin" HOME="$install_root/home" TMPDIR="$install_root/tmp" XDG_CACHE_HOME="$install_root/cache" CI=1 LANG=C.UTF-8 \
+            PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+            "$(command -v node)" packages/web/node_modules/playwright-core/cli.js install chromium > "$EVIDENCE_DIR/browser-install.log" 2>&1
+      - name: Verify both real browser images and read system codec capabilities
+        id: browser_codecs
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-codecs.exit"' EXIT
+          node recipe/scripts/matrix-runtime/identity.mjs browsers
+          env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffmpeg -version > "$EVIDENCE_DIR/ffmpeg-version.txt" 2>&1
+          env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffprobe -version > "$EVIDENCE_DIR/ffprobe-version.txt" 2>&1
+          env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ffmpeg -hide_banner -encoders > "$EVIDENCE_DIR/ffmpeg-encoders.txt" 2>&1
+          grep -Eq '^[[:space:]]*V[^[:space:]]*[[:space:]]+libx264[[:space:]]' "$EVIDENCE_DIR/ffmpeg-encoders.txt"
+          grep -Eq '^[[:space:]]*V[^[:space:]]*[[:space:]]+libvpx[[:space:]]' "$EVIDENCE_DIR/ffmpeg-encoders.txt"
+      - name: Generate genuine production proof with unchanged original probe
+        id: probe
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/production-probe.exit"' EXIT
+          bash recipe/scripts/matrix-runtime/run.sh probe
+      - name: Run all runnable original cases with isolated actual installer HOME
+        id: matrix
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime-matrix.exit"' EXIT
+          bash recipe/scripts/matrix-runtime/run.sh cases
+      - name: Check all source, dist and image identities after success or failure
+        id: final_identities
+        if: ${{ always() && steps.sources.outcome == 'success' }}
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/final-identities.exit"' EXIT
+          node recipe/scripts/matrix-runtime/identity.mjs final > "$EVIDENCE_DIR/final-identities.log" 2>&1
+      - name: Always reconcile all 324 exact identities, including missing and P14 not-run
+        id: reconciliation
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/reconciliation.exit"' EXIT
+          status=0
+          node recipe/scripts/matrix-runtime/reconcile.mjs recipe/scripts/matrix-runtime/inventory "$EVIDENCE_DIR" "$GITHUB_WORKSPACE/e2e-source" || status=1
+          node --input-type=module - <<'JS' || status=1
+          import assert from 'node:assert/strict';
+          import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
+          const out=process.env.EVIDENCE_DIR;
+          const images=JSON.parse(readFileSync(out+'/images-before.json'));
+          const rows=readdirSync(out).filter(n=>n.endsWith('.processes.jsonl')).flatMap(n=>readFileSync(out+'/'+n,'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)));
+          const observed=Object.fromEntries(['full','shell','production'].map(name=>[name,rows.some(row=>row.executable===images[name].executable&&row.sha256===images[name].sha256&&row.expectedHashMatches===true)]));
+          writeFileSync(out+'/actual-image-observation.json',JSON.stringify({observed,coverage:'sampled only; not exhaustive launch or cleanup proof',releaseEligible:false},null,2)+'\n');
+          assert.ok(Object.values(observed).every(Boolean),'At least one required actual process image was not observed; identity remains unknown');
+          JS
+          test "$(cat "$EVIDENCE_DIR/cli-cache-unchanged.exit" 2>/dev/null || printf unknown)" = 0 || status=1
+          for name in production-probe original-noncli-304 new-4 callbacks-14 official-install cli-installed-1; do
+            test "$(cat "$EVIDENCE_DIR/$name.observer.exit" 2>/dev/null || printf unknown)" = 0 || status=1
+          done
+          exit "$status"
+      - name: Preserve step outcomes and first failing phase
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+          /usr/bin/python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          steps=json.loads(os.environ['STEP_OUTCOMES'])
+          order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','browser_codecs','probe','matrix','final_identities','reconciliation']
+          for name in order:
+              outcome=steps.get(name,{}).get('outcome')
+              if outcome in ('failure','cancelled'):
+                  Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').write_text(f'{name}: {outcome}\n')
+                  break
+          PY
+          for phase in sources artifact dependencies browser-install browser-codecs production-probe runtime-matrix final-identities reconciliation; do
+            [[ ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]] || break
+            status=$(cat "$EVIDENCE_DIR/$phase.exit" 2>/dev/null || printf unknown)
+            if [[ "$status" != 0 && "$status" != not-run ]]; then printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"; break; fi
+          done
+      - name: Upload only current synthetic diagnostic evidence, never profiles or old raw results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: original-matrix-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/complete-matrix-evidence/
+          if-no-files-found: error
+          retention-days: 7

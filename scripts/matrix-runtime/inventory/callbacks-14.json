@@ -1,0 +1,113 @@
+{
+  "metadata": {
+    "planOnly": true,
+    "executed": false,
+    "publicE2eCommit": "0e19094382c3959d3c52c865c1066c3e59b911b7",
+    "e2eTree": "238ef7ffdabc655885385846531d4e3ee2dc2ad2",
+    "inspectedLocalCommit": "e5dc03f5d1b7f1d5684bb5fc57b939e4cdfeeade",
+    "nativeCommit": "2647b4c5e9439dcf620ce6726883bab65b0fc2ca",
+    "nativeTree": "f61baf5f27586108a7ac6c8bde7e9aa985428ad1",
+    "productionSha256": "fa5fbad01243472bb82db38a3a4790b072fe9e1114e7f0adc6dc2a494b3edd02",
+    "releaseEligible": false
+  },
+  "count": 14,
+  "inventoryProvenance": {
+    "original306": {
+      "path": "/workspace/shared/native-first-rust/full-candidate-39782174498/web-browser.vitest.json",
+      "sourceRevision": "9d3508ca22717557482f9f4509643db3b7868dd3",
+      "sha256": "b7d01fe50628132d794216a640ca36cac2d85fbb61ccf0d707ce549e7fddcd81"
+    },
+    "expanded310": {
+      "path": "/workspace/shared/native-first-rust/full-candidate-39940386738/web-browser.vitest.json",
+      "sourceRevision": "b3a23a07c3f9068e7c0b122873b94f28cbb2e40b",
+      "sha256": "76ba069513d736a52e7be29b9852742798510228a0579a1ddd0042de7c6c9bb8"
+    },
+    "reconciliation": "All 306 historical file/fullName pairs are present in expanded report. Git diff b3a23a07..18984864 changes only protected-app Promise markers and no test registration. Inventory is static/report-reconciled, not fresh collection/execution."
+  },
+  "cases": [
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract route callback reads the live page while evaluate awaits fetch",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract route removal keeps the paused fallback chain",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract response subscription does not block its trigger",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract dialog decisions settle an awaiting evaluation",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract download subscription runs its trigger",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-callback-contract.test.ts",
+      "fullName": "public Web callback contract custom executor uses checked actions and the test verifies the response",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract navigation history reload and browser expectations preserve document readiness",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract evaluate supports JSON arguments async functions and string expressions",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract cookies retain context scope and start isolated in every attempt",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract init scripts and partial media updates cover frames and new tabs",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract viewport and keyboard preserve actual input and key events",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract pointer primitives preserve coordinates buttons and wheel events",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract frame locators and class assertions use the shared public query contract",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    },
+    {
+      "file": "packages/e2e/tests/integration/web-native-primitives-contract.test.ts",
+      "fullName": "public native Web primitive contract large fulfill and continued request bodies use verified native storage",
+      "caseId": null,
+      "runtimeStatus": "not-run-this-subtask"
+    }
+  ]
+}
