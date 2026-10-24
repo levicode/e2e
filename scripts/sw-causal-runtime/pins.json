@@ -1,0 +1,22 @@
+{
+  "e2eSha": "c98be61c2c01a642c39c8951b466405090e39b04",
+  "e2eTree": "daddbee93c4ea0b0e1483f892317d0603a2e5843",
+  "nativeSha": "56105fe36b66c0f8ef62a596e04ddd1254952c0b",
+  "nativeTree": "6a8fd05a22ce5197fbf769b376d9c3a6cabe9563",
+  "nativeChromeSourceSha256": "9ee5b08e8a2359627794fab196310986fda1cfa7678d63149df1edebf96b83a6",
+  "nativeInstallSourceSha256": "bcdbaf5db5dd16740af8f7e0c761ed8e842da14f13400ff429a9324a2914ffa6",
+  "playwrightVersion": "1.64.1",
+  "chromiumRevision": "1248",
+  "chromeVersion": "156.0.8078.4",
+  "nodeVersion": "v24.19.0",
+  "pnpmVersion": "12.3.4",
+  "http500OriginalSha256": "5b2f94ff429cace82577704bee6c931a7fbf744c327e6f19712111042452062f",
+  "negotiationOriginalSha256": "c4ba0a0cf01bb6aab69485ee1c088a7094172a3269d07cdb2a426c058f400921",
+  "p41SourceSha256": "31c1548f67b3055fdc7158f88e59daf1b04c8005abf951c081c255ac2bf768df",
+  "scope": "temporary SW causal diagnostic only; never formal candidate/distribution",
+  "nativeBaseSha": "88a7b674d45b784f5578369b8d2bb9a07e430eae",
+  "nativeBaseTree": "37e8593d44f514afcfa633c94a374b3213ab7dda",
+  "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "chromeSha256": "377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025"
+}
