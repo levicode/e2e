@@ -1,0 +1,415 @@
+# Local recipe for published, read-back-verified source trees.
+# Reuses existing Linux producer/compile boundaries and exact harness runner.
+name: native Linux failed worker RED to GREEN (not acceptance or release)
+'on':
+  push:
+    branches:
+    - implement/native-worker-retirement-ci
+permissions:
+  contents: read
+concurrency:
+  group: native-worker-retirement-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  worker-retirement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      RED_SHA: 9af8b3f3c5b88a979c2a1f6ed627217af7f97e1f
+      RED_TREE: f0bee4d661ed0cb77c831d0c58ccbf205d321bfa
+      GREEN_SHA: 6650af464afe4eb0830c16d207ce84d1a3eb6570
+      GREEN_TREE: ecdc53575fd0edfabbad65b294f6f8a84b9f4e6c
+      NATIVE_LOCK_SHA256: 652c867321a346fd7b4c04b5d73db4267dbbb5c3e575ed9bb2842529a4843cb1
+      CARGO_BUILD_JOBS: '1'
+      RUST_MIN_STACK: '16777216'
+      RUSTUP_TOOLCHAIN: 1.99.1
+      RUST_BACKTRACE: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+    - name: Initialize failure-preserving receipts
+      id: initialize
+      run: |
+        set -euo pipefail
+        export EVIDENCE_DIR="$RUNNER_TEMP/native-worker-retirement"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/native-worker-retirement-target"
+        export CARGO_HOME="$RUNNER_TEMP/native-worker-retirement-cargo"
+        printf 'EVIDENCE_DIR=%s\nCARGO_TARGET_DIR=%s\nCARGO_HOME=%s\n' "$EVIDENCE_DIR" "$CARGO_TARGET_DIR" "$CARGO_HOME" >> "$GITHUB_ENV"
+        mkdir -p "$EVIDENCE_DIR"
+        printf '%s\n' \
+         'Native failed-worker RED to GREEN regression only; never full browser or production acceptance.' \
+         'RED must compile, uniquely match, then fail only the pinned assertion with exit 101.' \
+         'GREEN runs independent format/Clippy/feature boundaries and 40 frozen exact unit tests.' \
+         'Same source workspace and external target cache. Dev/test profiles only.' \
+         'No browser, ignored suite, production build, release, package publication or native CLI.' \
+         'Cargo build.rs may create its existing ignored dashboard placeholder.' \
+         'Missing, skipped, ignored, timeout and unexpected failure never satisfy the final gate.' \
+         > "$EVIDENCE_DIR/SCOPE.txt"
+        printf 'RUSTUP_TOOLCHAIN=%s\nCARGO_BUILD_JOBS=%s\nRUST_MIN_STACK=%s\n' "$RUSTUP_TOOLCHAIN" "$CARGO_BUILD_JOBS" "$RUST_MIN_STACK" > "$EVIDENCE_DIR/build-environment.txt"
+        for phase in binding recipe-before toolchain red-before red-build red-exact red-after green-before format clippy feature-tests-check proxy-feature-check green-build green-exact green-after recipe-after gate; do
+         printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+         : > "$EVIDENCE_DIR/$phase.stdout.log"
+         : > "$EVIDENCE_DIR/$phase.stderr.log"
+        done
+    - name: Require immutable published source pins
+      id: binding
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/binding.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/binding.stdout.log") 2> >(tee "$EVIDENCE_DIR/binding.stderr.log" >&2)
+
+        for value in "$RED_SHA" "$GREEN_SHA" "$RED_TREE" "$GREEN_TREE"; do [[ "$value" =~ ^[0-9a-f]{40}$ ]]; done
+        [[ "$NATIVE_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]
+        test "$RED_SHA" != "$GREEN_SHA"
+        test "$RED_TREE" != "$GREEN_TREE"
+        printf 'red=%s\nred_tree=%s\ngreen=%s\ngreen_tree=%s\nlock=%s\n' "$RED_SHA" "$RED_TREE" "$GREEN_SHA" "$GREEN_TREE" "$NATIVE_LOCK_SHA256" > "$EVIDENCE_DIR/source-pins.txt"
+    - name: Check out immutable RECIPE recipe
+      id: recipe_checkout
+      if: ${{ !cancelled() && steps.initialize.outcome == 'success' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+        clean: true
+    - name: Read back immutable recipe and Linux host
+      id: recipe_before
+      if: ${{ !cancelled() && steps.recipe_checkout.outcome == 'success' }}
+      env:
+        EXPECTED_SHA: ${{ github.workflow_sha }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/recipe-before.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/recipe-before.stdout.log") 2> >(tee "$EVIDENCE_DIR/recipe-before.stderr.log" >&2)
+
+        failed=0
+        git -C recipe rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/recipe-before.identity.txt" || failed=1
+        git -C recipe status --porcelain --untracked-files=all > "$EVIDENCE_DIR/recipe-before.status.txt" || failed=1
+        git -C recipe ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/recipe-before.ignored.txt" || failed=1
+        test ! -s "$EVIDENCE_DIR/recipe-before.status.txt" || failed=1
+        test "$(git -C recipe rev-parse HEAD)" = "$EXPECTED_SHA" || failed=1
+
+        sha256sum recipe/.github/workflows/native-worker-retirement.yml recipe/scripts/run-worker-retirement-tests.py > "$EVIDENCE_DIR/recipe-before.sha256" || failed=1
+
+        cp recipe/scripts/run-worker-retirement-tests.py "$EVIDENCE_DIR/runner-reviewed.py.txt" || failed=1
+        cp recipe/.github/workflows/native-worker-retirement.yml "$EVIDENCE_DIR/workflow-reviewed.yml.txt" || failed=1
+        date -u > "$EVIDENCE_DIR/started-at-utc.txt"
+        cat /etc/os-release > "$EVIDENCE_DIR/linux-version.txt"
+        uname -a > "$EVIDENCE_DIR/linux-host.txt"
+        lscpu > "$EVIDENCE_DIR/linux-resources.txt"
+        free -h >> "$EVIDENCE_DIR/linux-resources.txt"
+        df -h "$RUNNER_TEMP" > "$EVIDENCE_DIR/runner-disk.txt"
+        python3 --version > "$EVIDENCE_DIR/python-version.txt"
+        test "$RUNNER_OS" = Linux || failed=1
+        test "$(uname -m)" = x86_64 || failed=1
+        printf 'event_commit=%s\nrecipe_commit=%s\n' "$GITHUB_SHA" "$EXPECTED_SHA" > "$EVIDENCE_DIR/recipe-context.txt"
+        test "$failed" -eq 0
+    - name: Install and verify exact Rust 1.99.1 host toolchain
+      id: toolchain
+      if: ${{ !cancelled() && steps.recipe_before.outcome == 'success' && steps.binding.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/toolchain.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/toolchain.stdout.log") 2> >(tee "$EVIDENCE_DIR/toolchain.stderr.log" >&2)
+
+        rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+        rustup show active-toolchain > "$EVIDENCE_DIR/active-toolchain.txt"
+        rustc -Vv > "$EVIDENCE_DIR/rustc-version.txt"
+        cargo -Vv > "$EVIDENCE_DIR/cargo-version.txt"
+        cargo clippy --version > "$EVIDENCE_DIR/clippy-version.txt"
+        cargo fmt --version > "$EVIDENCE_DIR/rustfmt-version.txt"
+        test "$(sed -n 's/^release: //p' "$EVIDENCE_DIR/rustc-version.txt")" = 1.99.1
+        test "$(sed -n 's/^host: //p' "$EVIDENCE_DIR/rustc-version.txt")" = x86_64-unknown-linux-gnu
+    - name: Check out immutable RED in the same native workspace
+      id: red_checkout
+      if: ${{ !cancelled() && steps.binding.outcome == 'success' && steps.recipe_before.outcome == 'success' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.RED_SHA }}
+        path: native-source
+        persist-credentials: false
+        clean: true
+    - name: Read back RED commit tree and lock before work
+      id: red_before
+      if: ${{ !cancelled() && steps.red_checkout.outcome == 'success' }}
+      env: &id001
+        EXPECTED_SHA: ${{ env.RED_SHA }}
+        EXPECTED_TREE: ${{ env.RED_TREE }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/red-before.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/red-before.stdout.log") 2> >(tee "$EVIDENCE_DIR/red-before.stderr.log" >&2)
+
+        failed=0
+        git -C native-source rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/red-before.identity.txt" || failed=1
+        git -C native-source status --porcelain --untracked-files=all > "$EVIDENCE_DIR/red-before.status.txt" || failed=1
+        git -C native-source ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/red-before.ignored.txt" || failed=1
+        test ! -s "$EVIDENCE_DIR/red-before.status.txt" || failed=1
+        test "$(git -C native-source rev-parse HEAD)" = "$EXPECTED_SHA" || failed=1
+
+        sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/red-before.sha256" || failed=1
+        test "$(git -C native-source rev-parse HEAD^{tree})" = "$EXPECTED_TREE" || failed=1
+        test "$(sha256sum native-source/cli/Cargo.lock | cut -d' ' -f1)" = "$NATIVE_LOCK_SHA256" || failed=1
+        test "$failed" -eq 0
+    - name: Compile RED default harness
+      id: red_compile
+      if: ${{ !cancelled() && steps.red_before.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+      working-directory: native-source/cli
+      run: |
+        set -euo pipefail
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+        failed=0
+        check_boundary() {
+         local name="$1" status=0
+         shift
+         printf '%q ' "$@" > "$EVIDENCE_DIR/$name.command.txt"
+         printf '\n' >> "$EVIDENCE_DIR/$name.command.txt"
+         if "$@" > "$EVIDENCE_DIR/$name.stdout.log" 2> "$EVIDENCE_DIR/$name.stderr.log"; then status=0; else status=$?; failed=1; fi
+         printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.exit"
+         cat "$EVIDENCE_DIR/$name.stdout.log" "$EVIDENCE_DIR/$name.stderr.log"
+        }
+        check_boundary red-build cargo test --locked --profile test --no-default-features --no-run --message-format=json
+        test "$failed" -eq 0
+    - name: Validate frozen exact RED witnesses
+      id: red_exact
+      if: ${{ !cancelled() && steps.red_before.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/red-exact.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/red-exact.stdout.log") 2> >(tee "$EVIDENCE_DIR/red-exact.stderr.log" >&2)
+
+        python3 -B recipe/scripts/run-worker-retirement-tests.py \
+         --phase red \
+         --cargo-json "$EVIDENCE_DIR/red-build.stdout.log" \
+         --build-exit "$EVIDENCE_DIR/red-build.exit" \
+         --manifest "$GITHUB_WORKSPACE/native-source/cli/Cargo.toml" \
+         --target-dir "$CARGO_TARGET_DIR" \
+         --evidence-dir "$EVIDENCE_DIR/red-exact" \
+         --timeout-seconds 30
+    - name: Read back unchanged RED source before leaving phase
+      id: red_after
+      if: ${{ always() }}
+      env: *id001
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/red-after.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/red-after.stdout.log") 2> >(tee "$EVIDENCE_DIR/red-after.stderr.log" >&2)
+
+        failed=0
+        git -C native-source rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/red-after.identity.txt" || failed=1
+        git -C native-source status --porcelain --untracked-files=all > "$EVIDENCE_DIR/red-after.status.txt" || failed=1
+        git -C native-source ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/red-after.ignored.txt" || failed=1
+        test ! -s "$EVIDENCE_DIR/red-after.status.txt" || failed=1
+        test "$(git -C native-source rev-parse HEAD)" = "$EXPECTED_SHA" || failed=1
+
+        sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/red-after.sha256" || failed=1
+        test "$(git -C native-source rev-parse HEAD^{tree})" = "$EXPECTED_TREE" || failed=1
+        test "$(sha256sum native-source/cli/Cargo.lock | cut -d' ' -f1)" = "$NATIVE_LOCK_SHA256" || failed=1
+
+        cmp "$EVIDENCE_DIR/red-before.identity.txt" "$EVIDENCE_DIR/red-after.identity.txt" || failed=1
+        cmp "$EVIDENCE_DIR/red-before.sha256" "$EVIDENCE_DIR/red-after.sha256" || failed=1
+        test "$failed" -eq 0
+    - name: Check out immutable GREEN in the same native workspace
+      id: green_checkout
+      if: ${{ !cancelled() && steps.binding.outcome == 'success' && steps.recipe_before.outcome == 'success' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.GREEN_SHA }}
+        path: native-source
+        persist-credentials: false
+        clean: true
+    - name: Read back GREEN commit tree and lock before work
+      id: green_before
+      if: ${{ !cancelled() && steps.green_checkout.outcome == 'success' }}
+      env: &id002
+        EXPECTED_SHA: ${{ env.GREEN_SHA }}
+        EXPECTED_TREE: ${{ env.GREEN_TREE }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/green-before.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/green-before.stdout.log") 2> >(tee "$EVIDENCE_DIR/green-before.stderr.log" >&2)
+
+        failed=0
+        git -C native-source rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/green-before.identity.txt" || failed=1
+        git -C native-source status --porcelain --untracked-files=all > "$EVIDENCE_DIR/green-before.status.txt" || failed=1
+        git -C native-source ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/green-before.ignored.txt" || failed=1
+        test ! -s "$EVIDENCE_DIR/green-before.status.txt" || failed=1
+        test "$(git -C native-source rev-parse HEAD)" = "$EXPECTED_SHA" || failed=1
+
+        sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/green-before.sha256" || failed=1
+        test "$(git -C native-source rev-parse HEAD^{tree})" = "$EXPECTED_TREE" || failed=1
+        test "$(sha256sum native-source/cli/Cargo.lock | cut -d' ' -f1)" = "$NATIVE_LOCK_SHA256" || failed=1
+        test "$failed" -eq 0
+    - name: Compile GREEN default harness and every independent boundary
+      id: green_compile
+      if: ${{ !cancelled() && steps.green_before.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+      working-directory: native-source/cli
+      run: |
+        set -euo pipefail
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET
+        failed=0
+        check_boundary() {
+         local name="$1" status=0
+         shift
+         printf '%q ' "$@" > "$EVIDENCE_DIR/$name.command.txt"
+         printf '\n' >> "$EVIDENCE_DIR/$name.command.txt"
+         if "$@" > "$EVIDENCE_DIR/$name.stdout.log" 2> "$EVIDENCE_DIR/$name.stderr.log"; then status=0; else status=$?; failed=1; fi
+         printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.exit"
+         cat "$EVIDENCE_DIR/$name.stdout.log" "$EVIDENCE_DIR/$name.stderr.log"
+        }
+        check_boundary format cargo fmt -- --check
+        check_boundary clippy cargo clippy --locked --profile dev --no-default-features --all-targets -- -D warnings
+        check_boundary feature-tests-check cargo check --locked --profile dev --no-default-features --features acceptance-faults --tests
+        check_boundary proxy-feature-check cargo check --locked --profile dev --no-default-features --features acceptance-faults --test client-proxy-fixture
+        check_boundary green-build cargo test --locked --profile test --no-default-features --no-run --message-format=json
+        test "$failed" -eq 0
+    - name: Validate frozen exact GREEN witnesses
+      id: green_exact
+      if: ${{ !cancelled() && steps.green_before.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/green-exact.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/green-exact.stdout.log") 2> >(tee "$EVIDENCE_DIR/green-exact.stderr.log" >&2)
+
+        python3 -B recipe/scripts/run-worker-retirement-tests.py \
+         --phase green \
+         --cargo-json "$EVIDENCE_DIR/green-build.stdout.log" \
+         --build-exit "$EVIDENCE_DIR/green-build.exit" \
+         --manifest "$GITHUB_WORKSPACE/native-source/cli/Cargo.toml" \
+         --target-dir "$CARGO_TARGET_DIR" \
+         --evidence-dir "$EVIDENCE_DIR/green-exact" \
+         --timeout-seconds 30
+    - name: Read back unchanged GREEN source before leaving phase
+      id: green_after
+      if: ${{ always() }}
+      env: *id002
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/green-after.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/green-after.stdout.log") 2> >(tee "$EVIDENCE_DIR/green-after.stderr.log" >&2)
+
+        failed=0
+        git -C native-source rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/green-after.identity.txt" || failed=1
+        git -C native-source status --porcelain --untracked-files=all > "$EVIDENCE_DIR/green-after.status.txt" || failed=1
+        git -C native-source ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/green-after.ignored.txt" || failed=1
+        test ! -s "$EVIDENCE_DIR/green-after.status.txt" || failed=1
+        test "$(git -C native-source rev-parse HEAD)" = "$EXPECTED_SHA" || failed=1
+
+        sha256sum native-source/cli/Cargo.lock > "$EVIDENCE_DIR/green-after.sha256" || failed=1
+        test "$(git -C native-source rev-parse HEAD^{tree})" = "$EXPECTED_TREE" || failed=1
+        test "$(sha256sum native-source/cli/Cargo.lock | cut -d' ' -f1)" = "$NATIVE_LOCK_SHA256" || failed=1
+
+        cmp "$EVIDENCE_DIR/green-before.identity.txt" "$EVIDENCE_DIR/green-after.identity.txt" || failed=1
+        cmp "$EVIDENCE_DIR/green-before.sha256" "$EVIDENCE_DIR/green-after.sha256" || failed=1
+        test "$failed" -eq 0
+    - name: Read back unchanged recipe after all work
+      id: recipe_after
+      if: ${{ always() }}
+      env:
+        EXPECTED_SHA: ${{ github.workflow_sha }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/recipe-after.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/recipe-after.stdout.log") 2> >(tee "$EVIDENCE_DIR/recipe-after.stderr.log" >&2)
+
+        failed=0
+        git -C recipe rev-parse HEAD HEAD^{tree} > "$EVIDENCE_DIR/recipe-after.identity.txt" || failed=1
+        git -C recipe status --porcelain --untracked-files=all > "$EVIDENCE_DIR/recipe-after.status.txt" || failed=1
+        git -C recipe ls-files --others --ignored --exclude-standard > "$EVIDENCE_DIR/recipe-after.ignored.txt" || failed=1
+        test ! -s "$EVIDENCE_DIR/recipe-after.status.txt" || failed=1
+        test "$(git -C recipe rev-parse HEAD)" = "$EXPECTED_SHA" || failed=1
+
+        sha256sum recipe/.github/workflows/native-worker-retirement.yml recipe/scripts/run-worker-retirement-tests.py > "$EVIDENCE_DIR/recipe-after.sha256" || failed=1
+
+        cmp "$EVIDENCE_DIR/recipe-before.identity.txt" "$EVIDENCE_DIR/recipe-after.identity.txt" || failed=1
+        cmp "$EVIDENCE_DIR/recipe-before.sha256" "$EVIDENCE_DIR/recipe-after.sha256" || failed=1
+        test "$failed" -eq 0
+    - name: Require valid RED and every GREEN boundary and test
+      id: gate
+      if: ${{ always() }}
+      run: |
+        set -euo pipefail
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        trap 'status=$?; printf "%s\n" "$status" > "$EVIDENCE_DIR/gate.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/gate.stdout.log") 2> >(tee "$EVIDENCE_DIR/gate.stderr.log" >&2)
+
+        python3 -B - <<'PYCODE'
+        import importlib.util, json, os
+        from pathlib import Path
+        root=Path(os.environ['EVIDENCE_DIR'])
+        phases="binding recipe-before toolchain red-before red-build red-exact red-after green-before format clippy feature-tests-check proxy-feature-check green-build green-exact green-after recipe-after".split()
+        receipt={'scope':'exact failed-worker native regression only; not full acceptance','accepted':False,'phases':{},'proofs':{},'errors':[]}
+        for phase in phases:
+         path=root/(phase+'.exit')
+         value=path.read_text().strip() if path.exists() else 'missing'
+         receipt['phases'][phase]=value
+         if value!='0': receipt['errors'].append(phase+': '+value)
+        inventories={}
+        try:
+         spec=importlib.util.spec_from_file_location('witnesses','recipe/scripts/run-worker-retirement-tests.py')
+         runner=importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
+         inventories={'red':(runner.RED_TEST,),'green':runner.GREEN_TESTS}
+        except (OSError,ValueError,AttributeError,TypeError) as error:
+         receipt['errors'].append('test inventory unavailable: '+repr(error))
+        for phase,wanted_exit in [('red',101),('green',0)]:
+         try:
+          result=json.loads((root/(phase+'-exact')/'summary.json').read_text())
+          receipt['proofs'][phase]=result
+          names=inventories[phase]
+          assert result['phase']==phase and result['accepted'] is True
+          assert result['test_inventory']==list(names) and [row['name'] for row in result['tests']]==list(names)
+          assert len(names)==len(set(names))>0
+          assert all(row['accepted'] is True and row['list']['unique_match'] is True and row['list']['exit']==0
+                     and row['run']['exit']==wanted_exit and not row['run']['timed_out'] for row in result['tests'])
+          assert result['harness']['sha256_before']==result['harness']['sha256_after']
+         except (OSError,ValueError,KeyError,AssertionError,AttributeError,TypeError) as error:
+          receipt['errors'].append(phase+' witness receipt invalid: '+repr(error))
+        receipt['accepted']=not receipt['errors']
+        (root/'gate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+        print(json.dumps({'accepted':receipt['accepted'],'errors':receipt['errors']}))
+        if not receipt['accepted']: raise SystemExit(1)
+        (root/'SCOPED-PASS.txt').write_text('RED failed at the intended assertion; GREEN exact native witnesses and compile boundaries passed. Not browser, production, release or formal acceptance.\n')
+        PYCODE
+    - name: Record actual step outcomes including skipped actions
+      id: step_outcomes
+      if: ${{ always() }}
+      env:
+        STEP_OUTCOMES: ${{ toJSON(steps) }}
+      run: |
+        EVIDENCE_DIR="${EVIDENCE_DIR:-$RUNNER_TEMP/native-worker-retirement}"
+        mkdir -p "$EVIDENCE_DIR"
+        printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+    - name: Preserve complete RED and GREEN diagnostics after any failure
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: linux-worker-retirement-diagnostics-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt
+          }}
+        path: ${{ runner.temp }}/native-worker-retirement/
+        if-no-files-found: error
+        retention-days: 7
