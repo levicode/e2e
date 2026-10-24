@@ -9,11 +9,23 @@ import { imageIdentity, pathPreflight, runObserved, sha256 } from './observer.mj
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pins = JSON.parse(readFileSync(path.join(here, 'pins.json'), 'utf8'));
+export const reusePins = JSON.parse(readFileSync(path.join(here, 'reuse-pins.json'), 'utf8'));
 if (process.env.EVIDENCE_DIR && existsSync(path.join(process.env.EVIDENCE_DIR, 'production-identity.json'))) {
   const built = JSON.parse(readFileSync(path.join(process.env.EVIDENCE_DIR, 'production-identity.json'), 'utf8'));
   assert.equal(built.nativeSha, pins.nativeSha); assert.equal(built.nativeTree, pins.nativeTree);
   assert.equal(built.profile, 'ci'); assert.deepEqual(built.features, []);
-  assert.equal(built.diagnosticOnly, true); assert.equal(built.sameRunArtifactVerified, true);
+  assert.equal(built.diagnosticOnly, true);
+  if (built.exactPriorArtifactVerified === true) {
+    assert.equal(built.sameRunArtifactVerified, false);
+    for (const key of ['artifactId', 'binarySha256', 'binaryBytes', 'recipeSha']) assert.equal(built[key], reusePins[key]);
+    assert.equal(built.runId, String(reusePins.runId)); assert.equal(built.runAttempt, String(reusePins.runAttempt));
+    assert.equal(built.artifactDigest, 'sha256:' + reusePins.artifactSha256);
+    assert.equal(built.consumerRunId, process.env.GITHUB_RUN_ID);
+    assert.equal(built.consumerRunAttempt, process.env.GITHUB_RUN_ATTEMPT);
+    assert.equal(built.consumerRecipeSha, process.env.GITHUB_WORKFLOW_SHA);
+    assert.equal(built.nativeCompilationExecutedThisRun, false); assert.equal(built.nativeTestsExecutedThisRun, false);
+    assert.equal(built.formalCandidate, false); assert.equal(built.releaseEligible, false);
+  } else assert.equal(built.sameRunArtifactVerified, true);
   assert.match(built.binarySha256, /^[a-f0-9]{64}$/); pins.binarySha256 = built.binarySha256;
 }
 export const CASES = {
@@ -188,12 +200,53 @@ export function mayContinueFocusedCase(result) {
     && result.knownCleanupConfirmed===true && result.runtimeImagesUnchanged===true
     && result.actualBrowserImageConfirmed===true && !result.firstRunnerError && !result.observerFirstError;
 }
+export const REUSE_CASE_IDS = Object.freeze(['HTTP500']);
+export function requireReuseSelection(ids) {
+  assert.deepEqual(ids, REUSE_CASE_IDS, 'Historical positive control permits only one original HTTP500');
+  return ids;
+}
+export function requireHistoricalPositive(value) {
+  assert.equal(value.id, 'FIRST_EVENTS'); assert.equal(value.status, 'historical-positive-control-verified');
+  assert.equal(value.executedThisRun, false);
+  assert.equal(value.sourceRunId, reusePins.runId); assert.equal(value.sourceRunAttempt, reusePins.runAttempt);
+  assert.equal(value.sourceRecipeSha, reusePins.recipeSha);
+  assert.equal(value.sourceArtifactId, reusePins.priorEvidenceArtifactId);
+  assert.equal(value.sourceArtifactSha256, reusePins.priorEvidenceArtifactSha256);
+  assert.equal(value.rawSha256, reusePins.priorRawSha256);
+  for (const key of ['testPassed', 'knownCleanupConfirmed', 'positiveControlVisible']) assert.equal(value[key], true);
+  for (const key of ['globalLosslessCapture', 'formalCleanupPass', 'formalAcceptance', 'nativeCompilationExecutedThisRun']) assert.equal(value[key], false);
+  assert.equal(value.scopeDecoderVersion, 'sw-causal-scope-closure-v1');
+  assert.ok(Number.isSafeInteger(value.closedSuccessfulTraceCount) && value.closedSuccessfulTraceCount > 0);
+  assert.equal(value.decoderSha256, sha256(path.join(here, 'evidence.py')));
+  return value;
+}
 async function main() {
   const command = process.argv[2], workspace = process.env.GITHUB_WORKSPACE, evidence = process.env.EVIDENCE_DIR;
   if (command === 'guard') { requirePins(); console.log(`e2e_sha=${pins.e2eSha}`); return; }
   assert.ok(workspace && evidence, 'Explicit workflow workspace/evidence required');
   if (command === 'sources') return sourceCheck(workspace, evidence);
   if (command === 'browser') return browserPin(workspace, evidence);
+  if (command === 'cases-reuse') {
+    sourceCheck(workspace, evidence);
+    const historicalPositiveControl = requireHistoricalPositive(JSON.parse(readFileSync(path.join(evidence, 'historical-positive-control.json'), 'utf8')));
+    const built = JSON.parse(readFileSync(path.join(evidence, 'production-identity.json'), 'utf8'));
+    assert.equal(built.exactPriorArtifactVerified, true);
+    assert.equal(sha256(path.join(workspace, 'agent-browser')), reusePins.binarySha256);
+    assert.equal(sha256(path.join(process.env.PRIOR_EVIDENCE_DIR, 'FIRST_EVENTS/native.jsonl')), reusePins.priorRawSha256);
+    const ids = requireReuseSelection([...REUSE_CASE_IDS]);
+    writeFileSync(path.join(evidence, 'selection.json'), JSON.stringify({ ids, historicalPositiveControl: { id: 'FIRST_EVENTS', executedThisRun: false, sourceRunId: reusePins.runId }, diagnosticOnly: true, formalAcceptance: false }) + '\n', { flag: 'wx', mode: 0o600 });
+    const chrome = await browserPin(workspace, evidence), results = [];
+    for (const id of ids) {
+      let result;
+      try { result = await runCase(id, workspace, evidence, chrome); }
+      catch (error) { result = { id, status: 'failed-or-incomplete', firstRunnerError: String(error.stack ?? error) }; json(path.join(evidence, `${id}-runner-error.json`), result); }
+      results.push(result);
+      if (result.status !== 'focused-test-passed') json(path.join(evidence, 'first-failed-case.json'), { id, status: result.status, firstRunnerError: result.firstRunnerError ?? null, firstAssertionFailure: result.report?.firstFailure ?? null });
+    }
+    json(path.join(evidence, 'summary.json'), { historicalPositiveControl, focusedCases: results, nativeCompilationExecutedThisRun: false, nativeTestsExecutedThisRun: false, diagnosticOnly: true, formalCandidateRuntimePass: false, fullAcceptance: false, originalHTTP500Chrome154: 'not-run', releaseEligible: false });
+    if (results.some(result => result.status !== 'focused-test-passed')) process.exitCode = 1;
+    return;
+  }
   if (command === 'cases') {
     sourceCheck(workspace, evidence);
     assert.match(pins.binarySha256, /^[a-f0-9]{64}$/);

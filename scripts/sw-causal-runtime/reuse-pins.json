@@ -1,0 +1,20 @@
+{
+  "runId": 40134687015,
+  "runAttempt": 1,
+  "recipeSha": "aeb4a1e9bcfbc6c18ea0e49a6e379da5b335281a",
+  "recipeTree": "b098a3a71378905e74986b5017a5168fa9ea3404",
+  "compileJobId": 120993585843,
+  "runtimeJobId": 120997644717,
+  "artifactId": 12576479261,
+  "artifactSha256": "9a2d50efd7d671f1ba0c208009b04b157bfefbd9b70242fa16b53c91792da4a1",
+  "artifactBytes": 13244292,
+  "binarySha256": "5e1f187466fe30b4f05efc49f4588076595d43a3d221f78ba218e6deebaa6658",
+  "binaryBytes": 31384056,
+  "priorEvidenceArtifactId": 12576309519,
+  "priorEvidenceArtifactSha256": "a971a52f9a1b836517f7e0464e4b99813dfbb122e63af8b32e3947b952d4f513",
+  "priorRawSha256": "e6a025067584b013edc1bbc6d2030599525747fe5efc13f491834a4359d80d96",
+  "priorRawBytes": 33718,
+  "relocatedFixtureSha256": "fe6b86153e822304eceaab1b30927fdd1440d8fdaddcc16478e1ddf4818993b8",
+  "collectorSha256": "2fe2f8777f94f59cd559574cc2df98557177b788dd8b6821b60cf54207adc776",
+  "compileHelperSha256": "7784c35672be246b7f854404fe240a09e181c69e0d83e33aa5f1b7ac153bb422"
+}
