@@ -18,8 +18,8 @@ jobs:
       run:
         shell: bash
     env:
-      NATIVE_SHA: 56105fe36b66c0f8ef62a596e04ddd1254952c0b
-      NATIVE_TREE: 6a8fd05a22ce5197fbf769b376d9c3a6cabe9563
+      NATIVE_SHA: 63964550fdc002834203b11343a46819185797a6
+      NATIVE_TREE: 8ba5e141fb1bb2b0e397152a5e1a9f740e48a46c
       NATIVE_LOCK_SHA256: 1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97
       E2E_SHA: c98be61c2c01a642c39c8951b466405090e39b04
       E2E_TREE: daddbee93c4ea0b0e1483f892317d0603a2e5843
@@ -267,8 +267,8 @@ jobs:
       run:
         shell: bash
     env:
-      NATIVE_SHA: 56105fe36b66c0f8ef62a596e04ddd1254952c0b
-      NATIVE_TREE: 6a8fd05a22ce5197fbf769b376d9c3a6cabe9563
+      NATIVE_SHA: 63964550fdc002834203b11343a46819185797a6
+      NATIVE_TREE: 8ba5e141fb1bb2b0e397152a5e1a9f740e48a46c
       NATIVE_LOCK_SHA256: 1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97
       E2E_SHA: c98be61c2c01a642c39c8951b466405090e39b04
       E2E_TREE: daddbee93c4ea0b0e1483f892317d0603a2e5843
@@ -334,7 +334,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 56105fe36b66c0f8ef62a596e04ddd1254952c0b
+        ref: 63964550fdc002834203b11343a46819185797a6
         path: native-source
         persist-credentials: false
       timeout-minutes: 3
