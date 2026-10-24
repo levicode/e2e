@@ -1,0 +1,150 @@
+# LOCAL REVIEW DRAFT. Reviewed immutable source pins; publication remains a separate action.
+# Dedicated runtime probe only; never build Rust, publish, merge, or run release gates.
+name: native Linux focused runtime (nonrelease)
+on:
+  push:
+    branches: [implement/native-linux-runtime-ci]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: native-linux-runtime-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  focused-runtime:
+    if: ${{ github.ref == 'refs/heads/implement/native-linux-runtime-ci' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Initialize failure-preserving synthetic evidence
+        run: |
+          set -euo pipefail
+          umask 077
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/native-runtime-playwright"
+          export EVIDENCE_DIR="$RUNNER_TEMP/native-runtime-evidence"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\nEVIDENCE_DIR=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" "$EVIDENCE_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' 'Focused loopback synthetic probes only. Not full-suite, release, acceptance, or original Chrome154 verification.' > "$EVIDENCE_DIR/SCOPE.txt"
+          for phase in guard sources download dependencies browser-install browser-pin runtime final-sources; do
+            printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"
+          done
+      - name: Check out this immutable recipe separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.19.0
+          architecture: x64
+      - name: Require reviewed final e2e commit and tree
+        id: guard
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/guard.exit"' EXIT
+          node recipe/scripts/runtime-probe/runtime.mjs guard 2> >(tee "$EVIDENCE_DIR/guard.stderr" >&2) | tee "$GITHUB_OUTPUT" "$EVIDENCE_DIR/guard.stdout"
+      - name: Check out reviewed e2e fixture source, never the recipe branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/e2e
+          ref: ${{ steps.guard.outputs.e2e_sha }}
+          path: e2e-source
+          persist-credentials: false
+      - name: Check out native source for identity and browser-selection inspection only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 2647b4c5e9439dcf620ce6726883bab65b0fc2ca
+          path: native-source
+          persist-credentials: false
+      - name: Verify immutable source identities and standard host
+        id: sources
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/sources.exit"' EXIT
+          node recipe/scripts/runtime-probe/runtime.mjs sources > >(tee "$EVIDENCE_DIR/sources.stdout") 2> >(tee "$EVIDENCE_DIR/sources.stderr" >&2)
+          uname -a > "$EVIDENCE_DIR/host.txt"
+          cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+      - name: Fetch exact existing compile artifact, never rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/download.exit"' EXIT
+          node recipe/scripts/runtime-probe/runtime.mjs download > >(tee "$EVIDENCE_DIR/download.stdout") 2> >(tee "$EVIDENCE_DIR/download.stderr" >&2)
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+        with:
+          version: 12.3.4
+          run_install: false
+      - name: Install frozen JS graph and build only the e2e TypeScript package
+        working-directory: e2e-source
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/dependencies.exit"' EXIT
+          exec > >(tee "$EVIDENCE_DIR/dependencies.stdout") 2> >(tee "$EVIDENCE_DIR/dependencies.stderr" >&2)
+          test "$(pnpm --version)" = 12.3.4
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter e2e run build
+      - name: Install lock-pinned full Chrome through the official Playwright path
+        id: browser_install
+        working-directory: e2e-source
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-install.exit"' EXIT
+          test ! -e "$PLAYWRIGHT_BROWSERS_PATH"
+          env -u PLAYWRIGHT_DOWNLOAD_HOST -u PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST -u PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD -u PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS -u PLAYWRIGHT_HOST_PLATFORM_OVERRIDE \
+            node packages/web/node_modules/playwright-core/cli.js install --no-shell chromium \
+            > >(tee "$EVIDENCE_DIR/browser-install.stdout") 2> >(tee "$EVIDENCE_DIR/browser-install.stderr" >&2)
+      - name: Verify official browser revision, real executable, version and hash
+        id: browser_pin
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-pin.exit"' EXIT
+          node recipe/scripts/runtime-probe/runtime.mjs browser > >(tee "$EVIDENCE_DIR/browser-pin.stdout") 2> >(tee "$EVIDENCE_DIR/browser-pin.stderr" >&2)
+      - name: Run only original P08 and distinct Chrome156 HTTP500 extension once each
+        id: runtime
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime.exit"' EXIT
+          node recipe/scripts/runtime-probe/runtime.mjs cases > >(tee "$EVIDENCE_DIR/runtime.stdout") 2> >(tee "$EVIDENCE_DIR/runtime.stderr" >&2)
+      - name: Verify sources after execution or failure
+        if: ${{ always() && steps.sources.outcome == 'success' }}
+        env:
+          RECIPE_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/final-sources.exit"' EXIT
+          cp "$EVIDENCE_DIR/source-identity.json" "$EVIDENCE_DIR/source-identity-before.json"
+          node recipe/scripts/runtime-probe/runtime.mjs sources > >(tee "$EVIDENCE_DIR/final-sources.stdout") 2> >(tee "$EVIDENCE_DIR/final-sources.stderr" >&2)
+          cmp "$EVIDENCE_DIR/source-identity-before.json" "$EVIDENCE_DIR/source-identity.json"
+          test "$(sha256sum agent-browser | cut -d' ' -f1)" = fa5fbad01243472bb82db38a3a4790b072fe9e1114e7f0adc6dc2a494b3edd02
+      - name: Preserve actual steps and first failing phase
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          mkdir -p "$EVIDENCE_DIR"
+          printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+          for phase in guard sources download dependencies browser-install browser-pin runtime final-sources; do
+            status="$(cat "$EVIDENCE_DIR/$phase.exit" 2>/dev/null || printf unknown)"
+            if [[ "$status" != 0 && "$status" != not-run ]]; then
+              printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"
+              break
+            fi
+          done
+      - name: Always upload only this run's synthetic evidence, including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: linux-focused-runtime-nonrelease-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-runtime-evidence/
+          if-no-files-found: error
+          retention-days: 7
