@@ -269,6 +269,9 @@ def production(destination, label):
                   cargo_artifact=row, helper_sha256=digest(Path(__file__)),
                   scope="unpromoted native validation artifact; browser/source-retirement/full acceptance NOT established",
                   distribution_eligible=False, dashboard_frontend_built=False)
+    assert re.fullmatch(r"[0-9a-f]{64}", os.environ["NATIVE_VALIDATION_RECEIPT_SHA256"])
+    result["native_validation"] = {"mode": "historical-native-proof-reuse", "proof": NATIVE_REUSE, "current_native_execution": False,
+                                   "receipt_file": "native-reuse.json", "receipt_sha256": os.environ["NATIVE_VALIDATION_RECEIPT_SHA256"]}
     save(destination / "provenance.json", result)
     save(EVIDENCE / f"{label}-provenance.json", result)
     print(json.dumps(result, indent=2))
@@ -336,6 +339,123 @@ def reference_history():
     print(json.dumps(record, indent=2))
 
 
+# One immutable, successful native job. This is historical validation, never a rerun.
+NATIVE_REUSE = {
+    "run_id": 40125273477, "run_attempt": 1, "job_id": 120965243598, "artifact_id": 12572773254,
+    "recipe_sha": "5968c0bcec64c9b0f57a5cdd9b8c77fbe129f771", "recipe_tree": "f43be8fe437579c746438657d436cca7452f1e2d",
+    "archive_sha256": "c0334bde219e025b79ad2f482b02c35f695193e0a7f973b929d6b8afab34396d", "archive_bytes": 291815,
+    "workflow_sha256": "fa25dea10df6090d1cf7b05572aa3c733dd0e98731f7b9b1f270e4d0dfc901fc",
+    "helper_sha256": "33a23d82c7ef2bf2404a1b92bd96d9cabe72677576256e90e3b0c3ed7a913713",
+    "check_contract_sha256": "48234415a67e0feeaa2469090c2bf2f901c53318ecdbce108ac2a70dba41d065",
+}
+
+
+def reuse_native():
+    import inspect
+    import zipfile
+    expected = NATIVE_REUSE
+    core = (terminate_owned, save, digest, execute, identity, binding, aggregate, cargo_artifacts, native_tests)
+    assert hashlib.sha256((''.join(inspect.getsource(fn) for fn in core) + json.dumps(REQUIRED_TESTS)).encode()).hexdigest() == expected["check_contract_sha256"], "native checking contract changed; rerun required"
+    native = {"NATIVE_SHA": "88a7b674d45b784f5578369b8d2bb9a07e430eae", "NATIVE_TREE": "37e8593d44f514afcfa633c94a374b3213ab7dda", "NATIVE_LOCK_SHA256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97"}
+    assert all(os.environ[key] == value for key, value in native.items()), "native source/dependencies changed; rerun required"
+    assert os.environ["RUSTUP_TOOLCHAIN"] == "1.99.1" and os.environ["RUST_MIN_STACK"] == "16777216" and os.environ["CARGO_BUILD_JOBS"] == "2"
+    assert os.environ["SEMANTIC_TESTS_FROZEN"] == "yes"
+    run = json.loads((EVIDENCE / "run.json").read_text())
+    assert run["id"] == expected["run_id"] and run["run_attempt"] == 1 and run["status"] == "completed" and run["conclusion"] == "failure"
+    assert run["head_sha"] == expected["recipe_sha"] and run["head_commit"]["tree_id"] == expected["recipe_tree"]
+    assert run["repository"]["full_name"] == "levicode/e2e" and run["repository"]["private"] is False
+    assert run["event"] == "push" and run["path"] == ".github/workflows/latest-upstream-validation.yml"
+    jobs = json.loads((EVIDENCE / "jobs.json").read_text())
+    assert jobs["total_count"] == len(jobs["jobs"])
+    selected = [job for job in jobs["jobs"] if job["id"] == expected["job_id"]]
+    assert len(selected) == 1
+    job = selected[0]
+    assert job["run_id"] == run["id"] and job["run_attempt"] == 1 and job["head_sha"] == run["head_sha"]
+    assert job["name"] == "native-validation" and job["status"] == "completed" and job["conclusion"] == "success" and job["labels"] == ["ubuntu-latest"]
+    assert job["steps"] and all(step["status"] == "completed" and step["conclusion"] == "success" for step in job["steps"])
+    artifacts = json.loads((EVIDENCE / "artifacts.json").read_text())
+    assert artifacts["total_count"] == len(artifacts["artifacts"])
+    selected = [item for item in artifacts["artifacts"] if item["id"] == expected["artifact_id"]]
+    assert len(selected) == 1
+    artifact = selected[0]
+    assert artifact["name"] == "native-diagnostics-40125273477-1" and artifact["expired"] is False
+    assert artifact["workflow_run"]["id"] == run["id"] and artifact["workflow_run"]["head_sha"] == run["head_sha"]
+    assert artifact["workflow_run"]["repository_id"] == artifact["workflow_run"]["head_repository_id"] == run["repository"]["id"] == 1425853610
+    assert artifact["digest"] == "sha256:" + expected["archive_sha256"] and artifact["size_in_bytes"] == expected["archive_bytes"]
+    archive = EVIDENCE / "native-proof.zip"
+    assert archive.stat().st_size == expected["archive_bytes"] and digest(archive) == expected["archive_sha256"]
+    with zipfile.ZipFile(archive) as bundle:
+        entries = bundle.infolist()
+        assert len(entries) == len({entry.filename for entry in entries}) == 120
+        assert sum(entry.file_size for entry in entries) <= 2_000_000
+        assert all(re.fullmatch(r"[A-Za-z0-9_.-]+", entry.filename) and not entry.is_dir() for entry in entries)
+        proof = {entry.filename: bundle.read(entry).decode("utf-8") for entry in entries}
+    def data(name):
+        return json.loads(proof[name + ".json"])
+    def successful(name, command=None):
+        assert proof[name + ".exit"].strip() == "0", name
+        result = data(name + ".result")
+        assert result["exit"] == 0 and result["timed_out"] is False and not result.get("interrupted"), name
+        assert result["command"] == data(name + ".command"), name
+        assert command is None or result["command"] == command, name
+    phases = "recipe-identity binding source-before toolchain format clippy acceptance-tests-check proxy-feature-check default-no-run default-tests source-after".split()
+    assert data("aggregate")["accepted"] is True and data("aggregate")["phases"] == dict.fromkeys(phases, "0")
+    for name in phases:
+        assert proof[name + ".exit"].strip() == "0"
+        if name != "default-tests":
+            successful(name)
+    identity_row = json.loads(proof["recipe-identity.stdout.log"])
+    assert identity_row == {"sha": expected["recipe_sha"], "tree": expected["recipe_tree"], "status": "", "ignored": []}
+    assert proof["recipe.sha256"].splitlines() == [expected["workflow_sha256"] + "  recipe/.github/workflows/latest-upstream-validation.yml", expected["helper_sha256"] + "  recipe/scripts/validate-latest-upstream.py"]
+    assert all(json.loads(proof["binding.stdout.log"])[key] == value for key, value in native.items())
+    for phase, ignored in [("source-before", []), ("source-after", ["packages/dashboard/out/index.html"])]:
+        row = json.loads(proof[phase + ".stdout.log"])
+        assert row == {"sha": native["NATIVE_SHA"], "tree": native["NATIVE_TREE"], "lock_sha256": native["NATIVE_LOCK_SHA256"], "status": "", "ignored": ignored}
+    toolchain = proof["toolchain.stdout.log"]
+    assert "rustc 1.99.1 (58cf8f9c3 2026-10-13)" in toolchain and "cargo 1.99.1 (5f94df478 2026-08-27)" in toolchain and "host: x86_64-unknown-linux-gnu" in toolchain
+    for name, command in {
+        "format": "cargo fmt --all -- --check",
+        "clippy": "cargo clippy --locked --profile dev --no-default-features --all-targets -- -D warnings",
+        "acceptance-tests-check": "cargo check --locked --profile dev --no-default-features --features acceptance-faults --tests",
+        "proxy-feature-check": "cargo check --locked --profile dev --no-default-features --features acceptance-faults --test client-proxy-fixture",
+        "default-no-run": "cargo test --locked --profile ci --no-default-features --no-run --message-format=json",
+    }.items():
+        successful(name, command.split())
+    outcomes = data("step-outcomes")
+    assert outcomes["gate"]["outputs"] == {"validated": "true"} and all(row["outcome"] == row["conclusion"] == "success" for row in outcomes.values())
+    cargo = [json.loads(line) for line in proof["default-no-run.stdout.log"].splitlines() if line.strip()]
+    assert [row for row in cargo if row.get("reason") == "build-finished"] == [{"reason": "build-finished", "success": True}]
+    compiled = {row["target"]["name"]: row for row in cargo if row.get("reason") == "compiler-artifact" and row.get("executable") and row["profile"]["test"]}
+    tests = data("native-tests")
+    counts = {"agent-browser": (2583, 196), "obscura_cli": (5, 0), "dashboard_cli": (4, 0), "doctor_cli": (5, 0), "tls_cli": (12, 0), "pin_tab_cli": (0, 2)}
+    assert tests["accepted"] is True and tests["required_tests"] == REQUIRED_TESTS and not tests["required_missing_or_not_passed"]
+    assert len(tests["targets"]) == len(compiled) == 6 and {row["target"] for row in tests["targets"]} == set(counts) == set(compiled)
+    summary = []
+    for row in tests["targets"]:
+        name = row["target"]; compiled_row = compiled[name]; binary = compiled_row["executable"]
+        assert row["accepted"] is True and row["cargo_artifact"] == compiled_row
+        assert compiled_row["features"] == [] and compiled_row["profile"]["opt_level"] == "3" and compiled_row["profile"]["debug_assertions"] is False
+        assert Path(binary).parent == Path("/home/runner/work/_temp/upstream-target/ci/deps")
+        assert re.fullmatch(r"[0-9a-f]{64}", row["sha256_before"]) and row["sha256_before"] == row["sha256_after"]
+        successful("list-" + name, [binary, "--list", "--format", "pretty", "--color", "never"])
+        successful("tests-" + name, [binary, "--test-threads=1", "--format", "pretty", "--color", "never"])
+        inventory = re.findall(r"(?m)^(.+): test$", proof["list-" + name + ".stdout.log"])
+        states = re.findall(r"(?m)^test (\S+) \.\.\. (ok|ignored(?:, [^\n]*)?|FAILED)$", proof["tests-" + name + ".stdout.log"])
+        passed = {test for test, state in states if state == "ok"}; ignored = {test for test, state in states if state.startswith("ignored")}
+        assert len(inventory) == len(set(inventory)) == len(states) and {test for test, _ in states} == set(inventory) == passed | ignored
+        assert row["inventory"] == inventory and row["passed"] == len(passed) and row["ignored"] == sorted(ignored)
+        assert (len(passed), len(ignored)) == counts[name]
+        assert len(re.findall(r"(?m)^test result: ok\. " + str(len(passed)) + r" passed; 0 failed; " + str(len(ignored)) + r" ignored; 0 measured; 0 filtered out; finished in [0-9.]+s$", proof["tests-" + name + ".stdout.log"])) == 1
+        if name == "agent-browser":
+            assert set(REQUIRED_TESTS) <= passed and len(REQUIRED_TESTS) == len(set(REQUIRED_TESTS)) == 61
+        summary.append({"target": name, "historical_passed": len(passed), "historical_ignored": len(ignored)})
+    save(EVIDENCE / "native-reuse.json", {"accepted": True, "mode": "historical-native-proof-reuse", "current_native_execution": False,
+         "historical_binary_hashes_only": True, "binaries_present_or_rehashed_now": False, "proof": expected,
+         "native_identity": native, "historical_run_conclusion": run["conclusion"], "historical_native_job_conclusion": job["conclusion"],
+         "required_witnesses_actually_passed_in_historical_run": 61, "targets": summary,
+         "scope": "Reuse of one exact native-only gate. Current e2e and fresh production builds remain separately required; no runtime acceptance."})
+
+
 def main():
     command, *args = sys.argv[1:]
     if command == "run":
@@ -350,6 +470,8 @@ def main():
         decision_selection()
     elif command == "reference-history":
         reference_history()
+    elif command == "reuse-native":
+        reuse_native()
     elif command == "native-tests":
         native_tests()
     elif command == "production":

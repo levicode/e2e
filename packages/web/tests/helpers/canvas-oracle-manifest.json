@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baselineRevision": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8",
-  "candidateSourceBase": "178794771ad0d2e7ad8b65d77fa9cd4173a8ea25",
+  "candidateSourceBase": "8cc0f520280fcb64d0ea708d3bc99e4e1d05d482",
   "claim": "source-equivalent-primitive-oracle",
   "entry": "packages/web/src/observation.ts",
   "sources": [
@@ -15,12 +15,12 @@
     },
     {
       "path": "packages/e2e/src/engine/contract.ts",
-      "currentSha256": "539da3d5d27c3e605bd808d833fff50e55a83646984f563e6917aff8987d9452",
+      "currentSha256": "df2d2aa251791ff515c99886c6e61849672c33a7253f48c2e1f0c14ec45a2bdf",
       "baselineSha256": "bb84292b254644676ff611a625daeeac5304aa6e4f4f9e6e3694420e90494ee5",
       "byteEqual": false,
       "imports": [],
       "external": [],
-      "differenceReview": "Added EngineReadField/EngineFieldValues type aliases and changed viewport documentation. EngineError, retryable-code set, observed limits and every runtime statement are unchanged."
+      "differenceReview": "Added EngineReadField/EngineFieldValues and LocatorExpression union type aliases plus documentation. EngineError, retryable-code set, observed limits and every runtime statement are unchanged."
     },
     {
       "path": "packages/e2e/src/engine/field-values.ts",
@@ -35,7 +35,7 @@
     },
     {
       "path": "packages/e2e/src/engine/index.ts",
-      "currentSha256": "e9fc85cb6c37d4bfd5a117827141cda14c4c4fdf0c41caf01343d29992c4aaa9",
+      "currentSha256": "233ee66daabadd44199e5152c7c4f157bce517a68150adfd1534f8890e4d7611",
       "baselineSha256": "f0644d48279326e37b0b791bdab5648f92fcae54593341e630121dff4ca7cb93",
       "byteEqual": false,
       "imports": [
@@ -56,7 +56,7 @@
         "packages/e2e/src/secrets.ts"
       ],
       "external": [],
-      "differenceReview": "Called runtime exports are unchanged. Added jsonValueProblem and fixture-field validator exports, plus type/comment extensions. The new field-values dependency is separately inventoried; neither validator is invoked by the primitive capture path."
+      "differenceReview": "Called runtime exports are unchanged. Added jsonValueProblem and fixture-field validator exports, plus type/comment extensions. Upstream additions since the prior candidate are comments only. The new field-values dependency is separately inventoried; neither validator is invoked by primitive capture."
     },
     {
       "path": "packages/e2e/src/engine/manifest.ts",
@@ -88,14 +88,15 @@
     },
     {
       "path": "packages/e2e/src/engine/resolve.ts",
-      "currentSha256": "c24af91697672f0c4c1b9c133a89a6d21b88dc5560da8c3cfe3e62f59d1ad000",
+      "currentSha256": "26d1bbd289cc471e1679a63b3b50b32c3826e456b5c7e893642740b970678c21",
       "baselineSha256": "c24af91697672f0c4c1b9c133a89a6d21b88dc5560da8c3cfe3e62f59d1ad000",
-      "byteEqual": true,
+      "byteEqual": false,
       "imports": [
         "packages/e2e/src/engine/contract.ts",
         "packages/e2e/src/internal/text.ts"
       ],
-      "external": []
+      "external": [],
+      "differenceReview": "Upstream adds only the union branch to resolve. This module is barrel-loaded but no resolver is invoked by observation.ts or capture-scope.ts. The source gate removes precisely that branch and requires byte equality with d7."
     },
     {
       "path": "packages/e2e/src/engine/timing.ts",
@@ -118,9 +119,9 @@
     },
     {
       "path": "packages/e2e/src/internal/errors.ts",
-      "currentSha256": "ded7841d27500130684e6f7ae0e9f878731d31b0dbebdfaeadf081426b37c755",
+      "currentSha256": "98df0b4161ae3bdb65efb28f30c4ede07412007944d3bac325f7691e86c792a9",
       "baselineSha256": "ded7841d27500130684e6f7ae0e9f878731d31b0dbebdfaeadf081426b37c755",
-      "byteEqual": true,
+      "byteEqual": false,
       "imports": [
         "packages/e2e/src/engine/contract.ts",
         "packages/e2e/src/internal/realm-slot.ts",
@@ -128,7 +129,8 @@
       ],
       "external": [
         "node:util"
-      ]
+      ],
+      "differenceReview": "Upstream hardens errorMessage for unprintable values and adds a type-only filter phase. Neither errorMessage nor runner error normalization is invoked by the primitive capture path: it uses unchanged EngineError, raceAbort and withTimeout. The source gate checks the exact delta and called timing functions."
     },
     {
       "path": "packages/e2e/src/internal/json-value.ts",
@@ -211,13 +213,14 @@
     },
     {
       "path": "packages/e2e/src/internal/time.ts",
-      "currentSha256": "dc9feb56048ceaff4dc194c596ba0ac2d71693a35caf3be0ffaa4696b0fcdfcf",
+      "currentSha256": "00122464ba81c94caf63a4f2c0f764a7cd6c3b3f8a3dbec0ccbf0ba34e51f866",
       "baselineSha256": "dc9feb56048ceaff4dc194c596ba0ac2d71693a35caf3be0ffaa4696b0fcdfcf",
-      "byteEqual": true,
+      "byteEqual": false,
       "imports": [
         "packages/e2e/src/internal/errors.ts"
       ],
-      "external": []
+      "external": [],
+      "differenceReview": "Upstream adds only the unused budgetText function. withTimeout used by CaptureScope is unchanged and does not invoke runner error normalization. The source gate removes precisely budgetText and requires byte equality with d7."
     },
     {
       "path": "packages/e2e/src/internal/urls.ts",
@@ -259,11 +262,12 @@
     },
     {
       "path": "packages/web/src/in-page/read-semantics.ts",
-      "currentSha256": "dc88e6552d89564a701b7357ca8439df1c9a1cbba091a666ad7d409ce81f426e",
+      "currentSha256": "b1b297b79e24c4eb866441f5ff520b2ae216007156604632b18ea4253dac6343",
       "baselineSha256": "dc88e6552d89564a701b7357ca8439df1c9a1cbba091a666ad7d409ce81f426e",
-      "byteEqual": true,
+      "byteEqual": false,
       "imports": [],
-      "external": []
+      "external": [],
+      "differenceReview": "Fixture-scoped equivalence only, not whole-reader equivalence: upstream changes presentational-role conflict resolution, img role and select option enumeration. Frozen P42 HTML has no explicit role, img or select, including its srcdoc; these changed branches cannot run for it. The source gate reconstructs the complete d7 reader by reversing precisely these additions and guards the exact original HTML. Do not generalize this oracle to arbitrary pages."
     },
     {
       "path": "packages/web/src/observation.ts",
@@ -300,7 +304,7 @@
     },
     {
       "path": "packages/web/src/support.ts",
-      "currentSha256": "f1e2e1cd07c70afae8ce947ae8f6638c3d42dd6ea2b8979a48118f3a6201e1a0",
+      "currentSha256": "75d0c911dccdacc63e49aa6c86b3ce614fd033a3c8b15f14238e89589a9ecdf7",
       "baselineSha256": "a2cfb48489715a94fab9f2c42fcab0664f9a1b67e49245739dd1a5539f1f136d",
       "byteEqual": false,
       "imports": [
@@ -310,7 +314,7 @@
       "external": [
         "node:timers/promises"
       ],
-      "differenceReview": "CaptureScope calls only cancelled, re-exported from runtime-support.ts. The original cancelled function moved unchanged; other support actions are not invoked."
+      "differenceReview": "CaptureScope calls only cancelled, re-exported unchanged from runtime-support.ts. Other support actions are not invoked. Upstream timeout classification changes only navigationStaleOr/staleOr, which are outside primitive capture."
     }
   ],
   "runtimeEntry": "packages/e2e/dist/engine/index.js",
