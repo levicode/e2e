@@ -107,7 +107,7 @@ jobs:
           set -euo pipefail
           trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-pin.exit"' EXIT
           node recipe/scripts/runtime-probe/runtime.mjs browser > >(tee "$EVIDENCE_DIR/browser-pin.stdout") 2> >(tee "$EVIDENCE_DIR/browser-pin.stderr" >&2)
-      - name: Run only original P08 and distinct Chrome156 HTTP500 extension once each
+      - name: Run only P08 exact native-contract regression once
         id: runtime
         env:
           RECIPE_SHA: ${{ github.workflow_sha }}

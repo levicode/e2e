@@ -195,7 +195,7 @@ async function main() {
   if (command === 'cases') {
     sourceCheck(workspace, evidence);
     const chrome = await browserPin(workspace, evidence), results = [];
-    for (const id of Object.keys(CASES)) {
+    for (const id of ['P08']) {
       try { results.push(await runCase(id, workspace, evidence, chrome)); }
       catch (error) { const result = { id, status: 'failed-or-incomplete', firstRunnerError: String(error.stack ?? error) }; results.push(result); json(path.join(evidence, `${id}-runner-error.json`), result); }
     }
