@@ -196,7 +196,7 @@ function importFocusedP41(workspace,evidence) {
 // A functional assertion failure is not an ownership failure. Unknown collector/identity is.
 export function mayContinueFocusedBatch(summary) {
   const cases=summary?.focusedCases;
-  return Array.isArray(cases)&&cases.length===3&&['HTTP500','P41','FIRST_EVENTS'].every(id=>{
+  return summary?.scope==='matrix-only'&&JSON.stringify(summary.excludedCaseIds)===JSON.stringify(['HTTP500'])&&Array.isArray(cases)&&cases.length===2&&['P41','FIRST_EVENTS'].every(id=>{
     const matches=cases.filter(row=>row.id===id);
     return matches.length===1&&matches[0].report?.selectionExact===true&&['passed','failed'].includes(matches[0].report.status)&&mayContinueFocusedCase(matches[0]);
   });
@@ -217,14 +217,26 @@ async function focusedContinuation(workspace,evidence) {
   json(path.join(evidence,'focused-continuation.json'),receipt);
   if(!receipt.safeToContinue) process.exitCode=1;
 }
+export function sentinelLedger(focused) {
+  const first=focused?.focusedCases?.find(row=>row.id==='FIRST_EVENTS');
+  const ledger={schemaVersion:1,scope:'matrix-only job; full runtime sentinel coverage incomplete',fullRuntimeComplete:false,releaseEligible:false,cases:[
+    {id:'HTTP500',requiredForFullRuntime:true,status:'not-run',passed:false,reason:'Excluded from this isolated matrix job; do not repeat the prior failed/cleanup-unknown sentinel',historicalOnly:{runId:40129728970,status:'failed-or-incomplete',cleanup:'unknown',reasons:['worker-admission-incomplete','no-cleanup-attempt'],importedAsCurrentEvidence:false}},
+    {id:'FIRST_EVENTS',requiredForFullRuntime:true,status:first?.status??'not-run',passed:first?.status==='focused-test-passed'&&mayContinueFocusedBatch(focused),currentRun:true}
+  ]};
+  return ledger;
+}
+function writeSentinelLedger(evidence) {
+  let focused;try{focused=JSON.parse(readFileSync(path.join(evidence,'focused/summary.json')));}catch{}
+  const ledger=sentinelLedger(focused);json(path.join(evidence,'sentinel-ledger.json'),ledger);return ledger;
+}
 function verifyRuntimeResults(evidence) {
   const manifest=JSON.parse(readFileSync(path.join(here,'runtime-manifest.json')));
   const summary=JSON.parse(readFileSync(path.join(evidence,'summary.json')));
   assert.equal(summary.expectedCount,333); assert.equal(summary.all333AssertionsPassed,true);
   for(const name of ['sources','artifact','dependencies','browser-install','codec-install','browser-codecs','runtime-probes','focused','runtime-matrix','final-identities']) assert.equal(readFileSync(path.join(evidence,name+'.exit'),'utf8').trim(),'0',name);
   const focused=JSON.parse(readFileSync(path.join(evidence,'focused/summary.json')));
-  assert.equal(focused.focusedCases.length,3);
-  for(const id of ['HTTP500','P41','FIRST_EVENTS']) {
+  assert.equal(focused.scope,'matrix-only');assert.deepEqual(focused.excludedCaseIds,['HTTP500']);assert.equal(focused.focusedCases.length,2);
+  for(const id of ['P41','FIRST_EVENTS']) {
     const matches=focused.focusedCases.filter(item=>item.id===id);assert.equal(matches.length,1);assert.equal(matches[0].status,'focused-test-passed');
   }
   assert.equal(readFileSync(path.join(evidence,'cli-cache-unchanged.exit'),'utf8').trim(),'0');
@@ -243,7 +255,10 @@ function verifyRuntimeResults(evidence) {
   const observed=Object.fromEntries(['full','shell','production','fault'].map(name=>[name,observations.some(row=>row.executable===images[name].executable&&row.sha256===images[name].sha256&&row.expectedHashMatches===true)]));
   json(path.join(evidence,'actual-image-observation.json'),{observed,coverage:'sampled only; not exhaustive descendant cleanup proof',releaseEligible:false});
   assert.ok(Object.values(observed).every(Boolean));
-  json(path.join(evidence,'runtime-results.json'),{status:'passed',originalAssertions:329,decisionAssertions:4,externalSentinels:2,e2e:pins.e2eSha,native:pins.nativeSha,productionSha256:pins.production.binarySha256,faultSha256:pins.fault.binarySha256,releaseEligible:false,fullAcceptance:false,sourceRetirement:false,realModelAcceptance:false});
+  const sentinels=writeSentinelLedger(evidence);assert.equal(sentinels.cases[0].status,'not-run');assert.equal(sentinels.cases[0].passed,false);assert.equal(sentinels.cases[1].passed,true);
+  const matrix={status:'passed',scope:'isolated same-source333 plus FIRST_EVENTS only',originalAssertions:329,decisionAssertions:4,externalSentinelsExecuted:1,http500Status:'not-run',fullRuntimeComplete:false,e2e:pins.e2eSha,native:pins.nativeSha,productionSha256:pins.production.binarySha256,faultSha256:pins.fault.binarySha256,releaseEligible:false,fullAcceptance:false,sourceRetirement:false,realModelAcceptance:false};
+  json(path.join(evidence,'matrix-runtime-results.json'),matrix);
+  json(path.join(evidence,'runtime-results.json'),{...matrix,status:'incomplete',matrixStatus:'passed',reason:'Required HTTP500 sentinel deliberately not run in this isolated job; prior failed/cleanup-unknown observation is separate history'});
 }
 async function main() {
   const [command]=process.argv.slice(2), workspace=process.env.GITHUB_WORKSPACE,evidence=process.env.EVIDENCE_DIR;
@@ -251,6 +266,7 @@ async function main() {
   if(command==='sources') return sourceCheck(workspace,evidence);
   if(command==='focused-continuation') return focusedContinuation(workspace,evidence);
   if(command==='import-p41') return importFocusedP41(workspace,evidence);
+  if(command==='sentinel-ledger') return writeSentinelLedger(evidence);
   if(command==='runtime-results') return verifyRuntimeResults(evidence);
   if(command==='download') return downloadArtifact(workspace,evidence);
   if(command==='browsers') return browserCheck(workspace,evidence);

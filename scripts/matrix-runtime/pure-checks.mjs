@@ -5,10 +5,10 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { reconcile, validateManifest, phaseSelectionExact } from './reconcile.mjs';
-import { pins, requirePins, verifyProvenance, validateFocusedP41, mayContinueFocusedBatch, observedCleanupConfirmed } from './identity.mjs';
+import { pins, requirePins, verifyProvenance, validateFocusedP41, mayContinueFocusedBatch, observedCleanupConfirmed, sentinelLedger } from './identity.mjs';
 import { validatePairCoverage, validatePairRecords } from './canvas-pair.mjs';
 import { pathToFileURL } from 'node:url';
-import { mayContinueFocusedCase } from '../runtime-probe/runtime.mjs';
+import { mayContinueFocusedCase, selectRuntimeCases } from '../runtime-probe/runtime.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url));
 const manifest=JSON.parse(readFileSync(path.join(here,'runtime-manifest.json')));
 const clone=x=>structuredClone(x), sourceRoot='/synthetic-only/e2e-source';
@@ -82,8 +82,15 @@ for(const mutate of [x=>x.report.testResults[0].name='/synthetic/reproduction.te
 const focusedSafe={knownCleanupConfirmed:true,cleanup:{status:'complete-observed-snapshots'},runtimeImagesUnchanged:true,actualBrowserImageConfirmed:true,firstRunnerError:null,observerFirstError:null};
 assert.equal(mayContinueFocusedCase(focusedSafe),true);checks++;
 for(const mutate of [x=>x.knownCleanupConfirmed=false,x=>delete x.knownCleanupConfirmed,x=>x.cleanup.status='unknown',x=>x.runtimeImagesUnchanged=false,x=>x.actualBrowserImageConfirmed=false,x=>x.firstRunnerError='missing reporter',x=>x.observerFirstError='identity mismatch']){const x=clone(focusedSafe);mutate(x);assert.equal(mayContinueFocusedCase(x),false);checks++}
-const safeBatch={focusedCases:['HTTP500','P41','FIRST_EVENTS'].map(id=>({...clone(focusedSafe),id,status:'focused-test-passed',report:{selectionExact:true,status:'passed'}}))};
+const safeBatch={scope:'matrix-only',excludedCaseIds:['HTTP500'],focusedCases:['P41','FIRST_EVENTS'].map(id=>({...clone(focusedSafe),id,status:'focused-test-passed',report:{selectionExact:true,status:'passed'}}))};
 assert.equal(mayContinueFocusedBatch(safeBatch),true);checks++;
+const sentinels=sentinelLedger(safeBatch);assert.equal(sentinels.fullRuntimeComplete,false);assert.equal(sentinels.cases[0].status,'not-run');assert.equal(sentinels.cases[0].passed,false);assert.equal(sentinels.cases[1].passed,true);checks++;
+assert.equal(sentinelLedger(undefined).cases[0].passed,false);assert.equal(sentinelLedger(undefined).cases[1].passed,false);checks++;
+const invented500=clone(safeBatch);invented500.focusedCases.push({...clone(safeBatch.focusedCases[0]),id:'HTTP500'});assert.equal(sentinelLedger(invented500).cases[0].passed,false);assert.equal(sentinelLedger(invented500).cases[0].status,'not-run');checks++;
+const failedEvent=clone(safeBatch);failedEvent.focusedCases[1].status='failed-or-incomplete';failedEvent.focusedCases[1].report.status='failed';assert.equal(sentinelLedger(failedEvent).cases[1].passed,false);checks++;
+assert.deepEqual(selectRuntimeCases(['matrix']),['P41','FIRST_EVENTS']);checks++;
+for(const args of [[],['all'],['HTTP500'],['P41'],['matrix','HTTP500'],['matrix','matrix'],['P41','FIRST_EVENTS']]){assert.throws(()=>selectRuntimeCases(args));checks++;}
+for(const mutate of [x=>delete x.scope,x=>x.excludedCaseIds=[],x=>x.focusedCases.push({...clone(x.focusedCases[0]),id:'HTTP500'}),x=>x.focusedCases[1].id='P41']){const x=clone(safeBatch);mutate(x);assert.equal(mayContinueFocusedBatch(x),false);checks++;}
 const redSafe=clone(safeBatch);redSafe.focusedCases[0].status='failed-or-incomplete';redSafe.focusedCases[0].report.status='failed';
 assert.equal(mayContinueFocusedBatch(redSafe),true,'Ordinary assertion red with complete identity/cleanup permits next group');checks++;
 for(const mutate of [x=>x.focusedCases[0].cleanup.status='unknown',x=>x.focusedCases[0].cleanup={status:'unknown',reasons:['worker-admission-incomplete']},x=>x.focusedCases[0].knownCleanupConfirmed=false,x=>x.focusedCases[0].runtimeImagesUnchanged=false,x=>x.focusedCases[0].report.selectionExact=false,x=>delete x.focusedCases[0].report.status,x=>x.focusedCases[0].report.status='unknown',x=>x.focusedCases[0].report.status='skipped',x=>x.focusedCases[0].firstRunnerError='missing report',x=>x.focusedCases.pop()]){const x=clone(redSafe);mutate(x);assert.equal(mayContinueFocusedBatch(x),false);checks++}

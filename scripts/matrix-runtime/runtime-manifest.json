@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "kind": "same-source-runtime-activation-recipe",
+  "kind": "isolated-same-source-333-runtime-recipe",
   "preparedOnly": true,
   "executed": false,
   "dispatchable": true,
@@ -186,7 +186,10 @@
       "countedIn333": false,
       "sourcePath": "/workspace/shared/e2e-worker-runtime-recipe/scripts/runtime-probe/sw-startup-events.test.ts",
       "outerMaxMs": 45000,
-      "status": "not-run"
+      "status": "not-run",
+      "executionPlanned": false,
+      "requiredForFullRuntime": true,
+      "reason": "Excluded from isolated matrix job; prior HTTP500 failed with cleanup unknown, not retried or relabeled"
     },
     {
       "id": "FIRST_EVENTS",
@@ -196,7 +199,9 @@
       "countedIn333": false,
       "sourcePath": "/workspace/shared/e2e-worker-runtime-recipe/scripts/runtime-probe/sw-startup-events.test.ts",
       "outerMaxMs": 45000,
-      "status": "not-run"
+      "status": "not-run",
+      "executionPlanned": true,
+      "requiredForFullRuntime": true
     }
   ],
   "inventorySources": [
@@ -4638,6 +4643,17 @@
     "runtimeExecuted": false,
     "releaseEligible": false,
     "integratorOnlyRemoteWriter": true,
-    "recommendedRecipeBaseCommit": "c98be61c2c01a642c39c8951b466405090e39b04"
+    "recommendedRecipeBaseCommit": "23a026142dd998de5aa39d4005f1261024cf62f1",
+    "runtimeScope": "333 plus original FIRST_EVENTS; HTTP500 not run",
+    "freshRunnerIsolation": true,
+    "priorRuntimeRunId": 40129728970,
+    "priorRuntimeOutcomesImported": 0,
+    "recommendedRecipeBaseTree": "777195e73064ed77c3eae8c96ad16092865f7888"
+  },
+  "scopeCompletionPolicy": {
+    "matrixJobMayPassOnlyFor": "all333 plus FIRST_EVENTS and every unchanged proof/identity/cleanup prerequisite",
+    "http500": "not-run in this job; prior failure/unknown stays separate history",
+    "fullRuntimeComplete": false,
+    "fullAcceptance": false
   }
 }

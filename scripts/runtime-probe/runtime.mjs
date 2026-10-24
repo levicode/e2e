@@ -165,6 +165,11 @@ export function mayContinueFocusedCase(result) {
     && result.runtimeImagesUnchanged===true && result.actualBrowserImageConfirmed===true
     && !result.firstRunnerError && !result.observerFirstError;
 }
+// Closed matrix-only selector. No implicit all-cases mode or user-provided test IDs.
+export function selectRuntimeCases(args) {
+  assert.deepEqual(args,['matrix'],'Only the exact matrix selector is allowed');
+  return ['P41','FIRST_EVENTS'];
+}
 async function main() {
   const command = process.argv[2], workspace = process.env.GITHUB_WORKSPACE, evidence = process.env.EVIDENCE_DIR;
   if (command === 'guard') { requirePins(); console.log(`e2e_sha=${pins.e2eSha}`); return; }
@@ -172,11 +177,13 @@ async function main() {
   if (command === 'sources') return sourceCheck(workspace, evidence);
   if (command === 'browser') return browserPin(workspace, evidence);
   if (command === 'cases') {
+    const ids=selectRuntimeCases(process.argv.slice(3));
     sourceCheck(workspace, evidence);
     assert.match(pins.binarySha256, /^[a-f0-9]{64}$/);
     assert.equal(sha256(path.join(workspace, 'agent-browser')), pins.binarySha256);
+    // Exclusive invocation receipt refuses duplicate execution even after an interrupted run.
+    writeFileSync(path.join(evidence,'selection.json'),JSON.stringify({scope:'matrix-only',caseIds:ids,excludedCaseIds:['HTTP500'],sourceRevision:pins.e2eSha,binarySha256:pins.binarySha256})+'\n',{flag:'wx',mode:0o600});
     const chrome = await browserPin(workspace, evidence), results = [];
-    const ids=Object.keys(CASES);
     for (const [index,id] of ids.entries()) {
       let result;
       try { result=await runCase(id, workspace, evidence, chrome); }
@@ -189,7 +196,7 @@ async function main() {
         break;
       }
     }
-    json(path.join(evidence, 'summary.json'), { focusedCases: results, originalHTTP500Chrome154: 'not-run', releaseEligible: false });
+    json(path.join(evidence, 'summary.json'), { scope:'matrix-only', excludedCaseIds:['HTTP500'], focusedCases: results, originalHTTP500Chrome154: 'not-run', releaseEligible: false });
     if (results.some(result => result.status !== 'focused-test-passed')) process.exitCode = 1;
     return;
   }
