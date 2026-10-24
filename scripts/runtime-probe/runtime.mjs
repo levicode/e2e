@@ -98,7 +98,7 @@ async function browserPin(workspace, evidence) {
   const catalog = JSON.parse(readFileSync(path.join(path.dirname(packageFile), 'browsers.json'), 'utf8'));
   const chromium = catalog.browsers.find(entry => entry.name === 'chromium');
   assert.equal(chromium.revision, pins.chromiumRevision); assert.equal(chromium.browserVersion, pins.chromeVersion);
-  const playwright = await import(pathToFileURL(require.resolve('playwright-core')).href);
+  const playwright = require('playwright-core');
   const executable = realpathSync(playwright.chromium.executablePath());
   assert.ok(executable.startsWith(realpathSync(process.env.PLAYWRIGHT_BROWSERS_PATH) + path.sep));
   assert.ok(executable.includes(`/chromium-${pins.chromiumRevision}/chrome-linux64/chrome`));
