@@ -11,7 +11,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const pins = JSON.parse(readFileSync(path.join(here, 'pins.json'), 'utf8'));
 export const CASES = {
   P08: { title: 'rejects a missing active target even when another tab has the same URL', browserScenario: 'original-P08-Chrome156', outerMaxMs: 150000 },
-  HTTP500: { title: 'projects a failed first service-worker main-script request once while registration stays empty', browserScenario: 'HTTP500-Chrome156-extension-NOT-original-Chrome154', outerMaxMs: 45000 },
+  HTTP500: { title: 'projects a failed first service-worker main-script request once while registration stays empty', browserScenario: 'HTTP500-Chrome156-connect-isolated-PASSIVE-DIAGNOSTIC-NOT-original-launch', outerMaxMs: 45000 },
 };
 const json = (file, value) => writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -117,7 +117,7 @@ async function runCase(id, workspace, evidence, chrome) {
   const collectorFile = path.join(source, 'scripts/acceptance/candidate-cleanup-diagnostics.ts');
   const collector = await import(pathToFileURL(collectorFile).href);
   const { validSyntheticFact } = await import(pathToFileURL(path.join(web, 'tests/helpers/synthetic-evidence.ts')).href);
-  const testSource = id === 'P08' ? path.join(web, 'tests/integration/cdp-recovery.test.ts') : path.join(here, 'sw-startup-events.test.ts');
+  const testSource = id === 'P08' ? path.join(web, 'tests/integration/cdp-recovery.test.ts') : path.join(here, 'sw-startup-events.passive.test.ts');
   const binding = { sourceRevision: pins.e2eSha, nativeSourceRevision: pins.nativeSha, testSourceDigest: sha256(testSource), binarySha256: pins.binarySha256, collectorSha256: sha256(collectorFile) };
   for (const name of ['home', 'cache', 'bin']) mkdirSync(path.join(root, name), { mode: 0o700 });
   symlinkSync(chrome.executable, path.join(root, 'bin/google-chrome'));
@@ -129,9 +129,9 @@ async function runCase(id, workspace, evidence, chrome) {
   const capture = collector.prepareCleanupCapture(binding, baseEnv), env = capture.env;
   let target = testSource, extra = ['--project=integration'];
   if (id === 'HTTP500') {
-    for (const file of ['sw-startup-events.test.ts', 'negotiation.setup.ts']) writeFileSync(path.join(root, file), readFileSync(path.join(here, file), 'utf8').replaceAll('__E2E_SOURCE_ROOT__', source));
+    for (const file of ['sw-startup-events.passive.test.ts', 'passive-relay.mjs', 'negotiation.setup.ts']) writeFileSync(path.join(root, file), readFileSync(path.join(here, file), 'utf8').replaceAll('__E2E_SOURCE_ROOT__', source));
     symlinkSync(path.join(web, 'node_modules'), path.join(root, 'node_modules'));
-    target = path.join(root, 'sw-startup-events.test.ts');
+    target = path.join(root, 'sw-startup-events.passive.test.ts');
     const config = { test: { testTimeout: 30000, hookTimeout: 30000, pool: 'forks', maxWorkers: 1, minWorkers: 1, include: [target], setupFiles: [path.join(root, 'negotiation.setup.ts')] } };
     writeFileSync(path.join(root, 'config.mjs'), 'export default ' + JSON.stringify(config));
     extra = ['--config=' + path.join(root, 'config.mjs')];
@@ -141,14 +141,14 @@ async function runCase(id, workspace, evidence, chrome) {
     env.E2E_CDP_RECOVERY_DIAGNOSTIC = '1';
   }
   const argv = [process.execPath, path.join(web, 'node_modules/vitest/vitest.mjs'), 'run', ...extra, '--maxWorkers=1', '--reporter=verbose', '--reporter=json', '--outputFile.json=' + path.join(root, 'vitest.json'), target, '-t', spec.title];
-  json(path.join(output, 'plan.json'), { id, ...spec, binding, paths, argv, privatePathChrome: path.join(root, 'bin/google-chrome'), selectedChrome: chrome, syntheticBatch: false, temporaryNoSandbox: 'only this owned CI loopback fixture' });
+  json(path.join(output, 'plan.json'), { id, ...spec, topology: 'connect-isolated-passive-relay-not-original-launch', passiveRelaySha256: sha256(path.join(here, 'passive-relay.mjs')), diagnosticRunnerSha256: sha256(fileURLToPath(import.meta.url)), binding, paths, argv, privatePathChrome: path.join(root, 'bin/google-chrome'), selectedChrome: chrome, syntheticBatch: false, temporaryNoSandbox: 'only this owned CI loopback fixture' });
   let observed, cleanup, report, firstRunnerError = null;
   try {
     assert.equal(sha256(binary), pins.binarySha256);
-    observed = await runObserved({ root, synthetic: false, borrowedChrome: id === 'P08', queueSampling: id !== 'P08', python: '/usr/bin/python3', sampler: path.join(here, 'sample_queues.py'), markerFile: path.join(root, 'no-marker.jsonl'),
+    observed = await runObserved({ root, synthetic: false, borrowedChrome: true, queueSampling: false, python: '/usr/bin/python3', sampler: path.join(here, 'sample_queues.py'), markerFile: path.join(root, 'no-marker.jsonl'),
       native: { executable: binary, sha256: pins.binarySha256, fileIdentity: imageIdentity(binary), argv: [binary] },
       proxy: { executable: binary, sha256: pins.binarySha256, fileIdentity: imageIdentity(binary), argvCheck: a => a.length === 6 && a[0] === binary && a[1] === '--session' && /^e2e-[a-f0-9-]{36}$/.test(a[2]) && a[3] === 'session' && a[4] === 'connect' && a[5] === '--json' },
-      chrome: { ...chrome, ...(id === 'P08' ? { argvForProfile: profile => borrowedArgv(chrome.executable, profile) } : {}) },
+      chrome: { ...chrome, argvForProfile: profile => borrowedArgv(chrome.executable, profile) },
       terminalIdentity: { dev: capture.device, ino: capture.inode }, ownerEnvironment: { AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: capture.file }, program: { argv, cwd: web, env }, outerMaxMs: spec.outerMaxMs });
   } catch (error) { firstRunnerError = String(error.stack ?? error); }
   finally {
@@ -195,11 +195,11 @@ async function main() {
   if (command === 'cases') {
     sourceCheck(workspace, evidence);
     const chrome = await browserPin(workspace, evidence), results = [];
-    for (const id of ['P08']) {
+    for (const id of ['HTTP500']) {
       try { results.push(await runCase(id, workspace, evidence, chrome)); }
       catch (error) { const result = { id, status: 'failed-or-incomplete', firstRunnerError: String(error.stack ?? error) }; results.push(result); json(path.join(evidence, `${id}-runner-error.json`), result); }
     }
-    json(path.join(evidence, 'summary.json'), { focusedCases: results, originalHTTP500Chrome154: 'not-run', releaseEligible: false });
+    json(path.join(evidence, 'summary.json'), { focusedCases: results, topology: 'connect-isolated-passive-relay-not-original-launch', originalLaunchHTTP500: 'not-run-in-this-diagnostic', originalHTTP500Chrome154: 'not-run', releaseEligible: false });
     if (results.some(result => result.status !== 'focused-test-passed')) process.exitCode = 1;
     return;
   }
