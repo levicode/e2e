@@ -1,0 +1,259 @@
+{
+  "baseNativeSha": "64315733808267b10be34f179f2a2daf4fd644ee",
+  "baseNativeTree": "c0f32f260978e3631c4fce79513780820dc7218d",
+  "publishedNativeSha": "53d280d74c8e264f1e30edb6760fb85134c06851",
+  "candidateTree": "2526ed25dd6d6ecb81a534a82f38b4d6c166ae80",
+  "sourceBindingFrozen": true,
+  "productionSourceChanged": true,
+  "onlyTestOverlay": false,
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "patchSha256": "7ab2b7b0b00fb62e71a0d341a0283cee9c6a5bc6a3671d567a612865752a1937",
+  "rustToolchain": "1.99.1",
+  "nodeVersion": "v24.19.0",
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_actions.rs",
+      "beforeSha256": "e88116ced75fb9c9382e55900a245588e3bfac3114ab3e6d7308da6ad8ff799e",
+      "afterSha256": "7fa4712a9ef7c896a0ef95c518e9d8b1f15df47c6c3dab7878c8ebf86b7b9159"
+    },
+    {
+      "path": "cli/src/native/client_browser_trace_retirement_tests.rs",
+      "beforeSha256": "9322afeec46692cc7feddba344d64b5b1306f1e921290a229e9db7557efda6ee",
+      "afterSha256": "204aec44b22aa3685e99ac6df98d8a8c3cf2ebe928b3c5739866cb0f98871ec1"
+    },
+    {
+      "path": "cli/src/native/client_enrollment.rs",
+      "beforeSha256": "1995ebed5552723f6ec923072aebb598743740957f7ff6f0416e463eaf0323e7",
+      "afterSha256": "6b4f5d012639c0c44ea2b0350ab2c5465414f5c29e65671ea5c583fe9085689e"
+    },
+    {
+      "path": "cli/src/native/client_network.rs",
+      "beforeSha256": "d9f811188240800b4cf49bd88930ce955bf321701fafe63a6ce0f91f4d70c980",
+      "afterSha256": "73da2e258589a858c1d965ce839a1091aabbf288c1ce31675d768546651147b7"
+    },
+    {
+      "path": "cli/src/native/client_session.rs",
+      "beforeSha256": "427bf41663d38653f56982a796597ffe8bc2d676c2dcbebd2717b16ac026767c",
+      "afterSha256": "657a17ea4385fac80f404b28d8bed9ae7d2c1725e205591bf0d8dcd2c154d7a6"
+    },
+    {
+      "path": "cli/src/native/client_terminal_cleanup_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "a2526ac49062db2c869a3485f9020b077309a4c96957c02fcb7ea4e8f9f0916c"
+    },
+    {
+      "path": "cli/src/native/client_transport.rs",
+      "beforeSha256": "53a559f56724d9763349fe680b6ee8a7492e60066b12994f6cd0df0cc060e486",
+      "afterSha256": "010bbf164ef65c2063d3177755fc700898cfcb272d89377019357ea10a28a48b"
+    }
+  ],
+  "cases": [
+    {
+      "id": "p06-characterization",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_currently_quarantines_before_reconnect_verification",
+      "expected": "passed",
+      "category": "current-behavior-characterization",
+      "configuration": "default"
+    },
+    {
+      "id": "p06-recovery-red",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay",
+      "expected": "failed",
+      "failureMarker": "P06 exact-identity reconnect never reached verification:",
+      "category": "intentional-unfixed-recovery-entry-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "cold-unarmed",
+      "name": "native::client_actions::tests::recording_unarmed_page_hooks_and_stop_are_resource_free_noops",
+      "expected": "passed",
+      "category": "retirement-producer-candidate-not-retired",
+      "configuration": "default"
+    },
+    {
+      "id": "misleading-query",
+      "name": "native::client_actions::tests::live_query_publication_then_tap_refuses_ambiguity_without_input",
+      "expected": "passed",
+      "category": "retirement-producer-candidate-not-retired",
+      "configuration": "default"
+    },
+    {
+      "id": "response-watermark",
+      "name": "native::client_enrollment::tests::eval_capture_network_reader_ahead_of_apply_is_scope_unavailable",
+      "expected": "passed",
+      "category": "scope-unavailable-characterization-not-e2e-root-cause",
+      "configuration": "default"
+    },
+    {
+      "id": "trace-raw-ack-restoration",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_raw_ack_then_restore_past_transport_grace_preserves_owner",
+      "expected": "passed",
+      "category": "trace-retirement-characterization-not-e2e-root-cause",
+      "configuration": "faults"
+    },
+    {
+      "id": "trace-unacknowledged-raw",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_unacknowledged_raw_capture_cannot_regain_owner",
+      "expected": "passed",
+      "category": "trace-retirement-negative-control",
+      "configuration": "faults"
+    },
+    {
+      "id": "terminal-quarantine-drain",
+      "name": "native::client_network::bridge_tests::terminal_quarantine_parks_and_drains_without_restoring_business_authority",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-callback-disposition",
+      "name": "native::client_network::bridge_tests::terminal_callback_disposition_distinguishes_queue_from_local_only",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-owner-rejections",
+      "name": "native::client_network::bridge_tests::terminal_cleanup_rejects_foreign_broker_ledger_generation_and_missing_owner",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-publication-rejections",
+      "name": "native::client_network::bridge_tests::terminal_local_fence_rejects_pending_and_discarded_publications",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-notice-failure",
+      "name": "native::client_network::bridge_tests::terminal_notice_queue_failure_never_becomes_local_only_success",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-reader-failure",
+      "name": "native::client_network::bridge_tests::terminal_local_fence_never_hides_a_failed_retained_reader",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-gate-owner",
+      "name": "native::client_transport::tests::terminal_callback_cut_requires_registered_gate_and_explicit_owner",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "terminal-unpublished-rejection",
+      "name": "native::client_transport::tests::terminal_callback_cut_never_treats_unpublished_false_as_terminal_proof",
+      "expected": "passed",
+      "category": "new-terminal-cleanup-regression",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-exact-owner",
+      "name": "native::client_session::tests::parked_registry_requires_exact_admitted_operation_and_owner",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-park-expiry",
+      "name": "native::client_session::tests::parked_registry_expiry_cancellation_and_abandonment_never_revive",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-transfer-owner",
+      "name": "native::client_session::tests::route_transfer_rejects_wrong_owner_scope_generation_and_cancellation",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-terminal-replacement",
+      "name": "native::client_network::bridge_tests::terminal_routes_wrong_replacement_authority_never_mutates_hold",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-reader-early-ack",
+      "name": "native::client_network::bridge_tests::terminal_close_canceled_waiter_cannot_acknowledge_held_reader_early",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-transfer-before-drain",
+      "name": "native::client_network::bridge_tests::route_transfer_adopts_same_version_only_after_exact_source_drain",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-callback-publication",
+      "name": "native::client_transport::tests::terminal_callback_cut_rejects_root_wrong_scope_and_unpublished_replacement",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "negative-callback-queue",
+      "name": "native::client_transport::tests::terminal_callback_cut_queue_failure_seals_and_quarantines",
+      "expected": "passed",
+      "category": "existing-terminal-cleanup-negative-control",
+      "configuration": "default"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    },
+    "faults": {
+      "features": [
+        "acceptance-faults"
+      ],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "baselineEvidence": {
+    "runId": "40137712725",
+    "passedTests": 2,
+    "failedTests": 4,
+    "notRunTests": 1,
+    "allFourStrictGatesAndBothHarnessesPassed": true
+  },
+  "scope": {
+    "originalSevenPreserved": true,
+    "newTerminalCleanupTests": 8,
+    "existingNegativeControls": 8,
+    "productionFilesChanged": [
+      "cli/src/native/client_enrollment.rs",
+      "cli/src/native/client_network.rs",
+      "cli/src/native/client_session.rs",
+      "cli/src/native/client_transport.rs"
+    ],
+    "fixtureModelCorrections": [
+      "trace-source-mask-install-peer",
+      "misleading-query-default-serde-states"
+    ],
+    "reconnectAdmissionFixed": false,
+    "originalE2eRetired": false,
+    "productionImageBuilt": false
+  },
+  "patchInputs": [
+    {
+      "name": "terminal-local-retirement",
+      "sha256": "85589132eef8d9bbc84b27780cde27ec8a17461aecf14c1f8f26856f7a040843"
+    }
+  ]
+}
