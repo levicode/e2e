@@ -157,12 +157,14 @@ describe('nested frame locators', () => {
         evidence.phase('setup', 'document');
         await nativeDocument(browser, HOST_DOCUMENT);
         evidence.phase('setup', 'readiness');
-        await expect.poll(() => browser.evaluate(() => {
-          const outer = document.querySelector<HTMLIFrameElement>('#outer')?.contentDocument;
-          const inner = outer?.querySelector<HTMLIFrameElement>('#inner')?.contentDocument;
-          const deep = inner?.querySelector<HTMLIFrameElement>('#deep')?.contentDocument;
-          return deep?.querySelector('button')?.textContent ?? null;
-        })).toBe('Deep button');
+        await vi.waitFor(async () => {
+          expect(await browser.evaluate(() => {
+            const outer = document.querySelector<HTMLIFrameElement>('#outer')?.contentDocument;
+            const inner = outer?.querySelector<HTMLIFrameElement>('#inner')?.contentDocument;
+            const deep = inner?.querySelector<HTMLIFrameElement>('#deep')?.contentDocument;
+            return deep?.querySelector('button')?.textContent ?? null;
+          })).toBe('Deep button');
+        }, { timeout: 1_000, interval: 50 });
         evidence.passed('setup');
       } catch (cause) { evidence.failed('setup'); throw cause; }
       finally { restore(); evidence.observer.close(); }

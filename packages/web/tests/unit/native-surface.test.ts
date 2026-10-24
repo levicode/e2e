@@ -1403,6 +1403,37 @@ describe('native surface ownership and fixed policy binding', () => {
     expect(frames.find(frame => frame['command'] === 'scope.reconnect')?.['args']).toMatchObject({ expectedBrowserIdentity: 'browser-owner', expectedContextIdentity: 'context-1', expectedPageIdentity: 'page-1' });
     await surface.dispose(cleanup());
   });
+  it('retains the original scope and cached refusal without replay after a clean reconnect refusal', async () => {
+    const reconnect = vi.fn(async () => 'ws://synthetic.test/replacement');
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/original', reconnectEndpoint: reconnect } });
+    await start(surface);
+    const originalScope = currentScope;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'scope.reconnect') return false;
+      reply({ ok: false, error: { code: 'stale-scope' }, effects: 'not-dispatched', scopeState: 'usable' });
+      return true;
+    };
+    try {
+      await sendEvent('scope.disconnected', { identityScope: originalScope, reason: 'browser-connection-closed' });
+      const beforeRecovery = frames.length;
+      const firstFailure: unknown = await surface.observe(operation()).catch((cause: unknown) => cause);
+      expect(firstFailure).toBeInstanceOf(EngineError);
+      expect(firstFailure).toMatchObject({ code: 'INVALID_STATE', retryable: false });
+      expect(reconnect).toHaveBeenCalledOnce();
+      expect(frames.slice(beforeRecovery)).toHaveLength(1);
+      expect(frames[beforeRecovery]).toMatchObject({ command: 'scope.reconnect', args: {
+        identityScope: originalScope, expectedBrowserIdentity: 'browser-owner', expectedContextIdentity: 'context-1', expectedPageIdentity: 'page-1',
+      } });
+      const afterRefusal = frames.length;
+      await expect(surface.observe(operation())).rejects.toBe(firstFailure);
+      expect(frames).toHaveLength(afterRefusal);
+      expect(reconnect).toHaveBeenCalledOnce();
+      await surface.endAttempt(cleanup());
+      const cleanupCommands = frames.slice(afterRefusal).filter(frame => frame['command'] !== undefined);
+      expect(cleanupCommands).toHaveLength(1);
+      expect(cleanupCommands[0]).toMatchObject({ command: 'scope.end', args: { identityScope: originalScope } });
+    } finally { await surface.dispose(cleanup()); }
+  });
   it('uses the acknowledged restarted page authority for exact reconnect', async () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface); preserveRestartScope = true;

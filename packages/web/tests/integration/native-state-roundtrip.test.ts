@@ -38,6 +38,16 @@ const APP = `<!doctype html><link rel="icon" href="data:,"><script>
 it('restores cookies, local storage and structured IndexedDB before the first app script without bootstrap requests', async () => {
   const binary = process.env['E2E_AGENT_BROWSER_EXECUTABLE'];
   if (!binary) throw new Error('Native state acceptance requires E2E_AGENT_BROWSER_EXECUTABLE; it cannot silently skip');
+  const nativeEnv = {
+    E2E_AGENT_BROWSER_EXECUTABLE: binary,
+    CI: process.env['CI'],
+    HOME: process.env['HOME'],
+    PATH: process.env['PATH'],
+    TMPDIR: process.env['TMPDIR'],
+    TMP: process.env['TMP'],
+    TEMP: process.env['TEMP'],
+    AGENT_BROWSER_SOCKET_DIR: process.env['AGENT_BROWSER_SOCKET_DIR'],
+  };
   const reports = new Map<string, unknown>();
   const requests: string[] = [];
   const server = createServer((request, response) => {
@@ -62,7 +72,7 @@ it('restores cookies, local storage and structured IndexedDB before the first ap
     return reports.get(phase);
   };
   try {
-    await engine.init!({ runId: 'state-contract', targetName: 'web', projectRoot: process.cwd(), app: { site: '127.0.0.1' }, env: { E2E_AGENT_BROWSER_EXECUTABLE: binary }, headed: false, workerSlot: 0, log: () => undefined, signal: new AbortController().signal });
+    await engine.init!({ runId: 'state-contract', targetName: 'web', projectRoot: process.cwd(), app: { site: '127.0.0.1' }, env: nativeEnv, headed: false, workerSlot: 0, log: () => undefined, signal: new AbortController().signal });
     await engine.startAttempt!({ attemptId: 'state', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
     await engine.session!.open!(`${origin}/?phase=seed`, operation());
     expect(await readback('seed')).not.toHaveProperty('error');

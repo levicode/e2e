@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type TestContext } from 'vitest';
 import { chromium, type Browser as HostBrowser, type ConnectOverCDPOptions } from 'playwright-core';
-import { TestError, type EngineHandle, type OperationContext } from 'e2e/engine';
+import { EngineError, TestError, type EngineHandle, type OperationContext } from 'e2e/engine';
 import { web as webEngine, type WebConnectOptions, type WebOptions, type Browser } from '../../src/index.ts';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
@@ -18,14 +18,38 @@ import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
-import { beginSyntheticCase, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { beginSyntheticCase, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEvidence, type RecoverySection } from '../helpers/synthetic-native-outcomes.ts';
 
 const recoveryEvidence = new AsyncLocalStorage<RecoveryEvidence>();
 const recoveryTasks = new WeakMap<object, RecoveryEvidence>();
+interface RecoveryContract { schemaVersion: 1; caseId: SyntheticCaseId; invalid: boolean; facts: SyntheticFact[] }
+const p07Contracts = new WeakMap<object, RecoveryContract>();
+
+/** Reuse the existing observer's bounded facts; this never enables the synthetic batch. */
+function recoveryContractSink(context: TestContext, id: SyntheticCaseId): SyntheticEvidence {
+  const sink = beginSyntheticCase(id);
+  if (id !== 'P07' && (id !== 'P08' || process.env['E2E_CDP_RECOVERY_DIAGNOSTIC'] !== '1')) return sink;
+  const contract: RecoveryContract = { schemaVersion: 1, caseId: id, invalid: false, facts: [] };
+  if (id === 'P07') p07Contracts.set(context.task, contract);
+  Object.assign(context.task.meta, id === 'P07' ? { nativeRecoveryContract: contract } : { nativeRecoveryDiagnostic: contract });
+  const capture = (fact: SyntheticFact): void => {
+    if (fact.kind !== 'selected-operation' && fact.kind !== 'cleanup-native' && !(id === 'P08' && fact.kind === 'test-failure')) return;
+    if (contract.facts.length >= (id === 'P07' ? 3 : 5) || !validSyntheticFact(fact, id)) { contract.invalid = true; return; }
+    contract.facts.push(structuredClone(fact));
+  };
+  return {
+    available: sink.available,
+    record(fact) { capture(fact); sink.record(fact); },
+    tryRecord(fact) { capture(fact); return sink.tryRecord(fact); },
+    observe(observer) { sink.observe(observer); },
+    finish(outcome) { sink.finish(outcome); },
+    invalidate() { contract.invalid = true; sink.invalidate(); },
+  };
+}
 function recoveryCase(id: SyntheticCaseId, body: () => Promise<void>) {
   return async (context: TestContext): Promise<void> => {
-    const record = new RecoveryEvidence(beginSyntheticCase(id));
+    const record = new RecoveryEvidence(recoveryContractSink(context, id));
     recoveryTasks.set(context.task, record);
     return record.observer.run(() => recoveryEvidence.run(record, async () => {
       try { await body(); record.passed('body'); }
@@ -194,7 +218,26 @@ describe('CDP session recovery', () => {
       diagnostic.finishBackstop(failures.length > 0);
       recoveryTasks.delete(context.task);
     }
+    const contract = p07Contracts.get(context.task);
+    p07Contracts.delete(context.task);
     if (failures.length > 0) throw new AggregateError(failures, 'Recovery fixture cleanup failed');
+    if (contract !== undefined) {
+      expect(contract.invalid).toBe(false);
+      expect(contract.facts).toHaveLength(3);
+      const initial = contract.facts.find(fact => fact.kind === 'selected-operation' && fact.ordinal === 0);
+      const repeated = contract.facts.find(fact => fact.kind === 'selected-operation' && fact.ordinal === 1);
+      const ended = contract.facts.find(fact => fact.kind === 'cleanup-native');
+      const refusal = { operationSeq: expect.any(Number), ok: false, code: 'stale-scope', effects: 'not-dispatched', scopeState: 'usable' };
+      expect(initial).toMatchObject({ kind: 'selected-operation', ordinal: 0, command: 'scope.reconnect', invoked: true,
+        requestCount: 1, requestPending: 0, rejected: false, adapter: 'rejected', code: 'INVALID_STATE',
+        reason: 'native-stale-scope', assertion: 'passed', firstResult: refusal, firstFailure: refusal });
+      expect(repeated).toMatchObject({ kind: 'selected-operation', ordinal: 1, command: 'scope.reconnect', invoked: true,
+        requestCount: 0, requestPending: 0, firstResult: null, firstFailure: null, rejected: false,
+        adapter: 'rejected', code: 'INVALID_STATE', reason: 'native-stale-scope', assertion: 'passed' });
+      expect(ended).toMatchObject({ kind: 'cleanup-native', command: 'scope.end', requestCount: 1, requestPending: 0,
+        firstResult: { operationSeq: expect.any(Number), ok: true, code: null, effects: 'completed', scopeState: 'usable' },
+        firstFailure: null, rejected: false });
+    }
   });
 
   /** Registers the host before attempt setup, so a failed setup cannot leak Chrome. */
@@ -378,6 +421,8 @@ describe('CDP session recovery', () => {
       try {
         const fixture = fixtureOf(engine);
         const original = await witness(engine, remote);
+        // The independent oracle must not auto-dismiss native-owned dialogs.
+        original.page.on('dialog', () => {});
         step = 'viewport'; recoveryPhase('viewport', 'body');
         await fixture.setViewport({ width: 800, height: 600 });
         step = 'seed-state'; recoveryPhase('seed-state', 'body');
@@ -600,7 +645,23 @@ describe('CDP session recovery', () => {
       await debuggerSession.send('Debugger.enable');
       const transportDropped = new Promise<void>((resolve, reject) => {
         debuggerSession.once('Debugger.paused', () => {
-          void disconnect(remote).then(() => debuggerSession.send('Debugger.resume')).then(() => resolve(), reject);
+          void (async () => {
+            const outcomes = await Promise.allSettled([
+              disconnect(remote),
+              (async () => {
+                const failures: unknown[] = [];
+                try { await expect.poll(() => remote.connections(), { timeout: 5_000 }).toBe(0); }
+                catch (cause) { failures.push(cause); }
+                finally {
+                  try { await debuggerSession.send('Debugger.resume'); }
+                  catch (cause) { failures.push(cause); }
+                }
+                if (failures.length > 0) throw new AggregateError(failures, 'Debugger pause cleanup failed');
+              })(),
+            ]);
+            const failures = outcomes.flatMap(outcome => outcome.status === 'rejected' ? [outcome.reason as unknown] : []);
+            if (failures.length > 0) throw new AggregateError(failures, 'Transport drop or debugger cleanup failed');
+          })().then(() => resolve(), reject);
         });
       });
       recoveryPhase('locate');
@@ -636,9 +697,14 @@ describe('CDP session recovery', () => {
     try {
       await disconnect(remote);
       recoveryPhase('observe');
-      await recoveryAssert(0, () => expect(recoverySelect(0, 'scope.reconnect', () => engine.observe!(operation()))).rejects.toThrow(/different browser/));
+      let firstFailure: unknown;
+      await recoveryAssert(0, async () => {
+        firstFailure = await recoverySelect(0, 'scope.reconnect', () => engine.observe!(operation())).catch((cause: unknown) => cause);
+        expect(firstFailure).toBeInstanceOf(EngineError);
+        expect(firstFailure).toMatchObject({ code: 'INVALID_STATE', retryable: false });
+      });
       recoveryPhase('observe');
-      await recoveryAssert(1, () => expect(recoverySelect(1, 'scope.reconnect', () => engine.observe!(operation()))).rejects.toThrow(/different browser/));
+      await recoveryAssert(1, () => expect(recoverySelect(1, 'scope.reconnect', () => engine.observe!(operation()))).rejects.toBe(firstFailure));
       expect(provisioned).toBe(1);
       expect(replacement.proc.exitCode).toBeNull();
     } catch (cause) {
