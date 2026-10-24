@@ -1,6 +1,6 @@
-# Matrix-only isolated runner preparation; integrator is sole publisher. HTTP500 is not executed.
-# Step caps total222min; job225min. Original test/hook/assertion budgets are unchanged.
-name: Isolated same-source333 Linux matrix (HTTP500 not run; nonrelease)
+# Original Vitest-only333; no focused diagnostic or sentinel prerequisite. Integrator is sole publisher.
+# Total step caps222min/job225min; prior6min focused budget reassigned to matrix148min.
+name: Original Vitest333 Linux matrix (sentinels not run; nonrelease)
 permissions:
   contents: read
   actions: read
@@ -8,7 +8,7 @@ concurrency:
   group: same-source-runtime-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  matrix_only:
+  vitest_only:
     if: ${{ github.ref == 'refs/heads/implement/latest-upstream-runtime-ci' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 225
@@ -24,8 +24,8 @@ jobs:
         export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/same-source-runtime-playwright"
         printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
         mkdir -m700 "$EVIDENCE_DIR"
-        printf '%s\n' 'Fresh isolated same-source329 + required decision4, plus FIRST_EVENTS. HTTP500 is deliberately NOT RUN; prior failed/cleanup-unknown observation is not imported. Full runtime sentinel coverage remains incomplete. No prior pass carryover. Nonrelease, not installed-distribution/source-retirement/real-model acceptance.' > "$EVIDENCE_DIR/SCOPE.txt"
-        for phase in sources artifact dependencies browser-install codec-install browser-codecs runtime-probes focused runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
+        printf '%s\n' 'Fresh isolated same-source329 + required decision4, original Vitest only. HTTP500 and FIRST_EVENTS are deliberately NOT RUN; prior failed/cleanup-unknown observation is not imported. Full runtime sentinel coverage remains incomplete. No prior pass carryover. Nonrelease, not installed-distribution/source-retirement/real-model acceptance.' > "$EVIDENCE_DIR/SCOPE.txt"
+        for phase in sources artifact dependencies browser-install codec-install browser-codecs runtime-probes runtime-matrix final-identities reconciliation; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
         for group in priority-p41-1 priority-upstream-5 priority-old-failures-6 original-remaining-296 paired-canvas-2 new-controls-3 callbacks-14 cli-installed-1 cli-cancel-P14-1 decision-cli-4; do
           printf '%s\n' '{"status":"not-run","reason":"Prerequisite or exact batch has not completed"}' > "$EVIDENCE_DIR/$group.state.json"
         done
@@ -181,49 +181,14 @@ jobs:
         trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime-probes.exit"' EXIT
         bash recipe/scripts/matrix-runtime/run.sh probe
       timeout-minutes: 12
-    - name: Run original P41 and FIRST_EVENTS only in fresh owned scopes
-      id: focused
-      run: |
-        set -euo pipefail
-        printf 'safe_to_continue=false\n' >> "$GITHUB_OUTPUT"
-        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/focused.exit"' EXIT
-        mkdir -m700 "$EVIDENCE_DIR/focused"
-        cp "$EVIDENCE_DIR/production-identity.json" "$EVIDENCE_DIR/focused/production-identity.json"
-        set +e
-        EVIDENCE_DIR="$EVIDENCE_DIR/focused" RECIPE_SHA="${{ github.workflow_sha }}" node recipe/scripts/runtime-probe/runtime.mjs cases matrix > "$EVIDENCE_DIR/focused.stdout-stderr.log" 2>&1
-        status=$?
-        set -e
-        if [[ -f "$EVIDENCE_DIR/focused/first-failed-case.json" && ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]]; then
-          node --input-type=module - <<'JS'
-          import {readFileSync,writeFileSync} from 'node:fs';
-          const out=process.env.EVIDENCE_DIR,value=JSON.parse(readFileSync(out+'/focused/first-failed-case.json'));
-          writeFileSync(out+'/first-failed-phase.txt',`focused ${value.id}: ${value.status}\n`,{flag:'wx'});
-        JS
-        fi
-        # Copy only exact same-run original P41 raw reporter and actual launcher exit.
-        # Its original source/config/hash/fullName must match; no synthetic status translation.
-        p41_import=0
-        node recipe/scripts/matrix-runtime/identity.mjs import-p41 || p41_import=$?
-        if [[ "$p41_import" != 0 ]]; then status=1; fi
-        # Only exact reports plus complete identity/owned-cleanup evidence permit further observation.
-        # A red assertion remains red; unknown worker admission/cleanup never grants continuation.
-        if [[ "$p41_import" == 0 ]] && node recipe/scripts/matrix-runtime/identity.mjs focused-continuation; then
-          printf 'safe_to_continue=true\n' >> "$GITHUB_OUTPUT"
-        else
-          status=1
-        fi
-        exit "$status"
-      timeout-minutes: 6
-      env:
-        RECIPE_SHA: ${{ github.workflow_sha }}
-    - name: Run remaining original matrix exactly once plus all four decision CLI assertions
+    - name: Run all333 original Vitest assertions once, including P41 as its own batch
       id: matrix
       run: |
         set -euo pipefail
         trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime-matrix.exit"' EXIT
         bash recipe/scripts/matrix-runtime/run.sh cases
-      timeout-minutes: 142
-      if: ${{ !cancelled() && steps.recipe.outcome == 'success' && steps.node.outcome == 'success' && steps.e2e.outcome == 'success' && steps.native.outcome == 'success' && steps.sources.outcome == 'success' && steps.artifact.outcome == 'success' && steps.pnpm.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.browser_install.outcome == 'success' && steps.codec_install.outcome == 'success' && steps.browser_codecs.outcome == 'success' && steps.probe.outcome == 'success' && steps.focused.outputs.safe_to_continue == 'true' }}
+      timeout-minutes: 148
+      if: ${{ !cancelled() && steps.recipe.outcome == 'success' && steps.node.outcome == 'success' && steps.e2e.outcome == 'success' && steps.native.outcome == 'success' && steps.sources.outcome == 'success' && steps.artifact.outcome == 'success' && steps.pnpm.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.browser_install.outcome == 'success' && steps.codec_install.outcome == 'success' && steps.browser_codecs.outcome == 'success' && steps.probe.outcome == 'success' }}
     - name: Check all source, dist and image identities after success or failure
       id: final_identities
       if: ${{ always() && steps.sources.outcome == 'success' }}
@@ -249,7 +214,7 @@ jobs:
         if [[ "$status" == 0 ]]; then
           node recipe/scripts/matrix-runtime/identity.mjs runtime-results || status=1
         else
-          printf '%s\n' '{"status":"incomplete","matrixStatus":"failed-or-incomplete","http500Status":"not-run","fullRuntimeComplete":false,"reason":"Final assertion/proof/pair revalidation failed or unavailable","releaseEligible":false,"fullAcceptance":false}' > "$EVIDENCE_DIR/runtime-results.json"
+          printf '%s\n' '{"status":"incomplete","matrixStatus":"failed-or-incomplete","http500Status":"not-run","firstEventsStatus":"not-run","fullRuntimeComplete":false,"reason":"Final assertion/proof/pair revalidation failed or unavailable","releaseEligible":false,"fullAcceptance":false}' > "$EVIDENCE_DIR/runtime-results.json"
         fi
         exit "$status"
       timeout-minutes: 3
@@ -265,14 +230,14 @@ jobs:
         from pathlib import Path
         steps=json.loads(os.environ['STEP_OUTCOMES'])
         if Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').exists(): raise SystemExit(0)
-        order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','codec_install','browser_codecs','probe','focused','matrix','final_identities','reconciliation']
+        order=['recipe','node','e2e','native','sources','artifact','pnpm','dependencies','browser_install','codec_install','browser_codecs','probe','matrix','final_identities','reconciliation']
         for name in order:
             outcome=steps.get(name,{}).get('outcome')
             if outcome in ('failure','cancelled'):
                 Path(os.environ['EVIDENCE_DIR'],'first-failed-phase.txt').write_text(f'{name}: {outcome}\n')
                 break
         PY
-        for phase in sources artifact dependencies browser-install codec-install browser-codecs runtime-probes focused runtime-matrix final-identities reconciliation; do
+        for phase in sources artifact dependencies browser-install codec-install browser-codecs runtime-probes runtime-matrix final-identities reconciliation; do
           [[ ! -e "$EVIDENCE_DIR/first-failed-phase.txt" ]] || break
           status=$(cat "$EVIDENCE_DIR/$phase.exit" 2>/dev/null || printf unknown)
           if [[ "$status" != 0 && "$status" != not-run ]]; then printf '%s: %s\n' "$phase" "$status" > "$EVIDENCE_DIR/first-failed-phase.txt"; break; fi

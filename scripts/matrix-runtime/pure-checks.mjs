@@ -84,7 +84,7 @@ assert.equal(mayContinueFocusedCase(focusedSafe),true);checks++;
 for(const mutate of [x=>x.knownCleanupConfirmed=false,x=>delete x.knownCleanupConfirmed,x=>x.cleanup.status='unknown',x=>x.runtimeImagesUnchanged=false,x=>x.actualBrowserImageConfirmed=false,x=>x.firstRunnerError='missing reporter',x=>x.observerFirstError='identity mismatch']){const x=clone(focusedSafe);mutate(x);assert.equal(mayContinueFocusedCase(x),false);checks++}
 const safeBatch={scope:'matrix-only',excludedCaseIds:['HTTP500'],focusedCases:['P41','FIRST_EVENTS'].map(id=>({...clone(focusedSafe),id,status:'focused-test-passed',report:{selectionExact:true,status:'passed'}}))};
 assert.equal(mayContinueFocusedBatch(safeBatch),true);checks++;
-const sentinels=sentinelLedger(safeBatch);assert.equal(sentinels.fullRuntimeComplete,false);assert.equal(sentinels.cases[0].status,'not-run');assert.equal(sentinels.cases[0].passed,false);assert.equal(sentinels.cases[1].passed,true);checks++;
+const sentinels=sentinelLedger(safeBatch);assert.equal(sentinels.fullRuntimeComplete,false);assert.equal(sentinels.cases[0].status,'not-run');assert.equal(sentinels.cases[0].passed,false);assert.equal(sentinels.cases[1].passed,false);checks++;
 assert.equal(sentinelLedger(undefined).cases[0].passed,false);assert.equal(sentinelLedger(undefined).cases[1].passed,false);checks++;
 const invented500=clone(safeBatch);invented500.focusedCases.push({...clone(safeBatch.focusedCases[0]),id:'HTTP500'});assert.equal(sentinelLedger(invented500).cases[0].passed,false);assert.equal(sentinelLedger(invented500).cases[0].status,'not-run');checks++;
 const failedEvent=clone(safeBatch);failedEvent.focusedCases[1].status='failed-or-incomplete';failedEvent.focusedCases[1].report.status='failed';assert.equal(sentinelLedger(failedEvent).cases[1].passed,false);checks++;
@@ -94,6 +94,16 @@ for(const mutate of [x=>delete x.scope,x=>x.excludedCaseIds=[],x=>x.focusedCases
 const redSafe=clone(safeBatch);redSafe.focusedCases[0].status='failed-or-incomplete';redSafe.focusedCases[0].report.status='failed';
 assert.equal(mayContinueFocusedBatch(redSafe),true,'Ordinary assertion red with complete identity/cleanup permits next group');checks++;
 for(const mutate of [x=>x.focusedCases[0].cleanup.status='unknown',x=>x.focusedCases[0].cleanup={status:'unknown',reasons:['worker-admission-incomplete']},x=>x.focusedCases[0].knownCleanupConfirmed=false,x=>x.focusedCases[0].runtimeImagesUnchanged=false,x=>x.focusedCases[0].report.selectionExact=false,x=>delete x.focusedCases[0].report.status,x=>x.focusedCases[0].report.status='unknown',x=>x.focusedCases[0].report.status='skipped',x=>x.focusedCases[0].firstRunnerError='missing report',x=>x.focusedCases.pop()]){const x=clone(redSafe);mutate(x);assert.equal(mayContinueFocusedBatch(x),false);checks++}
+// A diagnostic evidence gap is not a process-image/residue failure and is never promoted to complete.
+const diagnosticGap={status:'unknown',reasons:['dropped','gap','worker-admission-incomplete']};
+const safeWithGap={errors:[],remainingObservedAtStop:[],diagnostic:diagnosticGap};
+assert.equal(observedCleanupConfirmed(safeWithGap,0),true,'Diagnostic gap alone must not block original Vitest');assert.equal(diagnosticGap.status,'unknown');checks++;
+assert.equal(observedCleanupConfirmed({...safeWithGap,errors:['runtime image identity unknown']},0),false);checks++;
+assert.equal(observedCleanupConfirmed({...safeWithGap,remainingObservedAtStop:[{pid:1}]},0),false);checks++;
+const recipeText=readFileSync(path.join(here,'../../.github/workflows/native-linux-complete-matrix.yml'),'utf8');
+assert.equal(recipeText.includes('steps.focused'),false);assert.equal(recipeText.includes('runtime-probe/runtime.mjs cases'),false);checks++;
+const runnerText=readFileSync(path.join(here,'run.sh'),'utf8');assert.equal((runnerText.match(/run_batch priority-p41-1 web/g)||[]).length,1);assert.equal(runnerText.includes('import-p41'),false);checks++;
+assert.equal(sentinelLedger(safeBatch).cases.every(row=>row.status==='not-run'&&row.passed===false),true);checks++;
 const observation={errors:[],remainingObservedAtStop:[]};assert.equal(observedCleanupConfirmed(observation,0),true);checks++;
 for(const [value,exit] of [[{errors:['identity mismatch'],remainingObservedAtStop:[]},0],[{errors:[],remainingObservedAtStop:[{pid:1}]},0],[observation,1],[{},0]]){assert.equal(observedCleanupConfirmed(value,exit),false);checks++}
 for(const phase of ['priority-p41-1','priority-old-failures-6']){

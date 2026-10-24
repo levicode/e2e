@@ -218,34 +218,27 @@ async function focusedContinuation(workspace,evidence) {
   if(!receipt.safeToContinue) process.exitCode=1;
 }
 export function sentinelLedger(focused) {
-  const first=focused?.focusedCases?.find(row=>row.id==='FIRST_EVENTS');
   const ledger={schemaVersion:1,scope:'matrix-only job; full runtime sentinel coverage incomplete',fullRuntimeComplete:false,releaseEligible:false,cases:[
     {id:'HTTP500',requiredForFullRuntime:true,status:'not-run',passed:false,reason:'Excluded from this isolated matrix job; do not repeat the prior failed/cleanup-unknown sentinel',historicalOnly:{runId:40129728970,status:'failed-or-incomplete',cleanup:'unknown',reasons:['worker-admission-incomplete','no-cleanup-attempt'],importedAsCurrentEvidence:false}},
-    {id:'FIRST_EVENTS',requiredForFullRuntime:true,status:first?.status??'not-run',passed:first?.status==='focused-test-passed'&&mayContinueFocusedBatch(focused),currentRun:true}
+    {id:'FIRST_EVENTS',requiredForFullRuntime:true,status:'not-run',passed:false,reason:'Excluded from the Vitest-only333 job; reserved for a separate runner',currentRun:true}
   ]};
   return ledger;
 }
 function writeSentinelLedger(evidence) {
-  let focused;try{focused=JSON.parse(readFileSync(path.join(evidence,'focused/summary.json')));}catch{}
-  const ledger=sentinelLedger(focused);json(path.join(evidence,'sentinel-ledger.json'),ledger);return ledger;
+  const ledger=sentinelLedger();json(path.join(evidence,'sentinel-ledger.json'),ledger);return ledger;
 }
 function verifyRuntimeResults(evidence) {
   const manifest=JSON.parse(readFileSync(path.join(here,'runtime-manifest.json')));
   const summary=JSON.parse(readFileSync(path.join(evidence,'summary.json')));
   assert.equal(summary.expectedCount,333); assert.equal(summary.all333AssertionsPassed,true);
-  for(const name of ['sources','artifact','dependencies','browser-install','codec-install','browser-codecs','runtime-probes','focused','runtime-matrix','final-identities']) assert.equal(readFileSync(path.join(evidence,name+'.exit'),'utf8').trim(),'0',name);
-  const focused=JSON.parse(readFileSync(path.join(evidence,'focused/summary.json')));
-  assert.equal(focused.scope,'matrix-only');assert.deepEqual(focused.excludedCaseIds,['HTTP500']);assert.equal(focused.focusedCases.length,2);
-  for(const id of ['P41','FIRST_EVENTS']) {
-    const matches=focused.focusedCases.filter(item=>item.id===id);assert.equal(matches.length,1);assert.equal(matches[0].status,'focused-test-passed');
-  }
+  for(const name of ['sources','artifact','dependencies','browser-install','codec-install','browser-codecs','runtime-probes','runtime-matrix','final-identities']) assert.equal(readFileSync(path.join(evidence,name+'.exit'),'utf8').trim(),'0',name);
   assert.equal(readFileSync(path.join(evidence,'cli-cache-unchanged.exit'),'utf8').trim(),'0');
   assert.deepEqual(JSON.parse(readFileSync(path.join(evidence,'cli-cache-before.json'))),JSON.parse(readFileSync(path.join(evidence,'cli-cache-after.json'))));
   const binding=JSON.parse(readFileSync(path.join(evidence,'P14-installer-binding.json')));
   assert.equal(binding.caseId,'P14');assert.equal(binding.purpose,'installer-cancellation-loopback');
   assert.equal(binding.binarySha256,pins.fault.binarySha256);assert.equal(binding.negotiationProofSha256,sha256(path.join(evidence,'fault-negotiation.json')));
   assert.equal(binding.postRunIdentityVerified,true);assert.equal(binding.processExit,0);assert.equal(binding.signal,null);assert.equal(binding.primaryError,null);
-  for(const name of ['production-probe','fault-probe','canvas-web-unit','official-install',...manifest.phases.map(p=>p.id).filter(id=>id!=='priority-p41-1')]) {
+  for(const name of ['production-probe','fault-probe','canvas-web-unit','official-install',...manifest.phases.map(p=>p.id)]) {
     assert.equal(readFileSync(path.join(evidence,name+'.observer.exit'),'utf8').trim(),'0');
     const sampled=JSON.parse(readFileSync(path.join(evidence,name+'.processes.jsonl.summary.json')));
     assert.equal(sampled.errors.length,0);assert.equal(sampled.remainingObservedAtStop.length,0);
@@ -255,10 +248,10 @@ function verifyRuntimeResults(evidence) {
   const observed=Object.fromEntries(['full','shell','production','fault'].map(name=>[name,observations.some(row=>row.executable===images[name].executable&&row.sha256===images[name].sha256&&row.expectedHashMatches===true)]));
   json(path.join(evidence,'actual-image-observation.json'),{observed,coverage:'sampled only; not exhaustive descendant cleanup proof',releaseEligible:false});
   assert.ok(Object.values(observed).every(Boolean));
-  const sentinels=writeSentinelLedger(evidence);assert.equal(sentinels.cases[0].status,'not-run');assert.equal(sentinels.cases[0].passed,false);assert.equal(sentinels.cases[1].passed,true);
-  const matrix={status:'passed',scope:'isolated same-source333 plus FIRST_EVENTS only',originalAssertions:329,decisionAssertions:4,externalSentinelsExecuted:1,http500Status:'not-run',fullRuntimeComplete:false,e2e:pins.e2eSha,native:pins.nativeSha,productionSha256:pins.production.binarySha256,faultSha256:pins.fault.binarySha256,releaseEligible:false,fullAcceptance:false,sourceRetirement:false,realModelAcceptance:false};
+  const sentinels=writeSentinelLedger(evidence);assert.equal(sentinels.cases[0].status,'not-run');assert.equal(sentinels.cases[0].passed,false);assert.equal(sentinels.cases[1].status,'not-run');assert.equal(sentinels.cases[1].passed,false);
+  const matrix={status:'passed',scope:'original same-source333 through ordinary Vitest only',originalAssertions:329,decisionAssertions:4,externalSentinelsExecuted:0,http500Status:'not-run',firstEventsStatus:'not-run',fullRuntimeComplete:false,e2e:pins.e2eSha,native:pins.nativeSha,productionSha256:pins.production.binarySha256,faultSha256:pins.fault.binarySha256,releaseEligible:false,fullAcceptance:false,sourceRetirement:false,realModelAcceptance:false};
   json(path.join(evidence,'matrix-runtime-results.json'),matrix);
-  json(path.join(evidence,'runtime-results.json'),{...matrix,status:'incomplete',matrixStatus:'passed',reason:'Required HTTP500 sentinel deliberately not run in this isolated job; prior failed/cleanup-unknown observation is separate history'});
+  json(path.join(evidence,'runtime-results.json'),{...matrix,status:'incomplete',matrixStatus:'passed',reason:'HTTP500 and FIRST_EVENTS are not run in this Vitest-only333 job; separate diagnostics do not grant full runtime acceptance'});
 }
 async function main() {
   const [command]=process.argv.slice(2), workspace=process.env.GITHUB_WORKSPACE,evidence=process.env.EVIDENCE_DIR;

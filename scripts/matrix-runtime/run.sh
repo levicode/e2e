@@ -67,6 +67,7 @@ JS
 run_batch() {
   local name=$1 package=$2 cap; local -a files project=() command
   case "$name" in
+    priority-p41-1) cap=150 ;;
     priority-upstream-5) cap=300 ;;
     paired-canvas-2) cap=180 ;;
     new-controls-3) cap=300 ;;
@@ -111,8 +112,10 @@ case "${1:-}" in
     "$NODE" "$HERE/identity.mjs" verify-proof
     "$NODE" "$HERE/identity.mjs" verify-fault-proof
     selectors
-    # P41's original reporter/exit was imported from the same-run focused runner.
-    "$NODE" "$HERE/reconcile.mjs" "$HERE/runtime-manifest.json" "$OUT" "$REPO" priority-p41-1
+    # Original P41 is one ordinary Vitest batch, counted once within333.
+    # No focused collector completeness is an admission prerequisite.
+    fresh_environment
+    run_batch priority-p41-1 web
     # Existing wrapper executes only suite web-unit and verifies the already produced proof.
     # It does not launch probe/installer/browser stages; no stdout-derived receipt is manufactured.
     fresh_environment

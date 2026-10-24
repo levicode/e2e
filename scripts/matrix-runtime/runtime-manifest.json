@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "kind": "isolated-same-source-333-runtime-recipe",
+  "kind": "original-vitest-only-333-runtime-recipe",
   "preparedOnly": true,
   "executed": false,
   "dispatchable": true,
@@ -189,7 +189,7 @@
       "status": "not-run",
       "executionPlanned": false,
       "requiredForFullRuntime": true,
-      "reason": "Excluded from isolated matrix job; prior HTTP500 failed with cleanup unknown, not retried or relabeled"
+      "reason": "Separate-runner sentinel; not a prerequisite or pass in the original333 Vitest job"
     },
     {
       "id": "FIRST_EVENTS",
@@ -200,8 +200,9 @@
       "sourcePath": "/workspace/shared/e2e-worker-runtime-recipe/scripts/runtime-probe/sw-startup-events.test.ts",
       "outerMaxMs": 45000,
       "status": "not-run",
-      "executionPlanned": true,
-      "requiredForFullRuntime": true
+      "executionPlanned": false,
+      "requiredForFullRuntime": true,
+      "reason": "Separate-runner sentinel; not a prerequisite or pass in the original333 Vitest job"
     }
   ],
   "inventorySources": [
@@ -4643,17 +4644,20 @@
     "runtimeExecuted": false,
     "releaseEligible": false,
     "integratorOnlyRemoteWriter": true,
-    "recommendedRecipeBaseCommit": "23a026142dd998de5aa39d4005f1261024cf62f1",
-    "runtimeScope": "333 plus original FIRST_EVENTS; HTTP500 not run",
+    "recommendedRecipeBaseCommit": "53ff4989b4853ae1e40198855fb67429ff0ef9c0",
+    "runtimeScope": "333 original Vitest cases only; HTTP500 and FIRST_EVENTS not run",
     "freshRunnerIsolation": true,
-    "priorRuntimeRunId": 40129728970,
+    "priorRuntimeRunId": 40130396449,
     "priorRuntimeOutcomesImported": 0,
-    "recommendedRecipeBaseTree": "777195e73064ed77c3eae8c96ad16092865f7888"
+    "recommendedRecipeBaseTree": "3fd11be50de215ec8c324c38f898b711f37e1776"
   },
   "scopeCompletionPolicy": {
-    "matrixJobMayPassOnlyFor": "all333 plus FIRST_EVENTS and every unchanged proof/identity/cleanup prerequisite",
+    "matrixJobMayPassOnlyFor": "all333 original Vitest assertions and unchanged proof/identity/cache/process-residue prerequisites",
     "http500": "not-run in this job; prior failure/unknown stays separate history",
     "fullRuntimeComplete": false,
-    "fullAcceptance": false
+    "fullAcceptance": false,
+    "firstEvents": "not-run in this job; separate runner only",
+    "diagnosticGap": "remains unknown where observed; not an original Vitest admission prerequisite",
+    "p41": "ordinary run_batch priority-p41-1 exactly once within333"
   }
 }
