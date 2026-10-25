@@ -1,8 +1,8 @@
-# FROZEN FOCUSED RUNTIME: actual terminal-success producer and exact new ELF are bound.
-name: P06 test-carrier only on unchanged genuine production ELF
+# FROZEN P06 ONLY: actual terminal-success recovery producer and exact fresh ELF are bound.
+name: Original P06 test-carrier on fresh recovery production ELF
 'on':
   push:
-    branches: [implement/unified-focused-runtime-ci]
+    branches: [validation/p06-recovery-runtime-20261025]
 permissions:
   contents: read
   actions: read
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   runtime:
     name: focused-${{ matrix.case }}
-    if: ${{ github.ref == 'refs/heads/implement/unified-focused-runtime-ci' }}
+    if: ${{ github.ref == 'refs/heads/validation/p06-recovery-runtime-20261025' }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -88,7 +88,7 @@ jobs:
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: 26ad6cfedd9771fbf8366f2d3d3620d66a09d9bb
+        ref: 0ea3dce92bec2e1d059f30b6839f444a42f6a4eb
         path: native-source
         persist-credentials: false
     - name: Verify clean sources original fixtures and exact lock bytes

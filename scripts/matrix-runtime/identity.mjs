@@ -29,7 +29,7 @@ export function verifyProvenance(value, binaryBytes, focusedBytes, expected = pi
   assert.equal(cargo.manifest_path,'/home/runner/work/e2e/e2e/source/cli/Cargo.toml');
   assert.equal(cargo.executable,'/home/runner/work/_temp/focused-production-target/ci/agent-browser');
   for(const key of ['distribution_eligible','full_native_suite_passed','optimized_native_tests_executed','installed_distribution_verified']) assert.equal(value[key],false);
-  assert.deepEqual(value.focused_runtime_cases,['P06','HTTP500']);
+  assert.deepEqual(value.focused_runtime_cases,['P06']);
   assert.deepEqual(value.native_validation,{mode:'focused-native-prior-dev-fixtures',run_id:expected.nativeFocused.runId,current_native_execution:false,receipt_file:'native-focused-verified.json',receipt_sha256:expected.nativeFocused.receiptSha256});
   assert.equal(digest(focusedBytes),expected.nativeFocused.receiptSha256);
   const focused=JSON.parse(focusedBytes);
@@ -43,7 +43,7 @@ export function verifyProducerMetadata(run,jobs,metadata,commit,expected=pins) {
   assert.equal(run.id,p.runId); assert.equal(run.status,'completed'); assert.equal(run.conclusion,'success');
   assert.equal(run.head_sha,p.recipeSha); assert.equal(run.run_attempt,p.runAttempt); assert.equal(run.head_commit.tree_id,p.recipeTree);
   assert.equal(run.repository.full_name,'levicode/e2e'); assert.equal(run.repository.private,false); assert.equal(run.repository.id,1425853610);
-  assert.equal(run.head_branch,'implement/unified-focused-production-ci'); assert.equal(run.event,'push'); assert.equal(run.path,'.github/workflows/native-focused-production.yml');
+  assert.equal(run.head_branch,'validation/p06-recovery-production-20261025'); assert.equal(run.event,'push'); assert.equal(run.path,'.github/workflows/native-focused-production.yml');
   assert.equal(jobs.total_count,1); assert.equal(jobs.jobs.length,1); const job=jobs.jobs[0];
   assert.equal(job.id,p.jobId); assert.equal(job.name,'focused-native-production-artifact'); assert.equal(job.run_id,p.runId); assert.equal(job.run_attempt,p.runAttempt); assert.equal(job.head_sha,p.recipeSha);
   assert.equal(job.status,'completed'); assert.equal(job.conclusion,'success'); assert.deepEqual(job.labels,['ubuntu-24.04']);
