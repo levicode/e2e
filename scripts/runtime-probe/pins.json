@@ -1,6 +1,6 @@
 {
-  "e2eSha": "ffcffc1fdf6b11ef846f2da5221e981514e2b898",
-  "e2eTree": "921fa65501d4ae1b613059a7fbba4dee8d930718",
+  "e2eSha": "56fee318b83032e714e323b696e2fde25dddf134",
+  "e2eTree": "1859235e46e7b5ab0a12cc129bc0ad6f2dce9fc1",
   "nativeSha": "26ad6cfedd9771fbf8366f2d3d3620d66a09d9bb",
   "nativeTree": "c5ca16e88a1336739aebed8cbdad3052dc864773",
   "nativeChromeSourceSha256": "9ee5b08e8a2359627794fab196310986fda1cfa7678d63149df1edebf96b83a6",
@@ -17,7 +17,7 @@
   "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
   "chromeSha256": "377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025",
-  "p06SourceSha256": "e128da927b7b9793efb3ea3b141bc1e972e94adbb4412d49951fcc3595d491ea",
+  "p06SourceSha256": "636a502b03c1a833ee67eabe492336bb342647761ca1bee38a4de05bdebf6199",
   "cdpHostSourceSha256": "2a2bb072e5ed008c9ef350d9966db06b7df9c32c550f2a8bb2daf4ccad45ad0b",
   "production": {
     "runId": 40160295269,
@@ -83,5 +83,38 @@
     40155505451,
     40156097045,
     40157538616
-  ]
+  ],
+  "testOnlyE2eDelta": {
+    "baseSha": "ffcffc1fdf6b11ef846f2da5221e981514e2b898",
+    "baseTree": "921fa65501d4ae1b613059a7fbba4dee8d930718",
+    "candidateSha": "56fee318b83032e714e323b696e2fde25dddf134",
+    "candidateTree": "1859235e46e7b5ab0a12cc129bc0ad6f2dce9fc1",
+    "patchSha256": "c6416619e81e3e1d3d3c6310323f13df1f7829bcc6745c7946ee36c5c268083d",
+    "files": [
+      {
+        "path": "packages/web/tests/helpers/synthetic-evidence.ts",
+        "mode": "100644",
+        "beforeBlob": "220c5286e9aef3c007b01e3644c4a7a97c5f5458",
+        "afterBlob": "25e5758cdbb9bfaa6f0ec31e0d41d0442d45fef2",
+        "beforeSha256": "b66e65577e644c702a13e7ad3b9a732feeb8183b5977e7c58d4be5349e54cbf8",
+        "afterSha256": "005f7f7a5687198983957b1f8bef47015a4155aa2337d7749736456784fad2a7"
+      },
+      {
+        "path": "packages/web/tests/integration/cdp-recovery.test.ts",
+        "mode": "100644",
+        "beforeBlob": "54372d30f2eaaeedee832b29efd4eb9b43972243",
+        "afterBlob": "6ae6cee7cbd7e9485dedf181ca907fc19a2b254c",
+        "beforeSha256": "e128da927b7b9793efb3ea3b141bc1e972e94adbb4412d49951fcc3595d491ea",
+        "afterSha256": "636a502b03c1a833ee67eabe492336bb342647761ca1bee38a4de05bdebf6199"
+      },
+      {
+        "path": "packages/web/tests/unit/synthetic-evidence.test.ts",
+        "mode": "100644",
+        "beforeBlob": "18694110d7f3dc997781748e98317e337f791f43",
+        "afterBlob": "278a460d19664fdfdfd781aeea6e5c935ff41b8e",
+        "beforeSha256": "715b8802cb91a8ec2913da45678a952c82c14f1a7b4fb21344970e3f6fb6cb14",
+        "afterSha256": "5fbe5544d5de39a0ffb87bd2a8130b4d7c278e16d9dd421e770471ffd9899676"
+      }
+    ]
+  }
 }

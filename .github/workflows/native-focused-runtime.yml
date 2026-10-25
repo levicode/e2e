@@ -1,5 +1,5 @@
 # FROZEN FOCUSED RUNTIME: actual terminal-success producer and exact new ELF are bound.
-name: Independent P06 and HTTP500 focused Linux runtimes
+name: P06 test-carrier only on unchanged genuine production ELF
 'on':
   push:
     branches: [implement/unified-focused-runtime-ci]
@@ -15,9 +15,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/implement/unified-focused-runtime-ci' }}
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
-        case: [P06, HTTP500]
+        case: [P06]
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     defaults:
@@ -36,13 +36,13 @@ jobs:
         set -euo pipefail
         umask 077
         test "$GITHUB_RUN_ATTEMPT" = 1
-        case "$CASE_ID" in P06|HTTP500) ;; *) exit 1;; esac
+        test "$CASE_ID" = P06
         export EVIDENCE_DIR="$RUNNER_TEMP/focused-runtime-evidence"
         export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/focused-runtime-playwright"
         printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
         mkdir -m700 "$EVIDENCE_DIR"
         for phase in $PHASES; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
-        printf '%s\n' 'One original focused case on an independent hosted runner. No full native/all333/installed/release proof. Existing final acceptance goal unchanged. Original temporary no-sandbox flags apply only to owned cloud loopback synthetic fixtures, not user sessions or user data. Loopback fixture scope does not claim blocked browser background egress. No retries or diagnostic overlay.' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf '%s\n' 'One original focused case on an independent hosted runner. No full native/all333/installed/release proof. Existing final acceptance goal unchanged. Original temporary no-sandbox flags apply only to owned cloud loopback synthetic fixtures, not user sessions or user data. Loopback fixture scope does not claim blocked browser background egress. Only approved three-file test metadata and existing native cleanup carrier; no retries, new collector or diagnostic acceptance gate. HTTP500 is not run.' > "$EVIDENCE_DIR/SCOPE.txt"
         uname -a > "$EVIDENCE_DIR/host.txt"
         cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
         . /etc/os-release
@@ -78,7 +78,8 @@ jobs:
       timeout-minutes: 3
       with:
         repository: levicode/e2e
-        ref: ffcffc1fdf6b11ef846f2da5221e981514e2b898
+        ref: 56fee318b83032e714e323b696e2fde25dddf134
+        fetch-depth: 2
         path: e2e-source
         persist-credentials: false
     - name: Check out exact native source for provenance only
@@ -181,11 +182,8 @@ jobs:
       run: |
         set -euo pipefail
         trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime.exit"' EXIT
-        if [[ "$CASE_ID" = P06 ]]; then
-          bash recipe/scripts/matrix-runtime/p06.sh
-        else
-          node recipe/scripts/runtime-probe/runtime.mjs cases HTTP500
-        fi
+        test "$CASE_ID" = P06
+        bash recipe/scripts/matrix-runtime/p06.sh
     - name: Recheck source dist and image bytes after success or failure
       id: final_identities
       timeout-minutes: 3

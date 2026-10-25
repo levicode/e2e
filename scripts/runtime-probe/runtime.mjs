@@ -13,7 +13,7 @@ if (process.env.EVIDENCE_DIR && existsSync(path.join(process.env.EVIDENCE_DIR, '
   const built = JSON.parse(readFileSync(path.join(process.env.EVIDENCE_DIR, 'production-identity.json'), 'utf8'));
   assert.equal(built.nativeSha, pins.nativeSha); assert.equal(built.nativeTree, pins.nativeTree);
   assert.equal(built.profile, 'ci'); assert.deepEqual(built.features, []);
-  assert.equal(built.e2eSha, pins.e2eSha); assert.equal(built.e2eTree, pins.e2eTree);
+  assert.equal(built.e2eSha, pins.production.e2eSha); assert.equal(built.e2eTree, pins.production.e2eTree);
   assert.equal(built.exactProducerArtifactVerified, true);
   assert.equal(built.sameRunArtifactVerified, false, 'Producer must have finished in a separate earlier run');
   assert.notEqual(String(built.runId), process.env.GITHUB_RUN_ID);
@@ -34,6 +34,7 @@ export const CASES = {
 const json = (file, value) => writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 const digest = value => createHash('sha256').update(value).digest('hex');
+const P06_TEST_ONLY_FILES = ['packages/web/tests/helpers/synthetic-evidence.ts','packages/web/tests/integration/cdp-recovery.test.ts','packages/web/tests/unit/synthetic-evidence.test.ts'];
 export function requirePins(value = pins) {
   assert.equal(value.enabled, true, 'Pending actual focused native success and newly built production identity');
   assert.equal(value.sourceBindingFrozen, true);
@@ -52,7 +53,11 @@ export function requirePins(value = pins) {
   assert.equal(new Set(names).size,names.length);
   assert.notEqual(String(value.production.runId),process.env.GITHUB_RUN_ID,'Must consume a terminal prior producer run');
   assert.equal(value.production.nativeSha, value.nativeSha); assert.equal(value.production.nativeTree, value.nativeTree);
-  assert.equal(value.production.e2eSha, value.e2eSha); assert.equal(value.production.e2eTree, value.e2eTree);
+  const d=value.testOnlyE2eDelta;
+  assert.equal(d.baseSha,value.production.e2eSha); assert.equal(d.baseTree,value.production.e2eTree);
+  assert.equal(d.candidateSha,value.e2eSha); assert.equal(d.candidateTree,value.e2eTree); assert.notEqual(d.baseSha,d.candidateSha);
+  assert.deepEqual(d.files.map(file=>file.path),P06_TEST_ONLY_FILES); assert.match(d.patchSha256,/^[a-f0-9]{64}$/);
+  for(const file of d.files){assert.equal(file.mode,'100644');for(const key of ['beforeBlob','afterBlob'])assert.match(file[key],/^[a-f0-9]{40}$/);for(const key of ['beforeSha256','afterSha256'])assert.match(file[key],/^[a-f0-9]{64}$/);}
   for (const key of ['e2eSha', 'e2eTree', 'nativeSha', 'nativeTree']) assert.match(value[key], /^[a-f0-9]{40}$/, `Unresolved ${key}: reviewed final source required`);
   assert.notEqual(value.e2eTree, '5e345f7aec13fbd15389dde73a070a813436b383', 'Pre-fix e2e tree is not the reviewed final fixture source');
 }
@@ -77,6 +82,41 @@ function sourceIdentity(root, sha, tree) {
   const result = { commit: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'rev-parse', 'HEAD^{tree}'), status: git(root, 'status', '--porcelain', '--untracked-files=all') };
   assert.equal(result.commit, sha); assert.equal(result.tree, tree); assert.equal(result.status, ''); return result;
 }
+// One closed reviewed test-only delta, not a generic source mismatch exemption.
+export function validateTestOnlyDelta(value, expected=pins) {
+  const d=expected.testOnlyE2eDelta;
+  for(const key of ['baseSha','baseTree','candidateSha','candidateTree'])assert.equal(value[key],d[key]);
+  assert.deepEqual(value.parents,[d.baseSha]); assert.equal(value.patchSha256,d.patchSha256);
+  assert.deepEqual(d.files.map(file=>file.path),P06_TEST_ONLY_FILES);
+  assert.deepEqual(value.files,d.files.map(file=>({...file,worktreeSha256:file.afterSha256})));
+  const outside=rows=>rows.filter(row=>!P06_TEST_ONLY_FILES.includes(row.slice(row.indexOf('\t')+1)));
+  assert.equal(new Set(value.beforeInventory).size,value.beforeInventory.length);
+  assert.equal(new Set(value.afterInventory).size,value.afterInventory.length);
+  for(const file of d.files){
+    assert.equal(file.mode,'100644'); assert.notEqual(file.beforeBlob,file.afterBlob);
+    assert.ok(value.beforeInventory.includes(`100644 blob ${file.beforeBlob}\t${file.path}`));
+    assert.ok(value.afterInventory.includes(`100644 blob ${file.afterBlob}\t${file.path}`));
+    assert.equal(value.beforeInventory.filter(row=>row.endsWith('\t'+file.path)).length,1);
+    assert.equal(value.afterInventory.filter(row=>row.endsWith('\t'+file.path)).length,1);
+  }
+  assert.deepEqual(outside(value.beforeInventory),outside(value.afterInventory),'A non-approved tracked input or mode changed');
+  return {baseSha:d.baseSha,baseTree:d.baseTree,candidateSha:d.candidateSha,candidateTree:d.candidateTree,parents:value.parents,
+    patchSha256:value.patchSha256,files:value.files,unchangedEntryCount:outside(value.beforeInventory).length,
+    unchangedInventorySha256:digest(outside(value.beforeInventory).join('\0')+'\0')};
+}
+function testOnlySource(root) {
+  const d=pins.testOnlyE2eDelta;
+  const bytes=(...args)=>execFileSync('git',['-C',root,...args],{maxBuffer:16*1024*1024});
+  const inventory=tree=>bytes('ls-tree','-r','-z','--full-tree',tree).toString('utf8').split('\0').filter(Boolean);
+  const row=(tree,file)=>bytes('ls-tree',tree,'--',file).toString('utf8').trim().split('\t')[0].split(' ');
+  const value={baseSha:d.baseSha,baseTree:git(root,'rev-parse',d.baseSha+'^{tree}'),candidateSha:git(root,'rev-parse','HEAD'),candidateTree:git(root,'rev-parse','HEAD^{tree}'),
+    parents:bytes('cat-file','-p','HEAD').toString('utf8').split('\n').filter(line=>line.startsWith('parent ')).map(line=>line.slice(7)),
+    patchSha256:digest(bytes('diff','--no-ext-diff','--no-textconv','--no-renames','--full-index','--binary',d.baseTree,d.candidateTree)),
+    beforeInventory:inventory(d.baseTree),afterInventory:inventory(d.candidateTree),
+    files:d.files.map(file=>({path:file.path,mode:row(d.baseTree,file.path)[0],beforeBlob:row(d.baseTree,file.path)[2],afterBlob:row(d.candidateTree,file.path)[2],
+      beforeSha256:digest(bytes('show',d.baseTree+':'+file.path)),afterSha256:digest(bytes('show',d.candidateTree+':'+file.path)),worktreeSha256:sha256(path.join(root,file.path))}))};
+  return validateTestOnlyDelta(value);
+}
 export function sourceCheck(workspace, evidence) {
   requirePins();
   assert.equal(process.platform, 'linux'); assert.equal(process.arch, 'x64'); assert.equal(process.version, pins.nodeVersion);
@@ -96,7 +136,7 @@ export function sourceCheck(workspace, evidence) {
   assert.equal(JSON.parse(readFileSync(path.join(e2e, 'package.json'), 'utf8')).packageManager, `pnpm@${pins.pnpmVersion}`);
   for (const [file, hash] of [['sw-startup-events.test.ts', pins.http500OriginalSha256], ['negotiation.setup.ts', pins.negotiationOriginalSha256]])
     assert.equal(digest(restoreOriginalFixture(readFileSync(path.join(here, file), 'utf8'))), hash, 'Only source import relocation is allowed');
-  json(path.join(evidence, 'source-identity.json'), { ...identities, pnpmLockSha256: sha256(path.join(e2e, 'pnpm-lock.yaml')) });
+  json(path.join(evidence, 'source-identity.json'), { ...identities, artifactBuildE2e:{commit:pins.production.e2eSha,tree:pins.production.e2eTree}, approvedTestOnlyDelta:testOnlySource(e2e), pnpmLockSha256: sha256(path.join(e2e, 'pnpm-lock.yaml')) });
 }
 export async function browserPin(workspace, evidence) {
   const web = path.join(workspace, 'e2e-source/packages/web');

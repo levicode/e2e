@@ -13,7 +13,7 @@ const load = file => JSON.parse(readFileSync(file));
 export function verifyProvenance(value, binaryBytes, focusedBytes, expected = pins) {
   const p=expected.production;
   assert.equal(value.NATIVE_SHA, expected.nativeSha); assert.equal(value.NATIVE_TREE, expected.nativeTree);
-  assert.equal(value.E2E_SHA, expected.e2eSha); assert.equal(value.E2E_TREE, expected.e2eTree);
+  assert.equal(value.E2E_SHA, p.e2eSha); assert.equal(value.E2E_TREE, p.e2eTree);
   assert.equal(value.NATIVE_LOCK_SHA256, expected.nativeLockSha256); assert.equal(value.E2E_LOCK_SHA256, expected.e2eLockSha256);
   assert.equal(String(value.GITHUB_RUN_ID), String(p.runId)); assert.equal(String(value.GITHUB_RUN_ATTEMPT), String(p.runAttempt));
   assert.equal(value.GITHUB_WORKFLOW_SHA, p.recipeSha); assert.equal(value.RUSTUP_TOOLCHAIN, expected.rustToolchain);
@@ -76,7 +76,7 @@ async function downloadArtifact(workspace,evidence) {
   assert.equal(digest(provenanceBytes),p.provenanceSha256);const provenance=JSON.parse(provenanceBytes);verifyProvenance(provenance,binary,focused);
   writeFileSync(path.join(workspace,'agent-browser'),binary,{flag:'wx',mode:0o700});
   writeFileSync(path.join(evidence,'production-provenance.json'),provenanceBytes);writeFileSync(path.join(evidence,'native-focused-verified.json'),focused);
-  json(path.join(evidence,'production-identity.json'),{nativeSha:pins.nativeSha,nativeTree:pins.nativeTree,e2eSha:pins.e2eSha,e2eTree:pins.e2eTree,profile:'ci',features:[],binarySha256:digest(binary),binaryBytes:binary.length,runId:p.runId,runAttempt:p.runAttempt,recipeSha:p.recipeSha,recipeTree:p.recipeTree,artifactId:p.artifactId,archiveSha256:p.archiveSha256,nativeFocusedReceiptSha256:pins.nativeFocused.receiptSha256,exactProducerArtifactVerified:true,sameRunArtifactVerified:false});
+  json(path.join(evidence,'production-identity.json'),{nativeSha:pins.nativeSha,nativeTree:pins.nativeTree,e2eSha:p.e2eSha,e2eTree:p.e2eTree,profile:'ci',features:[],binarySha256:digest(binary),binaryBytes:binary.length,runId:p.runId,runAttempt:p.runAttempt,recipeSha:p.recipeSha,recipeTree:p.recipeTree,artifactId:p.artifactId,archiveSha256:p.archiveSha256,nativeFocusedReceiptSha256:pins.nativeFocused.receiptSha256,exactProducerArtifactVerified:true,sameRunArtifactVerified:false});
 }
 function image(file) {
   const executable=realpathSync(file),info=statSync(executable);

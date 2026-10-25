@@ -20,7 +20,8 @@ fresh_environment() {
   ENV=(env -i "PATH=$ROOT/bin:$BASE_PATH" "HOME=$ROOT/home" CI=1 LANG=C.UTF-8
     "TMPDIR=$ROOT/tmp" "TMP=$ROOT/tmp" "TEMP=$ROOT/tmp" "XDG_CACHE_HOME=$ROOT/cache"
     "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" "AGENT_BROWSER_SOCKET_DIR=$ROOT/s"
-    "E2E_AGENT_BROWSER_EXECUTABLE=$PRODUCTION" E2E_TELEMETRY_DISABLED=1 E2E_UPDATE_CHECK_DISABLED=1 E2E_CACHE_DIR=)
+    "E2E_AGENT_BROWSER_EXECUTABLE=$PRODUCTION" E2E_TELEMETRY_DISABLED=1 E2E_UPDATE_CHECK_DISABLED=1 E2E_CACHE_DIR=
+    "AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=$OUT/P06.native.jsonl")
   test "$("${ENV[@]}" /usr/bin/readlink -f "$ROOT/bin/google-chrome")" = "$CHROME"
 }
 observed_command() {
@@ -49,7 +50,21 @@ node "$HERE/../runtime-probe/runtime.mjs" browser
 # Match the existing HTTP500 exclusive invocation receipt before spawning any runtime.
 node --input-type=module - "$OUT/selection.json" <<'JS'
 import {writeFileSync} from 'node:fs';
-writeFileSync(process.argv[2],JSON.stringify({scope:'two-independent-focused-jobs',caseIds:['P06']})+'\n',{flag:'wx',mode:0o600});
+writeFileSync(process.argv[2],JSON.stringify({scope:'P06-only-test-carrier-same-production',caseIds:['P06']})+'\n',{flag:'wx',mode:0o600});
+JS
+# Existing native closed, bounded diagnostic carrier only; never an acceptance gate.
+node --input-type=module - "$OUT" "$HERE/../runtime-probe/runtime.mjs" <<'JS'
+import assert from 'node:assert/strict';
+import {lstatSync,realpathSync,writeFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+const [out,helper]=process.argv.slice(2); const {pins}=await import(pathToFileURL(helper));
+const directory=lstatSync(out); assert.ok(directory.isDirectory()&&!directory.isSymbolicLink());
+assert.equal(directory.uid,process.getuid());assert.equal(directory.mode&0o777,0o700);assert.equal(realpathSync(out),out);
+const file=out+'/P06.native.jsonl';writeFileSync(file,'',{flag:'wx',mode:0o600});
+const stat=lstatSync(file);assert.ok(stat.isFile()&&!stat.isSymbolicLink());assert.equal(stat.mode&0o777,0o600);assert.equal(stat.uid,process.getuid());
+writeFileSync(out+'/P06.native-binding.json',JSON.stringify({diagnosticOnly:true,acceptanceGate:false,missingRecords:'unknown',caseAssociation:'unproven',processCoverage:'unproven',
+  sourceRevision:pins.e2eSha,nativeSourceRevision:pins.nativeSha,testSourceDigest:pins.p06SourceSha256,binarySha256:pins.production.binarySha256,
+  file,device:stat.dev,inode:stat.ino,initialBytes:stat.size,format:'existing native schema2 closed bounded JSONL; ScreenshotFirstFailure/CleanupFirstFailure retained if emitted'})+'\n',{flag:'wx',mode:0o600});
 JS
 fresh_environment
 # Preserve the original 600s phase cap and source's 60s case/30s hooks/10s operations.
@@ -89,6 +104,7 @@ const browserLifetimes=new Set(browsers.map(row=>`${row.pid}:${row.startTicks}`)
 const productionObserved=rows.some(row=>row.executable===images.production.executable&&row.expectedHashMatches===true);
 const exit=Number(readFileSync(`${out}/P06.exit`,'utf8'));
 const result={caseId:'P06',selected,exit,cleanupConfirmed,productionObserved,browserRootLifetimes:browserLifetimes.size,
+  testSource:{sha:pins.e2eSha,tree:pins.e2eTree},artifactBuildE2e:{sha:pins.production.e2eSha,tree:pins.production.e2eTree},
   fullNativeSuitePassed:false,full333Complete:false,releaseEligible:false,
   pageCountClaim:'unchanged original single-marker witness only; no new page inventory or diagnostics'};
 writeFileSync(`${out}/P06.focused-result.json`,JSON.stringify(result,null,2)+'\n');
