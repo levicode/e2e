@@ -1,0 +1,131 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "publishedNativeSha": "1f41d03e4ea200fe33e1733b256d2b5a6f4bc886",
+  "candidateTree": "8041af95f5fc686cefbe10a31456b6c33d19e626",
+  "baseNativeSha": "a2c48b8529d44434214c56aef31540bc3fedfeaa",
+  "baseNativeTree": "e69a73e73b5587a49906910332ba4a2c9eed5da9",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "onlyTestOverlay": false,
+  "productionSourceChanged": true,
+  "productionImageBuilt": false,
+  "patchSha256": "1575ccdd6154f7cf2c119b8a2da511e79744a69f8664d3092438cf8393168156",
+  "patchInputs": [
+    {
+      "name": "response-ingress-fix-from-exact-red-source",
+      "sha256": "1575ccdd6154f7cf2c119b8a2da511e79744a69f8664d3092438cf8393168156"
+    }
+  ],
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_browser.rs",
+      "beforeSha256": "ddc267d81a498fc70da3df235dc181c80557a427ff98dcaeab0ea60f5f36ed25",
+      "afterSha256": "ae1f391707d37ea794b4fb2ca8cd0776d2a92eaa7e8a622b9282f1382106fdae",
+      "gitBlob": "496ce47eded70dc7c029ae009472ee3eb55d1638"
+    },
+    {
+      "path": "cli/src/native/client_browser_response_entry_tests.rs",
+      "beforeSha256": "80d04d88cb7f3d22d68b8bb38260468fdade3baeb8bdc42275320c116662ffad",
+      "afterSha256": "f4ddda1ca0d530a1bcdd18f83044d80d22c31e614df0885dff3e448ee78d0665",
+      "gitBlob": "50d1c14da022c259460583f6318361e919cb4480"
+    },
+    {
+      "path": "cli/src/native/client_debt.rs",
+      "beforeSha256": "d63f4aa898ff02c8797078762d76ae944fdc703c2f4e44010963d754f0f368ae",
+      "afterSha256": "7997ed036bc042916100e67b30292019ce0b1331a541af812ccfbba5773ec834",
+      "gitBlob": "918044b3595bab3d4d6a2aa7d277f0f23db317f6"
+    },
+    {
+      "path": "cli/src/native/client_enrollment.rs",
+      "beforeSha256": "a2adb8bcf0bb93e5d5f98c82a7e1d1cf975b4ec4450d6f53472c605acb20fefd",
+      "afterSha256": "97884ad1c8c89f52a3a9ecd4dbaf5e287af0c691b3a3cd1eb586e5d40a9f0a6b",
+      "gitBlob": "bc1e164e9236e17d987b618570938ba3eead0896"
+    },
+    {
+      "path": "cli/src/native/client_eval_network_watermark_tests.rs",
+      "beforeSha256": "3775b384fa7b1dd22a29e728aee4ca44920b6e8833ca5a8bd9d6862ed1f7afa8",
+      "afterSha256": "d659ed88f1e60b31c162b3df609c9536835c83eebf8bcee13f675c099516da9a",
+      "gitBlob": "31702bd55295cbae57fc82c19d6ea5bfad049320"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "response-1",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_applied_network_positive_reads_full_text_and_json",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-2",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_unapplied_network_waits_then_reads_full_text_and_json",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-3",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_pending_network_preserves_original_deadline_without_dispatch",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-4",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_pending_network_preserves_user_cancel_without_dispatch",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-5",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_does_not_chase_later_received_network_events",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-6",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_rejects_loader_change_during_ingress_wait",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-7",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_rejects_realm_change_during_ingress_wait",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-8",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_rejects_exact_session_detach_during_ingress_wait",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-9",
+      "name": "native::client_debt::tests::eval_ingress_observation_preserves_existing_live_window",
+      "category": "response ingress fixed watermark positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    }
+  ],
+  "releaseEligible": false,
+  "casesSha256": "09df25dabbbddd9713aa5c1aa5992364af2e5260ba8daadc33de51fff5e22597",
+  "formalAncestor": {
+    "sha": "0ea3dce92bec2e1d059f30b6839f444a42f6a4eb",
+    "tree": "f14d6ac9cc880094720fc4ea9707dd1a57bf2b95",
+    "role": "ancestor, not direct parent"
+  }
+}
