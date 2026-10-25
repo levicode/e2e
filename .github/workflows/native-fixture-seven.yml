@@ -1,5 +1,5 @@
-# Dedicated support trigger only; expected architecture RED remains a failed workflow.
-name: SW late-detach architecture RED with two exact controls
+# Dedicated support trigger only; every selected regression must genuinely pass.
+name: 'SW late-detach production repair: twelve exact passing regressions'
 'on':
   push:
     branches:
@@ -13,7 +13,7 @@ jobs:
   fixtures:
     if: ${{ github.ref == 'refs/heads/implement/sw-late-detach-architecture-ci' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 110
+    timeout-minutes: 125
     defaults:
       run:
         shell: bash
@@ -32,11 +32,11 @@ jobs:
 
         umask 077
 
-        export EVIDENCE_DIR="$RUNNER_TEMP/sw-late-detach-evidence"
+        export EVIDENCE_DIR="$RUNNER_TEMP/sw-late-detach-repair-evidence"
 
-        export CARGO_HOME="$RUNNER_TEMP/sw-late-detach-cargo"
+        export CARGO_HOME="$RUNNER_TEMP/sw-late-detach-repair-cargo"
 
-        export CARGO_TARGET_DIR="$RUNNER_TEMP/sw-late-detach-target"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/sw-late-detach-repair-target"
 
         export VALIDATE="$GITHUB_WORKSPACE/recipe/scripts/native-fixture-seven/fixture-recipe.py"
 
@@ -46,12 +46,15 @@ jobs:
         mkdir -m700 "$EVIDENCE_DIR"
 
         for phase in recipe-identity parser-self-tests source-before apply-overlay toolchain format clippy acceptance-tests-check proxy-feature-check
-        default-harness-compile default-harness-inventory sw-error-terminal-control sw-applied-detach-control sw-late-detach-architecture-red
-        source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
+        default-harness-compile default-harness-inventory failed-live-exact-detach-after-decision-keeps-owner-healthy failed-live-exact-detach-after-wait-preserves-failed-retired-error
+        error-ack-never-reaches-ready-commit-gate failed-live-pending-wait-honors-independent-operation-cancel failed-live-pending-wait-rejects-wrong-session-detach
+        failed-live-pending-wait-rejects-target-destroyed-alone failed-live-pending-wait-rejects-replaced-watermark-subscription failed-terminal-target-destroyed-alone-fails-promptly
+        enrollment-observer-failure-never-publishes-ready retirement-waits-for-applied-detach-without-publishing-ready pending-failure-preserves-error-without-retirement-authority
+        failed-terminal-preserves-errors-and-refuses-ready-authority source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
 
-        printf ''%s\n'' ''Exactly two existing SW controls and one new deterministic SW late-detach architecture RED. One default dev test harness.
-        No Rust/browser execution during local preparation; CI contains no product image, browser, seven-suite, query matcher, full native suite
-        or retirement change.'' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf ''%s\n'' ''Exactly twelve SW late-detach repair regressions, all expected PASS. Reviewed production change, one default dev test
+        harness. No browser, product image, seven-suite, query matcher, full native suite or retirement change. Historical architecture RED101
+        remains unchanged in its original run.'' > "$EVIDENCE_DIR/SCOPE.txt"
 
         uname -a > "$EVIDENCE_DIR/host.txt"
 
@@ -80,17 +83,17 @@ jobs:
       id: parser_tests
       timeout-minutes: 1
       run: python3 -B "$VALIDATE" run parser-self-tests 30 python3 -B "$(dirname "$VALIDATE")/test-recipe.py"
-    - name: Check out immutable reviewed SW test-only source
+    - name: Check out immutable reviewed SW production repair source
       id: source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: ffcfad2a81012f22c7d1f03f726dd7b6e920ce5e
+        ref: fa8bcdfcb4797ecc495d9e5337d7ea373709f63f
         fetch-depth: 2
         path: source
         persist-credentials: false
-    - name: Verify published source and exact reviewed test overlay
+    - name: Verify published source and exact reviewed production change
       id: overlay
       timeout-minutes: 2
       run: 'set -euo pipefail
@@ -171,42 +174,132 @@ jobs:
       timeout-minutes: 2
       if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' }}
       run: python3 -B "$VALIDATE" run default-harness-inventory 90 python3 -B "$VALIDATE" harness "$GITHUB_WORKSPACE/source" default
-    - name: sw-error-terminal-control must pass exactly once with zero ignored
-      id: sw_error_terminal_control
+    - name: failed-live-exact-detach-after-decision-keeps-owner-healthy must pass exactly once with zero ignored
+      id: failed_live_exact_detach_after_decision_keeps_owner_healthy
       timeout-minutes: 3
       if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
         == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case sw-error-terminal-control
+        python3 -B "$VALIDATE" case failed-live-exact-detach-after-decision-keeps-owner-healthy
 
         '
-    - name: sw-applied-detach-control must pass exactly once with zero ignored
-      id: sw_applied_detach_control
+    - name: failed-live-exact-detach-after-wait-preserves-failed-retired-error must pass exactly once with zero ignored
+      id: failed_live_exact_detach_after_wait_preserves_failed_retired_error
       timeout-minutes: 3
       if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
         == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case sw-applied-detach-control
+        python3 -B "$VALIDATE" case failed-live-exact-detach-after-wait-preserves-failed-retired-error
 
         '
-    - name: sw-late-detach-architecture-red must remain a genuine assertion failure
-      id: sw_late_detach_architecture_red
+    - name: error-ack-never-reaches-ready-commit-gate must pass exactly once with zero ignored
+      id: error_ack_never_reaches_ready_commit_gate
       timeout-minutes: 3
       if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
-        == 'success' && steps.sw_error_terminal_control.outcome == 'success' && steps.sw_applied_detach_control.outcome == 'success' }}
+        == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case sw-late-detach-architecture-red
+        python3 -B "$VALIDATE" case error-ack-never-reaches-ready-commit-gate
 
         '
-    - name: Verify exact source overlay after success or failure
+    - name: failed-live-pending-wait-honors-independent-operation-cancel must pass exactly once with zero ignored
+      id: failed_live_pending_wait_honors_independent_operation_cancel
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case failed-live-pending-wait-honors-independent-operation-cancel
+
+        '
+    - name: failed-live-pending-wait-rejects-wrong-session-detach must pass exactly once with zero ignored
+      id: failed_live_pending_wait_rejects_wrong_session_detach
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case failed-live-pending-wait-rejects-wrong-session-detach
+
+        '
+    - name: failed-live-pending-wait-rejects-target-destroyed-alone must pass exactly once with zero ignored
+      id: failed_live_pending_wait_rejects_target_destroyed_alone
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case failed-live-pending-wait-rejects-target-destroyed-alone
+
+        '
+    - name: failed-live-pending-wait-rejects-replaced-watermark-subscription must pass exactly once with zero ignored
+      id: failed_live_pending_wait_rejects_replaced_watermark_subscription
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case failed-live-pending-wait-rejects-replaced-watermark-subscription
+
+        '
+    - name: failed-terminal-target-destroyed-alone-fails-promptly must pass exactly once with zero ignored
+      id: failed_terminal_target_destroyed_alone_fails_promptly
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case failed-terminal-target-destroyed-alone-fails-promptly
+
+        '
+    - name: enrollment-observer-failure-never-publishes-ready must pass exactly once with zero ignored
+      id: enrollment_observer_failure_never_publishes_ready
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case enrollment-observer-failure-never-publishes-ready
+
+        '
+    - name: retirement-waits-for-applied-detach-without-publishing-ready must pass exactly once with zero ignored
+      id: retirement_waits_for_applied_detach_without_publishing_ready
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case retirement-waits-for-applied-detach-without-publishing-ready
+
+        '
+    - name: pending-failure-preserves-error-without-retirement-authority must pass exactly once with zero ignored
+      id: pending_failure_preserves_error_without_retirement_authority
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case pending-failure-preserves-error-without-retirement-authority
+
+        '
+    - name: failed-terminal-preserves-errors-and-refuses-ready-authority must pass exactly once with zero ignored
+      id: failed_terminal_preserves_errors_and_refuses_ready_authority
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case failed-terminal-preserves-errors-and-refuses-ready-authority
+
+        '
+    - name: Verify exact production source after success or failure
       id: source_after
       timeout-minutes: 1
       if: ${{ always() && steps.overlay.outcome == 'success' }}
       run: python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" source "$GITHUB_WORKSPACE/source" applied
-    - name: Reconcile controls and architectural RED without making failure green
+    - name: Require all twelve exact regressions and strict gates to pass
       id: summary
       timeout-minutes: 1
       if: ${{ always() && steps.recipe.outcome == 'success' }}
@@ -222,7 +315,7 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: sw-late-detach-${{ github.run_id }}-${{ github.run_attempt }}
+        name: sw-late-detach-repair-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ env.EVIDENCE_DIR }}/
         if-no-files-found: error
         retention-days: 7

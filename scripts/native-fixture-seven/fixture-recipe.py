@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exactly three SW late-detach fixtures, adapted from the seven-fixture recipe. RED stays RED."""
+"""Exactly twelve SW late-detach repair fixtures. Every selected test must pass."""
 import hashlib
 import json
 import os
@@ -90,13 +90,17 @@ def require_frozen_pins():
         assert re.fullmatch(r'[0-9a-f]{40}', PINS[field]), 'Unfrozen source identity: ' + field
     for field in ('nativeLockSha256', 'patchSha256'):
         assert re.fullmatch(r'[0-9a-f]{64}', PINS[field]), 'Unfrozen hash: ' + field
-    assert PINS['baseNativeSha'] == '64315733808267b10be34f179f2a2daf4fd644ee'
-    assert PINS['baseNativeTree'] == 'c0f32f260978e3631c4fce79513780820dc7218d'
+    assert PINS['baseNativeSha'] == 'ffcfad2a81012f22c7d1f03f726dd7b6e920ce5e'
+    assert PINS['baseNativeTree'] == '4e9a6d877503672174d38a859454bf007ea6bc45'
     assert PINS['candidateTree'] != PINS['baseNativeTree']
+    assert PINS['productionSourceChanged'] is True
     assert [row['path'] for row in PINS['changedFiles']] == [
-        'cli/src/native/cdp/client.rs', 'cli/src/native/client_enrollment.rs']
+        'cli/src/native/cdp/client.rs', 'cli/src/native/client_enrollment.rs',
+        'cli/src/native/client_network.rs']
     assert set(PINS['configurations']) == {'default'}
-    assert len(PINS['cases']) == 3 and sum(row['expected'] == 'failed' for row in PINS['cases']) == 1
+    assert PINS['configurations']['default'] == {'features': [], 'profile': 'dev', 'targetDirectory': 'debug/deps'}
+    assert len(PINS['cases']) == 12 and all(row['expected'] == 'passed' for row in PINS['cases'])
+    assert len({row['name'] for row in PINS['cases']}) == 12
 
 
 def assert_source_binding(source):
@@ -106,21 +110,26 @@ def assert_source_binding(source):
     assert source['baseTree'] == PINS['baseNativeTree']
     assert source['effectiveTree'] == PINS['candidateTree']
     assert source['lockSha256'] == PINS['nativeLockSha256']
-    assert source['onlyTestOverlay'] is True
+    assert source['productionSourceChanged'] is True
 
 
-def verify_architecture_source(root):
-    red = next(case for case in PINS['cases'] if case['expected'] == 'failed')
-    path = Path(root) / red['failureSource']
-    lines = path.read_text().splitlines()
-    assert lines[red['failureLine'] - 1].strip() == red['failureAssertion']
-    assert lines[red['characterizationLine'] - 1].strip() == red['characterizationAssertion']
-    assert red['characterizationLine'] < red['failureLine']
-    test_start = 'async fn ' + red['name'].split('::')[-1] + '() {'
-    starts = [i for i, line in enumerate(lines, 1) if line.strip() == test_start]
-    assert len(starts) == 1 and starts[0] < red['characterizationLine']
-    assert lines[starts[0] - 2].strip() == '#[tokio::test]'
-    assert not any('async fn ' in line for line in lines[starts[0]:red['failureLine'] - 1])
+def verify_selected_test_sources(root):
+    for case in PINS['cases']:
+        lines = (Path(root) / case['sourcePath']).read_text().splitlines()
+        assert case['name'].startswith(case['sourceModule'] + '::')
+        function = case['name'].split('::')[-1]
+        starts = [i for i, line in enumerate(lines) if re.match(r'\s*async fn ' + re.escape(function) + r'\(', line)]
+        assert len(starts) == 1, 'Selected test definition must be unique: ' + function
+        index = starts[0]
+        assert lines[index - 1].strip().startswith('#[tokio::test')
+        assert lines[case['definitionLine'] - 1] == lines[index]
+        attributes = []
+        while index > 0 and lines[index - 1].strip().startswith('#['):
+            index -= 1
+            attributes.append(lines[index].strip())
+        assert not any('ignore' in value for value in attributes)
+        assert sum(line.strip() == 'mod tests {' for line in lines[:index]) == 1
+        assert any(line.strip() == '#[cfg(test)]' for line in lines[:index])
 
 
 def source_identity(root, applied):
@@ -128,7 +137,7 @@ def source_identity(root, applied):
     root = Path(root).resolve()
     assert git(root, 'rev-parse', 'HEAD') == PINS['publishedNativeSha']
     parents = [line[7:] for line in git(root, 'cat-file', '-p', 'HEAD').splitlines() if line.startswith('parent ')]
-    assert parents == [PINS['baseNativeSha']], 'New source must have exactly the published c0f32f base parent'
+    assert parents == [PINS['baseNativeSha']], 'Repair source must have exactly the published V2 regression base parent'
     assert git(root, 'rev-parse', 'HEAD^1^{tree}') == PINS['baseNativeTree']
     assert git(root, 'rev-parse', 'HEAD^{tree}') == PINS['candidateTree']
     assert digest(root / 'cli/Cargo.lock') == PINS['nativeLockSha256']
@@ -139,15 +148,15 @@ def source_identity(root, applied):
         assert digest(root / row['path']) == row['afterSha256']
         before = subprocess.check_output(['git', '-C', str(root), 'show', 'HEAD^1:' + row['path']])
         assert hashlib.sha256(before).hexdigest() == row['beforeSha256']
-    verify_architecture_source(root)
-    return {'publishedHead': PINS['publishedNativeSha'], 'baseHead': PINS['baseNativeSha'], 'baseTree': PINS['baseNativeTree'], 'effectiveTree': PINS['candidateTree'], 'onlyTestOverlay': True, 'lockSha256': PINS['nativeLockSha256']}
+    verify_selected_test_sources(root)
+    return {'publishedHead': PINS['publishedNativeSha'], 'baseHead': PINS['baseNativeSha'], 'baseTree': PINS['baseNativeTree'], 'effectiveTree': PINS['candidateTree'], 'productionSourceChanged': True, 'lockSha256': PINS['nativeLockSha256']}
 
 
 def apply_overlay(root):
-    # Reverse only this new two-file test patch in a private index. The public
-    # c0f32f tree, not the older formal 88a7b tree, is the sole permissible base.
+    # Reverse the reviewed three-file production repair in a private index.
+    # Preserve the published V2 regression baseline and its historical RED.
     source_identity(root, False)
-    patch = HERE / 'test-only.patch'
+    patch = HERE / 'source-change.patch'
     assert digest(patch) == PINS['patchSha256']
     with tempfile.TemporaryDirectory(prefix='sw-late-detach-overlay-') as temporary:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / 'index'))
@@ -157,8 +166,8 @@ def apply_overlay(root):
         subprocess.run(command + ['apply', '--cached', '--reverse', '--whitespace=error', str(patch)], env=env, check=True)
         assert subprocess.check_output(command + ['write-tree'], env=env, text=True).strip() == PINS['baseNativeTree']
     value = source_identity(root, True)
-    value.update(patchSha256=PINS['patchSha256'], productionSourceChanged=False, reversePatchRestoresPublishedBaseTree=True)
-    save(EVIDENCE / 'test-overlay-identity.json', value)
+    value.update(patchSha256=PINS['patchSha256'], productionSourceChanged=True, reversePatchRestoresPublishedBaseTree=True)
+    save(EVIDENCE / 'source-change-identity.json', value)
 
 def capture_harness(root, configuration):
     config = PINS['configurations'][configuration]
@@ -211,31 +220,10 @@ def inspect_case(case, stdout, stderr, result, harness_sha, post_sha, source):
             elif word == 'FAILED' and (passed, failed) == ('0', '1') and outcomes[0][1] == 'FAILED' and result.get('exit') == 101:
                 actual = 'failed'
     expected_observed = actual == case['expected']
-    if case['expected'] == 'failed':
-        # A source-bound final architecture assertion only. No P06 JSON decoder,
-        # arbitrary panic, early characterization failure, timeout or zero match.
-        combined = stdout + stderr
-        captured = re.findall(r'(?m)^---- (\S+) stdout ----$', stdout)
-        failures = re.findall(r'(?m)^failures:\n((?:    \S+\n)+)', stdout)
-        panic = re.findall(r"(?m)^thread '([^']+)'(?: \(\d+\))? panicked at ([^\n]+):\n([^\n]+)\n  left: ([^\n]+)\n right: ([^\n]+)", combined)
-        expected_observed = expected_observed and captured == [case['name']] and failures == ['    ' + case['name'] + '\n'] and len(panic) == 1 and len(re.findall(r'(?m)^thread .* panicked at ', combined)) == 1
-        try:
-            thread, location, message, left, right = panic[0]
-            source_suffix = re.escape(case['failureSource'].removeprefix('cli/'))
-            assert thread == case['name']
-            assert re.fullmatch(r'(?:.*/)?' + source_suffix + ':' + str(case['failureLine']) + r':\d+', location)
-            assert message == 'assertion `left == right` failed: ' + case['failureMarker']
-            assert left == 'Some(BrowserFailure)' and right == 'None'
-            diagnostics = re.findall(r'(?m)^' + re.escape(case['diagnosticPrefix']) + r'[^\n]+$', combined)
-            assert len(diagnostics) == 1 and 'failure=Some(BrowserFailure);' in diagnostics[0]
-            assert 'Runtime.enable: CDP error (Runtime.enable)' in diagnostics[0] and 'synthetic observer failure' in diagnostics[0]
-            assert combined.index(diagnostics[0]) < combined.index("thread '" + case['name'] + "'")
-        except (AssertionError, IndexError, TypeError, KeyError, ValueError):
-            expected_observed = False
     return {'id': case['id'], 'test': case['name'], 'category': case['category'], 'expected': case['expected'], 'actual': actual,
             'configuration': case['configuration'], 'features': PINS['configurations'][case['configuration']]['features'], 'expectedObservationConfirmed': expected_observed, 'testPassed': actual == 'passed',
-            'classification': 'expected-red-observed' if case['expected'] == 'failed' and expected_observed else 'expected-pass-observed' if case['expected'] == 'passed' and expected_observed else 'unexpected-pass' if actual == 'passed' else 'unexpected-failure' if actual == 'failed' else 'unknown', 'process': result,
-            'harnessSha256Before': harness_sha, 'harnessSha256After': post_sha, 'sourceTree': source.get('effectiveTree'), 'sourceIdentityConfirmed': source_matches,
+            'classification': 'expected-pass-observed' if case['expected'] == 'passed' and expected_observed else 'unexpected-pass' if actual == 'passed' else 'unexpected-failure' if actual == 'failed' else 'unknown', 'process': result,
+            'harnessSha256Before': harness_sha, 'harnessSha256After': post_sha, 'sourceTree': source.get('effectiveTree'), 'sourceIdentityConfirmed': source_matches, 'productionSourceChanged': True,
             'originalE2eRetired': False, 'fullNativeSuitePassed': False, 'productionAcceptance': False}
 
 def verify_saved_case(case):
@@ -253,10 +241,6 @@ def verify_saved_case(case):
 
 def run_case(case_id):
     case = next(row for row in PINS['cases'] if row['id'] == case_id)
-    if case['expected'] == 'failed':
-        for control in (row for row in PINS['cases'] if row['expected'] == 'passed'):
-            receipt = verify_saved_case(control)
-            assert receipt['actual'] == 'passed' and receipt['expectedObservationConfirmed'] is True, 'Both exact controls must pass before architecture RED'
     binding = json.loads((EVIDENCE / (case['configuration'] + '-harness-binding.json')).read_text())
     assert_source_binding(binding['source'])
     assert binding['source']['effectiveTree'] == PINS['candidateTree'] and binding['selectedExactTests'] == [row for row in PINS['cases'] if row['configuration'] == case['configuration']] and binding['configuration'] == case['configuration'] and binding['features'] == PINS['configurations'][case['configuration']]['features'] and binding['cargoProfile'] == 'dev'
@@ -267,7 +251,7 @@ def run_case(case_id):
     receipt = inspect_case(case, (EVIDENCE / f'{case_id}.stdout.log').read_text(), (EVIDENCE / f'{case_id}.stderr.log').read_text(), result, binding['sha256'], digest(binary), binding['source'])
     receipt['command'] = command
     save(EVIDENCE / f'{case_id}.ledger.json', receipt)
-    # Preserve RED as RED, not a passing test or successful workflow step.
+    # Preserve all nonzero exits, including historical-style 101 failures.
     return status if status else (0 if receipt['testPassed'] and receipt['expectedObservationConfirmed'] else 1)
 
 def summarize():
@@ -281,21 +265,16 @@ def summarize():
         except (OSError, ValueError, KeyError, AssertionError):
             cases.append({'id': case['id'], 'test': case['name'], 'expected': case['expected'], 'actual': 'unknown' if file.exists() else 'not-run', 'expectedObservationConfirmed': False, 'testPassed': False})
     all_gates = all(value == '0' for value in states.values())
-    controls_confirmed = all(case.get('actual') == 'passed' and case.get('expectedObservationConfirmed') is True for case in cases if case['expected'] == 'passed')
-    red = next(case for case in cases if case['expected'] == 'failed')
-    red['controlsConfirmed'] = controls_confirmed
-    if not controls_confirmed:
-        red['expectedObservationConfirmed'] = False
-    outcome = {'scope': 'exactly two existing SW controls and one deterministic SW late-detach architecture RED; no browser, product image, seven-suite, query matcher, retirement or full acceptance', 'sourceTree': PINS['candidateTree'],
-               'strictGatesPassed': all_gates, 'phases': states, 'cases': cases,
+    outcome = {'scope': 'exactly twelve SW late-detach repair regressions, all expected PASS; reviewed production change; no browser, product image, seven-suite, query matcher, retirement or full acceptance', 'sourceTree': PINS['candidateTree'],
+               'productionSourceChanged': True, 'strictGatesPassed': all_gates, 'phases': states, 'cases': cases,
                'expectedObservationsConfirmed': all_gates and all(case['expectedObservationConfirmed'] for case in cases),
                'passedTestCount': sum(case['actual'] == 'passed' for case in cases), 'failedTestCount': sum(case['actual'] == 'failed' for case in cases),
-               'allThreeTestsPassed': all_gates and all(case['testPassed'] for case in cases), 'fullNativeSuitePassed': False,
+               'allTwelveTestsPassed': all_gates and all(case['testPassed'] for case in cases), 'fullNativeSuitePassed': False,
                'retirementCountChanged': False, 'productionBuildExecuted': False, 'releaseEligible': False}
     save(EVIDENCE / 'summary.json', outcome)
     print(json.dumps(outcome, indent=2))
-    # Expected RED is useful evidence but cannot make this validation green.
-    return 0 if outcome['allThreeTestsPassed'] and outcome['expectedObservationsConfirmed'] else 1
+    # Every selected exact test and every independent gate must pass.
+    return 0 if outcome['allTwelveTestsPassed'] and outcome['expectedObservationsConfirmed'] else 1
 
 def main():
     mode, *args = sys.argv[1:]
@@ -306,7 +285,7 @@ def main():
         require_frozen_pins()
         root = Path(args[0]); sha = args[1]
         assert git(root, 'rev-parse', 'HEAD') == sha and not git(root, 'status', '--porcelain')
-        save(EVIDENCE / 'recipe-binding.json', {'commit': sha, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'), 'helperSha256': digest(Path(__file__)), 'pinsSha256': digest(HERE / 'pins.json'), 'patchSha256': digest(HERE / 'test-only.patch'), 'selfTestsSha256': digest(HERE / 'test-recipe.py')})
+        save(EVIDENCE / 'recipe-binding.json', {'commit': sha, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'), 'helperSha256': digest(Path(__file__)), 'pinsSha256': digest(HERE / 'pins.json'), 'patchSha256': digest(HERE / 'source-change.patch'), 'selfTestsSha256': digest(HERE / 'test-recipe.py')})
         return 0
     if mode == 'source':
         print(json.dumps(source_identity(args[0], args[1] == 'applied'), indent=2)); return 0

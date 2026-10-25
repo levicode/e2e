@@ -1,59 +1,157 @@
 {
-  "baseNativeSha": "64315733808267b10be34f179f2a2daf4fd644ee",
-  "baseNativeTree": "c0f32f260978e3631c4fce79513780820dc7218d",
-  "publishedNativeSha": "ffcfad2a81012f22c7d1f03f726dd7b6e920ce5e",
-  "candidateTree": "4e9a6d877503672174d38a859454bf007ea6bc45",
-  "pendingSourcePins": false,
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
-  "patchSha256": "3d7c1d3ad26c96e45784ed46084d55811f5f675a9812d62d8ed011411ccfe038",
   "rustToolchain": "1.99.1",
-  "changedFiles": [
-    {
-      "path": "cli/src/native/cdp/client.rs",
-      "beforeSha256": "0ea0303deeae89ab45af5a6a163eae23667c084ca4a7b83d781b84f9a777d22a",
-      "afterSha256": "09785a65145ac26e7db8c238977c4b0b7c0afe93d386f6aff0be6cb032732462"
-    },
-    {
-      "path": "cli/src/native/client_enrollment.rs",
-      "beforeSha256": "1995ebed5552723f6ec923072aebb598743740957f7ff6f0416e463eaf0323e7",
-      "afterSha256": "5d7e4f41737cea443c802553b43bb9a117b08d3f5f8fa694ddad1dd46a9dfa82"
-    }
-  ],
-  "cases": [
-    {
-      "id": "sw-error-terminal-control",
-      "name": "native::cdp::client::tests::service_worker_failed_terminal_preserves_errors_and_refuses_ready_authority",
-      "expected": "passed",
-      "category": "existing-error-terminal-control",
-      "configuration": "default"
-    },
-    {
-      "id": "sw-applied-detach-control",
-      "name": "native::client_enrollment::tests::service_worker_failed_retired_waits_for_applied_detach_without_poison",
-      "expected": "passed",
-      "category": "existing-applied-detach-control",
-      "configuration": "default"
-    },
-    {
-      "id": "sw-late-detach-architecture-red",
-      "name": "native::client_enrollment::tests::service_worker_failed_live_exact_detach_after_decision_keeps_owner_healthy",
-      "expected": "failed",
-      "category": "intentional-unfixed-late-detach-architecture-regression",
-      "configuration": "default",
-      "failureSource": "cli/src/native/client_enrollment.rs",
-      "failureLine": 13075,
-      "characterizationLine": 13072,
-      "failureMarker": "desired architectural RED: exact detach applied after the fixed no-receipt decision, but the whole owner was poisoned",
-      "diagnosticPrefix": "failed-live exact-detach after decision: ",
-      "failureAssertion": "assert_eq!(failure, None, \"desired architectural RED: exact detach applied after the fixed no-receipt decision, but the whole owner was poisoned\");",
-      "characterizationAssertion": "assert_eq!(failure, Some(ProtocolError::BrowserFailure));"
-    }
-  ],
   "configurations": {
     "default": {
       "features": [],
       "profile": "dev",
       "targetDirectory": "debug/deps"
     }
-  }
+  },
+  "baseNativeSha": "ffcfad2a81012f22c7d1f03f726dd7b6e920ce5e",
+  "baseNativeTree": "4e9a6d877503672174d38a859454bf007ea6bc45",
+  "publishedNativeSha": "fa8bcdfcb4797ecc495d9e5337d7ea373709f63f",
+  "candidateTree": "68491142efac686711c0b70627a9dfbc556b1cfd",
+  "pendingSourcePins": false,
+  "productionSourceChanged": true,
+  "patchSha256": "22310024dfa29b9450b8fcd19716ca11f7d0501de7e85fadca2d217e7970dc8a",
+  "changedFiles": [
+    {
+      "path": "cli/src/native/cdp/client.rs",
+      "beforeSha256": "09785a65145ac26e7db8c238977c4b0b7c0afe93d386f6aff0be6cb032732462",
+      "afterSha256": "4d48db69d35f8a77947bf4615b61c32b898c7fe101adf2117cf4b07e8b4dd8f5"
+    },
+    {
+      "path": "cli/src/native/client_enrollment.rs",
+      "beforeSha256": "5d7e4f41737cea443c802553b43bb9a117b08d3f5f8fa694ddad1dd46a9dfa82",
+      "afterSha256": "6aa0e88582d0aba024446108c2bba2e568341f11da76a7b225f2b0baccf559c4"
+    },
+    {
+      "path": "cli/src/native/client_network.rs",
+      "beforeSha256": "d9f811188240800b4cf49bd88930ce955bf321701fafe63a6ce0f91f4d70c980",
+      "afterSha256": "8c0643d1c27413f7715c3c55e8c7369ebb0040cd579c1c9ef74f84aab044b962"
+    }
+  ],
+  "cases": [
+    {
+      "id": "failed-live-exact-detach-after-decision-keeps-owner-healthy",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_exact_detach_after_decision_keeps_owner_healthy",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 12961
+    },
+    {
+      "id": "failed-live-exact-detach-after-wait-preserves-failed-retired-error",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_exact_detach_after_wait_preserves_failed_retired_error",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13547
+    },
+    {
+      "id": "error-ack-never-reaches-ready-commit-gate",
+      "name": "native::client_enrollment::tests::service_worker_error_ack_never_reaches_ready_commit_gate",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13554
+    },
+    {
+      "id": "failed-live-pending-wait-honors-independent-operation-cancel",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_honors_independent_operation_cancel",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13559
+    },
+    {
+      "id": "failed-live-pending-wait-rejects-wrong-session-detach",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_rejects_wrong_session_detach",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13564
+    },
+    {
+      "id": "failed-live-pending-wait-rejects-target-destroyed-alone",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_rejects_target_destroyed_alone",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13569
+    },
+    {
+      "id": "failed-live-pending-wait-rejects-replaced-watermark-subscription",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_rejects_replaced_watermark_subscription",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13574
+    },
+    {
+      "id": "failed-terminal-target-destroyed-alone-fails-promptly",
+      "name": "native::client_enrollment::tests::service_worker_failed_terminal_target_destroyed_alone_fails_promptly",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13156
+    },
+    {
+      "id": "enrollment-observer-failure-never-publishes-ready",
+      "name": "native::client_enrollment::tests::service_worker_enrollment_observer_failure_never_publishes_ready",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13877
+    },
+    {
+      "id": "retirement-waits-for-applied-detach-without-publishing-ready",
+      "name": "native::client_enrollment::tests::service_worker_retirement_waits_for_applied_detach_without_publishing_ready",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/client_enrollment.rs",
+      "sourceModule": "native::client_enrollment::tests",
+      "definitionLine": 13579
+    },
+    {
+      "id": "pending-failure-preserves-error-without-retirement-authority",
+      "name": "native::cdp::client::tests::service_worker_pending_failure_preserves_error_without_retirement_authority",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/cdp/client.rs",
+      "sourceModule": "native::cdp::client::tests",
+      "definitionLine": 4246
+    },
+    {
+      "id": "failed-terminal-preserves-errors-and-refuses-ready-authority",
+      "name": "native::cdp::client::tests::service_worker_failed_terminal_preserves_errors_and_refuses_ready_authority",
+      "expected": "passed",
+      "category": "sw-late-detach-repair-regression",
+      "configuration": "default",
+      "sourcePath": "cli/src/native/cdp/client.rs",
+      "sourceModule": "native::cdp::client::tests",
+      "definitionLine": 4151
+    }
+  ]
 }
