@@ -1,0 +1,216 @@
+# FROZEN FOCUSED RUNTIME: actual terminal-success producer and exact new ELF are bound.
+name: Independent P06 and HTTP500 focused Linux runtimes
+'on':
+  push:
+    branches: [implement/unified-focused-runtime-ci]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: focused-runtime-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  runtime:
+    name: focused-${{ matrix.case }}
+    if: ${{ github.ref == 'refs/heads/implement/unified-focused-runtime-ci' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        case: [P06, HTTP500]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    defaults:
+      run:
+        shell: bash
+    env:
+      CASE_ID: ${{ matrix.case }}
+      RECIPE_SHA: ${{ github.workflow_sha }}
+      PHASES: sources artifact dependencies browser-install runtime-images runtime final-identities
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+    - name: Initialize one isolated case with explicit not-run receipts
+      id: init
+      timeout-minutes: 1
+      run: |
+        set -euo pipefail
+        umask 077
+        test "$GITHUB_RUN_ATTEMPT" = 1
+        case "$CASE_ID" in P06|HTTP500) ;; *) exit 1;; esac
+        export EVIDENCE_DIR="$RUNNER_TEMP/focused-runtime-evidence"
+        export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/focused-runtime-playwright"
+        printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+        mkdir -m700 "$EVIDENCE_DIR"
+        for phase in $PHASES; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
+        printf '%s\n' 'One original focused case on an independent hosted runner. No full native/all333/installed/release proof. Existing final acceptance goal unchanged. Original temporary no-sandbox flags apply only to owned cloud loopback synthetic fixtures, not user sessions or user data. Loopback fixture scope does not claim blocked browser background egress. No retries or diagnostic overlay.' > "$EVIDENCE_DIR/SCOPE.txt"
+        uname -a > "$EVIDENCE_DIR/host.txt"
+        cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
+        . /etc/os-release
+        test "$RUNNER_OS" = Linux
+        test "$(uname -m)" = x86_64
+        test "$(id -u)" -ne 0
+        test "$ID" = ubuntu
+        test "$VERSION_ID" = 24.04
+    - name: Check out immutable focused runtime recipe
+      id: recipe
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      timeout-minutes: 2
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - name: Refuse unresolved actual producer pins before installing anything
+      id: binding
+      timeout-minutes: 1
+      run: |
+        set -euo pipefail
+        node recipe/scripts/runtime-probe/runtime.mjs guard
+    - name: Select pinned official Node
+      id: node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      timeout-minutes: 2
+      with:
+        node-version: 24.19.0
+        architecture: x64
+    - name: Check out exact current E2E source without an overlay
+      id: e2e
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      timeout-minutes: 3
+      with:
+        repository: levicode/e2e
+        ref: ffcffc1fdf6b11ef846f2da5221e981514e2b898
+        path: e2e-source
+        persist-credentials: false
+    - name: Check out exact native source for provenance only
+      id: native
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      timeout-minutes: 3
+      with:
+        repository: levicode/agent-browser
+        ref: 26ad6cfedd9771fbf8366f2d3d3620d66a09d9bb
+        path: native-source
+        persist-credentials: false
+    - name: Verify clean sources original fixtures and exact lock bytes
+      id: sources
+      timeout-minutes: 1
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/sources.exit"' EXIT
+        node recipe/scripts/matrix-runtime/identity.mjs sources > "$EVIDENCE_DIR/sources.log" 2>&1
+    - name: Admit only the successful prior producer and exact new ELF
+      id: artifact
+      timeout-minutes: 6
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/artifact.exit"' EXIT
+        node recipe/scripts/matrix-runtime/identity.mjs download > "$EVIDENCE_DIR/artifact.log" 2>&1
+    - name: Select pinned pnpm without running dependency scripts
+      id: pnpm
+      uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      timeout-minutes: 2
+      with:
+        version: 12.3.4
+        run_install: false
+    - name: Install frozen graph and build actual core and Web only
+      id: dependencies
+      timeout-minutes: 12
+      working-directory: e2e-source
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/dependencies.exit"' EXIT
+        exec > >(tee "$EVIDENCE_DIR/dependencies.log") 2>&1
+        test "$(node --version)" = v24.19.0
+        test "$(pnpm --version)" = 12.3.4
+        pnpm install --frozen-lockfile --ignore-scripts
+        pnpm --filter e2e run build
+        pnpm --filter @e2e-dev/web run build
+        node ../recipe/scripts/matrix-runtime/identity.mjs dist
+    - name: Install original official complete Playwright Chromium distribution
+      id: browser_install
+      timeout-minutes: 10
+      working-directory: e2e-source
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/browser-install.exit"' EXIT
+        test ! -e "$PLAYWRIGHT_BROWSERS_PATH"
+        install_root=$(mktemp -d /tmp/ep-XXXXXX)
+        mkdir -m700 "$install_root/home" "$install_root/tmp" "$install_root/cache"
+        env -i PATH="$(dirname "$(command -v node)"):/usr/bin:/bin" HOME="$install_root/home" TMPDIR="$install_root/tmp" XDG_CACHE_HOME="$install_root/cache" CI=1 LANG=C.UTF-8 \
+          PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+          "$(command -v node)" packages/web/node_modules/playwright-core/cli.js install chromium > "$EVIDENCE_DIR/browser-install.log" 2>&1
+    - name: Verify required executables full Chrome exact image and native linkage
+      id: images
+      timeout-minutes: 3
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime-images.exit"' EXIT
+        missing=0
+        for tool in node pnpm git unzip python3 timeout which readlink ldd fc-match; do
+          if executable=$(command -v "$tool"); then printf '%s\t%s\n' "$tool" "$executable"; else printf 'MISSING\t%s\n' "$tool"; missing=1; fi
+        done > "$EVIDENCE_DIR/required-executables.txt"
+        for executable in /usr/bin/python3 /usr/bin/timeout /usr/bin/which /usr/bin/readlink; do
+          if [[ ! -x "$executable" ]]; then printf 'MISSING\t%s\n' "$executable" >> "$EVIDENCE_DIR/required-executables.txt"; missing=1; fi
+        done
+        test "$missing" = 0
+        font_file=$(fc-match -f '%{file}\n' sans | head -n1)
+        test -n "$font_file"
+        test -r "$font_file"
+        printf '%s\n' "$font_file" > "$EVIDENCE_DIR/font-fallback.txt"
+        node recipe/scripts/matrix-runtime/identity.mjs images
+        node --input-type=module - <<'JS' > "$EVIDENCE_DIR/runtime-linkage-inputs.tsv"
+        import {readFileSync} from 'node:fs';
+        const images=JSON.parse(readFileSync(process.env.EVIDENCE_DIR+'/images-before.json'));
+        for(const name of ['production','full']) console.log(name+'\t'+images[name].executable);
+        JS
+        linkage_failed=0
+        while IFS=$'\t' read -r name executable; do
+          set +e
+          env -i PATH=/usr/bin:/bin LANG=C.UTF-8 ldd "$executable" > "$EVIDENCE_DIR/$name.ldd.txt" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$EVIDENCE_DIR/$name.ldd.exit"
+          if [[ "$status" != 0 ]] || grep -Fq 'not found' "$EVIDENCE_DIR/$name.ldd.txt"; then linkage_failed=1; fi
+        done < "$EVIDENCE_DIR/runtime-linkage-inputs.tsv"
+        test "$linkage_failed" = 0
+        printf '%s\n' 'Selected cases never start video and empty-recording cleanup returns immediately. System ffmpeg/ffprobe/codecs are not runtime inputs. Original Playwright install may download bundled FFmpeg/headless shell; neither is selected.' > "$EVIDENCE_DIR/codec-scope.txt"
+    - name: Run exactly this original case with its original budgets and cleanup
+      id: runtime
+      timeout-minutes: 11
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/runtime.exit"' EXIT
+        if [[ "$CASE_ID" = P06 ]]; then
+          bash recipe/scripts/matrix-runtime/p06.sh
+        else
+          node recipe/scripts/runtime-probe/runtime.mjs cases HTTP500
+        fi
+    - name: Recheck source dist and image bytes after success or failure
+      id: final_identities
+      timeout-minutes: 3
+      if: ${{ always() && steps.sources.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/final-identities.exit"' EXIT
+        node recipe/scripts/matrix-runtime/identity.mjs final > "$EVIDENCE_DIR/final-identities.log" 2>&1
+    - name: Require each actual local phase without importing another case result
+      id: gate
+      timeout-minutes: 1
+      if: ${{ always() && steps.recipe.outcome == 'success' }}
+      run: node recipe/scripts/matrix-runtime/identity.mjs gate
+    - name: Preserve exact independent job step outcomes
+      timeout-minutes: 1
+      if: ${{ always() }}
+      env:
+        STEP_OUTCOMES: ${{ toJSON(steps) }}
+      run: printf '%s\n' "$STEP_OUTCOMES" > "$EVIDENCE_DIR/step-outcomes.json"
+    - name: Always retain synthetic evidence only never browser profiles or caches
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      timeout-minutes: 5
+      if: ${{ always() }}
+      with:
+        name: focused-${{ matrix.case }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ env.EVIDENCE_DIR }}/
+        if-no-files-found: error
+        retention-days: 7
