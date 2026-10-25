@@ -2,83 +2,26 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Browser, Page } from 'playwright-core';
 import { EngineError, TestError, type OperationContext } from 'e2e/engine';
-import { captureDocument } from '../../src/observation.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
-import { PlaywrightSurface } from '../../src/surface.ts';
-import { scriptedConnection } from '../helpers/scripted-connection.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 
-vi.mock('../../src/observation.ts', async (original) => ({
-  ...await original<typeof import('../../src/observation.ts')>(),
-  captureDocument: vi.fn(),
-}));
-
-const TIMEOUT = new EngineError('OPERATION_TIMEOUT', 'semantic reader timed out', { retryable: false });
-const surfaces = new Set<PlaywrightSurface | NativeSurface>();
+const surfaces = new Set<NativeSurface>();
 const operation = (signal = new AbortController().signal): OperationContext => ({
   signal, timeoutMs: 1_000, runId: 'run', attemptId: 'attempt', origin: 'agent',
 });
-
-/** Opens an actual attempt whose independent mask probes can fail without a semantic reader. */
-async function setup() {
-  const masks = [
-    { count: vi.fn(async () => 1) },
-    { count: vi.fn(async () => 0) },
-  ];
-  const screenshot = vi.fn(async (_options: unknown) => Buffer.from([1, 2, 3]));
-  const page = {
-    isClosed: () => false,
-    waitForLoadState: async () => undefined,
-    viewportSize: () => ({ width: 100, height: 80 }),
-    url: () => 'https://app.test/current',
-    frames: () => [{ locator: (selector: string) => selector.startsWith('e2e-closed') ? masks[1] : masks[0] }],
-    screenshot,
-  } as unknown as Page;
-  const browser = {
-    isConnected: () => true,
-    newContext: async () => ({
-      newPage: async () => page,
-      addInitScript: async () => undefined,
-      pages: () => [],
-      setDefaultTimeout: () => undefined,
-      on: () => undefined,
-      close: async () => undefined,
-    }),
-  } as unknown as Browser;
-  const surface = new PlaywrightSurface({}, scriptedConnection(async () => browser));
-  surfaces.add(surface);
-  const signal = new AbortController().signal;
-  await surface.init({
-    runId: 'run', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: {},
-    headed: false, workerSlot: 0, signal, log: () => undefined,
-  });
-  await surface.startAttempt({ attemptId: 'attempt', artifactsDir: tmpdir(), signal, resolveSecret: noSecrets, ...ignoreTrace });
-  await surface.ensurePage();
-  vi.mocked(captureDocument).mockRejectedValue(TIMEOUT);
-  return { surface, masks, screenshot };
-}
 
 afterEach(async () => {
   vi.useRealTimers();
   await Promise.all([...surfaces].map((surface) => surface.dispose({ signal: new AbortController().signal, timeoutMs: 1_000 })));
   surfaces.clear();
   vi.restoreAllMocks();
-});
-
-describe('semantic capture fallback', () => {
-  it('fails closed when a mask probe cannot prove coverage', async () => {
-    const { surface, masks } = await setup();
-    masks[0]!.count.mockRejectedValue(new Error('frame detached'));
-    await expect(surface.observe(operation(), { pixelFallback: true })).rejects.toBe(TIMEOUT);
-  });
 });
 
 /** Start the real Surface after a test installs its framed process connection. */
@@ -189,12 +132,37 @@ async function cancellableNativeFallback() {
   };
 }
 
-// Review checkpoint: all nine legacy cases above remain unchanged. These ports
-// cover adapter obligations 13/14/16/17/18/19/20/21, not native browser stages.
-// CI15 separately executes client_observation_dispatch's fallback tests, the
-// public semantic-fallback integration, and hosted metadata/masking contracts.
-// Keep obligation 15: generic failed probe != typed independent coverage failure.
+// Adapter forwarding and ownership are separate from native capture stages.
+// Run 40125273477 executes the same-source typed independent-coverage failure
+// and protocol-rejection witnesses; no generic failed probe is treated as proof.
 describe('native fallback adapter ownership', () => {
+  // Native detached_mask_probe_preserves_original_semantic_timeout_without_pixels
+  // reaches the original semantic deadline before an independent MASK_READER
+  // exception. Its protocol-rejection companion must preserve BrowserFailure.
+  // This peer proves only the public typed outcome, not mask acquisition or pixels.
+  it.each([
+    ['fails closed when a mask probe cannot prove coverage', 'deadline-exceeded', 'OPERATION_TIMEOUT'],
+    ['does not replace a rejected native mask command with the earlier semantic timeout', 'browser-failure', 'ENGINE_FAILURE'],
+  ] as const)('%s', async (_title, nativeError, code) => {
+    const { surface, peer } = await nativeFallback(request => {
+      expect(request.command).toBe('browser.observe');
+      return { error: nativeError, effects: 'not-dispatched', scopeState: 'usable' };
+    });
+    const start = peer.requests.length;
+    const options = { pixelFallback: true };
+    const failure: unknown = await surface.observe(operation(), options).catch((cause: unknown) => cause);
+    expect(failure).toBeInstanceOf(EngineError);
+    expect(failure).toMatchObject({ code, retryable: false });
+    expect(peer.requests.slice(start).map(request => [request.command, request.args])).toEqual([
+      ['browser.observe', { identityScope: 'scope', options, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' }],
+    ]);
+    const wireRequest = peer.frames.find(frame => frame['type'] === 'request' && frame['command'] === 'browser.observe');
+    expect(wireRequest?.['timeoutMs']).toBeGreaterThan(0);
+    expect(wireRequest?.['timeoutMs']).toBeLessThanOrEqual(1000);
+    await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'still usable' });
+    expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe', 'page.title']);
+  });
+
   it('does not expand an ordinary tree-only request or retry its native deadline as pixels', async () => {
     const { surface, peer } = await nativeFallback(request => {
       expect(request.command).toBe('browser.observe');

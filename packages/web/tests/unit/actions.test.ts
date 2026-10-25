@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EngineError, type LocatorAction } from 'e2e/engine';
 import { classifyActionError, dispatchLocatorAction, dispatchPointerAction } from '../../src/actions.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { BrowserChannel, isNativeNotDispatched } from '../../src/native/browser-channel.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 
 type ActionTarget = Parameters<typeof dispatchLocatorAction>[0];
@@ -70,6 +71,68 @@ describe('native locator action forwarding', () => {
 // Run 39940386738 executes the no-box native refusal and its public lifecycle
 // counterpart. This peer checks only error mapping, one dispatch and the 7ms wire budget.
 describe('native locator action refusals', () => {
+  // Original case 4. The source-bound MATCH_QUERY fixture executes this author
+  // text; native live_query_publication_then_tap_refuses_ambiguity_without_input
+  // publishes one match, revalidates two, and releases both query groups with
+  // zero input/scroll despite those words. This peer proves the adapter half.
+  it('keeps misleading action-log words in an ambiguous text query as author data', async () => {
+    const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const expression = { kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'performing click action', exact: false } } } as const;
+    const ref = { id: '@e2', revision: '1' };
+    const queryArgs = { identityScope: 'scope', expression, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' };
+    const actionArgs = { identityScope: 'scope', ref, action: { kind: 'tap' } as const };
+    const original = structuredClone([queryArgs, actionArgs]);
+    const peer = new NativeProtocolPeer([], request => {
+      if (request.command === 'browser.query') return { data: { identityScope: 'scope', revision: '1', nodes: [{ ref, role: 'button', name: 'click action done', text: 'performing click action\nclick action done' }] } };
+      if (request.command === 'browser.perform') return { error: 'stale-reference', effects: 'not-dispatched', scopeState: 'usable' };
+      if (request.command === 'page.title') return { data: { title: 'still usable' } };
+      throw new Error('Unexpected misleading-query adapter command');
+    });
+    const disposed = vi.spyOn(peer, 'dispose');
+    const client = await peer.connect(operation, () => undefined);
+    try {
+      const channel = new EngineChannel(client);
+      const query = await channel.command('browser.query', queryArgs, operation);
+      expect(query).toMatchObject({ identityScope: 'scope', nodes: [{ ref, name: 'click action done' }] });
+      const failure: unknown = await channel.command('browser.perform', actionArgs, operation).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(EngineError);
+      expect(failure).toMatchObject({ code: 'NODE_STALE', retryable: true });
+      expect(isNativeNotDispatched(failure)).toBe(true);
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([
+        ['browser.query', original[0]], ['browser.perform', original[1]],
+      ]);
+      expect(peer.frames.filter(frame => frame['type'] === 'request').map(frame => frame['timeoutMs'])).toEqual([1000, 1000]);
+      expect(disposed).not.toHaveBeenCalled();
+      await expect(new BrowserChannel(client, { identityScope: () => 'scope', operation: () => operation }).command('page.title', {}, operation)).resolves.toEqual({ title: 'still usable' });
+      expect(peer.requests.map(request => request.command)).toEqual(['browser.query', 'browser.perform', 'page.title']);
+    } finally { await client.close(operation); }
+  });
+
+  // Same-source native preparation_effect_settlement_unacked_input_release_remains_unknown
+  // executes a tap through its original deadline: move/press are acknowledged,
+  // release remains unacknowledged, and the producer retains Unknown without replay.
+  // This peer proves only the closed outcome's public mapping and terminal adapter fence.
+  it('treats a log that stopped at "performing" as uncertain: the input may be in flight', async () => {
+    const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], () => ({ error: 'deadline-exceeded', effects: 'unknown', scopeState: 'quarantined' }));
+    const dispose = vi.spyOn(peer, 'dispose');
+    const client = await peer.connect(operation, () => undefined);
+    const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action: { kind: 'tap' } as const };
+    const original = structuredClone(args);
+    try {
+      await expect(new EngineChannel(client).command('browser.perform', args, operation)).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+      expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(1000);
+      expect(dispose).toHaveBeenCalledOnce();
+      const retired = peer.frames.length;
+      await expect(new EngineChannel(client).command('browser.perform', args, operation)).rejects.toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+      expect(peer.frames).toHaveLength(retired);
+      expect(peer.requests).toHaveLength(1);
+    } finally {
+      await expect(client.close(operation)).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    }
+  });
+
   // Formal 0e3f's stale_does_not_erase_unknown_effects_after_dispatch checks the
   // shared failure rule. live_drag_destination_revalidates_after_press_without_replay
   // additionally witnesses real press -> stale/Unknown; it is not a tap replay test.
@@ -180,7 +243,6 @@ const TAP: LocatorAction = { kind: 'tap' };
 
 describe('classifyActionError', () => {
   it.each([
-    ["strict mode violation: getByText('performing click action') resolved to 2 elements:\n    1) <p>click action done</p>\nCall log:\n  - waiting for getByText('performing click action')", 'NODE_STALE', true],
     ['Element is not an <input>, <textarea> or [contenteditable] element', 'NOT_ACTIONABLE', false],
     ['Target page, context or browser has been closed', 'ENGINE_FAILURE', false],
   ] as const)('maps "%s" to %s', (text, code, retryable) => {
@@ -228,11 +290,6 @@ describe('classifyActionError', () => {
     const error = classifyActionError(pwTimeout(POST_DISPATCH_LOG), TAP);
     expect(error).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
     expect(error.message).toContain('after its input was dispatched');
-  });
-
-  it('treats a log that stopped at "performing" as uncertain: the input may be in flight', () => {
-    const inFlight = POST_DISPATCH_LOG.slice(0, POST_DISPATCH_LOG.indexOf('performing click action') + 1);
-    expect(classifyActionError(pwTimeout(inFlight), TAP)).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
   });
 
   it('treats an action the operation deadline cut off as uncertain: Playwright never said whether the input landed', () => {

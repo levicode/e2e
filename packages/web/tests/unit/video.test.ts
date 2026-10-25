@@ -112,12 +112,6 @@ describe('VideoRecorder', () => {
     expect(dead.stopped.count).toBe(0);
   });
 
-  it('runs every hook straight through until armed', async () => {
-    const video = recorder();
-    const idle = fakePage();
-    await video.pageOpened(idle.page);
-    expect(idle.started).toEqual([]);
-    await video.pageClosing();
-    expect(await video.stop()).toEqual([]);
-  });
+  // The never-armed hook case now pairs native's executed direct-hook producer
+  // with public web() empty-stop assertions in native-surface.test.ts.
 });

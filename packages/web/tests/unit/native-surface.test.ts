@@ -1798,6 +1798,36 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); } }
   });
 
+  // Original video case 6: run 40137712725 at native 643157 executes
+  // recording_unarmed_page_hooks_and_stop_are_resource_free_noops. That producer
+  // proves the never-armed pageOpened/pageClosing hooks; this public peer proves
+  // only empty-stop decoding, exact forwarding and absence of adapter recording work.
+  it('runs every hook straight through until armed', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'native-video-never-armed-'));
+    const engine = web({});
+    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
+    await engine.startAttempt!({ ...context('video-never-armed'), artifactsDir: directory });
+    try {
+      const fixture = nativeBrowser(engine, operation);
+      await expect(fixture.title()).resolves.toBe('Synthetic page');
+      const scope = currentScope;
+      const beforeStop = frames.length;
+      expect(frames.filter(frame => frame['command'] === 'recording.start')).toEqual([]);
+      await expect(engine.artifacts!.stopVideo!(operation())).resolves.toEqual([]);
+      expect(frames.slice(beforeStop).filter(frame => frame['type'] === 'request').map(frame => [frame['command'], frame['args']])).toEqual([
+        ['recording.stop', { identityScope: scope }],
+      ]);
+      const stop = frames.slice(beforeStop).find(frame => frame['command'] === 'recording.stop');
+      expect(stop?.['timeoutMs']).toBeGreaterThan(0);
+      expect(stop?.['timeoutMs']).toBeLessThanOrEqual(1000);
+      expect(frames.filter(frame => ['recording.start', 'blob.read', 'blob.release'].includes(String(frame['command'])))).toEqual([]);
+      expect(existsSync(path.join(directory, 'video'))).toBe(false);
+      await expect(fixture.title()).resolves.toBe('Synthetic page');
+      expect(currentScope).toBe(scope);
+      expect(frames.slice(beforeStop).filter(frame => frame['type'] === 'request').map(frame => frame['command'])).toEqual(['recording.stop', 'page.title']);
+    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
+  });
+
   it.each([1, 2])('reports finalized missing segment %i once without losing retained earlier output on retry', async ordinal => {
     const directory = await mkdtemp(path.join(tmpdir(), 'native-video-retry-'));
     const engine = web({});
