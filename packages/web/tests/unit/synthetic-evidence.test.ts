@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { p06RecoveryEvidence, serviceWorkerPromiseFact, validSyntheticFact, validSyntheticNativeResult, type SyntheticEvidence, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
+import { p06RecoveryEvidence, p06TransportFact, recordP06Fact, serviceWorkerPromiseFact, validSyntheticFact, validSyntheticNativeResult, type SyntheticEvidence, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
+import type { NativeResult } from '../../src/native/protocol.ts';
 const result = { operationSeq: 1, ok: false, code: 'cancelled', effects: 'unknown', scopeState: 'quarantined' };
 describe('closed concentrated synthetic evidence schemas', () => {
   it('accepts validated scalar result facts but never payload or exception text', () => {
@@ -153,5 +155,90 @@ describe('P06 bounded recovery reporter carrier', () => {
     expect(diagnostic.invalid).toBe(true);
     expect(diagnostic.facts).toHaveLength(64);
     expect(diagnostic.facts.at(-1)).toEqual(fact);
+  });
+});
+
+
+describe('P06 transport branch and parsed Result scalar carrier', () => {
+  const sink = (): SyntheticEvidence => ({ available: false, record() {}, tryRecord() { return false; }, observe() {}, finish() {}, invalidate() {} });
+  it('keeps each branch and callback entry separate with explicit unobserved counts', () => {
+    const { evidence, diagnostic } = p06RecoveryEvidence(sink());
+    for (const branch of ['disconnected-event-poll', 'relay-connections-zero', 'debugger-resume', 'disconnected-callback'] as const) {
+      for (const state of ['entered', 'passed', 'failed'] as const) {
+        const fact = p06TransportFact(branch, state, null, null, null, { code: 'OPERATION_TIMEOUT', message: 'private text' });
+        expect(validSyntheticFact(fact, 'P06')).toBe(true);
+        expect(validSyntheticFact(fact, 'P07')).toBe(false);
+        recordP06Fact(evidence, fact);
+        expect(fact.code).toBe(state === 'failed' ? 'OPERATION_TIMEOUT' : null);
+        expect(fact.reason).toBe(state === 'failed' ? 'other' : null);
+      }
+    }
+    expect(diagnostic.invalid).toBe(false);
+    expect(diagnostic.facts).toHaveLength(12);
+    expect(JSON.parse(JSON.stringify(diagnostic))).toEqual(diagnostic);
+    expect(JSON.stringify(diagnostic)).not.toContain('private');
+    const entered = p06TransportFact('disconnected-callback', 'entered', 0, 0, 1);
+    recordP06Fact(evidence, entered);
+    recordP06Fact(evidence, p06TransportFact('disconnected-callback', 'failed', 0, 0, 1, { code: 'INVALID_STATE' }));
+    expect(diagnostic.facts.slice(-2)).toMatchObject([{ state: 'entered', current: 0, callbackCount: 1 }, { state: 'failed', current: 0, callbackCount: 1 }]);
+  });
+  it('rejects malformed, extra, secret-bearing and non-P06 facts without invoking getters', () => {
+    const fact = p06TransportFact('disconnected-event-poll', 'failed', 0, 0, 0, new Error('private'));
+    let reads = 0;
+    for (const invalid of [
+      { ...fact, branch: 'wire-received' }, { ...fact, state: 'skipped' }, { ...fact, current: -1 },
+      { ...fact, callbackCount: 65_536 }, { ...fact, previous: undefined }, { ...fact, code: 'private' },
+      { ...fact, reason: 'private' }, { ...fact, payload: 'private' }, { ...fact, [Symbol('private')]: true },
+      Object.assign(Object.create({ private: true }), fact),
+      Object.defineProperty({ ...fact }, 'current', { enumerable: true, get() { reads++; return 0; } }),
+    ]) {
+      const { evidence, diagnostic } = p06RecoveryEvidence(sink());
+      expect(evidence.tryRecord(invalid as SyntheticFact)).toBe(false);
+      expect(diagnostic.invalid).toBe(true);
+      expect(diagnostic.facts).toEqual([]);
+    }
+    expect(reads).toBe(0);
+    const error = Object.defineProperty({}, 'code', { get() { reads++; return 'private'; } });
+    expect(p06TransportFact('debugger-resume', 'failed', null, null, null, error).code).toBe('other');
+    expect(reads).toBe(0);
+    expect(() => p06TransportFact('debugger-resume', 'failed', null, null, null, new Proxy({}, { getOwnPropertyDescriptor() { throw new Error('private'); } }))).not.toThrow();
+    const untouched = sink();
+    untouched.record = () => { throw new Error('non-P06 must not record'); };
+    expect(() => recordP06Fact(untouched, fact)).not.toThrow();
+  });
+  it('serializes synthetic Result projection fixtures independently of callback counts', async () => {
+    for (const recoveryPresent of [false, true]) {
+      const { evidence, diagnostic } = p06RecoveryEvidence(sink());
+      const observer = new SyntheticNativeObserver(evidence, () => 'perform');
+      // Pure projection fixture only: this test does not prove protocol parsing or scope correlation.
+      const value: NativeResult = { type: 'result', id: 'private-request', generation: 1, operationSeq: 12, ok: false,
+        error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined',
+        ...(recoveryPresent ? { recovery: { version: 1, identityScope: 'private-scope' } } : {}) };
+      const pending = Promise.resolve(value);
+      observer.observePromise('browser.perform', 'perform', pending);
+      expect(await pending).toBe(value);
+      observer.close();
+      const projected = diagnostic.facts.find(fact => fact.kind === 'p06-recovery-result');
+      expect(projected).toEqual({ kind: 'p06-recovery-result', operationSeq: 12, recoveryPresent,
+        versionValid: recoveryPresent ? true : null, exactScopeCorrelation: recoveryPresent ? true : null });
+      expect(diagnostic.facts.some(fact => fact.kind === 'p06-transport')).toBe(false);
+      expect(JSON.stringify(diagnostic)).not.toMatch(/private|identityScope|recoveryToken/);
+      expect(diagnostic.invalid).toBe(false);
+    }
+  });
+  it('rejects contradictory recovery shapes and leaves a missing terminal Result unknown', async () => {
+    const fact = { kind: 'p06-recovery-result', operationSeq: 12, recoveryPresent: true, versionValid: true, exactScopeCorrelation: true };
+    expect(validSyntheticFact(fact, 'P06')).toBe(true);
+    expect(validSyntheticFact(fact, 'P07')).toBe(false);
+    for (const invalid of [{ ...fact, recoveryPresent: false }, { ...fact, versionValid: false }, { ...fact, exactScopeCorrelation: null }, { ...fact, identityScope: 'private' }, { ...fact, operationSeq: 0 }]) expect(validSyntheticFact(invalid, 'P06')).toBe(false);
+    const { evidence, diagnostic } = p06RecoveryEvidence(sink());
+    const observer = new SyntheticNativeObserver(evidence, () => 'perform');
+    const cause = new Error('private');
+    const pending = Promise.reject<NativeResult>(cause);
+    observer.observePromise('browser.perform', 'perform', pending);
+    await expect(pending).rejects.toBe(cause);
+    observer.close();
+    expect(diagnostic.facts.some(item => item.kind === 'p06-recovery-result')).toBe(false);
+    expect(diagnostic.invalid).toBe(false);
   });
 });

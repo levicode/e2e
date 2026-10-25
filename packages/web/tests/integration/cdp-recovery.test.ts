@@ -18,7 +18,7 @@ import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
-import { beginSyntheticCase, p06RecoveryEvidence, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { beginSyntheticCase, p06RecoveryEvidence, recordP06Fact, p06TransportFact, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEvidence, type RecoverySection } from '../helpers/synthetic-native-outcomes.ts';
 
 const recoveryEvidence = new AsyncLocalStorage<RecoveryEvidence>();
@@ -177,24 +177,44 @@ describe('CDP session recovery', () => {
   const fixtures = new Map<EngineHandle, { browser: Browser; timeoutMs: number }>();
   const attemptArtifacts = new WeakMap<EngineHandle, string>();
   let disconnectEvents = 0;
+  let disconnectCallbacks = 0;
 
   beforeEach(() => {
     disconnectEvents = 0;
+    disconnectCallbacks = 0;
     const connect = NativeClient.connect;
-    vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) =>
-      observeSyntheticConnection(connect(channel, capabilities, context, async event => {
-        await onEvent(event);
+    vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) => {
+      const evidence = recoveryEvidence.getStore()?.evidence;
+      return observeSyntheticConnection(connect(channel, capabilities, context, async event => {
+        const disconnected = event.event === 'browser.disconnected';
+        const previous = disconnectEvents;
+        const callbackCount = disconnected ? ++disconnectCallbacks : null;
+        // Callback entry is after NativeClient's dispatch guard, never a raw/wire-received witness.
+        if (disconnected) recordP06Fact(evidence, p06TransportFact('disconnected-callback', 'entered', previous, disconnectEvents, callbackCount));
+        try { await onEvent(event); }
+        catch (cause) {
+          if (disconnected) recordP06Fact(evidence, p06TransportFact('disconnected-callback', 'failed', previous, disconnectEvents, callbackCount, cause));
+          throw cause;
+        }
         if (event.event === 'browser.disconnected') disconnectEvents += 1;
-      })),
-    );
+        if (disconnected) recordP06Fact(evidence, p06TransportFact('disconnected-callback', 'passed', previous, disconnectEvents, callbackCount));
+      }));
+    });
   });
 
   /** Wait for the adapter to consume the real disconnection, not an arbitrary delay. */
-  async function disconnect(remote: RecoveryHost): Promise<void> {
+  async function disconnect(remote: RecoveryHost, evidence = recoveryEvidence.getStore()?.evidence): Promise<void> {
     recoveryPhase('disconnect');
     const previous = disconnectEvents;
     remote.disconnect();
-    await expect.poll(() => disconnectEvents, { timeout: 5_000 }).toBeGreaterThan(previous);
+    recordP06Fact(evidence, p06TransportFact('disconnected-event-poll', 'entered', previous, disconnectEvents, disconnectCallbacks));
+    try {
+      await expect.poll(() => disconnectEvents, { timeout: 5_000 }).toBeGreaterThan(previous);
+      recordP06Fact(evidence, p06TransportFact('disconnected-event-poll', 'passed', previous, disconnectEvents, disconnectCallbacks));
+    } catch (cause) {
+      recordP06Fact(evidence, p06TransportFact('disconnected-event-poll', 'failed', previous, disconnectEvents, disconnectCallbacks, cause));
+      throw cause;
+    }
   }
 
   beforeAll(async () => {
@@ -652,18 +672,34 @@ describe('CDP session recovery', () => {
       });
       const debuggerSession = await original.page.context().newCDPSession(original.page);
       await debuggerSession.send('Debugger.enable');
+      const evidence = recoveryEvidence.getStore()?.evidence;
       const transportDropped = new Promise<void>((resolve, reject) => {
         debuggerSession.once('Debugger.paused', () => {
           void (async () => {
             const outcomes = await Promise.allSettled([
-              disconnect(remote),
+              disconnect(remote, evidence),
               (async () => {
                 const failures: unknown[] = [];
-                try { await expect.poll(() => remote.connections(), { timeout: 5_000 }).toBe(0); }
-                catch (cause) { failures.push(cause); }
+                let connectionCount: number | null = null;
+                recordP06Fact(evidence, p06TransportFact('relay-connections-zero', 'entered', null, connectionCount, null));
+                try {
+                  await expect.poll(() => { connectionCount = remote.connections(); return connectionCount; }, { timeout: 5_000 }).toBe(0);
+                  recordP06Fact(evidence, p06TransportFact('relay-connections-zero', 'passed', null, connectionCount, null));
+                }
+                catch (cause) {
+                  recordP06Fact(evidence, p06TransportFact('relay-connections-zero', 'failed', null, connectionCount, null, cause));
+                  failures.push(cause);
+                }
                 finally {
-                  try { await debuggerSession.send('Debugger.resume'); }
-                  catch (cause) { failures.push(cause); }
+                  recordP06Fact(evidence, p06TransportFact('debugger-resume', 'entered', null, null, null));
+                  try {
+                    await debuggerSession.send('Debugger.resume');
+                    recordP06Fact(evidence, p06TransportFact('debugger-resume', 'passed', null, null, null));
+                  }
+                  catch (cause) {
+                    recordP06Fact(evidence, p06TransportFact('debugger-resume', 'failed', null, null, null, cause));
+                    failures.push(cause);
+                  }
                 }
                 if (failures.length > 0) throw new AggregateError(failures, 'Debugger pause cleanup failed');
               })(),
