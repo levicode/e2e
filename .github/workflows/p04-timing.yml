@@ -3,7 +3,7 @@ name: 'P04 timing: strict exact dev then diagnostic ci ELF and original relay ca
 'on':
   push:
     branches:
-    - diagnostic/p04-capture-timing-proxy-fix-20261025
+    - diagnostic/p04-capture-timing-parser-fix-20261025
 permissions:
   contents: read
 concurrency:
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   production:
     name: temporary-P04-timing
-    if: ${{ github.ref == 'refs/heads/diagnostic/p04-capture-timing-proxy-fix-20261025' }}
+    if: ${{ github.ref == 'refs/heads/diagnostic/p04-capture-timing-parser-fix-20261025' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 250
     permissions:

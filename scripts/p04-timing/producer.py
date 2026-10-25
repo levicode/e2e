@@ -173,12 +173,28 @@ def capture_harness(root, configuration):
     assert before == digest(binary)
     save(EVIDENCE / (configuration + '-harness-binding.json'), {'binary': str(binary), 'sha256': before, 'cargoArtifact': row, 'source': source_identity(root, True), 'inventory': inventory, 'selectedExactTests': selected, 'configuration': configuration, 'features': config['features'], 'cargoProfile': 'dev', 'productionImageBuilt': False})
 
+def nested_timing_stdout(case, stdout):
+    """Only this exact test runs the two serial opt-out/opt-in child harnesses."""
+    name = 'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_timing_success_ack_and_real_restoration_emit_original_sink'
+    if (case['id'], case['name'], case['configuration'], case['expected']) != ('timing-5', name, 'faults', 'passed'):
+        return False
+    lines = [line.rstrip() for line in stdout.splitlines() if line.strip()]
+    fixed = {0: 'running 1 test', 1: f'test {name} ...', 2: 'running 1 test',
+             3: f'test {name} ... ok', 5: 'running 1 test', 6: f'test {name} ... ok', 8: 'ok'}
+    if len(lines) != 10 or any(lines[index] != text for index, text in fixed.items()):
+        return False
+    summaries = [re.fullmatch(r'test result: ok\. 1 passed; 0 failed; 0 ignored; 0 measured; (\d+) filtered out; finished in \d+(?:\.\d+)?s', lines[index]) for index in (4, 7, 9)]
+    return all(summaries) and len({match.group(1) for match in summaries}) == 1
+
 def inspect_case(case, stdout, stderr, result, harness_sha, post_sha):
     """Exact libtest stdout is evidence, not just a process exit or expected label."""
     outcomes = re.findall(r'(?m)^test (\S+) \.\.\. (ok|ignored(?:, [^\n]*)?|FAILED)$', stdout)
     summaries = re.findall(r'(?m)^test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in [0-9.]+s$', stdout)
     actual = 'unknown'
-    if len(summaries) == 1 and len(outcomes) == 1 and outcomes[0][0] == case['name'] and re.findall(r'(?m)^running (\d+) tests?$', stdout) == ['1']:
+    if case['id'] == 'timing-5':
+        if nested_timing_stdout(case, stdout) and result.get('exit') == 0 and not result.get('timed_out') and not result.get('interrupted') and harness_sha == post_sha:
+            actual = 'passed'
+    elif len(summaries) == 1 and len(outcomes) == 1 and outcomes[0][0] == case['name'] and re.findall(r'(?m)^running (\d+) tests?$', stdout) == ['1']:
         word, passed, failed, ignored, measured, _filtered = summaries[0]
         if ignored == measured == '0' and not result.get('timed_out') and not result.get('interrupted') and harness_sha == post_sha:
             if word == 'ok' and (passed, failed) == ('1', '0') and outcomes[0][1] == 'ok' and result.get('exit') == 0:
