@@ -1,0 +1,113 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "publishedNativeSha": "0ea3dce92bec2e1d059f30b6839f444a42f6a4eb",
+  "candidateTree": "f14d6ac9cc880094720fc4ea9707dd1a57bf2b95",
+  "baseNativeSha": "26ad6cfedd9771fbf8366f2d3d3620d66a09d9bb",
+  "baseNativeTree": "c5ca16e88a1336739aebed8cbdad3052dc864773",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "onlyTestOverlay": false,
+  "productionSourceChanged": true,
+  "productionImageBuilt": false,
+  "patchSha256": "734dbd1c964d6beb096633298459fdee4f3244479184e67bfe980d080eed9531",
+  "patchInputs": [
+    {
+      "name": "p06-locator-eof-recovery-four-file-full-delta",
+      "sha256": "734dbd1c964d6beb096633298459fdee4f3244479184e67bfe980d080eed9531"
+    }
+  ],
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_actions.rs",
+      "beforeSha256": "3ded30b86d506261f92332754aac72e8947ef123effb020b56af08c4570db484",
+      "afterSha256": "05642e164b026ad4882469313761873d1b9af9637e40db3552859ff7efb926fd",
+      "gitBlob": "9b2e68fe346511d2360e8fcc704363fa8bd5e540"
+    },
+    {
+      "path": "cli/src/native/client_browser_locator_eof_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "972caf8afa83800d151e75a3eac3c2fef721e7b335a92b5fbf2b4ce813da0eae",
+      "gitBlob": "22bacfb194c81fc0c46b5a1ab2d92edc7ce89007"
+    },
+    {
+      "path": "cli/src/native/client_browser_point_debt_tests.rs",
+      "beforeSha256": "0b83cd18e597beaec42b188009ce478d843e27a8380e957165825c67525708db",
+      "afterSha256": "3a28023034e5a98db5422ab9826d7c851779df4846715d2201187ce9468d2f8b",
+      "gitBlob": "a53dcaa21599e602e5d007f8d52b71b0e58b148b"
+    },
+    {
+      "path": "cli/src/native/client_debt.rs",
+      "beforeSha256": "a5cefb8ab45c726cb8a5aa6355cea904fdb3d215e5496d862ba30ccf46110b97",
+      "afterSha256": "d63f4aa898ff02c8797078762d76ae944fdc703c2f4e44010963d754f0f368ae",
+      "gitBlob": "782ea0b004abd0f6a0cbb02bb70ad1dac6ed8b63"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "locator-control",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::p06_framed_locator_tap_control_releases_exact_object",
+      "category": "real locator tap ACK/release positive control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "locator-eof",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::p06_framed_locator_release_eof_must_offer_recovery_without_replay",
+      "category": "real locator input ACK loss with unresolved exact object; explicit recovery must actually pass",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "exact-eof-handoff",
+      "name": "native::client_debt::tests::exact_eof_object_handoff_keeps_owned_debt_and_never_settles_producers",
+      "category": "exact recovery responsibility safety control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "nonexact-handoff-rejected",
+      "name": "native::client_debt::tests::exact_eof_object_handoff_rejects_nonexact_or_contaminated_responsibility",
+      "category": "exact recovery responsibility safety control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "release-exact-ack",
+      "name": "native::client_actions::tests::readonly_release_requires_exact_settled_ack_not_legacy_acceptance",
+      "category": "exact recovery responsibility safety control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "retained-cleanup-failure",
+      "name": "native::client_tasks::tests::retained_cleanup_failure_error_without_dirty_flag_quarantines_broker",
+      "category": "exact recovery responsibility safety control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "owner-cleanup-recheck",
+      "name": "native::cdp::client::tests::owner_cleanup_rechecks_exact_ledger_and_deadline_after_writer_wait",
+      "category": "exact recovery responsibility safety control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "unacked-input-unknown",
+      "name": "native::client_actions::tests::preparation_effect_settlement_unacked_input_release_remains_unknown",
+      "category": "exact recovery responsibility safety control",
+      "configuration": "default",
+      "expected": "passed"
+    }
+  ],
+  "releaseEligible": false,
+  "casesSha256": "461d9973a1dca610d7920aa3686dda00f5ed0d86a43f2dc5ee6fcc3e045d48c4"
+}

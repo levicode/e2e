@@ -1,0 +1,1039 @@
+diff --git a/cli/src/native/client_actions.rs b/cli/src/native/client_actions.rs
+index 83e38761..9b2e68fe 100644
+--- a/cli/src/native/client_actions.rs
++++ b/cli/src/native/client_actions.rs
+@@ -647,6 +647,9 @@ struct ObjectReleaseOutcome {
+     accepted: bool,
+     // New refusal evidence requires an exact settled command, not retained debt.
+     settled: bool,
++    // The reservation was refused before any command could be submitted.
++    // A sent release with a failed/missing ACK must never acquire this fact.
++    not_reserved: bool,
+ }
+ async fn release_object_outcome(
+     client: &super::cdp::client::CdpClient,
+@@ -692,7 +695,12 @@ async fn release_accounted_inner(
+ ) -> ObjectReleaseOutcome {
+     let reservation = match client.reserve_tracked_command(method, Some(&params), Some(session)) {
+         Ok(reservation) => reservation,
+-        Err(_) => return ObjectReleaseOutcome::default(),
++        Err(_) => {
++            return ObjectReleaseOutcome {
++                not_reserved: true,
++                ..Default::default()
++            }
++        }
+     };
+     let status = reservation.as_ref().map(|reservation| reservation.status());
+     let result = tokio::time::timeout(
+@@ -714,6 +722,7 @@ async fn release_accounted_inner(
+             && client
+                 .debt_ledger()
+                 .is_some_and(|ledger| !ledger.snapshot().integrity_lost),
++        not_reserved: false,
+     }
+ }
+ struct Resolved {
+@@ -723,6 +732,41 @@ struct Resolved {
+     binding: ExactBinding,
+ }
+ impl Resolved {
++    /// Relinquish only the local handle responsibility into an already-owned
++    /// EOF obligation. This neither releases the remote object nor settles debt.
++    fn local_handle_retained_after_eof(&self, ctx: &ActionContext<'_>) -> bool {
++        if self.realm.is_none()
++            || self.session != self.binding.session
++            || self.binding.page_session != ctx.page.page_session_id
++            || ctx.page.permit.check().is_err()
++            || !*ctx.page.client.remote_connection_closed().borrow()
++        {
++            return false;
++        }
++        let Some(journal) = OperationJournalHandle::current() else {
++            return false;
++        };
++        let ledger = journal.ledger();
++        if journal.key().generation != ctx.operation.generation
++            || journal.key().operation_seq != ctx.operation.sequence
++            || !ledger.matches_owner(ctx.operation.generation, &ctx.page.identity_scope)
++            || !ctx
++                .page
++                .client
++                .debt_ledger()
++                .is_some_and(|owner| Arc::ptr_eq(&owner, &ledger))
++            || ctx.page.client.check_cleanup_owner(&Some(ledger)).is_err()
++        {
++            return false;
++        }
++        journal.retains_exact_object_after_remote_eof(
++            ctx.operation,
++            &ctx.page.target_id,
++            &ctx.page.page_session_id,
++            &self.session,
++            &self.object,
++        )
++    }
+     async fn release_settled(&self, ctx: &ActionContext<'_>) -> Result<(), ProtocolError> {
+         if self
+             .realm
+@@ -752,7 +796,15 @@ impl Resolved {
+         {
+             return Ok(());
+         }
+-        if release_object_accounted(&ctx.page.client, &self.session, &self.object).await {
++        let release = release_object_outcome(&ctx.page.client, &self.session, &self.object).await;
++        if release.accepted {
++            return Ok(());
++        }
++        if release.not_reserved && self.local_handle_retained_after_eof(ctx) {
++            // Ok here means local ownership remains accounted, as with an
++            // accepted-but-unsettled release above. The old remote obligation
++            // stays intact; only the retained task may finish its producer and
++            // the existing registry may later qualify explicit recovery.
+             return Ok(());
+         }
+         // Failed release is not evidence. Only the captured native realm's
+@@ -4130,7 +4182,15 @@ mod tests {
+     #[tokio::test]
+     async fn readonly_release_requires_exact_settled_ack_not_legacy_acceptance() {
+         use tokio_tungstenite::tungstenite::Message;
+-        for mode in ["settled", "held", "rejected", "wrong-session", "untracked"] {
++        for mode in [
++            "settled",
++            "held",
++            "rejected",
++            "wrong-session",
++            "untracked",
++            "eof-before-reserve",
++            "eof-after-submit",
++        ] {
+             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+             let url = format!("ws://{}", listener.local_addr().unwrap());
+             let server = tokio::spawn(async move {
+@@ -4148,6 +4208,13 @@ mod tests {
+                         "DOM.resolveNode" => {
+                             json!({"id":request["id"],"sessionId":"page","result":{"object":{"objectId":"owned-object"}}})
+                         }
++                        "Runtime.releaseObject" if mode == "eof-after-submit" => {
++                            socket.send(Message::Close(None)).await.unwrap();
++                            break;
++                        }
++                        "Runtime.releaseObject" if mode == "eof-before-reserve" => {
++                            panic!("release was submitted after reader EOF")
++                        }
+                         "Runtime.releaseObject" if mode == "held" => continue,
+                         "Runtime.releaseObject" if mode == "rejected" => {
+                             json!({"id":request["id"],"sessionId":"page","error":{"code":-32000,"message":"synthetic release rejection"}})
+@@ -4161,6 +4228,10 @@ mod tests {
+                         reply["sessionId"] = json!("foreign-page");
+                     }
+                     socket.send(Message::Text(reply.to_string())).await.unwrap();
++                    if mode == "eof-before-reserve" && method == "DOM.resolveNode" {
++                        socket.send(Message::Close(None)).await.unwrap();
++                        break;
++                    }
+                 }
+             });
+             let client = CdpClient::connect(&url).await.unwrap();
+@@ -4195,14 +4266,31 @@ mod tests {
+                 ))
+                 .await
+                 .unwrap();
++            if mode == "eof-before-reserve" {
++                let mut closed = client.remote_connection_closed();
++                tokio::time::timeout(Duration::from_secs(3), async {
++                    while !*closed.borrow_and_update() {
++                        closed.changed().await.unwrap();
++                    }
++                })
++                .await
++                .unwrap();
++            }
+             let outcome = journal
+                 .scope(release_object_outcome(&client, "page", "owned-object"))
+                 .await;
+-            assert!(
++            assert_eq!(
+                 outcome.accepted,
++                !matches!(mode, "eof-before-reserve" | "eof-after-submit"),
+                 "legacy accountable release acceptance changed for {mode}"
+             );
+             assert_eq!(outcome.settled, mode == "settled", "{mode}");
++            assert_eq!(outcome.not_reserved, mode == "eof-before-reserve", "{mode}");
++            if matches!(mode, "eof-before-reserve" | "eof-after-submit") {
++                assert!(*client.remote_connection_closed().borrow());
++                assert_eq!(ledger.snapshot().object_debt, 1);
++                assert!(ledger.snapshot().integrity_lost);
++            }
+             if mode == "settled" {
+                 assert_eq!(ledger.snapshot().object_debt, 0);
+             }
+diff --git a/cli/src/native/client_browser_locator_eof_tests.rs b/cli/src/native/client_browser_locator_eof_tests.rs
+new file mode 100644
+index 00000000..22bacfb1
+--- /dev/null
++++ b/cli/src/native/client_browser_locator_eof_tests.rs
+@@ -0,0 +1,526 @@
++//! Real framed locator acquisition and enrolled Resolved lifetime across EOF.
++//! Unlike the pointer fixture, the final input owns a real unresolved object.
++use super::*;
++use crate::native::client_browser::reconnect_tests::{candidate_cleanup_commands, peer, PeerMode};
++use crate::native::client_protocol::{DISCONNECTED_RECOVERY, EXACT_OWNER_CONTINUATION};
++use std::collections::HashMap;
++use tokio::sync::mpsc;
++
++fn purchase_expression() -> Value {
++    json!({"kind":"query","query":{"kind":"text","value":{"kind":"string","value":"Purchase","exact":true}}})
++}
++
++#[derive(Debug)]
++struct Handle {
++    backend: Option<i64>,
++    group: String,
++}
++#[derive(Default)]
++struct LocatorModel {
++    handles: HashMap<String, Handle>,
++    next: usize,
++    realm_created: bool,
++    realm_destroyed: bool,
++    input_count: usize,
++    query_count: usize,
++    exact_action: Option<String>,
++    sent_release_acks: Vec<String>,
++}
++impl LocatorModel {
++    fn object(&mut self, backend: Option<i64>, group: &str) -> String {
++        self.next += 1;
++        let object = format!("p06-object-{}", self.next);
++        assert!(self
++            .handles
++            .insert(
++                object.clone(),
++                Handle {
++                    backend,
++                    group: group.into()
++                }
++            )
++            .is_none());
++        object
++    }
++    fn node(&self, object: &Value, backend: i64) {
++        assert_eq!(
++            self.handles.get(object.as_str().unwrap()).unwrap().backend,
++            Some(backend)
++        );
++    }
++    fn response(&mut self, request: &Value) -> Option<Value> {
++        let method = request["method"].as_str().unwrap();
++        let p = &request["params"];
++        let result = match method {
++            "Page.getLayoutMetrics" => {
++                json!({"cssVisualViewport":{"clientWidth":100,"clientHeight":80,"offsetX":0,"offsetY":0,"scale":1},"cssLayoutViewport":{"clientWidth":100,"clientHeight":80}})
++            }
++            "Page.createIsolatedWorld" => {
++                assert_eq!(
++                    p,
++                    &json!({"frameId":"frame-host-session","worldName":"agent-browser-native-observation"})
++                );
++                json!({"executionContextId":1})
++            }
++            "DOM.getDocument" => {
++                json!({"root":{"nodeType":9,"backendNodeId":1,"children":[{"nodeType":1,"nodeName":"BUTTON","localName":"button","backendNodeId":7,"attributes":[]}]}})
++            }
++            "Accessibility.getFullAXTree" => {
++                assert_eq!(p["frameId"], "frame-host-session");
++                json!({"nodes":[{"nodeId":"purchase","backendDOMNodeId":7,"role":{"type":"role","value":"button"},"name":{"type":"string","value":"Purchase"}}]})
++            }
++            "DOM.resolveNode" => {
++                let backend = p["backendNodeId"].as_i64().unwrap();
++                assert!(matches!(backend, 1 | 7));
++                assert_eq!(p["executionContextId"], 1);
++                let group = p["objectGroup"].as_str().unwrap();
++                assert!(
++                    group == "native-exact"
++                        || ["native-security-", "native-metadata-", "native-query-"]
++                            .iter()
++                            .any(|prefix| group
++                                .strip_prefix(prefix)
++                                .is_some_and(|n| n.parse::<u64>().is_ok()))
++                );
++                let object = self.object(Some(backend), group);
++                if group == "native-exact" && self.query_count == 2 {
++                    self.exact_action = Some(object.clone());
++                }
++                json!({"object":{"type":"object","subtype":"node","objectId":object}})
++            }
++            "Runtime.getProperties" => {
++                assert_eq!(
++                    self.handles
++                        .get(p["objectId"].as_str().unwrap())
++                        .unwrap()
++                        .backend,
++                    None
++                );
++                json!({"result":[{"name":"focused","value":{"type":"object","subtype":"null","value":null}}]})
++            }
++            "DOM.getBoxModel" => {
++                self.node(&p["objectId"], 7);
++                json!({"model":{"border":[10,20,50,20,50,40,10,40]}})
++            }
++            "DOM.scrollIntoViewIfNeeded" => {
++                self.node(&p["objectId"], 7);
++                assert_eq!(p["objectId"].as_str(), self.exact_action.as_deref());
++                json!({})
++            }
++            "Runtime.releaseObject" => {
++                let object = p["objectId"].as_str().unwrap();
++                assert!(
++                    self.handles.remove(object).is_some(),
++                    "unknown/repeated object release: {request}"
++                );
++                json!({})
++            }
++            "Runtime.releaseObjectGroup" => {
++                let group = p["objectGroup"].as_str().unwrap();
++                assert!(
++                    self.handles.values().any(|handle| handle.group == group),
++                    "unknown/empty group release: {request}"
++                );
++                self.handles.retain(|_, handle| handle.group != group);
++                json!({})
++            }
++            "Runtime.callFunctionOn" => self.call(request),
++            "Input.dispatchMouseEvent" => {
++                assert_eq!(self.query_count, 2);
++                let exact = self.exact_action.as_ref().unwrap();
++                assert!(self.handles.contains_key(exact));
++                let kind = ["mouseMoved", "mousePressed", "mouseReleased"]
++                    .get(self.input_count)
++                    .expect("input replay");
++                assert_eq!(p["type"], *kind);
++                assert_eq!(p["x"], 30.0);
++                assert_eq!(p["y"], 30.0);
++                assert_eq!(p["buttons"], if self.input_count == 1 { 1 } else { 0 });
++                self.input_count += 1;
++                json!({})
++            }
++            other if other.starts_with("Input.") => panic!("unexpected locator input: {request}"),
++            _ => return None,
++        };
++        assert_eq!(request["sessionId"], "host-session");
++        Some(result)
++    }
++    fn call(&mut self, request: &Value) -> Value {
++        let p = &request["params"];
++        let source = p["functionDeclaration"].as_str().unwrap();
++        let object = p["objectId"].as_str().unwrap();
++        assert!(
++            self.handles.contains_key(object),
++            "call without owned object: {request}"
++        );
++        if source.starts_with("function(selector,authorRoots,...roots)") && source.contains("const out=Array.from(result);out.focused=active;return out;") {
++            self.node(&p["objectId"], 1);
++            let group = p["objectGroup"].as_str().unwrap();
++            assert!(group.starts_with("native-security-"));
++            assert_eq!(self.handles.get(object).unwrap().group, group);
++            let object = self.object(None, group);
++            json!({"result":{"type":"object","objectId":object}})
++        } else if source.starts_with("function(testId,secureSelector,...nodes)") && source.contains("const read=") {
++            let args = p["arguments"].as_array().unwrap();
++            assert_eq!(args.len(), 3);
++            self.node(&args[2]["objectId"], 7);
++            assert!(self.handles.get(object).unwrap().group.starts_with("native-metadata-"));
++            assert_eq!(p["objectGroup"], self.handles.get(object).unwrap().group);
++            json!({"result":{"value":[{"attributes":{},"labels":[],"states":{"secure":false,"hidden":false},"text":"Purchase","rect":{"x":10,"y":20,"width":40,"height":20},"author":{"tag":"button","nodeType":1,"visible":true}}]}})
++        } else if source.starts_with("function(expression, data, labels, safeNames, secureSelector, protectedAncestors, ...elements)") {
++            let args = p["arguments"].as_array().unwrap();
++            let expression: crate::native::client_observation::LocatorExpression = serde_json::from_value(purchase_expression()).unwrap();
++            assert_eq!(args[0]["value"], serde_json::to_value(expression).unwrap());
++            assert_eq!(args.len(), 7);
++            self.node(&args[6]["objectId"], 7);
++            assert!(self.handles.get(object).unwrap().group.starts_with("native-query-"));
++            assert_eq!(p["objectGroup"], self.handles.get(object).unwrap().group);
++            self.query_count += 1;
++            assert!(self.query_count <= 2, "unexpected locator retry");
++            json!({"result":{"value":{"indices":[0],"redacted":[]}}})
++        } else if source == "function() { const p=Node.prototype; return Object.getOwnPropertyDescriptor(p,'isConnected').get.call(this) === true && (this === document || Object.getOwnPropertyDescriptor(p,'ownerDocument').get.call(this) === document); }" {
++            self.node(&p["objectId"], 7);
++            json!({"result":{"value":true}})
++        } else if source == crate::native::client_geometry::BOX_PROOF {
++            self.node(&p["objectId"], 7);
++            json!({"result":{"value":{"connected":true,"frameOwner":false}}})
++        } else if source == "function(){if(!this.isConnected||this.ownerDocument!==document)return {status:'stale'};const rect=this.getBoundingClientRect();const style=getComputedStyle(this);if(rect.width<=0||rect.height<=0||style.visibility==='hidden'||style.visibility==='collapse')return {status:'not-actionable'};return true;}" {
++            assert_eq!(Some(object), self.exact_action.as_deref());
++            json!({"result":{"value":true}})
++        } else if source.starts_with("function(x,y,enabled){") && source.contains(crate::native::element::BLOCKER_AT_JS) && source.contains(crate::native::element::ACTIONABILITY_JS) && source.ends_with("return {width:rect.width,height:rect.height};\n    }") {
++            assert_eq!(Some(object), self.exact_action.as_deref());
++            assert_eq!(p["arguments"], json!([{"value":30.0},{"value":30.0},{"value":true}]));
++            json!({"result":{"value":{"width":40,"height":20}}})
++        } else {
++            panic!("unmodeled locator function: {request}");
++        }
++    }
++}
++
++struct LocatorPeer {
++    endpoint: String,
++    commands: Arc<Mutex<Vec<Value>>>,
++    model: Arc<Mutex<LocatorModel>>,
++    release: mpsc::UnboundedReceiver<()>,
++    close: mpsc::Sender<()>,
++    relay: tokio::task::JoinHandle<()>,
++    backend: tokio::task::JoinHandle<()>,
++}
++async fn locator_peer(hold_release: bool) -> LocatorPeer {
++    let original = peer(PeerMode::Original).await;
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let endpoint = format!("ws://{}", listener.local_addr().unwrap());
++    let commands = Arc::new(Mutex::new(Vec::new()));
++    let recorded = commands.clone();
++    let model = Arc::new(Mutex::new(LocatorModel::default()));
++    let modeled = model.clone();
++    let (seen, release) = mpsc::unbounded_channel();
++    let (close, mut closing) = mpsc::channel(1);
++    let relay = tokio::spawn(async move {
++        // Keep the lifecycle peer's explicit event control alive until relay exit.
++        let _emit = original.emit;
++        let (stream, _) = listener.accept().await.unwrap();
++        let mut client = tokio_tungstenite::accept_async(stream).await.unwrap();
++        let (mut backend, _) = tokio_tungstenite::connect_async(&original.endpoint)
++            .await
++            .unwrap();
++        let mut cleanup_index = None;
++        let mut activated = false;
++        loop {
++            tokio::select! {
++                Some(()) = closing.recv() => {
++                    client.send(Message::Close(None)).await.unwrap();
++                    let _ = backend.send(Message::Close(None)).await;
++                    break;
++                }
++                message = backend.next() => {
++                    let Some(Ok(message)) = message else { break; };
++                    if let Message::Text(text) = &message {
++                        let event: Value = serde_json::from_str(text).unwrap();
++                        if matches!(event["method"].as_str(), Some("Runtime.executionContextDestroyed" | "Runtime.executionContextsCleared")) {
++                            assert_eq!(event["sessionId"], "host-session");
++                            modeled.lock().unwrap().realm_destroyed = true;
++                        }
++                    }
++                    if client.send(message).await.is_err() { break; }
++                }
++                message = client.next() => {
++                    let Some(Ok(Message::Text(text))) = message else {
++                        let _ = backend.send(Message::Close(None)).await;
++                        break;
++                    };
++                    let request: Value = serde_json::from_str(&text).unwrap();
++                    recorded.lock().unwrap().push(request.clone());
++                    let method = request["method"].as_str().unwrap();
++                    assert!(!matches!(method, "Target.createTarget" | "Target.createBrowserContext" | "Target.closeTarget" | "Target.disposeBrowserContext" | "Browser.close"));
++                    if method == "Page.navigate" {
++                        // PageActivation owns this sole setup navigation. No
++                        // later action/recovery may navigate or replace the page.
++                        assert!(!activated && !modeled.lock().unwrap().realm_created);
++                        assert_eq!(request["sessionId"], "host-session");
++                        assert_eq!(request["params"], json!({"url":"about:blank"}));
++                        activated = true;
++                    }
++                    let cleanup = cleanup_index.is_some() || method == "Fetch.disable";
++                    let result = if cleanup {
++                        assert_eq!(modeled.lock().unwrap().input_count, 3);
++                        let index = cleanup_index.get_or_insert(0);
++                        let mut envelope = request.clone();
++                        envelope.as_object_mut().unwrap().remove("id");
++                        assert_eq!(Some(&envelope), candidate_cleanup_commands().get(*index));
++                        *index += 1;
++                        Some(json!({}))
++                    } else { modeled.lock().unwrap().response(&request) };
++                    let Some(result) = result else {
++                        backend.send(Message::Text(text)).await.unwrap();
++                        continue;
++                    };
++                    if method == "Page.createIsolatedWorld" {
++                        let created = {
++                            let mut model = modeled.lock().unwrap();
++                            let first = !model.realm_created;
++                            model.realm_created = true;
++                            first
++                        };
++                        if created {
++                            client.send(Message::Text(json!({"method":"Runtime.executionContextCreated","sessionId":"host-session","params":{"context":{"id":1,"uniqueId":"p06-locator-realm","name":"agent-browser-native-observation","auxData":{"frameId":"frame-host-session","isDefault":false}}}}).to_string())).await.unwrap();
++                        }
++                    }
++                    if method == "Input.dispatchMouseEvent" && request["params"]["type"] == "mouseReleased" {
++                        seen.send(()).unwrap();
++                        if hold_release { continue; }
++                    }
++                    let mut response = json!({"id":request["id"],"result":result});
++                    if let Some(session) = request.get("sessionId") { response["sessionId"] = session.clone(); }
++                    client.send(Message::Text(response.to_string())).await.unwrap();
++                    if method == "Runtime.releaseObject" {
++                        modeled.lock().unwrap().sent_release_acks.push(request["params"]["objectId"].as_str().unwrap().into());
++                    }
++                }
++            }
++        }
++        if let Some(index) = cleanup_index {
++            assert_eq!(index, candidate_cleanup_commands().len());
++        }
++    });
++    LocatorPeer {
++        endpoint,
++        commands,
++        model,
++        release,
++        close,
++        relay,
++        backend: original.task,
++    }
++}
++
++async fn locator_result(framed: &mut FramedFixture, sequence: u64) -> (Value, Vec<Value>) {
++    bounded(async {
++        let mut notices = Vec::new();
++        let mut retired = false;
++        for _ in 0..16 {
++            let frame = framed.read().await.unwrap();
++            assert_eq!(frame["generation"], 1);
++            if frame["type"] == "result" {
++                assert_eq!(frame["id"], "p06-locator");
++                assert_eq!(frame["operationSeq"], sequence);
++                return (frame, notices);
++            }
++            assert_eq!(frame["type"], "event", "unexpected locator frame: {frame}");
++            let through = framed.event_sequence;
++            framed.event_sequence += 1;
++            assert_eq!(frame["sequence"], framed.event_sequence);
++            if frame["event"] == "browser.disconnected" {
++                assert_eq!(
++                    frame["payload"],
++                    json!({"reason":"browser-connection-closed"})
++                );
++                assert!(frame.get("decision").is_none());
++            } else if frame["event"] == "scope.callbacks-retired" {
++                assert!(valid_eof_callback_retirement(
++                    &frame,
++                    framed.scope.as_deref().unwrap(),
++                    through,
++                    retired
++                ));
++                retired = true;
++            } else {
++                assert_eq!(
++                    frame["payload"]["identityScope"],
++                    framed.scope.as_deref().unwrap()
++                );
++                validate_fixture_notice(&frame).unwrap_or_else(|error| panic!("{error}: {frame}"));
++            }
++            notices.push(frame);
++        }
++        panic!("missing locator result")
++    })
++    .await
++}
++
++async fn framed_locator_release(hold_release: bool) {
++    let mut peer = locator_peer(hold_release).await;
++    let broker = Arc::new(ClientSession::new());
++    let browser = Arc::new(ClientBrowser::new(broker.clone()));
++    let mut framed = FramedFixture::with_capabilities(
++        broker.clone(),
++        browser.clone(),
++        vec![
++            EXACT_OWNER_CONTINUATION.into(),
++            DISCONNECTED_RECOVERY.into(),
++            "terminal.close/1".into(),
++        ],
++    );
++    framed.ready().await.unwrap();
++    let opened = framed
++        .command(
++            "scope.open",
++            json!({"source":"connect","context":"persistent","endpoint":peer.endpoint}),
++            5,
++        )
++        .await
++        .unwrap();
++    let scope = opened["identityScope"].as_str().unwrap().to_owned();
++    framed.scope = Some(scope.clone());
++    framed
++        .command("scope.configure", fixture_configuration(&scope, None), 5)
++        .await
++        .unwrap();
++    framed
++        .command("network.routes.replace", fixture_routes(&scope), 5)
++        .await
++        .unwrap();
++    framed.registry = 1;
++    framed
++        .command("page.activate", json!({"identityScope":scope}), 5)
++        .await
++        .unwrap();
++    let (client, ledger, page_state) = {
++        let owner = browser.owner.lock().await;
++        let owner = owner.as_ref().unwrap();
++        assert!(!owner.owns_context);
++        (
++            owner.manager.client.clone(),
++            owner.manager.client.debt_ledger().unwrap(),
++            owner.page_state.clone(),
++        )
++    };
++    let located = framed.command("browser.query", json!({"identityScope":scope,"expression":purchase_expression(),"testIdAttribute":"data-testid","secureFieldSelector":FIXTURE_SECURE_SELECTOR}), 5).await.unwrap();
++    assert_eq!(located["nodes"].as_array().unwrap().len(), 1);
++    let reference = located["nodes"][0]["ref"].clone();
++    assert!(reference["id"].is_string() && reference["revision"].is_string());
++    assert_eq!(peer.model.lock().unwrap().query_count, 1);
++    assert_eq!(ledger.snapshot().object_debt, 0);
++    framed.sequence += 1;
++    let key = OperationKey {
++        generation: 1,
++        operation_seq: framed.sequence,
++    };
++    framed.write(json!({"type":"request","id":"p06-locator","generation":1,"operationSeq":key.operation_seq,"timeoutMs":5000,"command":"browser.perform","args":{"identityScope":scope,"ref":reference,"action":{"kind":"tap"}}})).await.unwrap();
++    bounded(peer.release.recv()).await.unwrap();
++    let exact = peer.model.lock().unwrap().exact_action.clone().unwrap();
++    if hold_release {
++        assert_eq!(
++            browser
++                .tasks
++                .operation_retention_status(key)
++                .mutation_dispatched(),
++            Some(true)
++        );
++        assert_eq!(ledger.snapshot().input_debt, 1);
++        assert_eq!(ledger.snapshot().object_debt, 1);
++        assert!(!ledger.snapshot().integrity_lost);
++        assert_eq!(page_state.mouse_state().unwrap().buttons, 0);
++        assert!(!peer
++            .model
++            .lock()
++            .unwrap()
++            .sent_release_acks
++            .contains(&exact));
++        // The real socket is the only fault. Do not mutate debt, realm state,
++        // producer registry, callback gates or broker recovery authority.
++        peer.close.send(()).await.unwrap();
++        bounded(peer.relay).await.unwrap();
++        bounded(peer.backend).await.unwrap();
++        let mut closed = client.remote_connection_closed();
++        bounded(async {
++            while !*closed.borrow_and_update() {
++                closed.changed().await.unwrap();
++            }
++        })
++        .await;
++        let (original, notices) = locator_result(&mut framed, key.operation_seq).await;
++        assert_eq!(original["ok"], false);
++        assert_eq!(original["effects"], "unknown");
++        assert_eq!(original["scopeState"], "quarantined");
++        assert!(original.get("retention").is_none());
++        // Read actual eligibility before any later timeout can expire it.
++        let candidate = browser.tasks.recovery_candidate(key).is_some();
++        let offered = broker.recovery_available();
++        let status = browser.tasks.operation_retention_status(key);
++        let eof_only_at_result = ledger.remote_eof_only();
++        let producer_drain = bounded(browser.tasks.drain()).await;
++        assert_eq!(ledger.snapshot().input_debt, 1);
++        assert_eq!(ledger.snapshot().object_debt, 1);
++        assert!(ledger.snapshot().integrity_lost);
++        assert_eq!(page_state.mouse_state().unwrap().buttons, 0);
++        {
++            let model = peer.model.lock().unwrap();
++            assert_eq!(model.query_count, 2);
++            assert!(model.realm_created && !model.realm_destroyed);
++            assert_eq!(model.input_count, 3);
++            assert_eq!(model.handles.len(), 1);
++            assert!(model.handles.contains_key(&exact));
++            assert!(!model.sent_release_acks.contains(&exact));
++        }
++        {
++            let commands = peer.commands.lock().unwrap();
++            assert_eq!(
++                commands
++                    .iter()
++                    .filter(|r| r["method"] == "Input.dispatchMouseEvent")
++                    .count(),
++                3
++            );
++            assert!(!commands.iter().any(
++                |r| r["method"] == "Runtime.releaseObject" && r["params"]["objectId"] == exact
++            ));
++        }
++        // EOF is not realm destruction, a release ACK or cleanup success.
++        let cleanup = tokio::time::timeout(Duration::from_secs(7), framed.finish())
++            .await
++            .unwrap();
++        eprintln!("P06 locator EOF: status={status:?}, candidate={candidate}, offered={offered}, eof_only_at_result={eof_only_at_result}, disconnected_before_result={}, producer_drain={producer_drain:?}, cleanup={cleanup:?}, original={original}", notices.iter().filter(|n| n["event"] == "browser.disconnected").count());
++        assert_eq!(original["recovery"], json!({"version":1,"identityScope":scope}), "real locator EOF did not offer explicit recovery; status={status:?}, candidate={candidate}, offered={offered}");
++    } else {
++        let (result, _) = locator_result(&mut framed, key.operation_seq).await;
++        assert_eq!(result["ok"], true, "locator control failed: {result}");
++        assert_eq!(result["effects"], "completed");
++        assert_eq!(result["scopeState"], "usable");
++        assert_eq!(ledger.snapshot().input_debt, 0);
++        assert_eq!(ledger.snapshot().object_debt, 0);
++        assert!(!ledger.snapshot().integrity_lost);
++        assert!(peer
++            .model
++            .lock()
++            .unwrap()
++            .sent_release_acks
++            .contains(&exact));
++        assert!(peer.model.lock().unwrap().handles.is_empty());
++        tokio::time::timeout(Duration::from_secs(7), framed.finish())
++            .await
++            .unwrap()
++            .unwrap();
++        bounded(peer.relay).await.unwrap();
++        bounded(peer.backend).await.unwrap();
++    }
++}
++
++#[tokio::test]
++async fn p06_framed_locator_tap_control_releases_exact_object() {
++    framed_locator_release(false).await;
++}
++#[tokio::test]
++async fn p06_framed_locator_release_eof_must_offer_recovery_without_replay() {
++    framed_locator_release(true).await;
++}
+diff --git a/cli/src/native/client_browser_point_debt_tests.rs b/cli/src/native/client_browser_point_debt_tests.rs
+index 3d431e0c..a53dcaa2 100644
+--- a/cli/src/native/client_browser_point_debt_tests.rs
++++ b/cli/src/native/client_browser_point_debt_tests.rs
+@@ -1024,3 +1024,6 @@ async fn p06_framed_input_eof_cancelled_recovery_cannot_be_reissued() {
+     assert!(observed.candidate_commands.is_empty());
+     assert!(observed.cleanup.is_err());
+ }
++
++#[path = "client_browser_locator_eof_tests.rs"]
++mod locator_eof_tests;
+diff --git a/cli/src/native/client_debt.rs b/cli/src/native/client_debt.rs
+index c89d8b20..782ea0b0 100644
+--- a/cli/src/native/client_debt.rs
++++ b/cli/src/native/client_debt.rs
+@@ -619,6 +619,59 @@ impl OperationJournalHandle {
+         self.ledger
+             .reserve_command(Some(self), method, params, session)
+     }
++    /// Read-only local-handle handoff, never a release ACK or debt settlement.
++    /// The real reader must already have left this exact acknowledged object
++    /// in the disconnected borrowed owner's ledger. No aggregate count suffices.
++    pub(super) fn retains_exact_object_after_remote_eof(
++        &self,
++        operation: &OperationLease,
++        page_target: &str,
++        page_session: &str,
++        session: &str,
++        object: &str,
++    ) -> bool {
++        if self.key().generation != operation.generation
++            || self.key().operation_seq != operation.sequence
++            || self.journal.target != page_target
++            || self.journal.session != page_session
++        {
++            return false;
++        }
++        // Match command submission's lock order. Local admission/integrity and
++        // remote EOF/object provenance are inspected together, without mutation.
++        self.ledger.state.lock().is_ok_and(|state| {
++            let Ok(local) = self.journal.state.lock() else {
++                return false;
++            };
++            state.remote_eof_only()
++                && !local.integrity_lost
++                && !local.submission_revoked
++                && !local.local_producers_finished
++                && local
++                    .admission
++                    .as_ref()
++                    .is_some_and(|(deadline, cancellation)| {
++                        *deadline == operation.deadline
++                            && cancellation.same_channel(&operation.cancellation)
++                            && Instant::now() < *deadline
++                            && *cancellation.borrow() == CancelSignal::None
++                    })
++                && state.objects.iter().any(|debt| {
++                    debt.serial != 0
++                        && debt.object.as_deref() == Some(object)
++                        && debt.provenance.operation == Some(self.key())
++                        && debt.provenance.session.as_deref() == Some(session)
++                        && debt
++                            .provenance
++                            .target
++                            .as_ref()
++                            .is_some_and(|target| state.targets.get(session) == Some(target))
++                        && debt.provenance.realm.is_some_and(|(context, epoch)| {
++                            state.realms.get(&(session.to_owned(), context)) == Some(&epoch)
++                        })
++                })
++        })
++    }
+     pub(crate) fn has_accounted_object_creation(&self, session: &str) -> bool {
+         self.ledger.state.lock().is_ok_and(|state| {
+             !state.integrity_lost
+@@ -821,6 +874,16 @@ struct LedgerState {
+     recording_targets: HashSet<String>,
+ }
+ impl LedgerState {
++    fn remote_eof_only(&self) -> bool {
++        self.integrity_lost
++            && self.eof_integrity_cause == EofIntegrityCause::RemoteEofOnly
++            && !self.retired
++            && self
++                .bootstrap
++                .as_ref()
++                .is_some_and(|scope| !scope.owns_context)
++            && self.context_id.is_some()
++    }
+     fn contaminate_integrity(&mut self) {
+         if let Some(window) = &mut self.eval_window {
+             window.revoked = true;
+@@ -1646,16 +1709,7 @@ impl OwnerDebtLedger {
+     /// Remote transport loss remains Unknown. This only distinguishes that
+     /// reader-owned cause from independent accounting/cleanup corruption.
+     pub(crate) fn remote_eof_only(&self) -> bool {
+-        self.state.lock().is_ok_and(|state| {
+-            state.integrity_lost
+-                && state.eof_integrity_cause == EofIntegrityCause::RemoteEofOnly
+-                && !state.retired
+-                && state
+-                    .bootstrap
+-                    .as_ref()
+-                    .is_some_and(|scope| !scope.owns_context)
+-                && state.context_id.is_some()
+-        })
++        self.state.lock().is_ok_and(|state| state.remote_eof_only())
+     }
+     pub(crate) fn identity_scope(&self) -> &str {
+         &self.identity_scope
+@@ -5542,4 +5596,226 @@ pub(crate) mod tests {
+         assert_eq!(ledger.snapshot().object_debt, 1);
+         assert!(!ledger.snapshot().integrity_lost);
+     }
++    fn eof_retained_object_fixture() -> (
++        Arc<OwnerDebtLedger>,
++        OperationJournalHandle,
++        OperationLease,
++        tokio::sync::watch::Sender<CancelSignal>,
++    ) {
++        let ledger = borrowed_final_local_owner();
++        ledger
++            .bind_session("borrowed-context", "target", "page")
++            .unwrap();
++        ledger.publish_initialization(|| Ok(())).unwrap();
++        let (cancel, mut operation) = admission_operation(5000);
++        operation.sequence = 1;
++        let journal = ledger
++            .operation(
++                OperationKey {
++                    generation: 7,
++                    operation_seq: 1,
++                },
++                "target".into(),
++                "page".into(),
++            )
++            .unwrap();
++        journal.bind_operation(&operation).unwrap();
++        ledger.observe_event(&CdpEvent {
++            method: "Runtime.executionContextCreated".into(),
++            session_id: Some("page".into()),
++            params: json!({"context":{"id":9}}),
++        });
++        ledger
++            .reserve_command(
++                Some(&journal),
++                "DOM.resolveNode",
++                Some(
++                    &json!({"backendNodeId":7,"executionContextId":9,"objectGroup":"native-exact"}),
++                ),
++                Some("page"),
++            )
++            .unwrap()
++            .submit()
++            .unwrap()
++            .settle(&response(json!({"object":{"objectId":"eof-kept"}})));
++        // Submitted input remains owned even after its local handle is dropped.
++        drop(pending_input(&ledger, &journal));
++        (ledger, journal, operation, cancel)
++    }
++
++    #[test]
++    fn exact_eof_object_handoff_keeps_owned_debt_and_never_settles_producers() {
++        let (ledger, journal, operation, _cancel) = eof_retained_object_fixture();
++        assert!(!journal.retains_exact_object_after_remote_eof(
++            &operation, "target", "page", "page", "eof-kept"
++        ));
++        ledger.observe_remote_eof();
++        let before = ledger.snapshot();
++        let producer_before = journal.snapshot();
++        assert_eq!((before.input_debt, before.object_debt), (1, 1));
++        assert!(journal.retains_exact_object_after_remote_eof(
++            &operation, "target", "page", "page", "eof-kept"
++        ));
++        for (target, page, session, object) in [
++            ("foreign", "page", "page", "eof-kept"),
++            ("target", "foreign", "page", "eof-kept"),
++            ("target", "page", "foreign", "eof-kept"),
++            ("target", "page", "page", "foreign"),
++        ] {
++            assert!(!journal
++                .retains_exact_object_after_remote_eof(&operation, target, page, session, object));
++        }
++        assert_eq!(ledger.snapshot(), before);
++        assert_eq!(journal.snapshot(), producer_before);
++        assert!(!producer_before.local_producers_finished && !producer_before.submission_revoked);
++        assert!(ledger.check_admission(AdmissionClass::Input).is_err());
++        assert!(matches!(
++            ledger.reserve_command(
++                Some(&journal),
++                "Runtime.releaseObject",
++                Some(&json!({"objectId":"eof-kept"})),
++                Some("page")
++            ),
++            Err(ProtocolError::ScopeUnavailable)
++        ));
++        assert_eq!(ledger.snapshot(), before);
++    }
++
++    #[tokio::test]
++    async fn exact_eof_object_handoff_rejects_nonexact_or_contaminated_responsibility() {
++        for obstruction in [
++            "live",
++            "local-close-before",
++            "local-close-after",
++            "cancel",
++            "expired",
++            "revoked",
++            "finished",
++            "local-integrity",
++            "owner-retired",
++            "owned",
++            "target-mapping",
++            "realm-reused",
++            "anonymous",
++            "released",
++            "group-only",
++            "operation",
++            "generation",
++            "deadline",
++            "cancellation-channel",
++            "unbound",
++        ] {
++            let (ledger, journal, mut operation, cancel) = eof_retained_object_fixture();
++            if matches!(obstruction, "anonymous" | "released" | "group-only") {
++                ledger
++                    .reserve_command(
++                        Some(&journal),
++                        "Runtime.releaseObject",
++                        Some(&json!({"objectId":"eof-kept"})),
++                        Some("page"),
++                    )
++                    .unwrap()
++                    .submit()
++                    .unwrap()
++                    .settle(&response(json!({})));
++                if obstruction == "anonymous" {
++                    drop(
++                        ledger
++                            .reserve_command(
++                                Some(&journal),
++                                "DOM.resolveNode",
++                                Some(&json!({"executionContextId":9})),
++                                Some("page"),
++                            )
++                            .unwrap()
++                            .submit()
++                            .unwrap(),
++                    );
++                }
++                if obstruction == "group-only" {
++                    grouped(
++                        &ledger,
++                        &journal,
++                        "native-security-1",
++                        "DOM.resolveNode",
++                        json!({"executionContextId":9,"objectGroup":"native-security-1"}),
++                    )
++                    .await
++                    .submit()
++                    .unwrap()
++                    .settle(&response(json!({"object":{"objectId":"eof-kept"}})));
++                }
++            }
++            match obstruction {
++                "local-close-before" => ledger.connection_lost(),
++                "cancel" => cancel.send(CancelSignal::Requested).unwrap(),
++                "expired" => {
++                    operation.deadline = Instant::now();
++                    journal
++                        .journal
++                        .state
++                        .lock()
++                        .unwrap()
++                        .admission
++                        .as_mut()
++                        .unwrap()
++                        .0 = operation.deadline;
++                }
++                "revoked" => journal.revoke_application_submission(),
++                "finished" => journal.finish_local_producers(),
++                "local-integrity" => {
++                    journal.record_cleanup_disposition(CleanupDisposition::IntegrityLost)
++                }
++                "owner-retired" => ledger.state.lock().unwrap().retired = true,
++                "owned" => {
++                    ledger
++                        .state
++                        .lock()
++                        .unwrap()
++                        .bootstrap
++                        .as_mut()
++                        .unwrap()
++                        .owns_context = true
++                }
++                "target-mapping" => {
++                    ledger
++                        .state
++                        .lock()
++                        .unwrap()
++                        .targets
++                        .insert("page".into(), "foreign".into());
++                }
++                "realm-reused" => ledger.observe_event(&CdpEvent {
++                    method: "Runtime.executionContextCreated".into(),
++                    session_id: Some("page".into()),
++                    params: json!({"context":{"id":9}}),
++                }),
++                "operation" => operation.sequence += 1,
++                "generation" => operation.generation += 1,
++                "deadline" => operation.deadline += std::time::Duration::from_secs(1),
++                "cancellation-channel" => {
++                    let (_sender, receiver) = tokio::sync::watch::channel(CancelSignal::None);
++                    operation.cancellation = receiver;
++                }
++                "unbound" => journal.journal.state.lock().unwrap().admission = None,
++                _ => {}
++            }
++            if obstruction != "live" {
++                ledger.observe_remote_eof();
++            }
++            if obstruction == "local-close-after" {
++                ledger.connection_lost();
++            }
++            let before = ledger.snapshot();
++            let local_before = journal.snapshot();
++            assert!(
++                !journal.retains_exact_object_after_remote_eof(
++                    &operation, "target", "page", "page", "eof-kept"
++                ),
++                "{obstruction}"
++            );
++            assert_eq!(ledger.snapshot(), before, "{obstruction}");
++            assert_eq!(journal.snapshot(), local_before, "{obstruction}");
++        }
++    }
+ }
