@@ -1,5 +1,5 @@
 import { NativeFrameError } from './frames.ts';
-import { CONTINUE_EXACT_OWNER_CAPABILITY } from './capabilities.ts';
+import { CONTINUE_EXACT_OWNER_CAPABILITY, DISCONNECTED_RECOVERY_CAPABILITY } from './capabilities.ts';
 
 export const NATIVE_PROTOCOL = 'agent-browser-session/1';
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -33,6 +33,8 @@ export interface NativeResult {
   readonly ok: boolean; readonly data?: unknown; readonly error?: WireError;
   readonly effects: Effects; readonly scopeState: ScopeState;
   readonly retention?: OperationRetention;
+  /** One explicit recovery attempt only; old scope and effects remain quarantined/Unknown. */
+  readonly recovery?: { readonly version: 1; readonly identityScope: string };
 }
 export interface NativeControlResult {
   readonly type: 'control-result'; readonly id: string; readonly generation: number;
@@ -78,7 +80,7 @@ function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities:
       break;
     }
     case 'result':
-      keys(value, ['type', 'id', 'generation', 'operationSeq', 'ok', 'effects', 'scopeState'], ['data', 'error', 'retention']);
+      keys(value, ['type', 'id', 'generation', 'operationSeq', 'ok', 'effects', 'scopeState'], ['data', 'error', 'retention', 'recovery']);
       identifier(value['id']); positive(value['generation']); positive(value['operationSeq']); state(value['scopeState']);
       if (typeof value['ok'] !== 'boolean' || (typeof value['effects'] !== 'string' || !EFFECTS.has(value['effects']))) throw new NativeFrameError();
       if (value['ok']) {
@@ -86,6 +88,13 @@ function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities:
       } else {
         error(value['error'], true);
         if (Object.hasOwn(value, 'data')) throw new NativeFrameError();
+      }
+      if (Object.hasOwn(value, 'recovery')) {
+        if (!negotiatedCapabilities.includes(DISCONNECTED_RECOVERY_CAPABILITY) || value['effects'] !== 'unknown' || value['ok'] || value['scopeState'] !== 'quarantined' || Object.hasOwn(value, 'retention')) throw new NativeFrameError();
+        const recovery = record(value['recovery']);
+        keys(recovery, ['version', 'identityScope']);
+        if (recovery['version'] !== 1) throw new NativeFrameError();
+        identifier(recovery['identityScope']);
       }
       if (Object.hasOwn(value, 'retention')) {
         if (!negotiatedCapabilities.includes(CONTINUE_EXACT_OWNER_CAPABILITY) || value['effects'] !== 'unknown' || value['ok'] || value['scopeState'] !== 'usable') throw new NativeFrameError();

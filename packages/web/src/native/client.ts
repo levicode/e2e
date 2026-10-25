@@ -1,3 +1,4 @@
+import { DISCONNECTED_RECOVERY_CAPABILITY } from './capabilities.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import { EngineError, type JsonValue, type OperationContext } from 'e2e/engine';
@@ -23,11 +24,13 @@ interface Pending {
   readonly callbackToken?: string;
   readonly callbackTransition?: number;
   readonly command?: string;
+  readonly identityScope?: string;
   readonly generation?: number;
   readonly resolve: (message: ServerMessage) => void;
   readonly reject: (error: EngineError) => void;
   readonly clear: () => void;
   draining?: boolean;
+  quarantined?: boolean;
 }
 
 type ReceiveFailureKind = 'event-order' | 'response-correlation' | 'response-kind' | 'callback-proof' | 'capacity' | 'native-refusal';
@@ -54,6 +57,10 @@ export class NativeClient {
   private failure: EngineError | undefined;
   private closed = false;
   private terminal = false;
+  private recovery: { readonly scope: string; readonly operationSeq: number; claimed: boolean } | undefined;
+  // Historical local handle fence only, never native admission authority.
+  // Unlike callbackEpoch, ordinary same-scope restart does not change it.
+  private recoveryRetirementSequence = 0;
   private closing: Promise<void> | undefined;
   private disposed = false;
   private nextId = 0;
@@ -123,11 +130,28 @@ export class NativeClient {
   /** Captures only this invocation's native revocation state; does not grant new scope authority. */
   callbackRevocationGuard(): () => boolean {
     const owner = this.callback.getStore();
-    return () => owner?.revoked !== true;
+    const ownsRecovery = this.recoveryRevocationGuard();
+    return () => ownsRecovery() && owner?.revoked !== true;
+  }
+
+  /** Keep handle cleanup through ordinary restart, but never across an EOF recovery. */
+  recoveryRevocationGuard(): () => boolean {
+    const sequence = this.recoveryRetirementSequence;
+    return () => this.recoveryRetirementSequence === sequence && this.recovery === undefined && !this.awaitingQuarantinedResult();
   }
 
   /** Captures callback ownership before a native lifecycle transition. */
   callbackCheckpoint(): number { this.assertUsable(); return this.callbackEpoch; }
+
+  recoveryScope(): string | undefined { return this.recovery?.scope; }
+
+  /** Restricted lifecycle checkpoint; it does not restore ordinary commands. */
+  reconnectCheckpoint(scope: string): number {
+    if (this.recovery === undefined) return this.callbackCheckpoint();
+    if (this.failure !== undefined) throw this.failure;
+    if (this.terminal || this.closed || this.closing !== undefined || this.recovery.claimed || this.recovery.scope !== scope || this.callback.getStore() !== undefined) throw new EngineError('INVALID_STATE', 'The native recovery authority is not available', { retryable: false });
+    return this.callbackEpoch;
+  }
 
   /** Called only after native settlement drained the old scope's decision tokens. */
   retireCallbacks(epoch: number, proof: 'selected' | 'scope-ended' | 'scope-reconnected' = 'selected'): void {
@@ -148,7 +172,11 @@ export class NativeClient {
 
   /** Dispatches exactly once; a transport timeout cannot turn an uncertain effect into a retry. */
   async request(command: string, args: Readonly<Record<string, JsonValue>>, context: OperationContext, callbackTransition?: number): Promise<NativeResult> {
-    this.assertUsable();
+    const recovery = this.recovery;
+    if (recovery === undefined) this.assertUsable();
+    else {
+      if (command !== 'scope.reconnect' || args['identityScope'] !== recovery.scope || callbackTransition !== this.reconnectCheckpoint(recovery.scope)) throw new EngineError('INVALID_STATE', 'Only explicit exact-scope recovery is available', { retryable: false });
+    }
     if (this.settlingRequests > 0) throw new EngineError('INVALID_STATE', 'The native browser is settling a cancelled operation', { retryable: false });
     if (this.pending.size >= Math.min(this.ready!.limits.maxPendingOperations, 64)) throw new EngineError('ENGINE_FAILURE', 'The native browser operation capacity was exceeded', { retryable: false });
     if (this.operationSeq === Number.MAX_SAFE_INTEGER) {
@@ -165,6 +193,7 @@ export class NativeClient {
       this.transitionEpoch = callbackTransition;
     }
     const sequence = ++this.operationSeq;
+    if (recovery !== undefined) recovery.claimed = true;
     let message: ServerMessage;
     try {
       message = await this.exchange('request', { type: 'request', generation: this.ready!.generation, operationSeq: sequence, timeoutMs: this.timeout(context), command, args, ...(callback === undefined ? {} : { callbackToken: callback.token }) }, context, sequence, callbackTransition);
@@ -219,6 +248,7 @@ export class NativeClient {
 
   private beginTerminalCleanup(): void {
     this.terminal = true;
+    this.recovery = undefined;
     for (const callback of this.callbacks) {
       callback.revoked = true; callback.active = false;
       if (callback.timer !== undefined) clearTimeout(callback.timer);
@@ -230,9 +260,11 @@ export class NativeClient {
     void this.close({ runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 }).catch(() => {});
   }
 
+  private awaitingQuarantinedResult(): boolean { return [...this.pending.values()].some(pending => pending.kind === 'request' && pending.quarantined); }
+
   private assertUsable(): void {
     if (this.failure !== undefined) throw this.failure;
-    if (this.terminal || this.closing !== undefined || this.closed || this.ready === undefined) throw new EngineError('INVALID_STATE', 'The native browser session is not available', { retryable: false });
+    if (this.terminal || this.recovery !== undefined || this.awaitingQuarantinedResult() || this.closing !== undefined || this.closed || this.ready === undefined) throw new EngineError('INVALID_STATE', 'The native browser session is not available', { retryable: false });
   }
 
   private timeout(context: OperationContext): number {
@@ -313,7 +345,9 @@ export class NativeClient {
         if (settled !== undefined) throw new ReceiveFailure('response-correlation');
         settled = reply; complete();
       };
-      this.pending.set(id, { kind, ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
+      const args = message['args'];
+      const scope = args !== null && typeof args === 'object' && 'identityScope' in args && typeof args.identityScope === 'string' ? args.identityScope : undefined;
+      this.pending.set(id, { kind, ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
       context.signal.addEventListener('abort', abort, { once: true });
       if (context.signal.aborted) { abort(); return; }
       if (trace === undefined) {
@@ -345,6 +379,7 @@ export class NativeClient {
       this.eventSequence = message.sequence;
       if (this.terminal) return;
       if (message.event === 'scope.callbacks-retired') { this.retireProvenCallbacks(message); return; }
+      if (this.recovery !== undefined || this.awaitingQuarantinedResult()) return;
       const bytes = Buffer.byteLength(JSON.stringify(message));
       if (++this.activeEvents > Math.min(this.ready.limits.maxPendingDecisions, 256) || this.eventBytes + bytes > 4 * MAX_FRAME_BYTES) throw new ReceiveFailure('capacity');
       this.eventBytes += bytes;
@@ -365,6 +400,38 @@ export class NativeClient {
       this.ready = message;
       if (message.capabilities.includes('acceptance.faults/1')) this.channel.acceptanceTrace?.enable();
     }
+    // The independent control lane may flush this acknowledgement first.
+    // Hold only its still-pending original receipt, never enable new business.
+    const quarantinedRequest = message.type === 'control-result' && message.scopeState === 'quarantined'
+      && pending.kind === 'cancel' && this.requiredCapabilities.includes(DISCONNECTED_RECOVERY_CAPABILITY)
+      ? [...this.pending.values()].find(request => request.kind === 'request' && request.draining && request.operationSeq === pending.cancelTarget)
+      : undefined;
+    if (quarantinedRequest !== undefined) {
+      quarantinedRequest.quarantined = true;
+      for (const callback of this.callbacks) {
+        callback.revoked = true; callback.active = false;
+        if (callback.timer !== undefined) clearTimeout(callback.timer);
+      }
+    }
+    if (message.type === 'result' && message.recovery !== undefined) {
+      if (this.recovery !== undefined || pending.callbackToken !== undefined || pending.identityScope !== message.recovery.identityScope) throw new ReceiveFailure('response-correlation');
+      this.recovery = { scope: message.recovery.identityScope, operationSeq: message.operationSeq, claimed: false };
+      this.recoveryRetirementSequence = message.operationSeq;
+      for (const control of this.pending.values()) if (control.kind === 'cancel' && control.cancelTarget === message.operationSeq) control.quarantined = true;
+      this.retireOperation(pending);
+      if (this.callbackEpoch === Number.MAX_SAFE_INTEGER) throw new ReceiveFailure('capacity');
+      this.callbackEpoch++;
+      for (const callback of this.callbacks) {
+        callback.revoked = true; callback.active = false;
+        if (callback.timer !== undefined) clearTimeout(callback.timer);
+      }
+      for (const staged of this.stagedEvents.splice(0)) { this.activeEvents--; this.eventBytes -= staged.bytes; }
+      this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
+    }
+    if (message.type === 'result' && pending.command === 'scope.reconnect' && this.recovery?.claimed && message.ok) {
+      if (message.scopeState !== 'usable' || message.effects !== 'completed') throw new ReceiveFailure('response-kind');
+      this.recovery = undefined;
+    }
     if (message.type === 'result' && message.retention !== undefined) this.retireOperation(pending);
     if (!pending.draining) { this.pending.delete(message.id); pending.clear(); }
     if (message.type === 'closed') {
@@ -379,7 +446,11 @@ export class NativeClient {
     pending.resolve(message);
     if (message.type === 'result') this.channel.acceptanceTrace?.observe('ResultValidated', { operationSeq: message.operationSeq, generation: message.generation });
     if (pending.kind === 'cancel' && message.type === 'control-result') this.channel.acceptanceTrace?.observe('CancelAckValidated', { ...(pending.cancelTarget === undefined ? {} : { operationSeq: pending.cancelTarget }), generation: message.generation, accepted: message.accepted });
-    if (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed')) {
+    const recoveryControl = quarantinedRequest !== undefined
+      || (message.type === 'control-result' && pending.kind === 'cancel' && pending.quarantined === true)
+      || this.recovery !== undefined && ((message.type === 'result' && message.recovery !== undefined)
+      || (message.type === 'control-result' && pending.kind === 'cancel' && pending.cancelTarget === this.recovery.operationSeq));
+    if (!recoveryControl && (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed'))) {
       if ((message.type === 'result' || message.type === 'control-result') && this.requiredCapabilities.includes('terminal.close/1') && this.ready?.capabilities.includes('terminal.close/1')) this.beginTerminalCleanup();
       else if (!this.terminal) this.fail('The native browser scope is no longer reusable');
     }
@@ -416,6 +487,7 @@ export class NativeClient {
 
   /** Post-ACK events wait for adapter publication, without delaying pre-ACK decisions. */
   private dispatchEvent(message: NativeEvent, bytes: number, arrived: number): void {
+    const ownsRecovery = this.recoveryRevocationGuard();
     const identityScope = message.payload !== null && typeof message.payload === 'object' && !Array.isArray(message.payload) && 'identityScope' in message.payload && typeof message.payload['identityScope'] === 'string' ? message.payload['identityScope'] : undefined;
     if (message.decision !== undefined && identityScope !== undefined && this.retiredCallbackScopes.has(identityScope)) {
       this.activeEvents--; this.eventBytes -= bytes;
@@ -432,12 +504,12 @@ export class NativeClient {
     if (callback !== undefined && callbackTimer !== undefined) callback.timer = callbackTimer;
     callbackTimer?.unref();
     void Promise.resolve().then(() => {
-      if (this.failure !== undefined || this.terminal || this.closing !== undefined || this.closed || this.ready?.generation !== message.generation || callback?.revoked) return;
+      if (this.failure !== undefined || this.terminal || !ownsRecovery() || this.closing !== undefined || this.closed || this.ready?.generation !== message.generation || callback?.revoked) return;
       if (callback !== undefined && callback.expiresAt <= performance.now()) {
         callback.active = false; this.fail('The native browser callback exceeded its operation budget', 'OPERATION_TIMEOUT'); return;
       }
       return callback === undefined ? this.onEvent(message) : this.callback.run(callback, () => this.onEvent(message));
-    }).catch(() => { if (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch)) this.fail('The native browser event handler failed'); }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
+    }).catch(() => { if (ownsRecovery() && (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch))) this.fail('The native browser event handler failed'); }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
   }
 
   private dispose(): void {

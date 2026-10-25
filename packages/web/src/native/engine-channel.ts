@@ -62,7 +62,9 @@ export class EngineChannel {
 
   /** Read exact bytes, verify the final digest, and retire the scoped handle once. */
   async readBlob(blob: NativeBlob, expectedScope: string, operation: OperationContext): Promise<Buffer> {
-    const owns = this.captureScope(expectedScope); this.assertOwner(owns);
+    const capturedOwner = this.captureScope(expectedScope);
+    const notRevoked = this.client.recoveryRevocationGuard();
+    const owns = () => notRevoked() && capturedOwner(); this.assertOwner(owns);
     if (blob.identityScope !== expectedScope) throw this.client.invalidate();
     operation = { ...operation }; // Snapshot the parent's remaining monotonic budget once.
     const endsAt = performance.now() + operation.timeoutMs;
@@ -95,7 +97,9 @@ export class EngineChannel {
 
   /** File uploads are borrowed; successful state replacement consumes its old-scope upload. */
   async withUpload<T>(bytes: Uint8Array, operation: OperationContext, work: (handle: string, remaining: OperationContext) => Promise<T>, expectedScope: string, ownership: 'borrowed' | 'consume-on-success' = 'borrowed'): Promise<T> {
-    const owns = this.captureScope(expectedScope); this.assertOwner(owns);
+    const capturedOwner = this.captureScope(expectedScope);
+    const notRevoked = this.client.recoveryRevocationGuard();
+    const owns = () => notRevoked() && capturedOwner(); this.assertOwner(owns);
     operation = { ...operation }; // Snapshot the parent's remaining monotonic budget once.
     const endsAt = performance.now() + operation.timeoutMs;
     const remaining = (): OperationContext => {

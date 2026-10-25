@@ -76,6 +76,7 @@ export class BrowserChannel {
     // A queued retired event cannot acquire/release handles in the replacement scope.
     // Native scope teardown owns retirement of these resources before transition ACK.
     if (event.identityScope !== this.scope) return;
+    const notRevoked = this.client.callbackRevocationGuard();
     let failed = false;
     try {
       // All subscribers see this same immutable event identity and may share its body capture.
@@ -85,22 +86,22 @@ export class BrowserChannel {
     } catch (cause) { failed = true; throw cause; } finally {
       if (name === 'network.response' || name === 'download.started') {
         const handle = (event as BrowserEventMap['network.response'] | BrowserEventMap['download.started']).handle;
-        await this.release(name === 'network.response' ? 'network.body.release' : 'download.release', handle, failed);
+        await this.release(name === 'network.response' ? 'network.body.release' : 'download.release', handle, failed, notRevoked);
       }
     }
   }
 
   dispose(): void { this.retired = true; this.listeners.clear(); }
 
-  private async release(name: 'network.body.release' | 'download.release', handle: string, failed: boolean): Promise<void> {
+  private async release(name: 'network.body.release' | 'download.release', handle: string, failed: boolean, notRevoked: () => boolean): Promise<void> {
     // Lifecycle retirement owns outstanding native leases; a late JS callback
     // must neither release into nor invalidate the replacement scope.
-    if (this.retired) return;
+    if (this.retired || !notRevoked()) return;
     try { await this.command(name, { handle }, this.context.operation()); }
     catch {
       // A release admitted while live may settle after disposal or scope replacement.
       // Its post-await scope check must not invalidate the shared replacement client.
-      if (this.retired || this.context.identityScope() !== this.scope) return;
+      if (this.retired || !notRevoked() || this.context.identityScope() !== this.scope) return;
       const failure = this.client.invalidate();
       if (!failed) throw failure;
     }

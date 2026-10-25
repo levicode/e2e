@@ -434,6 +434,37 @@ describe('retained exact-owner adapter publication and services', () => {
 });
 
 describe('public point input recovery freshness', () => {
+  it('recovers from negotiated Unknown on the next observation without replay or a disconnect event', async () => {
+    const reconnect = vi.fn(() => 'ws://synthetic.test/recovered');
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: reconnect } });
+    await start(surface);
+    const oldScope = currentScope; let interrupted = false;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'browser.pointer' || interrupted) return false;
+      interrupted = true;
+      reply({ ok: false, error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined', recovery: { version: 1, identityScope: oldScope } });
+      return true;
+    };
+    try {
+      await expect(surface.performAt({ x: 10, y: 10 }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+      expect(reconnect).not.toHaveBeenCalled();
+      expect(frames.some(frame => frame['type'] === 'close')).toBe(false);
+      expect(frames.filter(frame => frame['command'] === 'browser.pointer')).toHaveLength(1);
+      const observed = await surface.observe(operation());
+      expect(observed.identityScope).not.toBe(oldScope);
+      expect(reconnect).toHaveBeenCalledOnce();
+      expect(frames.filter(frame => frame['command'] === 'scope.reconnect').map(frame => frame['args'])).toEqual([{
+        identityScope: oldScope, endpoint: 'ws://synthetic.test/recovered', expectedBrowserIdentity: 'browser-owner', expectedContextIdentity: 'context-1', expectedPageIdentity: 'page-1',
+      }]);
+      expect(frames.filter(frame => frame['command'] === 'browser.pointer')).toHaveLength(1);
+      // This subsequent call is a new explicit intention, not automatic replay.
+      await surface.performAt({ x: 20, y: 20 }, { kind: 'tap' }, operation());
+      const inputs = frames.filter(frame => frame['command'] === 'browser.pointer');
+      expect(inputs).toHaveLength(2);
+      expect(inputs[1]!['args']).toMatchObject({ identityScope: observed.identityScope, point: { x: 20, y: 20 } });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
   it('keeps initial and direct fixture input available but requires public observation after each recovery', async () => {
     const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });

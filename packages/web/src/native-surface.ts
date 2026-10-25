@@ -306,7 +306,7 @@ export class NativeSurface implements NativeWebSurface {
       }
       let failure: unknown = this.retirementFailure;
       try {
-        if (failure !== undefined || client?.isTerminal()) {
+        if (failure !== undefined || client?.isTerminal() || client?.recoveryScope() !== undefined) {
           await this.closeClient(remaining(), client);
         } else if (attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
           const callbackEpoch = client!.callbackCheckpoint(); const budget = remaining();
@@ -519,6 +519,7 @@ export class NativeSurface implements NativeWebSurface {
   private async ensureConnected(operation: OperationContext, attempt: Attempt): Promise<void> {
     this.assertAttempt(attempt);
     if (attempt.recoveryFailure !== undefined) throw attempt.recoveryFailure.error;
+    if (this.requireClient().recoveryScope() === attempt.scope) attempt.recoveryPending = true;
     if (!attempt.recoveryPending) return;
     if (attempt.reconnect === undefined || attempt.recovery === undefined) throw invalidState('The native browser disconnected and has no persistent recovery contract');
     const recovering = attempt.recovering;
@@ -533,7 +534,7 @@ export class NativeSurface implements NativeWebSurface {
       const endpoint = await this.resolveEndpoint(attempt.reconnect!, remaining().signal, 'connect.reconnectEndpoint');
       this.assertAttempt(attempt);
       const identity = attempt.recovery!;
-      const client = this.requireClient(); const callbackEpoch = client.callbackCheckpoint();
+      const client = this.requireClient(); const callbackEpoch = client.reconnectCheckpoint(attempt.scope);
       const result = await this.requireEngine().command('scope.reconnect', { identityScope: attempt.scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, { ...operation, ...remaining() }, callbackEpoch);
       this.assertAttempt(attempt); remaining();
       client.retireCallbacks(callbackEpoch, 'scope-reconnected'); attempt.epoch += 1; attempt.scope = result.identityScope; attempt.recoveryPending = false; this.bindChannel(attempt);

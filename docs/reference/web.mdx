@@ -1247,8 +1247,20 @@ successful read do not prove an uncertain action completed or all debt cleared.
 The Web adapter requires this coordinated capability; older native runtimes fail
 negotiation rather than silently changing uncertainty semantics.
 
-Without that negotiated proof, or after an actual integrity or cleanup failure,
-the client stops ordinary commands and callbacks. The negotiated
+A disconnect during an action can instead leave that result `unknown` and its
+old scope quarantined. With mutually negotiated `scope.reconnect-quarantined/1`,
+a qualified native recovery descriptor permits one explicit reconnect to the
+same browser, context and page. The next operation uses the existing recovery
+budget; old local producers must retire before the new scope is published.
+The original action is never replayed, its debt remains recorded, and recovery
+does not prove that it never executed. Fresh observation restores public point
+input; a later explicit action is a new intention, not a retry of the old one.
+Old handles across this terminal boundary belong to native retirement, rather
+than a late JavaScript release into the replacement scope. Ordinary same-scope
+restart and usable exact-owner retention still finish their original cleanup.
+
+Without either negotiated qualification, or after an unrelated integrity or
+cleanup failure, the client stops ordinary commands and callbacks. The negotiated
 `terminal.close/1` capability permits one separately bounded close exchange.
 Cleanup requires its correlated native acknowledgement and proxy settlement,
 not EOF or process exit alone. Concurrent cleanup callers share that outcome;
