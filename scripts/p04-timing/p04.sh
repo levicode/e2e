@@ -3,7 +3,7 @@
 # Requires separately verified new product/source/browser identity.
 set -euo pipefail
 umask 077
-: "${COMPARISON_CELL:?}" "${GITHUB_WORKSPACE:?}" "${EVIDENCE_DIR:?}" "${PLAYWRIGHT_BROWSERS_PATH:?}"
+: "${P04_CAPTURE_RATE_MODE:?}" "${COMPARISON_CELL:?}" "${GITHUB_WORKSPACE:?}" "${EVIDENCE_DIR:?}" "${PLAYWRIGHT_BROWSERS_PATH:?}"
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO="$GITHUB_WORKSPACE/e2e-source"
 PRODUCTION="$GITHUB_WORKSPACE/agent-browser"
@@ -51,11 +51,13 @@ node --input-type=module - "$OUT/selection.json" "$HERE/runtime.mjs" <<'JS'
 import {writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const {pins}=await import(pathToFileURL(process.argv[3]));
-writeFileSync(process.argv[2],JSON.stringify({scope:'P04-fixed-N-D-once-per-independent-runner',cell:process.env.COMPARISON_CELL,attempt:1,caseIds:['P04'],runtimeWebSource:{sha:pins.e2eSha,tree:pins.e2eTree}})+'\n',{flag:'wx',mode:0o600});
+writeFileSync(process.argv[2],JSON.stringify({scope:'P04-fixed-N-D-once-per-independent-runner',cell:process.env.COMPARISON_CELL,rateMode:process.env.P04_CAPTURE_RATE_MODE,attempt:1,caseIds:['P04'],runtimeWebSource:{sha:pins.e2eSha,tree:pins.e2eTree}})+'\n',{flag:'wx',mode:0o600});
 JS
 "$NODE" "$HERE/capture.mjs" prepare
 P04_NATIVE_FILE=$("$NODE" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).file)' "$OUT/P04.capture-binding.json")
+[[ "$P04_CAPTURE_RATE_MODE" = zero || "$P04_CAPTURE_RATE_MODE" = original ]]
 fresh_environment
+ENV+=("P04_CAPTURE_RATE_MODE=$P04_CAPTURE_RATE_MODE")
 ENV+=("AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=$P04_NATIVE_FILE")
 # Preserve the original 600s phase cap and source's 60s case/30s hooks/10s operations.
 test_file=tests/integration/cdp-recovery.test.ts
@@ -105,7 +107,7 @@ const result={caseId:'P04',cell,originalP04Acceptance:cell==='N'?selected.status
   fullNativeSuitePassed:false,full333Complete:false,releaseEligible:false,
   pageCountClaim:'unchanged original unique-marker witness and same-URL second-tab assertions; no new page inventory'};
 writeFileSync(`${out}/P04.focused-result.json`,JSON.stringify(result,null,2)+'\n');
-if(cell==='D') {const {validDirectResult}=await import(pathToFileURL(helper.replace('runtime.mjs','direct-capture.mjs')));assert.equal(validDirectResult(direct),true,'D evidence missing/unknown/failed; never original P04 acceptance');}
+if(cell==='D') {assert.equal(direct?.rateMode,process.env.P04_CAPTURE_RATE_MODE);const {validDirectResult}=await import(pathToFileURL(helper.replace('runtime.mjs','direct-capture.mjs')));assert.equal(validDirectResult(direct),true,'D evidence missing/unknown/failed; never original P04 acceptance');}
 assert.equal(selected.selectionExact,true);assert.equal(selected.status,'passed');assert.equal(selected.success,true);assert.equal(exit,0);
 assert.equal(cleanupConfirmed,true);assert.equal(productionObserved,true);assert.equal(browserLifetimes.size,1);
 assert.ok(browsers.every(row=>row.expectedHashMatches===true));

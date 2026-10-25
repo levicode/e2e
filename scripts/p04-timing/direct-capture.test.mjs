@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {directCapture,newDirectRecord,validDirectResult,CAPTURE_PARAMS} from './direct-capture.mjs';
+import {directCapture,newDirectRecord,validDirectResult,validDirectTiming,CAPTURE_PARAMS} from './direct-capture.mjs';
 let count=0;
 const expected={targetId:'same-target',marker:'same-document'};
 const state={marker:expected.marker,input:'unsaved',session:'kept',local:'kept',cookie:'session=kept',width:800,height:600,visibility:'hidden',focus:false};
@@ -16,7 +16,7 @@ async function run(options={}) {
     if(method==='Page.captureScreenshot') {assert.deepEqual(params,{format:'png',fromSurface:true});if(options.late)time=1000;return{data:'cG5n'};}
     throw Error('unrecognized method');
   },async detach(){calls.push(['detach']);if(options.detachReject)throw Error('synthetic');}};
-  const page={context:()=>({newCDPSession:async()=>session})},record=newDirectRecord();
+  const page={context:()=>({newCDPSession:async()=>session})},record=newDirectRecord(options.rateMode);
   await directCapture(page,expected,record,()=>time);
   return{record,calls,page};
 }
@@ -73,4 +73,42 @@ for(const change of [{visibility:'visible'},{focus:true},{input:'changed'}]) {
 for(const [key,value]of [['visibility','invalid'],['focus',null],['background',true]]) {
  const {record}=await run({state:{visibility:'visible',focus:true}});record[key]=value;assert.equal(validDirectResult(record),false);count++;
 }
+// Only the first set-rate argument differs; all CDP methods/other args stay identical.
+{
+ const zero=await run(),original=await run({rateMode:'original'});
+ assert.equal(validDirectResult(original.record),true);assert.equal(original.record.rateBefore,2);assert.equal(original.record.requestedRate,2);
+ const a=structuredClone(zero.calls),b=structuredClone(original.calls),index=a.findIndex(c=>c[0]==='Animation.setPlaybackRate');
+ assert.equal(a[index][1].playbackRate,0);assert.equal(b[index][1].playbackRate,2);a[index][1].playbackRate=2;assert.deepEqual(a,b);
+ assert.deepEqual(b.filter(c=>c[0]==='Animation.setPlaybackRate').map(c=>c[1].playbackRate),[2,2]);count++;
+}
+for(const position of ['before','during','after']) {
+ let clock=0,rate=2,sets=0,finish;const record=newDirectRecord();
+ const session={send(method,params){
+  if(method==='Target.getTargetInfo')return{targetInfo:{targetId:expected.targetId}};
+  if(method==='Runtime.evaluate')return{result:{value:state}};
+  if(method==='Animation.enable')return{};
+  if(method==='Animation.getPlaybackRate') {
+   if(sets===2&&position==='after')return{then(resolve){resolve({playbackRate:rate});queueMicrotask(()=>finish({data:'cG5n'}));}};
+   return{playbackRate:rate};
+  }
+  if(method==='Animation.setPlaybackRate'){rate=params.playbackRate;sets++;if(sets===2&&position==='during')finish({data:'cG5n'});return{};}
+  if(method==='Page.captureScreenshot'){clock=1000;if(position==='before')return{data:'cG5n'};return new Promise(resolve=>{finish=resolve;});}
+ },detach(){}};
+ await directCapture({context:()=>({newCDPSession:()=>session})},expected,record,()=>clock++);
+ assert.equal(record.captureStatus,'timeout');assert.equal(record.captureTerminal,'fulfilled');assert.equal(record.cleanup,'confirmed');
+ assert.equal(validDirectTiming(record),true);assert.equal(validDirectResult(record),false);assert.ok(record.timeoutObservedMs>=1000);
+ if(position==='before')assert.ok(record.captureFulfilledMs<record.restoreCalledMs);
+ if(position==='during')assert.ok(record.restoreCalledMs<record.captureFulfilledMs&&record.captureFulfilledMs<record.restoreAckMs);
+ if(position==='after')assert.ok(record.restoreReadbackMs<record.captureFulfilledMs);
+ count++;
+}
+const error=(await run({reject:'Page.captureScreenshot'})).record;
+assert.equal(error.captureTerminal,'rejected');assert.equal(typeof error.captureRejectedMs,'number');assert.equal(error.captureFulfilledMs,null);assert.equal(validDirectTiming(error),true);assert.equal(validDirectResult(error),false);count++;
+for(const [key,value]of [['captureCalledMs',null],['captureFulfilledMs',null],['captureRejectedMs',0],['timeoutObservedMs',1000],['restoreCalledMs',null],['restoreAckMs',null],['restoreReadbackMs',null],['requestedRate',2],['rateMode','invalid']]) {
+ const {record}=await run();record[key]=value;assert.equal(validDirectResult(record),false,key);count++;
+}
+for(const mutation of [r=>{r.captureFulfilledMs=-1;},r=>{r.captureFulfilledMs=NaN;},r=>{r.captureFulfilledMs=60001;},r=>{r.captureCalledMs=10;r.captureFulfilledMs=5;},r=>{r.restoreCalledMs=10;r.restoreAckMs=5;},r=>{r.restoreAckMs=10;r.restoreReadbackMs=5;}]) {
+ const {record}=await run();mutation(record);assert.equal(validDirectTiming(record),false);count++;
+}
+for(const terminal of ['pending','not-issued','rejected']){const {record}=await run();record.captureTerminal=terminal;assert.equal(validDirectTiming(record),false);count++;}
 console.log(JSON.stringify({pureControls:count,passed:true,browserExecuted:false}));

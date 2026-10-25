@@ -1,9 +1,9 @@
-# D state-guard correction only: one runner, no repeated N or producer build.
-name: P04 D-only observed-state comparison on verified existing ELF
+# D rate comparison: independent zero/original runners, one invocation each, no repeated N.
+name: P04 D-only rate comparison on verified existing ELF
 'on':
   push:
     branches:
-    - diagnostic/p04-direct-state-fix-20261025
+    - diagnostic/p04-direct-rate-compare-20261025
 permissions:
   contents: read
 concurrency:
@@ -11,15 +11,16 @@ concurrency:
   cancel-in-progress: false
 jobs:
   comparison:
-    name: P04 comparison ${{ matrix.cell }}
-    if: ${{ github.ref == 'refs/heads/diagnostic/p04-direct-state-fix-20261025' }}
+    name: P04 D rate ${{ matrix.rate }}
+    if: ${{ github.ref == 'refs/heads/diagnostic/p04-direct-rate-compare-20261025' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:
-        cell:
-        - D
+        rate:
+        - zero
+        - original
     permissions:
       contents: read
       actions: read
@@ -28,7 +29,8 @@ jobs:
         shell: bash
     env:
       CASE_ID: P04
-      COMPARISON_CELL: ${{ matrix.cell }}
+      COMPARISON_CELL: D
+      P04_CAPTURE_RATE_MODE: ${{ matrix.rate }}
       RECIPE_SHA: ${{ github.workflow_sha }}
       PYTHONDONTWRITEBYTECODE: '1'
       RUNTIME_PHASES: local-product sources dependencies browser-install runtime-images runtime diagnostic final-identities
@@ -54,7 +56,7 @@ jobs:
 
         for phase in $RUNTIME_PHASES; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
 
-        printf ''%s\n'' ''D-only state-guard correction, once. Prior N/D run40179120398 preserved; N is not repeated. D only last optional trace uses new
+        printf ''%s\n'' ''D-only rate comparison: zero versus original, each once on independent runners. Earlier runs preserved; N is not repeated. D only last optional trace uses new
         oracle session, no native mask equivalence or original case pass. Prior failed run40175557827 remains failed; only its verified
         ci ELF is reused. No Rust build, retries, warmup, focus/visibility mutation or success-budget extension. Owned synthetic Chrome
         teardown retains original SIGKILL; observer itself sends no signals. Full native/333/release acceptance not claimed.'' > "$EVIDENCE_DIR/SCOPE.txt"
@@ -245,7 +247,7 @@ jobs:
       timeout-minutes: 5
       if: ${{ always() }}
       with:
-        name: p04-comparison-${{ matrix.cell }}-${{ github.run_id }}-${{ github.run_attempt }}
+        name: p04-rate-${{ matrix.rate }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ env.EVIDENCE_DIR }}/
         if-no-files-found: error
         retention-days: 7

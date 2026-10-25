@@ -28,8 +28,12 @@
     "sourceRun": "40175557827",
     "directTitle": "DIAGNOSTIC D: keeps the exact page, document state, storage, viewport, routes, and dialog handlers",
     "overlay": {
-      "packages/web/tests/integration/cdp-recovery-direct.test.ts": "47c2bdda4875087e1e154c32ee300b7f6610cbf14354bc937fedc71b06722c38",
-      "packages/web/tests/helpers/p04-direct-capture.mjs": "06d14eff880e0db264df1c07b868d1dea71a1fe40c7856f4795d7c1aefc0c82f"
-    }
+      "packages/web/tests/integration/cdp-recovery-direct.test.ts": "24acb4d867dde79fe0dce80bfb4483b453527f3699609c871f292de54c1e546f",
+      "packages/web/tests/helpers/p04-direct-capture.mjs": "a1ba54a16d8450d0115fd04dc4a6b73e1a5f6ddb6190bace05282f50d2b20720"
+    },
+    "rateModes": [
+      "zero",
+      "original"
+    ]
   }
 }

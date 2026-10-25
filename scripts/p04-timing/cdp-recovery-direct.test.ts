@@ -15,7 +15,7 @@ import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { directCapture, newDirectRecord } from '../helpers/p04-direct-capture.mjs';
-const directRecord = newDirectRecord();
+const directRecord = newDirectRecord(process.env['P04_CAPTURE_RATE_MODE']);
 import { NativeClient } from '../../src/native/client.ts';
 import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
