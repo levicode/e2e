@@ -18,7 +18,7 @@ import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
-import { beginSyntheticCase, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+import { beginSyntheticCase, p06RecoveryEvidence, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEvidence, type RecoverySection } from '../helpers/synthetic-native-outcomes.ts';
 
 const recoveryEvidence = new AsyncLocalStorage<RecoveryEvidence>();
@@ -29,6 +29,11 @@ const recoveryContracts = new WeakMap<object, RecoveryContract>();
 /** Reuse the existing observer's bounded facts; this never enables the synthetic batch. */
 function recoveryContractSink(context: TestContext, id: SyntheticCaseId): SyntheticEvidence {
   const sink = beginSyntheticCase(id);
+  if (id === 'P06') {
+    const capture = p06RecoveryEvidence(sink);
+    Object.assign(context.task.meta, { nativeRecoveryDiagnostic: capture.diagnostic });
+    return capture.evidence;
+  }
   if (id !== 'P07' && id !== 'P08') return sink;
   const diagnostic = id === 'P08' && process.env['E2E_CDP_RECOVERY_DIAGNOSTIC'] === '1';
   const contract: RecoveryContract = { schemaVersion: 1, caseId: id, invalid: false, facts: [] };
@@ -624,7 +629,10 @@ describe('CDP session recovery', () => {
     let reconnected = 0;
     const engine = await start({
       cdpEndpoint: () => remote.endpoint,
-      reconnectEndpoint: () => { reconnected += 1; return remote.endpoint; },
+      reconnectEndpoint: () => {
+        recoveryEvidence.getStore()?.evidence.record({ kind: 'phase', section: 'body', phase: 'reconnect', state: 'enter' });
+        reconnected += 1; return remote.endpoint;
+      },
     });
     try {
       const fixture = fixtureOf(engine);
@@ -669,11 +677,16 @@ describe('CDP session recovery', () => {
       const [button] = await engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Purchase', exact: true } } }, operation());
       recoveryPhase('perform');
       await recoveryAssert(0, () => expect(recoverySelect(0, 'browser.perform', () => engine.perform!(button!.ref, { kind: 'tap' }, operation()))).rejects.toMatchObject({ retryable: false }));
+      recoveryPhase('disconnect');
       await transportDropped;
+      recoveryEvidence.getStore()?.evidence.record({ kind: 'phase', section: 'body', phase: 'disconnect', state: 'passed' });
       expect(reconnected).toBe(0);
       recoveryPhase('observe');
-      await engine.observe!(operation());
-      expect(await fixtureOf(engine).evaluate(() => sessionStorage.getItem('clicks'))).toBe('1');
+      await recoverySelect(1, 'browser.observe', () => engine.observe!(operation()));
+      recoveryEvidence.getStore()?.evidence.record({ kind: 'phase', section: 'body', phase: 'observe', state: 'passed' });
+      recoveryPhase('recovered-state');
+      expect(await recoverySelect(2, 'page.evaluate', () => fixtureOf(engine).evaluate(() => sessionStorage.getItem('clicks')))).toBe('1');
+      recoveryEvidence.getStore()?.evidence.record({ kind: 'phase', section: 'body', phase: 'recovered-state', state: 'passed' });
       expect(reconnected).toBe(1);
     } catch (cause) {
       recoveryEvidence.getStore()?.failed('body', cause);
@@ -682,6 +695,7 @@ describe('CDP session recovery', () => {
       recoveryEvidence.getStore()?.passed('body');
       recoveryPhase('dispose', 'cleanup');
       await engine.dispose!(cleanup());
+      recoveryPhase('close-host', 'cleanup');
       await closeRemoteChrome(remote);
       recoveryEvidence.getStore()?.passed('cleanup');
     }

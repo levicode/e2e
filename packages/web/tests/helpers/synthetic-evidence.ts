@@ -440,6 +440,35 @@ function snapshotFact(value: unknown, depth = 0, retention = false): unknown {
   return snapshot;
 }
 
+/** P06-only, bounded JSON reporter carrier; not a synthetic batch or a recovery authority. */
+export function p06RecoveryEvidence(sink: SyntheticEvidence): {
+  evidence: SyntheticEvidence;
+  diagnostic: { schemaVersion: 1; caseId: 'P06'; invalid: boolean; facts: SyntheticFact[] };
+} {
+  const diagnostic = { schemaVersion: 1 as const, caseId: 'P06' as const, invalid: false, facts: [] as SyntheticFact[] };
+  let bytes = 0;
+  const capture = (fact: SyntheticFact): boolean => {
+    try {
+      const snapshot = snapshotFact(fact);
+      if (!validSyntheticFact(snapshot, 'P06')) throw new Error('Invalid P06 fact');
+      if (!['phase', 'selected-operation', 'native-result', 'test-failure', 'cleanup-native', 'request-rejected-without-result'].includes(snapshot.kind)) return false;
+      const size = Buffer.byteLength(JSON.stringify(snapshot));
+      if (size > SYNTHETIC_RECORD_BYTES || diagnostic.facts.length >= SYNTHETIC_CASE_MANIFEST.P06.maxRecords || bytes + size > SYNTHETIC_CASE_MANIFEST.P06.maxBytes) throw new Error('P06 carrier exhausted');
+      diagnostic.facts.push(snapshot); bytes += size;
+      return true;
+    } catch { diagnostic.invalid = true; return false; }
+  };
+  const evidence: SyntheticEvidence = {
+    available: sink.available,
+    record(fact) { capture(fact); sink.record(fact); },
+    tryRecord(fact) { const captured = capture(fact); const recorded = sink.tryRecord(fact); return captured || recorded; },
+    observe(observer) { try { evidence.record(observer()); } catch { evidence.invalidate(); } },
+    finish(outcome) { sink.finish(outcome); },
+    invalidate() { diagnostic.invalid = true; sink.invalidate(); },
+  };
+  return { evidence, diagnostic };
+}
+
 /** No business callback is wrapped. Diagnostic errors cannot replace, swallow or retry a test operation. */
 export function beginSyntheticCase(caseId: SyntheticCaseId, env: NodeJS.ProcessEnv = process.env): SyntheticEvidence {
   let fd: number | undefined;

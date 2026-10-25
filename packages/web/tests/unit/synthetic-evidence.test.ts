@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { serviceWorkerPromiseFact, validSyntheticFact, validSyntheticNativeResult, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
+import { p06RecoveryEvidence, serviceWorkerPromiseFact, validSyntheticFact, validSyntheticNativeResult, type SyntheticEvidence, type SyntheticFact } from '../helpers/synthetic-evidence.ts';
 const result = { operationSeq: 1, ok: false, code: 'cancelled', effects: 'unknown', scopeState: 'quarantined' };
 describe('closed concentrated synthetic evidence schemas', () => {
   it('accepts validated scalar result facts but never payload or exception text', () => {
@@ -109,4 +109,49 @@ it('uses current native primitive names and accepts frame errors without retaini
     expect(validSyntheticNativeResult({ ...result, code })).toBe(true);
     expect(validSyntheticNativeResult({ ...result, code, frameSelection: { private: 'never' } })).toBe(false);
   }
+});
+
+
+describe('P06 bounded recovery reporter carrier', () => {
+  function disabledSink(): SyntheticEvidence {
+    return { available: false, record() {}, tryRecord() { return false; }, observe() {}, finish() {}, invalidate() {} };
+  }
+  it('retains only validated scalar facts without enabling the batch or sharing mutable receipts', () => {
+    const { evidence, diagnostic } = p06RecoveryEvidence(disabledSink());
+    const receipt: SyntheticFact = { kind: 'native-result', slot: 'first-terminal', phase: 'perform', command: 'browser.perform', result: { operationSeq: 12, ok: false, code: 'browser-failure', effects: 'unknown', scopeState: 'quarantined' } };
+    expect(evidence.available).toBe(false);
+    expect(evidence.tryRecord(receipt)).toBe(true);
+    receipt.result!.operationSeq = 13;
+    evidence.record({ kind: 'phase', section: 'body', phase: 'disconnect', state: 'passed' });
+    evidence.record({ kind: 'ownership', phase: 'backstop', hosts: 1, clients: 1, relays: 1, pendingCleanup: 2 });
+    expect(diagnostic.invalid).toBe(false);
+    expect(diagnostic.facts).toHaveLength(2);
+    expect(diagnostic.facts[0]).toMatchObject({ result: { operationSeq: 12, effects: 'unknown', scopeState: 'quarantined' } });
+    expect(JSON.parse(JSON.stringify(diagnostic))).toEqual(diagnostic);
+  });
+  it('rejects unknown fields, nested payloads, invalid enums and accessors without reading them', () => {
+    const fact = { kind: 'native-result', slot: 'first-terminal', phase: 'perform', command: 'browser.perform', result: { operationSeq: 12, ok: false, code: 'browser-failure', effects: 'unknown', scopeState: 'quarantined' } };
+    let reads = 0;
+    const accessor = Object.defineProperty({ ...fact }, 'result', { enumerable: true, get() { reads++; return fact.result; } });
+    for (const invalid of [
+      { ...fact, payload: 'private' }, { ...fact, result: { ...fact.result, url: 'private' } },
+      { ...fact, command: 'private' }, { ...fact, phase: 'private' }, { ...fact, kind: 'unknown' },
+      { ...fact, [Symbol('private')]: true }, Object.assign(Object.create({ inherited: true }), fact), accessor,
+    ]) {
+      const { evidence, diagnostic } = p06RecoveryEvidence(disabledSink());
+      expect(evidence.tryRecord(invalid as SyntheticFact)).toBe(false);
+      expect(diagnostic.invalid).toBe(true);
+      expect(diagnostic.facts).toEqual([]);
+    }
+    expect(reads).toBe(0);
+  });
+  it('keeps the bounded prefix and flags overflow instead of replacing earlier facts', () => {
+    const { evidence, diagnostic } = p06RecoveryEvidence(disabledSink());
+    const fact: SyntheticFact = { kind: 'phase', section: 'body', phase: 'perform', state: 'enter' };
+    for (let index = 0; index < 64; index++) expect(evidence.tryRecord(fact)).toBe(true);
+    expect(evidence.tryRecord({ ...fact, phase: 'dispose' })).toBe(false);
+    expect(diagnostic.invalid).toBe(true);
+    expect(diagnostic.facts).toHaveLength(64);
+    expect(diagnostic.facts.at(-1)).toEqual(fact);
+  });
 });
