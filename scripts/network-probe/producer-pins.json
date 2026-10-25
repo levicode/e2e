@@ -1,0 +1,118 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "publishedNativeSha": "97a6a9ee1cd83dc64771764567d03ac50e1a13a6",
+  "candidateTree": "3c5ce0ed56e1c9bd1c3b2b30890d4a0bb94614ae",
+  "baseNativeSha": "26ad6cfedd9771fbf8366f2d3d3620d66a09d9bb",
+  "baseNativeTree": "c5ca16e88a1336739aebed8cbdad3052dc864773",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "e2eSha": "ffcffc1fdf6b11ef846f2da5221e981514e2b898",
+  "e2eTree": "921fa65501d4ae1b613059a7fbba4dee8d930718",
+  "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+  "productionSourceChanged": true,
+  "onlyTestOverlay": false,
+  "patchSha256": "3a26866ff398c8856ab207a5b9d3dab8f0fefc55370a5eb6d62cc90f93dc4a6b",
+  "patchInputs": [
+    {
+      "name": "rustfmt-plus-proxy-compatibility-v2",
+      "sha256": "3a26866ff398c8856ab207a5b9d3dab8f0fefc55370a5eb6d62cc90f93dc4a6b"
+    }
+  ],
+  "changedFiles": [
+    {
+      "path": "cli/src/connection.rs",
+      "beforeSha256": "5406c60689591f5ce906f33ae5cf6dbe6d3706668bbd53ebe29880bbc4f374e2",
+      "afterSha256": "a1b3d22ccb5028c268ea551835c025e9d4ee1ec1c1bd8586781fc4db90983fdd"
+    },
+    {
+      "path": "cli/src/native/cdp/client.rs",
+      "beforeSha256": "4d48db69d35f8a77947bf4615b61c32b898c7fe101adf2117cf4b07e8b4dd8f5",
+      "afterSha256": "7f02141fce441b646e8b6a559f2cb39533e498cf614b4a38db79108971e07521"
+    },
+    {
+      "path": "cli/src/native/client_app_events.rs",
+      "beforeSha256": "6d7592b5710f66a519ba0c32aa7518c09b639ad9f2aa625d19ec847fc3f80726",
+      "afterSha256": "3d8cc3cf6191a80c2c4553a7c2425acba1d6924274906b6455a8b8f52017f3f2"
+    },
+    {
+      "path": "cli/src/native/client_enrollment.rs",
+      "beforeSha256": "42a3d69dea1b5e9f2d3c73e72b9bb6f3984929e4d4f014be7ed37ebbfb1670c8",
+      "afterSha256": "aa295401b9c7b1719298248f4d48814e099671a34e208cbaeec2ab37e0980db2"
+    },
+    {
+      "path": "cli/src/native/client_network.rs",
+      "beforeSha256": "9c0e291cc744dba6eaedaf8727ea4e86c378f02e8529f78b40f6ed5c4566076d",
+      "afterSha256": "d72068af146e450d22ef433115d87ee0afc9c3abd3c521fa367ca05045d98103"
+    },
+    {
+      "path": "cli/src/native/client_network_probe.rs",
+      "beforeSha256": null,
+      "afterSha256": "ec148a9f115e3c3381b209915dda3850bc19afc8527faee163ced1eaaeecbc88"
+    },
+    {
+      "path": "cli/src/native/client_settlement_trace.rs",
+      "beforeSha256": "a50592a36caed2a442e94443af8a4317245f89658b9cf04a27275dba58de5782",
+      "afterSha256": "5b33aaae745d7d69c9bfe491853285f4edc6a5a476191852df36ef3c659e7f19"
+    },
+    {
+      "path": "cli/src/native/client_targets.rs",
+      "beforeSha256": "a24bbd0b27b711a117056d9d86cfb53f85ba0dc29210d5e5b48b30f5c83885dc",
+      "afterSha256": "3954df0d125d0c79bf4b5f48cb5fcf3c9c12be0cd80d4595753415befbdb1f53"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "probe-1",
+      "name": "connection::test_probe_selector_is_preserved_only_as_an_exact_64_hex_env_entry",
+      "category": "temporary diagnostic exact dev positive/negative/whitelist regression",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "probe-2",
+      "name": "connection::test_isolated_client_env_acceptance_capture_is_exact_and_feature_gated",
+      "category": "temporary diagnostic exact dev positive/negative/whitelist regression",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "probe-3",
+      "name": "native::client_settlement_trace::network_probe::tests::selector_and_request_keys_are_exact_without_new_identity_authority",
+      "category": "temporary diagnostic exact dev positive/negative/whitelist regression",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "probe-4",
+      "name": "native::client_app_events::tests::diagnostic_real_projector_and_capture_emit_keep_retirement_outcomes",
+      "category": "temporary diagnostic exact dev positive/negative/whitelist regression",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "probe-5",
+      "name": "native::client_settlement_trace::network_probe::tests::capture_limit_is_terminal_unknown_and_maximum_scalar_rows_fit",
+      "category": "temporary diagnostic exact dev positive/negative/whitelist regression",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "probe-6",
+      "name": "native::client_settlement_trace::network_probe::tests::contested_sink_records_unknown_drop_instead_of_waiting_or_affecting_product",
+      "category": "temporary diagnostic exact dev positive/negative/whitelist regression",
+      "configuration": "default",
+      "expected": "passed"
+    }
+  ],
+  "requiresRemoval": true,
+  "releaseEligible": false,
+  "casesSha256": "9d43ba9e9b7b76c59510d58033aaaf16529ebd71069ab09b9ffa5e2e2ae3bd4b"
+}

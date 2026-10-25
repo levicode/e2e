@@ -1,0 +1,875 @@
+diff --git a/cli/src/connection.rs b/cli/src/connection.rs
+index f51040fa..0311cf91 100644
+--- a/cli/src/connection.rs
++++ b/cli/src/connection.rs
+@@ -965,10 +965,17 @@ fn isolated_client_env_allowed(key: &str) -> bool {
+             "AGENT_BROWSER_SOCKET_DIR"
+                 | "AGENT_BROWSER_NAMESPACE"
+                 | "AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE"
++                | "AGENT_BROWSER_NETWORK_PROBE_SHA256"
+         )
+         || (cfg!(feature = "acceptance-faults") && key == "AGENT_BROWSER_ACCEPTANCE_PHASE_FILE")
+ }
+ 
++fn isolated_client_env_entry_allowed(key: &str, value: &std::ffi::OsStr) -> bool {
++    use crate::native::client_settlement_trace::network_probe as probe;
++    isolated_client_env_allowed(key)
++        && (key != probe::SELECTOR_ENV || value.to_str().is_some_and(probe::valid_selector))
++}
++
+ /// New opt-in protocol mode never reuses/restarts another named daemon and
+ /// never loads browser launch/plugin configuration before negotiation.
+ pub fn run_isolated_client_session(session: &str, namespace: Option<&str>) -> Result<(), String> {
+@@ -977,9 +984,9 @@ pub fn run_isolated_client_session(session: &str, namespace: Option<&str>) -> Re
+     if !crate::validation::is_valid_session_name(session) {
+         return Err("Invalid dedicated session name".into());
+     }
+-    for (key, _) in env::vars_os() {
++    for (key, value) in env::vars_os() {
+         let key_text = key.to_string_lossy();
+-        if !isolated_client_env_allowed(&key_text) {
++        if !isolated_client_env_entry_allowed(&key_text, &value) {
+             env::remove_var(key);
+         }
+     }
+@@ -1012,6 +1019,24 @@ pub fn run_isolated_client_session(session: &str, namespace: Option<&str>) -> Re
+     Err("Dedicated session teardown was not confirmed".into())
+ }
+ 
++#[cfg(test)]
++#[test]
++fn test_probe_selector_is_preserved_only_as_an_exact_64_hex_env_entry() {
++    use std::ffi::OsStr;
++    let key = crate::native::client_settlement_trace::network_probe::SELECTOR_ENV;
++    assert!(isolated_client_env_entry_allowed(
++        key,
++        OsStr::new(&"a".repeat(64))
++    ));
++    for invalid in ["", "ab", &"f".repeat(63), &"f".repeat(65), &"z".repeat(64)] {
++        assert!(!isolated_client_env_entry_allowed(key, OsStr::new(invalid)));
++    }
++    assert!(!isolated_client_env_entry_allowed(
++        &format!("{key}_EXTRA"),
++        OsStr::new(&"a".repeat(64))
++    ));
++}
++
+ #[cfg(test)]
+ #[test]
+ fn test_isolated_client_env_acceptance_capture_is_exact_and_feature_gated() {
+@@ -1020,6 +1045,7 @@ fn test_isolated_client_env_acceptance_capture_is_exact_and_feature_gated() {
+         "AGENT_BROWSER_SOCKET_DIR",
+         "AGENT_BROWSER_NAMESPACE",
+         "AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE",
++        "AGENT_BROWSER_NETWORK_PROBE_SHA256",
+     ] {
+         assert!(isolated_client_env_allowed(preserved));
+     }
+@@ -1035,6 +1061,8 @@ fn test_isolated_client_env_acceptance_capture_is_exact_and_feature_gated() {
+         "AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE_EXTRA",
+         "AGENT_BROWSER_CLEANUP_DIAGNOSTIC",
+         "AGENT_BROWSER_CLEANUP_OTHER",
++        "AGENT_BROWSER_NETWORK_PROBE_SHA256_EXTRA",
++        "AGENT_BROWSER_NETWORK_PROBE",
+     ] {
+         assert!(!isolated_client_env_allowed(removed));
+     }
+diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
+index c1a399db..7ee1fb29 100644
+--- a/cli/src/native/cdp/client.rs
++++ b/cli/src/native/cdp/client.rs
+@@ -1049,6 +1049,17 @@ impl CdpClient {
+                         params: parsed.params.clone().unwrap_or(Value::Null),
+                         session_id: parsed.session_id.clone(),
+                     };
++                    if let Some(fact) = super::super::client_settlement_trace::network_probe::select(
++                        &event.method,
++                        event.session_id.as_deref(),
++                        &event.params,
++                    ) {
++                        super::super::client_settlement_trace::network_probe::emit(
++                            fact,
++                            super::super::client_settlement_trace::network_probe::Stage::Receive,
++                            None,
++                        );
++                    }
+                     let eval_publication = debt_reader
+                         .lock()
+                         .unwrap_or_else(|error| error.into_inner())
+diff --git a/cli/src/native/client_app_events.rs b/cli/src/native/client_app_events.rs
+index 0b50617e..4e140650 100644
+--- a/cli/src/native/client_app_events.rs
++++ b/cli/src/native/client_app_events.rs
+@@ -12,6 +12,7 @@ use serde_json::{json, Value};
+ 
+ use super::cdp::types::CdpEvent;
+ use super::client_protocol::ProtocolError;
++use super::client_settlement_trace::network_probe::Outcome as ProbeOutcome;
+ 
+ const MAX_TEXT_BYTES: usize = 64 * 1024;
+ const MAX_URL_BYTES: usize = 64 * 1024;
+@@ -247,7 +248,17 @@ impl AppEventProjector {
+         event: &CdpEvent,
+         context: AppEventContext<'_>,
+     ) -> Result<Option<ProjectedAppEvent>, ProtocolError> {
++        self.project_observed(event, context, &mut ProbeOutcome::Unreached)
++    }
++    pub(crate) fn project_observed(
++        &self,
++        event: &CdpEvent,
++        context: AppEventContext<'_>,
++        outcome: &mut ProbeOutcome,
++    ) -> Result<Option<ProjectedAppEvent>, ProtocolError> {
++        *outcome = ProbeOutcome::Invalid;
+         if event.session_id.as_deref() != Some(context.session_id) {
++            *outcome = ProbeOutcome::WrongSession;
+             return Ok(None);
+         }
+         identifier(context.session_id)?;
+@@ -257,7 +268,7 @@ impl AppEventProjector {
+             "Network.requestWillBeSent"
+             | "Network.responseReceived"
+             | "Network.loadingFailed"
+-            | "Network.loadingFinished" => self.network(event, context.session_id),
++            | "Network.loadingFinished" => self.network(event, context.session_id, outcome),
+             "Page.frameNavigated" | "Page.navigatedWithinDocument" => {
+                 let Some(navigation) = context.navigation else {
+                     return Ok(None);
+@@ -287,13 +298,17 @@ impl AppEventProjector {
+                         && (navigation.initiated_by_operation || marked),
+                 }))
+             }
+-            _ => Ok(None),
++            _ => {
++                *outcome = ProbeOutcome::Unsupported;
++                Ok(None)
++            }
+         }
+     }
+     fn network(
+         &self,
+         event: &CdpEvent,
+         session: &str,
++        outcome: &mut ProbeOutcome,
+     ) -> Result<Option<ProjectedAppEvent>, ProtocolError> {
+         let id = string(&event.params, "requestId")?;
+         identifier(id)?;
+@@ -333,6 +348,7 @@ impl AppEventProjector {
+                     response_reported: false,
+                 },
+             );
++            *outcome = ProbeOutcome::Stored;
+             return Ok(None);
+         }
+         if event.method == "Network.loadingFinished" || event.method == "Network.loadingFailed" {
+@@ -364,9 +380,11 @@ impl AppEventProjector {
+             )));
+         }
+         let Some(request) = state.requests.get_mut(&key) else {
++            *outcome = ProbeOutcome::MissingRequest;
+             return Ok(None);
+         };
+         if request.response_reported {
++            *outcome = ProbeOutcome::Duplicate;
+             return Ok(None);
+         }
+         let response = event
+@@ -385,6 +403,7 @@ impl AppEventProjector {
+                     .ok()
+                     .is_some_and(|url| url.path() == "/favicon.ico"))
+         {
++            *outcome = ProbeOutcome::Ignored;
+             return Ok(None);
+         }
+         let status_text = string(response, "statusText")?;
+@@ -398,6 +417,7 @@ impl AppEventProjector {
+             text.push(" ");
+             text.push(status_text);
+         }
++        *outcome = ProbeOutcome::Projected;
+         Ok(Some(log(
+             AppLogSource::Network,
+             if status >= 500 {
+@@ -1242,4 +1262,74 @@ mod tests {
+             assert!(wire["text"].as_str().unwrap().contains(TRUNCATED));
+         }
+     }
++    #[test]
++    fn diagnostic_real_projector_and_capture_emit_keep_retirement_outcomes() {
++        use super::super::client_settlement_trace::network_probe::{self as probe, Outcome, Stage};
++        const URL: &str = "http://127.0.0.1:12345/bad-sw.js";
++        let make = |method: &str, id: &str| CdpEvent {
++            method: method.into(),
++            session_id: Some("worker".into()),
++            params: json!({
++                "requestId": id, "request": {"url": URL, "method": "GET"},
++                "response": {"url": URL, "status": 500, "statusText": "Internal Server Error"}
++            }),
++        };
++        let projector = AppEventProjector::new();
++        let request = make("Network.requestWillBeSent", "one");
++        let response = make("Network.responseReceived", "one");
++        let saved = probe::test_capture(URL, |record| {
++            let mut outcome = Outcome::Unreached;
++            let mut apply = |event: &CdpEvent, session: &str, expected: Outcome| {
++                record(
++                    &event.method,
++                    event.session_id.as_deref(),
++                    &event.params,
++                    Stage::Receive,
++                    None,
++                );
++                let result = projector
++                    .project_observed(
++                        event,
++                        AppEventContext {
++                            session_id: session,
++                            navigation: None,
++                        },
++                        &mut outcome,
++                    )
++                    .unwrap();
++                assert_eq!(outcome, expected);
++                record(
++                    &event.method,
++                    event.session_id.as_deref(),
++                    &event.params,
++                    Stage::Project,
++                    Some(outcome),
++                );
++                result
++            };
++            assert!(apply(&response, "worker", Outcome::MissingRequest).is_none());
++            assert!(apply(&request, "wrong", Outcome::WrongSession).is_none());
++            assert!(apply(&request, "worker", Outcome::Stored).is_none());
++            assert!(apply(
++                &make("Network.responseReceived", "other"),
++                "worker",
++                Outcome::MissingRequest
++            )
++            .is_none());
++            let projected = apply(&response, "worker", Outcome::Projected).unwrap();
++            let (name, payload) = projected.into_wire("scope").unwrap();
++            assert_eq!(name, "app.log");
++            assert_eq!(
++                payload["text"],
++                format!("GET {URL} 500 Internal Server Error")
++            );
++            assert!(apply(&response, "worker", Outcome::Duplicate).is_none());
++            projector.forget_session("worker").unwrap();
++            assert!(apply(&response, "worker", Outcome::MissingRequest).is_none());
++        });
++        assert_eq!(saved.len(), 14);
++        assert!(saved.iter().all(|row| row["droppedBefore"] == 0));
++        assert_eq!(saved.last().unwrap()["probe"]["outcome"], "missing-request");
++        // Diagnostic I/O and the real projector, not browser/adapter acceptance.
++    }
+ }
+diff --git a/cli/src/native/client_enrollment.rs b/cli/src/native/client_enrollment.rs
+index 1bedc0f9..e2d81c16 100644
+--- a/cli/src/native/client_enrollment.rs
++++ b/cli/src/native/client_enrollment.rs
+@@ -2890,6 +2890,16 @@ impl ClientEnrollment {
+             origin,
+             (self.generation, sequence),
+         );
++        if let Some(binding) = self
++            .targets
++            .network_probe_attachment(&entry.target, &entry.session)
++        {
++            super::client_settlement_trace::network_probe::binding(
++                &entry.session,
++                binding,
++                super::client_settlement_trace::network_probe::Stage::Bind,
++            );
++        }
+     }
+     fn register(
+         &self,
+@@ -5174,9 +5184,19 @@ impl ClientEnrollment {
+                 removed
+             };
+             for entry in entries {
++                let probe_binding = self
++                    .targets
++                    .network_probe_attachment(&entry.target, &entry.session);
+                 if !entry.observation_only {
+                     self.targets.detach(&entry.target)?;
+                 }
++                if let Some(binding) = probe_binding {
++                    super::client_settlement_trace::network_probe::binding(
++                        &entry.session,
++                        binding,
++                        super::client_settlement_trace::network_probe::Stage::Detach,
++                    );
++                }
+                 self.page.forget_session(&entry.session)?;
+                 if entry.application {
+                     self.network.detach_session(&entry.session)?;
+@@ -5239,8 +5259,32 @@ impl ClientEnrollment {
+                 .cloned()
+         };
+         let Some(entry) = entry else {
++            if let Some(fact) = super::client_settlement_trace::network_probe::select(
++                &event.method,
++                event.session_id.as_deref(),
++                &event.params,
++            ) {
++                super::client_settlement_trace::network_probe::emit(
++                    fact,
++                    super::client_settlement_trace::network_probe::Stage::Dispatch,
++                    Some(super::client_settlement_trace::network_probe::Outcome::NoSession),
++                );
++            }
+             return Ok(());
+         };
++        if entry.observation_only || !entry.application {
++            if let Some(fact) = super::client_settlement_trace::network_probe::select(
++                &event.method,
++                event.session_id.as_deref(),
++                &event.params,
++            ) {
++                super::client_settlement_trace::network_probe::emit(
++                    fact,
++                    super::client_settlement_trace::network_probe::Stage::Dispatch,
++                    Some(super::client_settlement_trace::network_probe::Outcome::NotApplication),
++                );
++            }
++        }
+         if entry.observation_only {
+             match event.method.as_str() {
+                 "Page.frameNavigated" => {
+diff --git a/cli/src/native/client_network.rs b/cli/src/native/client_network.rs
+index 48d90abe..de3d27bd 100644
+--- a/cli/src/native/client_network.rs
++++ b/cli/src/native/client_network.rs
+@@ -822,6 +822,43 @@ impl ClientNetwork {
+         page: &BrowserExecutionLease,
+         event: &CdpEvent,
+         navigation: Option<AppNavigationContext<'_>>,
++    ) -> Result<(), ProtocolError> {
++        use super::client_settlement_trace::network_probe as probe;
++        let fact = probe::select(&event.method, event.session_id.as_deref(), &event.params);
++        let mut outcome = probe::Outcome::Unreached;
++        let mut emitted = None;
++        let result = self.publish_app_event_inner(
++            page,
++            event,
++            navigation,
++            fact.is_some(),
++            &mut outcome,
++            &mut emitted,
++        );
++        if let Some(fact) = fact {
++            probe::emit(fact, probe::Stage::Project, Some(outcome));
++            if let Some(ok) = emitted {
++                probe::emit(
++                    fact,
++                    probe::Stage::Emit,
++                    Some(if ok {
++                        probe::Outcome::Accepted
++                    } else {
++                        probe::Outcome::Failed
++                    }),
++                );
++            }
++        }
++        result
++    }
++    fn publish_app_event_inner(
++        &self,
++        page: &BrowserExecutionLease,
++        event: &CdpEvent,
++        navigation: Option<AppNavigationContext<'_>>,
++        observe: bool,
++        outcome: &mut super::client_settlement_trace::network_probe::Outcome,
++        emitted: &mut Option<bool>,
+     ) -> Result<(), ProtocolError> {
+         self.validate_app_page(page)?;
+         let sessions = self
+@@ -833,21 +870,25 @@ impl ClientNetwork {
+         {
+             return Err(ProtocolError::StaleReference);
+         }
+-        let projected = self.app_events.project(
+-            event,
+-            AppEventContext {
+-                session_id: &page.page_session_id,
+-                navigation,
+-            },
+-        )?;
++        let context = AppEventContext {
++            session_id: &page.page_session_id,
++            navigation,
++        };
++        let projected = if observe {
++            self.app_events.project_observed(event, context, outcome)
++        } else {
++            self.app_events.project(event, context)
++        }?;
+         self.validate_app_page(page)?;
+         if let Some(projected) = projected {
+             let (name, payload) = projected.into_wire(&self.scope.identity_scope)?;
+-            sessions
++            let result = sessions
+                 .get(&page.page_session_id)
+                 .ok_or(ProtocolError::StaleReference)?
+                 .sink
+-                .emit(name.into(), payload, None)?;
++                .emit(name.into(), payload, None);
++            *emitted = Some(result.is_ok());
++            result?;
+         }
+         Ok(())
+     }
+diff --git a/cli/src/native/client_network_probe.rs b/cli/src/native/client_network_probe.rs
+new file mode 100644
+index 00000000..5a077257
+--- /dev/null
++++ b/cli/src/native/client_network_probe.rs
+@@ -0,0 +1,379 @@
++//! Temporary, delete after the HTTP500 investigation. No authority or payload capture.
++use super::{record_capture, Capture, DiagnosticAttachment, Facts, Phase, CLEANUP_SINK};
++use hmac::{Hmac, Mac};
++use serde::Serialize;
++use sha2::{Digest, Sha256};
++use std::sync::{
++    atomic::{AtomicU64, Ordering},
++    OnceLock,
++};
++
++pub(crate) const SELECTOR_ENV: &str = "AGENT_BROWSER_NETWORK_PROBE_SHA256";
++static PROBE: OnceLock<Option<Probe>> = OnceLock::new();
++struct Probe {
++    selector: [u8; 32],
++    key: [u8; 32],
++    rows: AtomicU64,
++}
++#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
++#[serde(rename_all = "kebab-case")]
++pub(crate) enum Stage {
++    Ready,
++    Receive,
++    Dispatch,
++    Project,
++    Emit,
++    Bind,
++    Detach,
++    Limit,
++}
++#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
++#[serde(rename_all = "kebab-case")]
++pub(crate) enum Outcome {
++    Unreached,
++    Invalid,
++    WrongSession,
++    MissingRequest,
++    Stored,
++    Duplicate,
++    Ignored,
++    Projected,
++    Unsupported,
++    NoSession,
++    NotApplication,
++    Accepted,
++    Failed,
++}
++#[derive(Clone, Copy, Default, Serialize)]
++pub(crate) struct ProbeFact {
++    pub stage: Option<Stage>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub kind: Option<u8>, // 1=request, 2=response, 3=Fetch request pause.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub session: Option<[u32; 4]>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub request: Option<[u32; 4]>, // Always includes session; Fetch uses networkId.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub status: Option<u16>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub outcome: Option<Outcome>,
++}
++pub(crate) fn valid_selector(value: &str) -> bool {
++    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
++}
++impl Probe {
++    fn new(selector: &str, key: [u8; 32]) -> Option<Self> {
++        if !valid_selector(selector) {
++            return None;
++        }
++        let mut digest = [0; 32];
++        hex::decode_to_slice(selector, &mut digest).ok()?;
++        Some(Self {
++            selector: digest,
++            key,
++            rows: AtomicU64::new(0),
++        })
++    }
++    fn tag(&self, parts: &[&str]) -> Option<[u32; 4]> {
++        if parts
++            .iter()
++            .any(|part| part.is_empty() || part.len() > 4096)
++        {
++            return None;
++        }
++        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key).ok()?;
++        for part in parts {
++            mac.update(&(part.len() as u32).to_be_bytes());
++            mac.update(part.as_bytes());
++        }
++        let bytes = mac.finalize().into_bytes();
++        Some(std::array::from_fn(|i| {
++            u32::from_be_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
++        }))
++    }
++    fn select(
++        &self,
++        method: &str,
++        session: Option<&str>,
++        params: &serde_json::Value,
++    ) -> Option<ProbeFact> {
++        let (kind, pointer, id) = match method {
++            "Network.requestWillBeSent" => (1, "/request/url", "requestId"),
++            "Network.responseReceived" => (2, "/response/url", "requestId"),
++            "Fetch.requestPaused" => (3, "/request/url", "networkId"),
++            _ => return None,
++        };
++        let url = params.pointer(pointer)?.as_str()?;
++        if url.len() > 65536 {
++            return None;
++        }
++        let digest: [u8; 32] = Sha256::digest(url.as_bytes()).into();
++        if digest != self.selector {
++            return None;
++        }
++        let request = params.get(id).and_then(|v| v.as_str());
++        Some(ProbeFact {
++            kind: Some(kind),
++            session: session.and_then(|s| self.tag(&[s])),
++            request: session.zip(request).and_then(|(s, r)| self.tag(&[s, r])),
++            status: params
++                .pointer("/response/status")
++                .and_then(|v| v.as_f64())
++                .filter(|v| v.is_finite() && v.fract() == 0.0 && (0.0..=999.0).contains(v))
++                .map(|v| v as u16),
++            ..Default::default()
++        })
++    }
++    fn record(
++        &self,
++        capture: &Capture,
++        mut fact: ProbeFact,
++        stage: Stage,
++        outcome: Option<Outcome>,
++        binding: Option<DiagnosticAttachment>,
++    ) {
++        #[allow(deprecated)]
++        let Ok(row) = self
++            .rows
++            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |old| {
++                (old < 64).then_some(old + 1)
++            })
++        else {
++            return;
++        };
++        fact.stage = Some(stage);
++        fact.outcome = outcome;
++        let mut facts = Facts {
++            probe: Some(fact),
++            ..Default::default()
++        };
++        if let Some(binding) = binding {
++            facts.generation = Some(binding.generation);
++            facts.attachment_ordinal = Some(binding.attachment);
++            facts.target_ordinal = Some(binding.target);
++        }
++        // Reserve the last row as a terminal unknown marker, never silently truncate.
++        if row == 63 {
++            facts = Facts {
++                probe: Some(ProbeFact {
++                    stage: Some(Stage::Limit),
++                    ..Default::default()
++                }),
++                ..Default::default()
++            };
++        }
++        record_capture(capture, 0, Phase::NetworkProbe, facts);
++    }
++}
++pub(super) fn initialize(capture: &Capture) {
++    let probe = PROBE.get_or_init(|| {
++        let selector = std::env::var(SELECTOR_ENV).ok()?;
++        if !valid_selector(&selector) {
++            return None;
++        }
++        let mut key = [0; 32];
++        getrandom::getrandom(&mut key).ok()?;
++        Probe::new(&selector, key)
++    });
++    if let Some(probe) = probe {
++        probe.record(capture, ProbeFact::default(), Stage::Ready, None, None);
++    }
++}
++pub(crate) fn enabled() -> bool {
++    PROBE.get().is_some_and(Option::is_some)
++}
++pub(crate) fn select(
++    method: &str,
++    session: Option<&str>,
++    params: &serde_json::Value,
++) -> Option<ProbeFact> {
++    PROBE.get()?.as_ref()?.select(method, session, params)
++}
++pub(crate) fn emit(fact: ProbeFact, stage: Stage, outcome: Option<Outcome>) {
++    if let Some(probe) = PROBE.get().and_then(Option::as_ref) {
++        if let Some(capture) = CLEANUP_SINK.get().and_then(Option::as_ref) {
++            probe.record(capture, fact, stage, outcome, None);
++        }
++    }
++}
++pub(crate) fn binding(session: &str, binding: DiagnosticAttachment, stage: Stage) {
++    if let Some(probe) = PROBE.get().and_then(Option::as_ref) {
++        if let Some(capture) = CLEANUP_SINK.get().and_then(Option::as_ref) {
++            probe.record(
++                capture,
++                ProbeFact {
++                    session: probe.tag(&[session]),
++                    ..Default::default()
++                },
++                stage,
++                None,
++                Some(binding),
++            );
++        }
++    }
++}
++
++// Test-only access to the same record_capture -> emit -> AppendSink path. No CDP dependency:
++// the harness-free proxy fixture imports this module without native browser modules.
++#[cfg(test)]
++type TestRecorder<'a> = dyn Fn(&str, Option<&str>, &serde_json::Value, Stage, Option<Outcome>) + 'a;
++#[cfg(test)]
++pub(crate) fn test_capture(
++    url: &str,
++    run: impl FnOnce(&TestRecorder<'_>),
++) -> Vec<serde_json::Value> {
++    let file = tempfile::NamedTempFile::new().unwrap();
++    let capture = super::cleanup_capture(Some(file.path())).unwrap();
++    let probe = Probe::new(&hex::encode(Sha256::digest(url.as_bytes())), [7; 32]).unwrap();
++    run(&|method, session, params, stage, outcome| {
++        let fact = probe.select(method, session, params).unwrap();
++        probe.record(&capture, fact, stage, outcome, None);
++    });
++    std::fs::read_to_string(file.path())
++        .unwrap()
++        .lines()
++        .map(|line| {
++            assert!(line.len() < 512);
++            assert!(!line.contains(url));
++            serde_json::from_str(line).unwrap()
++        })
++        .collect()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use serde_json::{json, Value};
++    const URL: &str = "http://127.0.0.1:12345/bad-sw.js";
++    fn probe() -> Probe {
++        Probe::new(&hex::encode(Sha256::digest(URL.as_bytes())), [7; 32]).unwrap()
++    }
++    #[derive(Clone)]
++    struct TestEvent {
++        method: String,
++        session_id: Option<String>,
++        params: Value,
++    }
++    fn event(method: &str, session: &str, id: &str) -> TestEvent {
++        TestEvent {
++            method: method.into(),
++            session_id: Some(session.into()),
++            params: json!({
++                "requestId": id, "networkId": id,
++                "request": {"url": URL, "method": "GET", "headers": {"secret": "not-captured"}},
++                "response": {"url": URL, "status": 500, "statusText": "Internal Server Error"}
++            }),
++        }
++    }
++    fn selected(probe: &Probe, event: &TestEvent) -> Option<ProbeFact> {
++        probe.select(&event.method, event.session_id.as_deref(), &event.params)
++    }
++    fn rows(file: &tempfile::NamedTempFile) -> Vec<Value> {
++        std::fs::read_to_string(file.path())
++            .unwrap()
++            .lines()
++            .map(|line| {
++                assert!(line.len() < 512);
++                assert!(!line.contains(URL) && !line.contains("not-captured"));
++                serde_json::from_str(line).unwrap()
++            })
++            .collect()
++    }
++    #[test]
++    fn selector_and_request_keys_are_exact_without_new_identity_authority() {
++        for invalid in ["", "abc", &"a".repeat(63), &"a".repeat(65), &"g".repeat(64)] {
++            assert!(Probe::new(invalid, [0; 32]).is_none());
++        }
++        assert!(Probe::new(&"A".repeat(64), [0; 32]).is_some());
++        let probe = probe();
++        let request = event("Network.requestWillBeSent", "worker", "one");
++        let one = selected(&probe, &request).unwrap();
++        assert_eq!(
++            one.request,
++            selected(&probe, &event("Fetch.requestPaused", "worker", "one"))
++                .unwrap()
++                .request
++        );
++        assert_ne!(
++            one.request,
++            selected(&probe, &event("Network.responseReceived", "other", "one"))
++                .unwrap()
++                .request
++        );
++        assert_ne!(
++            one.request,
++            selected(&probe, &event("Network.responseReceived", "worker", "two"))
++                .unwrap()
++                .request
++        );
++        let mut missing = event("Fetch.requestPaused", "worker", "one");
++        missing.params.as_object_mut().unwrap().remove("networkId");
++        assert!(selected(&probe, &missing).unwrap().request.is_none());
++        let mut other = request.clone();
++        other.params["request"]["url"] = json!("http://127.0.0.1:12346/bad-sw.js");
++        assert!(selected(&probe, &other).is_none());
++    }
++    #[test]
++    fn capture_limit_is_terminal_unknown_and_maximum_scalar_rows_fit() {
++        let file = tempfile::NamedTempFile::new().unwrap();
++        let capture = super::super::cleanup_capture(Some(file.path())).unwrap();
++        let probe = probe();
++        let fact = ProbeFact {
++            kind: Some(2),
++            session: Some([u32::MAX; 4]),
++            request: Some([u32::MAX; 4]),
++            status: Some(999),
++            ..Default::default()
++        };
++        probe.record(
++            &capture,
++            ProbeFact {
++                session: Some([u32::MAX; 4]),
++                ..Default::default()
++            },
++            Stage::Bind,
++            None,
++            Some(DiagnosticAttachment {
++                generation: super::super::SAFE_INTEGER,
++                attachment: super::super::SAFE_INTEGER,
++                target: super::super::SAFE_INTEGER,
++                ..Default::default()
++            }),
++        );
++        capture
++            .counters
++            .attempted
++            .store(super::super::SAFE_INTEGER, Ordering::Relaxed);
++        capture
++            .counters
++            .suppressed
++            .store(super::super::SAFE_INTEGER, Ordering::Relaxed);
++        for _ in 0..80 {
++            probe.record(
++                &capture,
++                fact,
++                Stage::Project,
++                Some(Outcome::MissingRequest),
++                None,
++            );
++        }
++        let saved = rows(&file);
++        assert_eq!(saved.len(), 64);
++        assert!(saved.iter().skip(1).all(|row| row["overflow"] == true));
++        assert_eq!(saved.last().unwrap()["probe"]["stage"], "limit");
++        assert_eq!(probe.rows.load(Ordering::Relaxed), 64);
++    }
++    #[test]
++    fn contested_sink_records_unknown_drop_instead_of_waiting_or_affecting_product() {
++        let file = tempfile::NamedTempFile::new().unwrap();
++        let capture = super::super::cleanup_capture(Some(file.path())).unwrap();
++        let probe = probe();
++        let guard = capture.sink.lock().unwrap();
++        probe.record(&capture, ProbeFact::default(), Stage::Ready, None, None);
++        drop(guard);
++        probe.record(&capture, ProbeFact::default(), Stage::Ready, None, None);
++        let saved = rows(&file);
++        assert_eq!(saved.len(), 1);
++        assert_eq!(saved[0]["droppedBefore"], 1);
++    }
++}
+diff --git a/cli/src/native/client_settlement_trace.rs b/cli/src/native/client_settlement_trace.rs
+index c3f036f4..5789179a 100644
+--- a/cli/src/native/client_settlement_trace.rs
++++ b/cli/src/native/client_settlement_trace.rs
+@@ -30,6 +30,7 @@ pub(crate) enum SettlementPhase {
+     FrameInventoryRejection,
+     ReadonlyPrepareFailure,
+     ServiceWorkerAdmission,
++    NetworkProbe,
+     ExecuteStarted,
+     ExecuteReturned,
+     CancelObserved,
+@@ -87,6 +88,9 @@ pub(crate) enum SettlementPhase {
+ 
+ pub(crate) use SettlementPhase as Phase;
+ 
++#[path = "client_network_probe.rs"]
++pub(crate) mod network_probe;
++
+ const PATH_ENV: &str = "AGENT_BROWSER_ACCEPTANCE_PHASE_FILE";
+ const CLEANUP_PATH_ENV: &str = "AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE";
+ const MAX_RECORDS: usize = 2048;
+@@ -164,6 +168,8 @@ pub(crate) enum MessageKind {
+ #[derive(Default, Serialize)]
+ #[serde(rename_all = "camelCase")]
+ pub(crate) struct Facts {
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub probe: Option<network_probe::ProbeFact>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub attachment_ordinal: Option<u64>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+@@ -531,6 +537,7 @@ pub(super) fn initialize_cleanup() {
+     if created {
+         if let Some(capture) = capture {
+             record_capture(capture, 0, Phase::CaptureStarted, Facts::default());
++            network_probe::initialize(capture);
+         }
+     }
+ }
+diff --git a/cli/src/native/client_targets.rs b/cli/src/native/client_targets.rs
+index 811973db..93152a66 100644
+--- a/cli/src/native/client_targets.rs
++++ b/cli/src/native/client_targets.rs
+@@ -1647,6 +1647,22 @@ impl ClientTargets {
+             diagnostic::target_observation_lost(operation.0, operation.1);
+         }
+     }
++    pub(crate) fn network_probe_attachment(
++        &self,
++        target: &str,
++        session: &str,
++    ) -> Option<diagnostic::DiagnosticAttachment> {
++        if !super::client_settlement_trace::network_probe::enabled() {
++            return None;
++        }
++        self.state.try_lock().ok().and_then(|state| {
++            state
++                .targets
++                .get(target)
++                .filter(|entry| entry.session_id == session)
++                .and_then(OwnedTarget::diagnostic_snapshot)
++        })
++    }
+     pub(crate) fn diagnostic_step(
+         &self,
+         target_id: &str,
