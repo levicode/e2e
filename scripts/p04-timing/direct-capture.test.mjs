@@ -4,12 +4,12 @@ let count=0;
 const expected={targetId:'same-target',marker:'same-document'};
 const state={marker:expected.marker,input:'unsaved',session:'kept',local:'kept',cookie:'session=kept',width:800,height:600,visibility:'hidden',focus:false};
 async function run(options={}) {
-  const calls=[]; let rate=2, time=0;
+  const calls=[]; let rate=2, time=0, stateReads=0;
   const session={async send(method,params){
     calls.push([method,params]);
     if(options.reject===method) throw Error('synthetic');
     if(method==='Target.getTargetInfo')return{targetInfo:{targetId:options.wrongTarget?'other':expected.targetId}};
-    if(method==='Runtime.evaluate')return{result:{value:{...state,...options.state}}};
+    if(method==='Runtime.evaluate')return{result:{value:{...state,...options.state,...(stateReads++?options.stateAfter:{})}}};
     if(method==='Animation.enable')return{};
     if(method==='Animation.getPlaybackRate')return{playbackRate:options.badReadback&&rate===2&&calls.some(c=>c[0]==='Page.captureScreenshot')?3:rate};
     if(method==='Animation.setPlaybackRate'){rate=params.playbackRate;return{};}
@@ -22,7 +22,7 @@ async function run(options={}) {
 }
 const positive=await run();assert.equal(validDirectResult(positive.record),true);count++;
 assert.equal(positive.calls.filter(c=>c[0]==='Page.captureScreenshot').length,1);assert.equal(positive.record.rateBefore,2);count++;
-for(const options of [{wrongTarget:true},{state:{visibility:'visible'}},{state:{focus:true}},{state:{input:'changed'}},{reject:'Page.captureScreenshot'},{badReadback:true},{detachReject:true},{late:true}]) {
+for(const options of [{wrongTarget:true},{state:{visibility:'invalid'}},{state:{focus:'invalid'}},{state:{input:'changed'}},{reject:'Page.captureScreenshot'},{badReadback:true},{detachReject:true},{late:true}]) {
   const {record}=await run(options);assert.equal(validDirectResult(record),false);count++;
   if(options.late){assert.equal(record.captureStatus,'timeout');assert.equal(record.captureTerminal,'fulfilled');assert.equal(record.cleanup,'confirmed');count++;}
 }
@@ -59,5 +59,18 @@ const missing=(await run()).record;delete missing.restoreAck;assert.equal(validD
  },async detach(){rejectCapture(Error('session detached'));}};
  await directCapture({context:()=>({newCDPSession:async()=>session})},expected,record);
  assert.equal(record.captureStatus,'timeout');assert.equal(record.captureTerminal,'pending');assert.equal(record.restoreReadback,true);assert.equal(record.detachAck,true);assert.equal(record.cleanup,'unknown');assert.equal(validDirectResult(record),false);count++;
+}
+// Foreground is an observed state, not a reason to skip the sole capture.
+for(const foreground of [{visibility:'visible',focus:true},{visibility:'visible',focus:false},{visibility:'hidden',focus:true}]) {
+ const {record,calls}=await run({state:foreground});assert.equal(validDirectResult(record),true);assert.equal(record.captureRequests,1);
+ assert.equal(record.visibility,foreground.visibility);assert.equal(record.focus,foreground.focus);
+ assert.equal(calls.filter(c=>c[0]==='Page.captureScreenshot').length,1);count++;
+}
+for(const change of [{visibility:'visible'},{focus:true},{input:'changed'}]) {
+ const {record}=await run({stateAfter:change});assert.equal(record.captureRequests,1);assert.equal(record.captureStatus,'success');
+ assert.equal(record.stateAfterMatches,false);assert.equal(record.cleanup,'unknown');assert.equal(validDirectResult(record),false);count++;
+}
+for(const [key,value]of [['visibility','invalid'],['focus',null],['background',true]]) {
+ const {record}=await run({state:{visibility:'visible',focus:true}});record[key]=value;assert.equal(validDirectResult(record),false);count++;
 }
 console.log(JSON.stringify({pureControls:count,passed:true,browserExecuted:false}));

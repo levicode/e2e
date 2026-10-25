@@ -21,7 +21,7 @@ async function until(item, deadline, now) {
 export function newDirectRecord() {
   return {schemaVersion:1,diagnosticOnly:true,originalP04Pass:false,nativeMaskEquivalent:false,
     sessionRoute:'oracle-direct-new-session',budgetMs:1000,cleanupBudgetMs:3000,calls:0,captureRequests:0,
-    targetMatches:false,stateBeforeMatches:false,stateAfterMatches:false,background:false,rateBefore:null,
+    targetMatches:false,stateBeforeMatches:false,stateAfterMatches:false,background:false,visibility:'unknown',focus:null,rateBefore:null,
     rateZeroAck:false,captureStatus:'not-run',captureTerminal:'not-issued',captureElapsedMs:null,bytes:null,
     restoreAck:false,restoreReadback:false,detachAck:false,pendingRequests:null,cleanup:'unknown',invalid:false};
 }
@@ -41,8 +41,11 @@ export async function directCapture(page, expected, record, now=()=>performance.
     before=(await send('Runtime.evaluate',{expression:STATE,returnByValue:true})).result?.value;
     record.stateBeforeMatches=!!before && before.marker===expected.marker && before.input==='unsaved' &&
       before.session==='kept' && before.local==='kept' && before.cookie==='session=kept' && before.width===800 && before.height===600;
-    record.background=before?.visibility==='hidden' && before?.focus===false;
-    if(!record.targetMatches || !record.stateBeforeMatches || !record.background) throw new Error('precondition');
+    record.visibility=['visible','hidden'].includes(before?.visibility)?before.visibility:'unknown';
+    record.focus=typeof before?.focus==='boolean'?before.focus:null;
+    record.background=record.visibility==='hidden' && record.focus===false;
+    // Preserve the page's actual state; the original P04 does not promise background.
+    if(!record.targetMatches || !record.stateBeforeMatches || record.visibility==='unknown' || record.focus===null) throw new Error('precondition');
     await send('Animation.enable');
     const {playbackRate}=await send('Animation.getPlaybackRate');
     if(typeof playbackRate!=='number'||!Number.isFinite(playbackRate)) throw new Error('rate');
@@ -89,7 +92,8 @@ export function validDirectResult(r) {
   if(!r || !same(Object.keys(r).sort(),Object.keys(shape).sort())) return false;
   return r.schemaVersion===1 && r.diagnosticOnly===true && r.originalP04Pass===false && r.nativeMaskEquivalent===false &&
     r.sessionRoute===shape.sessionRoute && r.budgetMs===1000 && r.cleanupBudgetMs===3000 && r.calls===1 && r.captureRequests===1 &&
-    r.targetMatches===true && r.stateBeforeMatches===true && r.stateAfterMatches===true && r.background===true &&
+    r.targetMatches===true && r.stateBeforeMatches===true && r.stateAfterMatches===true && ['visible','hidden'].includes(r.visibility) && typeof r.focus==='boolean' &&
+    r.background===(r.visibility==='hidden' && r.focus===false) &&
     typeof r.rateBefore==='number' && Number.isFinite(r.rateBefore) && r.rateZeroAck===true &&
     r.captureStatus==='success' && r.captureTerminal==='fulfilled' && typeof r.captureElapsedMs==='number' &&
     Number.isFinite(r.captureElapsedMs) && r.captureElapsedMs>=0 && r.captureElapsedMs<1000 && Number.isSafeInteger(r.bytes) && r.bytes>0 &&
