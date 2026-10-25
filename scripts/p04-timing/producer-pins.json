@@ -2,8 +2,8 @@
   "enabled": true,
   "sourceBindingFrozen": true,
   "casesFrozen": true,
-  "publishedNativeSha": "4a382062ae3a0f1255b05f9769f2a213cd9dda27",
-  "candidateTree": "4d5f62edcd5f64f1f9d0f91870395aa8ac7f82e1",
+  "publishedNativeSha": "cb7acd41b596a65366a2d9f1cdbc312f088368be",
+  "candidateTree": "b5cdd8d3f21f67f6294f332c54263c898875412f",
   "baseNativeSha": "0ea3dce92bec2e1d059f30b6839f444a42f6a4eb",
   "baseNativeTree": "f14d6ac9cc880094720fc4ea9707dd1a57bf2b95",
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
@@ -12,11 +12,11 @@
   "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
   "productionSourceChanged": true,
   "onlyTestOverlay": false,
-  "patchSha256": "57f9cd1a2bad4c869d397522944ed8f56ac978f769ef6d8479fb7462c64db0cb",
+  "patchSha256": "8bac5f76a4d3391713a1d3f0c6fa50b1b11cf20bc04a99341d535b3f2754e70e",
   "patchInputs": [
     {
       "name": "reviewed-p04-native-timing",
-      "sha256": "57f9cd1a2bad4c869d397522944ed8f56ac978f769ef6d8479fb7462c64db0cb"
+      "sha256": "8bac5f76a4d3391713a1d3f0c6fa50b1b11cf20bc04a99341d535b3f2754e70e"
     }
   ],
   "changedFiles": [
@@ -38,7 +38,7 @@
     {
       "path": "cli/src/native/client_cleanup_diagnostic_tests.rs",
       "beforeSha256": "8fe11917e383e4c75aebb5e3d7846eced2aa498e9c83e54d269fc3ba3b0d7218",
-      "afterSha256": "981f58f6ea4665c9402fad6a45d3d5b421b644ff9e4e64c9012a06a35307f5e9"
+      "afterSha256": "e19b4ae43f487323279fccc408cf40e5cfbca56c4a9e8fe30cf4d74a8b0f6439"
     },
     {
       "path": "cli/src/native/client_observation_dispatch.rs",

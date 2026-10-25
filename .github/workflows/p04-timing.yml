@@ -3,7 +3,7 @@ name: 'P04 timing: strict exact dev then diagnostic ci ELF and original relay ca
 'on':
   push:
     branches:
-    - diagnostic/p04-capture-timing-20261025
+    - diagnostic/p04-capture-timing-proxy-fix-20261025
 permissions:
   contents: read
 concurrency:
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   production:
     name: temporary-P04-timing
-    if: ${{ github.ref == 'refs/heads/diagnostic/p04-capture-timing-20261025' }}
+    if: ${{ github.ref == 'refs/heads/diagnostic/p04-capture-timing-proxy-fix-20261025' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 250
     permissions:
@@ -86,7 +86,7 @@ jobs:
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: 4a382062ae3a0f1255b05f9769f2a213cd9dda27
+        ref: cb7acd41b596a65366a2d9f1cdbc312f088368be
         path: source
         persist-credentials: false
         fetch-depth: 2
