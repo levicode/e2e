@@ -1,5 +1,5 @@
-# Locally prepared recipe; exact reviewed production source is frozen.
-name: Terminal cleanup pure fixtures (original7 plus new8 plus negative8; P06 remains RED)
+# Locally prepared 40-case recipe; immutable reviewed unified source is pinned.
+name: Unified native pure fixtures (40 exact tests; every case must pass)
 'on':
   push:
     branches:
@@ -13,7 +13,7 @@ jobs:
   fixtures:
     if: ${{ github.ref == 'refs/heads/implement/native-terminal-fixture-ci' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 240
     defaults:
       run:
         shell: bash
@@ -45,15 +45,17 @@ jobs:
         mkdir -m700 "$EVIDENCE_DIR"
 
         for phase in recipe-identity source-before source-patch toolchain node-version format clippy acceptance-tests-check proxy-feature-check default-harness-compile
-        default-harness-inventory faults-harness-compile faults-harness-inventory p06-characterization p06-recovery-red cold-unarmed misleading-query response-watermark
+        default-harness-inventory faults-harness-compile faults-harness-inventory p06-characterization p06-recovery cold-unarmed misleading-query response-watermark
         trace-raw-ack-restoration trace-unacknowledged-raw terminal-quarantine-drain terminal-callback-disposition terminal-owner-rejections terminal-publication-rejections
         terminal-notice-failure terminal-reader-failure terminal-gate-owner terminal-unpublished-rejection negative-exact-owner negative-park-expiry negative-transfer-owner
-        negative-terminal-replacement negative-reader-early-ack negative-transfer-before-drain negative-callback-publication negative-callback-queue query-matcher
-        source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
+        negative-terminal-replacement negative-reader-early-ack negative-transfer-before-drain negative-callback-publication negative-callback-queue p06-wrong-context
+        p06-callback-no-root p06-wrong-scope p06-cancelled-single-use sw-detach-after-decision sw-detach-after-wait sw-error-not-ready sw-independent-cancel
+        sw-wrong-session sw-target-only sw-replaced-watermark sw-pending-no-authority sw-terminal-no-ready sw-target-only-prompt sw-observer-failure sw-applied-detach-wait
+        trace-terminal-shape query-matcher source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
 
-        printf ''%s\n'' ''23 exact pure native fixtures: original7 + new8 + existing negative8. Genuine terminal cleanup production fix plus two fixture-model
-        corrections. P06 characterization must PASS and unchanged reconnect recovery remains genuine RED. No production build/browser/full native suite/retirement
-        count change.'' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf ''%s\n'' ''40 exact pure native fixtures: prior23 + four P06 negative controls + twelve SW bounded-event-wait cases + one trace terminal-shape
+        negative. Every exact test must genuinely PASS. P06 characterization precedes desired recovery; historical exit101 never qualifies. Production source
+        changes included. No production build/browser/full native suite/retirement count change.'' > "$EVIDENCE_DIR/SCOPE.txt"
 
         uname -a > "$EVIDENCE_DIR/host.txt"
 
@@ -85,17 +87,17 @@ jobs:
       id: recipe_identity
       timeout-minutes: 1
       run: python3 -B "$VALIDATE" run recipe-identity 30 python3 -B "$VALIDATE" recipe "$GITHUB_WORKSPACE/recipe" "$GITHUB_WORKFLOW_SHA"
-    - name: Check out immutable terminal cleanup source commit
+    - name: Check out immutable unified native source commit
       id: source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: 53d280d74c8e264f1e30edb6760fb85134c06851
+        ref: dd8d9a0cc518a149fe0600a6a1573daeb85da623
         fetch-depth: 2
         path: source
         persist-credentials: false
-    - name: Bind production source changes and reverse full patch to exact 643 base
+    - name: Bind production changes and full patch forward/reverse against exact 53d280d base
       id: overlay
       timeout-minutes: 2
       run: 'set -euo pipefail
@@ -214,14 +216,14 @@ jobs:
         python3 -B "$VALIDATE" case p06-characterization
 
         '
-    - name: P06 recovery entry remains a genuine failing assertion
-      id: recovery_red
+    - name: P06 explicit recovery must genuinely pass without replay
+      id: recovery
       timeout-minutes: 3
       if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
         == 'success' && steps.characterization.outcome == 'success' }}
       run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
 
-        python3 -B "$VALIDATE" case p06-recovery-red
+        python3 -B "$VALIDATE" case p06-recovery
 
         '
     - name: Cold unarmed producer exact test must pass independently
@@ -286,6 +288,29 @@ jobs:
       run: "set -uo pipefail\nunset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\nfailed=0\nfor case in negative-exact-owner\
         \ negative-park-expiry negative-transfer-owner negative-terminal-replacement negative-reader-early-ack negative-transfer-before-drain negative-callback-publication\
         \ negative-callback-queue; do\n  python3 -B \"$VALIDATE\" case \"$case\" || failed=1\ndone\nexit \"$failed\"\n"
+    - name: Four P06 exact negative controls must pass independently
+      id: p06_negatives
+      timeout-minutes: 9
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: "set -uo pipefail\nunset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\nfailed=0\nfor case in p06-wrong-context p06-callback-no-root\
+        \ p06-wrong-scope p06-cancelled-single-use; do\n  python3 -B \"$VALIDATE\" case \"$case\" || failed=1\ndone\nexit \"$failed\"\n"
+    - name: Twelve SW exact cases must pass independently
+      id: service_worker
+      timeout-minutes: 25
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: "set -uo pipefail\nunset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\nfailed=0\nfor case in sw-detach-after-decision\
+        \ sw-detach-after-wait sw-error-not-ready sw-independent-cancel sw-wrong-session sw-target-only sw-replaced-watermark sw-pending-no-authority sw-terminal-no-ready\
+        \ sw-target-only-prompt sw-observer-failure sw-applied-detach-wait; do\n  python3 -B \"$VALIDATE\" case \"$case\" || failed=1\ndone\nexit \"$failed\"\
+        \n"
+    - name: Trace terminal-shape negative control must pass
+      id: trace_shape
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.faults_compile.outcome == 'success' && steps.faults_inventory.outcome ==
+        'success' }}
+      run: "set -uo pipefail\nunset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\nfailed=0\nfor case in trace-terminal-shape;\
+        \ do\n  python3 -B \"$VALIDATE\" case \"$case\" || failed=1\ndone\nexit \"$failed\"\n"
     - name: Execute patched production MATCH_QUERY fixture without browser
       id: query_matcher
       timeout-minutes: 2
@@ -297,7 +322,7 @@ jobs:
       timeout-minutes: 1
       if: ${{ always() && steps.overlay.outcome == 'success' }}
       run: python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" source "$GITHUB_WORKSPACE/source" applied
-    - name: Reconcile independent ledgers without turning expected RED green
+    - name: Reconcile all forty exact ledgers and reject every failure
       id: summary
       timeout-minutes: 1
       if: ${{ always() && steps.recipe.outcome == 'success' }}

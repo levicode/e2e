@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Closed 23-case browser-free terminal cleanup fixtures. The recovery-entry test stays RED."""
+"""Closed 40-case browser-free native fixtures. Every exact test must genuinely pass."""
 import hashlib
 import json
 import os
@@ -17,20 +17,21 @@ EVIDENCE = Path(os.environ.get('EVIDENCE_DIR', '.'))
 ACTIVE_GROUPS = set()
 COMPILE_PHASES = ['recipe-identity', 'source-before', 'source-patch', 'toolchain', 'node-version', 'format', 'clippy', 'acceptance-tests-check', 'proxy-feature-check', 'default-harness-compile', 'default-harness-inventory', 'faults-harness-compile', 'faults-harness-inventory']
 
-CLOSED_CASES_SHA256 = 'abd01eb61a28b8fdf1fe3b55754ab0f3ed205ca89d42fe03ff8204f4eacc4a0e'
+CLOSED_CASES_SHA256 = '0ee622aa762d15cbbc886a7f8fc16e11eee4cbae9ed8410cc9137e8102faead1'
 
 def validate_cases():
     encoded = json.dumps(PINS['cases'], sort_keys=True, separators=(',', ':')).encode()
     assert hashlib.sha256(encoded).hexdigest() == CLOSED_CASES_SHA256, 'Closed exact selected-case manifest mismatch'
-    assert len(PINS['cases']) == len({case['id'] for case in PINS['cases']}) == len({case['name'] for case in PINS['cases']}) == 23
+    assert len(PINS['cases']) == len({case['id'] for case in PINS['cases']}) == len({case['name'] for case in PINS['cases']}) == 40
+    assert all(case['expected'] == 'passed' for case in PINS['cases'])
 
 def validate_pins():
     validate_cases()
     assert PINS.get('sourceBindingFrozen') is True, 'UNFROZEN source binding; refusing all source/build/test operations'
     for key in ('publishedNativeSha', 'candidateTree', 'baseNativeSha', 'baseNativeTree'):
         assert isinstance(PINS.get(key), str) and re.fullmatch(r'[0-9a-f]{40}', PINS[key]) and PINS[key] != '0' * 40, f'Unbound source identity: {key}'
-    assert PINS['baseNativeSha'] == '64315733808267b10be34f179f2a2daf4fd644ee'
-    assert PINS['baseNativeTree'] == 'c0f32f260978e3631c4fce79513780820dc7218d'
+    assert PINS['baseNativeSha'] == '53d280d74c8e264f1e30edb6760fb85134c06851'
+    assert PINS['baseNativeTree'] == '2526ed25dd6d6ecb81a534a82f38b4d6c166ae80'
     assert PINS.get('productionSourceChanged') is True and PINS.get('onlyTestOverlay') is False
     assert PINS['candidateTree'] != PINS['baseNativeTree']
     assert PINS['changedFiles'] and re.fullmatch(r'[0-9a-f]{64}', PINS['patchSha256'])
@@ -107,7 +108,7 @@ def source_identity(root, applied):
     root = Path(root).resolve()
     assert git(root, 'rev-parse', 'HEAD') == PINS['publishedNativeSha']
     parents = [line[7:] for line in git(root, 'cat-file', '-p', 'HEAD').splitlines() if line.startswith('parent ')]
-    assert parents == [PINS['baseNativeSha']], 'Source commit must have exactly the reviewed 643 base parent'
+    assert parents == [PINS['baseNativeSha']], 'Source commit must have exactly the reviewed 53d280d base parent'
     assert git(root, 'rev-parse', 'HEAD^1^{tree}') == PINS['baseNativeTree']
     assert git(root, 'rev-parse', 'HEAD^{tree}') == PINS['candidateTree']
     assert digest(root / 'cli/Cargo.lock') == PINS['nativeLockSha256']
@@ -125,19 +126,22 @@ def source_identity(root, applied):
 
 def apply_overlay(root):
     # Source changes are already committed. Reverse the complete patch in a
-    # private index to the exact 643 base, never to an older formal baseline.
+    # private index to the exact 53d280d base, never to an older formal baseline.
     source_identity(root, False)
     patch = HERE / 'source-change.patch'
     assert digest(patch) == PINS['patchSha256']
     with tempfile.TemporaryDirectory(prefix='native-terminal-source-patch-') as temporary:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / 'index'))
         command = ['git', '-C', str(root)]
-        subprocess.run(command + ['read-tree', PINS['candidateTree']], env=env, check=True)
+        subprocess.run(command + ['read-tree', PINS['baseNativeTree']], env=env, check=True)
+        subprocess.run(command + ['apply', '--cached', '--check', '--whitespace=error', str(patch)], env=env, check=True)
+        subprocess.run(command + ['apply', '--cached', '--whitespace=error', str(patch)], env=env, check=True)
+        assert subprocess.check_output(command + ['write-tree'], env=env, text=True).strip() == PINS['candidateTree']
         subprocess.run(command + ['apply', '--cached', '--reverse', '--check', '--whitespace=error', str(patch)], env=env, check=True)
         subprocess.run(command + ['apply', '--cached', '--reverse', '--whitespace=error', str(patch)], env=env, check=True)
         assert subprocess.check_output(command + ['write-tree'], env=env, text=True).strip() == PINS['baseNativeTree']
     value = source_identity(root, True)
-    value.update(patchSha256=PINS['patchSha256'], patchInputs=PINS['patchInputs'], productionSourceChanged=True, reversePatchRestoresExactBaseTree=True)
+    value.update(patchSha256=PINS['patchSha256'], patchInputs=PINS['patchInputs'], productionSourceChanged=True, forwardPatchMatchesCandidateTree=True, reversePatchRestoresExactBaseTree=True)
     save(EVIDENCE / 'source-patch-identity.json', value)
 
 def capture_harness(root, configuration):
@@ -188,25 +192,10 @@ def inspect_case(case, stdout, stderr, result, harness_sha, post_sha):
                 actual = 'passed'
             elif word == 'FAILED' and (passed, failed) == ('0', '1') and outcomes[0][1] == 'FAILED' and result.get('exit') == 101:
                 actual = 'failed'
-    expected_observed = actual == case['expected']
-    if case['expected'] == 'failed':
-        # A panic elsewhere, timeout or compile failure does not prove this intended RED.
-        captured = re.findall(r'(?m)^---- (\S+) stdout ----$', stdout)
-        failures = re.findall(r'(?m)^failures:\n((?:    \S+\n)+)', stdout)
-        panic = re.findall(r"(?m)^thread '([^']+)'(?: \(\d+\))? panicked at ([^\n]+):\n([^\n]+)", stdout + stderr)
-        expected_observed = expected_observed and captured == [case['name']] and failures == ['    ' + case['name'] + '\n'] and len(panic) == 1 and len(re.findall(r'(?m)^thread .* panicked at ', stdout + stderr)) == 1
-        try:
-            thread, location, message = panic[0]
-            prefix = 'assertion `left == right` failed: ' + case['failureMarker']
-            assert thread == case['name'] and re.fullmatch(r'.*src/native/client_browser_point_debt_tests\.rs:\d+:\d+', location)
-            assert message.startswith(prefix)
-            refused = json.loads(message[len(prefix):].strip())
-            expected_observed = expected_observed and refused['ok'] is False and refused['effects'] == 'not-dispatched' and refused['scopeState'] == 'quarantined' and refused['error']['code'] == 'scope-unavailable'
-        except (AssertionError, IndexError, TypeError, KeyError, ValueError):
-            expected_observed = False
+    expected_observed = case['expected'] == 'passed' and actual == 'passed'
     return {'id': case['id'], 'test': case['name'], 'category': case['category'], 'expected': case['expected'], 'actual': actual,
             'configuration': case['configuration'], 'features': PINS['configurations'][case['configuration']]['features'], 'expectedObservationConfirmed': expected_observed, 'testPassed': actual == 'passed',
-            'classification': 'expected-red-observed' if case['expected'] == 'failed' and expected_observed else 'expected-pass-observed' if case['expected'] == 'passed' and expected_observed else 'unexpected-pass' if actual == 'passed' else 'unexpected-failure' if actual == 'failed' else 'unknown', 'process': result,
+            'classification': 'expected-pass-observed' if expected_observed else 'unexpected-failure' if actual == 'failed' else 'unknown', 'process': result,
             'harnessSha256Before': harness_sha, 'harnessSha256After': post_sha, 'sourceTree': PINS['candidateTree'],
             'originalE2eRetired': False, 'fullNativeSuitePassed': False, 'productionAcceptance': False}
 
@@ -232,9 +221,9 @@ def verify_saved_case(case):
 def run_case(case_id):
     validate_pins()
     case = next(row for row in PINS['cases'] if row['id'] == case_id)
-    if case_id == 'p06-recovery-red':
+    if case_id == 'p06-recovery':
         characterization = verify_saved_case(next(row for row in PINS['cases'] if row['id'] == 'p06-characterization'))
-        assert characterization['actual'] == 'passed' and characterization['expectedObservationConfirmed'] is True, 'Genuine exact passing characterization required before RED'
+        assert characterization['actual'] == 'passed' and characterization['expectedObservationConfirmed'] is True, 'Genuine exact passing characterization required before recovery'
     binding = json.loads((EVIDENCE / (case['configuration'] + '-harness-binding.json')).read_text())
     verify_binding(binding, case['configuration'])
     binary = Path(binding['binary']); assert digest(binary) == binding['sha256']
@@ -244,7 +233,7 @@ def run_case(case_id):
     receipt = inspect_case(case, (EVIDENCE / f'{case_id}.stdout.log').read_text(), (EVIDENCE / f'{case_id}.stderr.log').read_text(), result, binding['sha256'], digest(binary))
     receipt['command'] = command
     save(EVIDENCE / f'{case_id}.ledger.json', receipt)
-    # Preserve RED as RED, not a passing test or successful workflow step.
+    # Only a genuine exact pass may produce a successful test step; exit 101 stays failed.
     return status if status else (0 if receipt['testPassed'] else 1)
 
 def summarize():
@@ -260,19 +249,19 @@ def summarize():
             cases.append({'id': case['id'], 'test': case['name'], 'expected': case['expected'], 'actual': 'unknown' if file.exists() else 'not-run', 'expectedObservationConfirmed': False, 'testPassed': False})
     all_gates = PINS.get('sourceBindingFrozen') is True and all(value == '0' for value in states.values())
     characterization = next(case for case in cases if case['id'] == 'p06-characterization')
-    red = next(case for case in cases if case['id'] == 'p06-recovery-red')
-    red['characterizationConfirmed'] = characterization.get('actual') == 'passed' and characterization.get('expectedObservationConfirmed') is True
-    if not red['characterizationConfirmed']:
-        red['expectedObservationConfirmed'] = False
-    outcome = {'scope': 'original seven plus eight terminal cleanup tests plus eight existing negative controls; no browser, product image, retirement or full acceptance', 'sourceTree': PINS['candidateTree'],
+    recovery = next(case for case in cases if case['id'] == 'p06-recovery')
+    recovery['characterizationConfirmed'] = characterization.get('actual') == 'passed' and characterization.get('expectedObservationConfirmed') is True
+    if not recovery['characterizationConfirmed']:
+        recovery['expectedObservationConfirmed'] = False
+    outcome = {'scope': '40 exact native fixtures: prior23 plus four P06 negatives plus twelve SW cases plus one trace-shape negative; no browser, product image, retirement or full acceptance', 'sourceTree': PINS['candidateTree'],
                'sourceBindingFrozen': PINS.get('sourceBindingFrozen') is True, 'strictGatesPassed': all_gates, 'phases': states, 'cases': cases,
                'expectedObservationsConfirmed': all_gates and all(case['expectedObservationConfirmed'] for case in cases),
                'passedTestCount': sum(case['actual'] == 'passed' for case in cases), 'failedTestCount': sum(case['actual'] == 'failed' for case in cases),
                'allSelectedTestsPassed': all_gates and all(case['testPassed'] for case in cases), 'fullNativeSuitePassed': False,
-               'originalSevenTestsPassed': all_gates and all(case['testPassed'] for case in cases[:7]), 'selectedCaseCount': 23, 'notRunTestCount': sum(case['actual'] == 'not-run' for case in cases), 'unknownTestCount': sum(case['actual'] == 'unknown' for case in cases), 'productionSourceChanged': True, 'onlyTestOverlay': False, 'reconnectAdmissionFixed': False, 'retirementCountChanged': False, 'productionBuildExecuted': False, 'releaseEligible': False}
+               'originalSevenTestsPassed': all_gates and all(case['testPassed'] for case in cases[:7]), 'selectedCaseCount': 40, 'notRunTestCount': sum(case['actual'] == 'not-run' for case in cases), 'unknownTestCount': sum(case['actual'] == 'unknown' for case in cases), 'productionSourceChanged': True, 'onlyTestOverlay': False, 'p06RecoveryFixturePassed': all_gates and recovery.get('testPassed') is True and recovery.get('characterizationConfirmed') is True, 'originalPausedInputE2eVerified': False, 'retirementCountChanged': False, 'productionBuildExecuted': False, 'releaseEligible': False}
     save(EVIDENCE / 'summary.json', outcome)
     print(json.dumps(outcome, indent=2))
-    # Expected RED is useful evidence but cannot make this validation green.
+    # All forty exact tests and every strict gate are mandatory; historical RED cannot qualify.
     return 0 if outcome['allSelectedTestsPassed'] and outcome['expectedObservationsConfirmed'] else 1
 
 def main():

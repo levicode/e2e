@@ -1,50 +1,110 @@
 {
-  "baseNativeSha": "64315733808267b10be34f179f2a2daf4fd644ee",
-  "baseNativeTree": "c0f32f260978e3631c4fce79513780820dc7218d",
-  "publishedNativeSha": "53d280d74c8e264f1e30edb6760fb85134c06851",
-  "candidateTree": "2526ed25dd6d6ecb81a534a82f38b4d6c166ae80",
+  "baseNativeSha": "53d280d74c8e264f1e30edb6760fb85134c06851",
+  "baseNativeTree": "2526ed25dd6d6ecb81a534a82f38b4d6c166ae80",
+  "publishedNativeSha": "dd8d9a0cc518a149fe0600a6a1573daeb85da623",
+  "candidateTree": "d04dbf591f083604806c6a185f4dc0d0af545d88",
   "sourceBindingFrozen": true,
   "productionSourceChanged": true,
   "onlyTestOverlay": false,
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
-  "patchSha256": "7ab2b7b0b00fb62e71a0d341a0283cee9c6a5bc6a3671d567a612865752a1937",
+  "patchSha256": "f4f6b3b192459117b773eae8e00343a7d693b1d1d5b644f7a69b0a8ae9985318",
   "rustToolchain": "1.99.1",
   "nodeVersion": "v24.19.0",
   "changedFiles": [
     {
+      "path": "cli/src/native/cdp/client.rs",
+      "beforeSha256": "0ea0303deeae89ab45af5a6a163eae23667c084ca4a7b83d781b84f9a777d22a",
+      "afterSha256": "4d48db69d35f8a77947bf4615b61c32b898c7fe101adf2117cf4b07e8b4dd8f5"
+    },
+    {
       "path": "cli/src/native/client_actions.rs",
-      "beforeSha256": "e88116ced75fb9c9382e55900a245588e3bfac3114ab3e6d7308da6ad8ff799e",
-      "afterSha256": "7fa4712a9ef7c896a0ef95c518e9d8b1f15df47c6c3dab7878c8ebf86b7b9159"
+      "beforeSha256": "7fa4712a9ef7c896a0ef95c518e9d8b1f15df47c6c3dab7878c8ebf86b7b9159",
+      "afterSha256": "3ded30b86d506261f92332754aac72e8947ef123effb020b56af08c4570db484"
+    },
+    {
+      "path": "cli/src/native/client_browser.rs",
+      "beforeSha256": "a14565633ed0ef94fac9c037f3ea6d04005cf0887d95053429d68afe15ebbd57",
+      "afterSha256": "ddc267d81a498fc70da3df235dc181c80557a427ff98dcaeab0ea60f5f36ed25"
+    },
+    {
+      "path": "cli/src/native/client_browser_borrowed_cleanup_tests.rs",
+      "beforeSha256": "f65ad9f7de59f1b456f60014815e1201ee8c45843fbffb887b92db766b8f9d8f",
+      "afterSha256": "c04977d4ea25f9b75ac49e35c97012b4addd222332ba28ba83f89ee117fd856a"
+    },
+    {
+      "path": "cli/src/native/client_browser_final_local_tests.rs",
+      "beforeSha256": "53fe8cbaaa88c70aa3c6d7e110009c354d75c178ecf46c7a9ddcbf22d865dc84",
+      "afterSha256": "79cdc297839e3335bfa048061fc7699d3ce1843f3fb5a64dd4f9b1b8565b9f14"
+    },
+    {
+      "path": "cli/src/native/client_browser_point_debt_tests.rs",
+      "beforeSha256": "c5a658ebd17b4d0810802315e06dded6d2e3550f9649cda273cfc41afc38bb79",
+      "afterSha256": "59158ca0652960e8596e3d541c7e4f344e9219dc4c721792278163b7d56fe04d"
+    },
+    {
+      "path": "cli/src/native/client_browser_reconnect_tests.rs",
+      "beforeSha256": "8940c3f6ef1a29f0fcfb2eae9022b1448cc7e9afe0cc1874eecd50a5f71afc9e",
+      "afterSha256": "3e148475644a92caa04042aaf091f1c306a1950c080cf3b1452a63ea1369e052"
     },
     {
       "path": "cli/src/native/client_browser_trace_retirement_tests.rs",
-      "beforeSha256": "9322afeec46692cc7feddba344d64b5b1306f1e921290a229e9db7557efda6ee",
-      "afterSha256": "204aec44b22aa3685e99ac6df98d8a8c3cf2ebe928b3c5739866cb0f98871ec1"
+      "beforeSha256": "204aec44b22aa3685e99ac6df98d8a8c3cf2ebe928b3c5739866cb0f98871ec1",
+      "afterSha256": "50d175e666f9c9879d66e9fb4ce7ca44e7d6c08a7e39a89ab513ea2de87c6309"
+    },
+    {
+      "path": "cli/src/native/client_debt.rs",
+      "beforeSha256": "02dbdef6a1b43b62e940667b2da7b8befe97385cc33fc6aa226dd8f52171c7aa",
+      "afterSha256": "a5cefb8ab45c726cb8a5aa6355cea904fdb3d215e5496d862ba30ccf46110b97"
     },
     {
       "path": "cli/src/native/client_enrollment.rs",
-      "beforeSha256": "1995ebed5552723f6ec923072aebb598743740957f7ff6f0416e463eaf0323e7",
-      "afterSha256": "6b4f5d012639c0c44ea2b0350ab2c5465414f5c29e65671ea5c583fe9085689e"
+      "beforeSha256": "6b4f5d012639c0c44ea2b0350ab2c5465414f5c29e65671ea5c583fe9085689e",
+      "afterSha256": "42a3d69dea1b5e9f2d3c73e72b9bb6f3984929e4d4f014be7ed37ebbfb1670c8"
     },
     {
       "path": "cli/src/native/client_network.rs",
-      "beforeSha256": "d9f811188240800b4cf49bd88930ce955bf321701fafe63a6ce0f91f4d70c980",
-      "afterSha256": "73da2e258589a858c1d965ce839a1091aabbf288c1ce31675d768546651147b7"
+      "beforeSha256": "73da2e258589a858c1d965ce839a1091aabbf288c1ce31675d768546651147b7",
+      "afterSha256": "9c0e291cc744dba6eaedaf8727ea4e86c378f02e8529f78b40f6ed5c4566076d"
+    },
+    {
+      "path": "cli/src/native/client_operation_state.rs",
+      "beforeSha256": "fbe4c3b2af6609b2f35c372897cb0d0a4eefdff0c2f57c7e3e1e3926109ba5d6",
+      "afterSha256": "124fac8bac4fc6dbcfc7b80a59fda608fe20d70afa94403a0305797da5dbe69a"
+    },
+    {
+      "path": "cli/src/native/client_page.rs",
+      "beforeSha256": "fefa7355e328176f2af8a8303ea7095b37e55f731bb3d10926e4c5cf7f0cd22f",
+      "afterSha256": "9129f46df3859417b475609b9509bf7b03d15c1e6dfd8c5bdba56f74c627155a"
+    },
+    {
+      "path": "cli/src/native/client_protocol.rs",
+      "beforeSha256": "6086d7b0773f637e86c30f1ee39c8fe9df9f34d6c85880b5eabbcfdda2e3c2c3",
+      "afterSha256": "83506bf02552b4ea373f42a365d445ac92bdd0d84955907976b9fc45f8b6490f"
+    },
+    {
+      "path": "cli/src/native/client_reconnect.rs",
+      "beforeSha256": "4ef041cdaf5c0b548ffd22560c82c45859a0596655d27f1de39d756725f7c030",
+      "afterSha256": "715a09c28447a47b9f3292de91675a7358b59232fb7e223775e952aca48f3baa"
     },
     {
       "path": "cli/src/native/client_session.rs",
-      "beforeSha256": "427bf41663d38653f56982a796597ffe8bc2d676c2dcbebd2717b16ac026767c",
-      "afterSha256": "657a17ea4385fac80f404b28d8bed9ae7d2c1725e205591bf0d8dcd2c154d7a6"
+      "beforeSha256": "657a17ea4385fac80f404b28d8bed9ae7d2c1725e205591bf0d8dcd2c154d7a6",
+      "afterSha256": "1e042bd923344cf886c8fbad3ef9c92977b66575ee21cfa1c7fd93cefd5f0253"
     },
     {
-      "path": "cli/src/native/client_terminal_cleanup_tests.rs",
-      "beforeSha256": null,
-      "afterSha256": "a2526ac49062db2c869a3485f9020b077309a4c96957c02fcb7ea4e8f9f0916c"
+      "path": "cli/src/native/client_state.rs",
+      "beforeSha256": "f3ef3521b2fd4682183bccea8a0f12ec626e8e1c572c306f3df69b998387c327",
+      "afterSha256": "971f2c83a48fcd28b31f8bc3e3db4c208f5364fa87276a978984b70fc753333e"
+    },
+    {
+      "path": "cli/src/native/client_tasks.rs",
+      "beforeSha256": "10ae066d0441f22b54c130c32ea3679e7357a85a39eebb5242899e357335a323",
+      "afterSha256": "49c79b544b2b14b93cdbe6123be12ac0baf78920f6992cf6cc8a0a1fcbc226d1"
     },
     {
       "path": "cli/src/native/client_transport.rs",
-      "beforeSha256": "53a559f56724d9763349fe680b6ee8a7492e60066b12994f6cd0df0cc060e486",
-      "afterSha256": "010bbf164ef65c2063d3177755fc700898cfcb272d89377019357ea10a28a48b"
+      "beforeSha256": "010bbf164ef65c2063d3177755fc700898cfcb272d89377019357ea10a28a48b",
+      "afterSha256": "cb639d6e3e97680cabef683bdcbd3e3905e380a75fa8d2fc7c55f8776af081c7"
     }
   ],
   "cases": [
@@ -56,11 +116,10 @@
       "configuration": "default"
     },
     {
-      "id": "p06-recovery-red",
+      "id": "p06-recovery",
       "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay",
-      "expected": "failed",
-      "failureMarker": "P06 exact-identity reconnect never reached verification:",
-      "category": "intentional-unfixed-recovery-entry-regression",
+      "expected": "passed",
+      "category": "explicit-recovery-without-replay-regression",
       "configuration": "default"
     },
     {
@@ -209,6 +268,125 @@
       "expected": "passed",
       "category": "existing-terminal-cleanup-negative-control",
       "configuration": "default"
+    },
+    {
+      "id": "p06-wrong-context",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay",
+      "expected": "passed",
+      "category": "explicit-recovery-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "p06-callback-no-root",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery",
+      "expected": "passed",
+      "category": "explicit-recovery-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "p06-wrong-scope",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io",
+      "expected": "passed",
+      "category": "explicit-recovery-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "p06-cancelled-single-use",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued",
+      "expected": "passed",
+      "category": "explicit-recovery-negative-control",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-detach-after-decision",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_exact_detach_after_decision_keeps_owner_healthy",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-detach-after-wait",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_exact_detach_after_wait_preserves_failed_retired_error",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-error-not-ready",
+      "name": "native::client_enrollment::tests::service_worker_error_ack_never_reaches_ready_commit_gate",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-independent-cancel",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_honors_independent_operation_cancel",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-wrong-session",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_rejects_wrong_session_detach",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-target-only",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_rejects_target_destroyed_alone",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-replaced-watermark",
+      "name": "native::client_enrollment::tests::service_worker_failed_live_pending_wait_rejects_replaced_watermark_subscription",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-pending-no-authority",
+      "name": "native::cdp::client::tests::service_worker_pending_failure_preserves_error_without_retirement_authority",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-terminal-no-ready",
+      "name": "native::cdp::client::tests::service_worker_failed_terminal_preserves_errors_and_refuses_ready_authority",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-target-only-prompt",
+      "name": "native::client_enrollment::tests::service_worker_failed_terminal_target_destroyed_alone_fails_promptly",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-observer-failure",
+      "name": "native::client_enrollment::tests::service_worker_enrollment_observer_failure_never_publishes_ready",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "sw-applied-detach-wait",
+      "name": "native::client_enrollment::tests::service_worker_retirement_waits_for_applied_detach_without_publishing_ready",
+      "expected": "passed",
+      "category": "service-worker-failed-live-bounded-event-wait",
+      "configuration": "default"
+    },
+    {
+      "id": "trace-terminal-shape",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_terminal_failure_rejects_correlated_or_reusable_shapes",
+      "expected": "passed",
+      "category": "trace-terminal-wire-shape-negative-control",
+      "configuration": "faults"
     }
   ],
   "configurations": {
@@ -226,34 +404,48 @@
     }
   },
   "baselineEvidence": {
-    "runId": "40137712725",
-    "passedTests": 2,
-    "failedTests": 4,
-    "notRunTests": 1,
-    "allFourStrictGatesAndBothHarnessesPassed": true
+    "runId": "40141462075",
+    "passedTests": 21,
+    "failedTests": 2,
+    "notRunTests": 0,
+    "sourceSha": "53d280d74c8e264f1e30edb6760fb85134c06851",
+    "recipeSha": "e1e69a983ebdd79a9aebecdf5f8aa2583e8a1f85",
+    "allFourStrictGatesAndBothHarnessesPassed": true,
+    "historicalP06RecoveryExpected": "failed",
+    "historicalP06FailureMarker": "P06 exact-identity reconnect never reached verification:",
+    "originalReceiptsPreserved": true
   },
   "scope": {
-    "originalSevenPreserved": true,
-    "newTerminalCleanupTests": 8,
-    "existingNegativeControls": 8,
-    "productionFilesChanged": [
-      "cli/src/native/client_enrollment.rs",
-      "cli/src/native/client_network.rs",
-      "cli/src/native/client_session.rs",
-      "cli/src/native/client_transport.rs"
-    ],
-    "fixtureModelCorrections": [
-      "trace-source-mask-install-peer",
-      "misleading-query-default-serde-states"
-    ],
-    "reconnectAdmissionFixed": false,
+    "original23SelectorsRetained": true,
+    "all40Expected": "passed",
+    "newP06NegativeControls": 4,
+    "serviceWorkerCases": 12,
+    "newTraceNegativeControl": 1,
+    "reconnectAdmissionImplementationChanged": true,
+    "originalPausedInputE2eVerified": false,
     "originalE2eRetired": false,
     "productionImageBuilt": false
   },
   "patchInputs": [
     {
-      "name": "terminal-local-retirement",
-      "sha256": "85589132eef8d9bbc84b27780cde27ec8a17461aecf14c1f8f26856f7a040843"
+      "name": "p06",
+      "sha256": "92d21025fd1fda62b55d3ca414fe8720e4c41710ddf22174bf121c26ebe413fb"
+    },
+    {
+      "name": "sw_test_gate",
+      "sha256": "3d7c1d3ad26c96e45784ed46084d55811f5f675a9812d62d8ed011411ccfe038"
+    },
+    {
+      "name": "sw_failed_live",
+      "sha256": "22310024dfa29b9450b8fcd19716ca11f7d0501de7e85fadca2d217e7970dc8a"
+    },
+    {
+      "name": "trace_fixture",
+      "sha256": "2740205fa081dd82201683389b694ea024072d4b7aa314f55caf75e957fd54e1"
+    },
+    {
+      "name": "sw_wrong_event_test_sampling",
+      "sha256": "2fabd3ca21bc2ce1a41915d0abbfa8a51b975a1c16ccc00b9acde0e967ae168e"
     }
   ]
 }

@@ -1,728 +1,2959 @@
-diff --git a/cli/src/native/client_actions.rs b/cli/src/native/client_actions.rs
-index 8af7be7ce..595bcbedb 100644
---- a/cli/src/native/client_actions.rs
-+++ b/cli/src/native/client_actions.rs
-@@ -6009,6 +6009,8 @@ mod tests {
-                 // Acquisition and action-time revalidation retain the text
-                 // query. The shared assertions below prove typed stale failure
-                 // and NotDispatched despite action-log words in author data.
-+                let mut serialized_expression = expression.clone();
-+                serialized_expression["query"]["states"] = json!({});
-                 for (index, request) in log
-                     .iter()
-                     .filter(|request| {
-@@ -6018,7 +6020,10 @@ mod tests {
-                     })
-                     .enumerate()
-                 {
--                    assert_eq!(request["params"]["arguments"][0]["value"], expression);
-+                    assert_eq!(
-+                        request["params"]["arguments"][0]["value"],
-+                        serialized_expression
-+                    );
-                     let arguments = request["params"]["arguments"].as_array().unwrap();
-                     assert_eq!(arguments[1]["value"].as_array().unwrap().len(), index + 1);
-                     assert_eq!(arguments.len() - 6, index + 1);
-diff --git a/cli/src/native/client_browser_trace_retirement_tests.rs b/cli/src/native/client_browser_trace_retirement_tests.rs
-index 5b7974408..6537f10e5 100644
---- a/cli/src/native/client_browser_trace_retirement_tests.rs
-+++ b/cli/src/native/client_browser_trace_retirement_tests.rs
-@@ -159,6 +159,26 @@ fn observation_reply(request: &Value) -> Option<Value> {
-                 json!({"result":{"value":values}})
-             } else if declaration.contains("frameOwner") {
-                 json!({"result":{"value":{"connected":true,"frameOwner":false}}})
-+            } else if declaration
-+                == "function(selector,...nodes){return this.install(selector,nodes)}"
-+            {
-+                // Source protection includes document roots, not only elements.
-+                assert_eq!(request["params"]["objectId"], "source-holder");
-+                assert_eq!(request["params"]["returnByValue"], true);
-+                assert_eq!(
-+                    request["params"]["arguments"],
-+                    json!([
-+                        {"value":FIXTURE_SECURE_SELECTOR}, {"objectId":"node-1"}
-+                    ])
-+                );
-+                let sequence = request["params"]["objectGroup"]
-+                    .as_str()
-+                    .and_then(|group| group.strip_prefix("capture-source-"))
-+                    .and_then(|group| group.strip_suffix("-frame-session-1"))
-+                    .and_then(|sequence| sequence.parse::<u64>().ok())
-+                    .expect("install must belong to this native source-mask group");
-+                assert!(sequence > 0);
-+                json!({"result":{"type":"boolean","value":true}})
-             } else {
-                 assert!(
-                     declaration == "function(){return this.verify()}"
-diff --git a/cli/src/native/client_enrollment.rs b/cli/src/native/client_enrollment.rs
-index 6d5f3fec5..ebd4871b8 100644
---- a/cli/src/native/client_enrollment.rs
-+++ b/cli/src/native/client_enrollment.rs
-@@ -119,6 +119,28 @@ impl NativeTerminalProof {
-         self.check_network(&network)?;
-         network.check_event_sink(sink)
+diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
+index 2c4688cb8d66fd9611f6595c5bc57dbf21bee2fc..c1a399db31a91b367ba337cfa07184d1777dfd49 100644
+--- a/cli/src/native/cdp/client.rs
++++ b/cli/src/native/cdp/client.rs
+@@ -83,6 +83,8 @@ pub(crate) struct ServiceWorkerStartupFailure {
+     message: String,
+     error: ProtocolError,
+     retirement: Option<Box<WorkerStartupRetirement>>,
++    // Retained failed-live responsibility, never a retirement/Ready grant.
++    pending_retirement: Option<Box<WorkerStartupRetirement>>,
+ }
+ impl ServiceWorkerStartupFailure {
+     pub(crate) fn error(&self) -> ProtocolError {
+@@ -91,6 +93,7 @@ impl ServiceWorkerStartupFailure {
+     pub(crate) fn fail_closed(mut self, error: ProtocolError) -> Self {
+         self.error = error;
+         self.retirement = None;
++        self.pending_retirement = None;
+         self
      }
-+    pub(crate) fn check_broker(
-+        &self,
-+        broker: &Arc<super::client_session::ClientSession>,
-+    ) -> Result<(), ProtocolError> {
-+        let network = self.network.upgrade().ok_or(ProtocolError::StaleScope)?;
-+        self.check_network(&network)?;
-+        network.check_broker(broker)
+     pub(crate) fn has_retirement(&self) -> bool {
+@@ -99,6 +102,12 @@ impl ServiceWorkerStartupFailure {
+     pub(crate) fn take_retirement(&mut self) -> Option<WorkerStartupRetirement> {
+         self.retirement.take().map(|retirement| *retirement)
+     }
++    pub(crate) fn has_pending_retirement(&self) -> bool {
++        self.pending_retirement.is_some()
 +    }
-+    /// Exact old-owner identity for local deauthorization after business
-+    /// admission has closed. Neither EOF nor this check settles any debt.
-+    pub(crate) fn check_local_retirement_owner(
++    pub(crate) fn take_pending_retirement(&mut self) -> Option<WorkerStartupRetirement> {
++        self.pending_retirement.take().map(|pending| *pending)
++    }
+ }
+ impl From<String> for ServiceWorkerStartupFailure {
+     fn from(message: String) -> Self {
+@@ -106,6 +115,7 @@ impl From<String> for ServiceWorkerStartupFailure {
+             message,
+             error: ProtocolError::BrowserFailure,
+             retirement: None,
++            pending_retirement: None,
+         }
+     }
+ }
+@@ -120,6 +130,7 @@ impl From<ProtocolError> for ServiceWorkerStartupFailure {
+             message: format!("{error:?}"),
+             error,
+             retirement: None,
++            pending_retirement: None,
+         }
+     }
+ }
+@@ -618,6 +629,12 @@ pub struct CdpClient {
+     owner: Option<Arc<OwnerDebtLedger>>,
+ }
+ 
++#[cfg(test)]
++type WorkerStartupNoReceiptGate = (
++    oneshot::Sender<(String, std::time::Instant)>,
++    oneshot::Receiver<()>,
++);
++
+ struct CdpTransport {
+     ws_tx: WsTx,
+     socket: socket2::Socket,
+@@ -642,6 +659,8 @@ struct CdpTransport {
+     #[cfg(test)]
+     worker_startup_decision_gate:
+         std::sync::Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
++    #[cfg(test)]
++    worker_startup_no_receipt_gate: std::sync::Mutex<Option<WorkerStartupNoReceiptGate>>,
+ }
+ 
+ /// Removes a pending entry if `send_command` is cancelled mid-await (e.g. an
+@@ -1153,6 +1172,8 @@ impl CdpClient {
+                 next_tap_id: AtomicU64::new(1),
+                 #[cfg(test)]
+                 worker_startup_decision_gate: std::sync::Mutex::new(None),
++                #[cfg(test)]
++                worker_startup_no_receipt_gate: std::sync::Mutex::new(None),
+             }),
+         })
+     }
+@@ -1673,16 +1694,22 @@ impl CdpClient {
+         if !same_budget {
+             errors.push("Service-worker startup initialization budget changed".into());
+         }
+-        // The joined batch still fails. Only an already unbound original
+-        // session may carry retire-only responsibility to enrollment; a live
+-        // error cannot wait here for some arbitrary future detach.
++        // The joined batch still fails. Already-unbound receipt authority and
++        // still-bound responsibility are distinct. Only enrollment may retain
++        // the latter under its original permit/budget until real exact detach.
+         if error_ack {
+-            let retirement = if eligible
+-                && expected.as_ref().is_some_and(|owner| {
+-                    owner
+-                        .worker_startup_session_unbound(session)
+-                        .unwrap_or(false)
+-                }) {
++            let can_retain = initialization.is_some()
++                && statuses.iter().all(|(status, expected)| {
++                    *expected == CommandStatus::Acknowledged && status.snapshot() == *expected
++                });
++            let unbound = if eligible {
++                expected
++                    .as_ref()
++                    .map(|owner| owner.worker_startup_session_unbound(session))
++            } else {
++                None
++            };
++            let responsibility = if matches!(unbound, Some(Ok(_))) {
+                 expected.map(|owner| WorkerStartupRetirement {
+                     owner,
+                     session: session.into(),
+@@ -1694,10 +1721,31 @@ impl CdpClient {
+             } else {
+                 None
+             };
++            let (retirement, pending_retirement) = match unbound {
++                Some(Ok(true)) => (responsibility, None),
++                Some(Ok(false)) if can_retain => (None, responsibility),
++                _ => (None, None),
++            };
++            #[cfg(test)]
++            if retirement.is_none() {
++                // The ErrorAck decision is already fixed. Let a test deliver
++                // exact detach before return, without reclassifying this failure.
++                let gate = self
++                    .transport
++                    .worker_startup_no_receipt_gate
++                    .lock()
++                    .unwrap()
++                    .take();
++                if let Some((entered, release)) = gate {
++                    let _ = entered.send((errors.join("; "), deadline));
++                    let _ = tokio::time::timeout_at(deadline.into(), release).await;
++                }
++            }
+             return Err(ServiceWorkerStartupFailure {
+                 message: errors.join("; "),
+                 error: ProtocolError::BrowserFailure,
+                 retirement: retirement.map(Box::new),
++                pending_retirement: pending_retirement.map(Box::new),
+             });
+         }
+         if errors.is_empty() && complete {
+@@ -1845,6 +1893,28 @@ impl CdpClient {
+         })
+     }
+ 
++    /// Read-only fence for retained failed-live responsibility. It grants no
++    /// commit; the original complete proof still runs after applied detach.
++    pub(crate) fn check_pending_worker_startup(
 +        &self,
-+        broker: &Arc<super::client_session::ClientSession>,
++        pending: &WorkerStartupRetirement,
++        targets: &Arc<super::super::client_targets::ClientTargets>,
++        operation: &super::super::client_session::OperationLease,
++        session: &str,
 +    ) -> Result<(), ProtocolError> {
-+        self.check_broker(broker)?;
-+        let debt = self.client.debt_ledger().ok_or(ProtocolError::StaleScope)?;
-+        if !debt.matches_owner(self.generation, &self.identity_scope) {
++        pending.check_operation(operation)?;
++        if !pending.failed_terminal()
++            || pending.session != session
++            || pending.deadline != operation.deadline
++        {
 +            return Err(ProtocolError::StaleScope);
 +        }
-+        self.targets.require_eval_owner(&debt)?;
-+        self.client.check_cleanup_owner(&Some(debt))
++        targets.require_eval_owner(&pending.owner)?;
++        self.check_cleanup_owner(&Some(pending.owner.clone()))
++            .map_err(|_| ProtocolError::StaleScope)?;
++        self.ensure_open().map_err(|_| ProtocolError::StaleScope)
 +    }
-     pub(crate) fn targets(&self) -> &Arc<ClientTargets> {
-         &self.targets
++
+     /// Registers the existing ledger notification before checking its condition.
+     /// No index/owner/ledger/targets guard may be held across this wait. Every
+     /// caller must retry its full final proof after waking; this grants no commit.
+@@ -2300,6 +2370,23 @@ impl CdpClient {
+         (observed, release)
      }
+ 
++    #[cfg(test)]
++    pub(crate) fn hold_worker_startup_no_receipt(
++        &self,
++    ) -> (
++        oneshot::Receiver<(String, std::time::Instant)>,
++        oneshot::Sender<()>,
++    ) {
++        let (entered, observed) = oneshot::channel();
++        let (release, waiting) = oneshot::channel();
++        *self
++            .transport
++            .worker_startup_no_receipt_gate
++            .lock()
++            .unwrap() = Some((entered, waiting));
++        (observed, release)
++    }
++
+     /// Test-only: count of in-flight commands still awaiting a response, so a
+     /// test can assert a cancelled command left no orphaned entry (#1528).
+     #[cfg(test)]
+@@ -4155,6 +4242,51 @@ mod tests {
+         }
+     }
+ 
++    #[tokio::test]
++    async fn service_worker_pending_failure_preserves_error_without_retirement_authority() {
++        let (client, mut requests, replies, peer) = service_worker_test_peer().await;
++        let deadline = std::time::Instant::now() + Duration::from_secs(5);
++        let (view, ledger, _cancel) = service_worker_test_owner(&client, deadline);
++        let (startup, sent) = service_worker_retirement_batch(view, &mut requests, deadline).await;
++        for request in &sent {
++            replies
++                .send(service_worker_response(request, true))
++                .unwrap();
++        }
++        let mut failure = tokio::time::timeout(Duration::from_secs(2), startup)
++            .await
++            .unwrap()
++            .unwrap()
++            .unwrap_err();
++        let original = failure.to_string();
++        let still_bound = !ledger
++            .worker_startup_session_unbound("worker-session")
++            .unwrap();
++        let has_pending = failure.has_pending_retirement();
++        let no_receipt = !failure.has_retirement() && failure.take_retirement().is_none();
++        let original_error = failure.error();
++        let closed = failure.fail_closed(ProtocolError::Cancelled);
++        let debt = ledger.snapshot();
++        let no_replay = requests.try_recv().is_err();
++        client.close().await;
++        peer.await.unwrap();
++        for method in [
++            "Network.enable",
++            "Runtime.enable",
++            "Runtime.runIfWaitingForDebugger",
++        ] {
++            assert!(original.contains(&format!("{method}: CDP error ({method})")));
++        }
++        assert!(original.contains("observation failed"));
++        assert_eq!(original_error, ProtocolError::BrowserFailure);
++        assert!(still_bound && has_pending && no_receipt && no_replay);
++        assert_eq!(debt.outstanding_commands, 0);
++        assert!(!debt.integrity_lost);
++        assert_eq!(closed.error(), ProtocolError::Cancelled);
++        assert_eq!(closed.to_string(), original);
++        assert!(!closed.has_retirement() && !closed.has_pending_retirement());
++    }
++
+     #[tokio::test]
+     async fn service_worker_startup_error_ack_is_not_pardoned_by_sibling_detachment() {
+         let (client, mut requests, replies, peer) = service_worker_test_peer().await;
+diff --git a/cli/src/native/client_actions.rs b/cli/src/native/client_actions.rs
+index 595bcbedb0848424745a52b8a5b892f5ea533024..83e387610cf8dca448f368d913c5e3512d530113 100644
+--- a/cli/src/native/client_actions.rs
++++ b/cli/src/native/client_actions.rs
+@@ -3836,6 +3836,7 @@ impl FixtureOperations {
+             Err(code) => (false, None, Some(WireError { code: code.clone() })),
+         };
+         sink.acknowledge_result_for_test(&ServerMessage::Result {
++            recovery: None,
+             id: "synthetic-fixture-result".into(),
+             generation: 1,
+             operation_seq: self.sequence,
+@@ -8900,6 +8901,7 @@ mod tests {
+             .stage_until_result(&f.op, &f.page.identity_scope)
+             .unwrap();
+         sink.acknowledge_result_for_test(&ServerMessage::Result {
++            recovery: None,
+             id: "preparation-fixture-initialized".into(),
+             generation: f.op.generation,
+             operation_seq: f.op.sequence,
+diff --git a/cli/src/native/client_browser.rs b/cli/src/native/client_browser.rs
+index c4d698d3e43dbed7242d25cc07b4bc20f324bb25..e064d7751c8d4af73aa59c4b1e812c5ac0eb769e 100644
+--- a/cli/src/native/client_browser.rs
++++ b/cli/src/native/client_browser.rs
+@@ -2088,16 +2088,18 @@ impl ClientBrowser {
+                             if watch_slot.is_none() {
+                                 {
+                                     let sink = event_sink;
+-                                    let mut lost =
+-                                        resource.manager.client.remote_connection_closed();
++                                    let watched_client = resource.manager.client.clone();
++                                    let watched_targets = resource.targets.clone();
++                                    let mut lost = watched_client.remote_connection_closed();
+                                     *watch_slot = Some(tokio::spawn(async move {
+                                         loop {
+                                             if *lost.borrow() {
+-                                                return sink.emit(
+-                                                    "browser.disconnected".into(),
+-                                                    serde_json::json!({"reason":"browser-connection-closed"}),
+-                                                    None,
+-                                                );
++                                                return sink
++                                                    .emit_disconnected(
++                                                        &watched_client,
++                                                        &watched_targets,
++                                                    )
++                                                    .map(|_queued| ());
+                                             }
+                                             if lost.changed().await.is_err() {
+                                                 return Ok(());
+@@ -2178,7 +2180,7 @@ impl ClientBrowser {
+         *slot = Some(tokio::spawn(async move {
+             let _transition = transition;
+             let result = async {
+-                let task_cleanup = tasks.drain().await;
++                let task_cleanup = tasks.drain_current().await;
+                 cleanup_trace::observe_cleanup(
+                     &diagnostics,
+                     CleanupPart::RetainedTaskFallback,
+@@ -2277,6 +2279,12 @@ impl super::client_transport::ClientExecutor for ClientBrowser {
+     ) -> super::client_operation_state::OperationRetentionStatus {
+         self.tasks.operation_retention_status(key)
+     }
++    fn disconnected_recovery_candidate(
++        &self,
++        key: super::client_debt::OperationKey,
++    ) -> Option<super::client_operation_state::DisconnectedRecoveryProof> {
++        self.tasks.recovery_candidate(key)
++    }
+     fn cancel_operation_producer(&self, key: super::client_debt::OperationKey) {
+         self.tasks.cancel_operation_producer(key);
+     }
+@@ -2341,6 +2349,7 @@ impl super::client_transport::ClientExecutor for ClientBrowser {
+         // acceptance evidence separately determines release readiness.
+         let capabilities = [
+             super::client_protocol::EXACT_OWNER_CONTINUATION,
++            super::client_protocol::DISCONNECTED_RECOVERY,
+             "browser.scope/1",
+             "browser.lifecycle/1",
+             "browser.evaluate/1",
+@@ -2559,7 +2568,21 @@ impl super::client_transport::ClientExecutor for ClientBrowser {
+                 }
+             }
+         };
+-        if command != "scope.end" {
++        let recovery = if command == "scope.reconnect" {
++            match self.broker.disconnected_recovery(&lease) {
++                Ok(proof) => proof,
++                Err(error) => {
++                    return NativeOutcome {
++                        retention: None,
++                        result: Err(error),
++                        effects: Effects::NotDispatched,
++                    }
++                }
++            }
++        } else {
++            None
++        };
++        if command != "scope.end" && recovery.is_none() {
+             let admission = async {
+                 self.broker.wait_application_publication(&lease).await?;
+                 self.tasks.wait_application(&lease).await
+@@ -2613,7 +2636,7 @@ impl super::client_transport::ClientExecutor for ClientBrowser {
+                     }
+                 };
+             return self
+-                .reconnect_scope(captured_scope.unwrap_or_default(), request, lease)
++                .reconnect_scope(captured_scope.unwrap_or_default(), request, lease, recovery)
+                 .await;
+         }
+         if command == "scope.restart" {
+@@ -3781,7 +3804,7 @@ impl super::client_transport::ClientExecutor for ClientBrowser {
+         let _lifecycle = self.lifecycle.lock().await;
+         let drain_failed = self.gate.drained().await.is_err();
+         self.tasks.seal().await;
+-        let task_cleanup_failed = self.tasks.drain().await.is_err();
++        let task_cleanup_failed = self.tasks.drain_current().await.is_err();
+         // Keep both journals in owner storage across cancellation or failed
+         // final cleanup. A local take would drop unresolved retained resources.
+         let mut owner = self.owner.lock().await;
+@@ -4101,6 +4124,7 @@ impl ClientBrowser {
+         let tasks = self.tasks.clone();
+         let observation = self.observation.clone();
+         let uncertain = self.startup_uncertain.clone();
++        let connection_watch = self.connection_watch.clone();
+         let Some(sink) = self.event_sink.get().cloned() else {
+             return NativeOutcome {
+                 retention: None,
+@@ -4179,12 +4203,24 @@ impl ClientBrowser {
+                     .stop(false);
+                 #[cfg(feature = "acceptance-faults")]
+                 faults.retire_scope(&scope)?;
++                {
++                    let mut watch = connection_watch.lock().await;
++                    if let Some(old) = watch.as_mut() {
++                        old.abort();
++                        if let Err(error) = old.await {
++                            if !error.is_cancelled() {
++                                return Err(ProtocolError::CleanupFailed);
++                            }
++                        }
++                    }
++                    *watch = None;
++                }
+                 gate.begin_transition()?;
+                 // Owner mutex cannot remain held while admitted operations are
+                 // finishing their captured ownership checks.
+                 drop(journal);
+                 gate.drained().await?;
+-                tasks.drain().await?;
++                tasks.drain_current().await?;
+                 let mut journal = owner.lock().await;
+                 let resource = journal.as_mut().ok_or(ProtocolError::StaleScope)?;
+                 if resource.identity_scope != scope {
+@@ -4208,7 +4244,7 @@ impl ClientBrowser {
+                     .initialize_runtime(
+                         gate.clone(),
+                         broker,
+-                        sink,
++                        sink.clone(),
+                         blobs.clone(),
+                         RuntimeInitialization {
+                             operation: &operation,
+@@ -4360,6 +4396,22 @@ impl ClientBrowser {
+                     .ok_or(ProtocolError::ScopeUnavailable)?
+                     .page_active
+                     .store(expose_page, std::sync::atomic::Ordering::SeqCst);
++                let watched_client = resource.manager.client.clone();
++                let watched_targets = resource.targets.clone();
++                let mut lost = watched_client.remote_connection_closed();
++                let watched_sink = sink.clone();
++                *connection_watch.lock().await = Some(tokio::spawn(async move {
++                    loop {
++                        if *lost.borrow() {
++                            return watched_sink
++                                .emit_disconnected(&watched_client, &watched_targets)
++                                .map(|_queued| ());
++                        }
++                        if lost.changed().await.is_err() {
++                            return Ok(());
++                        }
++                    }
++                }));
+                 uncertain.store(false, std::sync::atomic::Ordering::SeqCst);
+                 Ok(serde_json::json!({"identityScope":resource.identity_scope}))
+             }
+@@ -4405,6 +4457,7 @@ impl ClientBrowser {
+         scope: String,
+         request: ReconnectRequest,
+         operation: super::client_session::OperationLease,
++        recovery: Option<super::client_operation_state::DisconnectedRecoveryProof>,
+     ) -> super::client_transport::NativeOutcome {
+         use super::client_protocol::Effects;
+         use super::client_transport::NativeOutcome;
+@@ -4490,6 +4543,21 @@ impl ClientBrowser {
+                     .ok_or(ProtocolError::ScopeUnavailable)?;
+                 let terminal = runtime.enrollment.terminal_connection_proof()?;
+                 terminal.check_client(&resource.manager.client)?;
++                if let Some(proof) = &recovery {
++                    proof.check()?;
++                    let debt = resource
++                        .manager
++                        .client
++                        .debt_ledger()
++                        .ok_or(ProtocolError::StaleScope)?;
++                    if !Arc::ptr_eq(&debt, proof.ledger())
++                        || !debt.matches_owner(operation.generation, &scope)
++                    {
++                        return Err(ProtocolError::StaleScope);
++                    }
++                    resource.targets.require_eval_owner(&debt)?;
++                    resource.page_state.check_no_active_local_input(&scope)?;
++                }
+                 let retained = super::client_reconnect::RetainedIdentity::capture(
+                     &resource.manager,
+                     &resource.context_id,
+@@ -4545,7 +4613,16 @@ impl ClientBrowser {
+                 gate.begin_transition()?;
+                 drop(journal);
+                 gate.drained().await?;
+-                tasks.drain().await?;
++                if let Some(proof) = &recovery {
++                    tokio::time::timeout_at(
++                        operation.deadline.into(),
++                        tasks.drain_disconnected(proof),
++                    )
++                    .await
++                    .map_err(|_| ProtocolError::DeadlineExceeded)??;
++                } else {
++                    tasks.drain_current().await?;
++                }
+                 let mut journal = owner.lock().await;
+                 let resource = journal.as_mut().ok_or(ProtocolError::StaleScope)?;
+                 if resource.identity_scope != scope {
+@@ -4566,6 +4643,27 @@ impl ClientBrowser {
+                         .network
+                         .take_disconnected_routes(&resource.targets, &operation)?,
+                 );
++                // Stop the old root event producer before any new scoped
++                // authority exists. Abort never stands in for this actual join.
++                {
++                    let mut watch = connection_watch.lock().await;
++                    if let Some(old) = watch.as_mut() {
++                        old.abort();
++                        if let Err(error) = old.await {
++                            if !error.is_cancelled() {
++                                return Err(ProtocolError::CleanupFailed);
++                            }
++                        }
++                    }
++                    *watch = None;
++                }
++                if let Some(proof) = &recovery {
++                    let verified = candidate.as_ref().ok_or(ProtocolError::ScopeUnavailable)?;
++                    broker.bind_recovery_candidate(&operation, verified.proof())?;
++                    // This consumes positive local retirement while reader EOF
++                    // is still the sole cause, before our explicit socket close.
++                    tasks.retire_disconnected_owner(proof)?;
++                }
+                 resource.runtime = None;
+                 let recovery_observation_baseline =
+                     observation.snapshot_with_observation(&operation).await?.2;
+@@ -4592,7 +4690,7 @@ impl ClientBrowser {
+                 let authority = resource
+                     .initialize_runtime(
+                         gate.clone(),
+-                        broker,
++                        broker.clone(),
+                         sink.clone(),
+                         blobs.clone(),
+                         RuntimeInitialization {
+@@ -4694,21 +4792,29 @@ impl ClientBrowser {
+                         Err(error) => return Err(error),
+                     }
+                 }
++                if recovery.is_some() {
++                    let debt = resource
++                        .manager
++                        .client
++                        .debt_ledger()
++                        .ok_or(ProtocolError::StaleScope)?;
++                    broker.publish_recovered_scope(&operation, &debt)?;
++                }
+                 resource.reconnect_proof = None;
+                 let mut watch = connection_watch.lock().await;
+                 if let Some(old) = watch.as_mut() {
+                     old.abort();
+                     let _ = old.await;
+                 }
+-                let mut lost = resource.manager.client.remote_connection_closed();
++                let watched_client = resource.manager.client.clone();
++                let watched_targets = resource.targets.clone();
++                let mut lost = watched_client.remote_connection_closed();
+                 *watch = Some(tokio::spawn(async move {
+                     loop {
+                         if *lost.borrow() {
+-                            return sink.emit(
+-                                "browser.disconnected".into(),
+-                                serde_json::json!({"reason":"browser-connection-closed"}),
+-                                None,
+-                            );
++                            return sink
++                                .emit_disconnected(&watched_client, &watched_targets)
++                                .map(|_queued| ());
+                         }
+                         if lost.changed().await.is_err() {
+                             return Ok(());
+diff --git a/cli/src/native/client_browser_borrowed_cleanup_tests.rs b/cli/src/native/client_browser_borrowed_cleanup_tests.rs
+index e61c169aa3556f41953c61f08efac7cc8f669a25..471c52ea454ac84cf011f6c345093e876b6c2e8f 100644
+--- a/cli/src/native/client_browser_borrowed_cleanup_tests.rs
++++ b/cli/src/native/client_browser_borrowed_cleanup_tests.rs
+@@ -126,6 +126,7 @@ async fn managed_borrowed_case(event_first: bool, with_child: bool, fault: &'sta
+         .unwrap();
+     let scope = opened["identityScope"].as_str().unwrap().to_owned();
+     sink.acknowledge_result_for_test(&ServerMessage::Result {
++        recovery: None,
+         id: "managed-open".into(),
+         generation: 1,
+         operation_seq: 1,
+diff --git a/cli/src/native/client_browser_final_local_tests.rs b/cli/src/native/client_browser_final_local_tests.rs
+index ae82b93e84b4f5e26139cc4981670eb54a5d7e88..2180ac4cd97cac8518f4fef423f0633b374efec6 100644
+--- a/cli/src/native/client_browser_final_local_tests.rs
++++ b/cli/src/native/client_browser_final_local_tests.rs
+@@ -114,6 +114,7 @@ async fn missing_borrowed_root_can_end_only_after_exact_debt_free_remote_eof() {
+         // Use the real scoped result acknowledgement boundary, not an unscoped
+         // fixture sink that silently skips callback retirement.
+         sink.acknowledge_result_for_test(&ServerMessage::Result {
++            recovery: None,
+             id: "open".into(),
+             generation: 1,
+             operation_seq: 1,
+@@ -268,6 +269,7 @@ async fn missing_borrowed_root_can_end_only_after_exact_debt_free_remote_eof() {
+                         expected_page_identity: identity["page"].as_str().unwrap().into(),
+                     },
+                     operation(2),
++                    None,
+                 )
+                 .await;
+             assert_eq!(refused.result, Err(ProtocolError::StaleScope));
+diff --git a/cli/src/native/client_browser_point_debt_tests.rs b/cli/src/native/client_browser_point_debt_tests.rs
+index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026ea36f81f 100644
+--- a/cli/src/native/client_browser_point_debt_tests.rs
++++ b/cli/src/native/client_browser_point_debt_tests.rs
+@@ -502,21 +502,31 @@ async fn eof_recovery_result(framed: &mut FramedFixture, id: &str, sequence: u64
+     .await
+ }
+ 
+-async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
++#[derive(Clone, Copy, PartialEq, Eq)]
++enum RecoveryScenario {
++    OldClient,
++    Recover,
++    WrongContext,
++    WrongScope,
++    CancelRecovery,
++    Callback,
++}
++
++async fn framed_input_eof_reconnect(scenario: RecoveryScenario) -> EofRecoveryObservation {
+     use crate::native::client_browser::reconnect_tests::{peer as reconnect_peer, PeerMode};
+     use crate::native::client_protocol::EXACT_OWNER_CONTINUATION;
+ 
+     let mut original = reconnect_peer(PeerMode::HoldInput).await;
+     let broker = Arc::new(ClientSession::new());
+     let browser = Arc::new(ClientBrowser::new(broker.clone()));
+-    // These are the existing NativeClient REQUIRED_CAPABILITIES, not a new
+-    // recovery capability. terminal.close/1 makes its refusal observable after
+-    // quarantine; continuation must not turn EOF into an input acknowledgement.
+-    let mut framed = FramedFixture::with_capabilities(
+-        broker.clone(),
+-        browser.clone(),
+-        vec![EXACT_OWNER_CONTINUATION.into(), "terminal.close/1".into()],
+-    );
++    // Old clients preserve the recorded terminal behavior. The new descriptor
++    // is sent only after explicit schema negotiation, never as usable retention.
++    let mut capabilities = vec![EXACT_OWNER_CONTINUATION.into(), "terminal.close/1".into()];
++    if scenario != RecoveryScenario::OldClient {
++        capabilities.push(crate::native::client_protocol::DISCONNECTED_RECOVERY.into());
++    }
++    let mut framed =
++        FramedFixture::with_capabilities(broker.clone(), browser.clone(), capabilities);
+     framed.ready().await.unwrap();
+     let opened = framed
+         .command(
+@@ -566,12 +576,29 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+         generation: 1,
+         operation_seq: framed.sequence,
+     };
+-    framed
+-        .write(json!({"type":"request","id":"p06-original","generation":1,
+-            "operationSeq":key.operation_seq,"timeoutMs":5000,"command":"browser.pointer",
+-            "args":{"identityScope":scope,"point":{"x":10,"y":10},"action":{"kind":"tap"}}}))
+-        .await
+-        .unwrap();
++    let callback = if scenario == RecoveryScenario::Callback {
++        Some(
++            broker
++                .decision_scoped(
++                    1,
++                    crate::native::client_session::DecisionOwner::Scope,
++                    crate::native::client_session::DecisionKind::Dialog,
++                    5000,
++                    None,
++                    Some(scope.clone()),
++                )
++                .unwrap(),
++        )
++    } else {
++        None
++    };
++    let mut original_request = json!({"type":"request","id":"p06-original","generation":1,
++        "operationSeq":key.operation_seq,"timeoutMs":5000,"command":"browser.pointer",
++        "args":{"identityScope":scope,"point":{"x":10,"y":10},"action":{"kind":"tap"}}});
++    if let Some(callback) = &callback {
++        original_request["callbackToken"] = callback.token.clone().into();
++    }
++    framed.write(original_request).await.unwrap();
+     bounded(async {
+         while let Some(method) = original.received.recv().await {
+             if method == "Input.dispatchMouseEvent" {
+@@ -617,6 +644,32 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+     assert_eq!(original_result["ok"], false);
+     assert_eq!(original_result["effects"], "unknown");
+     assert!(original_result.get("retention").is_none());
++    assert_eq!(original_result["scopeState"], "quarantined");
++    if matches!(
++        scenario,
++        RecoveryScenario::Recover
++            | RecoveryScenario::WrongContext
++            | RecoveryScenario::WrongScope
++            | RecoveryScenario::CancelRecovery
++    ) {
++        assert_eq!(
++            original_result["recovery"],
++            json!({"version":1,"identityScope":scope})
++        );
++        // Recovery control is not old-scope business admission.
++        assert!(broker.admit(1, key.operation_seq + 1, 1000).is_err());
++        assert!(matches!(
++            broker.admit_disconnected_reconnect(2, key.operation_seq + 1, 1000, &scope),
++            Err(ProtocolError::StaleGeneration)
++        ));
++        let proof = browser.tasks.recovery_candidate(key).unwrap();
++        assert_eq!(
++            broker.offer_disconnected_recovery(proof),
++            Err(ProtocolError::ScopeUnavailable)
++        );
++    } else {
++        assert!(original_result.get("recovery").is_none());
++    }
+     // Joining the actual producer is not an acknowledgement of its remote
+     // command. Retain the outcome of this join for the characterization test.
+     let producer_drain = bounded(browser.tasks.drain()).await;
+@@ -636,14 +689,39 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+     // This is not the stronger debt-free final-local cleanup proof.
+     assert!(ledger.check_final_local_eof(1, &scope).is_err());
+ 
++    if scenario == RecoveryScenario::CancelRecovery {
++        // Use the already-minted real-reader proof through its real broker slot,
++        // then cancel before start. No replacement client or authority is forged.
++        framed.sequence += 1;
++        let cancelled = broker
++            .admit_disconnected_reconnect(1, framed.sequence, 5000, &scope)
++            .unwrap();
++        assert!(cancelled.deadline <= browser.tasks.recovery_candidate(key).unwrap().deadline());
++        broker.cancel(1, cancelled.sequence).unwrap();
++        assert!(!broker.start(1, cancelled.sequence).unwrap());
++        assert!(matches!(
++            broker.disconnected_recovery(&cancelled),
++            Err(ProtocolError::Cancelled)
++        ));
++        assert!(!broker.recovery_available());
++        broker
++            .settle(1, cancelled.sequence, Effects::NotDispatched)
++            .unwrap();
++    }
++
+     // A different transport advertising the exact retained browser/context/page
+     // is eligible for verification, never a replacement page or input retry.
+-    let candidate = reconnect_peer(PeerMode::ReconnectCandidate).await;
++    let candidate = reconnect_peer(if scenario == RecoveryScenario::WrongContext {
++        PeerMode::WrongContext
++    } else {
++        PeerMode::ReconnectCandidate
++    })
++    .await;
+     framed.sequence += 1;
+     framed
+         .write(json!({"type":"request","id":"p06-reconnect","generation":1,
+             "operationSeq":framed.sequence,"timeoutMs":5000,"command":"scope.reconnect",
+-            "args":{"identityScope":scope,"endpoint":candidate.endpoint,
++            "args":{"identityScope":if scenario == RecoveryScenario::WrongScope { "other-scope" } else { &scope },"endpoint":candidate.endpoint,
+                 "expectedBrowserIdentity":identity["browser"],
+                 "expectedContextIdentity":identity["context"],
+                 "expectedPageIdentity":identity["page"]}}))
+@@ -653,6 +731,24 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+     let reconnect = eof_recovery_result(&mut framed, "p06-reconnect", reconnect_sequence).await;
+     if reconnect["ok"] == true {
+         assert_ne!(reconnect["data"]["identityScope"], scope);
++        let new_scope = reconnect["data"]["identityScope"]
++            .as_str()
++            .unwrap()
++            .to_owned();
++        framed.scope = Some(new_scope.clone());
++        let observed = framed
++            .command("page.url", json!({"identityScope":new_scope}), 5)
++            .await
++            .unwrap();
++        assert_eq!(observed["url"], "about:blank");
++        assert!(matches!(
++            broker.admit(1, key.operation_seq, 1000),
++            Err(ProtocolError::SequenceReused)
++        ));
++        assert!(ledger.check_admission(AdmissionClass::Input).is_err());
++        // A duplicate old cancellation cannot revive its producer or poison
++        // the current owner after the old producer/monitor have actually joined.
++        browser.tasks.cancel_operation_producer(key);
+     }
+     let cleanup = tokio::time::timeout(Duration::from_secs(7), framed.finish())
+         .await
+@@ -716,7 +812,7 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+ 
+ #[tokio::test]
+ async fn p06_framed_input_eof_currently_quarantines_before_reconnect_verification() {
+-    let observed = framed_input_eof_reconnect().await;
++    let observed = framed_input_eof_reconnect(RecoveryScenario::OldClient).await;
+     assert_eq!(observed.original["scopeState"], "quarantined");
+     assert_eq!(observed.producer_drain, Err(ProtocolError::CleanupFailed));
+     assert_eq!(observed.reconnect["ok"], false);
+@@ -729,8 +825,8 @@ async fn p06_framed_input_eof_currently_quarantines_before_reconnect_verificatio
+ 
+ #[tokio::test]
+ async fn p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay() {
+-    let observed = framed_input_eof_reconnect().await;
+-    // Intentional RED on the current baseline. Recovery belongs only to the
++    let observed = framed_input_eof_reconnect(RecoveryScenario::Recover).await;
++    // Preserves the original RED receipt; negotiated recovery belongs only to the
+     // session: the helper has already proved the original receipt stays Unknown,
+     // its one dispatched input remains owned, and neither transport replays it.
+     assert_eq!(
+@@ -746,3 +842,45 @@ async fn p06_framed_input_eof_explicit_reconnect_must_recover_session_without_re
+         .iter()
+         .any(|r| r["method"] == "Target.getTargetInfo"));
+ }
++
++#[tokio::test]
++async fn p06_framed_input_eof_recovery_rejects_wrong_context_without_replay() {
++    let observed = framed_input_eof_reconnect(RecoveryScenario::WrongContext).await;
++    assert_eq!(observed.reconnect["ok"], false);
++    assert_eq!(observed.reconnect["effects"], "not-dispatched");
++    assert_eq!(observed.reconnect["scopeState"], "quarantined");
++    assert!(observed
++        .candidate_commands
++        .iter()
++        .any(|request| request["method"] == "Target.getTargetInfo"));
++    assert!(observed.cleanup.is_err());
++}
++
++#[tokio::test]
++async fn p06_framed_callback_input_eof_never_offers_root_recovery() {
++    let observed = framed_input_eof_reconnect(RecoveryScenario::Callback).await;
++    assert!(observed.original.get("recovery").is_none());
++    assert_eq!(observed.reconnect["ok"], false);
++    assert!(observed.candidate_commands.is_empty());
++    assert!(observed.cleanup.is_err());
++}
++
++#[tokio::test]
++async fn p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io() {
++    let observed = framed_input_eof_reconnect(RecoveryScenario::WrongScope).await;
++    assert_eq!(observed.reconnect["ok"], false);
++    assert_eq!(observed.reconnect["error"]["code"], "stale-scope");
++    assert_eq!(observed.reconnect["effects"], "not-dispatched");
++    assert!(observed.candidate_commands.is_empty());
++    assert!(observed.cleanup.is_err());
++}
++
++#[tokio::test]
++async fn p06_framed_input_eof_cancelled_recovery_cannot_be_reissued() {
++    let observed = framed_input_eof_reconnect(RecoveryScenario::CancelRecovery).await;
++    assert_eq!(observed.reconnect["ok"], false);
++    assert_eq!(observed.reconnect["effects"], "not-dispatched");
++    assert_eq!(observed.reconnect["scopeState"], "quarantined");
++    assert!(observed.candidate_commands.is_empty());
++    assert!(observed.cleanup.is_err());
++}
+diff --git a/cli/src/native/client_browser_reconnect_tests.rs b/cli/src/native/client_browser_reconnect_tests.rs
+index 4058194562644abc4f8741f192c8a094a2149cc1..5e9588a69a82e5d675f1cd05cb392d4027b25833 100644
+--- a/cli/src/native/client_browser_reconnect_tests.rs
++++ b/cli/src/native/client_browser_reconnect_tests.rs
+@@ -400,6 +400,7 @@ async fn preflight_refusal(mode: PeerMode, error: ProtocolError) {
+             owner.scope.clone(),
+             owner.request(&candidate.endpoint),
+             owner.operation(),
++            None,
+         ),
+     )
+     .await
+@@ -432,8 +433,11 @@ async fn reconnect_supervisor_cancel_after_candidate_attach_keeps_old_runtime()
+     let operation = owner.operation();
+     let browser = owner.browser.clone();
+     let scope = owner.scope.clone();
+-    let reconnecting =
+-        tokio::spawn(async move { browser.reconnect_scope(scope, request, operation).await });
++    let reconnecting = tokio::spawn(async move {
++        browser
++            .reconnect_scope(scope, request, operation, None)
++            .await
++    });
+     tokio::time::timeout(Duration::from_secs(3), async {
+         let mut contexts = 0;
+         while let Some(method) = candidate.received.recv().await {
+@@ -481,6 +485,7 @@ async fn reconnect_supervisor_old_cleanup_failure_closes_verified_candidate() {
+             owner.scope.clone(),
+             owner.request(&candidate.endpoint),
+             owner.operation(),
++            None,
+         ),
+     )
+     .await
+diff --git a/cli/src/native/client_browser_trace_retirement_tests.rs b/cli/src/native/client_browser_trace_retirement_tests.rs
+index 6537f10e5a5d9a89390f9c5aec92d2e45b4dd6c0..d815d30c229e20f4ef490810fb3f19bae91c6ece 100644
+--- a/cli/src/native/client_browser_trace_retirement_tests.rs
++++ b/cli/src/native/client_browser_trace_retirement_tests.rs
+@@ -212,6 +212,69 @@ async fn result_frame(fixture: &mut FramedFixture, sequence: u64) -> Value {
+     panic!("trace result missing within finite event bound")
+ }
+ 
++fn uncorrelated_cleanup_failure(frame: &Value) -> bool {
++    frame
++        == &json!({
++            "type":"error",
++            "error":{"code":"cleanup-failed"},
++            "scopeState":"quarantined"
++        })
++}
++
++async fn terminal_failure_frame(fixture: &mut FramedFixture) {
++    for _ in 0..32 {
++        let frame = bounded(fixture.read()).await.unwrap();
++        if frame["type"] == "error" {
++            assert!(
++                uncorrelated_cleanup_failure(&frame),
++                "unexpected terminal: {frame}"
++            );
++            return;
++        }
++        assert_eq!(frame["generation"], 1);
++        assert_eq!(frame["type"], "event");
++        assert_eq!(frame["sequence"], fixture.event_sequence + 1);
++        fixture.event_sequence += 1;
++        validate_fixture_notice(&frame).unwrap();
++    }
++    panic!("trace terminal failure missing within finite event bound")
++}
++
++#[test]
++fn trace_terminal_failure_rejects_correlated_or_reusable_shapes() {
++    let terminal = serde_json::to_value(crate::native::client_protocol::ServerMessage::Error {
++        id: None,
++        error: crate::native::client_protocol::WireError {
++            code: ProtocolError::CleanupFailed,
++        },
++        scope_state: ScopeState::Quarantined,
++    })
++    .unwrap();
++    assert!(uncorrelated_cleanup_failure(&terminal));
++    for (field, value) in [
++        ("type", json!("result")),
++        ("type", json!("closed")),
++        ("id", json!("after-trace")),
++        ("id", Value::Null),
++        ("generation", json!(1)),
++        ("generation", Value::Null),
++        ("operationSeq", json!(7)),
++        ("ok", json!(false)),
++        ("data", json!({})),
++        ("retention", json!({})),
++        ("scopeState", json!("usable")),
++        ("scopeState", json!("closed")),
++        ("error", json!({"code":"scope-unavailable"})),
++    ] {
++        let mut invalid = terminal.clone();
++        invalid[field] = value;
++        assert!(
++            !uncorrelated_cleanup_failure(&invalid),
++            "terminal fixture accepted an invalid {field}: {invalid}"
++        );
++    }
++}
++
+ async fn trace_retirement_case(raw_ack: bool) {
+     let (endpoint, mut requests, release, log, relay, lifecycle) = trace_peer(raw_ack).await;
+     let broker = Arc::new(ClientSession::new());
+@@ -305,14 +368,16 @@ async fn trace_retirement_case(raw_ack: bool) {
+             }).await;
+             assert!(targets.inventory().is_err());
+             fixture.sequence += 1;
+-            let refused_sequence = fixture.sequence;
+-            fixture.write(json!({"type":"request","id":"after-trace","generation":1,
+-                "operationSeq":refused_sequence,"timeoutMs":1000,"command":"page.url",
+-                "args":{"identityScope":scope}})).await?;
+-            let refused = result_frame(&mut fixture, refused_sequence).await;
+-            assert_eq!(refused["id"], "after-trace");
+-            assert_eq!(refused["ok"], false);
+-            assert_eq!(refused["scopeState"], "quarantined");
++            assert!(matches!(
++                broker.admit(1, fixture.sequence, 1000),
++                Err(ProtocolError::ScopeUnavailable)
++            ));
++            // No terminal.close/1 was negotiated: the legacy transport ends
++            // with an uncorrelated cleanup error, not a new operation result.
++            // Keep result_frame's generation/sequence checks for the trace.
++            terminal_failure_frame(&mut fixture).await;
++            assert!(bounded(read_frame(&mut fixture.stream)).await.unwrap().is_none());
++            assert!(matches!(bounded(browser.page_lease(false)).await, Err(ProtocolError::ScopeUnavailable)));
+         }
+         assert_eq!(log.lock().unwrap().iter().filter(|r| r["method"] == "Page.captureScreenshot").count(), 1);
+         Ok(())
+@@ -329,6 +394,8 @@ async fn trace_retirement_case(raw_ack: bool) {
+     test.unwrap();
+     if raw_ack {
+         assert!(cleanup, "native fixture shutdown was not proven");
++    } else {
++        assert!(!cleanup, "unacknowledged raw capture cannot prove cleanup");
+     }
+ }
+ 
+diff --git a/cli/src/native/client_debt.rs b/cli/src/native/client_debt.rs
+index 820969c2fc27a25cf7296dcd1e9a7bfa2e17da89..c89d8b200ebc2598335a698615b184ac9b57b2b2 100644
+--- a/cli/src/native/client_debt.rs
++++ b/cli/src/native/client_debt.rs
+@@ -571,6 +571,12 @@ impl OperationJournalHandle {
+         // Neither a complete local producer nor an accounted-debt classification
+         // can clear reader-owned remote obligations or earlier integrity loss.
+     }
++    pub(crate) fn local_integrity_intact(&self) -> bool {
++        self.journal
++            .state
++            .lock()
++            .is_ok_and(|state| !state.integrity_lost)
++    }
+     pub(crate) fn finish_local_producers(&self) {
+         match self.journal.state.lock() {
+             Ok(mut state) => {
+@@ -1637,6 +1643,23 @@ impl OwnerDebtLedger {
+         state.context_id = Some(context_id.to_owned());
+         Ok(())
+     }
++    /// Remote transport loss remains Unknown. This only distinguishes that
++    /// reader-owned cause from independent accounting/cleanup corruption.
++    pub(crate) fn remote_eof_only(&self) -> bool {
++        self.state.lock().is_ok_and(|state| {
++            state.integrity_lost
++                && state.eof_integrity_cause == EofIntegrityCause::RemoteEofOnly
++                && !state.retired
++                && state
++                    .bootstrap
++                    .as_ref()
++                    .is_some_and(|scope| !scope.owns_context)
++                && state.context_id.is_some()
++        })
++    }
++    pub(crate) fn identity_scope(&self) -> &str {
++        &self.identity_scope
++    }
+     pub(crate) fn same_owner(&self, other: &OwnerDebtLedger) -> bool {
+         self.generation == other.generation && self.identity_scope == other.identity_scope
+     }
+diff --git a/cli/src/native/client_enrollment.rs b/cli/src/native/client_enrollment.rs
+index ebd4871b8eb1036769ac4f1adbc3570eeab69fbf..1bedc0f9af97817af75ff3bd6ad02fa7617c3384 100644
+--- a/cli/src/native/client_enrollment.rs
++++ b/cli/src/native/client_enrollment.rs
+@@ -736,6 +736,7 @@ enum CaptureTestPoint {
+     BeforeEventApply,
+     BeforeAttachedProcessing,
+     BeforeWorkerReadyCommit,
++    BeforeWorkerRetirementWait,
+ }
+ #[cfg(test)]
+ struct CaptureTestGate {
+@@ -3187,11 +3188,24 @@ impl ClientEnrollment {
+             let outcome = match startup {
+                 Ok(outcome) => outcome,
+                 Err(mut failure) => {
+-                    let Some(retirement) = failure.take_retirement() else {
+-                        return Err(failure.error());
+-                    };
++                    let (retirement, wait_for_exact_detach) =
++                        if let Some(retirement) = failure.take_retirement() {
++                            (retirement, false)
++                        } else if let Some(pending) = failure.take_pending_retirement() {
++                            (pending, true)
++                        } else {
++                            return Err(failure.error());
++                        };
++                    // Keep the original error outside the bounded retirement
++                    // wait. Cancellation/deadline cannot turn it into success.
+                     let retired = self
+-                        .finish_retired_worker_startup(&entry, retirement, permit, op)
++                        .finish_retired_worker_startup(
++                            &entry,
++                            retirement,
++                            permit,
++                            op,
++                            wait_for_exact_detach,
++                        )
+                         .await;
+                     if let Err(error) = retired {
+                         self.network.quarantine_worker_startup()?;
+@@ -3223,7 +3237,7 @@ impl ClientEnrollment {
+                 }
+                 super::cdp::client::ServiceWorkerStartupOutcome::Retired(retirement) => {
+                     return self
+-                        .finish_retired_worker_startup(&entry, retirement, permit, op)
++                        .finish_retired_worker_startup(&entry, retirement, permit, op, false)
+                         .await
+                         .map(|()| InitializationOutcome::Initialized);
+                 }
+@@ -3416,7 +3430,7 @@ impl ClientEnrollment {
+             match result {
+                 Ok(WorkerStartupDecision::AwaitDetach(pending)) => {
+                     return self
+-                        .finish_retired_worker_startup(entry, pending, permit, op)
++                        .finish_retired_worker_startup(entry, pending, permit, op, false)
+                         .await;
+                 }
+                 Ok(WorkerStartupDecision::AwaitPublication(pending)) => {
+@@ -3467,7 +3481,11 @@ impl ClientEnrollment {
+         mut retirement: super::cdp::client::WorkerStartupRetirement,
+         mut permit: super::client_targets::ResumePermit,
+         op: &OperationLease,
++        wait_for_exact_detach: bool,
+     ) -> Result<(), ProtocolError> {
++        if wait_for_exact_detach && !retirement.failed_terminal() {
++            return Err(ProtocolError::StaleScope);
++        }
+         let watermark = self.realm_watermark()?;
+         let result = bounded(op, async {
+             loop {
+@@ -3494,6 +3512,9 @@ impl ClientEnrollment {
+                     // transport owner -> ledger -> targets. No readiness or
+                     // application authority is published by this completion.
+                     let received = watermark.received().map_err(|_| ProtocolError::ScopeUnavailable)?;
++                    if wait_for_exact_detach {
++                        self.client.check_pending_worker_startup(&retirement, &self.targets, op, &entry.session)?;
++                    }
+                     if index.applied_watermark >= received {
+                         if index.sessions.contains_key(&entry.session)
+                             || index.sessions.values().any(|current| current.target == entry.target) {
+@@ -3502,6 +3523,13 @@ impl ClientEnrollment {
+                             // Wait only for the original tenure; never a reused ID.
+                             if retirement.failed_terminal() && retirement.publication_pending()? {
+                                 publication_pending = true;
++                            } else if wait_for_exact_detach {
++                                // Resume was already acknowledged. Retain
++                                // responsibility, not Ready or new business
++                                // authority, while this exact tenure is live.
++                                if !permit.original_worker_attachment_present()? {
++                                    return Err(ProtocolError::StaleReference);
++                                }
+                             } else if !retirement.all_acknowledged()
+                                 || !permit.original_worker_attachment_present()? {
+                                 return Err(ProtocolError::StaleReference);
+@@ -3526,6 +3554,10 @@ impl ClientEnrollment {
+                     self.client.wait_worker_startup_publication(&mut retirement, op).await?;
+                     continue;
+                 }
++                #[cfg(test)]
++                if wait_for_exact_detach {
++                    self.pause_capture_at(CaptureTestPoint::BeforeWorkerRetirementWait, op).await?;
++                }
+                 let deadline = retirement.deadline();
+                 tokio::select! { biased;
+                     _ = retirement.cancelled() => return Err(ProtocolError::Cancelled),
+@@ -6057,6 +6089,7 @@ mod tests {
+         };
+         let scoped_sink = sink.stage_until_result(&stage_op, scope).unwrap();
+         sink.acknowledge_result_for_test(&ServerMessage::Result {
++            recovery: None,
+             id: "initial".into(),
+             generation: 1,
+             operation_seq: 900,
+@@ -12945,6 +12978,160 @@ mod tests {
+         );
+     }
+ 
++    // The first no-receipt decision is fixed before real exact detach. Only
++    // retained responsibility can be reconsidered, never ErrorAck or Ready.
++    #[tokio::test]
++    async fn service_worker_failed_live_exact_detach_after_decision_keeps_owner_healthy() {
++        let (owner, _notices, log, emit, mut server, _broker, connection) =
++            fixture_with_client("sw-startup-observer-fails", true).await;
++        let ledger = owner.client.debt_ledger().unwrap();
++        let (decided, release) = owner.client.hold_worker_startup_no_receipt();
++        let ready_gate = CaptureTestGate::new();
++        owner.capture_test_gates.lock().unwrap().insert(
++            CaptureTestPoint::BeforeWorkerReadyCommit,
++            ready_gate.clone(),
++        );
++        owner.ensure_supervisor().await.unwrap();
++        let attached = attach(
++            "owned-context",
++            "worker-target",
++            "worker-session",
++            "service_worker",
++            None,
++        );
++        emit.send(json!({"method":attached.method,"params":attached.params}))
++            .await
++            .unwrap();
++        let (joined_error, deadline) = tokio::time::timeout(Duration::from_secs(2), decided)
++            .await
++            .unwrap()
++            .unwrap();
++        // The existing peer emits one real typed Runtime ErrorAck and two
++        // successful replies. All three are settled before the fixed decision.
++        assert!(joined_error.contains("Runtime.enable: CDP error (Runtime.enable)"));
++        assert!(joined_error.contains("synthetic observer failure"));
++        assert_eq!(ledger.snapshot().outstanding_commands, 0);
++        assert!(!ledger.snapshot().integrity_lost);
++        assert!(!ledger
++            .worker_startup_session_unbound("worker-session")
++            .unwrap());
++        let original = owner.targets.owned_target("worker-target").unwrap();
++        assert!(!original.configured && !original.resumed);
++        assert!(owner.index.lock().unwrap().failure.is_none());
++        owner
++            .network
++            .check_worker_startup(&owner.operation())
++            .unwrap();
++        let watermark = owner.realm_watermark().unwrap();
++        let before = watermark.received().unwrap();
++        emit.send(json!({"method":"Target.detachedFromTarget","params":{
++            "sessionId":"worker-session","targetId":"worker-target"
++        }}))
++        .await
++        .unwrap();
++        tokio::time::timeout_at(deadline.into(), async {
++            loop {
++                let changed = owner.changed.notified();
++                tokio::pin!(changed);
++                changed.as_mut().enable();
++                let applied = {
++                    let index = owner.index.lock().unwrap();
++                    let received = watermark.received().unwrap();
++                    received > before
++                        && index.applied_watermark >= received
++                        && !index.sessions.contains_key("worker-session")
++                };
++                if applied {
++                    break;
++                }
++                changed.await;
++            }
++        })
++        .await
++        .expect("exact detach must really apply within the original deadline");
++        assert!(Instant::now() < deadline);
++        assert!(ledger
++            .worker_startup_session_unbound("worker-session")
++            .unwrap());
++        assert!(owner.targets.owned_target("worker-target").is_err());
++        assert!(owner
++            .index
++            .lock()
++            .unwrap()
++            .pending_enrollment
++            .contains("worker-session"));
++        // Release the already-fixed None unchanged. This is not a retry, a
++        // fabricated detach, a receipt grant, or a delayed business command.
++        release.send(()).unwrap();
++        tokio::time::timeout_at(deadline.into(), async {
++            loop {
++                let changed = owner.changed.notified();
++                tokio::pin!(changed);
++                changed.as_mut().enable();
++                if !owner
++                    .index
++                    .lock()
++                    .unwrap()
++                    .pending_enrollment
++                    .contains("worker-session")
++                {
++                    break;
++                }
++                changed.await;
++            }
++        })
++        .await
++        .unwrap();
++        let failure = owner.index.lock().unwrap().failure.clone();
++        let health = owner.targets.check_settlement_integrity();
++        let network = owner.network.check_worker_startup(&owner.operation());
++        let debt = ledger.snapshot();
++        let ready_gate_unused = ready_gate.entered.try_acquire().is_err();
++        let methods: Vec<String> = log
++            .lock()
++            .unwrap()
++            .iter()
++            .filter(|request| request["sessionId"] == "worker-session")
++            .map(|request| request["method"].as_str().unwrap().to_owned())
++            .collect();
++        // Save primary state and finish the owned synthetic peer before the
++        // intentional RED assertion, so RED cannot masquerade as leaked cleanup.
++        let cleanup = owner.close().await;
++        connection.close().await;
++        let peer = tokio::time::timeout(Duration::from_secs(2), &mut server).await;
++        if peer.is_err() {
++            server.abort();
++            let _ = server.await;
++        }
++        eprintln!("failed-live exact-detach after decision: joined_error={joined_error}; failure={failure:?}; health={health:?}; network={network:?}; debt={debt:?}; cleanup={cleanup:?}; peer={peer:?}");
++        assert!(ready_gate_unused);
++        assert_eq!(debt.outstanding_commands, 0);
++        assert_eq!(
++            methods,
++            [
++                "Fetch.enable",
++                "Target.setAutoAttach",
++                "Network.enable",
++                "Runtime.enable",
++                "Runtime.runIfWaitingForDebugger"
++            ]
++        );
++        assert!(
++            matches!(peer, Ok(Ok(()))),
++            "owned peer did not finish: {peer:?}"
++        );
++        // A future design must retain that error/obligation until exact proof,
++        // never turn a still-live ErrorAck into Ready or wait past its budget.
++        assert_eq!(
++            failure, None,
++            "exact detach after the initial no-receipt decision must retire only the failed worker"
++        );
++        assert_eq!(health, Ok(()));
++        assert_eq!(network, Ok(()));
++        assert!(!debt.integrity_lost);
++        assert_eq!(cleanup, Ok(()));
++    }
++
+     #[tokio::test]
+     async fn service_worker_detach_rejects_conflicting_target_identity() {
+         let (owner, _notices, _log, _emit, server) = fixture("normal").await;
+@@ -13059,63 +13246,398 @@ mod tests {
+         );
+     }
+ 
+-    #[tokio::test]
+-    async fn service_worker_error_ack_never_reaches_ready_commit_gate() {
++    // Exercise the actual retained wait after its index guard is released.
++    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
++    enum FailedWorkerWaitCase {
++        ExactDetach,
++        Deadline,
++        OperationCancel,
++        WrongSession,
++        TargetDestroyed,
++        ReplacedWatermark,
++    }
++
++    async fn failed_worker_pending_wait_case(case: FailedWorkerWaitCase) {
+         let (owner, _notices, log, emit, mut server, _broker, connection) =
+             fixture_with_client("sw-startup-observer-fails", true).await;
+         let ledger = owner.client.debt_ledger().unwrap();
+-        let gate = CaptureTestGate::new();
+-        owner
+-            .capture_test_gates
++        let ready = CaptureTestGate::new();
++        let waiting = CaptureTestGate::new();
++        {
++            let mut gates = owner.capture_test_gates.lock().unwrap();
++            gates.insert(CaptureTestPoint::BeforeWorkerReadyCommit, ready.clone());
++            gates.insert(
++                CaptureTestPoint::BeforeWorkerRetirementWait,
++                waiting.clone(),
++            );
++        }
++        let (cancel, cancellation) = watch::channel(CancelSignal::None);
++        let separate_operation_cancel = !cancellation.same_channel(&owner.stop.subscribe());
++        let mut startup = None;
++        let mut replacement_stream = None;
++        let mut waiting_state = None;
++        let mut event_applied = false;
++        let mut pending_after_wrong_event = false;
++        let mut wrong_event_attachment = None;
++        // Keep setup/waits fallible until after teardown. In particular, a
++        // missing hook or unexpected early completion must not leak this peer.
++        let observed: Result<_, String> = async {
++            owner
++                .ensure_supervisor()
++                .await
++                .map_err(|e| format!("supervisor: {e:?}"))?;
++            // The original operation gets a short budget BEFORE registration or
++            // initialization. Neither the production 30s budget nor the 2s
++            // harness bound is changed to make the no-detach case pass.
++            let deadline = Instant::now() + Duration::from_secs(1);
++            let op = OperationLease {
++                is_callback: false,
++                generation: owner.generation,
++                sequence: 0,
++                deadline,
++                cancellation,
++            };
++            let entry = owner
++                .register(
++                    "owned-context",
++                    "worker-target",
++                    "worker-session",
++                    "service_worker",
++                    None,
++                )
++                .map_err(|e| format!("register: {e:?}"))?
++                .ok_or_else(|| "worker was not registered".to_owned())?;
++            let (decided, release_decision) = owner.client.hold_worker_startup_no_receipt();
++            let task_owner = owner.clone();
++            startup = Some(tokio::spawn(async move {
++                task_owner.initialize_observed(entry, &op, None).await
++            }));
++            let (joined_error, decision_deadline) =
++                tokio::time::timeout(Duration::from_secs(2), decided)
++                    .await
++                    .map_err(|_| "no joined ErrorACK decision".to_owned())?
++                    .map_err(|e| format!("decision channel: {e:?}"))?;
++            release_decision
++                .send(())
++                .map_err(|_| "decision waiter gone".to_owned())?;
++            // Unlike the earlier after-noReceipt test, no detach has even been
++            // sent before this point. Enrollment now owns the pending wait.
++            tokio::time::timeout(Duration::from_secs(2), waiting.entered.acquire())
++                .await
++                .map_err(|_| "retained retirement wait not entered".to_owned())?
++                .map_err(|e| format!("retirement gate: {e:?}"))?
++                .forget();
++            let original = owner
++                .targets
++                .owned_target("worker-target")
++                .map_err(|e| format!("original tenure: {e:?}"))?;
++            waiting_state = Some((
++                !ledger
++                    .worker_startup_session_unbound("worker-session")
++                    .map_err(|e| format!("original binding: {e:?}"))?,
++                !original.configured && !original.resumed,
++                !startup.as_ref().unwrap().is_finished(),
++                owner.network.check_worker_startup(&owner.operation()),
++                ledger.snapshot(),
++                Instant::now() < deadline,
++            ));
++            let watermark = owner
++                .realm_watermark()
++                .map_err(|e| format!("watermark: {e:?}"))?;
++            let before = watermark
++                .received()
++                .map_err(|e| format!("received: {e:?}"))?;
++            if case == FailedWorkerWaitCase::ReplacedWatermark {
++                // Both streams are real/live. A replacement cannot stand in for
++                // the exact subscription captured by the retained startup.
++                let events = owner
++                    .client
++                    .subscribe_bounded_methods(EVENTS, 256, 128 * 1024 * 1024)
++                    .map_err(|e| format!("replacement subscription: {e:?}"))?;
++                *owner.event_watermark.lock().unwrap() = Some(events.watermark());
++                replacement_stream = Some(events);
++                owner.changed.notify_waiters();
++            }
++            waiting.release();
++            let event = match case {
++                FailedWorkerWaitCase::ExactDetach => Some(json!({
++                    "method":"Target.detachedFromTarget",
++                    "params":{"sessionId":"worker-session","targetId":"worker-target"}
++                })),
++                FailedWorkerWaitCase::WrongSession => Some(json!({
++                    "method":"Target.detachedFromTarget",
++                    "params":{"sessionId":"other-session","targetId":"worker-target"}
++                })),
++                FailedWorkerWaitCase::TargetDestroyed => Some(json!({
++                    "method":"Target.targetDestroyed", "params":{"targetId":"worker-target"}
++                })),
++                _ => None,
++            };
++            if let Some(event) = event {
++                emit.send(event).await.map_err(|e| format!("emit: {e:?}"))?;
++                tokio::time::timeout(Duration::from_secs(2), async {
++                    loop {
++                        let changed = owner.changed.notified();
++                        tokio::pin!(changed);
++                        changed.as_mut().enable();
++                        let received = watermark
++                            .received()
++                            .map_err(|e| format!("event watermark: {e:?}"))?;
++                        if received > before
++                            && owner.index.lock().unwrap().applied_watermark >= received
++                        {
++                            return Ok::<_, String>(());
++                        }
++                        changed.await;
++                    }
++                })
++                .await
++                .map_err(|_| "real lifecycle event was not applied".to_owned())??;
++                event_applied = true;
++                if matches!(
++                    case,
++                    FailedWorkerWaitCase::WrongSession | FailedWorkerWaitCase::TargetDestroyed
++                ) {
++                    // Sample the still-live original attachment before the
++                    // deadline drops its incomplete permit and seals access.
++                    let current = owner
++                        .targets
++                        .owned_target("worker-target")
++                        .map_err(|e| format!("post-event original tenure: {e:?}"))?;
++                    let same_session = owner
++                        .index
++                        .lock()
++                        .unwrap()
++                        .sessions
++                        .get(&original.session_id)
++                        .is_some_and(|entry| {
++                            entry.target == original.target_id
++                                && entry.session == original.session_id
++                        });
++                    let still_bound = !ledger
++                        .worker_startup_session_unbound(&original.session_id)
++                        .map_err(|e| format!("post-event original binding: {e:?}"))?;
++                    wrong_event_attachment = Some((
++                        current.same_attachment(&original),
++                        same_session,
++                        still_bound,
++                        !current.configured && !current.resumed,
++                        Instant::now() < deadline,
++                    ));
++                    pending_after_wrong_event = !startup.as_ref().unwrap().is_finished();
++                }
++            }
++            if case == FailedWorkerWaitCase::OperationCancel {
++                // Not owner.stop and not the fixture's bootstrap cancellation.
++                cancel.send_replace(CancelSignal::Requested);
++            }
++            let outcome = tokio::time::timeout(Duration::from_secs(2), startup.as_mut().unwrap())
++                .await
++                .map_err(|_| "initialization exceeded the unchanged harness bound".to_owned())?
++                .map_err(|e| format!("initialization task: {e:?}"))?;
++            Ok((
++                outcome,
++                joined_error,
++                decision_deadline,
++                deadline,
++                Instant::now(),
++            ))
++        }
++        .await;
++
++        // Preserve primary state before cleanup. Fresh operation authority is
++        // essential: cancellation/expiry alone must not fake quarantine.
++        let network_after = owner.network.check_worker_startup(&owner.operation());
++        let debt_after = ledger.snapshot();
++        let health_after = owner.targets.check_settlement_integrity();
++        let stop_after = *owner.stop.borrow();
++        let ready_unused = ready.entered.try_acquire().is_err();
++        let target_after = owner.targets.owned_target("worker-target");
++        let target_absent = matches!(&target_after, Err(ProtocolError::StaleReference));
++        let no_ready = match &target_after {
++            Ok(target) => !target.configured && !target.resumed,
++            // A sealed registry denies authority; it does not prove absence.
++            Err(ProtocolError::StaleScope | ProtocolError::StaleReference) => true,
++            Err(_) => false,
++        };
++        let session_absent = !owner
++            .index
+             .lock()
+             .unwrap()
+-            .insert(CaptureTestPoint::BeforeWorkerReadyCommit, gate.clone());
+-        owner.ensure_supervisor().await.unwrap();
+-        let attached = attach(
+-            "owned-context",
+-            "worker-target",
+-            "worker-session",
+-            "service_worker",
+-            None,
+-        );
+-        emit.send(json!({"method":attached.method,"params":attached.params}))
+-            .await
+-            .unwrap();
+-        tokio::time::timeout(Duration::from_secs(2), async {
+-            while owner.index.lock().unwrap().failure.is_none() {
+-                tokio::task::yield_now().await;
+-            }
+-        })
+-        .await
+-        .unwrap();
+-        let failure = owner.index.lock().unwrap().failure.clone();
+-        let ready_gate_unused = gate.entered.try_acquire().is_err();
+-        let debt_before_close = ledger.snapshot();
+-        let resume_count = log
++            .sessions
++            .contains_key("worker-session");
++        let methods: Vec<String> = log
+             .lock()
+             .unwrap()
+             .iter()
+-            .filter(|request| {
+-                request["sessionId"] == "worker-session"
+-                    && request["method"] == "Runtime.runIfWaitingForDebugger"
+-            })
+-            .count();
++            .filter(|request| request["sessionId"] == "worker-session")
++            .map(|request| request["method"].as_str().unwrap().to_owned())
++            .collect();
++        waiting.release();
++        ready.release();
++        if let Some(task) = startup.take() {
++            if !task.is_finished() {
++                task.abort();
++                let _ = task.await;
++            }
++        }
+         let cleanup = owner.close().await;
++        drop(replacement_stream);
+         connection.close().await;
+         let peer = tokio::time::timeout(Duration::from_secs(2), &mut server).await;
+         if peer.is_err() {
+             server.abort();
+             let _ = server.await;
+         }
+-        eprintln!("ready-error-ack: failure={failure:?}; ready_gate_unused={ready_gate_unused}; debt_before_close={debt_before_close:?}; cleanup={cleanup:?}; peer={peer:?}");
+-        assert_eq!(failure, Some(ProtocolError::BrowserFailure));
+-        assert!(ready_gate_unused);
+-        assert_eq!(resume_count, 1);
+-        assert_eq!(debt_before_close.outstanding_commands, 0);
++        // All substantive assertions occur after the owned peer is joined.
+         assert!(
+             matches!(peer, Ok(Ok(()))),
+-            "owned peer did not finish: {peer:?}"
++            "{case:?}: peer did not finish: {peer:?}"
++        );
++        let (outcome, joined_error, decision_deadline, deadline, returned_at) =
++            observed.unwrap_or_else(|error| panic!("{case:?}: {error}; cleanup={cleanup:?}"));
++        let (was_bound, was_unready, was_pending, network_waiting, debt_waiting, within_budget) =
++            waiting_state.expect("retained wait state");
++        assert!(
++            was_bound && was_unready && was_pending && within_budget,
++            "{case:?}"
++        );
++        assert_eq!(network_waiting, Ok(()), "{case:?}: premature quarantine");
++        assert_eq!(debt_waiting.outstanding_commands, 0, "{case:?}");
++        assert!(!debt_waiting.integrity_lost, "{case:?}");
++        assert_eq!(
++            decision_deadline, deadline,
++            "{case:?}: original budget changed"
++        );
++        assert!(joined_error.contains("Runtime.enable: CDP error (Runtime.enable)"));
++        assert!(joined_error.contains("synthetic observer failure"));
++        assert!(
++            separate_operation_cancel && ready_unused && no_ready,
++            "{case:?}"
+         );
++        assert_eq!(
++            stop_after,
++            CancelSignal::None,
++            "{case:?}: owner stop was not the trigger"
++        );
++        assert_eq!(debt_after.outstanding_commands, 0, "{case:?}");
++        assert!(!debt_after.integrity_lost, "{case:?}");
++        assert_eq!(
++            methods,
++            [
++                "Fetch.enable",
++                "Target.setAutoAttach",
++                "Network.enable",
++                "Runtime.enable",
++                "Runtime.runIfWaitingForDebugger",
++            ],
++            "{case:?}: no replay, body read, evaluation, or business call is allowed"
++        );
++        match case {
++            FailedWorkerWaitCase::ExactDetach => {
++                let Ok(InitializationOutcome::FailedRetired(failure)) = outcome else {
++                    panic!("expected actual FailedRetired, got {outcome:?}");
++                };
++                assert_eq!(failure.error(), ProtocolError::BrowserFailure);
++                assert_eq!(
++                    failure.to_string(),
++                    joined_error,
++                    "the full original CDP ErrorACK must survive"
++                );
++                assert!(!failure.has_retirement() && !failure.has_pending_retirement());
++                assert!(event_applied && target_absent && session_absent);
++                assert!(returned_at < deadline);
++                assert_eq!(network_after, Ok(()));
++                assert_eq!(health_after, Ok(()));
++                assert_eq!(cleanup, Ok(()));
++            }
++            _ => {
++                let expected = match case {
++                    FailedWorkerWaitCase::OperationCancel => ProtocolError::Cancelled,
++                    FailedWorkerWaitCase::ReplacedWatermark => ProtocolError::StaleScope,
++                    _ => ProtocolError::DeadlineExceeded,
++                };
++                assert!(
++                    matches!(&outcome, Err(error) if *error == expected),
++                    "{case:?}: expected {expected:?}, got {outcome:?}"
++                );
++                assert!(
++                    network_after.is_err(),
++                    "{case:?}: fresh operation must be fail-closed"
++                );
++                if matches!(
++                    case,
++                    FailedWorkerWaitCase::Deadline
++                        | FailedWorkerWaitCase::WrongSession
++                        | FailedWorkerWaitCase::TargetDestroyed
++                ) {
++                    assert!(
++                        returned_at >= deadline,
++                        "{case:?}: must respect the original deadline"
++                    );
++                } else {
++                    assert!(
++                        returned_at < deadline,
++                        "{case:?}: must not wait for the deadline"
++                    );
++                }
++                if matches!(
++                    case,
++                    FailedWorkerWaitCase::WrongSession | FailedWorkerWaitCase::TargetDestroyed
++                ) {
++                    assert!(event_applied && pending_after_wrong_event, "{case:?}");
++                    assert_eq!(
++                        wrong_event_attachment,
++                        Some((
++                            true,
++                            true,
++                            case == FailedWorkerWaitCase::WrongSession,
++                            true,
++                            true,
++                        )),
++                        "{case:?}: non-exact event must retain tenure/session while pending; targetDestroyed alone unbinds ledger but grants no retirement"
++                    );
++                    assert!(!session_absent, "{case:?}: exact detach was never supplied");
++                    assert_eq!(
++                        target_after.as_ref().err(),
++                        Some(&ProtocolError::StaleScope),
++                        "{case:?}: deadline must revoke target authority, not prove absence"
++                    );
++                }
++            }
++        }
++    }
++
++    #[tokio::test]
++    async fn service_worker_failed_live_exact_detach_after_wait_preserves_failed_retired_error() {
++        failed_worker_pending_wait_case(FailedWorkerWaitCase::ExactDetach).await;
++    }
++
++    // No exact detach is supplied. The original 1s operation must fail closed
++    // before the unchanged 2s harness bound, never reach Ready or replay.
++    #[tokio::test]
++    async fn service_worker_error_ack_never_reaches_ready_commit_gate() {
++        failed_worker_pending_wait_case(FailedWorkerWaitCase::Deadline).await;
++    }
++
++    #[tokio::test]
++    async fn service_worker_failed_live_pending_wait_honors_independent_operation_cancel() {
++        failed_worker_pending_wait_case(FailedWorkerWaitCase::OperationCancel).await;
++    }
++
++    #[tokio::test]
++    async fn service_worker_failed_live_pending_wait_rejects_wrong_session_detach() {
++        failed_worker_pending_wait_case(FailedWorkerWaitCase::WrongSession).await;
++    }
++
++    #[tokio::test]
++    async fn service_worker_failed_live_pending_wait_rejects_target_destroyed_alone() {
++        failed_worker_pending_wait_case(FailedWorkerWaitCase::TargetDestroyed).await;
++    }
++
++    #[tokio::test]
++    async fn service_worker_failed_live_pending_wait_rejects_replaced_watermark_subscription() {
++        failed_worker_pending_wait_case(FailedWorkerWaitCase::ReplacedWatermark).await;
+     }
+ 
+     #[tokio::test]
 diff --git a/cli/src/native/client_network.rs b/cli/src/native/client_network.rs
-index 698121920..99b6683a2 100644
+index 99b6683a29a3867c9da43d0781c0542b01f43479..48d90abe645011169360660eff6a8be6b378c21c 100644
 --- a/cli/src/native/client_network.rs
 +++ b/cli/src/native/client_network.rs
-@@ -468,6 +468,12 @@ impl ClientNetwork {
+@@ -579,9 +579,10 @@ impl ClientNetwork {
+         ).await;
+         match result {
+             Err(failure) => {
+-                // Defer quarantine only for a still-valid failed-terminal
+-                // candidate. Never clear quarantine or replace its CDP message.
+-                let check = if failure.has_retirement() {
++                // Enrollment retains the original failure/permit while a
++                // qualified pending attachment awaits exact detach. Neither
++                // kind grants Ready or clears quarantine or its CDP message.
++                let check = if failure.has_retirement() || failure.has_pending_retirement() {
+                     self.check_worker_startup(operation)
+                 } else {
+                     Err(failure.error())
+@@ -2628,13 +2629,13 @@ impl ClientNetwork {
+         if self.sealed.load(Ordering::Acquire) {
+             return Err(ProtocolError::StaleScope);
+         }
+-        let (generation, health) = self.broker.health()?;
+-        if generation != self.scope.generation
+-            || health != super::client_protocol::ScopeState::Usable
+-        {
+-            return Err(ProtocolError::StaleScope);
+-        }
+-        Ok(())
++        self.broker
++            .check_scoped_owner(
++                self.scope.generation,
++                &self.scope.identity_scope,
++                self.client.debt_ledger().as_ref(),
++            )
++            .map_err(|_| ProtocolError::StaleScope)
+     }
+ 
+     /// Lifecycle owner calls this before context disposal. Read aliases carry no
+@@ -4125,6 +4126,7 @@ mod bridge_tests {
+             .stage_until_result(&stage_op, &scope.identity_scope)
+             .unwrap();
+         sink.acknowledge_result_for_test(&ServerMessage::Result {
++            recovery: None,
+             retention: None,
+             id: "initial".into(),
+             generation: 1,
+@@ -5053,6 +5055,7 @@ mod bridge_tests {
+         assert!(events.try_recv().is_err());
+         source
+             .acknowledge_result_for_test(&ServerMessage::Result {
++                recovery: None,
+                 retention: None,
+                 id: "restart".into(),
+                 generation: 1,
+diff --git a/cli/src/native/client_operation_state.rs b/cli/src/native/client_operation_state.rs
+index 807a381192bbb15f43f42a423f04d907557621fd..88346442b43d2aa77b32925733641b9178c34c96 100644
+--- a/cli/src/native/client_operation_state.rs
++++ b/cli/src/native/client_operation_state.rs
+@@ -20,6 +20,7 @@ enum ProducerState {
+     Retiring,
+     Retired,
+     IntegrityLost,
++    DisconnectedRetired,
+ }
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ enum RetiredDisposition {
+@@ -29,6 +30,7 @@ enum RetiredDisposition {
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(crate) enum RetentionIntegrityReason {
+     LocalProducerFailed,
++    RemoteConnectionLost,
+     RetirementDeadline,
+     OwnerAccountingLost,
+     RegistryUnavailable,
+@@ -100,6 +102,34 @@ impl OperationRetentionStatus {
+         }
+     }
+ }
++/// Permission to attempt one explicit exact-owner recovery, not permission to
++/// submit business work or evidence that any remote Unknown effect completed.
++#[derive(Clone)]
++pub(crate) struct DisconnectedRecoveryProof {
++    key: OperationKey,
++    ledger: std::sync::Arc<super::client_debt::OwnerDebtLedger>,
++    deadline: Instant,
++}
++impl DisconnectedRecoveryProof {
++    pub(crate) fn key(&self) -> OperationKey {
++        self.key
++    }
++    pub(crate) fn ledger(&self) -> &std::sync::Arc<super::client_debt::OwnerDebtLedger> {
++        &self.ledger
++    }
++    pub(crate) fn deadline(&self) -> Instant {
++        self.deadline
++    }
++    pub(crate) fn check(&self) -> Result<(), ProtocolError> {
++        if Instant::now() >= self.deadline {
++            return Err(ProtocolError::DeadlineExceeded);
++        }
++        if !self.ledger.remote_eof_only() {
++            return Err(ProtocolError::ScopeUnavailable);
++        }
++        Ok(())
++    }
++}
+ #[derive(Default)]
+ pub(crate) struct OperationRegistry {
+     entries: Mutex<HashMap<OperationKey, Entry>>,
+@@ -240,7 +270,11 @@ impl OperationRegistry {
+     /// once; subsequent lookups/new requests cannot extend it.
+     pub(crate) fn retire(&self, key: OperationKey) -> Option<Instant> {
+         let mut entries = self.entries.lock().ok()?;
+-        if !entries.contains_key(&key) {
++        if !entries.contains_key(&key)
++            || entries
++                .get(&key)
++                .is_some_and(|entry| entry.state == ProducerState::DisconnectedRetired)
++        {
+             return None;
+         }
+         Self::revoke_eval_windows(&entries);
+@@ -259,9 +293,21 @@ impl OperationRegistry {
+         Some(deadline)
+     }
+     pub(crate) fn finish(&self, key: OperationKey, integrity_lost: bool) -> bool {
++        self.finish_with_cause(key, integrity_lost, false)
++    }
++    pub(crate) fn finish_remote_eof(&self, key: OperationKey) -> bool {
++        self.finish_with_cause(key, true, true)
++    }
++    fn finish_with_cause(&self, key: OperationKey, integrity_lost: bool, remote_eof: bool) -> bool {
+         let Ok(mut entries) = self.entries.lock() else {
+             return true;
+         };
++        if entries
++            .get(&key)
++            .is_some_and(|entry| entry.state == ProducerState::DisconnectedRetired)
++        {
++            return true;
++        }
+         let expired = entries.get(&key).is_some_and(|entry| {
+             entry.state == ProducerState::Retiring
+                 && entry
+@@ -288,12 +334,21 @@ impl OperationRegistry {
+             .ledger()
+             .eval_operation_terminal(key, true, entry.result_fixed);
+         if integrity_lost || expired || entry.state == ProducerState::IntegrityLost {
+-            entry
+-                .journal
+-                .record_cleanup_disposition(CleanupDisposition::IntegrityLost);
++            let remote_only = remote_eof
++                && !expired
++                && entry.state != ProducerState::IntegrityLost
++                && entry.journal.local_integrity_intact()
++                && entry.journal.ledger().remote_eof_only();
++            if !remote_only {
++                entry
++                    .journal
++                    .record_cleanup_disposition(CleanupDisposition::IntegrityLost);
++            }
+             entry.state = ProducerState::IntegrityLost;
+             entry.integrity_reason.get_or_insert(if expired {
+                 RetentionIntegrityReason::RetirementDeadline
++            } else if remote_only {
++                RetentionIntegrityReason::RemoteConnectionLost
+             } else {
+                 RetentionIntegrityReason::LocalProducerFailed
+             });
+@@ -320,6 +375,96 @@ impl OperationRegistry {
+         self.changed.notify_waiters();
+         integrity_lost
+     }
++    pub(crate) fn recovery_candidate(
++        &self,
++        key: OperationKey,
++    ) -> Option<DisconnectedRecoveryProof> {
++        let entries = self.entries.lock().ok()?;
++        let source = entries.get(&key)?;
++        let deadline = source.retirement_deadline?;
++        let ledger = source.journal.ledger();
++        let proof = DisconnectedRecoveryProof {
++            key,
++            ledger,
++            deadline,
++        };
++        proof.check().ok()?;
++        if !source.result_fixed
++            || !entries.values().all(|entry| {
++                entry.state == ProducerState::DisconnectedRetired
++                    || (std::sync::Arc::ptr_eq(&entry.journal.ledger(), proof.ledger())
++                        && entry.state == ProducerState::IntegrityLost
++                        && entry.integrity_reason
++                            == Some(RetentionIntegrityReason::RemoteConnectionLost)
++                        && entry.journal.snapshot().local_producers_finished
++                        && entry.journal.snapshot().submission_revoked
++                        && entry.journal.local_integrity_intact())
++            })
++        {
++            return None;
++        }
++        Some(proof)
++    }
++    /// Called only after exact native old-owner/runtime retirement and verified
++    /// replacement binding. Keep journals, debt and immutable Unknown receipts.
++    pub(crate) fn retire_disconnected_owner(
++        &self,
++        proof: &DisconnectedRecoveryProof,
++    ) -> Result<(), ProtocolError> {
++        proof.check()?;
++        let mut entries = self
++            .entries
++            .lock()
++            .map_err(|_| ProtocolError::ScopeUnavailable)?;
++        if !entries
++            .values()
++            .filter(|entry| std::sync::Arc::ptr_eq(&entry.journal.ledger(), proof.ledger()))
++            .all(|entry| {
++                entry.result_fixed
++                    && entry.state == ProducerState::IntegrityLost
++                    && entry.integrity_reason
++                        == Some(RetentionIntegrityReason::RemoteConnectionLost)
++                    && entry.journal.snapshot().local_producers_finished
++                    && entry.journal.snapshot().submission_revoked
++                    && entry.journal.local_integrity_intact()
++            })
++        {
++            return Err(ProtocolError::CleanupFailed);
++        }
++        if !entries.contains_key(&proof.key) {
++            return Err(ProtocolError::OperationMissing);
++        }
++        for entry in entries
++            .values_mut()
++            .filter(|entry| std::sync::Arc::ptr_eq(&entry.journal.ledger(), proof.ledger()))
++        {
++            entry.state = ProducerState::DisconnectedRetired;
++        }
++        self.changed.notify_waiters();
++        Ok(())
++    }
++    pub(crate) fn disconnected_failure_retired(&self, key: OperationKey) -> bool {
++        self.entries.lock().is_ok_and(|entries| {
++            entries
++                .get(&key)
++                .is_some_and(|entry| entry.state == ProducerState::DisconnectedRetired)
++        })
++    }
++    pub(crate) fn disconnected_failure_matches(
++        &self,
++        key: OperationKey,
++        proof: &DisconnectedRecoveryProof,
++    ) -> bool {
++        self.entries.lock().is_ok_and(|entries| {
++            entries.get(&key).is_some_and(|entry| {
++                std::sync::Arc::ptr_eq(&entry.journal.ledger(), proof.ledger())
++                    && entry.integrity_reason
++                        == Some(RetentionIntegrityReason::RemoteConnectionLost)
++                    && entry.journal.snapshot().local_producers_finished
++                    && entry.journal.local_integrity_intact()
++            })
++        })
++    }
+     pub(crate) fn fix_result(&self, key: OperationKey) {
+         let Ok(mut entries) = self.entries.lock() else {
+             return;
+@@ -458,7 +603,16 @@ impl OperationRegistry {
+         key: OperationKey,
+         eval_root: Option<OperationKey>,
+     ) -> Result<bool, ProtocolError> {
++        if entries
++            .get(&key)
++            .is_some_and(|entry| entry.state == ProducerState::DisconnectedRetired)
++        {
++            return Err(ProtocolError::StaleScope);
++        }
+         for (other, entry) in entries.iter() {
++            if entry.state == ProducerState::DisconnectedRetired {
++                continue;
++            }
+             let snapshot = entry.journal.snapshot();
+             if snapshot.integrity_lost || entry.state == ProducerState::IntegrityLost {
+                 return Err(ProtocolError::ScopeUnavailable);
+@@ -496,6 +650,9 @@ impl OperationRegistry {
+             .lock()
+             .map_err(|_| ProtocolError::ScopeUnavailable)?;
+         for entry in entries.values() {
++            if entry.state == ProducerState::DisconnectedRetired {
++                continue;
++            }
+             if entry.state == ProducerState::IntegrityLost
+                 || entry.journal.snapshot().integrity_lost
+             {
+diff --git a/cli/src/native/client_page.rs b/cli/src/native/client_page.rs
+index 95ed2fbc236db4340c793d019091fd9904dba940..07c0cab2cf27d9878e5d130ecc7b511fc8477482 100644
+--- a/cli/src/native/client_page.rs
++++ b/cli/src/native/client_page.rs
+@@ -539,6 +539,21 @@ impl ClientPageState {
          }
          Ok(())
      }
-+    pub(crate) fn check_broker(&self, broker: &Arc<ClientSession>) -> Result<(), ProtocolError> {
-+        if !Arc::ptr_eq(&self.broker, broker) {
++    /// Local held-state only, never proof that an unacknowledged remote
++    /// release completed. Recovery must not silently abandon a known drag/key.
++    pub(crate) fn check_no_active_local_input(&self, scope: &str) -> Result<(), ProtocolError> {
++        if scope != self.identity_scope {
++            return Err(ProtocolError::StaleScope);
++        }
++        let state = self.state()?;
++        if !state.input.keys.is_empty()
++            || state.input.mouse.buttons != 0
++            || state.input_cleanup.is_some()
++        {
++            return Err(ProtocolError::CleanupFailed);
++        }
++        Ok(())
++    }
+     pub fn held_modifiers(&self) -> Result<i32, ProtocolError> {
+         Ok(modifiers(&self.state()?.input))
+     }
+diff --git a/cli/src/native/client_protocol.rs b/cli/src/native/client_protocol.rs
+index b68ca6f46a126292da97b7f95f689ea8d07a6ee4..2e772f10a7f27b2d858463bced6fa772b638858e 100644
+--- a/cli/src/native/client_protocol.rs
++++ b/cli/src/native/client_protocol.rs
+@@ -321,6 +321,15 @@ impl Serialize for ProtocolError {
+ /// A usable owner is not per-command admission or proof that debt is empty.
+ /// Negotiation is required; legacy clients retain terminal uncertainty behavior.
+ pub const EXACT_OWNER_CONTINUATION: &str = "operation.continue-exact-owner/1";
++/// Independent opt-in: a quarantined result may permit one explicit reconnect.
++pub const DISCONNECTED_RECOVERY: &str = "scope.reconnect-quarantined/1";
++#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
++#[serde(rename_all = "camelCase")]
++pub struct RecoveryDescriptor {
++    pub version: u8,
++    pub identity_scope: String,
++}
++
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+ #[serde(rename_all = "lowercase")]
+ pub enum RetentionProducerState {
+@@ -367,6 +376,8 @@ pub enum ServerMessage {
+         effects: Effects,
+         #[serde(skip_serializing_if = "Option::is_none")]
+         retention: Option<RetentionDescriptor>,
++        #[serde(skip_serializing_if = "Option::is_none")]
++        recovery: Option<RecoveryDescriptor>,
+         #[serde(rename = "scopeState")]
+         scope_state: ScopeState,
+     },
+@@ -595,6 +606,7 @@ mod tests {
+                 vector["error"]["code"]
+             );
+             let message = ServerMessage::Result {
++                recovery: None,
+                 retention: None,
+                 id: "frame".into(),
+                 generation: 1,
+diff --git a/cli/src/native/client_reconnect.rs b/cli/src/native/client_reconnect.rs
+index 4e5974e7d1a54cac1e40ba589b88a831f282e745..8ff41887a9d753fcf306e4e44af94d560ec1839e 100644
+--- a/cli/src/native/client_reconnect.rs
++++ b/cli/src/native/client_reconnect.rs
+@@ -67,11 +67,23 @@ pub(super) struct VerifiedReconnectProof {
+     cancellation: tokio::sync::watch::Receiver<CancelSignal>,
+ }
+ impl VerifiedReconnect {
++    pub(super) fn proof(&self) -> &VerifiedReconnectProof {
++        &self.proof
++    }
+     pub(super) fn into_parts(self) -> (BrowserManager, String, String, VerifiedReconnectProof) {
+         (self.manager, self.context_id, self.target_id, self.proof)
+     }
+ }
+ impl VerifiedReconnectProof {
++    pub(super) fn ledger(
++        &self,
++        operation: &OperationLease,
++    ) -> Result<Arc<super::client_debt::OwnerDebtLedger>, ProtocolError> {
++        self.check(&self.client, &self.context_id, &self.target_id, operation)?;
++        let ledger = self.client.debt_ledger().ok_or(ProtocolError::StaleScope)?;
++        ledger.check_unpublished_operation(operation)?;
++        Ok(ledger)
++    }
+     pub(super) fn check(
+         &self,
+         client: &Arc<super::cdp::client::CdpClient>,
+diff --git a/cli/src/native/client_session.rs b/cli/src/native/client_session.rs
+index 047f75c41ea74ee66dde1926fd121c9f3fdc0b7f..c3bf029a8a35afc2f8e225557ab61b2074592c41 100644
+--- a/cli/src/native/client_session.rs
++++ b/cli/src/native/client_session.rs
+@@ -197,9 +197,15 @@ pub struct DecisionLease {
+     pub outcome: oneshot::Receiver<DecisionOutcome>,
+ }
+ 
++struct RecoveryTransition {
++    source: super::client_operation_state::DisconnectedRecoveryProof,
++    operation: Option<u64>,
++    candidate: Option<Arc<super::client_debt::OwnerDebtLedger>>,
++}
+ struct Inner {
+     generation: u64,
+     health: ScopeState,
++    recovery: Option<RecoveryTransition>,
+     high_water: u64,
+     operations: HashMap<u64, Operation>,
+     decisions: HashMap<String, PendingDecision>,
+@@ -233,6 +239,7 @@ impl ClientSession {
+             inner: Mutex::new(Inner {
+                 generation: 1,
+                 health: ScopeState::Usable,
++                recovery: None,
+                 high_water: 0,
+                 operations: HashMap::new(),
+                 decisions: HashMap::new(),
+@@ -267,6 +274,245 @@ impl ClientSession {
+         Ok((inner.generation, inner.health))
+     }
+ 
++    pub(crate) fn offer_disconnected_recovery(
++        &self,
++        proof: super::client_operation_state::DisconnectedRecoveryProof,
++    ) -> Result<(), ProtocolError> {
++        proof.check()?;
++        let mut inner = self.lock()?;
++        if inner.generation != proof.key().generation {
++            return Err(ProtocolError::StaleGeneration);
++        }
++        if inner.health != ScopeState::Quarantined
++            || inner.recovery.is_some()
++            || !inner.operations.is_empty()
++        {
++            return Err(ProtocolError::ScopeUnavailable);
++        }
++        inner.recovery = Some(RecoveryTransition {
++            source: proof,
++            operation: None,
++            candidate: None,
++        });
++        Ok(())
++    }
++    pub(crate) fn recovery_available(&self) -> bool {
++        self.lock().is_ok_and(|inner| {
++            inner.health == ScopeState::Quarantined
++                && inner.recovery.as_ref().is_some_and(|recovery| {
++                    Instant::now() < recovery.source.deadline()
++                        && recovery.operation.is_none_or(|sequence| {
++                            inner.operations.get(&sequence).is_some_and(|operation| {
++                                *operation.cancel.borrow() == CancelSignal::None
++                                    && Instant::now() < operation.deadline
++                            })
++                        })
++                })
++        })
++    }
++    pub(crate) fn admit_disconnected_reconnect(
++        &self,
++        generation: u64,
++        sequence: u64,
++        timeout_ms: u64,
++        scope: &str,
++    ) -> Result<OperationLease, ProtocolError> {
++        let mut inner = self.lock()?;
++        if inner.generation != generation {
++            return Err(ProtocolError::StaleGeneration);
++        }
++        if inner.health != ScopeState::Quarantined {
++            return Err(ProtocolError::ScopeUnavailable);
++        }
++        if sequence == 0 || sequence > MAX_SAFE_SEQUENCE {
++            return Err(ProtocolError::InvalidSequence);
++        }
++        if sequence <= inner.high_water {
++            return Err(ProtocolError::SequenceReused);
++        }
++        inner.high_water = sequence;
++        let recovery = inner
++            .recovery
++            .as_ref()
++            .ok_or(ProtocolError::ScopeUnavailable)?;
++        recovery.source.check()?;
++        if recovery.operation.is_some() || recovery.source.ledger().identity_scope() != scope {
++            return Err(ProtocolError::StaleScope);
++        }
++        if timeout_ms == 0 || timeout_ms > MAX_TIMEOUT_MS {
++            return Err(ProtocolError::InvalidTimeout);
++        }
++        if !inner.operations.is_empty() {
++            return Err(ProtocolError::CapacityExceeded);
++        }
++        let deadline = recovery
++            .source
++            .deadline()
++            .min(Instant::now() + Duration::from_millis(timeout_ms));
++        let (cancel, cancellation) = watch::channel(CancelSignal::None);
++        inner.operations.insert(
++            sequence,
++            Operation {
++                eval_window: None,
++                callback_token: None,
++                parent_sequence: None,
++                callback_depth: 0,
++                deadline,
++                started: false,
++                cancel,
++            },
++        );
++        inner.recovery.as_mut().unwrap().operation = Some(sequence);
++        Ok(OperationLease {
++            is_callback: false,
++            generation,
++            sequence,
++            deadline,
++            cancellation,
++        })
++    }
++    fn check_control(inner: &Inner, generation: u64, sequence: u64) -> Result<(), ProtocolError> {
++        if inner.generation != generation {
++            return Err(ProtocolError::StaleGeneration);
++        }
++        if inner.health == ScopeState::Usable {
++            return Ok(());
++        }
++        if inner.health == ScopeState::Quarantined
++            && inner
++                .recovery
++                .as_ref()
++                .is_some_and(|recovery| recovery.operation == Some(sequence))
++        {
++            return Ok(());
++        }
++        Err(ProtocolError::ScopeUnavailable)
++    }
++    pub(crate) fn disconnected_recovery(
++        &self,
++        operation: &OperationLease,
++    ) -> Result<Option<super::client_operation_state::DisconnectedRecoveryProof>, ProtocolError>
++    {
++        let inner = self.lock()?;
++        if inner.health == ScopeState::Usable {
++            return Ok(None);
++        }
++        Self::check_live_operation(&inner, operation)?;
++        let recovery = inner
++            .recovery
++            .as_ref()
++            .ok_or(ProtocolError::ScopeUnavailable)?;
++        recovery.source.check()?;
++        Ok(Some(recovery.source.clone()))
++    }
++    /// Native verified candidate only. The old scope remains quarantined and
++    /// ordinary admission stays closed throughout unpublished initialization.
++    pub(crate) fn bind_recovery_candidate(
++        &self,
++        operation: &OperationLease,
++        verified: &super::client_reconnect::VerifiedReconnectProof,
++    ) -> Result<(), ProtocolError> {
++        let candidate = verified.ledger(operation)?;
++        let mut inner = self.lock()?;
++        Self::check_live_operation(&inner, operation)?;
++        let recovery = inner
++            .recovery
++            .as_mut()
++            .ok_or(ProtocolError::ScopeUnavailable)?;
++        recovery.source.check()?;
++        if recovery.candidate.is_some()
++            || Arc::ptr_eq(recovery.source.ledger(), &candidate)
++            || recovery.source.ledger().identity_scope() == candidate.identity_scope()
++        {
++            return Err(ProtocolError::StaleScope);
++        }
++        recovery.candidate = Some(candidate);
++        Ok(())
++    }
++    fn check_scope(inner: &Inner, generation: u64, scope: &str) -> Result<(), ProtocolError> {
++        if inner.health == ScopeState::Usable {
++            return Self::check(inner, generation);
++        }
++        let recovery = inner
++            .recovery
++            .as_ref()
++            .ok_or(ProtocolError::ScopeUnavailable)?;
++        let sequence = recovery.operation.ok_or(ProtocolError::ScopeUnavailable)?;
++        Self::check_control(inner, generation, sequence)?;
++        let operation = inner
++            .operations
++            .get(&sequence)
++            .ok_or(ProtocolError::OperationMissing)?;
++        if *operation.cancel.borrow() != CancelSignal::None {
++            return Err(ProtocolError::Cancelled);
++        }
++        if Instant::now() >= operation.deadline {
++            return Err(ProtocolError::DeadlineExceeded);
++        }
++        if !recovery
++            .candidate
++            .as_ref()
++            .is_some_and(|candidate| candidate.matches_owner(generation, scope))
++        {
 +            return Err(ProtocolError::StaleScope);
 +        }
 +        Ok(())
 +    }
-     /// Enrollment is supplied by the scope owner. This module never discovers
-     /// targets, changes purposes, adopts bootstrap pages, or resumes execution.
-     /// Lifecycle selects only the default for targets enrolled after this
-@@ -1893,18 +1899,25 @@ impl ClientNetwork {
-             .registry
-             .lock()
-             .map_err(|_| ProtocolError::ScopeUnavailable)?;
--        self.check()?;
-+        if self.sealed.load(Ordering::Acquire) {
-+            return Err(ProtocolError::StaleScope);
-+        }
-+        let (generation, health) = self.broker.health()?;
-+        if generation != self.scope.generation {
-+            return Err(ProtocolError::StaleGeneration);
-+        }
-+        match health {
-+            super::client_protocol::ScopeState::Usable => {}
-+            super::client_protocol::ScopeState::Quarantined => {
-+                proof.check_local_retirement_owner(&self.broker)?;
-+            }
-+            super::client_protocol::ScopeState::Closed => return Err(ProtocolError::StaleScope),
-+        }
-         if self.routes_frozen.load(Ordering::Acquire) {
-             return Err(ProtocolError::RegistryInUse);
-         }
-         let registry = current
--            .map(|version| {
--                self.broker.park_registry(
--                    self.scope.generation,
--                    version,
--                    &self.scope.identity_scope,
--                )
--            })
-+            .map(|version| self.broker.park_registry_after_terminal(proof, version))
-             .transpose()?;
-         self.routes_frozen.store(true, Ordering::Release);
-         *current = None;
-@@ -2141,8 +2154,13 @@ impl ClientNetwork {
-                     self.retirement_sink
-                         .retire_callbacks_after_terminal_drain(&proof)
-                 });
--            if retired.is_err() {
--                failed = true;
-+            match retired {
-+                Ok(super::client_transport::NativeCallbackRetirement::NoticeQueued)
-+                | Ok(super::client_transport::NativeCallbackRetirement::LocalOnlyTerminal) => {
-+                    // Both establish only the native callback fence. LocalOnly
-+                    // makes no notification claim; readers must still join below.
-+                }
-+                Err(_) => failed = true,
-             }
-         }
-         if let Some(proof) = final_local {
-@@ -4037,6 +4055,8 @@ mod bridge_tests {
-             NetworkPolicy::default(),
-         ))
-     }
-+    include!("client_terminal_cleanup_tests.rs");
-+
-     struct TerminalFixture {
-         source: Arc<ClientNetwork>,
-         targets: Arc<super::super::client_targets::ClientTargets>,
-diff --git a/cli/src/native/client_session.rs b/cli/src/native/client_session.rs
-index c81f9fa4c..047f75c41 100644
---- a/cli/src/native/client_session.rs
-+++ b/cli/src/native/client_session.rs
-@@ -787,6 +787,7 @@ impl ClientSession {
-     /// Terminal owner calls this before revoking the disconnected source. No
-     /// operation is admitted or fabricated at EOF, and a retired registry can
-     /// never be reconstructed from its version or registration IDs.
-+    #[cfg(test)]
-     pub(crate) fn park_registry(
-         self: &Arc<Self>,
-         generation: u64,
-@@ -802,6 +803,28 @@ impl ClientSession {
-             held: self.hold_registry(&mut inner, version, source_scope, None)?,
-         })
-     }
-+    /// Preserve only this terminal owner's existing route hold. Quarantine
-+    /// closes business admission, not exact local deauthorization. This grants
-+    /// no reconnect operation and cannot reconstruct a retired registry.
-+    pub(crate) fn park_registry_after_terminal(
-+        self: &Arc<Self>,
-+        proof: &super::client_enrollment::NativeTerminalProof,
-+        version: u64,
-+    ) -> Result<ParkedRouteRegistry, ProtocolError> {
-+        proof.check_broker(self)?;
-+        let mut inner = self.lock()?;
-+        if inner.generation != proof.generation() {
-+            return Err(ProtocolError::StaleGeneration);
-+        }
-+        match inner.health {
-+            ScopeState::Usable => {}
-+            ScopeState::Quarantined => proof.check_local_retirement_owner(self)?,
-+            ScopeState::Closed => return Err(ProtocolError::StaleScope),
-+        }
-+        Ok(ParkedRouteRegistry {
-+            held: self.hold_registry(&mut inner, version, &proof.targets().identity_scope, None)?,
-+        })
-+    }
-     fn hold_registry(
-         self: &Arc<Self>,
-         inner: &mut Inner,
-diff --git a/cli/src/native/client_terminal_cleanup_tests.rs b/cli/src/native/client_terminal_cleanup_tests.rs
-new file mode 100644
-index 000000000..62840853b
---- /dev/null
-+++ b/cli/src/native/client_terminal_cleanup_tests.rs
-@@ -0,0 +1,324 @@
-+// Terminal cleanup exercises the existing real websocket EOF fixture. Only the
-+// scoped publication ACK uses its established unit seam; no debt/EOF is forged.
-+async fn managed_terminal_cleanup_fixture() -> (
-+    TerminalFixture,
-+    Arc<super::super::client_debt::OwnerDebtLedger>,
-+) {
-+    let fixture = terminal_fixture().await;
-+    let ledger = super::super::client_debt::OwnerDebtLedger::new(
-+        1,
-+        fixture.source.scope.identity_scope.clone(),
-+    );
-+    fixture
-+        .source
-+        .client
-+        .install_debt_ledger(ledger.clone())
-+        .unwrap();
-+    fixture.targets.bind_eval_owner(&ledger, 1).unwrap();
-+    (fixture, ledger)
-+}
-+
-+#[tokio::test]
-+async fn terminal_quarantine_parks_and_drains_without_restoring_business_authority() {
-+    let (mut fixture, ledger) = managed_terminal_cleanup_fixture().await;
-+    let source = fixture.source.clone();
-+    source.replace_routes(7, vec!["original".into()]).unwrap();
-+    let operation = source.broker.admit(1, 1, 5000).unwrap();
-+    let (release, blocked) = std::sync::mpsc::channel();
-+    let (started, entered) = tokio::sync::oneshot::channel();
-+    source
-+        .blocking_reads
-+        .lock()
-+        .unwrap()
-+        .spawn_blocking(move || {
-+            let _ = started.send(());
-+            let _ = blocked.recv();
-+        });
-+    tokio::time::timeout(std::time::Duration::from_secs(2), entered)
-+        .await
-+        .unwrap()
-+        .unwrap();
-+    let proof = disconnect_terminal(&fixture).await;
-+    source.broker.quarantine().unwrap();
-+    let before = ledger.snapshot();
-+    assert!(before.integrity_lost);
-+    let closing = source.clone();
-+    let terminal = proof.clone();
-+    let close = tokio::spawn(async move { closing.close_for_remote_disconnect(&terminal).await });
-+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
-+        while !source.sealed.load(Ordering::Acquire) {
-+            tokio::task::yield_now().await;
-+        }
-+    })
-+    .await
-+    .unwrap();
-+    assert!(!close.is_finished());
-+    assert!(!source.cleanup_drained.load(Ordering::Acquire));
-+    assert!(source
-+        .take_disconnected_routes(&fixture.targets, &operation)
-+        .is_err());
-+    release.send(()).unwrap();
-+    tokio::time::timeout(std::time::Duration::from_secs(2), close)
-+        .await
-+        .unwrap()
-+        .unwrap()
-+        .unwrap();
-+    assert!(source.cleanup_drained.load(Ordering::Acquire));
-+    assert!(matches!(
-+        *source.disconnected_routes.lock().unwrap(),
-+        DisconnectedRouteSlot::Parked(_)
-+    ));
-+    assert_eq!(
-+        source.park_disconnected_routes(&proof),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    assert!(fixture._events.try_recv().is_err());
-+    assert_eq!(
-+        source.broker.health().unwrap().1,
-+        super::super::client_protocol::ScopeState::Quarantined
-+    );
-+    assert!(source.broker.admit(1, 2, 5000).is_err());
-+    assert!(source
-+        .take_disconnected_routes(&fixture.targets, &operation)
-+        .is_err());
-+    let after = ledger.snapshot();
-+    assert!(after.integrity_lost);
-+    assert_eq!(after.input_debt, before.input_debt);
-+    assert_eq!(after.outstanding_commands, before.outstanding_commands);
-+    assert!(Arc::ptr_eq(&source.client.debt_ledger().unwrap(), &ledger));
-+    source.close().await.unwrap();
-+    assert!(matches!(
-+        *source.disconnected_routes.lock().unwrap(),
-+        DisconnectedRouteSlot::Retired
-+    ));
-+    assert_eq!(
-+        source.broker.take_released_registry_events(8).unwrap(),
-+        vec![(7, Some(source.scope.identity_scope.clone()))]
-+    );
-+    fixture.server.abort();
-+}
-+
-+#[tokio::test]
-+async fn terminal_callback_disposition_distinguishes_queue_from_local_only() {
-+    use super::super::client_transport::NativeCallbackRetirement;
-+    for publication_closed in [false, true] {
-+        let (mut fixture, ledger) = managed_terminal_cleanup_fixture().await;
-+        let source = &fixture.source;
-+        let proof = disconnect_terminal(&fixture).await;
-+        // No asynchronous producer or reader exists in this fixture. Revoke the
-+        // exact source before exercising the callback-only boundary directly.
-+        source.revoke_resources().unwrap();
-+        if publication_closed {
-+            source.retirement_sink.close_publications_for_test();
-+        }
-+        assert_eq!(
-+            source
-+                .retirement_sink
-+                .retire_callbacks_after_terminal_drain(&proof),
-+            Ok(if publication_closed {
-+                NativeCallbackRetirement::LocalOnlyTerminal
-+            } else {
-+                NativeCallbackRetirement::NoticeQueued
-+            })
-+        );
-+        if publication_closed {
-+            assert!(fixture._events.try_recv().is_err());
-+        } else {
-+            assert!(
-+                matches!(fixture._events.try_recv().unwrap(), ServerMessage::Event { event, .. } if event == "scope.callbacks-retired")
-+            );
-+        }
-+        assert_eq!(
-+            source
-+                .retirement_sink
-+                .retire_callbacks_after_terminal_drain(&proof),
-+            Err(ProtocolError::StaleScope)
-+        );
-+        assert!(source
-+            .retirement_sink
-+            .emit(
-+                "late".into(),
-+                json!({"identityScope":source.scope.identity_scope}),
-+                None
-+            )
-+            .is_err());
-+        assert!(ledger.snapshot().integrity_lost);
-+        source.close().await.unwrap();
-+        fixture.server.abort();
-+    }
-+}
-+
-+#[tokio::test]
-+async fn terminal_cleanup_rejects_foreign_broker_ledger_generation_and_missing_owner() {
-+    let (fixture, _ledger) = managed_terminal_cleanup_fixture().await;
-+    let source = &fixture.source;
-+    source.replace_routes(7, vec!["original".into()]).unwrap();
-+    assert!(
-+        super::super::client_enrollment::NativeTerminalProof::for_test(
-+            source.client.clone(),
-+            fixture.targets.clone(),
-+            source,
-+            1,
-+            "retained-page".into()
-+        )
-+        .is_err(),
-+        "local identity cannot substitute for reader EOF"
-+    );
-+    let proof = disconnect_terminal(&fixture).await;
-+    source.broker.quarantine().unwrap();
-+    let foreign = Arc::new(ClientSession::new());
-+    assert!(matches!(
-+        foreign.park_registry_after_terminal(&proof, 7),
-+        Err(ProtocolError::StaleScope)
-+    ));
-+    let same_labels = super::super::client_targets::ClientTargets::new(
-+        fixture.targets.context_id.clone(),
-+        source.scope.identity_scope.clone(),
-+    );
-+    let foreign_ledger =
-+        super::super::client_debt::OwnerDebtLedger::new(1, source.scope.identity_scope.clone());
-+    same_labels.bind_eval_owner(&foreign_ledger, 1).unwrap();
-+    let wrong_owner = super::super::client_enrollment::NativeTerminalProof::for_test(
-+        source.client.clone(),
-+        same_labels,
-+        source,
-+        1,
-+        "retained-page".into(),
-+    )
-+    .unwrap();
-+    assert_eq!(
-+        source.park_disconnected_routes(&wrong_owner),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    let wrong_generation = super::super::client_enrollment::NativeTerminalProof::for_test(
-+        source.client.clone(),
-+        fixture.targets.clone(),
-+        source,
-+        2,
-+        "retained-page".into(),
-+    )
-+    .unwrap();
-+    assert_eq!(
-+        source.park_disconnected_routes(&wrong_generation),
-+        Err(ProtocolError::StaleGeneration)
-+    );
-+    assert_eq!(*source.registry.lock().unwrap(), Some(7));
-+    assert!(matches!(
-+        *source.disconnected_routes.lock().unwrap(),
-+        DisconnectedRouteSlot::Uncaptured
-+    ));
-+    source.close().await.unwrap();
-+    fixture.server.abort();
-+
-+    let fixture = terminal_fixture().await;
-+    fixture
-+        .source
-+        .replace_routes(7, vec!["original".into()])
-+        .unwrap();
-+    let proof = disconnect_terminal(&fixture).await;
-+    fixture.source.broker.quarantine().unwrap();
-+    assert_eq!(
-+        fixture.source.park_disconnected_routes(&proof),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    assert_eq!(*fixture.source.registry.lock().unwrap(), Some(7));
-+    fixture.source.close().await.unwrap();
-+    fixture.server.abort();
-+}
-+
-+#[tokio::test]
-+async fn terminal_local_fence_rejects_pending_and_discarded_publications() {
-+    let (mut fixture, _ledger) = managed_terminal_cleanup_fixture().await;
-+    let source = &fixture.source;
-+    let operation = source.broker.admit(1, 1, 5000).unwrap();
-+    let pending = source
-+        .retirement_sink
-+        .stage_until_result(&operation, &source.scope.identity_scope)
-+        .unwrap();
-+    let proof = disconnect_terminal(&fixture).await;
-+    source.broker.quarantine().unwrap();
-+    source.revoke_resources().unwrap();
-+    assert_eq!(
-+        source
-+            .retirement_sink
-+            .retire_callbacks_after_terminal_drain(&proof),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    assert_eq!(
-+        pending.retire_callbacks_after_terminal_drain(&proof),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    source.retirement_sink.close_publications_for_test();
-+    assert_eq!(
-+        pending.retire_callbacks_after_terminal_drain(&proof),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    assert!(fixture._events.try_recv().is_err());
-+    source.close().await.unwrap();
-+    fixture.server.abort();
-+}
-+
-+#[tokio::test]
-+async fn terminal_notice_queue_failure_never_becomes_local_only_success() {
-+    let (mut fixture, _ledger) = managed_terminal_cleanup_fixture().await;
-+    let source = &fixture.source;
-+    for _ in 0..64 {
-+        source
-+            .retirement_sink
-+            .emit(
-+                "queued".into(),
-+                json!({"identityScope":source.scope.identity_scope}),
-+                None,
-+            )
-+            .unwrap();
-+    }
-+    let proof = disconnect_terminal(&fixture).await;
-+    source.revoke_resources().unwrap();
-+    assert_eq!(
-+        source
-+            .retirement_sink
-+            .retire_callbacks_after_terminal_drain(&proof),
-+        Err(ProtocolError::CapacityExceeded)
-+    );
-+    source.retirement_sink.close_publications_for_test();
-+    assert_eq!(
-+        source
-+            .retirement_sink
-+            .retire_callbacks_after_terminal_drain(&proof),
-+        Err(ProtocolError::StaleScope)
-+    );
-+    while let Ok(event) = fixture._events.try_recv() {
-+        assert!(
-+            !matches!(event, ServerMessage::Event { event, .. } if event == "scope.callbacks-retired")
-+        );
-+    }
-+    source.close().await.unwrap();
-+    fixture.server.abort();
-+}
-+
-+#[tokio::test]
-+async fn terminal_local_fence_never_hides_a_failed_retained_reader() {
-+    let (mut fixture, ledger) = managed_terminal_cleanup_fixture().await;
-+    let source = &fixture.source;
-+    source.replace_routes(7, vec!["original".into()]).unwrap();
-+    source.blocking_reads.lock().unwrap().spawn_blocking(|| {
-+        panic!("synthetic retained reader failure");
-+    });
-+    let proof = disconnect_terminal(&fixture).await;
-+    source.broker.quarantine().unwrap();
-+    assert_eq!(
-+        source.close_for_remote_disconnect(&proof).await,
-+        Err(ProtocolError::CleanupFailed)
-+    );
-+    assert!(!source.cleanup_drained.load(Ordering::Acquire));
-+    assert!(ledger.snapshot().integrity_lost);
-+    assert!(fixture._events.try_recv().is_err());
-+    // Cached worker failure survives the second call; no empty JoinSet can
-+    // masquerade as successful drainage after the original task was moved.
-+    assert_eq!(
-+        source.close_for_remote_disconnect(&proof).await,
-+        Err(ProtocolError::CleanupFailed)
-+    );
-+    assert_eq!(source.close().await, Err(ProtocolError::CleanupFailed));
-+    fixture.server.abort();
-+}
-diff --git a/cli/src/native/client_transport.rs b/cli/src/native/client_transport.rs
-index 9d170c9c1..97a4086a0 100644
---- a/cli/src/native/client_transport.rs
-+++ b/cli/src/native/client_transport.rs
-@@ -112,6 +112,13 @@ struct StagedEvent {
-     bytes: usize,
-     decision_deadline: Option<std::time::Instant>,
- }
-+/// Native authority retirement only. Queue acceptance is not writer flush or
-+/// peer receipt, and local-only retirement makes no notification claim at all.
-+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-+pub(crate) enum NativeCallbackRetirement {
-+    NoticeQueued,
-+    LocalOnlyTerminal,
-+}
- /// Reliable bounded event lane. A replacement producer receives a distinct
- /// operation-bound clone; old callback producers retain their live clone.
- #[derive(Clone)]
-@@ -430,10 +437,14 @@ impl ClientEventSink {
-     pub(crate) fn retire_callbacks_after_terminal_drain(
-         &self,
-         proof: &super::client_enrollment::NativeTerminalProof,
--    ) -> Result<(), ProtocolError> {
-+    ) -> Result<NativeCallbackRetirement, ProtocolError> {
-         proof.check_event_sink(self)?;
-         proof.check_targets(proof.targets())?;
--        self.retire_scope_callbacks(proof.generation(), &proof.targets().identity_scope)
-+        self.retire_scope_callbacks_checked(
-+            proof.generation(),
-+            &proof.targets().identity_scope,
-+            Some(proof),
-+        )
-     }
-     pub(crate) fn retire_callbacks_after_final_local_drain(
-         &self,
-@@ -443,6 +454,15 @@ impl ClientEventSink {
-         self.retire_scope_callbacks(proof.generation(), proof.identity_scope())
-     }
-     fn retire_scope_callbacks(&self, generation: u64, scope: &str) -> Result<(), ProtocolError> {
-+        self.retire_scope_callbacks_checked(generation, scope, None)
-+            .map(|_| ())
-+    }
-+    fn retire_scope_callbacks_checked(
++    pub(crate) fn check_scoped_owner(
 +        &self,
 +        generation: u64,
 +        scope: &str,
-+        terminal: Option<&super::client_enrollment::NativeTerminalProof>,
-+    ) -> Result<NativeCallbackRetirement, ProtocolError> {
-         let barrier = self.barrier.as_ref().ok_or(ProtocolError::StaleScope)?;
-         if barrier.key.0 != generation || barrier.identity_scope != scope {
-             return Err(ProtocolError::StaleScope);
-@@ -452,9 +472,23 @@ impl ClientEventSink {
-                 .sequence
-                 .lock()
-                 .map_err(|_| ProtocolError::ScopeUnavailable)?;
--            if self.check_open()? != generation {
-+            // Preserve the ordinary/final-local error contract. Only a checked
-+            // NativeTerminalProof may take the local-only retirement branch.
-+            if terminal.is_none() {
-+                self.check_open()?;
-+            }
-+            let (current, health) = self.broker.health()?;
-+            if current != generation {
-                 return Err(ProtocolError::StaleGeneration);
++        owner: Option<&Arc<super::client_debt::OwnerDebtLedger>>,
++    ) -> Result<(), ProtocolError> {
++        let inner = self.lock()?;
++        Self::check_scope(&inner, generation, scope)?;
++        if inner.health != ScopeState::Usable
++            && !inner
++                .recovery
++                .as_ref()
++                .and_then(|recovery| recovery.candidate.as_ref())
++                .is_some_and(|candidate| owner.is_some_and(|owner| Arc::ptr_eq(candidate, owner)))
++        {
++            return Err(ProtocolError::StaleScope);
++        }
++        Ok(())
++    }
++    pub(crate) fn staged_recovery_owner(
++        &self,
++        operation: &OperationLease,
++        scope: &str,
++    ) -> Result<Option<Arc<super::client_debt::OwnerDebtLedger>>, ProtocolError> {
++        let inner = self.lock()?;
++        if inner.health == ScopeState::Usable {
++            return Ok(None);
++        }
++        Self::check_live_operation(&inner, operation)?;
++        Self::check_scope(&inner, operation.generation, scope)?;
++        Ok(inner
++            .recovery
++            .as_ref()
++            .and_then(|recovery| recovery.candidate.clone()))
++    }
++    pub(crate) fn publish_recovered_scope(
++        &self,
++        operation: &OperationLease,
++        owner: &Arc<super::client_debt::OwnerDebtLedger>,
++    ) -> Result<(), ProtocolError> {
++        let mut inner = self.lock()?;
++        Self::check_live_operation(&inner, operation)?;
++        Self::check_scope(&inner, operation.generation, owner.identity_scope())?;
++        if !inner
++            .recovery
++            .as_ref()
++            .and_then(|recovery| recovery.candidate.as_ref())
++            .is_some_and(|candidate| Arc::ptr_eq(candidate, owner))
++        {
++            return Err(ProtocolError::StaleScope);
++        }
++        inner.recovery = None;
++        inner.health = ScopeState::Usable;
++        Ok(())
++    }
+     pub fn admit(
+         &self,
+         generation: u64,
+@@ -360,7 +606,7 @@ impl ClientSession {
+     /// Called immediately before entering an action, not when dequeued earlier.
+     pub fn start(&self, generation: u64, sequence: u64) -> Result<bool, ProtocolError> {
+         let mut inner = self.lock()?;
+-        Self::check(&inner, generation)?;
++        Self::check_control(&inner, generation, sequence)?;
+         let op = inner
+             .operations
+             .get_mut(&sequence)
+@@ -481,7 +727,7 @@ impl ClientSession {
+     /// Control acknowledgement only. The action must still produce settlement.
+     pub fn cancel(&self, generation: u64, sequence: u64) -> Result<(), ProtocolError> {
+         let mut inner = self.lock()?;
+-        Self::check(&inner, generation)?;
++        Self::check_control(&inner, generation, sequence)?;
+         if !inner.operations.contains_key(&sequence) {
+             return Err(ProtocolError::OperationMissing);
+         }
+@@ -494,7 +740,7 @@ impl ClientSession {
+     /// session remains stronger and can still replace either with SessionClosed.
+     pub(crate) fn expire(&self, generation: u64, sequence: u64) -> Result<(), ProtocolError> {
+         let mut inner = self.lock()?;
+-        Self::check(&inner, generation)?;
++        Self::check_control(&inner, generation, sequence)?;
+         let operation = inner
+             .operations
+             .get(&sequence)
+@@ -695,7 +941,10 @@ impl ClientSession {
+         previous: Option<u64>,
+     ) -> Result<(), ProtocolError> {
+         let mut inner = self.lock()?;
+-        Self::check(&inner, generation)?;
++        match identity_scope.as_deref() {
++            Some(scope) => Self::check_scope(&inner, generation, scope)?,
++            None => Self::check(&inner, generation)?,
++        }
+         if version == 0 || version > MAX_SAFE_SEQUENCE || version <= inner.registry_high_water {
+             return Err(ProtocolError::InvalidSequence);
+         }
+@@ -882,7 +1131,7 @@ impl ClientSession {
+         inner: &Inner,
+         operation: &OperationLease,
+     ) -> Result<(), ProtocolError> {
+-        Self::check(inner, operation.generation)?;
++        Self::check_control(inner, operation.generation, operation.sequence)?;
+         if operation.is_callback {
+             return Err(ProtocolError::InvalidArguments);
+         }
+@@ -1020,7 +1269,7 @@ impl ClientSession {
+     ) -> Result<(), ProtocolError> {
+         transfer.check_operation(operation)?;
+         let mut inner = self.lock()?;
+-        Self::check(&inner, transfer.generation)?;
++        Self::check_scope(&inner, transfer.generation, replacement_scope)?;
+         if require_admitted {
+             Self::check_live_operation(&inner, operation)?;
+         }
+@@ -1142,7 +1391,10 @@ impl ClientSession {
+             return Err(ProtocolError::InvalidArguments);
+         }
+         let mut inner = self.lock()?;
+-        Self::check(&inner, generation)?;
++        match resource_scope.as_deref() {
++            Some(scope) => Self::check_scope(&inner, generation, scope)?,
++            None => Self::check(&inner, generation)?,
++        }
+         if timeout_ms == 0 || timeout_ms > MAX_TIMEOUT_MS {
+             return Err(ProtocolError::InvalidTimeout);
+         }
+@@ -1549,6 +1801,7 @@ impl ClientSession {
+         }
+         // Seal admission before waking any asynchronous waiter.
+         inner.health = health;
++        inner.recovery = None;
+         for operation in inner.operations.values() {
+             operation.cancel.send_replace(CancelSignal::SessionClosed);
+         }
+diff --git a/cli/src/native/client_state.rs b/cli/src/native/client_state.rs
+index 53df43093683655dbb556fbef9b37ff33bde6435..64191f1542ce3b2418e95b2d74d12ecf750f7c56 100644
+--- a/cli/src/native/client_state.rs
++++ b/cli/src/native/client_state.rs
+@@ -1753,6 +1753,7 @@ mod tests {
+                 .stage_until_result(&operation, &owner.identity_scope)
+                 .unwrap();
+             sink.acknowledge_result_for_test(&ServerMessage::Result {
++                recovery: None,
+                 retention: None,
+                 id: "synthetic-state-fixture".into(),
+                 generation: operation.generation,
+diff --git a/cli/src/native/client_tasks.rs b/cli/src/native/client_tasks.rs
+index 5b0d8349f8a5d2646fc6207802c136c905b70d4b..c59995f11f811a946532a6ea334f93340ada7a6d 100644
+--- a/cli/src/native/client_tasks.rs
++++ b/cli/src/native/client_tasks.rs
+@@ -17,12 +17,13 @@ const MAX_RETAINED: usize = super::client_operation_state::MAX_RETAINED_OPERATIO
+ pub struct RetainedCompletion {
+     pub identity_scope: String,
+     pub cleanup_integrity_lost: bool,
++    operation: Option<super::client_debt::OperationKey>,
+ }
+ #[derive(Default)]
+ struct Tasks {
+     closing: bool,
+     tasks: JoinSet<RetainedCompletion>,
+-    failures: Vec<String>,
++    failures: Vec<RetainedCompletion>,
+     unscoped_failure: bool,
+ }
+ #[derive(Default)]
+@@ -34,9 +35,7 @@ impl Tasks {
+     fn record(&mut self, result: Result<RetainedCompletion, tokio::task::JoinError>) {
+         match result {
+             Ok(result) if result.cleanup_integrity_lost => {
+-                if !self.failures.contains(&result.identity_scope) {
+-                    self.failures.push(result.identity_scope);
+-                }
++                self.failures.push(result);
              }
-+            if !order
-+                .scope_gates
-+                .get(&(generation, scope.to_owned()))
-+                .and_then(std::sync::Weak::upgrade)
-+                .is_some_and(|gate| std::sync::Arc::ptr_eq(&gate, &barrier.scope_gate))
+             Err(_) => self.unscoped_failure = true,
+             _ => {}
+@@ -151,7 +150,8 @@ impl RetainedTasks {
+     {
+         let operations = self.operations.clone();
+         let task_targets = targets.clone();
+-        self.start_prepared(identity_scope, targets, move || {
++        let key = journal.key();
++        self.start_prepared_tracked(identity_scope, targets, Some(key), move || {
+             operations.register(journal.clone())?;
+             let future = match prepare() {
+                 Ok(future) => future,
+@@ -191,7 +191,19 @@ impl RetainedTasks {
+                         true,
+                     ),
+                 };
++                // This timer owns no action work. Join it before publishing local
++                // completion so an old deadline cannot quarantine a fresh owner.
++                monitor.abort();
++                let monitor_failed = match monitor.await {
++                    Ok(()) => false,
++                    Err(error) => !error.is_cancelled(),
++                };
++                let dirty = dirty || monitor_failed;
+                 let snapshot = journal.snapshot();
++                let remote_only = !dirty
++                    && !matches!(&outcome.result, Err(ProtocolError::CleanupFailed))
++                    && journal.local_integrity_intact()
++                    && journal.ledger().remote_eof_only();
+                 let already_dirty = dirty
+                     || matches!(&outcome.result, Err(ProtocolError::CleanupFailed))
+                     || snapshot.integrity_lost;
+@@ -225,12 +237,15 @@ impl RetainedTasks {
+                 if outcome.effects == Effects::Unknown {
+                     operations.retire(key);
+                 }
+-                let dirty = operations.finish(key, dirty) || dirty;
++                let dirty = (if remote_only {
++                    operations.finish_remote_eof(key)
++                } else {
++                    operations.finish(key, dirty)
++                }) || dirty;
+                 if dirty {
+                     task_targets.seal();
+                     let _ = broker.quarantine();
+                 }
+-                monitor.abort(); // Timer only; never aborts action/cleanup work.
+                 if outcome.effects == Effects::Unknown && !dirty {
+                     outcome.retention = operations.status(key).proof();
+                 }
+@@ -262,6 +277,21 @@ impl RetainedTasks {
+         targets: Arc<ClientTargets>,
+         prepare: P,
+     ) -> Result<oneshot::Receiver<NativeOutcome>, ProtocolError>
++    where
++        F: Future<Output = (NativeOutcome, bool)> + Send + 'static,
++        P: FnOnce() -> Result<F, ProtocolError>,
++    {
++        self.start_prepared_tracked(identity_scope, targets, None, prepare)
++            .await
++    }
++
++    async fn start_prepared_tracked<F, P>(
++        &self,
++        identity_scope: String,
++        targets: Arc<ClientTargets>,
++        operation: Option<super::client_debt::OperationKey>,
++        prepare: P,
++    ) -> Result<oneshot::Receiver<NativeOutcome>, ProtocolError>
+     where
+         F: Future<Output = (NativeOutcome, bool)> + Send + 'static,
+         P: FnOnce() -> Result<F, ProtocolError>,
+@@ -270,7 +300,14 @@ impl RetainedTasks {
+         while let Some(result) = tasks.tasks.try_join_next() {
+             tasks.record(result);
+         }
+-        if tasks.closing || tasks.unscoped_failure || !tasks.failures.is_empty() {
++        if tasks.closing
++            || tasks.unscoped_failure
++            || tasks.failures.iter().any(|failure| {
++                !failure
++                    .operation
++                    .is_some_and(|key| self.operations.disconnected_failure_retired(key))
++            })
++        {
+             return Err(ProtocolError::ScopeUnavailable);
+         }
+         if tasks.tasks.len() >= MAX_RETAINED {
+@@ -313,17 +350,80 @@ impl RetainedTasks {
+             RetainedCompletion {
+                 identity_scope,
+                 cleanup_integrity_lost,
++                operation,
+             }
+         });
+         Ok(receive)
+     }
+ 
++    pub(crate) fn recovery_candidate(
++        &self,
++        key: super::client_debt::OperationKey,
++    ) -> Option<super::client_operation_state::DisconnectedRecoveryProof> {
++        self.operations.recovery_candidate(key)
++    }
++    /// Join all old local producers under the caller's existing lifecycle budget.
++    /// A historical EOF failure is not erased, and unrelated local failures refuse.
++    pub(crate) async fn drain_disconnected(
++        &self,
++        proof: &super::client_operation_state::DisconnectedRecoveryProof,
++    ) -> Result<(), ProtocolError> {
++        proof.check()?;
++        let mut tasks = self.inner.lock().await;
++        while let Some(result) = tasks.tasks.join_next().await {
++            tasks.record(result);
++        }
++        if tasks.closing
++            || tasks.unscoped_failure
++            || tasks.failures.iter().any(|failure| {
++                !failure.operation.is_some_and(|key| {
++                    self.operations.disconnected_failure_retired(key)
++                        || self.operations.disconnected_failure_matches(key, proof)
++                }) || failure.identity_scope != proof.ledger().identity_scope()
++                    && !failure
++                        .operation
++                        .is_some_and(|key| self.operations.disconnected_failure_retired(key))
++            })
++        {
++            return Err(ProtocolError::CleanupFailed);
++        }
++        self.operations
++            .recovery_candidate(proof.key())
++            .ok_or(ProtocolError::CleanupFailed)?;
++        Ok(())
++    }
++    pub(crate) fn retire_disconnected_owner(
++        &self,
++        proof: &super::client_operation_state::DisconnectedRecoveryProof,
++    ) -> Result<(), ProtocolError> {
++        self.operations.retire_disconnected_owner(proof)
++    }
++    /// Final cleanup of the current owner. Previously verified local retirements
++    /// remain recorded; they are not live producers of this replacement scope.
++    pub(crate) async fn drain_current(&self) -> Result<(), ProtocolError> {
++        let mut tasks = self.inner.lock().await;
++        while let Some(result) = tasks.tasks.join_next().await {
++            tasks.record(result);
++        }
++        if tasks.unscoped_failure
++            || tasks.failures.iter().any(|failure| {
++                !failure
++                    .operation
++                    .is_some_and(|key| self.operations.disconnected_failure_retired(key))
++            })
++        {
++            Err(ProtocolError::CleanupFailed)
++        } else {
++            Ok(())
++        }
++    }
+     pub async fn seal(&self) {
+         self.inner.lock().await.closing = true;
+     }
+ 
+     /// JoinSet remains in owner storage if this wait is cancelled. All tasks
+     /// are joined even when an earlier task reported cleanup failure.
++    #[cfg(test)]
+     pub async fn drain(&self) -> Result<(), ProtocolError> {
+         let mut tasks = self.inner.lock().await;
+         while let Some(result) = tasks.tasks.join_next().await {
+diff --git a/cli/src/native/client_transport.rs b/cli/src/native/client_transport.rs
+index 97a4086a098956e2e86f97f6a6671fd02354f724..adbcad4dcff05715e5dc7086440a136e6a2e355f 100644
+--- a/cli/src/native/client_transport.rs
++++ b/cli/src/native/client_transport.rs
+@@ -37,6 +37,12 @@ pub trait ClientExecutor: Send + Sync + 'static {
+     }
+     /// Short-lock cancellation hook fixes the native retirement deadline before
+     /// the cleanup grace. It never drops or aborts the retained producer.
++    fn disconnected_recovery_candidate(
++        &self,
++        _key: super::client_debt::OperationKey,
++    ) -> Option<super::client_operation_state::DisconnectedRecoveryProof> {
++        None
++    }
+     fn cancel_operation_producer(&self, _key: super::client_debt::OperationKey) {}
+     fn fix_operation_result(&self, _key: super::client_debt::OperationKey) {}
+     /// Independent publication retirement. The broker barrier is already set;
+@@ -97,6 +103,7 @@ struct ScopeEmissionGate {
+ struct EventBarrier {
+     key: (u64, u64),
+     identity_scope: String,
++    recovery_owner: Option<std::sync::Arc<super::client_debt::OwnerDebtLedger>>,
+     scope_gate: std::sync::Arc<ScopeEmissionGate>,
+     deadline: std::time::Instant,
+     state: std::sync::Mutex<EventBarrierState>,
+@@ -153,7 +160,16 @@ impl ClientEventSink {
+         operation: &OperationLease,
+         identity_scope: &str,
+     ) -> Result<Self, ProtocolError> {
+-        self.check_open()?;
++        let recovery_owner = self
++            .broker
++            .staged_recovery_owner(operation, identity_scope)?;
++        if recovery_owner.is_some() {
++            if !self.open.load(std::sync::atomic::Ordering::Acquire) {
++                return Err(ProtocolError::ScopeUnavailable);
++            }
++        } else {
++            self.check_open()?;
++        }
+         if identity_scope.is_empty()
+             || identity_scope.len() > 256
+             || identity_scope.chars().any(char::is_control)
+@@ -212,6 +228,7 @@ impl ClientEventSink {
+         let barrier = std::sync::Arc::new(EventBarrier {
+             key,
+             identity_scope: identity_scope.into(),
++            recovery_owner,
+             scope_gate,
+             deadline: operation.deadline,
+             state: std::sync::Mutex::new(EventBarrierState::Holding(Vec::new())),
+@@ -321,6 +338,23 @@ impl ClientEventSink {
+             return Err(ProtocolError::ScopeUnavailable);
+         }
+         let (generation, health) = self.broker.health()?;
++        if let Some(barrier) = &self.barrier {
++            if barrier
++                .scope_gate
++                .closed
++                .load(std::sync::atomic::Ordering::Acquire)
 +            {
 +                return Err(ProtocolError::StaleScope);
 +            }
-             if barrier
-                 .scope_gate
-                 .closed
-@@ -475,11 +509,30 @@ impl ClientEventSink {
-             ) {
-                 return Err(ProtocolError::StaleScope);
-             }
--            // Seal before enqueue. Queue failure must never reopen old producers.
-+            // Live is the existing witness that this exact scope's successful
-+            // result was flushed. It excludes the initial open=false state:
-+            // startup's sole open=true write precedes every production Live.
-+            // Under this same mutex, sealing the shared gate fences every old
-+            // scope clone, even if quarantine precedes close_publications.
-+            let local_only = !self.open.load(std::sync::atomic::Ordering::Acquire)
-+                || health == ScopeState::Quarantined;
-+            if health == ScopeState::Closed {
++            if barrier.recovery_owner.is_some() {
++                self.broker.check_scoped_owner(
++                    generation,
++                    &barrier.identity_scope,
++                    barrier.recovery_owner.as_ref(),
++                )?;
++                return Ok(generation);
++            }
++        }
+         if health != ScopeState::Usable {
+             return Err(ProtocolError::ScopeUnavailable);
+         }
+@@ -342,6 +376,53 @@ impl ClientEventSink {
+             .try_send(message)
+             .map_err(|_| ProtocolError::CapacityExceeded)
+     }
++    /// Exact native reader EOF notice. False means not queued because the old
++    /// scope is already quarantined; it never means peer delivery or recovery.
++    /// Unlike ordinary publication this path cannot re-quarantine a replacement
++    /// while an old watcher is finishing. Lifecycle still joins that watcher.
++    pub(crate) fn emit_disconnected(
++        &self,
++        client: &std::sync::Arc<super::cdp::client::CdpClient>,
++        targets: &std::sync::Arc<super::client_targets::ClientTargets>,
++    ) -> Result<bool, ProtocolError> {
++        let debt = client.debt_ledger().ok_or(ProtocolError::StaleScope)?;
++        if !*client.remote_connection_closed().borrow() {
++            return Err(ProtocolError::StaleScope);
++        }
++        targets.require_eval_owner(&debt)?;
++        client.check_cleanup_owner(&Some(debt.clone()))?;
++        let result = {
++            let mut order = self
++                .sequence
++                .lock()
++                .map_err(|_| ProtocolError::ScopeUnavailable)?;
++            let (generation, health) = self.broker.health()?;
++            if !debt.matches_owner(generation, &targets.identity_scope) {
++                return Err(ProtocolError::StaleScope);
++            }
++            if health == ScopeState::Quarantined {
++                return Ok(false);
++            }
++            if health != ScopeState::Usable || !self.open.load(std::sync::atomic::Ordering::Acquire)
++            {
 +                return Err(ProtocolError::ScopeUnavailable);
 +            }
-+            if local_only {
-+                terminal
-+                    .ok_or(ProtocolError::ScopeUnavailable)?
-+                    .check_local_retirement_owner(&self.broker)?;
-+            }
-+            // Seal before enqueue. Queue failure must never reopen old producers
-+            // or be reclassified as successful local-only retirement.
-             barrier
-                 .scope_gate
-                 .closed
-                 .store(true, std::sync::atomic::Ordering::Release);
-+            if local_only {
-+                return Ok(NativeCallbackRetirement::LocalOnlyTerminal);
-+            }
-             let through = order.sequence;
-             self.enqueue_event(&mut order, ServerMessage::Event {
-                 generation, sequence: MAX_SAFE_SEQUENCE,
-@@ -487,6 +540,7 @@ impl ClientEventSink {
-                 payload: serde_json::json!({"identityScope":scope,"throughEventSequence":through}),
-                 decision: None,
-             })
-+            .map(|()| NativeCallbackRetirement::NoticeQueued)
-         })();
-         if result.is_err() && result != Err(ProtocolError::StaleScope) {
-             let _ = self.broker.quarantine();
-@@ -494,6 +548,10 @@ impl ClientEventSink {
-         result
-     }
-     #[cfg(test)]
-+    pub(crate) fn close_publications_for_test(&self) {
-+        self.close_publications();
++            self.enqueue_event(
++                &mut order,
++                ServerMessage::Event {
++                    generation,
++                    sequence: 0,
++                    event: "browser.disconnected".into(),
++                    payload: serde_json::json!({"reason":"browser-connection-closed"}),
++                    decision: None,
++                },
++            )
++        };
++        if result.is_err() {
++            let _ = self.broker.quarantine();
++        }
++        result.map(|()| true)
 +    }
-+    #[cfg(test)]
-     pub(crate) fn acknowledge_result_for_test(
+     pub fn emit(
          &self,
-         message: &ServerMessage,
-@@ -1805,6 +1863,64 @@ mod tests {
-         .unwrap();
-         staged
+         event: String,
+@@ -1015,6 +1096,12 @@ where
+         && capabilities
+             .iter()
+             .any(|capability| capability == EXACT_OWNER_CONTINUATION);
++    let recovery_negotiated = required_capabilities
++        .iter()
++        .any(|capability| capability == DISCONNECTED_RECOVERY)
++        && capabilities
++            .iter()
++            .any(|capability| capability == DISCONNECTED_RECOVERY);
+     let supported: Vec<_> = capabilities.iter().map(String::as_str).collect();
+     let validation = validate_hello(&protocol, &required_capabilities, &supported)
+         .and_then(|()| executor.set_event_sink(sink.clone()));
+@@ -1045,7 +1132,7 @@ where
+         sink_open.store(true, std::sync::atomic::Ordering::Release);
      }
-+    #[test]
-+    fn terminal_callback_cut_requires_registered_gate_and_explicit_owner() {
-+        let (root, mut events) =
-+            ClientEventSink::test_channel(std::sync::Arc::new(ClientSession::new()));
-+        let old = live_scope_sink(&root, 7, "old");
-+        // Even a genuine published barrier cannot fence an unregistered scope
-+        // gate. This structural corruption grants no replacement authority.
-+        let key = (1, "old".to_owned());
-+        let registered = root
-+            .sequence
-+            .lock()
-+            .unwrap()
-+            .scope_gates
-+            .remove(&key)
-+            .unwrap();
-+        assert_eq!(
-+            old.retire_scope_callbacks(1, "old"),
-+            Err(ProtocolError::StaleScope)
-+        );
-+        root.sequence
-+            .lock()
-+            .unwrap()
-+            .scope_gates
-+            .insert(key, registered);
-+        root.close_publications();
-+        assert_eq!(
-+            old.retire_scope_callbacks_checked(1, "old", None),
-+            Err(ProtocolError::ScopeUnavailable)
-+        );
-+        assert!(!old
-+            .barrier
-+            .as_ref()
-+            .unwrap()
-+            .scope_gate
-+            .closed
-+            .load(std::sync::atomic::Ordering::Acquire));
-+        assert!(events.try_recv().is_err());
-+    }
-+
-+    #[test]
-+    fn terminal_callback_cut_never_treats_unpublished_false_as_terminal_proof() {
-+        let (root, mut events) =
-+            ClientEventSink::test_channel(std::sync::Arc::new(ClientSession::new()));
-+        let (_sender, operation) = publication_operation();
-+        let pending = root.stage_until_result(&operation, "old").unwrap();
-+        root.open.store(false, std::sync::atomic::Ordering::Release);
-+        assert_eq!(
-+            pending.retire_scope_callbacks_checked(1, "old", None),
-+            Err(ProtocolError::ScopeUnavailable)
-+        );
-+        root.close_publications();
-+        assert_eq!(
-+            pending.retire_scope_callbacks_checked(1, "old", None),
-+            Err(ProtocolError::ScopeUnavailable)
-+        );
-+        assert!(events.try_recv().is_err());
-+    }
-+
-     #[test]
-     fn terminal_callback_cut_fences_all_same_scope_clones_but_not_sibling() {
-         let (root, mut events) =
+     let mut operations = tokio::task::JoinSet::<(u64, NativeOutcome)>::new();
+-    let mut pending = std::collections::HashMap::<u64, (String, u64)>::new();
++    let mut pending = std::collections::HashMap::<u64, (String, u64, bool)>::new();
+     let mut closing_id = None;
+     let mut terminal_control = false;
+     // Retained across both phases: cancelling a read must not discard its prefix.
+@@ -1064,17 +1151,24 @@ where
+                 _ = timer.tick() => {
+                     let _ = broker.expire_decisions();
+                     if sink.expire_publications().is_err() { settlement_trace!(0, PublicationExpired); let _ = broker.quarantine(); break; }
+-                    if !broker.health().is_ok_and(|(_, state)| state == ScopeState::Usable) {
++                    if !broker.health().is_ok_and(|(_, state)| state == ScopeState::Usable) && !broker.recovery_available() {
+                         if terminal_close_negotiated && !operations.is_empty() { continue; }
++                        // Expired/consumed recovery keeps only negotiated terminal cleanup.
++                        terminal_control = terminal_close_negotiated && recovery_negotiated;
+                         settlement_trace!(0, HealthFailed); break;
+                     }
++                    // Keep ordinary notifications owned until the replacement
++                    // is usable. Do not drain then lose them during recovery.
++                    if broker.recovery_available() { continue; }
+                     for (version,identity_scope) in broker.take_released_registry_events(16).unwrap_or_default() {
+                         let mut payload=serde_json::json!({ "registryVersion": version });
+                         if let Some(scope)=identity_scope { payload["identityScope"]=serde_json::json!(scope); }
+                         if sink.emit("registry-released".into(), payload, None).is_err() { break; }
+                     }
+-                    if !broker.health().is_ok_and(|(_, state)| state == ScopeState::Usable) {
++                    if !broker.health().is_ok_and(|(_, state)| state == ScopeState::Usable) && !broker.recovery_available() {
+                         if terminal_close_negotiated && !operations.is_empty() { continue; }
++                        // Expired/consumed recovery keeps only negotiated terminal cleanup.
++                        terminal_control = terminal_close_negotiated && recovery_negotiated;
+                         settlement_trace!(0, HealthFailed); break;
+                     }
+                     continue;
+@@ -1082,14 +1176,24 @@ where
+                 completion = operations.join_next(), if !operations.is_empty() => {
+                     let Some(Ok((sequence, outcome))) = completion else { settlement_trace!(0, CompletionLost); break; };
+                     settlement_trace!(sequence, CompletionJoined);
+-                    let Some((id, generation)) = pending.remove(&sequence) else { settlement_trace!(sequence, CompletionLost); break; };
++                    let Some((id, generation, callback)) = pending.remove(&sequence) else { settlement_trace!(sequence, CompletionLost); break; };
+                     let state = broker.settle_with_retention(generation, sequence, outcome.effects,
+                         if continuation_negotiated { outcome.retention.as_ref() } else { None }).unwrap_or(ScopeState::Quarantined);
+                     executor.fix_operation_result(super::client_debt::OperationKey { generation, operation_seq: sequence });
+                     let unknown = outcome.effects == Effects::Unknown;
+-                    if !enqueue(&sender, result_message(id, generation, sequence, outcome, state), &broker) { settlement_trace!(sequence, ResultQueueFailed); break; }
++                    let recovery = if recovery_negotiated && !callback && unknown && state == ScopeState::Quarantined {
++                        executor.disconnected_recovery_candidate(super::client_debt::OperationKey { generation, operation_seq: sequence })
++                            .and_then(|proof| {
++                                let descriptor = RecoveryDescriptor { version: 1, identity_scope: proof.ledger().identity_scope().to_owned() };
++                                broker.offer_disconnected_recovery(proof).ok().map(|()| descriptor)
++                            })
++                    } else { None };
++                    let recoverable = recovery.is_some();
++                    let mut message = result_message(id, generation, sequence, outcome, state);
++                    if let ServerMessage::Result { recovery: field, .. } = &mut message { *field = recovery; }
++                    if !enqueue(&sender, message, &broker) { settlement_trace!(sequence, ResultQueueFailed); break; }
+                     settlement_trace!(sequence, ResultQueued);
+-                    if (unknown && state != ScopeState::Usable) || state == ScopeState::Quarantined {
++                    if !recoverable && ((unknown && state != ScopeState::Usable) || state == ScopeState::Quarantined) {
+                         terminal_control = terminal_close_negotiated;
+                         settlement_trace!(sequence, UnknownOutcome); break;
+                     }
+@@ -1181,14 +1285,33 @@ where
+                     command,
+                     args,
+                 } => {
+-                    match broker.admit_callback(
+-                        generation,
+-                        operation_seq,
+-                        timeout_ms,
+-                        callback_token.as_deref(),
+-                    ) {
++                    let admitted = if recovery_negotiated
++                        && command == "scope.reconnect"
++                        && callback_token.is_none()
++                        && broker
++                            .health()
++                            .is_ok_and(|(_, state)| state == ScopeState::Quarantined)
++                    {
++                        broker.admit_disconnected_reconnect(
++                            generation,
++                            operation_seq,
++                            timeout_ms,
++                            args.get("identityScope")
++                                .and_then(serde_json::Value::as_str)
++                                .unwrap_or_default(),
++                        )
++                    } else {
++                        broker.admit_callback(
++                            generation,
++                            operation_seq,
++                            timeout_ms,
++                            callback_token.as_deref(),
++                        )
++                    };
++                    match admitted {
+                         Ok(lease) => {
+-                            pending.insert(operation_seq, (id, generation));
++                            pending
++                                .insert(operation_seq, (id, generation, callback_token.is_some()));
+                             let executor = executor.clone();
+                             let broker = broker.clone();
+                             operations.spawn(async move {
+@@ -1228,7 +1351,7 @@ where
+                             ) {
+                                 break;
+                             }
+-                            if state == ScopeState::Quarantined {
++                            if state == ScopeState::Quarantined && !broker.recovery_available() {
+                                 terminal_control = terminal_close_negotiated;
+                                 break;
+                             }
+@@ -1427,7 +1550,7 @@ where
+     } else {
+         settlement_trace!(0, ShutdownUnproven);
+     }
+-    for (sequence, (id, generation)) in pending {
++    for (sequence, (id, generation, _callback)) in pending {
+         let effects = if broker.has_started(sequence) {
+             Effects::Unknown
+         } else {
+@@ -1523,6 +1646,7 @@ fn result_message(
+         generation,
+         operation_seq,
+         retention,
++        recovery: None,
+         ok,
+         data,
+         error,
+@@ -1677,6 +1801,7 @@ fn respond<E: ClientExecutor>(
+             };
+             (
+                 ServerMessage::Result {
++                    recovery: None,
+                     retention: None,
+                     id,
+                     generation,
