@@ -419,13 +419,13 @@
 +            .count(),
 +        1
 +    );
-+    assert!(
-+        commands
-+            .iter()
-+            .any(|r| r["method"] == "Runtime.callFunctionOn"
-+                && r["params"]["functionDeclaration"] == "function(){return this.remove()}")
-+    );
-+    assert!(commands.iter().any(|r|r["method"]=="Animation.setPlaybackRate"&&r["params"]["playbackRate"]==1));
++    assert!(commands
++        .iter()
++        .any(|r| r["method"] == "Runtime.callFunctionOn"
++            && r["params"]["functionDeclaration"] == "function(){return this.remove()}"));
++    assert!(commands
++        .iter()
++        .any(|r| r["method"] == "Animation.setPlaybackRate" && r["params"]["playbackRate"] == 1));
 +    assert!(!commands.iter().any(|r| matches!(
 +        r["method"].as_str(),
 +        Some("Browser.close" | "Target.closeTarget" | "Target.disposeBrowserContext")
