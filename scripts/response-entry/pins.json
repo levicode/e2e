@@ -1,0 +1,91 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "publishedNativeSha": "a2c48b8529d44434214c56aef31540bc3fedfeaa",
+  "candidateTree": "e69a73e73b5587a49906910332ba4a2c9eed5da9",
+  "baseNativeSha": "0ea3dce92bec2e1d059f30b6839f444a42f6a4eb",
+  "baseNativeTree": "f14d6ac9cc880094720fc4ea9707dd1a57bf2b95",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "onlyTestOverlay": true,
+  "productionSourceChanged": false,
+  "productionImageBuilt": false,
+  "existingProductionElfSha256": "2c6ed68952516d0f0710e9c158b4e5991cddd2eb0518d064ea71d19765cb7dad",
+  "patchSha256": "b0e6cbb6a9538a073788a457d9dbc2df70414cea20178c03036e769717086369",
+  "patchInputs": [
+    {
+      "name": "response-entry-five-test-only-files",
+      "sha256": "b0e6cbb6a9538a073788a457d9dbc2df70414cea20178c03036e769717086369"
+    }
+  ],
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_browser_response_entry_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "80d04d88cb7f3d22d68b8bb38260468fdade3baeb8bdc42275320c116662ffad",
+      "gitBlob": "cf6847939b5b07d4c310611db139a418619e6e5f"
+    },
+    {
+      "path": "cli/src/native/client_browser_restart_transport_tests.rs",
+      "beforeSha256": "35d9e74d34c208c0eb3c522cb48db691c189cb31eca7a7678cda0d9bf79b3209",
+      "afterSha256": "f86016a5731f6308ec5bd6a4854c356e9196ae9ba0d1158e0e49158cb8e70edc",
+      "gitBlob": "b4b441901ed28c18f7555e9cca1b2accd85b5423"
+    },
+    {
+      "path": "cli/src/native/client_enrollment.rs",
+      "beforeSha256": "42a3d69dea1b5e9f2d3c73e72b9bb6f3984929e4d4f014be7ed37ebbfb1670c8",
+      "afterSha256": "a2adb8bcf0bb93e5d5f98c82a7e1d1cf975b4ec4450d6f53472c605acb20fefd",
+      "gitBlob": "0d3b447b2758d2ea8f50cd2b5f3207a119ef8231"
+    },
+    {
+      "path": "cli/src/native/client_eval_network_watermark_tests.rs",
+      "beforeSha256": "a4ffe0cf35972fa34122c0fe56123f56984d56ebf460ec3daf8791652932c000",
+      "afterSha256": "3775b384fa7b1dd22a29e728aee4ca44920b6e8833ca5a8bd9d6862ed1f7afa8",
+      "gitBlob": "3b807451cff9a2dc92d86868d5fd4921e58b9482"
+    },
+    {
+      "path": "cli/tests/fixtures/response-evaluate-entry.json",
+      "beforeSha256": null,
+      "afterSha256": "397b401e8274d4617c4ec037dba1165493c11f9e7e79efcf6c83425bdb1dff8d",
+      "gitBlob": "0c3f13db9de5c2f74dee1cf22faa59ee49b23fd5"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "response-applied-control",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_applied_network_positive_reads_full_text_and_json",
+      "category": "applied Network full-text/JSON positive",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-refusal-control",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_unapplied_network_characterizes_exact_framed_refusal",
+      "category": "unapplied Network exact framed refusal characterization",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "response-entry-red",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::response_entry_unapplied_network_must_reach_public_evaluate_red",
+      "category": "public evaluate admission desired behavior",
+      "configuration": "default",
+      "expected": "target-red"
+    }
+  ],
+  "redSource": {
+    "path": "src/native/client_browser_response_entry_tests.rs",
+    "line": 423,
+    "column": 5,
+    "assertionMessage": "RESPONSE exact public evaluate refused benign pending network application: "
+  },
+  "releaseEligible": false,
+  "casesSha256": "822d56397d8526db9dae387d578ef267c9f12d1e3969b3298bb31590804d94b3"
+}
