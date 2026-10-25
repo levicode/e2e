@@ -154,7 +154,17 @@ export interface SyntheticCleanupNative {
   kind: 'cleanup-native'; phase: SyntheticPhase; command: 'scope.end'; requestCount: number; requestPending: number;
   firstResult: SyntheticNativeResult | null; firstFailure: SyntheticNativeResult | null; rejected: boolean;
 }
+export type P06TransportFact = {
+  kind: 'p06-transport'; branch: 'disconnected-event-poll' | 'relay-connections-zero' | 'debugger-resume' | 'disconnected-callback';
+  state: 'entered' | 'passed' | 'failed'; previous: number | null; current: number | null; callbackCount: number | null;
+  code: typeof SYNTHETIC_PUBLIC_CODES[number] | null; reason: typeof SYNTHETIC_FAILURE_REASONS[number] | null;
+};
+export type P06RecoveryResultFact = {
+  kind: 'p06-recovery-result'; operationSeq: number; recoveryPresent: boolean;
+  versionValid: true | null; exactScopeCorrelation: true | null;
+};
 export type SyntheticFact =
+  | P06TransportFact | P06RecoveryResultFact
   | SyntheticSelectedOperation | SyntheticCleanupNative
   | { kind: 'test-failure'; section: keyof SyntheticOutcome; phase: SyntheticPhase; code: typeof SYNTHETIC_PUBLIC_CODES[number]; causeCode: typeof SYNTHETIC_PUBLIC_CODES[number] | null; reason: typeof SYNTHETIC_FAILURE_REASONS[number]; causeReason: typeof SYNTHETIC_FAILURE_REASONS[number] | null }
   | { kind: 'download-boundaries'; registrations: number; deliveries: number; triggers: number; tap: 'not-observed' | 'pending' | 'passed' | 'failed' }
@@ -244,6 +254,14 @@ export function validSyntheticNativeResult(value: unknown): value is SyntheticNa
 export function validSyntheticFact(value: unknown, caseId: SyntheticCaseId): value is SyntheticFact {
   if (!syntheticObject(value)) return false;
   switch (value['kind']) {
+    case 'p06-transport': return caseId === 'P06' && syntheticKeys(value, ['kind', 'branch', 'state', 'previous', 'current', 'callbackCount', 'code', 'reason'])
+      && member(['disconnected-event-poll', 'relay-connections-zero', 'debugger-resume', 'disconnected-callback'], value['branch'])
+      && member(['entered', 'passed', 'failed'], value['state'])
+      && ['previous', 'current', 'callbackCount'].every(key => value[key] === null || syntheticCount(value[key]))
+      && (value['state'] === 'failed' ? member(SYNTHETIC_PUBLIC_CODES, value['code']) && member(SYNTHETIC_FAILURE_REASONS, value['reason']) : value['code'] === null && value['reason'] === null);
+    case 'p06-recovery-result': return caseId === 'P06' && syntheticKeys(value, ['kind', 'operationSeq', 'recoveryPresent', 'versionValid', 'exactScopeCorrelation'])
+      && syntheticCount(value['operationSeq'], 1_000_000) && value['operationSeq'] > 0 && typeof value['recoveryPresent'] === 'boolean'
+      && (value['recoveryPresent'] ? value['versionValid'] === true && value['exactScopeCorrelation'] === true : value['versionValid'] === null && value['exactScopeCorrelation'] === null);
     case 'selected-operation': return syntheticKeys(value, ['kind', 'ordinal', 'phase', 'command', 'invoked', 'requestCount', 'requestPending', 'firstResult', 'firstFailure', 'rejected', 'adapter', 'code', 'causeCode', 'reason', 'causeReason', 'assertion'])
       && syntheticCount(value['ordinal'], 11) && member(SYNTHETIC_PHASES, value['phase']) && member(SYNTHETIC_COMMANDS, value['command']) && value['invoked'] === true
       && counts(value, ['requestCount', 'requestPending'], 64) && (value['requestPending'] as number) <= (value['requestCount'] as number)
@@ -390,6 +408,17 @@ export function callbackFailureFact(stageOrdinal: number, error: unknown): Extra
   const cause = own(error, 'cause');
   return { kind: 'callback-failure', stageOrdinal, code: code(error), causeCode: cause === undefined ? null : code(cause), reason: reason(error), causeReason: cause === undefined ? null : reason(cause) };
 }
+/** P06-only observation capability: other cases never receive these diagnostic facts. */
+const p06Evidence = new WeakSet<SyntheticEvidence>();
+export function recordP06Fact(evidence: SyntheticEvidence | undefined, fact: P06TransportFact | P06RecoveryResultFact): void {
+  if (evidence === undefined || !p06Evidence.has(evidence)) return;
+  try { evidence.record(fact); } catch { try { evidence.invalidate(); } catch { /* Diagnostics cannot change test behavior. */ } }
+}
+export function p06TransportFact(branch: P06TransportFact['branch'], state: P06TransportFact['state'], previous: number | null, current: number | null, callbackCount: number | null, cause?: unknown): P06TransportFact {
+  let failure: ReturnType<typeof callbackFailureFact> | undefined;
+  try { if (state === 'failed') failure = callbackFailureFact(0, cause); } catch { failure = callbackFailureFact(0, undefined); }
+  return { kind: 'p06-transport', branch, state, previous, current, callbackCount, code: failure?.code ?? null, reason: failure?.reason ?? null };
+}
 /** Whitelist four P41 markers, discard the native projector's optional location, and retain only closed enums. */
 export function serviceWorkerPromiseFact(branch: 'plain' | 'headers-blocked', entry: unknown): Extract<SyntheticFact, { kind: 'service-worker-promise' }> | null {
   if (!member(['plain', 'headers-blocked'], branch) || !syntheticObject(entry) || !syntheticKeys(entry, ['source', 'level', 'text'])
@@ -451,7 +480,7 @@ export function p06RecoveryEvidence(sink: SyntheticEvidence): {
     try {
       const snapshot = snapshotFact(fact);
       if (!validSyntheticFact(snapshot, 'P06')) throw new Error('Invalid P06 fact');
-      if (!['phase', 'selected-operation', 'native-result', 'test-failure', 'cleanup-native', 'request-rejected-without-result'].includes(snapshot.kind)) return false;
+      if (!['phase', 'selected-operation', 'native-result', 'test-failure', 'cleanup-native', 'request-rejected-without-result', 'p06-transport', 'p06-recovery-result'].includes(snapshot.kind)) return false;
       const size = Buffer.byteLength(JSON.stringify(snapshot));
       if (size > SYNTHETIC_RECORD_BYTES || diagnostic.facts.length >= SYNTHETIC_CASE_MANIFEST.P06.maxRecords || bytes + size > SYNTHETIC_CASE_MANIFEST.P06.maxBytes) throw new Error('P06 carrier exhausted');
       diagnostic.facts.push(snapshot); bytes += size;
@@ -466,6 +495,7 @@ export function p06RecoveryEvidence(sink: SyntheticEvidence): {
     finish(outcome) { sink.finish(outcome); },
     invalidate() { diagnostic.invalid = true; sink.invalidate(); },
   };
+  p06Evidence.add(evidence);
   return { evidence, diagnostic };
 }
 

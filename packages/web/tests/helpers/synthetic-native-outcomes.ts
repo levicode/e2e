@@ -1,7 +1,7 @@
 /** Passive, synthetic-case-only observations of already validated public results. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { NativeClient } from '../../src/native/client.ts';
-import { SYNTHETIC_COMMANDS, callbackFailureFact, syntheticKeys, syntheticObject, validSyntheticNativeResult, type SyntheticSelectedOperation, type SyntheticCleanupNative, type SyntheticOutcome, type SyntheticCommand, type SyntheticEvidence, type SyntheticNativeResult, type SyntheticPhase } from './synthetic-evidence.ts';
+import { SYNTHETIC_COMMANDS, callbackFailureFact, recordP06Fact, syntheticKeys, syntheticObject, validSyntheticNativeResult, type SyntheticSelectedOperation, type SyntheticCleanupNative, type SyntheticOutcome, type SyntheticCommand, type SyntheticEvidence, type SyntheticNativeResult, type SyntheticPhase } from './synthetic-evidence.ts';
 
 const current = new AsyncLocalStorage<SyntheticNativeObserver>();
 const selected = new AsyncLocalStorage<{ owner: SyntheticNativeObserver; fact: SyntheticSelectedOperation }>();
@@ -191,6 +191,13 @@ export class SyntheticNativeObserver {
     void promise.then(result => this.safely(() => {
       if (this.closed) return;
       const projected = projectResult(result);
+      if (closedCommand === 'browser.perform') {
+        // request() resolves only after strict protocol parsing and exact pending-scope correlation.
+        // This is a terminal Result witness, not evidence of event callback/wire delivery.
+        const recoveryPresent = Object.hasOwn(result, 'recovery');
+        recordP06Fact(this.evidence, { kind: 'p06-recovery-result', operationSeq: projected.operationSeq,
+          recoveryPresent, versionValid: recoveryPresent ? true : null, exactScopeCorrelation: recoveryPresent ? true : null });
+      }
       for (const receipt of receipts) {
         receipt.requestPending--; receipt.firstResult ??= projected;
         if (!projected.ok) receipt.firstFailure ??= projected;

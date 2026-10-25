@@ -162,16 +162,119 @@ describe('negotiated disconnected-owner recovery', () => {
     await close(fixture);
   });
 
-  it('does not start queued old callbacks after the recovery receipt', async () => {
+  it.each(['request', 'network.request', 'dialog.opened'] as const)('does not start queued old %s callbacks after the recovery receipt', async event => {
     const handler = vi.fn(); const fixture = await opened(capabilities, handler);
     const action = fixture.client.request('browser.pointer', { identityScope: scope }, context());
     fixture.send(
-      { type: 'event', generation: 1, sequence: 1, event: 'request', payload: { identityScope: scope }, decision: { token: 'old-token', timeoutMs: 1000 } },
+      { type: 'event', generation: 1, sequence: 1, event, payload: { identityScope: scope }, decision: { token: 'old-token', timeoutMs: 1000 } },
       fixture.unknown(fixture.requests.at(-1)!),
     );
     await action; await Promise.resolve();
     expect(handler).not.toHaveBeenCalled();
     await recover(fixture); await close(fixture);
+  });
+
+  it.each(['separate-chunks', 'same-chunk'] as const)('delivers the preceding disconnect lifecycle notice once with %s recovery', async delivery => {
+    const handler = vi.fn<(event: NativeEvent) => void>(); const fixture = await opened(capabilities, handler);
+    const action = fixture.client.request('browser.perform', { identityScope: scope }, context());
+    const original = fixture.requests.at(-1)!;
+    const disconnected: NativeEvent = { type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } };
+    if (delivery === 'separate-chunks') {
+      fixture.send(disconnected);
+      // Yield only to the already queued onEvent microtask before the second chunk.
+      await Promise.resolve();
+      expect(handler).toHaveBeenCalledExactlyOnceWith(disconnected);
+      fixture.send(fixture.unknown(original));
+    } else fixture.send(disconnected, fixture.unknown(original));
+    expect(await action).toMatchObject({ ok: false, effects: 'unknown', scopeState: 'quarantined', recovery: { version: 1, identityScope: scope } });
+    expect(fixture.client.recoveryScope()).toBe(scope);
+    expect(fixture.client.isTerminal()).toBe(false);
+    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request']);
+    await expect(fixture.client.request('page.title', { identityScope: scope }, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(fixture.requests.filter(request => request['command'] === 'browser.perform')).toHaveLength(1);
+    const delivered = handler.mock.calls.map(([event]) => event);
+    await close(fixture);
+    // A lifecycle fact preceding the Unknown result must not depend on chunking.
+    expect(delivered).toEqual([disconnected]);
+  });
+
+  it('does not publish a queued disconnect notice when the coalesced recovery scope is invalid', async () => {
+    const handler = vi.fn<(event: NativeEvent) => void>(); const fixture = await opened(capabilities, handler);
+    const action = fixture.client.request('browser.perform', { identityScope: scope }, context());
+    const original = fixture.requests.at(-1)!;
+    fixture.send(
+      { type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } },
+      { ...fixture.unknown(original), recovery: { version: 1, identityScope: 'wrong-owner-scope' } },
+    );
+    await expect(action).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(handler).not.toHaveBeenCalled();
+    expect(fixture.client.recoveryScope()).toBeUndefined();
+    expect(fixture.dispose).toHaveBeenCalledOnce();
+    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request']);
+  });
+
+  it.each(['extra-payload', 'wrong-reason', 'decision'] as const)('does not grant the recovery delivery exception to a disconnect notice with %s', async fault => {
+    const handler = vi.fn<(event: NativeEvent) => void>(); const fixture = await opened(capabilities, handler);
+    const action = fixture.client.request('browser.perform', { identityScope: scope }, context());
+    const original = fixture.requests.at(-1)!;
+    const disconnected = { type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } };
+    const invalid = fault === 'extra-payload' ? { ...disconnected, payload: { ...disconnected.payload, extra: true } }
+      : fault === 'wrong-reason' ? { ...disconnected, payload: { reason: 'not-eof' } }
+        : { ...disconnected, decision: { token: 'not-a-lifecycle-token', timeoutMs: 1000 } };
+    fixture.send(invalid, fixture.unknown(original));
+    expect(await action).toMatchObject({ ok: false, effects: 'unknown', scopeState: 'quarantined' });
+    expect(handler).not.toHaveBeenCalled();
+    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request']);
+    await recover(fixture); await close(fixture);
+  });
+
+  it.each(['generation', 'duplicate-sequence', 'extra-frame'] as const)('rejects a coalesced disconnect frame with %s', async fault => {
+    const handler = vi.fn<(event: NativeEvent) => void>(); const fixture = await opened(capabilities, handler);
+    const action = fixture.client.request('browser.perform', { identityScope: scope }, context());
+    const original = fixture.requests.at(-1)!;
+    const disconnected = { type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } };
+    const invalid = fault === 'generation' ? { ...disconnected, generation: 2 }
+      : fault === 'extra-frame' ? { ...disconnected, extra: true } : disconnected;
+    fixture.send(...(fault === 'duplicate-sequence' ? [disconnected] : []), invalid, fixture.unknown(original));
+    await expect(action).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(handler).not.toHaveBeenCalled();
+    expect(fixture.client.recoveryScope()).toBeUndefined();
+    expect(fixture.dispose).toHaveBeenCalledOnce();
+    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request']);
+  });
+
+  it('does not publish a disconnect notice received after the recovery receipt', async () => {
+    const handler = vi.fn<(event: NativeEvent) => void>(); const fixture = await opened(capabilities, handler);
+    const action = fixture.client.request('browser.perform', { identityScope: scope }, context());
+    fixture.send(
+      fixture.unknown(fixture.requests.at(-1)!),
+      { type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } },
+    );
+    expect(await action).toMatchObject({ ok: false, effects: 'unknown', scopeState: 'quarantined' });
+    expect(handler).not.toHaveBeenCalled();
+    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request']);
+    await recover(fixture); await close(fixture);
+  });
+
+  it('does not let a delivered disconnect handler failure contaminate a replacement owner', async () => {
+    let entered!: () => void; let release!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const fixture = await opened(capabilities, async event => {
+      expect(event.event).toBe('browser.disconnected'); entered(); await held; throw new Error('old disconnect handler');
+    });
+    const action = fixture.client.request('browser.perform', { identityScope: scope }, context());
+    fixture.send(
+      { type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } },
+      fixture.unknown(fixture.requests.at(-1)!),
+    );
+    await action; await started;
+    await recover(fixture); release(); await Promise.resolve(); await Promise.resolve();
+    const read = fixture.client.request('page.title', { identityScope: 'new-owner-scope' }, context());
+    fixture.send(fixture.result(fixture.requests.at(-1)!)); await read;
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(fixture.requests.filter(request => request['command'] === 'browser.perform')).toHaveLength(1);
+    await close(fixture);
   });
 
   it.each(['offer', 'cancel-ack'] as const)('retires old response handles locally after %s without invalidating recovery', async boundary => {

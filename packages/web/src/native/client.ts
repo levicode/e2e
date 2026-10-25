@@ -488,6 +488,15 @@ export class NativeClient {
   /** Post-ACK events wait for adapter publication, without delaying pre-ACK decisions. */
   private dispatchEvent(message: NativeEvent, bytes: number, arrived: number): void {
     const ownsRecovery = this.recoveryRevocationGuard();
+    const publication = this.publicationEpoch;
+    const payload = message.payload;
+    const disconnected = message.event === 'browser.disconnected' && message.decision === undefined
+      && payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+      && Object.keys(payload).length === 1 && 'reason' in payload && payload['reason'] === 'browser-connection-closed';
+    // Preserve a validated preceding lifecycle notice through exactly this
+    // recovery retirement, never through a claimed/new owner or business callback.
+    const ownsDelivery = () => ownsRecovery() || (disconnected
+      && this.recovery?.claimed === false && this.publicationEpoch === publication + 1);
     const identityScope = message.payload !== null && typeof message.payload === 'object' && !Array.isArray(message.payload) && 'identityScope' in message.payload && typeof message.payload['identityScope'] === 'string' ? message.payload['identityScope'] : undefined;
     if (message.decision !== undefined && identityScope !== undefined && this.retiredCallbackScopes.has(identityScope)) {
       this.activeEvents--; this.eventBytes -= bytes;
@@ -504,12 +513,12 @@ export class NativeClient {
     if (callback !== undefined && callbackTimer !== undefined) callback.timer = callbackTimer;
     callbackTimer?.unref();
     void Promise.resolve().then(() => {
-      if (this.failure !== undefined || this.terminal || !ownsRecovery() || this.closing !== undefined || this.closed || this.ready?.generation !== message.generation || callback?.revoked) return;
+      if (this.failure !== undefined || this.terminal || !ownsDelivery() || this.closing !== undefined || this.closed || this.ready?.generation !== message.generation || callback?.revoked) return;
       if (callback !== undefined && callback.expiresAt <= performance.now()) {
         callback.active = false; this.fail('The native browser callback exceeded its operation budget', 'OPERATION_TIMEOUT'); return;
       }
       return callback === undefined ? this.onEvent(message) : this.callback.run(callback, () => this.onEvent(message));
-    }).catch(() => { if (ownsRecovery() && (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch))) this.fail('The native browser event handler failed'); }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
+    }).catch(() => { if (ownsDelivery() && (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch))) this.fail('The native browser event handler failed'); }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
   }
 
   private dispose(): void {
