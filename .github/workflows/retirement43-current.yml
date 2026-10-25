@@ -15,7 +15,7 @@ jobs:
   exact-native:
     if: github.repository == 'levicode/e2e' && github.event_name == 'push' && github.ref == 'refs/heads/validation/retirement43-current-20261025'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       RUST_MIN_STACK: '16777216'
       RUSTUP_TOOLCHAIN: '1.99.1'
@@ -25,6 +25,7 @@ jobs:
       - name: Checkout validation scripts separately
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.workflow_sha }}
           path: recipe
           persist-credentials: false
       - name: Checkout exact native source
@@ -45,6 +46,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p validation-output
+          test "$(git -C recipe rev-parse HEAD)" = "${{ github.workflow_sha }}"
+          git -C recipe rev-parse HEAD > validation-output/recipe-sha.txt
           test "$(git -C native-source rev-parse HEAD)" = 7932b596b654dfbb3731679321e613e37944c4c2
           test "$(git -C native-source rev-parse HEAD^{tree})" = 23d4de87258f4635e92abdc5b554d278f5a20f8a
           test "$(git -C e2e-source rev-parse HEAD)" = 38b4c9fc00872ea8272c53faa5260f090d55a865
@@ -59,10 +63,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install 1.99.1 --profile minimal
+          timeout 600 rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
           rustc --version --verbose
           node --version
-      - name: Compile current ci profile and run 34 exact native tests plus 8 pure controls
+      - name: Check4strict, compile current ci profile and run34exact plus8pure controls
         shell: bash
         run: |
           set -euo pipefail
