@@ -1,0 +1,103 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "baseNativeSha": "9ed226f4fa7c17a011e0d5452a34dfa202907310",
+  "baseNativeTree": "a5194316f5cba316b70640173e3a0c74c3556c5e",
+  "publishedNativeSha": "dccbce9f626e36003d7b24f789fe9edd0fd13d7a",
+  "candidateTree": "1a42d51ab40b13f511a0cb4d694533a31702de75",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "onlyTestOverlay": true,
+  "productionSourceChanged": false,
+  "productionImageBuilt": false,
+  "patchSha256": "0603118f5ef962284320d8416372aeae29c285a6d08562fc696fabf76a9312bd",
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_browser_observe_trace_timeout_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "92ee5c380cd54359f415ca5c192065275cf9a13259bde58eef440e91667a6d59"
+    },
+    {
+      "path": "cli/src/native/client_browser_state_tests.rs",
+      "beforeSha256": "cbeb0e0d789638677730e616fbe2cc387619096d04cf71b1c397cec89d65e908",
+      "afterSha256": "0cd9c32a98aa03432c17cebe240a4be41b77aa4a8f742360c67d4137e9f8b41e"
+    },
+    {
+      "path": "cli/src/native/client_observation_dispatch.rs",
+      "beforeSha256": "9e5b6def8bfe53c50ce62830c43d02fcfd99804dc56d9b2c24b1aec86316c453",
+      "afterSha256": "d458a8ddd0c29d194b0cb36b7cbe94bbd5f3dc1776d563fb8d99eee4a561dafa"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    },
+    "faults": {
+      "features": [
+        "acceptance-faults"
+      ],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "schema",
+      "name": "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_peer_ax_schema_and_omitted_flags_match_real_protocol",
+      "expected": "passed",
+      "configuration": "faults",
+      "category": "schema-control"
+    },
+    {
+      "id": "immediate",
+      "name": "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_immediate_positive",
+      "expected": "passed",
+      "configuration": "faults",
+      "category": "control"
+    },
+    {
+      "id": "native-deadline",
+      "name": "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_native_deadline_records_then_checks_contract",
+      "expected": "target-red",
+      "configuration": "faults",
+      "category": "contract-red"
+    },
+    {
+      "id": "client-cancel",
+      "name": "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_client_cancel_ack_records_then_checks_contract",
+      "expected": "target-red",
+      "configuration": "faults",
+      "category": "contract-red"
+    }
+  ],
+  "casesSha256": "2c40c5ec5939da45526504a9bf4f07f32f2f069f094f0ce008d4ff64b194e504",
+  "rustVersion": "1.99.1",
+  "stackBytes": 16777216,
+  "cargoBuildJobs": 2,
+  "perCaseSeconds": 120,
+  "dedicatedBranchProposal": "validation/p04-observe-trace-red-20261025",
+  "branchPublished": false,
+  "reviewStatus": "source-reviewed-and-support-published; execution-pending-parent-approval",
+  "redSources": {
+    "native-deadline": {
+      "path": "src/native/client_browser_observe_trace_timeout_tests.rs",
+      "line": 602,
+      "column": 9,
+      "panicBody": "P04_OBSERVE_TRACE_SOURCE_OWNERSHIP_AND_CLEAN_CLOSE_CONTRACT"
+    },
+    "client-cancel": {
+      "path": "src/native/client_browser_observe_trace_timeout_tests.rs",
+      "line": 602,
+      "column": 9,
+      "panicBody": "P04_OBSERVE_TRACE_SOURCE_OWNERSHIP_AND_CLEAN_CLOSE_CONTRACT"
+    }
+  },
+  "patchInputs": [
+    "cli/src/native/client_browser_observe_trace_timeout_tests.rs",
+    "cli/src/native/client_browser_state_tests.rs",
+    "cli/src/native/client_observation_dispatch.rs"
+  ],
+  "sourceSupportBranch": "support/p04-observe-trace-red-20261025"
+}
