@@ -1,8 +1,8 @@
-# FROZEN P06 ONLY: actual terminal-success recovery producer and exact fresh ELF are bound.
-name: Original P06 test-carrier on fresh recovery production ELF
+# FROZEN P06 PAIR: two independent single-pass Web sources on the same verified native ELF.
+name: Original P06 paired Web comparison on verified recovery ELF
 'on':
   push:
-    branches: [validation/p06-recovery-runtime-20261025]
+    branches: [validation/p06-drop-paired-runtime-20261025]
 permissions:
   contents: read
   actions: read
@@ -11,20 +11,25 @@ concurrency:
   cancel-in-progress: false
 jobs:
   runtime:
-    name: focused-${{ matrix.case }}
-    if: ${{ github.ref == 'refs/heads/validation/p06-recovery-runtime-20261025' }}
+    name: focused-P06-${{ matrix.cell }}
+    if: ${{ github.ref == 'refs/heads/validation/p06-drop-paired-runtime-20261025' }}
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
-        case: [P06]
+        include:
+          - cell: old-web
+            e2eSha: a30c4152639c773cb8680462ab5458b2f1a3fb78
+          - cell: new-web
+            e2eSha: e39db86c404ae6b426dfc388bcb6d341119afd80
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     defaults:
       run:
         shell: bash
     env:
-      CASE_ID: ${{ matrix.case }}
+      CASE_ID: P06
+      P06_RUNTIME_CELL: ${{ matrix.cell }}
       RECIPE_SHA: ${{ github.workflow_sha }}
       PHASES: sources artifact dependencies browser-install runtime-images runtime final-identities
       PYTHONDONTWRITEBYTECODE: '1'
@@ -42,7 +47,7 @@ jobs:
         printf 'EVIDENCE_DIR=%s\nPLAYWRIGHT_BROWSERS_PATH=%s\n' "$EVIDENCE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
         mkdir -m700 "$EVIDENCE_DIR"
         for phase in $PHASES; do printf 'not-run\n' > "$EVIDENCE_DIR/$phase.exit"; done
-        printf '%s\n' 'One original focused case on an independent hosted runner. No full native/all333/installed/release proof. Existing final acceptance goal unchanged. Original temporary no-sandbox flags apply only to owned cloud loopback synthetic fixtures, not user sessions or user data. Loopback fixture scope does not claim blocked browser background egress. Only approved three-file test metadata and existing native cleanup carrier; no retries, new collector or diagnostic acceptance gate. HTTP500 is not run.' > "$EVIDENCE_DIR/SCOPE.txt"
+        printf '%s\n' 'One original focused case on an independent hosted runner. No full native/all333/installed/release proof. Existing final acceptance goal unchanged. Original temporary no-sandbox flags apply only to owned cloud loopback synthetic fixtures, not user sessions or user data. Loopback fixture scope does not claim blocked browser background egress. Identical approved four-file test metadata and existing native cleanup carrier; new-web differs only in the reviewed client and matching unit test; no retries, new collector or diagnostic acceptance gate. HTTP500 is not run.' > "$EVIDENCE_DIR/SCOPE.txt"
         uname -a > "$EVIDENCE_DIR/host.txt"
         cat /etc/os-release >> "$EVIDENCE_DIR/host.txt"
         . /etc/os-release
@@ -78,8 +83,8 @@ jobs:
       timeout-minutes: 3
       with:
         repository: levicode/e2e
-        ref: 56fee318b83032e714e323b696e2fde25dddf134
-        fetch-depth: 2
+        ref: ${{ matrix.e2eSha }}
+        fetch-depth: 3
         path: e2e-source
         persist-credentials: false
     - name: Check out exact native source for provenance only
@@ -97,6 +102,9 @@ jobs:
       run: |
         set -euo pipefail
         trap 'printf "%s\n" "$?" > "$EVIDENCE_DIR/sources.exit"' EXIT
+        if [[ "$P06_RUNTIME_CELL" = new-web ]]; then
+          /usr/bin/timeout --foreground --signal=TERM --kill-after=5s 45 git -C e2e-source fetch --no-tags --depth=1 origin a30c4152639c773cb8680462ab5458b2f1a3fb78 > "$EVIDENCE_DIR/comparison-source-fetch.log" 2>&1
+        fi
         node recipe/scripts/matrix-runtime/identity.mjs sources > "$EVIDENCE_DIR/sources.log" 2>&1
     - name: Admit only the successful prior producer and exact new ELF
       id: artifact
@@ -208,7 +216,7 @@ jobs:
       timeout-minutes: 5
       if: ${{ always() }}
       with:
-        name: focused-${{ matrix.case }}-${{ github.run_id }}-${{ github.run_attempt }}
+        name: focused-P06-${{ matrix.cell }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ env.EVIDENCE_DIR }}/
         if-no-files-found: error
         retention-days: 7

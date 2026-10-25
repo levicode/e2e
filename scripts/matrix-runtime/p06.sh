@@ -48,9 +48,11 @@ observed_command() {
 node "$HERE/../runtime-probe/runtime.mjs" sources
 node "$HERE/../runtime-probe/runtime.mjs" browser
 # Match the existing HTTP500 exclusive invocation receipt before spawning any runtime.
-node --input-type=module - "$OUT/selection.json" <<'JS'
+node --input-type=module - "$OUT/selection.json" "$HERE/../runtime-probe/runtime.mjs" <<'JS'
 import {writeFileSync} from 'node:fs';
-writeFileSync(process.argv[2],JSON.stringify({scope:'P06-only-test-carrier-same-production',caseIds:['P06']})+'\n',{flag:'wx',mode:0o600});
+import {pathToFileURL} from 'node:url';
+const {pins}=await import(pathToFileURL(process.argv[3]));
+writeFileSync(process.argv[2],JSON.stringify({scope:'P06-single-pass-paired-Web-comparison',caseIds:['P06'],runtimeCell:pins.runtimeCell,runtimeWebSource:{sha:pins.e2eSha,tree:pins.e2eTree}})+'\n',{flag:'wx',mode:0o600});
 JS
 # Existing native closed, bounded diagnostic carrier only; never an acceptance gate.
 node --input-type=module - "$OUT" "$HERE/../runtime-probe/runtime.mjs" <<'JS'
@@ -62,7 +64,7 @@ const directory=lstatSync(out); assert.ok(directory.isDirectory()&&!directory.is
 assert.equal(directory.uid,process.getuid());assert.equal(directory.mode&0o777,0o700);assert.equal(realpathSync(out),out);
 const file=out+'/P06.native.jsonl';writeFileSync(file,'',{flag:'wx',mode:0o600});
 const stat=lstatSync(file);assert.ok(stat.isFile()&&!stat.isSymbolicLink());assert.equal(stat.mode&0o777,0o600);assert.equal(stat.uid,process.getuid());
-writeFileSync(out+'/P06.native-binding.json',JSON.stringify({diagnosticOnly:true,acceptanceGate:false,missingRecords:'unknown',caseAssociation:'unproven',processCoverage:'unproven',
+writeFileSync(out+'/P06.native-binding.json',JSON.stringify({diagnosticOnly:true,acceptanceGate:false,runtimeCell:pins.runtimeCell,missingRecords:'unknown',caseAssociation:'unproven',processCoverage:'unproven',
   sourceRevision:pins.e2eSha,nativeSourceRevision:pins.nativeSha,testSourceDigest:pins.p06SourceSha256,binarySha256:pins.production.binarySha256,
   file,device:stat.dev,inode:stat.ino,initialBytes:stat.size,format:'existing native schema2 closed bounded JSONL; ScreenshotFirstFailure/CleanupFirstFailure retained if emitted'})+'\n',{flag:'wx',mode:0o600});
 JS
@@ -103,7 +105,7 @@ const browsers=rows.filter(row=>row.executable===images.full.executable&&!row.ar
 const browserLifetimes=new Set(browsers.map(row=>`${row.pid}:${row.startTicks}`));
 const productionObserved=rows.some(row=>row.executable===images.production.executable&&row.expectedHashMatches===true);
 const exit=Number(readFileSync(`${out}/P06.exit`,'utf8'));
-const result={caseId:'P06',selected,exit,cleanupConfirmed,productionObserved,browserRootLifetimes:browserLifetimes.size,
+const result={caseId:'P06',runtimeCell:pins.runtimeCell,selected,exit,cleanupConfirmed,productionObserved,browserRootLifetimes:browserLifetimes.size,
   testSource:{sha:pins.e2eSha,tree:pins.e2eTree},artifactBuildE2e:{sha:pins.production.e2eSha,tree:pins.production.e2eTree},
   fullNativeSuitePassed:false,full333Complete:false,releaseEligible:false,
   pageCountClaim:'unchanged original single-marker witness only; no new page inventory or diagnostics'};
