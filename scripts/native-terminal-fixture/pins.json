@@ -1,13 +1,13 @@
 {
   "baseNativeSha": "53d280d74c8e264f1e30edb6760fb85134c06851",
   "baseNativeTree": "2526ed25dd6d6ecb81a534a82f38b4d6c166ae80",
-  "publishedNativeSha": "dd8d9a0cc518a149fe0600a6a1573daeb85da623",
-  "candidateTree": "d04dbf591f083604806c6a185f4dc0d0af545d88",
+  "publishedNativeSha": "4c7e1fdefc99759f7c92efb0f32f82a00dc547a8",
+  "candidateTree": "4db53a2bdea3a199a4373b510a68e874bb3ae245",
   "sourceBindingFrozen": true,
   "productionSourceChanged": true,
   "onlyTestOverlay": false,
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
-  "patchSha256": "f4f6b3b192459117b773eae8e00343a7d693b1d1d5b644f7a69b0a8ae9985318",
+  "patchSha256": "fca4eed10fcb081d87be47153df58db43ed4e48d2cd5a1a8b3a0c68341cc053b",
   "rustToolchain": "1.99.1",
   "nodeVersion": "v24.19.0",
   "changedFiles": [
@@ -89,7 +89,7 @@
     {
       "path": "cli/src/native/client_session.rs",
       "beforeSha256": "657a17ea4385fac80f404b28d8bed9ae7d2c1725e205591bf0d8dcd2c154d7a6",
-      "afterSha256": "1e042bd923344cf886c8fbad3ef9c92977b66575ee21cfa1c7fd93cefd5f0253"
+      "afterSha256": "e053f8cac44e7e844541e33e52458e10454d9cbf2e8ced1aa526da599be6f7c2"
     },
     {
       "path": "cli/src/native/client_state.rs",

@@ -2117,7 +2117,7 @@ index 4e5974e7d1a54cac1e40ba589b88a831f282e745..8ff41887a9d753fcf306e4e44af94d56
          &self,
          client: &Arc<super::cdp::client::CdpClient>,
 diff --git a/cli/src/native/client_session.rs b/cli/src/native/client_session.rs
-index 047f75c41ea74ee66dde1926fd121c9f3fdc0b7f..c3bf029a8a35afc2f8e225557ab61b2074592c41 100644
+index 047f75c41ea74ee66dde1926fd121c9f3fdc0b7f..d18c921ac20eb7f62dfb9da06b8298c10da3721b 100644
 --- a/cli/src/native/client_session.rs
 +++ b/cli/src/native/client_session.rs
 @@ -197,9 +197,15 @@ pub struct DecisionLease {
@@ -2281,7 +2281,7 @@ index 047f75c41ea74ee66dde1926fd121c9f3fdc0b7f..c3bf029a8a35afc2f8e225557ab61b20
 +    }
 +    /// Native verified candidate only. The old scope remains quarantined and
 +    /// ordinary admission stays closed throughout unpublished initialization.
-+    pub(crate) fn bind_recovery_candidate(
++    pub(super) fn bind_recovery_candidate(
 +        &self,
 +        operation: &OperationLease,
 +        verified: &super::client_reconnect::VerifiedReconnectProof,
