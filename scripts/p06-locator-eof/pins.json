@@ -1,0 +1,67 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "publishedNativeSha": "4544f1a78611bd1ca0051a3ffc4499a93253d820",
+  "candidateTree": "10f771f9d1a71804a83ba8f8ff53ff1fb79cd063",
+  "baseNativeSha": "26ad6cfedd9771fbf8366f2d3d3620d66a09d9bb",
+  "baseNativeTree": "c5ca16e88a1336739aebed8cbdad3052dc864773",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "onlyTestOverlay": true,
+  "productionSourceChanged": false,
+  "productionImageBuilt": false,
+  "existingProductionElfSha256": "32512a1f8ed7f093fbc5403dce9ed3b6fda553533136bad0e0bd7d18b58e0d4b",
+  "patchSha256": "088e8b257da7b75409f038628e5141855fc064e9e49ad3a8114166d2d0fb7f8f",
+  "patchInputs": [
+    {
+      "name": "locator-eof-two-test-only",
+      "sha256": "088e8b257da7b75409f038628e5141855fc064e9e49ad3a8114166d2d0fb7f8f"
+    }
+  ],
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_browser_locator_eof_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "c20bd35dc71327ae45508318a2c58ab4513c90a337df4213a2842600c6e239f4",
+      "gitBlob": "b15151a108c948d424e8459e6af9eec7e17c0014"
+    },
+    {
+      "path": "cli/src/native/client_browser_point_debt_tests.rs",
+      "beforeSha256": "0b83cd18e597beaec42b188009ce478d843e27a8380e957165825c67525708db",
+      "afterSha256": "3a28023034e5a98db5422ab9826d7c851779df4846715d2201187ce9468d2f8b",
+      "gitBlob": "a53dcaa21599e602e5d007f8d52b71b0e58b148b"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "locator-control",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::p06_framed_locator_tap_control_releases_exact_object",
+      "category": "real locator tap ACK/release positive control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "locator-eof-red",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::p06_framed_locator_release_eof_must_offer_recovery_without_replay",
+      "category": "real locator input ACK loss with unresolved exact object",
+      "configuration": "default",
+      "expected": "target-red"
+    }
+  ],
+  "redSource": {
+    "path": "src/native/client_browser_locator_eof_tests.rs",
+    "line": 493,
+    "column": 9,
+    "evidencePrefix": "P06 locator EOF: ",
+    "assertionMessage": "real locator EOF did not offer explicit recovery"
+  },
+  "releaseEligible": false,
+  "casesSha256": "6372c1b749e5413f66c239ec824affcad4b9853c76b4873b9ac10c982c7f8efd"
+}
