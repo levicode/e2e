@@ -1,0 +1,111 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "baseNativeSha": "9ed226f4fa7c17a011e0d5452a34dfa202907310",
+  "baseNativeTree": "a5194316f5cba316b70640173e3a0c74c3556c5e",
+  "publishedNativeSha": "8e183160d8923587b8b43f2cd4f08f3f16703d0f",
+  "candidateTree": "6732ebb3aa72e026131bfbe6b151bd634ea19001",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "onlyTestOverlay": true,
+  "productionSourceChanged": false,
+  "productionImageBuilt": false,
+  "patchSha256": "07dab971de9ecb7e1ceea43adf46b8f87ffb03fe79b33f1042e55db59016dece",
+  "changedFiles": [
+    {
+      "path": "cli/src/native/client_browser_state_tests.rs",
+      "beforeSha256": "cbeb0e0d789638677730e616fbe2cc387619096d04cf71b1c397cec89d65e908",
+      "afterSha256": "675cbbf3b78d5ca3dab7a5fec7d61d831cabf2befb83c86d178f9c8a389c58bb"
+    },
+    {
+      "path": "cli/src/native/client_browser_trace_timeout_tests.rs",
+      "beforeSha256": null,
+      "afterSha256": "2b17d7d81a56ee6e5a8243011e9042ee3a3766d4bfe47a194e6b5f47d0fb82b3"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "immediate",
+      "name": "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_immediate_positive_closes_borrowed_scope",
+      "expected": "passed",
+      "configuration": "default",
+      "category": "control"
+    },
+    {
+      "id": "characterization",
+      "name": "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_late_reply_characterizes_existing_quarantine",
+      "expected": "passed",
+      "configuration": "default",
+      "category": "control"
+    },
+    {
+      "id": "restore-rejected",
+      "name": "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_rate_restore_rejection_remains_hard_failure",
+      "expected": "passed",
+      "configuration": "default",
+      "category": "control"
+    },
+    {
+      "id": "unnegotiated",
+      "name": "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_without_continuation_negotiation_stays_quarantined",
+      "expected": "passed",
+      "configuration": "default",
+      "category": "control"
+    },
+    {
+      "id": "late-contract",
+      "name": "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_late_reply_keeps_source_until_terminal_and_closes_scope",
+      "expected": "target-red",
+      "configuration": "default",
+      "category": "contract-red"
+    },
+    {
+      "id": "pending-close",
+      "name": "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_pending_scope_end_waits_for_terminal_cleanup",
+      "expected": "target-red",
+      "configuration": "default",
+      "category": "contract-red"
+    }
+  ],
+  "casesSha256": "f2e6acd06e7d2cd3b655e9300d6b5625d2be9ca440cc07e46e96c26a81066fdd",
+  "rustVersion": "1.99.1",
+  "stackBytes": 16777216,
+  "cargoBuildJobs": 2,
+  "perCaseSeconds": 120,
+  "dedicatedBranchProposal": "validation/p04-trace-timeout-red-20261025",
+  "branchPublished": false,
+  "proposedExactTests": [
+    "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_immediate_positive_closes_borrowed_scope",
+    "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_late_reply_characterizes_existing_quarantine",
+    "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_late_reply_keeps_source_until_terminal_and_closes_scope",
+    "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_rate_restore_rejection_remains_hard_failure",
+    "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_without_continuation_negotiation_stays_quarantined"
+  ],
+  "reviewStatus": "independently-reviewed-source-support-published-recipe-pending",
+  "redSources": {
+    "late-contract": {
+      "path": "src/native/client_browser_trace_timeout_tests.rs",
+      "line": 501,
+      "column": 13,
+      "panicBody": "P04_OPTIONAL_TIMEOUT_RETAINED_CONTINUATION_CONTRACT"
+    },
+    "pending-close": {
+      "path": "src/native/client_browser_trace_timeout_tests.rs",
+      "line": 480,
+      "column": 13,
+      "panicBody": "P04_PENDING_CLOSE_TERMINAL_OWNERSHIP_CONTRACT"
+    }
+  },
+  "patchInputs": [
+    "cli/src/native/client_browser_state_tests.rs",
+    "cli/src/native/client_browser_trace_timeout_tests.rs"
+  ],
+  "sourceSupportBranch": "support/p04-trace-timeout-red-20261025"
+}
