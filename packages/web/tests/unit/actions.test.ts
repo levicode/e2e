@@ -68,9 +68,78 @@ describe('native locator action forwarding', () => {
   });
 });
 
+// Original identities21–22 have executed400x300 native producer counterparts.
+// Identity23 remains an additive candidate: native recenters an already-hovered
+// noncentral pointer, so the old pointer-policy test remains below.
+// The protocol carries direction/momentum;
+// target geometry and aiming are owned by native, with no fabricated wire fields.
+describe('native node swipe adapter obligations', () => {
+  it.each([
+    ['scrolls a node with a wheel gesture sized by its own box: the agent node scroll', [
+      { kind: 'swipe', direction: 'down' }, { kind: 'swipe', direction: 'left', momentum: 'fast' },
+    ]],
+    ['wheels a node hit at its centre there, at the box the hit test read, without hovering it first', [
+      { kind: 'swipe', direction: 'down' },
+    ]],
+    ['wheels a node the pointer already hovers without moving the pointer', [
+      { kind: 'swipe', direction: 'down' },
+    ]],
+  ] as const)('%s', async (_title, actions) => {
+    vi.useFakeTimers();
+    const operation = { timeoutMs: 7, signal: new AbortController().signal, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], () => ({ data: null }));
+    const client = await peer.connect({ ...operation, timeoutMs: 1000 }, () => undefined);
+    const expected = actions.map(action => ['browser.perform', { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action }]);
+    try {
+      const channel = new EngineChannel(client);
+      for (const action of actions) {
+        await expect(channel.command('browser.perform', { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action }, operation)).resolves.toBeNull();
+      }
+      // No separate public hover, pointer movement or box request is inserted.
+      // This says nothing about native's internal preparation/CDP call counts.
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual(expected);
+      expect(peer.frames.filter(frame => frame['type'] === 'request').map(frame => frame['timeoutMs'])).toEqual(actions.map(() => 7));
+    } finally {
+      try { await client.close({ ...operation, timeoutMs: 1000 }); }
+      finally { vi.useRealTimers(); }
+    }
+  });
+});
+
 // Run 39940386738 executes the no-box native refusal and its public lifecycle
 // counterpart. This peer checks only error mapping, one dispatch and the 7ms wire budget.
 describe('native locator action refusals', () => {
+  // Original case 7. The mandatory native synthetic fixture taps the same
+  // real button successfully, closes only its actual Chrome target, observes
+  // native detachment, then refuses this exact tap with no Input command.
+  // This peer proves public mapping and clean scope teardown, not page closure.
+  it('maps "Target page, context or browser has been closed" to ENGINE_FAILURE', async () => {
+    const operation = { signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' as const };
+    const peer = new NativeProtocolPeer([], request => {
+      if (request.command === 'browser.perform') return { error: 'browser-failure', effects: 'not-dispatched', scopeState: 'usable' };
+      if (request.command === 'scope.end') return { data: null };
+      throw new Error('Unexpected closed-page adapter command');
+    });
+    const disposed = vi.spyOn(peer, 'dispose');
+    const client = await peer.connect(operation, () => undefined);
+    const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action: { kind: 'tap' } as const };
+    const original = structuredClone(args);
+    try {
+      const channel = new EngineChannel(client);
+      const failure: unknown = await channel.command('browser.perform', args, operation).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(EngineError);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+      expect(isNativeNotDispatched(failure)).toBe(true);
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', original]]);
+      expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(1000);
+      expect(disposed).not.toHaveBeenCalled();
+      await expect(channel.command('scope.end', { identityScope: 'scope' }, operation)).resolves.toBeNull();
+      expect(peer.requests.map(request => [request.command, request.args])).toEqual([
+        ['browser.perform', original], ['scope.end', { identityScope: 'scope' }],
+      ]);
+    } finally { await client.close(operation); }
+  });
+
   // Original case 4. The source-bound MATCH_QUERY fixture executes this author
   // text; native live_query_publication_then_tap_refuses_ambiguity_without_input
   // publishes one match, revalidates two, and releases both query groups with
@@ -244,7 +313,6 @@ const TAP: LocatorAction = { kind: 'tap' };
 describe('classifyActionError', () => {
   it.each([
     ['Element is not an <input>, <textarea> or [contenteditable] element', 'NOT_ACTIONABLE', false],
-    ['Target page, context or browser has been closed', 'ENGINE_FAILURE', false],
   ] as const)('maps "%s" to %s', (text, code, retryable) => {
     expect(classifyActionError(new Error(text), TAP)).toMatchObject({ code, retryable });
   });
@@ -350,26 +418,7 @@ describe('dispatchLocatorAction', () => {
   };
   const OPERATION = { timeoutMs: 7, signal: new AbortController().signal };
 
-  it('scrolls a node with a wheel gesture sized by its own box: the agent node scroll', async () => {
-    const { locator, target, wheel, frame } = stubLocator({ x: 0, y: 0, width: 400, height: 300 });
-    await dispatchLocatorAction(target, { kind: 'swipe', direction: 'down' }, OPERATION, lookup);
-    expect(locator.hover).toHaveBeenCalledWith({ timeout: 7 });
-    expect(wheel).toHaveBeenCalledWith(0, 150);
-    expect(frame.mock.invocationCallOrder[0]).toBeGreaterThan(wheel.mock.invocationCallOrder[0]!);
 
-    await dispatchLocatorAction(target, { kind: 'swipe', direction: 'left', momentum: 'fast' }, OPERATION, lookup);
-    expect(wheel).toHaveBeenLastCalledWith(-600, 0);
-  });
-
-  it('wheels a node hit at its centre there, at the box the hit test read, without hovering it first', async () => {
-    const { locator, target, wheel, move } = stubLocator({ x: 0, y: 0, width: 400, height: 300 }, 'centre');
-    await dispatchLocatorAction(target, { kind: 'swipe', direction: 'down' }, OPERATION, lookup);
-    expect(locator.hover).not.toHaveBeenCalled();
-    expect(locator.boundingBox).not.toHaveBeenCalled();
-    expect(move).toHaveBeenCalledWith(200, 150);
-    expect(move.mock.invocationCallOrder[0]).toBeLessThan(wheel.mock.invocationCallOrder[0]!);
-    expect(wheel).toHaveBeenCalledWith(0, 150);
-  });
 
   it('wheels a node the pointer already hovers without moving the pointer', async () => {
     const { locator, target, wheel, move } = stubLocator({ x: 0, y: 0, width: 400, height: 300 }, 'pointer');

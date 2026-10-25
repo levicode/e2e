@@ -254,6 +254,52 @@ describe('native direct-point ordered forwarding', () => {
   });
 });
 
+// Public-entry companion to original node swipe identities21–22. The native
+// component producers, not this peer, prove400x300 geometry, centre200,150,
+// down150/fast-left-600 and render ACKs. There is no public aiming/box wire field.
+describe('native node swipe public entry forwarding', () => {
+  it.each([
+    ['same-ref down then fast-left', [
+      { kind: 'swipe', direction: 'down' },
+      { kind: 'swipe', direction: 'left', momentum: 'fast' },
+    ]],
+    ['single down with native-owned centre targeting', [
+      { kind: 'swipe', direction: 'down' },
+    ]],
+  ] as const)('preserves %s through perform under the original7ms budget', async (_title, actions) => {
+    const surface = new NativeSurface({});
+    await start(surface);
+    const observed = await surface.observe(operation());
+    const ref = observed.root.ref;
+    const originalRef = structuredClone(ref);
+    const originalActions = structuredClone(actions);
+    const scope = surface.identityScope;
+    const before = frames.length;
+    // Freeze only the clock/timers, never perform/admit/channel/decode. This
+    // proves per-call absolute-budget forwarding, not a7ms renderer success.
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+    try {
+      for (const action of actions) {
+        await expect(surface.perform(ref, action, { ...operation(), timeoutMs: 7 })).resolves.toBeUndefined();
+      }
+      const requests = frames.slice(before).filter(frame => frame['type'] === 'request');
+      expect(requests.map(frame => [frame['command'], frame['args']])).toEqual(originalActions.map(action => [
+        'browser.perform', { identityScope: scope, ref: originalRef, action },
+      ]));
+      expect(requests.map(frame => frame['timeoutMs'])).toEqual(actions.map(() => 7));
+      expect(ref).toEqual(originalRef);
+      expect(actions).toEqual(originalActions);
+      expect(surface.identityScope).toBe(scope);
+    } finally {
+      try { await surface.endAttempt(cleanup()); }
+      finally {
+        try { await surface.dispose(cleanup()); }
+        finally { vi.useRealTimers(); }
+      }
+    }
+  });
+});
+
 // These companions keep the original pointer inputs and settlement boundary on
 // the real adapter. Native producer witnesses at 0c61010f (run 40113180638) cover
 // geometry, cancellation/release, and post-wheel render-ACK settlement. Those five
