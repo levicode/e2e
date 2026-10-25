@@ -1,0 +1,323 @@
+{
+  "repository": "levicode/e2e",
+  "repositoryId": 1425853610,
+  "runId": 40175557827,
+  "runAttempt": 1,
+  "status": "completed",
+  "conclusion": "failure",
+  "recipeSha": "dab16dfd89246092aa11c3b4f5a7c09fca47183a",
+  "recipeTree": "ebdd63e01efb6a0fc68859910a5803a8fb23b11d",
+  "branch": "diagnostic/p04-capture-timing-parser-fix-20261025",
+  "event": "push",
+  "workflowPath": ".github/workflows/p04-timing.yml",
+  "jobId": 121115334573,
+  "jobName": "temporary-P04-timing",
+  "jobLabels": [
+    "ubuntu-24.04"
+  ],
+  "jobSteps": [
+    {
+      "number": 1,
+      "name": "Set up job",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 2,
+      "name": "Initialize temporary diagnostic producer; browser follows producer gates",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 3,
+      "name": "Check out this immutable producer recipe",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 4,
+      "name": "Refuse UNRESOLVED diagnostic source before installation",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 5,
+      "name": "Check out exact temporary six-file native delta",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 6,
+      "name": "Verify exact parent tree six-file delta and reversible patch",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 7,
+      "name": "Select pinned official Node",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 8,
+      "name": "Check out exact unchanged original P04 Web baseline",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 9,
+      "name": "Cache registry bytes only, never target executables",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 10,
+      "name": "Install and verify the existing pinned official Rust toolchain",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 11,
+      "name": "Run all four unchanged strict compile gates",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 12,
+      "name": "Compile and bind only default exact dev harness",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 13,
+      "name": "Compile and bind only acceptance-faults exact dev harness",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 14,
+      "name": "Run frozen exact timing controls only; stop at first unexpected failure",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 15,
+      "name": "Run recipe-local collector schema positive and negative controls",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 16,
+      "name": "Verify unchanged source after pure cases",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 17,
+      "name": "Reconcile every exact raw ledger before any ci production compile",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 18,
+      "name": "Build new temporary feature-free ci ELF only after actual pure success",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 19,
+      "name": "Verify source remains unchanged even after a build failure",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 20,
+      "name": "Verify final temporary image and diagnostic provenance",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 21,
+      "name": "Require every actual same-run diagnostic producer phase",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 22,
+      "name": "Bind actual local receipt and fresh ELF without external artifact placeholders",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 23,
+      "name": "Verify clean sources original fixtures and exact lock bytes",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 24,
+      "name": "Select pinned pnpm without running dependency scripts",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 25,
+      "name": "Install frozen graph and build actual core and Web only",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 26,
+      "name": "Install original official complete Playwright Chromium distribution",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 27,
+      "name": "Verify required executables full Chrome exact image and native linkage",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 28,
+      "name": "Run exactly this original case with its original budgets and cleanup",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "number": 29,
+      "name": "Preserve raw timing on success or failure; missing evidence remains unknown",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 30,
+      "name": "Recheck source dist and image bytes after success or failure",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 31,
+      "name": "Keep P04 acceptance and timing completeness separate but require both",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "number": 32,
+      "name": "Retain exact producer step outcomes",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 33,
+      "name": "Always retain producer diagnostics without signed download headers",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 34,
+      "name": "Retain removable diagnostic ELF only after producer success",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 63,
+      "name": "Post Select pinned pnpm without running dependency scripts",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 64,
+      "name": "Post Cache registry bytes only, never target executables",
+      "status": "completed",
+      "conclusion": "skipped"
+    },
+    {
+      "number": 65,
+      "name": "Post Check out exact unchanged original P04 Web baseline",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 66,
+      "name": "Post Select pinned official Node",
+      "status": "completed",
+      "conclusion": "skipped"
+    },
+    {
+      "number": 67,
+      "name": "Post Check out exact temporary six-file native delta",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 68,
+      "name": "Post Check out this immutable producer recipe",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "number": 69,
+      "name": "Complete job",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "artifactId": 12592770979,
+  "artifactName": "temporary-p04-timing-native-cb7acd41b596a65366a2d9f1cdbc312f088368be-40175557827-1",
+  "archiveBytes": 13090734,
+  "archiveSha256": "3863f939f9f11e48657fde9a204a8a80573ead99d96285c0587819074d5603b7",
+  "binaryBytes": 31067128,
+  "binarySha256": "3dcdfd160e18c7c6ccc45b52913e6a1884e584659a43e26d14f119eb65ca5706",
+  "provenanceSha256": "bed8f3a0f0dfc8294144845161ad4983d8b3cb9b6254a4ce04f1f02739f9de40",
+  "nativeFocusedReceiptSha256": "5bb717cd6e55b6e94c28cf8631f684d00b0541dadfbef959664cdb57992fbe9c",
+  "helperSha256": "e9ef625d3368adceaefe803fbf8c4ff3152ce5e2ee64fd9925298c55d1d4dcab",
+  "workspace": "/home/runner/work/e2e/e2e",
+  "target": "/home/runner/work/_temp/focused-production-target",
+  "rustToolchain": "1.99.1",
+  "producer": {
+    "publishedNativeSha": "cb7acd41b596a65366a2d9f1cdbc312f088368be",
+    "candidateTree": "b5cdd8d3f21f67f6294f332c54263c898875412f",
+    "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+    "e2eSha": "5adcc69574da30c539b585d92a793bca87fae2bc",
+    "e2eTree": "94fd97e8054fa51a973128e5c87e36b956071f49",
+    "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+    "cases": [
+      {
+        "id": "timing-1",
+        "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_maximal_shape_fits_including_newline",
+        "category": "temporary P04 timing exact positive/negative control",
+        "configuration": "default",
+        "expected": "passed"
+      },
+      {
+        "id": "timing-2",
+        "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_overflow_contention_and_duplicate_are_unknown",
+        "category": "temporary P04 timing exact positive/negative control",
+        "configuration": "default",
+        "expected": "passed"
+      },
+      {
+        "id": "timing-3",
+        "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_exact_success_and_error_reach_existing_sink",
+        "category": "temporary P04 timing exact positive/negative control",
+        "configuration": "default",
+        "expected": "passed"
+      },
+      {
+        "id": "timing-4",
+        "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_wrong_id_session_and_missing_reply_are_not_success",
+        "category": "temporary P04 timing exact positive/negative control",
+        "configuration": "default",
+        "expected": "passed"
+      },
+      {
+        "id": "timing-5",
+        "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_timing_success_ack_and_real_restoration_emit_original_sink",
+        "category": "temporary P04 timing exact positive/negative control",
+        "configuration": "faults",
+        "expected": "passed"
+      }
+    ]
+  }
+}

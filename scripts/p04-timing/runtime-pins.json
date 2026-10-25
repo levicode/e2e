@@ -20,5 +20,17 @@
   "p04SourceSha256": "e128da927b7b9793efb3ea3b141bc1e972e94adbb4412d49951fcc3595d491ea",
   "formalCollectorSha256": "2fe2f8777f94f59cd559574cc2df98557177b788dd8b6821b60cf54207adc776",
   "collectorSha256": "6f35b41eaa54d78c9f1791ececaf6901bb2cd2b0ba3a379935565c0f61ccabd5",
-  "production": null
+  "production": null,
+  "comparison": {
+    "cells": [
+      "N",
+      "D"
+    ],
+    "sourceRun": "40175557827",
+    "directTitle": "DIAGNOSTIC D: keeps the exact page, document state, storage, viewport, routes, and dialog handlers",
+    "overlay": {
+      "packages/web/tests/integration/cdp-recovery-direct.test.ts": "47c2bdda4875087e1e154c32ee300b7f6610cbf14354bc937fedc71b06722c38",
+      "packages/web/tests/helpers/p04-direct-capture.mjs": "615ea76033b2c1b98dacc10c3deb18ff248af47a407d9324af74a371e54dff7d"
+    }
+  }
 }

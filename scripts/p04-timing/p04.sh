@@ -3,7 +3,7 @@
 # Requires separately verified new product/source/browser identity.
 set -euo pipefail
 umask 077
-: "${GITHUB_WORKSPACE:?}" "${EVIDENCE_DIR:?}" "${PLAYWRIGHT_BROWSERS_PATH:?}"
+: "${COMPARISON_CELL:?}" "${GITHUB_WORKSPACE:?}" "${EVIDENCE_DIR:?}" "${PLAYWRIGHT_BROWSERS_PATH:?}"
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO="$GITHUB_WORKSPACE/e2e-source"
 PRODUCTION="$GITHUB_WORKSPACE/agent-browser"
@@ -51,18 +51,23 @@ node --input-type=module - "$OUT/selection.json" "$HERE/runtime.mjs" <<'JS'
 import {writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const {pins}=await import(pathToFileURL(process.argv[3]));
-writeFileSync(process.argv[2],JSON.stringify({scope:'P04-single-original-relay-timing-carrier',caseIds:['P04'],runtimeWebSource:{sha:pins.e2eSha,tree:pins.e2eTree}})+'\n',{flag:'wx',mode:0o600});
+writeFileSync(process.argv[2],JSON.stringify({scope:'P04-fixed-N-D-once-per-independent-runner',cell:process.env.COMPARISON_CELL,attempt:1,caseIds:['P04'],runtimeWebSource:{sha:pins.e2eSha,tree:pins.e2eTree}})+'\n',{flag:'wx',mode:0o600});
 JS
 "$NODE" "$HERE/capture.mjs" prepare
 P04_NATIVE_FILE=$("$NODE" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).file)' "$OUT/P04.capture-binding.json")
 fresh_environment
 ENV+=("AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=$P04_NATIVE_FILE")
 # Preserve the original 600s phase cap and source's 60s case/30s hooks/10s operations.
+test_file=tests/integration/cdp-recovery.test.ts
 pattern='^CDP session recovery > keeps the exact page, document state, storage, viewport, routes, and dialog handlers$'
+if [[ "$COMPARISON_CELL" = D ]]; then
+  test_file=tests/integration/cdp-recovery-direct.test.ts
+  pattern='^CDP session recovery > DIAGNOSTIC D: keeps the exact page, document state, storage, viewport, routes, and dialog handlers$'
+else test "$COMPARISON_CELL" = N; fi
 (cd "$REPO/packages/web" && observed_command P04 /usr/bin/timeout --foreground --signal=TERM --kill-after=5s 600 \
   "$NODE" "$REPO/packages/web/node_modules/vitest/vitest.mjs" run --project integration --maxWorkers=2 --bail=0 \
   --reporter=verbose --reporter=json "--outputFile.json=$OUT/P04.vitest.json" \
-  --testNamePattern "$pattern" tests/integration/cdp-recovery.test.ts)
+  --testNamePattern "$pattern" "$test_file")
 # Reuse the exact report-selection predicate and process cleanup predicate; no full333 reconciliation.
 "$NODE" --input-type=module - "$HERE/runtime.mjs" "$OUT" "$REPO" <<'JS'
 import assert from 'node:assert/strict';
@@ -75,8 +80,9 @@ const load=name=>JSON.parse(readFileSync(`${out}/${name}`));
 const source=`${repo}/packages/web/tests/integration/cdp-recovery.test.ts`;
 assert.equal(createHash('sha256').update(readFileSync(source)).digest('hex'),pins.p04SourceSha256);
 const report=load('P04.vitest.json');
-assert.equal(report.testResults.length,1);assert.equal(report.testResults[0].name,source);
-const selected=selectedReport(report,'keeps the exact page, document state, storage, viewport, routes, and dialog handlers');
+const cell=process.env.COMPARISON_CELL;assert.ok(['N','D'].includes(cell));
+assert.equal(report.testResults.length,1);assert.equal(report.testResults[0].name,cell==='N'?source:`${repo}/packages/web/tests/integration/cdp-recovery-direct.test.ts`);
+const selected=selectedReport(report,(cell==='D'?'DIAGNOSTIC D: ':'')+'keeps the exact page, document state, storage, viewport, routes, and dialog handlers');
 const observed=load('P04.processes.jsonl.summary.json');
 const observerExit=Number(readFileSync(`${out}/P04.observer.exit`,'utf8'));
 const cleanupConfirmed=observerExit===0&&Array.isArray(observed?.errors)&&observed.errors.length===0
@@ -93,11 +99,13 @@ const browsers=rows.filter(row=>row.executable===images.full.executable&&!row.ar
 const browserLifetimes=new Set(browsers.map(row=>`${row.pid}:${row.startTicks}`));
 const productionObserved=rows.some(row=>row.executable===images.production.executable&&row.expectedHashMatches===true);
 const exit=Number(readFileSync(`${out}/P04.exit`,'utf8'));
-const result={caseId:'P04',selected,exit,cleanupConfirmed,productionObserved,browserRootLifetimes:browserLifetimes.size,
+const direct=cell==='D'?selected.meta?.p04DirectDiagnostic??null:null;
+const result={caseId:'P04',cell,originalP04Acceptance:cell==='N'?selected.status:'not-applicable-diagnostic-replacement',direct,selected,exit,cleanupConfirmed,productionObserved,browserRootLifetimes:browserLifetimes.size,
   testSource:{sha:pins.e2eSha,tree:pins.e2eTree},artifactBuildE2e:{sha:pins.production.e2eSha,tree:pins.production.e2eTree},
   fullNativeSuitePassed:false,full333Complete:false,releaseEligible:false,
   pageCountClaim:'unchanged original unique-marker witness and same-URL second-tab assertions; no new page inventory'};
 writeFileSync(`${out}/P04.focused-result.json`,JSON.stringify(result,null,2)+'\n');
+if(cell==='D') {const {validDirectResult}=await import(pathToFileURL(helper.replace('runtime.mjs','direct-capture.mjs')));assert.equal(validDirectResult(direct),true,'D evidence missing/unknown/failed; never original P04 acceptance');}
 assert.equal(selected.selectionExact,true);assert.equal(selected.status,'passed');assert.equal(selected.success,true);assert.equal(exit,0);
 assert.equal(cleanupConfirmed,true);assert.equal(productionObserved,true);assert.equal(browserLifetimes.size,1);
 assert.ok(browsers.every(row=>row.expectedHashMatches===true));

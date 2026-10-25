@@ -1,5 +1,6 @@
 // Narrow P04 extraction; no other runtime case or external artifact admission.
 import assert from 'node:assert/strict';
+import {consumerIdentity} from './prior-product.mjs';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync,readFileSync,realpathSync,statSync,writeFileSync} from 'node:fs';
@@ -15,11 +16,13 @@ const json=(file,value)=>writeFileSync(file,JSON.stringify(value,null,2)+'\n',{m
 const git=(root,...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
 if(process.env.EVIDENCE_DIR&&existsSync(path.join(process.env.EVIDENCE_DIR,'production-identity.json'))){
   const p=JSON.parse(readFileSync(path.join(process.env.EVIDENCE_DIR,'production-identity.json')));
-  assert.equal(p.sameRunDiagnosticVerified,true);assert.equal(p.releaseEligible,false);
+  assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');
+  assert.deepEqual(p,consumerIdentity({runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,recipeSha:process.env.RECIPE_SHA}));
+  assert.equal(p.exactProducerArtifactVerified,true);assert.equal(p.sameRunDiagnosticVerified,false);assert.equal(p.releaseEligible,false);
   assert.equal(p.nativeSha,pins.nativeSha);assert.equal(p.nativeTree,pins.nativeTree);
   assert.equal(p.e2eSha,pins.e2eSha);assert.equal(p.e2eTree,pins.e2eTree);
-  assert.equal(String(p.runId),process.env.GITHUB_RUN_ID);assert.equal(String(p.runAttempt),process.env.GITHUB_RUN_ATTEMPT);
-  assert.equal(p.recipeSha,process.env.RECIPE_SHA);assert.equal(p.profile,'ci');assert.deepEqual(p.features,[]);
+  assert.equal(String(p.producerRunId),'40175557827');assert.equal(String(p.consumerRunId),process.env.GITHUB_RUN_ID);
+  assert.notEqual(String(p.producerRunId),String(p.consumerRunId));assert.equal(p.consumerRecipeSha,process.env.RECIPE_SHA);assert.equal(p.profile,'ci');assert.deepEqual(p.features,[]);
   assert.match(p.binarySha256,/^[a-f0-9]{64}$/);pins.production=p;
 }
 export function requirePins(value=pins,product=true){
@@ -27,7 +30,7 @@ export function requirePins(value=pins,product=true){
   for(const k of ['nativeSha','nativeTree','e2eSha','e2eTree'])assert.match(value[k],/^[a-f0-9]{40}$/);
   assert.equal(value.e2eSha,'5adcc69574da30c539b585d92a793bca87fae2bc');assert.equal(value.e2eTree,'94fd97e8054fa51a973128e5c87e36b956071f49');
   for(const k of ['nativeChromeSourceSha256','nativeInstallSourceSha256','nativeLockSha256','e2eLockSha256','p04SourceSha256','cdpHostSourceSha256','collectorSha256','formalCollectorSha256'])assert.match(value[k],/^[a-f0-9]{64}$/);
-  if(product){assert.ok(value.production,'Actual same-run production binding missing');assert.equal(value.production.sameRunDiagnosticVerified,true);}
+  if(product){assert.ok(value.production,'Verified pinned historical producer artifact missing');assert.equal(value.production.exactProducerArtifactVerified,true);}
 }
 export function selectedReport(report, title) {
   const tests = report.testResults?.flatMap(suite => suite.assertionResults ?? []) ?? [];
@@ -37,16 +40,20 @@ export function selectedReport(report, title) {
   return { selectionExact: selected.length === 1 && executed.length === 1 && executed[0] === selected[0],
     status: selected[0]?.status ?? 'unknown', firstFailure, meta: selected[0]?.meta ?? null, success: report.success === true };
 }
-function sourceIdentity(root, sha, tree) {
+function sourceIdentity(root, sha, tree, overlays=false) {
   const result = { commit: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'rev-parse', 'HEAD^{tree}'), status: git(root, 'status', '--porcelain', '--untracked-files=all') };
-  assert.equal(result.commit, sha); assert.equal(result.tree, tree); assert.equal(result.status, ''); return result;
+  assert.equal(result.commit, sha); assert.equal(result.tree, tree);
+  const expected=overlays?Object.keys(pins.comparison.overlay).sort().map(name=>'?? '+name).join('\n'):'';
+  assert.equal(result.status,expected);
+  if(overlays)for(const [name,hash]of Object.entries(pins.comparison.overlay))assert.equal(sha256(path.join(root,name)),hash);
+  return result;
 }
 export function sourceCheck(workspace, evidence) {
   requirePins();
   assert.equal(process.platform, 'linux'); assert.equal(process.arch, 'x64'); assert.equal(process.version, pins.nodeVersion);
   assert.match(readFileSync('/etc/os-release', 'utf8'), /^VERSION_ID="24\.04"$/m);
   const e2e = path.join(workspace, 'e2e-source'), native = path.join(workspace, 'source'), recipe = path.join(workspace, 'recipe');
-  const identities = { e2e: sourceIdentity(e2e, pins.e2eSha, pins.e2eTree), native: sourceIdentity(native, pins.nativeSha, pins.nativeTree),
+  const identities = { e2e: sourceIdentity(e2e, pins.e2eSha, pins.e2eTree, process.env.COMPARISON_CELL==='D'), native: sourceIdentity(native, pins.nativeSha, pins.nativeTree),
     recipe: sourceIdentity(recipe, process.env.RECIPE_SHA, git(recipe, 'rev-parse', 'HEAD^{tree}')) };
   assert.equal(sha256(path.join(native, 'cli/src/native/cdp/chrome.rs')), pins.nativeChromeSourceSha256);
   assert.equal(sha256(path.join(native, 'cli/src/install.rs')), pins.nativeInstallSourceSha256);

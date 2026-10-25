@@ -31,9 +31,12 @@ if(process.argv[2]==='prepare'){
       if(bytes.length!==stat.size||after.size!==stat.size||after.mtimeMs!==stat.mtimeMs)throw Error('Changing cleanup evidence');
     }finally{closeSync(fd);}
     writeFileSync(path.join(evidence,'P04.native.jsonl'),bytes,{flag:'wx',mode:0o600});
-    result={...createTimingInspector(validCleanupRecord)(bytes),binding:capture.binding,caseAssociation:'single original P04 invocation; selected operation not independently attributed',processCoverage:'sampled observer only'};
+    result={...createTimingInspector(validCleanupRecord)(bytes),binding:capture.binding,caseAssociation:process.env.COMPARISON_CELL==='N'?'single original P04 invocation; selected operation not independently attributed':'D diagnostic derived fixture; final trace is direct, not native acceptance',processCoverage:'sampled observer only'};
   }catch{result={schemaVersion:1,status:'unknown',reasons:['collection-unavailable'],diagnosticOnly:true,cleanupAcceptance:'unknown',releaseEligible:false};}
   writeFileSync(path.join(evidence,'P04.timing.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});
   // Completeness is a diagnostic checkpoint, never a replacement for P04/cleanup assertions.
-  if(result.status!=='complete')process.exitCode=1;
+  if(process.env.COMPARISON_CELL==='D') {
+    // No native final trace was issued in D. Absence of its failure timing is expected, not complete timing proof.
+    if(!result.rawSha256||result.reasons.some(reason=>reason!=='no-timing-failure'))process.exitCode=1;
+  } else if(result.status!=='complete')process.exitCode=1;
 }else throw Error('Closed capture command');
