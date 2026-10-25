@@ -1,13 +1,13 @@
 {
   "baseNativeSha": "53d280d74c8e264f1e30edb6760fb85134c06851",
   "baseNativeTree": "2526ed25dd6d6ecb81a534a82f38b4d6c166ae80",
-  "publishedNativeSha": "4c7e1fdefc99759f7c92efb0f32f82a00dc547a8",
-  "candidateTree": "4db53a2bdea3a199a4373b510a68e874bb3ae245",
+  "publishedNativeSha": "733ffa8e0618ae02fb6e2cd5658c4b43d0305973",
+  "candidateTree": "48845c22db6c4b2de2c6c64796b87e52027471d2",
   "sourceBindingFrozen": true,
   "productionSourceChanged": true,
   "onlyTestOverlay": false,
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
-  "patchSha256": "fca4eed10fcb081d87be47153df58db43ed4e48d2cd5a1a8b3a0c68341cc053b",
+  "patchSha256": "db5c805b8a43fa3293bf1895361629e923c6903de86c278160d457a062be23cf",
   "rustToolchain": "1.99.1",
   "nodeVersion": "v24.19.0",
   "changedFiles": [
@@ -39,7 +39,7 @@
     {
       "path": "cli/src/native/client_browser_point_debt_tests.rs",
       "beforeSha256": "c5a658ebd17b4d0810802315e06dded6d2e3550f9649cda273cfc41afc38bb79",
-      "afterSha256": "59158ca0652960e8596e3d541c7e4f344e9219dc4c721792278163b7d56fe04d"
+      "afterSha256": "c35167f4164dd1475a82a9f7d1ce78e0373e0ab5cba1aad43bbc6ec3e0669d59"
     },
     {
       "path": "cli/src/native/client_browser_reconnect_tests.rs",
@@ -387,6 +387,13 @@
       "expected": "passed",
       "category": "trace-terminal-wire-shape-negative-control",
       "configuration": "faults"
+    },
+    {
+      "id": "p06-callback-retirement-notice",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_callback_retirement_notice_requires_exact_shape_and_watermark",
+      "expected": "passed",
+      "category": "p06-fixture-control-shape-negative-control",
+      "configuration": "default"
     }
   ],
   "configurations": {
@@ -417,14 +424,14 @@
   },
   "scope": {
     "original23SelectorsRetained": true,
-    "all40Expected": "passed",
     "newP06NegativeControls": 4,
     "serviceWorkerCases": 12,
     "newTraceNegativeControl": 1,
     "reconnectAdmissionImplementationChanged": true,
     "originalPausedInputE2eVerified": false,
     "originalE2eRetired": false,
-    "productionImageBuilt": false
+    "productionImageBuilt": false,
+    "all41Expected": "passed"
   },
   "patchInputs": [
     {

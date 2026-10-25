@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Closed 40-case browser-free native fixtures. Every exact test must genuinely pass."""
+"""Closed 41-case browser-free native fixtures. Every exact test must genuinely pass."""
 import hashlib
 import json
 import os
@@ -17,12 +17,12 @@ EVIDENCE = Path(os.environ.get('EVIDENCE_DIR', '.'))
 ACTIVE_GROUPS = set()
 COMPILE_PHASES = ['recipe-identity', 'source-before', 'source-patch', 'toolchain', 'node-version', 'format', 'clippy', 'acceptance-tests-check', 'proxy-feature-check', 'default-harness-compile', 'default-harness-inventory', 'faults-harness-compile', 'faults-harness-inventory']
 
-CLOSED_CASES_SHA256 = '0ee622aa762d15cbbc886a7f8fc16e11eee4cbae9ed8410cc9137e8102faead1'
+CLOSED_CASES_SHA256 = 'dc579090075f150979d14aa11ab78e0e3b5bd3292d6ba3ee339adb7ccdeb9a11'
 
 def validate_cases():
     encoded = json.dumps(PINS['cases'], sort_keys=True, separators=(',', ':')).encode()
     assert hashlib.sha256(encoded).hexdigest() == CLOSED_CASES_SHA256, 'Closed exact selected-case manifest mismatch'
-    assert len(PINS['cases']) == len({case['id'] for case in PINS['cases']}) == len({case['name'] for case in PINS['cases']}) == 40
+    assert len(PINS['cases']) == len({case['id'] for case in PINS['cases']}) == len({case['name'] for case in PINS['cases']}) == 41
     assert all(case['expected'] == 'passed' for case in PINS['cases'])
 
 def validate_pins():
@@ -253,15 +253,15 @@ def summarize():
     recovery['characterizationConfirmed'] = characterization.get('actual') == 'passed' and characterization.get('expectedObservationConfirmed') is True
     if not recovery['characterizationConfirmed']:
         recovery['expectedObservationConfirmed'] = False
-    outcome = {'scope': '40 exact native fixtures: prior23 plus four P06 negatives plus twelve SW cases plus one trace-shape negative; no browser, product image, retirement or full acceptance', 'sourceTree': PINS['candidateTree'],
+    outcome = {'scope': '41 exact native fixtures: unchanged prior40 plus one P06 callback-retirement control parser; no browser, product image, retirement or full acceptance', 'sourceTree': PINS['candidateTree'],
                'sourceBindingFrozen': PINS.get('sourceBindingFrozen') is True, 'strictGatesPassed': all_gates, 'phases': states, 'cases': cases,
                'expectedObservationsConfirmed': all_gates and all(case['expectedObservationConfirmed'] for case in cases),
                'passedTestCount': sum(case['actual'] == 'passed' for case in cases), 'failedTestCount': sum(case['actual'] == 'failed' for case in cases),
                'allSelectedTestsPassed': all_gates and all(case['testPassed'] for case in cases), 'fullNativeSuitePassed': False,
-               'originalSevenTestsPassed': all_gates and all(case['testPassed'] for case in cases[:7]), 'selectedCaseCount': 40, 'notRunTestCount': sum(case['actual'] == 'not-run' for case in cases), 'unknownTestCount': sum(case['actual'] == 'unknown' for case in cases), 'productionSourceChanged': True, 'onlyTestOverlay': False, 'p06RecoveryFixturePassed': all_gates and recovery.get('testPassed') is True and recovery.get('characterizationConfirmed') is True, 'originalPausedInputE2eVerified': False, 'retirementCountChanged': False, 'productionBuildExecuted': False, 'releaseEligible': False}
+               'originalSevenTestsPassed': all_gates and all(case['testPassed'] for case in cases[:7]), 'selectedCaseCount': 41, 'notRunTestCount': sum(case['actual'] == 'not-run' for case in cases), 'unknownTestCount': sum(case['actual'] == 'unknown' for case in cases), 'productionSourceChanged': True, 'onlyTestOverlay': False, 'p06RecoveryFixturePassed': all_gates and recovery.get('testPassed') is True and recovery.get('characterizationConfirmed') is True, 'originalPausedInputE2eVerified': False, 'retirementCountChanged': False, 'productionBuildExecuted': False, 'releaseEligible': False}
     save(EVIDENCE / 'summary.json', outcome)
     print(json.dumps(outcome, indent=2))
-    # All forty exact tests and every strict gate are mandatory; historical RED cannot qualify.
+    # All forty-one exact tests and every strict gate are mandatory; historical RED cannot qualify.
     return 0 if outcome['allSelectedTestsPassed'] and outcome['expectedObservationsConfirmed'] else 1
 
 def main():

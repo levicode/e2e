@@ -1,5 +1,5 @@
-# Locally prepared 40-case recipe; immutable reviewed unified source is pinned.
-name: Unified native pure fixtures (40 exact tests; every case must pass)
+# Locally prepared 41-case recipe; exact reviewed native source is pinned.
+name: Unified native pure fixtures (41 exact tests; every case must pass)
 'on':
   push:
     branches:
@@ -51,10 +51,10 @@ jobs:
         negative-terminal-replacement negative-reader-early-ack negative-transfer-before-drain negative-callback-publication negative-callback-queue p06-wrong-context
         p06-callback-no-root p06-wrong-scope p06-cancelled-single-use sw-detach-after-decision sw-detach-after-wait sw-error-not-ready sw-independent-cancel
         sw-wrong-session sw-target-only sw-replaced-watermark sw-pending-no-authority sw-terminal-no-ready sw-target-only-prompt sw-observer-failure sw-applied-detach-wait
-        trace-terminal-shape query-matcher source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
+        trace-terminal-shape p06-callback-retirement-notice query-matcher source-after; do printf ''not-run\n'' > "$EVIDENCE_DIR/$phase.exit"; done
 
-        printf ''%s\n'' ''40 exact pure native fixtures: prior23 + four P06 negative controls + twelve SW bounded-event-wait cases + one trace terminal-shape
-        negative. Every exact test must genuinely PASS. P06 characterization precedes desired recovery; historical exit101 never qualifies. Production source
+        printf ''%s\n'' ''41 exact pure native fixtures: unchanged prior40 plus one P06 callback-retirement notice parser. No earlier passing result is
+        reused. Every exact test must genuinely PASS. P06 characterization precedes desired recovery; historical exit101 never qualifies. Production source
         changes included. No production build/browser/full native suite/retirement count change.'' > "$EVIDENCE_DIR/SCOPE.txt"
 
         uname -a > "$EVIDENCE_DIR/host.txt"
@@ -93,7 +93,7 @@ jobs:
       timeout-minutes: 3
       with:
         repository: levicode/agent-browser
-        ref: 4c7e1fdefc99759f7c92efb0f32f82a00dc547a8
+        ref: 733ffa8e0618ae02fb6e2cd5658c4b43d0305973
         fetch-depth: 2
         path: source
         persist-credentials: false
@@ -295,6 +295,16 @@ jobs:
         == 'success' }}
       run: "set -uo pipefail\nunset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\nfailed=0\nfor case in p06-wrong-context p06-callback-no-root\
         \ p06-wrong-scope p06-cancelled-single-use; do\n  python3 -B \"$VALIDATE\" case \"$case\" || failed=1\ndone\nexit \"$failed\"\n"
+    - name: P06 callback-retirement notice parser exact positive and negative controls
+      id: p06_control_notice
+      timeout-minutes: 3
+      if: ${{ !cancelled() && steps.strict_compile.outcome == 'success' && steps.default_compile.outcome == 'success' && steps.default_inventory.outcome
+        == 'success' }}
+      run: 'unset AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE AGENT_BROWSER_ACCEPTANCE_PHASE_FILE
+
+        python3 -B "$VALIDATE" case p06-callback-retirement-notice
+
+        '
     - name: Twelve SW exact cases must pass independently
       id: service_worker
       timeout-minutes: 25
@@ -322,7 +332,7 @@ jobs:
       timeout-minutes: 1
       if: ${{ always() && steps.overlay.outcome == 'success' }}
       run: python3 -B "$VALIDATE" run source-after 30 python3 -B "$VALIDATE" source "$GITHUB_WORKSPACE/source" applied
-    - name: Reconcile all forty exact ledgers and reject every failure
+    - name: Reconcile all forty-one exact ledgers and reject every failure
       id: summary
       timeout-minutes: 1
       if: ${{ always() && steps.recipe.outcome == 'success' }}

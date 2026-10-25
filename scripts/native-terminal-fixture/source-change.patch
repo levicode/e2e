@@ -589,10 +589,150 @@ index ae82b93e84b4f5e26139cc4981670eb54a5d7e88..2180ac4cd97cac8518f4fef423f0633b
                  .await;
              assert_eq!(refused.result, Err(ProtocolError::StaleScope));
 diff --git a/cli/src/native/client_browser_point_debt_tests.rs b/cli/src/native/client_browser_point_debt_tests.rs
-index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026ea36f81f 100644
+index 0f775cfccbbfda651852a7274e885e91b053742f..f68648fe5fe9d8655ecfcef02a77562c526904b4 100644
 --- a/cli/src/native/client_browser_point_debt_tests.rs
 +++ b/cli/src/native/client_browser_point_debt_tests.rs
-@@ -502,21 +502,31 @@ async fn eof_recovery_result(framed: &mut FramedFixture, id: &str, sequence: u64
+@@ -466,13 +466,110 @@ struct EofRecoveryObservation {
+     candidate_commands: Vec<Value>,
+ }
+ 
+-async fn eof_recovery_result(framed: &mut FramedFixture, id: &str, sequence: u64) -> Value {
++fn valid_eof_callback_retirement(
++    frame: &Value,
++    scope: &str,
++    through: u64,
++    already_retired: bool,
++) -> bool {
++    !already_retired
++        && !scope.is_empty()
++        && scope.len() <= 128
++        && through < crate::native::client_protocol::MAX_SAFE_SEQUENCE
++        && frame
++            == &json!({
++                "type":"event", "generation":1, "sequence":through + 1,
++                "event":"scope.callbacks-retired",
++                "payload":{"identityScope":scope,"throughEventSequence":through}
++            })
++}
++
++#[test]
++fn p06_callback_retirement_notice_requires_exact_shape_and_watermark() {
++    // Parser values only: these do not mint a native proof or mutate a ledger.
++    let notice = serde_json::to_value(crate::native::client_protocol::ServerMessage::Event {
++        generation: 1,
++        sequence: 3,
++        event: "scope.callbacks-retired".into(),
++        payload: json!({"identityScope":"old-scope","throughEventSequence":2}),
++        decision: None,
++    })
++    .unwrap();
++    assert!(valid_eof_callback_retirement(
++        &notice,
++        "old-scope",
++        2,
++        false
++    ));
++    assert!(!valid_eof_callback_retirement(
++        &notice,
++        "other-scope",
++        2,
++        false
++    ));
++    assert!(!valid_eof_callback_retirement(
++        &notice,
++        "old-scope",
++        1,
++        false
++    ));
++    assert!(!valid_eof_callback_retirement(
++        &notice,
++        "old-scope",
++        2,
++        true
++    ));
++    for (field, value) in [
++        ("type", json!("error")),
++        ("type", json!("result")),
++        ("generation", json!(2)),
++        ("sequence", json!(4)),
++        ("event", json!("unknown.notice")),
++        ("decision", Value::Null),
++        ("decision", json!({"token":"not-authority"})),
++        ("recovery", json!({"version":1,"identityScope":"old-scope"})),
++        ("extra", json!(true)),
++        ("payload", Value::Null),
++    ] {
++        let mut invalid = notice.clone();
++        invalid[field] = value;
++        assert!(
++            !valid_eof_callback_retirement(&invalid, "old-scope", 2, false),
++            "{invalid}"
++        );
++    }
++    for payload in [
++        json!({"throughEventSequence":2}),
++        json!({"identityScope":"old-scope"}),
++        json!({"identityScope":"other-scope","throughEventSequence":2}),
++        json!({"identityScope":"old-scope","throughEventSequence":1}),
++        json!({"identityScope":"old-scope","throughEventSequence":3}),
++        json!({"identityScope":"old-scope","throughEventSequence":"2"}),
++        json!({"identityScope":"old-scope","throughEventSequence":2,"extra":true}),
++        json!({"identityScope":"old-scope","version":1}),
++    ] {
++        let mut invalid = notice.clone();
++        invalid["payload"] = payload;
++        assert!(
++            !valid_eof_callback_retirement(&invalid, "old-scope", 2, false),
++            "{invalid}"
++        );
++    }
++}
++
++async fn eof_recovery_result(
++    framed: &mut FramedFixture,
++    id: &str,
++    sequence: u64,
++    callbacks_retired: &mut bool,
++) -> Value {
+     bounded(async {
+         for _ in 0..8 {
+             let frame = framed.read().await.unwrap();
+             assert_eq!(frame["generation"], 1);
+             match frame["type"].as_str() {
+                 Some("event") => {
++                    let through = framed.event_sequence;
+                     framed.event_sequence += 1;
+                     assert_eq!(frame["sequence"], framed.event_sequence);
+                     if frame["event"] == "browser.disconnected" {
+@@ -481,12 +578,26 @@ async fn eof_recovery_result(framed: &mut FramedFixture, id: &str, sequence: u64
+                             json!({"reason":"browser-connection-closed"})
+                         );
+                         assert!(frame.get("decision").is_none());
++                    } else if frame["event"] == "scope.callbacks-retired" {
++                        // This is only the ordered old-scope callback fence,
++                        // not a recovery descriptor or usable-scope grant.
++                        assert!(
++                            valid_eof_callback_retirement(
++                                &frame,
++                                framed.scope.as_deref().unwrap(),
++                                through,
++                                *callbacks_retired,
++                            ),
++                            "invalid P06 callback retirement notice: {frame}"
++                        );
++                        *callbacks_retired = true;
+                     } else {
+                         assert_eq!(
+                             frame["payload"]["identityScope"],
+                             framed.scope.as_deref().unwrap()
+                         );
+-                        validate_fixture_notice(&frame).unwrap();
++                        validate_fixture_notice(&frame)
++                            .unwrap_or_else(|error| panic!("{error}: {frame}"));
+                     }
+                 }
+                 Some("result") => {
+@@ -502,21 +613,31 @@ async fn eof_recovery_result(framed: &mut FramedFixture, id: &str, sequence: u64
      .await
  }
  
@@ -633,7 +773,7 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
      framed.ready().await.unwrap();
      let opened = framed
          .command(
-@@ -566,12 +576,29 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+@@ -566,12 +687,29 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
          generation: 1,
          operation_seq: framed.sequence,
      };
@@ -669,7 +809,19 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
      bounded(async {
          while let Some(method) = original.received.recv().await {
              if method == "Input.dispatchMouseEvent" {
-@@ -617,6 +644,32 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+@@ -613,10 +751,43 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+         }
+     })
+     .await;
+-    let original_result = eof_recovery_result(&mut framed, "p06-original", key.operation_seq).await;
++    let mut callbacks_retired = false;
++    let original_result = eof_recovery_result(
++        &mut framed,
++        "p06-original",
++        key.operation_seq,
++        &mut callbacks_retired,
++    )
++    .await;
      assert_eq!(original_result["ok"], false);
      assert_eq!(original_result["effects"], "unknown");
      assert!(original_result.get("retention").is_none());
@@ -702,7 +854,7 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
      // Joining the actual producer is not an acknowledgement of its remote
      // command. Retain the outcome of this join for the characterization test.
      let producer_drain = bounded(browser.tasks.drain()).await;
-@@ -636,14 +689,39 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+@@ -636,23 +807,72 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
      // This is not the stronger debt-free final-local cleanup proof.
      assert!(ledger.check_final_local_eof(1, &scope).is_err());
  
@@ -744,8 +896,17 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
                  "expectedBrowserIdentity":identity["browser"],
                  "expectedContextIdentity":identity["context"],
                  "expectedPageIdentity":identity["page"]}}))
-@@ -653,6 +731,24 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
-     let reconnect = eof_recovery_result(&mut framed, "p06-reconnect", reconnect_sequence).await;
+         .await
+         .unwrap();
+     let reconnect_sequence = framed.sequence;
+-    let reconnect = eof_recovery_result(&mut framed, "p06-reconnect", reconnect_sequence).await;
++    let reconnect = eof_recovery_result(
++        &mut framed,
++        "p06-reconnect",
++        reconnect_sequence,
++        &mut callbacks_retired,
++    )
++    .await;
      if reconnect["ok"] == true {
          assert_ne!(reconnect["data"]["identityScope"], scope);
 +        let new_scope = reconnect["data"]["identityScope"]
@@ -769,7 +930,7 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
      }
      let cleanup = tokio::time::timeout(Duration::from_secs(7), framed.finish())
          .await
-@@ -716,7 +812,7 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
+@@ -716,7 +936,7 @@ async fn framed_input_eof_reconnect() -> EofRecoveryObservation {
  
  #[tokio::test]
  async fn p06_framed_input_eof_currently_quarantines_before_reconnect_verification() {
@@ -778,7 +939,7 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
      assert_eq!(observed.original["scopeState"], "quarantined");
      assert_eq!(observed.producer_drain, Err(ProtocolError::CleanupFailed));
      assert_eq!(observed.reconnect["ok"], false);
-@@ -729,8 +825,8 @@ async fn p06_framed_input_eof_currently_quarantines_before_reconnect_verificatio
+@@ -729,8 +949,8 @@ async fn p06_framed_input_eof_currently_quarantines_before_reconnect_verificatio
  
  #[tokio::test]
  async fn p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay() {
@@ -789,7 +950,7 @@ index 0f775cfccbbfda651852a7274e885e91b053742f..a521a9abbc768bc097b359efffae9026
      // session: the helper has already proved the original receipt stays Unknown,
      // its one dispatched input remains owned, and neither transport replays it.
      assert_eq!(
-@@ -746,3 +842,45 @@ async fn p06_framed_input_eof_explicit_reconnect_must_recover_session_without_re
+@@ -746,3 +966,45 @@ async fn p06_framed_input_eof_explicit_reconnect_must_recover_session_without_re
          .iter()
          .any(|r| r["method"] == "Target.getTargetInfo"));
  }
