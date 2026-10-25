@@ -31,7 +31,7 @@ class ParserControls(unittest.TestCase):
  def test_wrong_panic(self):
   c=v.PINS['cases'][4];self.assertFalse(self.inspect(c,self.raw(c,True).replace('P04_OPTIONAL_TIMEOUT_RETAINED_CONTINUATION_CONTRACT','wrong'),101))
  def test_wrong_source(self):
-  c=v.PINS['cases'][5];self.assertFalse(self.inspect(c,self.raw(c,True).replace(':480:13:',':479:13:'),101))
+  c=v.PINS['cases'][5];pin=v.PINS['redSources'][c['id']];self.assertFalse(self.inspect(c,self.raw(c,True).replace(f":{pin['line']}:{pin['column']}:",f":{pin['line']-1}:{pin['column']}:"),101))
  def test_missing_case(self):
   old=v.PINS; v.PINS=copy.deepcopy(old);v.PINS['cases'].pop()
   try:

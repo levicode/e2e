@@ -4,13 +4,13 @@
   "casesFrozen": true,
   "baseNativeSha": "9ed226f4fa7c17a011e0d5452a34dfa202907310",
   "baseNativeTree": "a5194316f5cba316b70640173e3a0c74c3556c5e",
-  "publishedNativeSha": "43854b2400165728e82f373b29745bc37913d8b8",
-  "candidateTree": "6b535a69b76da6ea16c46e561d2984c0f0408e1a",
+  "publishedNativeSha": "a95692dc5fa8b83fa4974293e411f193fd3387e1",
+  "candidateTree": "a01a3440301fe9dbbaa8f915cc6be615631f2326",
   "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
   "onlyTestOverlay": true,
   "productionSourceChanged": false,
   "productionImageBuilt": false,
-  "patchSha256": "1573b24c2ac5e9ec43808cd1028c1bb0cd117620754ab843595d099f7349f057",
+  "patchSha256": "734c20f38b14cb80208e4d752d5d5c4ad1989186082b97a52caa5029e9179deb",
   "changedFiles": [
     {
       "path": "cli/src/native/client_browser_state_tests.rs",
@@ -20,7 +20,7 @@
     {
       "path": "cli/src/native/client_browser_trace_timeout_tests.rs",
       "beforeSha256": null,
-      "afterSha256": "9ddccc0f5b09541efc8fa010ccbccc642f75d4657865d025268f8fdba165db8b"
+      "afterSha256": "be4403924aa3902e4b7b2d54eb2241f9597aafe890e7aa1757fce8dc2bd8d1d1"
     }
   ],
   "configurations": {
@@ -88,17 +88,17 @@
     "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_rate_restore_rejection_remains_hard_failure",
     "native::client_browser::state_lifecycle_tests::trace_timeout_tests::trace_timeout_without_continuation_negotiation_stays_quarantined"
   ],
-  "reviewStatus": "exact-rustfmt-only-recovery-after-run40182912224",
+  "reviewStatus": "finite-CDP-numeric-fixture-equivalence-after-run40183225556",
   "redSources": {
     "late-contract": {
       "path": "src/native/client_browser_trace_timeout_tests.rs",
-      "line": 501,
+      "line": 521,
       "column": 13,
       "panicBody": "P04_OPTIONAL_TIMEOUT_RETAINED_CONTINUATION_CONTRACT"
     },
     "pending-close": {
       "path": "src/native/client_browser_trace_timeout_tests.rs",
-      "line": 480,
+      "line": 500,
       "column": 13,
       "panicBody": "P04_PENDING_CLOSE_TERMINAL_OWNERSHIP_CONTRACT"
     }
@@ -107,5 +107,5 @@
     "cli/src/native/client_browser_state_tests.rs",
     "cli/src/native/client_browser_trace_timeout_tests.rs"
   ],
-  "sourceSupportBranch": "support/p04-trace-timeout-red-v2-20261025"
+  "sourceSupportBranch": "support/p04-trace-timeout-red-v3-20261025"
 }

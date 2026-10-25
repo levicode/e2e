@@ -9,7 +9,7 @@
 +mod trace_timeout_tests;
 --- /dev/null
 +++ b/cli/src/native/client_browser_trace_timeout_tests.rs
-@@ -0,0 +1,534 @@
+@@ -0,0 +1,554 @@
 +//! Real framed ClientBrowser -> Trace dispatch -> borrowed scope.end.
 +//! The finite peer models source-holder ownership, not renderer pixel fidelity.
 +//! An internal raw subscriber proves transport visibility, not public DevTools reachability.
@@ -37,6 +37,24 @@
 +    restoration_acked: Arc<AtomicBool>,
 +    task: tokio::task::JoinHandle<()>,
 +    protected_png: String,
++}
++
++// CDP playbackRate is numeric: restoration serializes the stored f64 as 1.0.
++// This finite peer accepts exactly its modeled frozen/restored values, not others.
++fn fixture_playback_rate(value: &Value) -> Option<f64> {
++    let rate = value.as_f64()?;
++    (rate.is_finite() && (rate == 0.0 || rate == 1.0)).then_some(rate)
++}
++
++fn check_numeric_peer_contract() {
++    assert_eq!(fixture_playback_rate(&json!(0)), Some(0.0));
++    assert_eq!(fixture_playback_rate(&json!(0.0)), Some(0.0));
++    assert_eq!(fixture_playback_rate(&json!(1)), Some(1.0));
++    assert_eq!(fixture_playback_rate(&json!(1.0)), Some(1.0));
++    for text in ["-1", "0.5", "2", "\"1\"", "null", "true", "{}", "[]"] {
++        let value: Value = serde_json::from_str(text).unwrap();
++        assert_eq!(fixture_playback_rate(&value), None);
++    }
 +}
 +
 +fn png(color: [u8; 4]) -> String {
@@ -106,10 +124,10 @@
 +                        "DOMSnapshot.captureSnapshot" => json!({"strings":[frame],"documents":[{"frameId":0,"nodes":{"nodeType":[],"backendNodeId":[]}}]}),
 +                        "Animation.getPlaybackRate" => json!({"playbackRate":1}),
 +                        "Animation.setPlaybackRate" => {
-+                            if request["params"]["playbackRate"] == 1 {
++                            if fixture_playback_rate(&request["params"]["playbackRate"]) == Some(1.0) {
 +                                if held.is_some() { early.store(true, Ordering::Release); }
 +                                rejected = case == Case::RestoreRejected;
-+                            } else { assert_eq!(request["params"]["playbackRate"], 0); }
++                            } else { assert_eq!(fixture_playback_rate(&request["params"]["playbackRate"]), Some(0.0)); }
 +                            json!({})
 +                        }
 +                        "Runtime.evaluate" if request["params"]["expression"] == "location.href" => json!({"result":{"type":"string","value":"about:blank"}}),
@@ -163,7 +181,7 @@
 +                    if !rejected {
 +                        if method == "Runtime.callFunctionOn" && request["params"]["functionDeclaration"] == "function(){return this.remove()}" { removed = true; }
 +                        if method == "Runtime.releaseObjectGroup" && request["params"]["objectGroup"].as_str().is_some_and(|g| g.starts_with("capture-source-")) { released = true; }
-+                        if method == "Animation.setPlaybackRate" && request["params"]["playbackRate"] == 1 { rate_restored = true; }
++                        if method == "Animation.setPlaybackRate" && fixture_playback_rate(&request["params"]["playbackRate"]) == Some(1.0) { rate_restored = true; }
 +                        restored.store(removed && released && rate_restored, Ordering::Release);
 +                    }
 +                    if method == "Page.navigate" {
@@ -214,6 +232,7 @@
 +}
 +
 +async fn run(case: Case) {
++    check_numeric_peer_contract();
 +    let peer = peer(case).await;
 +    let broker = Arc::new(ClientSession::new());
 +    let browser = Arc::new(ClientBrowser::new(broker.clone()));
@@ -425,7 +444,8 @@
 +            && r["params"]["functionDeclaration"] == "function(){return this.remove()}"));
 +    assert!(commands
 +        .iter()
-+        .any(|r| r["method"] == "Animation.setPlaybackRate" && r["params"]["playbackRate"] == 1));
++        .any(|r| r["method"] == "Animation.setPlaybackRate"
++            && fixture_playback_rate(&r["params"]["playbackRate"]) == Some(1.0)));
 +    assert!(!commands.iter().any(|r| matches!(
 +        r["method"].as_str(),
 +        Some("Browser.close" | "Target.closeTarget" | "Target.disposeBrowserContext")
