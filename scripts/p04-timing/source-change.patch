@@ -1,0 +1,680 @@
+diff --git a/cli/src/native/cdp/client.rs b/cli/src/native/cdp/client.rs
+index c1a399db..c22ada63 100644
+--- a/cli/src/native/cdp/client.rs
++++ b/cli/src/native/cdp/client.rs
+@@ -33,6 +33,7 @@ struct DisposalWork {
+ }
+ 
+ struct PendingResponse {
++    capture_timing: Option<Arc<super::super::client_settlement_trace::CaptureTiming>>,
+     sender: oneshot::Sender<CommandReply>,
+     session: Option<String>,
+ }
+@@ -1014,6 +1015,16 @@ impl CdpClient {
+                     // Delivery itself is the authority: is_closed() alone races
+                     // receiver cancellation between inspection and send.
+                     let abandoned = waiter.is_none_or(|tx| {
++                        if let Some(timing) = &tx.capture_timing {
++                            let kind = if !valid_envelope || tx.session != parsed.session_id {
++                                3
++                            } else if parsed.error.is_some() {
++                                2
++                            } else {
++                                1
++                            };
++                            timing.parsed_reply(id, kind);
++                        }
+                         let reply = if valid_envelope && tx.session == parsed.session_id {
+                             match parsed.error {
+                                 Some(error) => CommandReply::ErrorAck(error),
+@@ -2060,6 +2071,10 @@ impl CdpClient {
+             done: false,
+         };
+ 
++        let capture_timing = (method == "Page.captureScreenshot")
++            .then(super::super::client_settlement_trace::CaptureTiming::current)
++            .flatten()
++            .filter(|timing| timing.bind(id));
+         {
+             let mut ws_tx = self.transport.ws_tx.lock().await;
+             self.ensure_open()?;
+@@ -2075,6 +2090,7 @@ impl CdpClient {
+             pending.insert(
+                 id,
+                 PendingResponse {
++                    capture_timing: capture_timing.clone(),
+                     sender: tx,
+                     session: cmd.session_id.clone(),
+                 },
+@@ -2087,6 +2103,9 @@ impl CdpClient {
+             }
+         }
+ 
++        if let Some(timing) = capture_timing {
++            timing.write_complete(id);
++        }
+         Ok(CommandResponse {
+             receiver: rx,
+             guard,
+@@ -5211,6 +5230,7 @@ mod tests {
+             pending.lock().await.insert(
+                 id,
+                 PendingResponse {
++                    capture_timing: None,
+                     sender,
+                     session: session.map(str::to_owned),
+                 },
+diff --git a/cli/src/native/client_browser_trace_retirement_tests.rs b/cli/src/native/client_browser_trace_retirement_tests.rs
+index d815d30c..d02f7c81 100644
+--- a/cli/src/native/client_browser_trace_retirement_tests.rs
++++ b/cli/src/native/client_browser_trace_retirement_tests.rs
+@@ -58,6 +58,7 @@ fn trace_framed(browser: Arc<ClientBrowser>, broker: Arc<ClientSession>) -> Fram
+ // Unrecognized commands and every lifecycle event pass through unchanged.
+ async fn trace_peer(
+     hold_remove: bool,
++    post_ack_failure: bool,
+ ) -> (
+     String,
+     mpsc::UnboundedReceiver<Value>,
+@@ -78,6 +79,7 @@ async fn trace_peer(
+         stream.set_nodelay(true).unwrap();
+         let mut client = tokio_tungstenite::accept_async(stream).await.unwrap();
+         let (mut backend, _) = tokio_tungstenite::connect_async(&backend).await.unwrap();
++        let mut capture_seen = false;
+         loop {
+             tokio::select! {
+                 Some(reply) = replies.recv() => {
+@@ -99,9 +101,18 @@ async fn trace_peer(
+                     let remove = method == "Runtime.callFunctionOn"
+                         && request["params"]["functionDeclaration"] == "function(){return this.remove()}";
+                     if method == "Page.captureScreenshot" || (hold_remove && remove) {
++                        capture_seen |= method == "Page.captureScreenshot";
+                         seen.send(request).unwrap();
+                         continue;
+                     }
++                    // Only the real post-ACK verification can reach this branch.
++                    // Before capture, the same source-mask guard remains successful.
++                    if post_ack_failure && capture_seen && method == "Runtime.callFunctionOn"
++                        && request["params"]["functionDeclaration"] == "function(){return this.verify()}" {
++                        capture_seen = false;
++                        client.send(Message::Text(reply(&request, json!({"result":{"value":false}})).to_string())).await.unwrap();
++                        continue;
++                    }
+                     let Some(result) = observation_reply(&request) else {
+                         if backend.send(Message::Text(text)).await.is_err() { break; }
+                         continue;
+@@ -276,7 +287,12 @@ fn trace_terminal_failure_rejects_correlated_or_reusable_shapes() {
+ }
+ 
+ async fn trace_retirement_case(raw_ack: bool) {
+-    let (endpoint, mut requests, release, log, relay, lifecycle) = trace_peer(raw_ack).await;
++    trace_timing_case(raw_ack, false).await;
++}
++
++async fn trace_timing_case(raw_ack: bool, post_ack_failure: bool) {
++    let (endpoint, mut requests, release, log, relay, lifecycle) =
++        trace_peer(raw_ack && !post_ack_failure, post_ack_failure).await;
+     let broker = Arc::new(ClientSession::new());
+     let browser = Arc::new(ClientBrowser::new(broker.clone()));
+     let mut fixture = trace_framed(browser.clone(), broker.clone());
+@@ -314,6 +330,16 @@ async fn trace_retirement_case(raw_ack: bool) {
+             "args":{"identityScope":scope,"secureFieldSelector":FIXTURE_SECURE_SELECTOR,"purpose":"trace"}})).await?;
+         let screenshot = bounded(requests.recv()).await.unwrap();
+         assert_eq!(screenshot["method"], "Page.captureScreenshot");
++        if post_ack_failure {
++            release.send(reply(&screenshot, json!({"data":png}))).unwrap();
++            let result = result_frame(&mut fixture, sequence).await;
++            assert_eq!(result["id"], "trace");
++            assert_eq!(result["ok"], false);
++            assert_eq!(result["error"]["code"], "policy-denied");
++            assert_eq!(result["scopeState"], "usable");
++            assert!(result.get("data").is_none());
++            fixture.command("scope.end", json!({"identityScope":scope}), 5).await?;
++        } else {
+         assert!(matches!(bounded(retained).await.unwrap(), CaptureReason::Deadline | CaptureReason::Cancelled));
+         if raw_ack {
+             release.send(reply(&screenshot, json!({"data":png}))).unwrap();
+@@ -379,6 +405,7 @@ async fn trace_retirement_case(raw_ack: bool) {
+             assert!(bounded(read_frame(&mut fixture.stream)).await.unwrap().is_none());
+             assert!(matches!(bounded(browser.page_lease(false)).await, Err(ProtocolError::ScopeUnavailable)));
+         }
++        }
+         assert_eq!(log.lock().unwrap().iter().filter(|r| r["method"] == "Page.captureScreenshot").count(), 1);
+         Ok(())
+     }.await;
+@@ -408,3 +435,96 @@ async fn trace_raw_ack_then_restore_past_transport_grace_preserves_owner() {
+ async fn trace_unacknowledged_raw_capture_cannot_regain_owner() {
+     trace_retirement_case(false).await;
+ }
++
++// Isolate the process-wide production sink without changing global env in a
++// parallel test process. The child still runs the existing full framed fixture.
++#[tokio::test]
++async fn trace_timing_success_ack_and_real_restoration_emit_original_sink() {
++    const CHILD: &str = "AGENT_BROWSER_CAPTURE_TIMING_TEST_CHILD";
++    if std::env::var_os(CHILD).is_some() {
++        crate::native::client_settlement_trace::initialize_cleanup();
++        trace_retirement_case(true).await;
++        trace_timing_case(true, true).await;
++        return;
++    }
++    let file = tempfile::NamedTempFile::new().unwrap();
++    let name = "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_timing_success_ack_and_real_restoration_emit_original_sink";
++    for enabled in [false, true] {
++        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
++        command
++            .args(["--exact", name, "--test-threads=1", "--nocapture"])
++            .env(CHILD, "1")
++            .env_remove("AGENT_BROWSER_ACCEPTANCE_PHASE_FILE")
++            .env_remove("AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE")
++            .kill_on_drop(true);
++        if enabled {
++            command.env("AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE", file.path());
++        }
++        let mut child = command.spawn().unwrap();
++        let status = match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
++            Ok(status) => status.unwrap(),
++            Err(_) => {
++                let _ = child.kill().await;
++                let _ = child.wait().await;
++                panic!("diagnostic child watchdog");
++            }
++        };
++        assert!(status.success(), "diagnostic child failed: {status}");
++        let bytes = std::fs::read_to_string(file.path()).unwrap();
++        if !enabled {
++            assert!(bytes.is_empty(), "opt-out must write zero records");
++            continue;
++        }
++        let rows = bytes
++            .lines()
++            .map(|line| {
++                assert!(line.len() < 512);
++                serde_json::from_str::<Value>(line).unwrap()
++            })
++            .collect::<Vec<_>>();
++        let failures = rows
++            .iter()
++            .filter(|row| row["phase"] == "ScreenshotFirstFailure")
++            .collect::<Vec<_>>();
++        assert_eq!(
++            failures.len(),
++            2,
++            "late-ACK and post-capture failures must each emit once"
++        );
++        let late = failures
++            .iter()
++            .find(|row| row["capturePhase"] == "raw-capture")
++            .unwrap();
++        let timing = late["timing"].as_array().unwrap();
++        assert_eq!(timing.len(), 8);
++        for value in &timing[..6] {
++            assert!(value.as_u64().is_some_and(|value| value <= 60_000_000));
++        }
++        assert_eq!(timing[6], 1, "only the exact real success ACK is positive");
++        assert_eq!(timing[7], false);
++        assert!(timing[3].as_u64().unwrap() >= timing[0].as_u64().unwrap());
++        assert!(timing[4].as_u64().unwrap() >= timing[3].as_u64().unwrap());
++        assert!(timing[5].as_u64().unwrap() >= timing[4].as_u64().unwrap());
++        let post = failures
++            .iter()
++            .find(|row| row["capturePhase"] == "post-capture-validation")
++            .unwrap();
++        assert_eq!(post["error"], "policy-denied");
++        let timing = post["timing"].as_array().unwrap();
++        assert_eq!(timing.len(), 8);
++        for index in [0, 1, 2, 4, 5] {
++            assert!(timing[index]
++                .as_u64()
++                .is_some_and(|value| value <= 60_000_000));
++        }
++        assert!(
++            timing[3].is_null(),
++            "successful raw capture must not invent an interruption"
++        );
++        assert_eq!(timing[6], 1);
++        assert_eq!(timing[7], false);
++        assert!(timing[2].as_u64().unwrap() < timing[0].as_u64().unwrap());
++        assert!(timing[4].as_u64().unwrap() >= timing[2].as_u64().unwrap());
++        assert!(timing[5].as_u64().unwrap() >= timing[4].as_u64().unwrap());
++    }
++}
+diff --git a/cli/src/native/client_capture.rs b/cli/src/native/client_capture.rs
+index d9a6af01..78816dd7 100644
+--- a/cli/src/native/client_capture.rs
++++ b/cli/src/native/client_capture.rs
+@@ -355,6 +355,9 @@ pub(crate) async fn capture_under_journal(
+             _ = tokio::time::sleep_until(operation.deadline.into()) => (None, Some(CaptureReason::Deadline)),
+         };
+         if let Some(reason) = interrupted {
++            if let Some(timing) = super::client_settlement_trace::CaptureTiming::current() {
++                timing.interrupted();
++            }
+             if !super::client_observation::capture_retirement_active() {
+                 return Err(reason);
+             }
+diff --git a/cli/src/native/client_cleanup_diagnostic_tests.rs b/cli/src/native/client_cleanup_diagnostic_tests.rs
+index acf111ae..d03e6f66 100644
+--- a/cli/src/native/client_cleanup_diagnostic_tests.rs
++++ b/cli/src/native/client_cleanup_diagnostic_tests.rs
+@@ -701,6 +701,7 @@ fn screenshot_failure_uses_production_sink_without_cleanup_attempt_or_payload()
+         1,
+         11,
+         ScreenshotFailure {
++            timing: None,
+             stage: ScreenshotStage::Capture,
+             capture_phase: ScreenshotCapturePhase::PostCaptureValidation,
+             inventory_after_failure: InventoryAfterFailure::Changed,
+@@ -951,3 +952,205 @@ fn atomic_inventory_rejection_maximal_record_is_507_bytes_and_missing_counts_sta
+     assert!(rows[0].get("events").is_none());
+     assert_eq!(rows[0]["exact"], false);
+ }
++
++#[test]
++fn screenshot_timing_maximal_shape_fits_including_newline() {
++    let record = Record {
++        schema_version: 2,
++        source: Source::Native,
++        pid: u32::MAX,
++        record: SAFE_INTEGER,
++        operation_seq: SAFE_INTEGER,
++        phase: Phase::ScreenshotFirstFailure,
++        dropped_before: SAFE_INTEGER,
++        emitted_before: SAFE_INTEGER,
++        suppressed_before: SAFE_INTEGER,
++        overflow: false,
++        facts: Facts {
++            generation: Some(SAFE_INTEGER),
++            screenshot_stage: Some(ScreenshotStage::AnimationStabilization),
++            capture_phase: Some(ScreenshotCapturePhase::NotEntered),
++            inventory_after_failure: Some(InventoryAfterFailure::Unavailable),
++            error: Some(ProtocolError::UnsupportedCapability),
++            timing: Some((
++                Some(60_000_000),
++                Some(60_000_000),
++                Some(60_000_000),
++                Some(60_000_000),
++                Some(60_000_000),
++                Some(60_000_000),
++                3,
++                false,
++            )),
++            ..Facts::default()
++        },
++    };
++    let bytes = serde_json::to_vec(&record).unwrap();
++    assert_eq!(bytes.len() + 1, 512);
++    assert!(bytes.len() < MAX_RECORD_BYTES);
++    let file = tempfile::NamedTempFile::new().unwrap();
++    let capture = cleanup_capture(Some(file.path())).unwrap();
++    record_capture(
++        &capture,
++        SAFE_INTEGER,
++        Phase::ScreenshotFirstFailure,
++        record.facts,
++    );
++    assert_eq!(
++        records(&file).len(),
++        1,
++        "maximal facts must not silently drop"
++    );
++}
++
++#[test]
++fn screenshot_timing_overflow_contention_and_duplicate_are_unknown() {
++    use std::time::{Duration, Instant};
++    assert_eq!(
++        CaptureTiming::micros(Duration::from_micros(60_000_001)),
++        None
++    );
++    let timing = CaptureTiming::new(Instant::now() - Duration::from_secs(1));
++    let missing = timing.snapshot();
++    assert_eq!(missing.0, None);
++    assert!(missing.7);
++    let timing = CaptureTiming::new(Instant::now() + Duration::from_secs(1));
++    assert!(timing.bind(7));
++    assert!(!timing.bind(8));
++    timing.write_complete(8);
++    assert_eq!(timing.snapshot().1, None);
++    assert!(timing.snapshot().7);
++    let timing = CaptureTiming::new(Instant::now() + Duration::from_secs(1));
++    let held = timing.state.lock().unwrap();
++    timing.interrupted();
++    drop(held);
++    assert_eq!(timing.snapshot().3, None);
++    assert!(timing.snapshot().7);
++}
++
++// Real decoded CDP replies, not setter-only timing tests. The only sink write
++// uses the existing serializer and an actual pre-created local file.
++async fn screenshot_timing_reply_case(reply_kind: &str, expected: u8) {
++    use crate::native::cdp::client::CdpClient;
++    use futures_util::{SinkExt, StreamExt};
++    use std::time::{Duration, Instant};
++    use tokio_tungstenite::tungstenite::Message;
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let endpoint = format!("ws://{}", listener.local_addr().unwrap());
++    let (sent, received) = tokio::sync::oneshot::channel();
++    let kind = reply_kind.to_owned();
++    let peer = tokio::spawn(async move {
++        let (stream, _) = listener.accept().await.unwrap();
++        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
++        let Message::Text(text) = socket.next().await.unwrap().unwrap() else {
++            panic!("missing request")
++        };
++        let request: Value = serde_json::from_str(&text).unwrap();
++        assert_eq!(request["method"], "Page.captureScreenshot");
++        let mut reply = json!({"id":request["id"],"sessionId":"page","result":{"data":"synthetic-payload-never-logged"}});
++        match kind.as_str() {
++            "wrong-id" => reply["id"] = json!(request["id"].as_u64().unwrap() + 100),
++            "wrong-session" => reply["sessionId"] = json!("foreign-page"),
++            "error" => {
++                reply.as_object_mut().unwrap().remove("result");
++                reply["error"] = json!({"code":-32000,"message":"private-error-never-logged"});
++            }
++            "success" | "missing" => {}
++            _ => panic!("invalid test mode"),
++        }
++        if kind != "missing" {
++            socket.send(Message::Text(reply.to_string())).await.unwrap();
++        }
++        sent.send(()).unwrap();
++        let Message::Text(text) = socket.next().await.unwrap().unwrap() else {
++            panic!("missing fence")
++        };
++        let fence: Value = serde_json::from_str(&text).unwrap();
++        assert_eq!(fence["method"], "Fixture.fence");
++        socket
++            .send(Message::Text(
++                json!({"id":fence["id"],"sessionId":"page","result":{}}).to_string(),
++            ))
++            .await
++            .unwrap();
++        socket.close(None).await.unwrap();
++    });
++    let client = Arc::new(CdpClient::connect(&endpoint).await.unwrap());
++    let timing = CaptureTiming::new(Instant::now() + Duration::from_secs(1));
++    assert!(CaptureTiming::current().is_none());
++    let task_client = client.clone();
++    let task_timing = timing.clone();
++    let request = tokio::spawn(async move {
++        task_timing
++            .scope(task_client.send_command(
++                "Page.captureScreenshot",
++                Some(json!({"format":"png"})),
++                Some("page"),
++            ))
++            .await
++    });
++    tokio::time::timeout(Duration::from_secs(2), received)
++        .await
++        .unwrap()
++        .unwrap();
++    tokio::time::timeout(
++        Duration::from_secs(2),
++        client.send_command("Fixture.fence", Some(json!({})), Some("page")),
++    )
++    .await
++    .unwrap()
++    .unwrap();
++    let result = tokio::time::timeout(Duration::from_secs(2), request)
++        .await
++        .unwrap()
++        .unwrap();
++    tokio::time::timeout(Duration::from_secs(2), peer)
++        .await
++        .unwrap()
++        .unwrap();
++    // Preserve the legacy value-returning API: a session-mismatched local
++    // failure without a CDP error still returns its value, but is not an ACK.
++    assert_eq!(
++        result.is_ok(),
++        matches!(reply_kind, "success" | "wrong-session")
++    );
++    assert!(CaptureTiming::current().is_none());
++    let snapshot = timing.snapshot();
++    assert!(snapshot.0.is_some());
++    assert!(snapshot.1.is_some());
++    assert_eq!(snapshot.2.is_some(), expected != 0);
++    assert_eq!(snapshot.6, expected);
++    assert!(!snapshot.7);
++    let file = tempfile::NamedTempFile::new().unwrap();
++    let capture = cleanup_capture(Some(file.path())).unwrap();
++    screenshot_failure_into(
++        &capture,
++        1,
++        9,
++        ScreenshotFailure {
++            timing: Some(snapshot),
++            stage: ScreenshotStage::Capture,
++            capture_phase: ScreenshotCapturePhase::PostCaptureValidation,
++            inventory_after_failure: InventoryAfterFailure::Unchanged,
++            error: ProtocolError::StaleScope,
++        },
++    );
++    let rows = records(&file);
++    assert_eq!(rows.len(), 1);
++    assert_eq!(rows[0]["timing"][6], expected);
++    let bytes = std::fs::read_to_string(file.path()).unwrap();
++    assert!(!bytes.contains("synthetic-payload"));
++    assert!(!bytes.contains("private-error"));
++    assert!(!bytes.contains("foreign-page"));
++}
++#[tokio::test]
++async fn screenshot_timing_exact_success_and_error_reach_existing_sink() {
++    screenshot_timing_reply_case("success", 1).await;
++    screenshot_timing_reply_case("error", 2).await;
++}
++#[tokio::test]
++async fn screenshot_timing_wrong_id_session_and_missing_reply_are_not_success() {
++    screenshot_timing_reply_case("wrong-id", 0).await;
++    screenshot_timing_reply_case("wrong-session", 3).await;
++    screenshot_timing_reply_case("missing", 0).await;
++}
+diff --git a/cli/src/native/client_observation_dispatch.rs b/cli/src/native/client_observation_dispatch.rs
+index 1b20ab9d..45619f80 100644
+--- a/cli/src/native/client_observation_dispatch.rs
++++ b/cli/src/native/client_observation_dispatch.rs
+@@ -95,6 +95,7 @@ impl ObserveFailureWitness {
+ // contains no browser authority and holds no lock across an await. It records
+ // the first failed call site before restoration, but emits only after run returns.
+ struct ScreenshotFailureWitness {
++    timing: Arc<diagnostic::CaptureTiming>,
+     generation: u64,
+     sequence: u64,
+     state: Mutex<ScreenshotFailureState>,
+@@ -108,6 +109,7 @@ struct ScreenshotFailureState {
+ impl ScreenshotFailureWitness {
+     fn new(request: &DispatchRequest, operation: &OperationLease, enabled: bool) -> Option<Self> {
+         (enabled && matches!(request, DispatchRequest::Screenshot(request) if request.purpose == ScreenshotPurpose::Trace)).then(|| Self {
++            timing: diagnostic::CaptureTiming::new(operation.deadline),
+             generation: operation.generation,
+             sequence: operation.sequence,
+             state: Mutex::new(ScreenshotFailureState {
+@@ -221,6 +223,7 @@ impl ScreenshotFailureWitness {
+             },
+         };
+         Some(ScreenshotFailure {
++            timing: Some(self.timing.snapshot()),
+             stage,
+             capture_phase,
+             error,
+@@ -817,6 +820,12 @@ impl ObservationDispatch {
+             #[cfg(test)]
+             let run = FALLBACK_OBSERVED_CLEANUP_FOR_TEST.scope(observed_cleanup, run);
+             let run = observation::with_capture_retirement(retirement, run);
++            let run = async {
++                match screenshot.as_ref() {
++                    Some(witness) => witness.timing.scope(run).await,
++                    None => run.await,
++                }
++            };
+             let mut output = match operation_journal {
+                 Some(journal) => journal.scope(run).await,
+                 None => run.await,
+@@ -1416,10 +1425,12 @@ impl ObservationDispatch {
+             if result.is_err() { witness.failure(); }
+             witness.enter(ObserveFailureStage::Restoration);
+         }
++        if let Some(witness) = screenshot { witness.timing.restore_begin(); }
+         let restoration = match &mut journal {
+             Some(journal) => journal.restore().await,
+             None => Ok(()),
+         };
++        if let Some(witness) = screenshot { witness.timing.restore_end(); }
+         if let Err(error) = restoration {
+             if let Some(witness) = screenshot { witness.failure(&protected_error(error.reason)); }
+             return Err(DispatchFailure {
+diff --git a/cli/src/native/client_settlement_trace.rs b/cli/src/native/client_settlement_trace.rs
+index c3f036f4..ab6ba65a 100644
+--- a/cli/src/native/client_settlement_trace.rs
++++ b/cli/src/native/client_settlement_trace.rs
+@@ -218,6 +218,8 @@ pub(crate) struct Facts {
+     pub inventory_unconfigured: Option<u64>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub screenshot_stage: Option<ScreenshotStage>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub timing: Option<ScreenshotTiming>,
+     #[serde(skip_serializing_if = "Option::is_none", rename = "pass")]
+     pub frame_pass: Option<FrameInventoryPass>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+@@ -968,7 +970,131 @@ pub(crate) enum InventoryAfterFailure {
+     Unchanged,
+     Changed,
+ }
++// Temporary opt-in capture diagnosis. Fixed-size scalar state only, never authority.
++// Tuple: [budgetUs, writeCompleteUs, parsedReplyUs, interruptUs,
++//         restoreBeginUs, restoreEndUs, replyKind, incomplete].
++// Every time is monotonic microseconds after witness creation; values beyond
++// 60 seconds stay unknown, not clamped. Reply kinds: 0 absent, 1 success,
++// 2 exact error ACK, 3 invalid/session-mismatched envelope. No payload is copied.
++pub(crate) type ScreenshotTiming = (
++    Option<u64>,
++    Option<u64>,
++    Option<u64>,
++    Option<u64>,
++    Option<u64>,
++    Option<u64>,
++    u8,
++    bool,
++);
++const MAX_CAPTURE_TIME_US: u64 = 60_000_000;
++struct CaptureTimingState {
++    request: Option<u64>,
++    times: [Option<u64>; 5],
++    reply: u8,
++}
++pub(crate) struct CaptureTiming {
++    started: std::time::Instant,
++    budget: Option<u64>,
++    state: Mutex<CaptureTimingState>,
++    incomplete: AtomicBool,
++}
++tokio::task_local! {
++    static CAPTURE_TIMING: Arc<CaptureTiming>;
++}
++impl CaptureTiming {
++    pub(crate) fn new(deadline: std::time::Instant) -> Arc<Self> {
++        let started = std::time::Instant::now();
++        let budget = deadline
++            .checked_duration_since(started)
++            .and_then(Self::micros);
++        Arc::new(Self {
++            started,
++            budget,
++            state: Mutex::new(CaptureTimingState {
++                request: None,
++                times: [None; 5],
++                reply: 0,
++            }),
++            incomplete: AtomicBool::new(budget.is_none()),
++        })
++    }
++    fn micros(duration: std::time::Duration) -> Option<u64> {
++        u64::try_from(duration.as_micros())
++            .ok()
++            .filter(|value| *value <= MAX_CAPTURE_TIME_US)
++    }
++    pub(crate) fn current() -> Option<Arc<Self>> {
++        CAPTURE_TIMING.try_with(Arc::clone).ok()
++    }
++    pub(crate) async fn scope<F: std::future::Future>(self: &Arc<Self>, future: F) -> F::Output {
++        CAPTURE_TIMING.scope(self.clone(), future).await
++    }
++    pub(crate) fn bind(&self, id: u64) -> bool {
++        let Ok(mut state) = self.state.try_lock() else {
++            self.incomplete.store(true, Ordering::Relaxed);
++            return false;
++        };
++        if state.request.is_some() {
++            self.incomplete.store(true, Ordering::Relaxed);
++            return false;
++        }
++        state.request = Some(id);
++        true
++    }
++    fn mark(&self, index: usize, request: Option<(u64, u8)>) {
++        let at = Self::micros(self.started.elapsed());
++        let Ok(mut state) = self.state.try_lock() else {
++            self.incomplete.store(true, Ordering::Relaxed);
++            return;
++        };
++        if let Some((id, reply)) = request {
++            if state.request != Some(id) {
++                self.incomplete.store(true, Ordering::Relaxed);
++                return;
++            }
++            if index == 1 {
++                state.reply = reply;
++            }
++        }
++        if at.is_none() || state.times[index].is_some() {
++            self.incomplete.store(true, Ordering::Relaxed);
++        } else {
++            state.times[index] = at;
++        }
++    }
++    pub(crate) fn write_complete(&self, id: u64) {
++        self.mark(0, Some((id, 0)));
++    }
++    pub(crate) fn parsed_reply(&self, id: u64, kind: u8) {
++        self.mark(1, Some((id, kind)));
++    }
++    pub(crate) fn interrupted(&self) {
++        self.mark(2, None);
++    }
++    pub(crate) fn restore_begin(&self) {
++        self.mark(3, None);
++    }
++    pub(crate) fn restore_end(&self) {
++        self.mark(4, None);
++    }
++    pub(crate) fn snapshot(&self) -> ScreenshotTiming {
++        match self.state.try_lock() {
++            Ok(state) => (
++                self.budget,
++                state.times[0],
++                state.times[1],
++                state.times[2],
++                state.times[3],
++                state.times[4],
++                state.reply,
++                self.incomplete.load(Ordering::Relaxed),
++            ),
++            Err(_) => (self.budget, None, None, None, None, None, 0, true),
++        }
++    }
++}
+ pub(crate) struct ScreenshotFailure {
++    pub timing: Option<ScreenshotTiming>,
+     pub stage: ScreenshotStage,
+     pub capture_phase: ScreenshotCapturePhase,
+     pub inventory_after_failure: InventoryAfterFailure,
+@@ -991,6 +1117,7 @@ fn screenshot_failure_into(
+         Phase::ScreenshotFirstFailure,
+         Facts {
+             generation: Some(generation),
++            timing: failure.timing,
+             screenshot_stage: Some(failure.stage),
+             capture_phase: Some(failure.capture_phase),
+             inventory_after_failure: Some(failure.inventory_after_failure),

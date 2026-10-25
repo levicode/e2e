@@ -1,0 +1,109 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "casesFrozen": true,
+  "publishedNativeSha": "4a382062ae3a0f1255b05f9769f2a213cd9dda27",
+  "candidateTree": "4d5f62edcd5f64f1f9d0f91870395aa8ac7f82e1",
+  "baseNativeSha": "0ea3dce92bec2e1d059f30b6839f444a42f6a4eb",
+  "baseNativeTree": "f14d6ac9cc880094720fc4ea9707dd1a57bf2b95",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "e2eSha": "5adcc69574da30c539b585d92a793bca87fae2bc",
+  "e2eTree": "94fd97e8054fa51a973128e5c87e36b956071f49",
+  "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+  "productionSourceChanged": true,
+  "onlyTestOverlay": false,
+  "patchSha256": "57f9cd1a2bad4c869d397522944ed8f56ac978f769ef6d8479fb7462c64db0cb",
+  "patchInputs": [
+    {
+      "name": "reviewed-p04-native-timing",
+      "sha256": "57f9cd1a2bad4c869d397522944ed8f56ac978f769ef6d8479fb7462c64db0cb"
+    }
+  ],
+  "changedFiles": [
+    {
+      "path": "cli/src/native/cdp/client.rs",
+      "beforeSha256": "4d48db69d35f8a77947bf4615b61c32b898c7fe101adf2117cf4b07e8b4dd8f5",
+      "afterSha256": "be445068d424220b3d7290f403238a727c4a27c8842d19a651a9282a2c97f010"
+    },
+    {
+      "path": "cli/src/native/client_browser_trace_retirement_tests.rs",
+      "beforeSha256": "50d175e666f9c9879d66e9fb4ce7ca44e7d6c08a7e39a89ab513ea2de87c6309",
+      "afterSha256": "53ef93068bba18658629dea0bb97f75f66721d7ec7b1dcdd1f6bb41ec60c8da9"
+    },
+    {
+      "path": "cli/src/native/client_capture.rs",
+      "beforeSha256": "ed833993107bfbc5e9edc83c83e98ed491f3355875114e1fc3b63c5c1f475c15",
+      "afterSha256": "ac431daeb7d3f767efb9be71a14388fb819c4dee48d8b13b5c503dfbdea651da"
+    },
+    {
+      "path": "cli/src/native/client_cleanup_diagnostic_tests.rs",
+      "beforeSha256": "8fe11917e383e4c75aebb5e3d7846eced2aa498e9c83e54d269fc3ba3b0d7218",
+      "afterSha256": "981f58f6ea4665c9402fad6a45d3d5b421b644ff9e4e64c9012a06a35307f5e9"
+    },
+    {
+      "path": "cli/src/native/client_observation_dispatch.rs",
+      "beforeSha256": "9e5b6def8bfe53c50ce62830c43d02fcfd99804dc56d9b2c24b1aec86316c453",
+      "afterSha256": "735f48b7c1989387bbb3539eb2dda67993d3abcbd2d5b21eb415929f274fa135"
+    },
+    {
+      "path": "cli/src/native/client_settlement_trace.rs",
+      "beforeSha256": "a50592a36caed2a442e94443af8a4317245f89658b9cf04a27275dba58de5782",
+      "afterSha256": "1091ad052f9e5946fb76483f0a67945d6e83b7c7ca56d634060e7bb9320e4e26"
+    }
+  ],
+  "configurations": {
+    "default": {
+      "features": [],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    },
+    "faults": {
+      "features": [
+        "acceptance-faults"
+      ],
+      "profile": "dev",
+      "targetDirectory": "debug/deps"
+    }
+  },
+  "cases": [
+    {
+      "id": "timing-1",
+      "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_maximal_shape_fits_including_newline",
+      "category": "temporary P04 timing exact positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "timing-2",
+      "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_overflow_contention_and_duplicate_are_unknown",
+      "category": "temporary P04 timing exact positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "timing-3",
+      "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_exact_success_and_error_reach_existing_sink",
+      "category": "temporary P04 timing exact positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "timing-4",
+      "name": "native::client_settlement_trace::cleanup_tests::screenshot_timing_wrong_id_session_and_missing_reply_are_not_success",
+      "category": "temporary P04 timing exact positive/negative control",
+      "configuration": "default",
+      "expected": "passed"
+    },
+    {
+      "id": "timing-5",
+      "name": "native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_timing_success_ack_and_real_restoration_emit_original_sink",
+      "category": "temporary P04 timing exact positive/negative control",
+      "configuration": "faults",
+      "expected": "passed"
+    }
+  ],
+  "requiresRemoval": true,
+  "releaseEligible": false,
+  "casesSha256": "ccde016752555b82212d4deb0038f0e1d76e1e753bf8e050897f8558ea0d2221",
+  "expectedCaseCount": 5
+}
