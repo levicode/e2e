@@ -1,0 +1,52 @@
+{
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "scope": "Response production plus one original full-text/JSON case; actual nine dev cases required first, not full native acceptance",
+  "nativeSha": "1f41d03e4ea200fe33e1733b256d2b5a6f4bc886",
+  "nativeTree": "8041af95f5fc686cefbe10a31456b6c33d19e626",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "e2eSha": "5adcc69574da30c539b585d92a793bca87fae2bc",
+  "e2eTree": "94fd97e8054fa51a973128e5c87e36b956071f49",
+  "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+  "nativeFocused": {
+    "runId": 40174320115,
+    "runAttempt": 1,
+    "jobId": 121111614173,
+    "artifactId": 12591293682,
+    "artifactName": "response-entry-green-40174320115-1",
+    "archiveSha256": "64ca2209da3135ca7799c4db143ef399693a0e0a65ac1f55ba44086490be2ec1",
+    "archiveBytes": 199090,
+    "expectedJobStepNames": [
+      "Set up job",
+      "Initialize nine-case dev evidence; no production build or browser",
+      "Check out this immutable nine-case GREEN recipe",
+      "Verify exact frozen response source binding",
+      "Check out exact response ingress fix and its controls",
+      "Verify exact RED parent, 5-file fix delta and reversible patch",
+      "Cache registry bytes only, never target executables",
+      "Install and verify the existing pinned official Rust toolchain",
+      "Run all four unchanged strict compile gates",
+      "Compile and bind only default exact dev harness",
+      "Require nine real exact PASS results, stopping at the first failure",
+      "Verify unchanged source after pure cases",
+      "Reconcile nine raw exact PASS records; never accept RED",
+      "Require every strict gate and all nine exact passes",
+      "Retain exact step outcomes",
+      "Always retain raw nine-case evidence and actual exits",
+      "Post Cache registry bytes only, never target executables",
+      "Post Check out exact response ingress fix and its controls",
+      "Post Check out this immutable nine-case GREEN recipe",
+      "Complete job"
+    ],
+    "recipeSha": "b25085b24bf717ad8eb1d049d0e7053b46f7ea81",
+    "recipeTree": "ac851840ea17f8dd2affa67f7ccec43928b41525",
+    "helperSha256": "734532ecec25dd7e8c7d985a654050dae1af340b3f3cf2fe4298839dfd314a00",
+    "pinsSha256": "87988c49ec04e15d82f31d81b78fab8aa4d699c6969cf6b014769e207b9c2497",
+    "workflowSha256": "40263bbc44d68598c1d640d2216448873fdd08508bfc780ba7837ddaad10785f",
+    "expectedCaseCount": 9
+  },
+  "rejectedFocusedRuns": [
+    40172598996
+  ],
+  "nativeBuildRsSha256": "ca58ad25ff81d592ad09f8678cc0540f4020d164de6f8b6f853d51a784911f8f"
+}

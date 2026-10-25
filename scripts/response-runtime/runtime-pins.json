@@ -1,0 +1,22 @@
+{
+  "playwrightVersion": "1.64.1",
+  "chromiumRevision": "1248",
+  "chromeVersion": "156.0.8078.4",
+  "nodeVersion": "v24.19.0",
+  "pnpmVersion": "12.3.4",
+  "e2eLockSha256": "3945abab1b9152e71c287d2c0138449762aad74d0322018771cb4b121410629f",
+  "chromeSha256": "377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025",
+  "cdpHostSourceSha256": "2a2bb072e5ed008c9ef350d9966db06b7df9c32c550f2a8bb2daf4ccad45ad0b",
+  "rustToolchain": "1.99.1",
+  "enabled": true,
+  "sourceBindingFrozen": true,
+  "nativeSha": "1f41d03e4ea200fe33e1733b256d2b5a6f4bc886",
+  "nativeTree": "8041af95f5fc686cefbe10a31456b6c33d19e626",
+  "nativeChromeSourceSha256": "9ee5b08e8a2359627794fab196310986fda1cfa7678d63149df1edebf96b83a6",
+  "nativeInstallSourceSha256": "bcdbaf5db5dd16740af8f7e0c761ed8e842da14f13400ff429a9324a2914ffa6",
+  "nativeLockSha256": "1bc2f7a9e6f6c14d4a65c7c709612d43ba5ab63453ab073d28fa933538a11e97",
+  "e2eSha": "5adcc69574da30c539b585d92a793bca87fae2bc",
+  "e2eTree": "94fd97e8054fa51a973128e5c87e36b956071f49",
+  "production": null,
+  "responseSourceSha256": "93841e00a8da148bc4ba249f6205bff9a7d0d883e74032cd6de5ee3fa0724b82"
+}
