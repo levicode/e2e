@@ -1,0 +1,85 @@
+name: full Web with case-scoped cleanup diagnostics (not acceptance)
+'on':
+  push:
+    branches:
+    - implement/case-scoped-web-ci
+permissions:
+  contents: read
+concurrency:
+  group: case-scoped-web-${{ github.sha }}
+  cancel-in-progress: false
+env:
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  web-evidence:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: e75e4f347c286ce3764dc70cfb8c2059a32b2490
+        path: source
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - name: Restore pinned prior native ELF bytes (not a new native test pass)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        mkdir -p evidence
+        curl --fail --silent --show-error --location --retry 2 --max-time 180 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/levicode/e2e/actions/artifacts/12648838514/zip -o "$RUNNER_TEMP/native-images.zip"
+        python3 recipe/scripts/web-functional/restore-pinned-native.py linux "$RUNNER_TEMP/native-images.zip" "$GITHUB_WORKSPACE/images" "$GITHUB_WORKSPACE/evidence"
+        rm -- "$RUNNER_TEMP/native-images.zip"
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        zip="$RUNNER_TEMP/prior-apt-cache.zip"
+        curl --fail --silent --show-error --location --retry 2 --max-time 180 \
+          -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+          https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o "$zip"
+        printf '%s  %s\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 "$zip" | sha256sum -c -
+        python3 recipe/scripts/web-functional/seed-apt-cache.py "$zip" "$GITHUB_WORKSPACE/apt-cache" "$GITHUB_WORKSPACE/evidence"
+        rm -- "$zip"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Full Web original 2 workers with case-scoped capture
+      if: ${{ success() && steps.setup.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const dir=process.env.E2E_CASE_CLEANUP_DIAGNOSTIC_DIR; if(!path.isAbsolute(dir))throw Error("not absolute"); fs.mkdirSync(dir,{mode:0o700}); if(fs.lstatSync(dir).isSymbolicLink()||fs.realpathSync(dir)!==dir)throw Error("not canonical directory");'
+        bash recipe/scripts/web-functional/run.sh web
+      env:
+        E2E_CASE_CLEANUP_DIAGNOSTIC_DIR: ${{ github.workspace }}/evidence/case-cleanup
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: full-web-case-cleanup-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
