@@ -788,6 +788,8 @@ describe('CDP session recovery', () => {
     let phase = 'start';
     let failed = false;
     let failure: unknown;
+    const cleanupFailures: unknown[] = [];
+    let engine: EngineHandle | undefined;
     const state = () => ({ disconnectEvents, resolverEntered: entered, resolverAborted: signal?.aborted === true,
       recovery: native?.recoveryScope() !== undefined, terminal: native?.isTerminal() === true,
       failed: (native as unknown as { failure?: unknown } | undefined)?.failure !== undefined });
@@ -803,11 +805,11 @@ describe('CDP session recovery', () => {
       }
       return pending;
     });
-    const engine = await start({
-      cdpEndpoint: () => remote.endpoint,
-      reconnectEndpoint: (abort) => { entered = true; signal = abort; console.error('HUNG_RESOLVER_ENTER', JSON.stringify(state())); return new Promise<string>(() => undefined); },
-    });
     try {
+      engine = await start({
+        cdpEndpoint: () => remote.endpoint,
+        reconnectEndpoint: (abort) => { entered = true; signal = abort; console.error('HUNG_RESOLVER_ENTER', JSON.stringify(state())); return new Promise<string>(() => undefined); },
+      });
       phase = 'disconnect'; console.error('HUNG_PHASE', JSON.stringify({ phase, ...state() }));
       await disconnect(remote);
       console.error('HUNG_DISCONNECT_DONE', JSON.stringify(state()));
@@ -821,12 +823,24 @@ describe('CDP session recovery', () => {
       failed = true; failure = cause;
       console.error('HUNG_FIRST_BODY', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() }));
     } finally {
+      let disposed = false;
       phase = 'dispose';
-      try { await engine.dispose!(cleanup()); await closeRemoteChrome(remote); }
-      catch (cause) { console.error('HUNG_CLEANUP_FAILURE', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() })); if (!failed) { failed = true; failure = cause; } }
+      if (engine !== undefined) {
+        try { await engine.dispose!(cleanup()); disposed = true; console.error('HUNG_DISPOSE_PASSED', JSON.stringify({ phase, ...state() })); }
+        catch (cause) { cleanupFailures.push(cause); console.error('HUNG_CLEANUP_FAILURE', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() })); }
+      } else console.error('HUNG_DISPOSE_SKIPPED', JSON.stringify({ phase, reason: 'start-not-completed', ...state() }));
+      phase = 'close-remote';
+      // Preserve the original cleanup ordering: a refused dispose leaves host
+      // containment to the existing afterEach backstop, not a diagnostic bypass.
+      if (disposed) {
+        try { await closeRemoteChrome(remote); console.error('HUNG_CLOSE_REMOTE_PASSED', JSON.stringify({ phase, ...state() })); }
+        catch (cause) { cleanupFailures.push(cause); console.error('HUNG_CLEANUP_FAILURE', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() })); }
+      } else console.error('HUNG_CLOSE_REMOTE_SKIPPED', JSON.stringify({ phase, reason: 'dispose-not-completed', ...state() }));
       probe.mockRestore(); vi.mocked(NativeClient.connect).mockImplementation(connect);
     }
+    if (failed && cleanupFailures.length > 0) throw new AggregateError([failure, ...cleanupFailures], 'Hung resolver body and cleanup failed');
     if (failed) throw failure;
+    if (cleanupFailures.length > 0) throw cleanupFailures[0];
   }, 60_000);
 
   it('provisions a fresh browser for each attempt and refuses accidental reuse', recoveryCase('P09', async () => {
