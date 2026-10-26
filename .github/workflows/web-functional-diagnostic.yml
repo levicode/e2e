@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: web-functional-diagnostic-${{ github.ref }}
+  group: web-functional-diagnostic-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 env:
   RUSTUP_TOOLCHAIN: 1.99.1
@@ -14,6 +14,86 @@ env:
   E2E_UPDATE_CHECK_DISABLED: '1'
   NEXT_TELEMETRY_DISABLED: '1'
 jobs:
+  native-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 21791353df84ea075e614d71e8d9f5b95333a300
+          path: native
+          persist-credentials: false
+      - name: Compile exact native test harness (no browser auto-discovery)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          cd native/cli
+          test "$(git rev-parse HEAD)" = 21791353df84ea075e614d71e8d9f5b95333a300
+          test "$(git rev-parse HEAD^{tree})" = 82299045d676b1d21765d00799a3d8122d8f81cc
+          test -z "$(git status --porcelain)"
+          rustup toolchain install 1.99.1 --profile minimal
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/native-regressions-target"
+          cargo test --locked --profile ci --no-default-features --bin agent-browser -j1 --no-run --message-format=json > "$GITHUB_WORKSPACE/evidence/harness.jsonl" 2> "$GITHUB_WORKSPACE/evidence/harness-build.log"
+          python3 - <<'PY_HARNESS'
+          import json, os
+          from pathlib import Path
+          out = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'
+          paths = set()
+          build_finished = []
+          for line in (out / 'harness.jsonl').read_text().splitlines():
+              record = json.loads(line)
+              if record.get('reason') == 'build-finished':
+                  build_finished.append(record.get('success') is True)
+              if (record.get('reason') == 'compiler-artifact'
+                  and record.get('target', {}).get('name') == 'agent-browser'
+                  and 'bin' in record.get('target', {}).get('kind', [])
+                  and record.get('profile', {}).get('test') is True
+                  and record.get('features') == []
+                  and record.get('executable')):
+                  paths.add(record['executable'])
+          if build_finished != [True]:
+              raise SystemExit('Missing or unsuccessful final compiler build receipt')
+          if len(paths) != 1:
+              raise SystemExit(f'Expected exactly one test executable, got {len(paths)}')
+          harness = paths.pop()
+          if not Path(harness).is_file():
+              raise SystemExit('Compiler-selected harness is missing')
+          (out / 'harness.path').write_text(harness + '\n')
+          PY_HARNESS
+      - name: Run only the nine reviewed no-browser regression tests
+        shell: bash
+        env:
+          RUST_MIN_STACK: '16777216'
+        run: |
+          set -euo pipefail
+          harness="$(cat evidence/harness.path)"
+          sha256sum "$harness" > evidence/harness.sha256
+          failed=0
+          index=0
+          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish'; do
+            index=$((index + 1))
+            "$harness" --exact "$name" --list > "evidence/test-$index.inventory"
+            grep -Fx "$name: test" "evidence/test-$index.inventory"
+            set +e
+            "$harness" --exact "$name" --test-threads=1 --nocapture > "evidence/test-$index.log" 2>&1
+            status=$?
+            set -e
+            printf '%s\n' "$status" > "evidence/test-$index.exit"
+            if [ "$status" -ne 0 ]; then failed=1; fi
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: functional-native-regressions-evidence
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -21,7 +101,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 0eafeb33ee8b5749c8a82f527007e8ae0c1ac0cc
+          ref: 21791353df84ea075e614d71e8d9f5b95333a300
           path: native
           persist-credentials: false
       - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -30,8 +110,8 @@ jobs:
           set -euo pipefail
           mkdir -p images evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 0eafeb33ee8b5749c8a82f527007e8ae0c1ac0cc
-          test "$(git rev-parse HEAD^{tree})" = 742de7b191d66fae227ab9d70739636c81523055
+          test "$(git rev-parse HEAD)" = 21791353df84ea075e614d71e8d9f5b95333a300
+          test "$(git rev-parse HEAD^{tree})" = 82299045d676b1d21765d00799a3d8122d8f81cc
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -68,7 +148,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 94887ab1b3281d3d3886dfd4bc46da03cce682a8
+          ref: 91ef2332b3a03414430f93dfe7195cc5fd517878
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -111,7 +191,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 94887ab1b3281d3d3886dfd4bc46da03cce682a8
+          ref: 91ef2332b3a03414430f93dfe7195cc5fd517878
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
