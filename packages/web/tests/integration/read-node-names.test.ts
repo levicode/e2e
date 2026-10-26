@@ -74,73 +74,83 @@ describe('placeholder names', () => {
   });
 });
 
-describe('truncated flag', () => {
-  it('reports a walk the node budget stopped, and a whole read as not truncated', async () => {
-    const buttons = Array.from({ length: 20 }, (_, index) => `<button>Button ${String(index)}</button>`).join('');
-    await page.setContent(`<main>${buttons}</main>`);
-
-    const whole = await capture(100);
-    expect(whole.truncated).toBe(false);
-    expect(whole.nodeCount).toBe(22);
-
-    const cut = await capture(5);
-    expect(cut.truncated).toBe(true);
-    expect(cut.nodeCount).toBe(5);
+// The actual native producer owns configurable node budgets. Its executed
+// companions preserve exact whole22/cut5 and child-budget3 assertions. The Web
+// API exposes the resulting tree/truncated flag, not a per-observe budget knob.
+describe('native observation frame and completeness contracts', () => {
+  it('publishes the complete twenty-control tree without truncation', async () => {
+    const fixture = await startNativeFixture('public-observation-whole-twenty');
+    try {
+      const buttons = Array.from({ length: 20 }, (_, index) => `<button>Button ${String(index)}</button>`).join('');
+      await nativeDocument(fixture.browser, `<main>${buttons}</main>`);
+      const snapshot = await fixture.engine.observe!(fixture.operation());
+      const nodes = observedNodes(snapshot.root);
+      expect(snapshot.truncated).toBe(false);
+      expect(nodes).toHaveLength(22);
+      expect(nodes.filter(node => node.role === 'button').map(node => node.name))
+        .toEqual(Array.from({ length: 20 }, (_, index) => `Button ${String(index)}`));
+    } finally { await fixture.close(); }
   });
 
-  it('reports a child frame the budget could not enter', async () => {
-    await page.setContent(`
-      <button>One</button>
-      <iframe srcdoc="<button>Inside</button>"></iframe>
-    `);
-    await page.frames()[1]?.waitForLoadState('domcontentloaded');
-    const whole = await capture(100);
-    expect(whole.truncated).toBe(false);
-    expect(flatten(whole.tree).some((node) => node.name === 'Inside')).toBe(true);
-
-    // Root, button, iframe: exactly the budget, nothing left for the frame's document.
-    const cut = await capture(3);
-    expect(cut.truncated).toBe(true);
-    expect(flatten(cut.tree).some((node) => node.name === 'Inside')).toBe(false);
+  it('includes a loaded blank-site child frame in a complete observation', async () => {
+    const fixture = await startNativeFixture('public-observation-child-frame');
+    try {
+      await nativeDocument(fixture.browser, '<button>One</button><iframe srcdoc="<button>Inside</button>"></iframe>');
+      const loaded = await fixture.engine.locate!({ kind: 'frame', selector: 'iframe', source: {
+        kind: 'query', query: { kind: 'role', value: { kind: 'string', value: 'button', exact: true },
+          name: { kind: 'string', value: 'Inside', exact: true } },
+      } }, fixture.operation());
+      expect(loaded.map(node => node.name)).toEqual(['Inside']);
+      const snapshot = await fixture.engine.observe!(fixture.operation());
+      const nodes = observedNodes(snapshot.root);
+      expect(snapshot.truncated).toBe(false);
+      expect(nodes).toHaveLength(5);
+      expect(nodes.filter(node => node.role === 'button').map(node => node.name)).toEqual(['One', 'Inside']);
+    } finally { await fixture.close(); }
   });
 
-  it('does not count an off-site frame it leaves out by design, even with no budget left', async () => {
-    // With no site every non-blank URL is off-site; a data: document is never entered.
-    await page.setContent(`
-      <button>One</button>
-      <iframe src="data:text/html,<button>Ad</button>"></iframe>
-    `);
-    await page.frames()[1]?.waitForLoadState('domcontentloaded');
-    const cut = await capture(3);
-    expect(cut.nodeCount).toBe(3);
-    expect(cut.truncated).toBe(false);
+  it('omits a positively loaded data child by default site policy without calling that truncation', async () => {
+    const fixture = await startNativeFixture('public-observation-data-child');
+    try {
+      await nativeDocument(fixture.browser, '<button>One</button><iframe src="data:text/html,<button>Ad</button>"></iframe>');
+      // Explicit user-directed frame queries are not restricted by observation
+      // omission policy, and this proves loading succeeded before exclusion.
+      const loaded = await fixture.engine.locate!({ kind: 'frame', selector: 'iframe', source: {
+        kind: 'query', query: { kind: 'role', value: { kind: 'string', value: 'button', exact: true },
+          name: { kind: 'string', value: 'Ad', exact: true } },
+      } }, fixture.operation());
+      expect(loaded.map(node => node.name)).toEqual(['Ad']);
+      const snapshot = await fixture.engine.observe!(fixture.operation());
+      expect(snapshot.truncated).toBe(false);
+      expect(observedNodes(snapshot.root)).toHaveLength(3);
+      expect(observedNodes(snapshot.root).filter(node => node.role === 'button').map(node => node.name)).toEqual(['One']);
+    } finally { await fixture.close(); }
   });
 
-  it('reports an on-site frame past the depth limit as truncation', async () => {
-    await page.setContent('<button>Top</button>');
-    // Nest same-origin srcdoc frames one deeper than the capture follows.
-    const nest = async (depth: number): Promise<void> => {
-      await page.evaluate(async (levels) => {
-        let doc = document;
-        for (let level = 0; level < levels; level += 1) {
-          const iframe = doc.createElement('iframe');
-          iframe.srcdoc = `<button>Level ${String(level + 1)}</button>`;
-          doc.body.appendChild(iframe);
-          await new Promise<void>((resolve) => { iframe.addEventListener('load', () => resolve(), { once: true }); });
-          doc = iframe.contentDocument!;
-        }
-      }, depth);
-    };
-    await nest(4);
-    const within = await capture(1_000);
-    expect(within.truncated).toBe(false);
-    expect(flatten(within.tree).some((node) => node.name === 'Level 4')).toBe(true);
-
-    await page.setContent('<button>Top</button>');
-    await nest(5);
-    const beyond = await capture(1_000);
-    expect(beyond.truncated).toBe(true);
-    expect(flatten(beyond.tree).some((node) => node.name === 'Level 5')).toBe(false);
+  it('includes depth four but reports a loaded onsite depth-five frame as truncation', async () => {
+    const fixture = await startNativeFixture('public-observation-depth-boundary');
+    try {
+      for (const depth of [4, 5]) {
+        await nativeDocument(fixture.browser, '<button>Top</button>');
+        await fixture.browser.evaluate(async (levels) => {
+          let doc = document;
+          for (let level = 0; level < levels; level += 1) {
+            const iframe = doc.createElement('iframe');
+            iframe.srcdoc = `<button>Level ${String(level + 1)}</button>`;
+            const loaded = new Promise<void>(resolve => iframe.addEventListener('load', () => resolve(), { once: true }));
+            doc.body.appendChild(iframe); await loaded; doc = iframe.contentDocument!;
+          }
+          return null;
+        }, depth);
+        const snapshot = await fixture.engine.observe!(fixture.operation());
+        const nodes = observedNodes(snapshot.root);
+        expect(snapshot.truncated).toBe(depth === 5);
+        expect(nodes).toHaveLength(depth === 4 ? 14 : 15);
+        expect(nodes.filter(node => node.role === 'button').map(node => node.name))
+          .toEqual(['Top', 'Level 1', 'Level 2', 'Level 3', 'Level 4']);
+        expect(JSON.stringify(snapshot.root)).not.toContain('Level 5');
+      }
+    } finally { await fixture.close(); }
   });
 });
 
