@@ -1475,6 +1475,8 @@ export const RETRYABLE_ENGINE_ERROR_CODES: ReadonlySet<EngineErrorCode> = new Se
 ]);
 ```
 
+Native locator-action refusals name the requested action. Sensitive fill diagnostics use a fixed `[redacted]` marker, not the submitted value or a raw renderer cause. Native fill checks whether the exact target accepts text before reserving a mutation; that extra read uses the original operation deadline. The mutation path rechecks the target, so a later DOM change can still produce an unknown outcome. An unknown outcome remains `ACTION_MAY_HAVE_COMMITTED` and non-retryable. Its message does not claim that input was dispatched: preparation such as scrolling or focusing may also have effects.
+
 #### Timeouts at a deadline
 
 Native point input waits within its original operation budget for older input

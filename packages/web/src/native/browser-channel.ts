@@ -1,5 +1,5 @@
 /** Typed, validated command/event facade over the single native transport. */
-import { EngineError, TestError, type EngineErrorCode, type JsonValue, type OperationContext } from 'e2e/engine';
+import { EngineError, TestError, type EngineErrorCode, type JsonValue, type LocatorActionKind, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap } from './browser-contract.ts';
 import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs, validateBrowserDecision } from './browser-decode.ts';
 import type { NativeClient } from './client.ts';
@@ -112,17 +112,34 @@ export class BrowserChannel {
   }
 }
 
+/** Request-local scalar facts only; never retain a fill value or renderer text. */
+export interface NativeActionErrorContext {
+  readonly kind: LocatorActionKind;
+  readonly sensitive: boolean;
+}
+
+function sensitiveActionSuffix(action?: NativeActionErrorContext): string {
+  return action?.kind === 'fill' && action.sensitive ? ' (fill value [redacted])' : '';
+}
+
 /** Static protocol codes only. Never infer retryability from raw backend messages. */
 const cleanRejections = new WeakSet<EngineError | TestError>();
 /** Internal lifecycle evidence, never inferred from a public error string or caller-supplied code. */
 export function isNativeNotDispatched(cause: unknown): boolean { return (cause instanceof EngineError || cause instanceof TestError) && cleanRejections.has(cause); }
-export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic): EngineError | TestError {
-  const failure = classifyResultError(result, checkedAction, queryDiagnostic, frameDiagnostic);
+export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic, actionContext?: NativeActionErrorContext): EngineError | TestError {
+  const failure = classifyResultError(result, checkedAction, queryDiagnostic, frameDiagnostic, actionContext);
   if (result.effects === 'not-dispatched' && result.scopeState === 'usable') cleanRejections.add(failure);
   return failure;
 }
-function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic): EngineError | TestError {
-  if (result.effects === 'unknown') return new EngineError('ACTION_MAY_HAVE_COMMITTED', 'The native browser action outcome is unknown', { retryable: false });
+function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic, actionContext?: NativeActionErrorContext): EngineError | TestError {
+  const suffix = sensitiveActionSuffix(actionContext);
+  if (result.effects === 'unknown') {
+    // Unknown includes scroll/focus/preparation. It is not proof that an Input
+    // command was dispatched, and formatting never authorizes a replay.
+    const message = actionContext === undefined ? 'The native browser action outcome is unknown'
+      : `${actionContext.kind} outcome is unknown; the action may have committed`;
+    return new EngineError('ACTION_MAY_HAVE_COMMITTED', `${message}${suffix}`, { retryable: false });
+  }
   const reason = result.error?.code;
   if (!result.ok && result.effects === 'not-dispatched' && result.scopeState === 'usable' && frameDiagnostic !== undefined
     && result.error?.frameSelection?.index === frameDiagnostic.index && result.error.frameSelection.count === frameDiagnostic.count) {
@@ -135,7 +152,11 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
   if (!result.ok && reason === 'unsupported-capability' && result.effects === 'not-dispatched' && result.scopeState === 'usable' && queryDiagnostic === 'display-value-composition') {
     return new EngineError('UNSUPPORTED_CAPABILITY', 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine', { retryable: false });
   }
-  if (reason === 'intercepted-pointer') return new EngineError('NOT_ACTIONABLE', 'Another element intercepts pointer events', { retryable: false });
+  if (reason === 'intercepted-pointer') {
+    const message = actionContext === undefined ? 'Another element intercepts pointer events'
+      : `${actionContext.kind} did not become actionable: another element intercepts pointer events`;
+    return new EngineError('NOT_ACTIONABLE', `${message}${suffix}`, { retryable: false });
+  }
   if (reason === 'checked-state-unchanged' || reason === 'checked-control-replaced') {
     const verb = checkedAction ?? 'The checked-state action';
     const detail = reason === 'checked-control-replaced' ? ' before the control was replaced' : '';
@@ -154,5 +175,8 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
     'stale-scope': 'INVALID_STATE', 'stale-generation': 'INVALID_STATE', 'scope-unavailable': 'INVALID_STATE',
   };
   const code = codes[result.error?.code ?? ''] ?? 'ENGINE_FAILURE';
-  return new EngineError(code, `The native browser operation failed (${result.error?.code ?? 'browser-failure'})`, { retryable: code === 'NODE_STALE' && result.effects === 'not-dispatched' });
+  const message = code === 'NOT_ACTIONABLE' && actionContext !== undefined
+    ? `${actionContext.kind} did not become actionable`
+    : `The native browser operation failed (${result.error?.code ?? 'browser-failure'})`;
+  return new EngineError(code, `${message}${suffix}`, { retryable: code === 'NODE_STALE' && result.effects === 'not-dispatched' });
 }

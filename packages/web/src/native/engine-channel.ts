@@ -1,14 +1,20 @@
 /** Typed engine hooks share the Browser fixture's one native client. */
 import { createHash } from 'node:crypto';
-import { EngineError, type JsonValue, type OperationContext } from 'e2e/engine';
+import { EngineError, LOCATOR_ACTION_KINDS, type JsonValue, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap } from './browser-contract.ts';
-import { resultError } from './browser-channel.ts';
+import { resultError, type NativeActionErrorContext } from './browser-channel.ts';
 import { decodeBrowserResult } from './browser-decode.ts';
 import { decodeEngineResult } from './engine-decode.ts';
 import { QUERY_UNION_CAPABILITY } from './capabilities.ts';
 import type { EngineCommandMap, NativeBlob, NativeTraceImage } from './engine-contract.ts';
 import type { NativeClient } from './client.ts';
 import { frameQuerySnapshot, queryDiagnostic, queryUsesUnion, type FrameQueryDiagnostic } from './query-diagnostic.ts';
+
+function captureActionErrorContext(action: EngineCommandMap['browser.perform']['args']['action'] | undefined): NativeActionErrorContext | undefined {
+  const requestedKind = action?.kind;
+  const kind = LOCATOR_ACTION_KINDS.find(candidate => candidate === requestedKind);
+  return kind === undefined ? undefined : { kind, sensitive: action?.kind === 'fill' && action.sensitive === true };
+}
 
 /** No retries, backend implementation, or alternative process transport. */
 export class EngineChannel {
@@ -18,6 +24,10 @@ export class EngineChannel {
   command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number): Promise<EngineCommandMap[K]['result']>;
   async command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number): Promise<EngineCommandMap[K]['result']> {
     args = { ...args }; // Freeze dispatch purpose before asynchronous native work.
+    // Capture only closed action facts before awaiting native authority. Caller
+    // mutation cannot change the failure's verb or remove its sensitive marker.
+    const actionContext = captureActionErrorContext(name === 'browser.perform' ? (args as EngineCommandMap['browser.perform']['args']).action : undefined);
+    const actionKind = actionContext?.kind;
     const scope = (args as { identityScope?: string }).identityScope;
     const owns = scope === undefined ? () => true : this.captureScope(scope);
     this.assertOwner(owns);
@@ -38,7 +48,7 @@ export class EngineChannel {
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
-    if (!result.ok && result.effects === 'unknown') throw resultError(result);
+    if (!result.ok && result.effects === 'unknown') throw resultError(result, undefined, undefined, undefined, actionContext);
     // A settled keyboard refusal carries no input prefix. Preserve that exact
     // native evidence so the surface can classify a completed local reset.
     if (!result.ok && name === 'browser.keyboard.type' && result.effects === 'not-dispatched' && result.scopeState === 'usable') throw resultError(result);
@@ -56,8 +66,7 @@ export class EngineChannel {
         if (facts === undefined || selector === undefined) throw this.client.invalidate();
         frameDiagnostic = { selector, index: facts.index, count: facts.count };
       }
-      const action = name === 'browser.perform' ? (args as EngineCommandMap['browser.perform']['args']).action.kind : undefined;
-      throw resultError(result, action === 'check' || action === 'uncheck' ? action : undefined, diagnostic, frameDiagnostic);
+      throw resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
     }
     try { return decodeEngineResult(name, result.data, args); }
     catch { throw this.client.invalidate(); }

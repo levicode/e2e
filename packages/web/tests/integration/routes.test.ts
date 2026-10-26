@@ -1,3 +1,6 @@
+import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
+import { observeScopeEnd, RoutesCaseDiagnostic } from '../helpers/routes-case-diagnostic.ts';
+import { NativeClient } from '../../src/native/client.ts';
 /**
  * Route decisions against a server that counts what reaches it: `continue`
  * goes to the network past every other route and carries the configured
@@ -13,7 +16,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestError, type EngineFixtureContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { createBrowserFixture, type Browser, type WebRoute } from '../../src/browser.ts';
@@ -65,6 +68,12 @@ describe('browser.route decisions', () => {
   let origin: string;
   let otherSite: string;
   let browser: Browser;
+  let diagnostic: RoutesCaseDiagnostic | undefined;
+  const suiteCapture: Record<string, unknown> = {};
+  let capture: ReturnType<typeof beginCaseCleanupCapture> | undefined;
+  let restoreConnection: (() => void) | undefined;
+  const restoreClients: (() => void)[] = [];
+  let observerInvalid = false;
 
   /** The harness's navigation rule: relative to the base, only http(s) and the exact `about:blank` admitted. */
   const resolveUrl = (url: string): string => {
@@ -76,6 +85,19 @@ describe('browser.route decisions', () => {
   };
 
   beforeAll(async () => {
+    capture = beginCaseCleanupCapture('routes-suite', suiteCapture);
+    const connect = NativeClient.connect;
+    const spy = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => {
+      const pending = connect(...args);
+      void pending.then(client => {
+        try {
+          if (restoreClients.length !== 0) { observerInvalid = true; return; }
+          restoreClients.push(observeScopeEnd(client, () => diagnostic, () => { observerInvalid = true; }));
+        } catch { observerInvalid = true; }
+      }, () => {}).catch(() => { observerInvalid = true; });
+      return pending;
+    });
+    restoreConnection = () => spy.mockRestore();
     const started = await startCountingServer(hits);
     server = started.server;
     origin = `http://127.0.0.1:${started.port}`;
@@ -86,7 +108,11 @@ describe('browser.route decisions', () => {
       env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
   });
 
-  beforeEach(async () => {
+  beforeEach(async (test) => {
+    diagnostic = new RoutesCaseDiagnostic();
+    (test.task.meta as Record<string, unknown>)['routesCaseDiagnostic'] = diagnostic.data;
+    (test.task.meta as Record<string, unknown>)['routesSuiteCapture'] = suiteCapture;
+    try {
     hits.clear();
     await surface.startAttempt({ attemptId: 'routes', artifactsDir: projectRoot, signal, resolveSecret: noSecrets, ...ignoreTrace });
     browser = createBrowserFixture(surface.fixtureSurface(), {
@@ -97,16 +123,32 @@ describe('browser.route decisions', () => {
       fixture: (_name: string, target: object) => target,
     } as unknown as EngineFixtureContext);
     await browser.goto(`${origin}/`);
+    diagnostic.setupPassed();
+    } catch (cause) { diagnostic.setupFailed(cause); throw cause; }
   });
 
   afterEach(async () => {
-    await surface.endAttempt({ signal, timeoutMs: 5_000 });
+    diagnostic?.cleanupEntered();
+    try { await surface.endAttempt({ signal, timeoutMs: 5_000 }); diagnostic?.cleanupPassed(); }
+    catch (cause) { diagnostic?.cleanupFailed(cause); throw cause; }
+    finally { if (diagnostic) diagnostic.data.invalid ||= observerInvalid; }
   });
 
   afterAll(async () => {
-    await surface.dispose({ signal, timeoutMs: 5_000 });
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    rmSync(projectRoot, { recursive: true, force: true });
+    suiteCapture['cleanup'] = 'pending';
+    try {
+      await surface.dispose({ signal, timeoutMs: 5_000 });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(projectRoot, { recursive: true, force: true });
+      suiteCapture['cleanup'] = 'passed';
+    } catch (cause) { suiteCapture['cleanup'] = 'failed'; throw cause; }
+    finally {
+      for (const restore of restoreClients) { try { restore(); } catch { observerInvalid = true; } }
+      try { restoreConnection?.(); } catch { observerInvalid = true; }
+      suiteCapture['observerInvalid'] = observerInvalid;
+      capture?.finish();
+      try { console.error('ROUTES_SUITE_DIAGNOSTIC', JSON.stringify(suiteCapture)); } catch { /* Metadata only. */ }
+    }
   });
 
   /** Fetches `url` from the page; a failed fetch reads as `failed`. */
@@ -134,6 +176,8 @@ describe('browser.route decisions', () => {
   const nextStepFailure = (): Promise<unknown> => browser.url().then(() => undefined, (error: unknown) => error);
 
   it('clears every test route, keeps configured site headers, and can register again', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/**', route => route.fulfill({ body: 'mock-api' }));
     await browser.route(/\/echo$/, route => route.fulfill({ json: { intercepted: true } }));
     expect(await fetchText(`${origin}/api/quote`)).toBe('mock-api');
@@ -145,9 +189,13 @@ describe('browser.route decisions', () => {
     expect(await fetchText(`${origin}/api/quote`)).toBe('new-mock');
     await browser.unroute('**/api/quote');
     expect(await fetchText(`${origin}/api/quote`)).toBe('network:/api/quote');
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('routes real native dialogs by kind even when their messages are identical', async () => {
+    diagnostic?.bodyEntered();
+    try {
     const kinds: string[] = [];
     const off = await browser.onDialog(async dialog => {
       kinds.push(dialog.type);
@@ -162,16 +210,24 @@ describe('browser.route decisions', () => {
     expect(kinds).toEqual(['alert', 'confirm', 'prompt']);
     expect(answers).toEqual({ confirmed: false, prompt: 'typed answer' });
     await off();
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('answers with the route registered last when two fulfill', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/**', (route) => route.fulfill({ body: 'earlier' }));
     await browser.route('**/api/quote', (route) => route.fulfill({ body: 'later' }));
     expect(await fetchText(`${origin}/api/quote`)).toBe('later');
     expect(hits.get('/api/quote')).toBeUndefined();
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('continue goes to the network past an earlier route', async () => {
+    diagnostic?.bodyEntered();
+    try {
     let earlier = 0;
     await browser.route('**/api/**', (route) => {
       earlier += 1;
@@ -181,33 +237,49 @@ describe('browser.route decisions', () => {
     expect(await fetchText(`${origin}/api/quote`)).toBe('network:/api/quote');
     expect(earlier).toBe(0);
     expect(hits.get('/api/quote')).toBe(1);
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('fallback hands the request to the route before it', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/**', (route) => route.fulfill({ body: 'earlier' }));
     await browser.route('**/api/quote', (route) => route.fallback());
     expect(await fetchText(`${origin}/api/quote`)).toBe('earlier');
     expect(hits.get('/api/quote')).toBeUndefined();
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it.each([
     ['continue', (route: WebRoute) => route.continue()],
     ['fallback', (route: WebRoute) => route.fallback()],
   ])('keeps the configured site header through %s', async (_name, decide) => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/echo', decide);
     const echo = await fetchEcho(`${origin}/echo`);
     expect(echo.headers['x-gate']).toBe('open-sesame');
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('continue replaces the request headers and adds the site header on top', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/echo', (route) =>
       route.continue({ headers: { ...route.request.headers, 'X-Added': 'yes', 'X-GATE': 'forged' } }));
     const echo = await fetchEcho(`${origin}/echo`);
     expect(echo.headers['x-added']).toBe('yes');
     expect(echo.headers['x-gate']).toBe('open-sesame');
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('continue sends a rewritten url, method, and body without touching the original', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) =>
       route.continue({ url: '/echo', method: 'PUT', postData: 'payload' }));
     const echo = await fetchEcho(`${origin}/api/quote`, { method: 'POST', body: 'original' });
@@ -215,14 +287,20 @@ describe('browser.route decisions', () => {
     expect(echo.headers['x-gate']).toBe('open-sesame');
     expect(hits.get('/api/quote')).toBeUndefined();
     expect(hits.get('/echo')).toBe(1);
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('continue to another site leaves the site header behind', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) => route.continue({ url: `${otherSite}/echo` }));
     const echo = await fetchEcho(`${origin}/api/quote`);
     expect(echo.headers.host).toBe(`localhost:${new URL(origin).port}`);
     expect(echo.headers['x-gate']).toBeUndefined();
     expect(hits.get('/api/quote')).toBeUndefined();
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it.each([
@@ -231,23 +309,35 @@ describe('browser.route decisions', () => {
     ['about:blank', 'about:blank', 'INVALID_ARGUMENT', "route.continue url must keep the request's http: scheme; got about:"],
     ['another scheme', 'https://127.0.0.1/echo', 'INVALID_ARGUMENT', "route.continue url must keep the request's http: scheme; got https:"],
   ])('continue to %s aborts the request and fails the next step', async (_name, url, code, message) => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) => route.continue({ url }));
     expect(await fetchText(`${origin}/api/quote`)).toBe('failed');
     expect(hits.get('/api/quote')).toBeUndefined();
     expect(await nextStepFailure()).toMatchObject({ code, message });
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('fulfills a project file with its bytes and a type from its extension', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) => route.fulfill({ path: 'quote.json' }));
     expect(await fetchReply(`${origin}/api/quote`)).toEqual({ contentType: 'application/json', body: '{"cents":4200}\n' });
     expect(hits.get('/api/quote')).toBeUndefined();
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('fulfills under the given contentType or a content-type header', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) => route.fulfill({ json: { cents: 1 }, contentType: 'application/vnd.quote+json' }));
     expect(await fetchReply(`${origin}/api/quote`)).toEqual({ contentType: 'application/vnd.quote+json', body: '{"cents":1}' });
     await browser.route('**/api/quote', (route) => route.fulfill({ path: 'quote.json', headers: { 'Content-Type': 'text/plain' } }));
     expect(await fetchReply(`${origin}/api/quote`)).toEqual({ contentType: 'text/plain', body: '{"cents":4200}\n' });
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it.each([
@@ -270,13 +360,19 @@ describe('browser.route decisions', () => {
     ['an abort error code', (route: WebRoute) => untyped(route.abort, 'failed'),
       'route.abort() takes no arguments'],
   ])('rejects %s before deciding, and aborts the request', async (_name, decide, message) => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', decide);
     expect(await fetchText(`${origin}/api/quote`)).toBe('failed');
     expect(hits.get('/api/quote')).toBeUndefined();
     expect(await nextStepFailure()).toMatchObject({ code: 'INVALID_ARGUMENT', message });
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('aborts the request when the handler returns without deciding, and fails the next step', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', () => undefined);
     expect(await fetchText(`${origin}/api/quote`)).toBe('failed');
     expect(hits.get('/api/quote')).toBeUndefined();
@@ -284,9 +380,13 @@ describe('browser.route decisions', () => {
       code: 'ACTION_FAILED',
       message: 'route handler returned without calling fulfill, continue, fallback, or abort',
     });
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('keeps the first decision when the handler decides twice, and fails the next step', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) => {
       void route.fulfill({ body: 'first' });
       return route.fulfill({ body: 'second' });
@@ -296,18 +396,28 @@ describe('browser.route decisions', () => {
       code: 'ACTION_FAILED',
       message: 'route handler already decided; fulfill called twice',
     });
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('takes the decision the moment fulfill is called, awaited or not', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.route('**/api/quote', (route) => { void route.fulfill({ path: 'quote.json' }); });
     expect(await fetchText(`${origin}/api/quote`)).toBe('{"cents":4200}\n');
     await expect(browser.url()).resolves.toBe(`${origin}/`);
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 
   it('sets a cookie with a relative url on the base URL', async () => {
+    diagnostic?.bodyEntered();
+    try {
     await browser.setCookies([{ name: 'flavor', value: 'oatmeal', url: '/' }]);
     const cookies = await browser.cookies();
     expect(cookies.map(({ name, value, domain, path: cookiePath }) => ({ name, value, domain, path: cookiePath })))
       .toEqual([{ name: 'flavor', value: 'oatmeal', domain: '127.0.0.1', path: '/' }]);
+    diagnostic?.bodyPassed();
+    } catch (cause) { diagnostic?.bodyFailed(cause); throw cause; }
   });
 });
