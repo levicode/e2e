@@ -10,20 +10,16 @@ export PROOF="$out/negotiation.json" FAULT_PROOF="$out/fault-negotiation.json"
 cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
-DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native f4fa3c62d29208b7679fedbf0e3787f2923506a7; E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
-NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
-NOT RUN (excluded scope): protected-app service-worker registration P41.
-NOT RUN: native auto-discovery, optional benchmark sweep, iOS.
-macOS: separate diagnostic override-build jobs only; no full macOS acceptance claim.
-BLOCKED/NOT RUN: final producer, package-bundle and no-override installed-package acceptance. Original final gates are unchanged.
-Final acceptance/retirement evidence for pointer position preservation and stale-reference mapping after focus/reset is NOT established by this diagnostic matrix.
-Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
+PAIRED DIALOG ACK DIAGNOSTIC; no full acceptance claim and no imported passes.
+Fresh native GREEN f034e8dc639c8e3562885e1f0e0cd00797700d3e; unchanged E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
+RED tests retain their actual failures. GREEN exact native tests and original six browser cases run separately.
+Only CI-owned disposable browser profiles and loopback pages; original operation budgets and assertions.
+No whole Web, no package delivery, no main merge, no waiver of formal source-removal or installed-package gates.
 SCOPE
 if [[ "$mode" == restored-case ]]; then
   cat > "$out/scope.txt" <<'RESTORED_SCOPE'
 ONE EXACT RESTORED CASE ONLY; not full acceptance, no imported test pass.
-Native f4fa3c62d29208b7679fedbf0e3787f2923506a7; E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
+Native f034e8dc639c8e3562885e1f0e0cd00797700d3e; E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
 The original beforeunload or Service Worker test body and operation budgets are unchanged.
 Owned CI-created temporary browser profiles and loopback fixture pages only. No real browser or user data.
 Each of the six matrix jobs runs one exact selected case once; other tests filtered out are not passes.

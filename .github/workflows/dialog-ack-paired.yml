@@ -1,0 +1,338 @@
+name: paired dialog ACK RED GREEN diagnostics (not full acceptance)
+'on':
+  push:
+    branches:
+    - implement/dialog-ack-paired-ci
+permissions:
+  contents: read
+concurrency:
+  group: dialog-ack-${{ github.sha }}
+  cancel-in-progress: false
+env:
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  native-red:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: b236cc59bd765624aeed9d5741ff09f651f3aed3
+        path: native
+        persist-credentials: false
+    - name: Compile exact native test harness (no browser auto-discovery)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = b236cc59bd765624aeed9d5741ff09f651f3aed3\ntest \"\
+        $(git rev-parse HEAD^{tree})\" = fc9c9e3ec155a80a5a438298d5cbfe45c9cf81f4\ntest -z \"$(git status --porcelain)\"\n\
+        rustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --no-default-features\
+        \ --bin agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE'])\
+        \ / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile',\
+        \ {}).get('test') is True\n        and record.get('features') == []\n        and record.get('executable')):\n    \
+        \    paths.add(record['executable'])\nif build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected exactly one test executable,\
+        \ got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise SystemExit('Compiler-selected\
+        \ harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\
+        \nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests > SHA256SUMS)\n"
+    - name: Run exact red tests; retain actual failures without waiver
+      shell: bash
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
+        failed=0\nindex=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_missing_ack_never_becomes_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_error_ack_is_not_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_wrong_session_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_malformed_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_old_ack_cannot_retire_next_dialog_on_same_session'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_does_not_extend_expired_cleanup_budget'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_cleanup_wait_is_woken_by_exact_late_success_ack';\
+        \ do\n  index=$((index + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep\
+        \ -Fx \"$name: test\" \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One\
+        \ exclusive file per test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);\
+        \ os.close(fd)' \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"\
+        status\":\"prepared\",\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\
+        \n  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
+        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\ndone\nexit \"\
+        $failed\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: dialog-red-native-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  native-green:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: f034e8dc639c8e3562885e1f0e0cd00797700d3e
+        path: native
+        persist-credentials: false
+    - name: Compile exact native test harness (no browser auto-discovery)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = f034e8dc639c8e3562885e1f0e0cd00797700d3e\ntest \"\
+        $(git rev-parse HEAD^{tree})\" = 3601c675d35e0a1e0fc0f2bef8b7a9bb35ff5914\ntest -z \"$(git status --porcelain)\"\n\
+        rustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --no-default-features\
+        \ --bin agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE'])\
+        \ / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile',\
+        \ {}).get('test') is True\n        and record.get('features') == []\n        and record.get('executable')):\n    \
+        \    paths.add(record['executable'])\nif build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected exactly one test executable,\
+        \ got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise SystemExit('Compiler-selected\
+        \ harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\
+        \nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests > SHA256SUMS)\n"
+    - name: Run exact green tests; retain actual failures without waiver
+      shell: bash
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
+        failed=0\nindex=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_missing_ack_never_becomes_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_error_ack_is_not_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_wrong_session_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_malformed_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_old_ack_cannot_retire_next_dialog_on_same_session'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_does_not_extend_expired_cleanup_budget'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_cleanup_wait_is_woken_by_exact_late_success_ack'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input'\
+        \ 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued'\
+        \ 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse'\
+        \ 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission'\
+        \ 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::terminal_cleanup_tests::terminal_cleanup_checkpoints_have_closed_payloads'\
+        \ 'native::client_observation_dispatch::tests::semantic_trace_retains_first_inventory_failure_without_enabling_capture'\
+        \ 'native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch' 'native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt';\
+        \ do\n  index=$((index + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep\
+        \ -Fx \"$name: test\" \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One\
+        \ exclusive file per test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);\
+        \ os.close(fd)' \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"\
+        status\":\"prepared\",\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\
+        \n  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
+        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\ndone\nexit \"\
+        $failed\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: dialog-green-native-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  build-green:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: f034e8dc639c8e3562885e1f0e0cd00797700d3e
+        path: native
+        persist-credentials: false
+    - name: Build exact production and separate fault ELF (no tests or gate waiver)
+      shell: bash
+      run: 'set -euo pipefail
+
+        mkdir -p images evidence
+
+        cd native/cli
+
+        test "$(git rev-parse HEAD)" = f034e8dc639c8e3562885e1f0e0cd00797700d3e
+
+        test "$(git rev-parse HEAD^{tree})" = 3601c675d35e0a1e0fc0f2bef8b7a9bb35ff5914
+
+        test -z "$(git status --porcelain)"
+
+        rustup toolchain install 1.99.1 --profile minimal
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/web-functional-target"
+
+        rustc -Vv > "$GITHUB_WORKSPACE/evidence/rustc.txt"
+
+        cargo build --locked --profile ci --no-default-features 2>&1 | tee "$GITHUB_WORKSPACE/evidence/production-build.log"
+
+        cp "$CARGO_TARGET_DIR/ci/agent-browser" "$GITHUB_WORKSPACE/images/production"
+
+        cargo build --locked --profile ci --no-default-features --features acceptance-faults 2>&1 | tee "$GITHUB_WORKSPACE/evidence/fault-build.log"
+
+        cp "$CARGO_TARGET_DIR/ci/agent-browser" "$GITHUB_WORKSPACE/images/acceptance-faults"
+
+        cd "$GITHUB_WORKSPACE/images"
+
+        sha256sum production acceptance-faults > SHA256SUMS
+
+
+        printf "%s\n" f034e8dc639c8e3562885e1f0e0cd00797700d3e > native-source.sha
+
+        printf "%s\n" 3601c675d35e0a1e0fc0f2bef8b7a9bb35ff5914 > native-source.tree
+
+        printf "%s\n" "$GITHUB_RUN_ID" > producer-run.id
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: dialog-green-native-images
+        path: images/
+        if-no-files-found: error
+        retention-days: 3
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: dialog-green-build-evidence
+        path: evidence/
+        if-no-files-found: warn
+  restored-case:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: e75e4f347c286ce3764dc70cfb8c2059a32b2490
+        path: source
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: dialog-green-native-images
+        path: images
+    - name: Verify same-run source identity and image hashes
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = f034e8dc639c8e3562885e1f0e0cd00797700d3e
+
+        test "$(cat images/native-source.tree)" = 3601c675d35e0a1e0fc0f2bef8b7a9bb35ff5914
+
+        test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
+        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
+        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - name: One exact restored case with owned disposable browser and original budgets
+      if: ${{ success() && steps.setup.outcome == 'success' }}
+      run: bash recipe/scripts/web-functional/run.sh restored-case
+      env:
+        E2E_CASE_ID: ${{ matrix.id }}
+        E2E_CASE_TEST_FILE: ${{ matrix.file }}
+        E2E_CASE_TITLE: ${{ matrix.title }}
+        E2E_CASE_PATTERN: ${{ matrix.pattern }}
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: dialog-green-${{ matrix.id }}-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+        - id: beforeunload-open
+          file: tests/integration/cdp-recovery.test.ts
+          title: leaves the host untouched until first open and allows a pre-open dialog handler
+          pattern: leaves\ the\ host\ untouched\ until\ first\ open\ and\ allows\ a\ pre\-open\ dialog\ handler$
+        - id: beforeunload-video
+          file: tests/integration/cdp-recovery.test.ts
+          title: leaves the host untouched until first video and allows a pre-open dialog handler
+          pattern: leaves\ the\ host\ untouched\ until\ first\ video\ and\ allows\ a\ pre\-open\ dialog\ handler$
+        - id: beforeunload-provider
+          file: tests/integration/cdp-recovery.test.ts
+          title: activates the borrowed first page through the registered dialog handler before provider recording
+          pattern: activates\ the\ borrowed\ first\ page\ through\ the\ registered\ dialog\ handler\ before\ provider\ recording$
+        - id: beforeunload-dismiss-open
+          file: tests/integration/cdp-recovery.test.ts
+          title: dismisses an unhandled activated beforeunload on first open instead of silently accepting it
+          pattern: dismisses\ an\ unhandled\ activated\ beforeunload\ on\ first\ open\ instead\ of\ silently\ accepting\ it$
+        - id: beforeunload-dismiss-video
+          file: tests/integration/cdp-recovery.test.ts
+          title: dismisses an unhandled activated beforeunload on first video instead of silently accepting it
+          pattern: dismisses\ an\ unhandled\ activated\ beforeunload\ on\ first\ video\ instead\ of\ silently\ accepting\
+            it$
+        - id: service-worker
+          file: tests/integration/protected-app.test.ts
+          title: blocks service workers under headers, since routing never sees a worker's requests
+          pattern: blocks\ service\ workers\ under\ headers,\ since\ routing\ never\ sees\ a\ worker's\ requests$
+    needs: build-green
