@@ -11,10 +11,10 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
-Native 6e974b470e925c51b8452bdb66cfdcfbc310a471; E2E 4be49596fe85762b0d7947bbfd50d91b611a00f7.
-Normal native nonignored suite plus focused tests and seven exact original Chromium producer cases.
+Native cc46f3eef108e690ef256a2fbea2c1ebfa93aec7; E2E 141af04a8bffc39b5bc310408f1412504b304249.
+Normal native nonignored suite plus focused tests and all44 required browser/encoder contracts.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
-Formal source-removal is remeasured after conditional test-root migration; prior 35 failures are not silently waived; no main merge or package/release here.
+Formal source-removal is remeasured after conditional test-root migration; prior 31 failures are not silently waived; no main merge or package/release here.
 SCOPE
 if [[ "$mode" == setup ]]; then
   # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
@@ -50,7 +50,7 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = 4be49596fe85762b0d7947bbfd50d91b611a00f7
+  test "$(git rev-parse HEAD)" = 141af04a8bffc39b5bc310408f1412504b304249
   test "$(git rev-parse HEAD^{tree})" = d5f033f957f85b4296f1d3982d87d04e0a1a52b3
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
