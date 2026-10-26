@@ -40,6 +40,7 @@ let downloadBasename: string;
 let recordingSegments: Record<string, unknown>[] = [];
 let recordingMissing: number | undefined;
 const recordingBytes = Buffer.from('synthetic-finalized-segment');
+let cancellationObserved: (() => void) | undefined;
 let holdScopeEnd = false;
 let holdClose = false;
 let releaseClose: (() => void) | undefined;
@@ -60,7 +61,7 @@ let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { to
 beforeEach(() => {
   holdClose = false; releaseClose = undefined;
   continueExactOwner = false; environmentBrowser = 'Synthetic Chromium'; environmentUserAgent = 'synthetic-agent';
-  interceptRequest = undefined;
+  interceptRequest = undefined; cancellationObserved = undefined;
   holdObservation = false; observationHeld = undefined; settleObservation = undefined; acknowledgeCancel = undefined;
   downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, connectOperation, onEvent) => {
@@ -75,7 +76,10 @@ beforeEach(() => {
         const respond = () => send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
         if (holdClose) releaseClose = respond; else respond();
       }
-      else if (frame['type'] === 'cancel') acknowledgeCancel = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      else if (frame['type'] === 'cancel') {
+        acknowledgeCancel = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
+        cancellationObserved?.();
+      }
       else if (frame['type'] === 'decision') {
         if (holdDecision) rejectHeldDecision = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
         else send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
@@ -1658,6 +1662,38 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(environment).toHaveBeenCalledWith({ browser: 'Synthetic Chromium', 'user agent': 'synthetic-agent' });
       expect(frames.some(frame => frame['command'] === 'fixture.query')).toBe(false);
     } finally { read.mockRestore(); await surface.dispose(cleanup()); }
+  });
+
+  it('omits a settled one-second trace timeout without failing or replaying the action or retiring its observed ref', async () => {
+    const peer = holdRequests('browser.trace');
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const screen = vi.fn(); await surface.startAttempt({ ...context('trace-timeout'), screen });
+    try {
+      const snapshot = await surface.observe(operation());
+      const cancelled = new Promise<void>(resolve => { cancellationObserved = resolve; });
+      const first = surface.perform(snapshot.root.ref, { kind: 'tap' }, operation());
+      const held = await peer.next('browser.trace');
+      const trace = frames.findLast(frame => frame['command'] === 'browser.trace')!;
+      expect(trace['timeoutMs']).toBeGreaterThan(0);
+      expect(trace['timeoutMs']).toBeLessThanOrEqual(1000);
+      // Let the actual client timer/AbortSignal expire, not a synthetic action
+      // error. A cancel ACK alone is not settlement: return the exact clean
+      // native DeadlineExceeded/NotDispatched/Usable outcome as well.
+      await cancelled;
+      expect(frames.filter(frame => frame['type'] === 'cancel' && frame['operationSeq'] === trace['operationSeq'])).toHaveLength(1);
+      acknowledgeCancel!(); held.fail('deadline-exceeded');
+      await expect(first).resolves.toBeUndefined();
+      expect(screen).not.toHaveBeenCalled();
+      expect(frames.filter(frame => frame['command'] === 'browser.perform')).toHaveLength(1);
+      const second = surface.perform(snapshot.root.ref, { kind: 'tap' }, operation());
+      (await peer.next('browser.trace')).succeed(observation('2'));
+      await expect(second).resolves.toBeUndefined();
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: observation('2').root }));
+      expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(1);
+      expect(frames.filter(frame => frame['command'] === 'browser.trace')).toHaveLength(2);
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([snapshot.root.ref, snapshot.root.ref]);
+      expect(frames.some(frame => ['fixture.query', 'capture.screenshot'].includes(String(frame['command'])))).toBe(false);
+    } finally { cancellationObserved = undefined; await surface.dispose(cleanup()); }
   });
 
   it('rejects old screenshot bytes instead of allocating artifacts in the next attempt', async () => {

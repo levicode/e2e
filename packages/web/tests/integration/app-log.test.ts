@@ -34,7 +34,9 @@ const PAGE = `<!doctype html><html><body><h1>Todos</h1><script>
   setTimeout(() => { throw new RangeError('render loop exceeded'); }, 0);
 </script></body></html>`;
 
-const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="window.open('/tab', '_blank')">Help</button><script>
+// Keep the three positive live-screen reads separate from popup enrollment.
+// The third real tap opens the app tab, proving the earlier taps were not no-ops.
+const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="this.dataset.taps = String(Number(this.dataset.taps || 0) + 1); if (this.dataset.taps === '3') window.open('/tab', '_blank')">Help</button><script>
   const frame = document.createElement('iframe');
   frame.name = 'pay';
   frame.src = '/embed';
@@ -126,7 +128,7 @@ describe('app log', () => {
   it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async (context) => {
     const diagnostic = traceContractEvidence(context.task.meta);
     const evidence = new SyntheticRecoveryEvidence(diagnostic.evidence);
-    let traceOrdinal: 0 | 1 | 2 = 0;
+    let traceOrdinal: 0 | 1 | 2 | undefined = 0;
     const connect = NativeClient.connect;
     const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observeSyntheticConnection(connect(...args)));
     const caseCapture = beginCaseCleanupCapture('p01', context.task.meta as Record<string, unknown>);
@@ -149,7 +151,7 @@ describe('app log', () => {
             attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
             appLog: (entry) => entries.push(entry),
             navigation: (line) => went.push(line),
-            screen: (snapshot) => { screens.push(snapshot); diagnostic.contract.screenCounts[traceOrdinal]++; },
+            screen: (snapshot) => { screens.push(snapshot); if (traceOrdinal !== undefined) diagnostic.contract.screenCounts[traceOrdinal]++; },
             environment: (told) => facts.push({ ...told }),
           });
           evidence.passed('setup');
@@ -173,6 +175,11 @@ describe('app log', () => {
           diagnostic.contract.elapsedMs[2] = Math.ceil(performance.now() - traceStarted);
           evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
           expect(screens.every(screen => screen.pixels === undefined && screen.treeUnavailable !== true && screen.root.children?.some(node => node.role === 'button' && node.name === 'Help'))).toBe(true);
+          // Popup enrollment can exhaust the documented one-second best-effort
+          // trace budget. It must not weaken the three successful reads above,
+          // fail this separate action, or hide the app's navigation events.
+          traceOrdinal = undefined;
+          await surface.perform(help!.ref, { kind: 'tap' }, operation());
           releaseMovingNavigation();
           const navigations = () => [...went];
           await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
