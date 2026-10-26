@@ -22,18 +22,20 @@ import { nativeBrowser } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 import { beginSyntheticCase, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEvidence, type RecoverySection } from '../helpers/synthetic-native-outcomes.ts';
+import { observeNativeTerminalClose, terminalCloseEvidence, type TerminalCloseEvidence } from '../helpers/native-terminal-close-observer.ts';
 
 const recoveryEvidence = new AsyncLocalStorage<RecoveryEvidence>();
 const recoveryTasks = new WeakMap<object, RecoveryEvidence>();
-interface RecoveryContract { schemaVersion: 1; caseId: SyntheticCaseId; invalid: boolean; facts: SyntheticFact[] }
+interface RecoveryContract { schemaVersion: 1; caseId: SyntheticCaseId; invalid: boolean; facts: SyntheticFact[]; terminalCleanup: TerminalCloseEvidence }
 const recoveryContracts = new WeakMap<object, RecoveryContract>();
+const terminalObservers = new WeakMap<object, Array<() => void>>();
 
 /** Reuse the existing observer's bounded facts; this never enables the synthetic batch. */
 function recoveryContractSink(context: TestContext, id: SyntheticCaseId): SyntheticEvidence {
   const sink = beginSyntheticCase(id);
   if (id !== 'P07' && id !== 'P08') return sink;
   const diagnostic = id === 'P08' && process.env['E2E_CDP_RECOVERY_DIAGNOSTIC'] === '1';
-  const contract: RecoveryContract = { schemaVersion: 1, caseId: id, invalid: false, facts: [] };
+  const contract: RecoveryContract = { schemaVersion: 1, caseId: id, invalid: false, facts: [], terminalCleanup: terminalCloseEvidence() };
   recoveryContracts.set(context.task, contract);
   Object.assign(context.task.meta, { nativeRecoveryContract: contract }, diagnostic ? { nativeRecoveryDiagnostic: contract } : {});
   const capture = (fact: SyntheticFact): void => {
@@ -175,15 +177,25 @@ describe('CDP session recovery', () => {
   const attemptArtifacts = new WeakMap<EngineHandle, string>();
   let disconnectEvents = 0;
 
-  beforeEach(() => {
+  beforeEach(test => {
     disconnectEvents = 0;
+    const observers: Array<() => void> = [];
+    terminalObservers.set(test.task, observers);
     const connect = NativeClient.connect;
-    vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) =>
-      observeSyntheticConnection(connect(channel, capabilities, context, async event => {
+    vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) => {
+      const promise = observeSyntheticConnection(connect(channel, capabilities, context, async event => {
         await onEvent(event);
         if (event.event === 'browser.disconnected') disconnectEvents += 1;
-      })),
-    );
+      }));
+      void promise.then(client => {
+        const contract = recoveryContracts.get(test.task);
+        if (contract !== undefined) {
+          if (observers.length !== 0) { contract.invalid = true; return; }
+          observers.push(observeNativeTerminalClose(client, contract.terminalCleanup));
+        }
+      }, () => {}).catch(() => { const contract = recoveryContracts.get(test.task); if (contract) contract.invalid = true; });
+      return promise;
+    });
   });
 
   /** Wait for the adapter to consume the real disconnection, not an arbitrary delay. */
@@ -216,6 +228,8 @@ describe('CDP session recovery', () => {
     await settle([...hostControls.values()].map(control => control.browser.close()));
     await settle([...activeHosts].flatMap(remote => [remote.closeRelay(), closeRemoteChrome(remote)]));
     activeEngines.clear(); activeHosts.clear(); hostControls.clear(); fixtures.clear();
+    for (const restore of terminalObservers.get(context.task) ?? []) restore();
+    terminalObservers.delete(context.task);
     vi.restoreAllMocks();
     if (diagnostic) {
       diagnostic.finishBackstop(failures.length > 0);
@@ -226,20 +240,32 @@ describe('CDP session recovery', () => {
     if (failures.length > 0) throw new AggregateError(failures, 'Recovery fixture cleanup failed');
     if (contract !== undefined) {
       expect(contract.invalid).toBe(false);
-      expect(contract.facts).toHaveLength(3);
       const initial = contract.facts.find(fact => fact.kind === 'selected-operation' && fact.ordinal === 0);
       const repeated = contract.facts.find(fact => fact.kind === 'selected-operation' && fact.ordinal === 1);
       const ended = contract.facts.find(fact => fact.kind === 'cleanup-native');
-      const refusal = { operationSeq: expect.any(Number), ok: false, code: 'stale-scope', effects: 'not-dispatched', scopeState: 'usable' };
+      const state = initial?.kind === 'selected-operation' ? initial.firstResult?.scopeState : undefined;
+      expect(['usable', 'quarantined']).toContain(state);
+      const refusal = { operationSeq: expect.any(Number), ok: false, code: 'stale-scope', effects: 'not-dispatched', scopeState: state };
       expect(initial).toMatchObject({ kind: 'selected-operation', ordinal: 0, command: 'scope.reconnect', invoked: true,
         requestCount: 1, requestPending: 0, rejected: false, adapter: 'rejected', code: 'INVALID_STATE',
         reason: 'native-stale-scope', assertion: 'passed', firstResult: refusal, firstFailure: refusal });
       expect(repeated).toMatchObject({ kind: 'selected-operation', ordinal: 1, command: 'scope.reconnect', invoked: true,
         requestCount: 0, requestPending: 0, firstResult: null, firstFailure: null, rejected: false,
         adapter: 'rejected', code: 'INVALID_STATE', reason: 'native-stale-scope', assertion: 'passed' });
-      expect(ended).toMatchObject({ kind: 'cleanup-native', command: 'scope.end', requestCount: 1, requestPending: 0,
-        firstResult: { operationSeq: expect.any(Number), ok: true, code: null, effects: 'completed', scopeState: 'usable' },
-        firstFailure: null, rejected: false });
+      if (state === 'usable') {
+        expect(contract.facts).toHaveLength(3);
+        expect(ended).toMatchObject({ kind: 'cleanup-native', command: 'scope.end', requestCount: 1, requestPending: 0,
+          firstResult: { operationSeq: expect.any(Number), ok: true, code: null, effects: 'completed', scopeState: 'usable' },
+          firstFailure: null, rejected: false });
+      } else {
+        // A quarantined owner may only use the terminal control lane. Never
+        // disguise that as a reusable scope.end receipt or accept socket EOF.
+        expect(contract.facts).toHaveLength(2);
+        expect(ended).toBeUndefined();
+        expect(contract.terminalCleanup).toEqual({ invalid: false, exchanges: 1, pending: 0,
+          validatedClosed: 1, generationMatched: true, terminalAtExchange: true,
+          ordinaryPendingAtExchange: 0, ordinaryPendingAfterClose: 0, settled: 'fulfilled' });
+      }
     }
   });
 
