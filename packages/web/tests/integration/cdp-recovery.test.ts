@@ -651,7 +651,10 @@ describe('CDP session recovery', () => {
         debuggerSession.once('Debugger.paused', () => {
           void (async () => {
             const outcomes = await Promise.allSettled([
-              disconnect(remote),
+              // The quarantined Unknown receipt may precede/suppress the EOF event.
+              // This case waits for real socket loss plus the failed perform receipt;
+              // only the later explicit Observe may reconnect the exact owner.
+              Promise.resolve(remote.disconnect()),
               (async () => {
                 const failures: unknown[] = [];
                 try { await expect.poll(() => remote.connections(), { timeout: 5_000 }).toBe(0); }
@@ -673,7 +676,7 @@ describe('CDP session recovery', () => {
       const [button] = await engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Purchase', exact: true } } }, operation());
       recoveryPhase('perform');
       failurePhase = 'perform';
-      await recoveryAssert(0, () => expect(recoverySelect(0, 'browser.perform', () => engine.perform!(button!.ref, { kind: 'tap' }, operation()))).rejects.toMatchObject({ retryable: false }));
+      await recoveryAssert(0, () => expect(recoverySelect(0, 'browser.perform', () => engine.perform!(button!.ref, { kind: 'tap' }, operation()))).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false }));
       failurePhase = 'transportDropped';
       await transportDropped;
       expect(reconnected).toBe(0);
