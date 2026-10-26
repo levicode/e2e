@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { sha256 } from './bundle.ts';
 import { REPO_ROOT } from '../public-packages.ts';
-import type { NativeEvent } from '../../packages/web/src/native/protocol.ts';
+import type { NativeEvent, NativeResult } from '../../packages/web/src/native/protocol.ts';
 
 interface ProbeClient {
-  request(command: string, args: Readonly<Record<string, unknown>>, context: { signal: AbortSignal; timeoutMs: number }): Promise<{ ok: boolean; effects: string; scopeState: string; data?: unknown }>;
+  request(command: string, args: Readonly<Record<string, unknown>>, context: { signal: AbortSignal; timeoutMs: number }): Promise<Pick<NativeResult, 'ok' | 'effects' | 'scopeState' | 'data' | 'error'>>;
   negotiation(): { protocol: string; capabilities: readonly string[]; limits: unknown };
   /** The production wrapper must settle natural proxy exit after the native closed frame. */
   close(context: { signal: AbortSignal; timeoutMs: number }): Promise<void>;
@@ -25,6 +25,10 @@ mkdirSync(dirname(output), { recursive: true });
 let status: 'blocked' | 'passed' | 'failed' = 'blocked';
 let stage = 'preflight';
 let problem: string | undefined;
+// Metadata from the production client's already validated result, never wire IDs,
+// arbitrary payloads, error messages, page contents, paths, or URLs.
+let failedOperation: { command: string; ok: boolean; effects: NativeResult['effects']; scopeState: NativeResult['scopeState']; errorCode?: string } | undefined;
+let fallbackClose: 'not-needed' | 'fulfilled' | 'rejected' = 'not-needed';
 let negotiation: ReturnType<ProbeClient['negotiation']> | undefined;
 let binarySha256: string | undefined;
 const home = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'abp-'));
@@ -70,7 +74,10 @@ try {
   const completed = async (command: string, args: Record<string, unknown>): Promise<unknown> => {
     const result = await client!.request(command, args, { signal: AbortSignal.timeout(15_000), timeoutMs: 15_000 });
     if (unexpectedEvent) throw unexpectedEvent;
-    if (!result.ok || result.effects !== 'completed' || result.scopeState !== 'usable') throw new Error(`Native scope exercise failed: ${command}`);
+    if (!result.ok || result.effects !== 'completed' || result.scopeState !== 'usable') {
+      failedOperation = { command, ok: result.ok, effects: result.effects, scopeState: result.scopeState, errorCode: result.error?.code };
+      throw new Error(`Native scope exercise failed: ${command}`);
+    }
     return result.data;
   };
   const request = async (command: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
@@ -113,10 +120,10 @@ try {
   problem = unexpectedEvent?.message ?? (error instanceof Error ? error.message : String(error));
 } finally {
   if (client && !cleanupConfirmed) {
-    try { await client.close({ signal: AbortSignal.timeout(10_000), timeoutMs: 10_000 }); }
-    catch { status = 'failed'; problem ??= 'Native scope cleanup was not confirmed'; }
+    try { await client.close({ signal: AbortSignal.timeout(10_000), timeoutMs: 10_000 }); fallbackClose = 'fulfilled'; }
+    catch { fallbackClose = 'rejected'; status = 'failed'; problem ??= 'Native scope cleanup was not confirmed'; }
   }
-  writeFileSync(output, JSON.stringify({ schemaVersion: 1, kind: 'native-runtime-negotiation', status, stage, binarySha256, negotiation, scopeExercisePassed, pageActivationConfirmed, navigationEventsObserved, chromium, cleanupConfirmed, problem, releaseEligible: false, note: 'Owned scope open, explicit blank navigation when browser.page/1 is advertised, independent evaluate/readback, and acknowledged scope/proxy closure only; not browser behavior, installed consumer, or real-model proof.' }, null, 2));
+  writeFileSync(output, JSON.stringify({ schemaVersion: 1, kind: 'native-runtime-negotiation', status, stage, binarySha256, negotiation, scopeExercisePassed, pageActivationConfirmed, navigationEventsObserved, chromium, cleanupConfirmed, failedOperation, fallbackClose, problem, releaseEligible: false, note: 'Owned scope open, explicit blank navigation when browser.page/1 is advertised, independent evaluate/readback, and acknowledged scope/proxy closure only; not browser behavior, installed consumer, or real-model proof.' }, null, 2));
 }
 if (status !== 'passed') console.error(`Native process proof ${status} at ${stage}; see the negotiation artifact for details`);
 process.exitCode = status === 'passed' ? 0 : status === 'blocked' ? 2 : 1;

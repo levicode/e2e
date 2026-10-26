@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-for (const mode of ['success', 'wrong-readback', 'close-fails', 'missing-capabilities', 'foundation-event'] as const) {
+for (const mode of ['success', 'wrong-readback', 'close-fails', 'missing-capabilities', 'foundation-event', 'scope-refused', 'scope-refused-close-fails'] as const) {
   test(`native probe orchestration: ${mode}`, () => {
     const directory = mkdtempSync(join(tmpdir(), 'probe-test-'));
     try {
@@ -22,6 +22,7 @@ for (const mode of ['success', 'wrong-readback', 'close-fails', 'missing-capabil
             negotiation() { return { protocol: 'fixture/1', capabilities: options.capabilities, limits: {} }; },
             async request(command, args) {
               ${mode === 'foundation-event' ? "onEvent({ type: 'event', generation: 1, sequence: 1, event: 'app.navigation', payload: { identityScope: 'fixture', kind: 'main', url: 'about:blank', initiatedByOperation: true } });" : ''}
+              ${mode.startsWith('scope-refused') ? "return { ok: false, effects: 'unknown', scopeState: 'quarantined', error: { code: 'deadline-exceeded' }, data: { privatePayload: 'must-not-serialize' } };" : ''}
               let data;
               if (command === 'scope.open') data = { identityScope: 'fixture' };
               else if (command === 'page.title') data = { title: 'Native foundation' };
@@ -30,7 +31,7 @@ for (const mode of ['success', 'wrong-readback', 'close-fails', 'missing-capabil
               else throw new Error('Unexpected command');
               return { ok: true, effects: 'completed', scopeState: 'usable', data };
             },
-            async close() { ${mode === 'close-fails' ? "throw new Error('No close acknowledgement');" : ''} }
+            async close() { ${(mode === 'close-fails' || mode === 'scope-refused-close-fails') ? "throw new Error('No close acknowledgement');" : ''} }
           };
         }
       `);
@@ -40,12 +41,18 @@ for (const mode of ['success', 'wrong-readback', 'close-fails', 'missing-capabil
       });
       assert.equal(child.error, undefined);
       assert.equal(child.status, mode === 'success' ? 0 : mode === 'missing-capabilities' ? 2 : 1, child.stderr);
-      const result = JSON.parse(readFileSync(output, 'utf8')) as { status: string; cleanupConfirmed: boolean; pageActivationConfirmed: boolean; navigationEventsObserved: number; releaseEligible: boolean };
+      const result = JSON.parse(readFileSync(output, 'utf8')) as { status: string; cleanupConfirmed: boolean; pageActivationConfirmed: boolean; navigationEventsObserved: number; releaseEligible: boolean; failedOperation?: unknown; fallbackClose: string };
       assert.equal(result.status, mode === 'success' ? 'passed' : mode === 'missing-capabilities' ? 'blocked' : 'failed');
       assert.equal(result.releaseEligible, false);
       assert.equal(result.pageActivationConfirmed, false);
       assert.equal(result.navigationEventsObserved, 0);
       if (mode === 'close-fails') assert.equal(result.cleanupConfirmed, false);
+      if (mode.startsWith('scope-refused')) {
+        assert.deepEqual(result.failedOperation, { command: 'scope.open', ok: false, effects: 'unknown', scopeState: 'quarantined', errorCode: 'deadline-exceeded' });
+        assert.equal(result.cleanupConfirmed, false, 'fallback closure cannot promote failed exercise');
+        assert.equal(result.fallbackClose, mode === 'scope-refused' ? 'fulfilled' : 'rejected');
+        assert.ok(!readFileSync(output, 'utf8').includes('must-not-serialize'));
+      } else assert.equal(result.failedOperation, undefined);
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 }
