@@ -48,7 +48,7 @@ jobs:
 
         c=json.loads(pathlib.Path(''source/.github/native-candidate.json'').read_text())
 
-        assert c[''sourceSha'']==p[''nativeSource'']
+        assert c[''commit'']==p[''nativeSource'']
 
         PY_PINS'
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
