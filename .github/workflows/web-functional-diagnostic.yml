@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 1fd8815fb7770d02b4d14c2348a63d5ae001173f
+          ref: 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb
           path: native
           persist-credentials: false
       - name: Compile exact native test harness (no browser auto-discovery)
@@ -32,8 +32,8 @@ jobs:
           set -euo pipefail
           mkdir -p evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 1fd8815fb7770d02b4d14c2348a63d5ae001173f
-          test "$(git rev-parse HEAD^{tree})" = 180bd2c281be2c757ec49e8759f12e5b395f9620
+          test "$(git rev-parse HEAD)" = 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb
+          test "$(git rev-parse HEAD^{tree})" = cfee75313ae66059894d86afd66eb275fef30a9c
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -88,7 +88,7 @@ jobs:
           sha256sum "$harness" > evidence/harness.sha256
           failed=0
           index=0
-          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse' 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission' 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::tests::terminal_cleanup_checkpoints_have_closed_payloads'; do
+          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse' 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission' 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::terminal_cleanup_tests::terminal_cleanup_checkpoints_have_closed_payloads'; do
             index=$((index + 1))
             "$harness" --exact "$name" --list > "evidence/test-$index.inventory"
             grep -Fx "$name: test" "evidence/test-$index.inventory"
@@ -117,7 +117,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 1fd8815fb7770d02b4d14c2348a63d5ae001173f
+          ref: 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb
           path: native
           persist-credentials: false
       - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -126,8 +126,8 @@ jobs:
           set -euo pipefail
           mkdir -p images evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 1fd8815fb7770d02b4d14c2348a63d5ae001173f
-          test "$(git rev-parse HEAD^{tree})" = 180bd2c281be2c757ec49e8759f12e5b395f9620
+          test "$(git rev-parse HEAD)" = 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb
+          test "$(git rev-parse HEAD^{tree})" = cfee75313ae66059894d86afd66eb275fef30a9c
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -152,6 +152,10 @@ jobs:
           path: evidence/
           if-no-files-found: warn
   callbacks:
+    outputs:
+      apt-cache-ready: ${{ steps.cache-ready.outputs.ready }}
+    env:
+      E2E_APT_CACHE_ROLE: produce
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -179,6 +183,19 @@ jobs:
           path: images
       - name: Install existing browser/codec prerequisites and probe exact binaries
         run: bash recipe/scripts/web-functional/run.sh setup
+      - name: Save authenticated same-run package archives
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: functional-apt-archives
+          path: |
+            apt-cache/*.deb
+            apt-cache/SHA256SUMS
+            apt-cache/cache-metadata.json
+          if-no-files-found: error
+          retention-days: 1
+      - id: cache-ready
+        name: Record successful prerequisite cache only
+        run: echo 'ready=true' >> "$GITHUB_OUTPUT"
       - name: Existing functional group (original exit status)
         run: bash recipe/scripts/web-functional/run.sh callbacks
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -190,7 +207,9 @@ jobs:
           retention-days: 7
   functional:
     needs: [build, callbacks]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.callbacks.outputs.apt-cache-ready == 'true' }}
+    env:
+      E2E_APT_CACHE_ROLE: consume
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -220,6 +239,11 @@ jobs:
         with:
           name: fixed-native-images
           path: images
+      - name: Restore authenticated same-run package archives
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: functional-apt-archives
+          path: apt-cache
       - name: Install existing browser/codec prerequisites and probe exact binaries
         run: bash recipe/scripts/web-functional/run.sh setup
       - name: Existing functional group (original exit status)
@@ -248,7 +272,7 @@ jobs:
     timeout-minutes: 120
     env:
       E2E_SOURCE_SHA: '8edc1669a14a760fad751338fb5fd006e455cdc7'
-      NATIVE_SOURCE_SHA: '1fd8815fb7770d02b4d14c2348a63d5ae001173f'
+      NATIVE_SOURCE_SHA: '70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb'
       CARGO_BUILD_JOBS: '1'
       RUSTUP_TOOLCHAIN: 1.99.1
       E2E_TELEMETRY_DISABLED: '1'
@@ -298,7 +322,7 @@ jobs:
           test "$(git -C source rev-parse HEAD)" = "$E2E_SOURCE_SHA"
           test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
           test "$(git -C source rev-parse HEAD^{tree})" = ad05d353add4ca279664ed1fd3989da25018ed3a
-          test "$(git -C native-source rev-parse HEAD^{tree})" = 180bd2c281be2c757ec49e8759f12e5b395f9620
+          test "$(git -C native-source rev-parse HEAD^{tree})" = cfee75313ae66059894d86afd66eb275fef30a9c
           test -z "$(git -C source status --porcelain)"
           test -z "$(git -C native-source status --porcelain)"
           sw_vers > .artifacts/macos-diagnostic/macos-version.txt
@@ -309,11 +333,20 @@ jobs:
           rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
           test -d "$rustup_home"
           case "$rustup_home" in /*) ;; *) exit 1 ;; esac
+          setup_node_bin="$(dirname "$(command -v node)")"
+          test "$(node -p 'process.versions.node.split(".")[0]')" = 24
           for tool in rustup cargo rustc pnpm; do dirname "$(command -v "$tool")" >> "$GITHUB_PATH"; done
+          echo "$setup_node_bin" >> "$GITHUB_PATH"
           echo "RUSTUP_HOME=$rustup_home" >> "$GITHUB_ENV"
           echo "CARGO_HOME=$RUNNER_TEMP/diagnostic-cargo" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_DIR=$RUNNER_TEMP/diagnostic-target" >> "$GITHUB_ENV"
           echo "HOME=$RUNNER_TEMP/diagnostic-home" >> "$GITHUB_ENV"
+      - name: Verify pinned Node after tool path isolation
+        run: |
+          set -euo pipefail
+          command -v node
+          node -v
+          test "$(node -p 'process.versions.node.split(".")[0]')" = 24
       - name: Build exact public packages
         working-directory: source
         run: |
@@ -361,8 +394,13 @@ jobs:
         run: |
           set -euo pipefail
           out="$GITHUB_WORKSPACE/.artifacts/macos-diagnostic"
-          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
-          ffmpeg -version > "$out/ffmpeg.txt"
+          # The six-check consumer keeps the public default video mode off.
+          # Video/codec behavior is not covered by this diagnostic archive.
+          if command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null; then
+            ffmpeg -version > "$out/ffmpeg.txt"
+          else
+            printf '%s\n' 'ffmpeg/ffprobe unavailable; video recording NOT TESTED by this six-check diagnostic.' > "$out/ffmpeg.txt"
+          fi
           "$RUNNER_TEMP/diagnostic-bin/production" install
           chrome="$(node source/scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" "$out/chromium.json")"
           test "$(lipo -archs "$chrome")" = "$EXPECTED_MACHO_ARCH"
@@ -375,6 +413,9 @@ jobs:
         id: diagnostic
         run: |
           set -euo pipefail
+          command -v node
+          node -v
+          test "$(node -p 'process.versions.node.split(".")[0]')" = 24
           node scripts/acceptance/diagnostic-package.mjs source native-source "$RUNNER_TEMP/diagnostic-bin/production" .artifacts/macos-diagnostic/negotiation.json "$RUNNER_TEMP/diagnostic-package" "$RUNNER_TEMP/diagnostic-consumer"
           cp .artifacts/macos-diagnostic/{macos-version.txt,host.txt,recipe-source.txt,e2e-source.txt,native-source.txt,rustc.txt,cargo.txt,chromium-version.txt,chromium.sha256,ffmpeg.txt} "$RUNNER_TEMP/diagnostic-package/"
           (cd "$RUNNER_TEMP/diagnostic-package" && shasum -a 256 macos-version.txt host.txt recipe-source.txt e2e-source.txt native-source.txt rustc.txt cargo.txt chromium-version.txt chromium.sha256 ffmpeg.txt >> SHA256SUMS)

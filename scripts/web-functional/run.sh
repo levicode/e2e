@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native 1fd8815fb7770d02b4d14c2348a63d5ae001173f; E2E 8edc1669a14a760fad751338fb5fd006e455cdc7.
+Native 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb; E2E 8edc1669a14a760fad751338fb5fd006e455cdc7.
 NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
 NOT RUN (excluded scope): protected-app service-worker registration P41.
 NOT RUN: native auto-discovery, optional benchmark sweep, iOS.
@@ -21,6 +21,39 @@ Final acceptance/retirement evidence for pointer position preservation and stale
 Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
 SCOPE
 if [[ "$mode" == setup ]]; then
+  # Cache only authenticated public .deb archives from this workflow run.
+  # Repository/trust/signature settings and product tests remain unchanged.
+  cache="$GITHUB_WORKSPACE/apt-cache"
+  cache_config=/etc/apt/apt.conf.d/99-e2e-diagnostic-cache
+  case "${E2E_APT_CACHE_ROLE:?missing cache role}" in
+    produce) mkdir -p "$cache" ;;
+    consume)
+      python3 - "$cache" <<'PY_VERIFY_CACHE'
+import hashlib, json, os, pathlib, re, subprocess, sys
+root = pathlib.Path(sys.argv[1])
+meta = json.loads((root / 'cache-metadata.json').read_text())
+assert meta['runId'] == os.environ['GITHUB_RUN_ID']
+assert meta['runAttempt'] == os.environ['GITHUB_RUN_ATTEMPT']
+assert meta['architecture'] == subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip()
+assert meta['packageCount'] > 0
+lines = (root / 'SHA256SUMS').read_text().splitlines()
+assert len(lines) == meta['packageCount']
+assert {line.split('  ', 1)[1] for line in lines} == {f.name for f in root.glob('*.deb')}
+for line in lines:
+    digest, name = line.split('  ', 1)
+    assert re.fullmatch(r'[A-Za-z0-9.+%_~:-]+\.deb', name), name
+    f = root / name
+    assert f.is_file() and not f.is_symlink()
+    assert hashlib.sha256(f.read_bytes()).hexdigest() == digest, name
+print(f"Verified {len(lines)} same-run package archives; apt still verifies its official indexes.")
+PY_VERIFY_CACHE
+      ;;
+    *) echo 'Invalid apt cache role' >&2; exit 2 ;;
+  esac
+  sudo test ! -e "$cache_config"
+  printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
+  trap 'sudo rm -f -- "$cache_config"' EXIT
+  sudo install -d -o _apt -g root -m 0700 "$cache/partial"
   test "$(git rev-parse HEAD)" = 8edc1669a14a760fad751338fb5fd006e455cdc7
   test "$(git rev-parse HEAD^{tree})" = ad05d353add4ca279664ed1fd3989da25018ed3a
   test -z "$(git status --porcelain)"
@@ -37,8 +70,10 @@ if [[ "$mode" == setup ]]; then
   printf '%s\n' "$source_status" > "$out/source-removal.exit"
   "$PROD" install --with-deps
   pnpm --filter @e2e-dev/web exec playwright-core install chromium
-  sudo apt-get update
-  sudo apt-get install -y ffmpeg
+  if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+    sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update
+    sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y ffmpeg
+  fi
   ffmpeg -version; ffprobe -version
   chrome="$(node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" "$out/chromium-executable.json")"
   echo "E2E_CHROMIUM_EXECUTABLE=$chrome" >> "$GITHUB_ENV"
@@ -49,6 +84,19 @@ if [[ "$mode" == setup ]]; then
   node scripts/acceptance/probe-native.ts "$PROD" "$out/required-capabilities.json" "$PROOF"
   node --input-type=module -e "import { REQUIRED_CAPABILITIES } from './packages/web/dist/native/capabilities.js'; console.log(JSON.stringify([...REQUIRED_CAPABILITIES,'acceptance.faults/1']))" > "$out/fault-capabilities.json"
   node scripts/acceptance/probe-native.ts "$FAULT" "$out/fault-capabilities.json" "$FAULT_PROOF"
+  if [[ "$E2E_APT_CACHE_ROLE" == produce ]]; then
+    python3 - "$cache" <<'PY_SAVE_CACHE'
+import hashlib, json, os, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1]); files = sorted(root.glob('*.deb'))
+if not files: raise SystemExit('No package archives were retained; cache was NOT produced')
+for f in files:
+    assert f.is_file() and not f.is_symlink()
+(root / 'SHA256SUMS').write_text(''.join(hashlib.sha256(f.read_bytes()).hexdigest() + '  ' + f.name + '\n' for f in files))
+meta = {'schemaVersion': 1, 'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'], 'architecture': subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip(), 'packageCount': len(files), 'source': 'unchanged official apt repositories; apt authentication retained', 'productTestPass': False}
+(root / 'cache-metadata.json').write_text(json.dumps(meta, indent=2) + '\n')
+print(f'Prepared {len(files)} authenticated public package archives for this run only')
+PY_SAVE_CACHE
+  fi
   exit 0
 fi
 run_group() {
