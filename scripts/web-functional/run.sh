@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb; E2E 01a7cbb84ccc3aaef01630fa539296c63952d9aa.
+Native 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb; E2E 26dd30fd149f0b055bdfdbd789cd1c7490591e0b.
 NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
 NOT RUN (excluded scope): protected-app service-worker registration P41.
 NOT RUN: native auto-discovery, optional benchmark sweep, iOS.
@@ -21,7 +21,7 @@ Final acceptance/retirement evidence for pointer position preservation and stale
 Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
 SCOPE
 if [[ "$mode" == setup ]]; then
-  # Cache only authenticated public .deb archives from this workflow run.
+  # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
   # Repository/trust/signature settings and product tests remain unchanged.
   cache="$GITHUB_WORKSPACE/apt-cache"
   cache_config=/etc/apt/apt.conf.d/99-e2e-diagnostic-cache
@@ -54,8 +54,8 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = 01a7cbb84ccc3aaef01630fa539296c63952d9aa
-  test "$(git rev-parse HEAD^{tree})" = 0732eadff051e2fc5b3f79b3304f604ec07aac70
+  test "$(git rev-parse HEAD)" = 26dd30fd149f0b055bdfdbd789cd1c7490591e0b
+  test "$(git rev-parse HEAD^{tree})" = a9e6b13236b45daebc19399a417bb72104d555b0
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
@@ -94,8 +94,9 @@ for f in files:
     assert f.is_file() and not f.is_symlink()
 (root / 'SHA256SUMS').write_text(''.join(hashlib.sha256(f.read_bytes()).hexdigest() + '  ' + f.name + '\n' for f in files))
 meta = {'schemaVersion': 1, 'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'], 'architecture': subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip(), 'packageCount': len(files), 'source': 'unchanged official apt repositories; apt authentication retained', 'productTestPass': False}
+if (root / 'seed-source.json').is_file(): meta['seedSource'] = json.loads((root / 'seed-source.json').read_text())
 (root / 'cache-metadata.json').write_text(json.dumps(meta, indent=2) + '\n')
-print(f'Prepared {len(files)} authenticated public package archives for this run only')
+print(f'Prepared {len(files)} public package archives after successful current setup; seed provenance retained')
 PY_SAVE_CACHE
   fi
   exit 0
