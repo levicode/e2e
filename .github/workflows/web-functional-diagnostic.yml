@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 90e9c4bf51abf208400d60aae92572ebe9c9996e
+          ref: ebab0fcffde3c0e2edc6d59585c210ade9abc306
           path: native
           persist-credentials: false
       - name: Compile exact native test harness (no browser auto-discovery)
@@ -32,8 +32,8 @@ jobs:
           set -euo pipefail
           mkdir -p evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 90e9c4bf51abf208400d60aae92572ebe9c9996e
-          test "$(git rev-parse HEAD^{tree})" = 2a90808069de1448a100d574b09950ca0cf090cf
+          test "$(git rev-parse HEAD)" = ebab0fcffde3c0e2edc6d59585c210ade9abc306
+          test "$(git rev-parse HEAD^{tree})" = d2bb921eb4a9936aea221de2ff8d73912f96dad0
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -78,7 +78,7 @@ jobs:
           path: native-harness/
           if-no-files-found: error
           retention-days: 1
-      - name: Run only the nine reviewed no-browser regression tests
+      - name: Run only the reviewed exact no-browser regression tests
         shell: bash
         env:
           RUST_MIN_STACK: '16777216'
@@ -88,7 +88,7 @@ jobs:
           sha256sum "$harness" > evidence/harness.sha256
           failed=0
           index=0
-          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish'; do
+          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse' 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission' 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison'; do
             index=$((index + 1))
             "$harness" --exact "$name" --list > "evidence/test-$index.inventory"
             grep -Fx "$name: test" "evidence/test-$index.inventory"
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 90e9c4bf51abf208400d60aae92572ebe9c9996e
+          ref: ebab0fcffde3c0e2edc6d59585c210ade9abc306
           path: native
           persist-credentials: false
       - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -123,8 +123,8 @@ jobs:
           set -euo pipefail
           mkdir -p images evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 90e9c4bf51abf208400d60aae92572ebe9c9996e
-          test "$(git rev-parse HEAD^{tree})" = 2a90808069de1448a100d574b09950ca0cf090cf
+          test "$(git rev-parse HEAD)" = ebab0fcffde3c0e2edc6d59585c210ade9abc306
+          test "$(git rev-parse HEAD^{tree})" = d2bb921eb4a9936aea221de2ff8d73912f96dad0
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -161,7 +161,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 982b3e980d9015ad92670b9fda09bdc6f47ade70
+          ref: b6e1de82c529e2f4e24a5ef84ffa21f4bdf441cd
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -204,7 +204,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 982b3e980d9015ad92670b9fda09bdc6f47ade70
+          ref: b6e1de82c529e2f4e24a5ef84ffa21f4bdf441cd
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
