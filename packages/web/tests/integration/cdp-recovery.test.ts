@@ -14,6 +14,8 @@ import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../hel
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
 import { NativeClient } from '../../src/native/client.ts';
+import { NativeFrames as FrameReader } from '../../src/native/frames.ts';
+import { MAX_FRAME_BYTES, serverMessage } from '../../src/native/protocol.ts';
 import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
@@ -793,16 +795,82 @@ describe('CDP session recovery', () => {
     const state = () => ({ disconnectEvents, resolverEntered: entered, resolverAborted: signal?.aborted === true,
       recovery: native?.recoveryScope() !== undefined, terminal: native?.isTerminal() === true,
       failed: (native as unknown as { failure?: unknown } | undefined)?.failure !== undefined });
+    const wire: Record<string, string | number | boolean | null>[] = [];
+    let overflow = 0;
+    let callOrdinal = 0;
+    let wireClosed = false;
+    const detach: (() => void)[] = [];
+    const commands = new Set(['scope.open', 'scope.configure', 'scope.reconnect', 'scope.reset', 'scope.restart', 'scope.end',
+      'session.environment', 'browser.trace', 'browser.observe', 'browser.query', 'browser.perform', 'browser.pointer',
+      'browser.keyboard.press', 'browser.keyboard.type', 'page.activate', 'capture.screenshot', 'recording.start',
+      'recording.stop', 'state.capture', 'state.restore', 'blob.read', 'fixture.query', 'fixture.read-fields']);
+    /** Keep only closed metadata; diagnostic collection never changes a request outcome. */
+    const record = (entry: Record<string, string | number | boolean | null>): void => {
+      try {
+        if (wireClosed) return;
+        if (wire.length < 256) wire.push({ phase, ...entry }); else overflow += 1;
+      } catch { /* The observer has no authority over the test. */ }
+    };
     const connect = vi.mocked(NativeClient.connect).getMockImplementation()!;
-    vi.mocked(NativeClient.connect).mockImplementation(async (...args) => { native = await connect(...args); return native; });
+    vi.mocked(NativeClient.connect).mockImplementation(async (...args) => {
+      // Install after the original synchronous connect setup, without replacing its channel.
+      const pending = connect(...args);
+      const frames = new FrameReader(MAX_FRAME_BYTES);
+      let negotiated: readonly string[] = [];
+      let decodeFailed = false;
+      const inbound = (chunk: Buffer): void => {
+        if (decodeFailed || wireClosed) return;
+        try {
+          for (const frame of frames.read(chunk)) {
+            const message = serverMessage(frame, negotiated);
+            switch (message.type) {
+              case 'ready':
+                negotiated = args[1].filter(capability => message.capabilities.includes(capability));
+                frames.limit(Math.min(MAX_FRAME_BYTES, message.limits.maxFrameBytes));
+                record({ direction: 'inbound', type: message.type, generation: message.generation, scopeState: message.scopeState });
+                break;
+              case 'result':
+                record({ direction: 'inbound', type: message.type, operationSeq: message.operationSeq, generation: message.generation,
+                  ok: message.ok, effects: message.effects, scopeState: message.scopeState, errorCode: message.error?.code ?? null,
+                  recovery: message.recovery !== undefined, retention: message.retention !== undefined });
+                break;
+              case 'control-result':
+                record({ direction: 'inbound', type: message.type, generation: message.generation, accepted: message.accepted,
+                  scopeState: message.scopeState, errorCode: message.error?.code ?? null });
+                break;
+              case 'event':
+                record({ direction: 'inbound', type: message.type, generation: message.generation, sequence: message.sequence,
+                  event: message.event === 'browser.disconnected' || message.event === 'scope.callbacks-retired' ? message.event : 'other' });
+                break;
+              case 'error':
+                record({ direction: 'inbound', type: message.type, errorCode: message.error.code, scopeState: message.scopeState });
+                break;
+              case 'closed':
+                record({ direction: 'inbound', type: message.type, generation: message.generation, scopeState: message.scopeState });
+            }
+          }
+        } catch { decodeFailed = true; record({ direction: 'inbound', type: 'decode-failed' }); }
+      };
+      args[0].readable.on('data', inbound);
+      detach.push(() => args[0].readable.removeListener('data', inbound));
+      native = await pending;
+      return native;
+    });
     const request = NativeClient.prototype.request;
     const probe = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
-      const pending = request.apply(this, args);
-      if (['browser.trace', 'scope.reconnect', 'browser.observe', 'scope.end'].includes(args[0])) {
-        void pending.then(result => console.error('HUNG_RECEIPT', JSON.stringify({ phase, command: args[0], operationSeq: result.operationSeq,
-          ok: result.ok, effects: result.effects, scopeState: result.scopeState, error: result.error?.code, retention: result.retention !== undefined, ...state() })),
-          () => {}).catch(() => {});
-      }
+      const ordinal = ++callOrdinal;
+      const command = commands.has(args[0]) ? args[0] : 'other';
+      record({ direction: 'request', type: 'call', callOrdinal: ordinal, command });
+      let pending: ReturnType<NativeClient['request']>;
+      try { pending = request.apply(this, args); }
+      catch (cause) { record({ direction: 'request', type: 'throw', callOrdinal: ordinal, command,
+        errorCode: cause instanceof EngineError ? cause.code : 'other' }); throw cause; }
+      void pending.then(result => record({ direction: 'request', type: 'result', callOrdinal: ordinal, command,
+        operationSeq: result.operationSeq, generation: result.generation, ok: result.ok, effects: result.effects,
+        scopeState: result.scopeState, errorCode: result.error?.code ?? null,
+        recovery: result.recovery !== undefined, retention: result.retention !== undefined }),
+      cause => record({ direction: 'request', type: 'reject', callOrdinal: ordinal, command,
+        errorCode: cause instanceof EngineError ? cause.code : 'other' })).catch(() => {});
       return pending;
     });
     try {
@@ -836,6 +904,9 @@ describe('CDP session recovery', () => {
         try { await closeRemoteChrome(remote); console.error('HUNG_CLOSE_REMOTE_PASSED', JSON.stringify({ phase, ...state() })); }
         catch (cause) { cleanupFailures.push(cause); console.error('HUNG_CLEANUP_FAILURE', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() })); }
       } else console.error('HUNG_CLOSE_REMOTE_SKIPPED', JSON.stringify({ phase, reason: 'dispose-not-completed', ...state() }));
+      wireClosed = true;
+      for (const remove of detach) remove();
+      console.error('HUNG_WIRE', JSON.stringify({ schemaVersion: 1, overflow, entries: wire }));
       probe.mockRestore(); vi.mocked(NativeClient.connect).mockImplementation(connect);
     }
     if (failed && cleanupFailures.length > 0) throw new AggregateError([failure, ...cleanupFailures], 'Hung resolver body and cleanup failed');
