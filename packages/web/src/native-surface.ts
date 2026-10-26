@@ -881,16 +881,20 @@ export class NativeSurface implements NativeWebSurface {
     const endsAt = performance.now() + 1000;
     const trace = { ...operation, signal: AbortSignal.any([operation.signal, AbortSignal.timeout(1000)]), get timeoutMs() { return endsAt - performance.now(); } };
     try {
-      // Native Page-only publication never advances actionable semantic authority.
-      const image = await engine.command('capture.screenshot', { identityScope: scope, secureFieldSelector: SECURE_FIELD_SELECTOR, purpose: 'trace' }, trace);
-      const data = await engine.readBlob(image, scope, trace);
+      // Automatic trace retains the original bounded semantic-read contract.
+      // Native stages a live tree in a disposable map, without Observe admission
+      // or publication of action/viewport refs. Explicit pixels use screenshot().
+      const snapshot = await engine.command('browser.trace', { identityScope: scope,
+        testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR, options: {} }, trace);
       this.assertBudget(trace); this.assertObservationOwner(attempt, scope, epoch, client); this.assertPublication(client, publication);
-      if (image.identityScope !== scope || attempt.recoveryPending || this.latch.hasPending()
+      if (snapshot.identityScope !== scope || attempt.recoveryPending || this.latch.hasPending()
         || attempt.observationHighWater !== highWater || highWater?.revision !== revision) return;
-      attempt.context.screen({ identityScope: scope, root: { ref: image.viewportRef }, viewportRef: image.viewportRef, treeUnavailable: true,
-        viewport: image.viewport, location: image.location, maskedRegionCount: image.maskedRegionCount,
-        pixels: { data, mediaType: image.mediaType, width: image.width, height: image.height, scale: image.scale } });
-    } catch { /* Optional protected pixels never become semantic authority or consume callback failures. */ }
+      attempt.context.screen({ identityScope: scope, root: snapshot.root,
+        ...(snapshot.viewportRef === undefined ? {} : { viewportRef: snapshot.viewportRef }),
+        viewport: snapshot.viewport,
+        ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
+        ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }) });
+    } catch { /* Optional live trace never consumes callback failures or fails the action. */ }
   }
 
   private callbackIsCurrent(): boolean { const owner = this.callbackOwner.getStore(); return owner === undefined || (owner.notRevoked() && this.attempt === owner.attempt && owner.attempt.epoch === owner.epoch); }

@@ -150,7 +150,7 @@ describe('app log', () => {
           });
           evidence.passed('setup');
           evidence.enter('open', 'body');
-          await evidence.observer.select(0, 'capture.screenshot', () => surface.open(`${url}/moving`, operation()));
+          await evidence.observer.select(0, 'browser.trace', () => surface.open(`${url}/moving`, operation()));
           evidence.enter('assertion');
           evidence.observer.assert(0, () => {
             expect(screens).toHaveLength(1);
@@ -159,9 +159,10 @@ describe('app log', () => {
           // The screen is the trace's, never published: a ref from the observation acts after it, twice.
           const observed = await surface.observe(operation());
           const help = observed.root.children?.find((node) => node.role === 'button');
-          await evidence.observer.select(1, 'capture.screenshot', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
-          await evidence.observer.select(2, 'capture.screenshot', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          await evidence.observer.select(1, 'browser.trace', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          await evidence.observer.select(2, 'browser.trace', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
           evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
+          expect(screens.every(screen => screen.pixels === undefined && screen.treeUnavailable !== true && screen.root.children?.some(node => node.role === 'button' && node.name === 'Help'))).toBe(true);
           releaseMovingNavigation();
           const navigations = () => [...went];
           await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);

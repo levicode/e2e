@@ -63,6 +63,8 @@ export interface EngineCommandMap {
   'scope.end': { args: Scoped; result: null };
 
   'browser.observe': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };
+  /** Live trace-only tree: temporary refs never enter native action authority. */
+  'browser.trace': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };
   'fixture.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };
   'fixture.read-fields': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression; readonly fields: readonly EngineReadField[] }; result: Scoped & { readonly values: readonly EngineFieldValues[] } };
   'browser.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };

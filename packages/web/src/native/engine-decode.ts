@@ -77,6 +77,11 @@ const decoders = {
   'page.activate': (value: unknown): { activated: true } => { const item = record(value); if (Object.keys(item).length !== 1 || item['activated'] !== true) invalid(); return { activated: true }; },
   'scope.configure': empty, 'scope.end': empty, 'scope.restart': recoveryScope, 'scope.reset': scoped, 'scope.reconnect': scoped,
   'browser.observe': observation,
+  'browser.trace': (value: unknown): NativeObservation => {
+    const item = record(value);
+    if (item['pixels'] !== undefined || item['treeUnavailable'] === true) invalid();
+    return observation(item);
+  },
   'fixture.query': (value: unknown) => { const item = record(value); return { ...scoped(item), revision: text(item['revision']), nodes: list(item['nodes']).map(child => node(child)) }; },
   'fixture.read-fields': (_value: unknown): EngineCommandMap['fixture.read-fields']['result'] => invalid(),
   'browser.query': (value: unknown) => { const item = record(value); return { ...scoped(item), revision: text(item['revision']), nodes: list(item['nodes']).map(child => node(child)) }; },

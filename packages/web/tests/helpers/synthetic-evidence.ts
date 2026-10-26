@@ -116,7 +116,7 @@ export const SYNTHETIC_PHASES = [
 export type SyntheticPhase = typeof SYNTHETIC_PHASES[number];
 export const SYNTHETIC_COMMANDS = [
   'scope.open', 'scope.configure', 'scope.reconnect', 'scope.end', 'scope.restart', 'scope.reset', 'network.routes.replace',
-  'page.activate', 'page.navigate', 'page.title', 'page.evaluate', 'page.url', 'browser.observe', 'browser.query',
+  'page.activate', 'page.navigate', 'page.title', 'page.evaluate', 'page.url', 'browser.observe', 'browser.trace', 'browser.query',
   'browser.perform', 'browser.pointer', 'browser.keyboard.type', 'browser.keyboard.press', 'fixture.query',
   'capture.screenshot', 'blob.read', 'blob.release',
   'state.capture', 'state.restore', 'recording.start', 'recording.stop', 'other',
