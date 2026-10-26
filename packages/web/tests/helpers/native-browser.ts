@@ -45,8 +45,18 @@ export function nativeBrowser(engine: EngineHandle, operation: () => OperationCo
 export async function nativeDocument(browser: Browser, html: string): Promise<void> {
   await browser.evaluate((content) => {
     document.open();
-    document.write(content);
-    document.close();
-    return null;
+    // document.open clears listeners; arm the replacement document before writing.
+    return new Promise<null>((resolve, reject) => {
+      const loaded = () => resolve(null);
+      window.addEventListener('load', loaded, { once: true });
+      try {
+        document.write(content);
+        document.close();
+      } catch (error) {
+        window.removeEventListener('load', loaded);
+        reject(error);
+      }
+    });
   }, html);
 }
+
