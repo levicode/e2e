@@ -783,18 +783,50 @@ describe('CDP session recovery', () => {
   it('bounds a hung reconnect resolver and propagates cancellation to it', async () => {
     const remote = await host();
     let signal: AbortSignal | undefined;
+    let entered = false;
+    let native: NativeClient | undefined;
+    let phase = 'start';
+    let failed = false;
+    let failure: unknown;
+    const state = () => ({ disconnectEvents, resolverEntered: entered, resolverAborted: signal?.aborted === true,
+      recovery: native?.recoveryScope() !== undefined, terminal: native?.isTerminal() === true,
+      failed: (native as unknown as { failure?: unknown } | undefined)?.failure !== undefined });
+    const connect = vi.mocked(NativeClient.connect).getMockImplementation()!;
+    vi.mocked(NativeClient.connect).mockImplementation(async (...args) => { native = await connect(...args); return native; });
+    const request = NativeClient.prototype.request;
+    const probe = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
+      const pending = request.apply(this, args);
+      if (['browser.trace', 'scope.reconnect', 'browser.observe', 'scope.end'].includes(args[0])) {
+        void pending.then(result => console.error('HUNG_RECEIPT', JSON.stringify({ phase, command: args[0], operationSeq: result.operationSeq,
+          ok: result.ok, effects: result.effects, scopeState: result.scopeState, error: result.error?.code, retention: result.retention !== undefined, ...state() })),
+          () => {}).catch(() => {});
+      }
+      return pending;
+    });
     const engine = await start({
       cdpEndpoint: () => remote.endpoint,
-      reconnectEndpoint: (abort) => { signal = abort; return new Promise<string>(() => undefined); },
+      reconnectEndpoint: (abort) => { entered = true; signal = abort; console.error('HUNG_RESOLVER_ENTER', JSON.stringify(state())); return new Promise<string>(() => undefined); },
     });
     try {
+      phase = 'disconnect'; console.error('HUNG_PHASE', JSON.stringify({ phase, ...state() }));
       await disconnect(remote);
+      console.error('HUNG_DISCONNECT_DONE', JSON.stringify(state()));
+      phase = 'observe50';
       await expect(engine.observe!(operation(50))).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      console.error('HUNG_TIMEOUT_ASSERTED', JSON.stringify(state()));
+      phase = 'abort-assertion';
       expect(signal?.aborted).toBe(true);
+      console.error('HUNG_BODY_PASSED', JSON.stringify(state()));
+    } catch (cause) {
+      failed = true; failure = cause;
+      console.error('HUNG_FIRST_BODY', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() }));
     } finally {
-      await engine.dispose!(cleanup());
-      await closeRemoteChrome(remote);
+      phase = 'dispose';
+      try { await engine.dispose!(cleanup()); await closeRemoteChrome(remote); }
+      catch (cause) { console.error('HUNG_CLEANUP_FAILURE', JSON.stringify({ phase, code: cause instanceof EngineError ? cause.code : 'unknown', ...state() })); if (!failed) { failed = true; failure = cause; } }
+      probe.mockRestore(); vi.mocked(NativeClient.connect).mockImplementation(connect);
     }
+    if (failed) throw failure;
   }, 60_000);
 
   it('provisions a fresh browser for each attempt and refuses accidental reuse', recoveryCase('P09', async () => {
