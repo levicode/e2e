@@ -168,7 +168,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 8edc1669a14a760fad751338fb5fd006e455cdc7
+          ref: 01a7cbb84ccc3aaef01630fa539296c63952d9aa
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -226,7 +226,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 8edc1669a14a760fad751338fb5fd006e455cdc7
+          ref: 01a7cbb84ccc3aaef01630fa539296c63952d9aa
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -271,7 +271,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
-      E2E_SOURCE_SHA: '8edc1669a14a760fad751338fb5fd006e455cdc7'
+      E2E_SOURCE_SHA: '01a7cbb84ccc3aaef01630fa539296c63952d9aa'
       NATIVE_SOURCE_SHA: '70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb'
       CARGO_BUILD_JOBS: '1'
       RUSTUP_TOOLCHAIN: 1.99.1
@@ -321,7 +321,7 @@ jobs:
           test "$(sysctl -in sysctl.proc_translated 2>/dev/null || true)" != 1
           test "$(git -C source rev-parse HEAD)" = "$E2E_SOURCE_SHA"
           test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
-          test "$(git -C source rev-parse HEAD^{tree})" = ad05d353add4ca279664ed1fd3989da25018ed3a
+          test "$(git -C source rev-parse HEAD^{tree})" = 0732eadff051e2fc5b3f79b3304f604ec07aac70
           test "$(git -C native-source rev-parse HEAD^{tree})" = cfee75313ae66059894d86afd66eb275fef30a9c
           test -z "$(git -C source status --porcelain)"
           test -z "$(git -C native-source status --porcelain)"
