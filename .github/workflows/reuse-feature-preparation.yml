@@ -1,0 +1,37 @@
+name: Exact prior-built feature inventory and preparation diagnostics
+on:
+  push:
+    branches: [implement/reuse-feature-preparation-ci]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: feature-preparation-reuse-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  exact-reuse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: recipe
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 6e974b470e925c51b8452bdb66cfdcfbc310a471
+          path: native
+          persist-credentials: false
+      - name: Verify source-bound artifacts, exact listing delta, then feature and preparation tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 recipe/scripts/web-functional/reuse-feature-harnesses.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: feature-preparation-reuse-evidence
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
