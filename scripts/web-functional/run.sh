@@ -11,16 +11,18 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native ebab0fcffde3c0e2edc6d59585c210ade9abc306; E2E b6e1de82c529e2f4e24a5ef84ffa21f4bdf441cd.
+Native 1fd8815fb7770d02b4d14c2348a63d5ae001173f; E2E 8edc1669a14a760fad751338fb5fd006e455cdc7.
 NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
 NOT RUN (excluded scope): protected-app service-worker registration P41.
-NOT RUN: native auto-discovery, optional benchmark sweep, iOS, macOS.
-BLOCKED/NOT RUN: final producer, package-bundle and installed-package acceptance. Original final gates are unchanged.
-Known unresolved public semantics, NOT cleared by this matrix: pointer position preservation; stale-reference mapping after focus/reset.
+NOT RUN: native auto-discovery, optional benchmark sweep, iOS.
+macOS: separate diagnostic override-build jobs only; no full macOS acceptance claim.
+BLOCKED/NOT RUN: final producer, package-bundle and no-override installed-package acceptance. Original final gates are unchanged.
+Final acceptance/retirement evidence for pointer position preservation and stale-reference mapping after focus/reset is NOT established by this diagnostic matrix.
 Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
 SCOPE
 if [[ "$mode" == setup ]]; then
-  test "$(git rev-parse HEAD)" = b6e1de82c529e2f4e24a5ef84ffa21f4bdf441cd
+  test "$(git rev-parse HEAD)" = 8edc1669a14a760fad751338fb5fd006e455cdc7
+  test "$(git rev-parse HEAD^{tree})" = ad05d353add4ca279664ed1fd3989da25018ed3a
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
@@ -53,8 +55,10 @@ run_group() {
  case "$mode" in
   callbacks) node scripts/acceptance/candidate-web.ts public-callbacks "$PROD" "$PROOF" "$out" ;;
   web)
+   # Raw bounded native metadata only; not a cleanup success/acceptance receipt.
+   node --input-type=module -e "import {openSync,closeSync,writeFileSync} from 'node:fs'; closeSync(openSync(process.argv[1], 'wx', 0o600)); writeFileSync(process.argv[2], JSON.stringify({schemaVersion:1,status:'prepared',validation:'raw-not-validated',releaseEligible:false})+'\\n', {flag:'wx',mode:0o600});" "$out/web.cleanup.jsonl" "$out/web.cleanup.status.json" || return $?
    # activatedHost is called only within these five test bodies; shared hooks do not invoke it.
-   pnpm --filter @e2e-dev/web exec vitest run --project integration --maxWorkers=2 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/web-browser.vitest.json" \
+   AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$out/web.cleanup.jsonl" pnpm --filter @e2e-dev/web exec vitest run --project integration --maxWorkers=2 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/web-browser.vitest.json" \
     --exclude '**/semantic-fallback.test.ts' --exclude '**/crosscheck.test.ts' --exclude '**/cli.test.ts' \
     --testNamePattern='^(?!.*(?:beforeunload|leaves the host untouched until first (?:open|video) and allows a pre-open dialog handler|activates the borrowed first page through the registered dialog handler before provider recording|blocks service workers under headers)).*$' ;;
   differential) node scripts/acceptance/candidate-web.ts crosscheck-fixtures "$PROD" "$PROOF" "$out" ;;

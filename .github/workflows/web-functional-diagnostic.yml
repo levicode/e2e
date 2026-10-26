@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: ebab0fcffde3c0e2edc6d59585c210ade9abc306
+          ref: 1fd8815fb7770d02b4d14c2348a63d5ae001173f
           path: native
           persist-credentials: false
       - name: Compile exact native test harness (no browser auto-discovery)
@@ -32,8 +32,8 @@ jobs:
           set -euo pipefail
           mkdir -p evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = ebab0fcffde3c0e2edc6d59585c210ade9abc306
-          test "$(git rev-parse HEAD^{tree})" = d2bb921eb4a9936aea221de2ff8d73912f96dad0
+          test "$(git rev-parse HEAD)" = 1fd8815fb7770d02b4d14c2348a63d5ae001173f
+          test "$(git rev-parse HEAD^{tree})" = 180bd2c281be2c757ec49e8759f12e5b395f9620
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -88,12 +88,15 @@ jobs:
           sha256sum "$harness" > evidence/harness.sha256
           failed=0
           index=0
-          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse' 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission' 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison'; do
+          for name in 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input' 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued' 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse' 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission' 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::tests::terminal_cleanup_checkpoints_have_closed_payloads'; do
             index=$((index + 1))
             "$harness" --exact "$name" --list > "evidence/test-$index.inventory"
             grep -Fx "$name: test" "evidence/test-$index.inventory"
+            # Raw metadata, not a cleanup or acceptance receipt. One exclusive file per test process.
+            python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd)' "$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl"
+            printf '%s\n' '{"schemaVersion":1,"status":"prepared","validation":"raw-not-validated","releaseEligible":false}' > "evidence/test-$index.cleanup.status.json"
             set +e
-            "$harness" --exact "$name" --test-threads=1 --nocapture > "evidence/test-$index.log" 2>&1
+            AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl" "$harness" --exact "$name" --test-threads=1 --nocapture > "evidence/test-$index.log" 2>&1
             status=$?
             set -e
             printf '%s\n' "$status" > "evidence/test-$index.exit"
@@ -114,7 +117,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: ebab0fcffde3c0e2edc6d59585c210ade9abc306
+          ref: 1fd8815fb7770d02b4d14c2348a63d5ae001173f
           path: native
           persist-credentials: false
       - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -123,8 +126,8 @@ jobs:
           set -euo pipefail
           mkdir -p images evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = ebab0fcffde3c0e2edc6d59585c210ade9abc306
-          test "$(git rev-parse HEAD^{tree})" = d2bb921eb4a9936aea221de2ff8d73912f96dad0
+          test "$(git rev-parse HEAD)" = 1fd8815fb7770d02b4d14c2348a63d5ae001173f
+          test "$(git rev-parse HEAD^{tree})" = 180bd2c281be2c757ec49e8759f12e5b395f9620
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -161,7 +164,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: b6e1de82c529e2f4e24a5ef84ffa21f4bdf441cd
+          ref: 8edc1669a14a760fad751338fb5fd006e455cdc7
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -204,7 +207,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: b6e1de82c529e2f4e24a5ef84ffa21f4bdf441cd
+          ref: 8edc1669a14a760fad751338fb5fd006e455cdc7
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -228,3 +231,172 @@ jobs:
           path: evidence/
           if-no-files-found: warn
           retention-days: 7
+  macos-diagnostic:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            rust_host: aarch64-apple-darwin
+            macho_arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+            rust_host: x86_64-apple-darwin
+            macho_arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      E2E_SOURCE_SHA: '8edc1669a14a760fad751338fb5fd006e455cdc7'
+      NATIVE_SOURCE_SHA: '1fd8815fb7770d02b4d14c2348a63d5ae001173f'
+      CARGO_BUILD_JOBS: '1'
+      RUSTUP_TOOLCHAIN: 1.99.1
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Reject placeholder pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          for sha in "$E2E_SOURCE_SHA" "$NATIVE_SOURCE_SHA"; do
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+            test "$sha" != 0000000000000000000000000000000000000000
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/e2e
+          ref: ${{ env.E2E_SOURCE_SHA }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: ${{ env.NATIVE_SOURCE_SHA }}
+          path: native-source
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          architecture: ${{ matrix.arch }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+        with:
+          package_json_file: source/package.json
+      - name: Freeze platform and isolated tool paths
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/macos-diagnostic "$RUNNER_TEMP/diagnostic-home" "$RUNNER_TEMP/diagnostic-bin"
+          test "$(node -p 'process.platform')" = darwin
+          test "$(node -p 'process.arch')" = "$EXPECTED_ARCH"
+          test "$(sysctl -in sysctl.proc_translated 2>/dev/null || true)" != 1
+          test "$(git -C source rev-parse HEAD)" = "$E2E_SOURCE_SHA"
+          test "$(git -C native-source rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+          test "$(git -C source rev-parse HEAD^{tree})" = ad05d353add4ca279664ed1fd3989da25018ed3a
+          test "$(git -C native-source rev-parse HEAD^{tree})" = 180bd2c281be2c757ec49e8759f12e5b395f9620
+          test -z "$(git -C source status --porcelain)"
+          test -z "$(git -C native-source status --porcelain)"
+          sw_vers > .artifacts/macos-diagnostic/macos-version.txt
+          uname -a > .artifacts/macos-diagnostic/host.txt
+          git rev-parse HEAD HEAD^{tree} > .artifacts/macos-diagnostic/recipe-source.txt
+          git -C source rev-parse HEAD HEAD^{tree} > .artifacts/macos-diagnostic/e2e-source.txt
+          git -C native-source rev-parse HEAD HEAD^{tree} > .artifacts/macos-diagnostic/native-source.txt
+          rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+          test -d "$rustup_home"
+          case "$rustup_home" in /*) ;; *) exit 1 ;; esac
+          for tool in rustup cargo rustc pnpm; do dirname "$(command -v "$tool")" >> "$GITHUB_PATH"; done
+          echo "RUSTUP_HOME=$rustup_home" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$RUNNER_TEMP/diagnostic-cargo" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/diagnostic-target" >> "$GITHUB_ENV"
+          echo "HOME=$RUNNER_TEMP/diagnostic-home" >> "$GITHUB_ENV"
+      - name: Build exact public packages
+        working-directory: source
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --filter e2e run build
+          pnpm --filter @e2e-dev/web run build
+          pnpm --filter e2e run typecheck
+          pnpm --filter @e2e-dev/web run typecheck
+      - name: Build exact production runtime only
+        working-directory: native-source/cli
+        env:
+          EXPECTED_RUST_HOST: ${{ matrix.rust_host }}
+          EXPECTED_MACHO_ARCH: ${{ matrix.macho_arch }}
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          test "$(rustc -Vv | sed -n 's/^host: //p')" = "$EXPECTED_RUST_HOST"
+          out="$GITHUB_WORKSPACE/.artifacts/macos-diagnostic"
+          rustc -Vv > "$out/rustc.txt"
+          cargo -Vv > "$out/cargo.txt"
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          cargo build --locked --profile ci --no-default-features --message-format=json > "$out/compiler.jsonl" 2> "$out/build.stderr.log"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, copyFileSync, chmodSync } from 'node:fs';
+          import { join } from 'node:path';
+          const rows = readFileSync(join(process.env.GITHUB_WORKSPACE, '.artifacts/macos-diagnostic/compiler.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+          const done = rows.filter(r => r.reason === 'build-finished');
+          assert.equal(done.length, 1); assert.equal(done[0].success, true);
+          const bins = rows.filter(r => r.reason === 'compiler-artifact' && r.target?.name === 'agent-browser' && r.profile?.test === false);
+          assert.equal(bins.length, 1); const b = bins[0];
+          assert.deepEqual(b.features, []); assert.deepEqual(b.target.kind, ['bin']);
+          assert.equal(b.manifest_path, join(process.cwd(), 'Cargo.toml'));
+          assert.equal(b.target.src_path, join(process.cwd(), 'src/main.rs'));
+          assert.equal(b.executable, join(process.env.CARGO_TARGET_DIR, 'ci/agent-browser'));
+          const dest = join(process.env.RUNNER_TEMP, 'diagnostic-bin/production');
+          copyFileSync(b.executable, dest); chmodSync(dest, 0o755);
+          NODE
+          test "$(lipo -archs "$RUNNER_TEMP/diagnostic-bin/production")" = "$EXPECTED_MACHO_ARCH"
+          shasum -a 256 "$RUNNER_TEMP/diagnostic-bin/production" > "$out/production.sha256"
+      - name: Install official Chromium and negotiate production
+        env:
+          EXPECTED_MACHO_ARCH: ${{ matrix.macho_arch }}
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/.artifacts/macos-diagnostic"
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
+          ffmpeg -version > "$out/ffmpeg.txt"
+          "$RUNNER_TEMP/diagnostic-bin/production" install
+          chrome="$(node source/scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" "$out/chromium.json")"
+          test "$(lipo -archs "$chrome")" = "$EXPECTED_MACHO_ARCH"
+          "$chrome" --version > "$out/chromium-version.txt"
+          shasum -a 256 "$chrome" > "$out/chromium.sha256"
+          echo "E2E_CHROMIUM_EXECUTABLE=$chrome" >> "$GITHUB_ENV"
+          node --input-type=module -e "import { REQUIRED_CAPABILITIES } from './source/packages/web/dist/native/capabilities.js'; process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > "$out/capabilities.json"
+          E2E_CHROMIUM_EXECUTABLE="$chrome" node source/scripts/acceptance/probe-native.ts "$RUNNER_TEMP/diagnostic-bin/production" "$out/capabilities.json" "$out/negotiation.json"
+      - name: Pack and test independent installed diagnostic consumer
+        id: diagnostic
+        run: |
+          set -euo pipefail
+          node scripts/acceptance/diagnostic-package.mjs source native-source "$RUNNER_TEMP/diagnostic-bin/production" .artifacts/macos-diagnostic/negotiation.json "$RUNNER_TEMP/diagnostic-package" "$RUNNER_TEMP/diagnostic-consumer"
+          cp .artifacts/macos-diagnostic/{macos-version.txt,host.txt,recipe-source.txt,e2e-source.txt,native-source.txt,rustc.txt,cargo.txt,chromium-version.txt,chromium.sha256,ffmpeg.txt} "$RUNNER_TEMP/diagnostic-package/"
+          (cd "$RUNNER_TEMP/diagnostic-package" && shasum -a 256 macos-version.txt host.txt recipe-source.txt e2e-source.txt native-source.txt rustc.txt cargo.txt chromium-version.txt chromium.sha256 ffmpeg.txt >> SHA256SUMS)
+          tar -czf ".artifacts/macos-diagnostic/darwin-${{ matrix.arch }}-diagnostic.tgz" -C "$RUNNER_TEMP/diagnostic-package" .
+          shasum -a 256 ".artifacts/macos-diagnostic/darwin-${{ matrix.arch }}-diagnostic.tgz" > ".artifacts/macos-diagnostic/darwin-${{ matrix.arch }}-diagnostic.tgz.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() && steps.diagnostic.outcome == 'success' }}
+        with:
+          name: macos-diagnostic-override-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/macos-diagnostic/darwin-${{ matrix.arch }}-diagnostic.tgz
+            .artifacts/macos-diagnostic/darwin-${{ matrix.arch }}-diagnostic.tgz.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: macos-diagnostic-evidence-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/macos-diagnostic/*.txt
+            .artifacts/macos-diagnostic/*.json
+            .artifacts/macos-diagnostic/*.jsonl
+            .artifacts/macos-diagnostic/*.log
+            .artifacts/macos-diagnostic/*.sha256
+          if-no-files-found: warn
