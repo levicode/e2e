@@ -905,12 +905,23 @@ describe('CDP session recovery', () => {
         reconnectEndpoint: (abort) => { entered = true; signal = abort; console.error('HUNG_RESOLVER_ENTER', JSON.stringify(state())); return new Promise<string>(() => undefined); },
       });
       phase = 'disconnect'; console.error('HUNG_PHASE', JSON.stringify({ phase, ...state() }));
-      await disconnect(remote);
+      expect(native).toBeDefined();
+      expect(native!.recoveryScope()).toBeUndefined();
+      const previousDisconnects = disconnectEvents;
+      remote.disconnect();
+      // Like the original browser.close()/isConnected contract, wait for a real
+      // loss observation, not necessarily an ordinary lifecycle event. An EOF
+      // result may quarantine first, sealing the ordinary event sink; the real
+      // NativeClient validates its exact pending owner before exposing recovery.
+      await expect.poll(() => disconnectEvents > previousDisconnects || native!.recoveryScope() !== undefined,
+        { timeout: 5_000 }).toBe(true);
+      expect(native!.isTerminal()).toBe(false);
       console.error('HUNG_DISCONNECT_DONE', JSON.stringify(state()));
       phase = 'observe50';
       await expect(engine.observe!(operation(50))).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
       console.error('HUNG_TIMEOUT_ASSERTED', JSON.stringify(state()));
       phase = 'abort-assertion';
+      expect(entered).toBe(true);
       expect(signal?.aborted).toBe(true);
       console.error('HUNG_BODY_PASSED', JSON.stringify(state()));
     } catch (cause) {

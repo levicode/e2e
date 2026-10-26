@@ -1,4 +1,4 @@
-import { beginSyntheticCase } from '../helpers/synthetic-evidence.ts';
+import { traceContractEvidence } from '../helpers/trace-contract-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The app log: what a page does on its own during an attempt reaches the
@@ -122,8 +122,10 @@ describe('app log', () => {
     }
   });
 
-  it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async () => {
-    const evidence = new SyntheticRecoveryEvidence(beginSyntheticCase('P01'));
+  it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async (context) => {
+    const diagnostic = traceContractEvidence(context.task.meta);
+    const evidence = new SyntheticRecoveryEvidence(diagnostic.evidence);
+    let traceOrdinal: 0 | 1 | 2 = 0;
     const connect = NativeClient.connect;
     const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observeSyntheticConnection(connect(...args)));
     try {
@@ -145,12 +147,14 @@ describe('app log', () => {
             attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
             appLog: (entry) => entries.push(entry),
             navigation: (line) => went.push(line),
-            screen: (snapshot) => screens.push(snapshot),
+            screen: (snapshot) => { screens.push(snapshot); diagnostic.contract.screenCounts[traceOrdinal]++; },
             environment: (told) => facts.push({ ...told }),
           });
           evidence.passed('setup');
           evidence.enter('open', 'body');
+          let traceStarted = performance.now();
           await evidence.observer.select(0, 'browser.trace', () => surface.open(`${url}/moving`, operation()));
+          diagnostic.contract.elapsedMs[0] = Math.ceil(performance.now() - traceStarted);
           evidence.enter('assertion');
           evidence.observer.assert(0, () => {
             expect(screens).toHaveLength(1);
@@ -159,8 +163,12 @@ describe('app log', () => {
           // The screen is the trace's, never published: a ref from the observation acts after it, twice.
           const observed = await surface.observe(operation());
           const help = observed.root.children?.find((node) => node.role === 'button');
+          traceOrdinal = 1; traceStarted = performance.now();
           await evidence.observer.select(1, 'browser.trace', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          diagnostic.contract.elapsedMs[1] = Math.ceil(performance.now() - traceStarted);
+          traceOrdinal = 2; traceStarted = performance.now();
           await evidence.observer.select(2, 'browser.trace', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          diagnostic.contract.elapsedMs[2] = Math.ceil(performance.now() - traceStarted);
           evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
           expect(screens.every(screen => screen.pixels === undefined && screen.treeUnavailable !== true && screen.root.children?.some(node => node.role === 'button' && node.name === 'Help'))).toBe(true);
           releaseMovingNavigation();

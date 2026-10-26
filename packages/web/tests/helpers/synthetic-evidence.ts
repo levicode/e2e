@@ -8,7 +8,7 @@ export const SYNTHETIC_DIRECTORY_ENV = 'E2E_SYNTHETIC_EVIDENCE_DIRECTORY';
 export const SYNTHETIC_BINDING_ENV = 'E2E_SYNTHETIC_EVIDENCE_BINDING';
 export const SYNTHETIC_BINDING_FILE = 'binding.json';
 export const SYNTHETIC_CASE_MANIFEST = {
-  P01: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/app-log.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
+  P01: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/helpers/trace-contract-evidence.ts", "packages/web/tests/integration/app-log.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P02: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cdp-recovery.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P03: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cdp-recovery.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P04: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/cdp-recovery.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
