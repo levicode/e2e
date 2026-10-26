@@ -72,11 +72,11 @@ afterEach(async () => {
 
 // These cases exercise adapter-owned lifecycle through the actual framed client.
 // A synthetic peer acknowledges ownership; it does not prove remote browser cleanup.
-async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurface>[0] = {}, override?: (request: PeerRequest) => PeerOutcome | undefined) {
+async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurface>[0] = {}, override?: (request: PeerRequest) => PeerOutcome | undefined | Promise<PeerOutcome | undefined>) {
   let peer!: NativeProtocolPeer; let scopes = 0;
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
-    peer = new NativeProtocolPeer(config.capabilities, request => {
-      const outcome = override?.(request);
+    peer = new NativeProtocolPeer(config.capabilities, async request => {
+      const outcome = await override?.(request);
       if (outcome !== undefined) return outcome;
       if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
       if (request.command === 'page.title') return { data: { title: 'clean' } };
@@ -177,6 +177,42 @@ it('rejects a focus read from a context replaced before typing dispatches', asyn
   await rejected;
   expect(press).not.toHaveBeenCalled();
   expect(type).not.toHaveBeenCalled();
+});
+
+it.each([
+  { reason: 'stale-scope', effects: 'not-dispatched', aborted: false, expected: 'NODE_STALE' },
+  { reason: 'cancelled', effects: 'not-dispatched', aborted: false, expected: 'NODE_STALE' },
+  { reason: 'cancelled', effects: 'completed', aborted: false, expected: 'CANCELLED' },
+  { reason: 'cancelled', effects: 'unknown', aborted: false, expected: 'ACTION_MAY_HAVE_COMMITTED' },
+  { reason: 'cancelled', effects: 'not-dispatched', aborted: true, expected: 'CANCELLED' },
+] as const)('keeps focus/reset settlement classification ($reason/$effects, aborted=$aborted)', async ({ reason, effects, aborted, expected }) => {
+  let entered!: () => void;
+  let release!: (outcome: PeerOutcome) => void;
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<PeerOutcome>(resolve => { release = resolve; });
+  const fixture = await nativeLifecycle({}, async request => {
+    if (request.command === 'browser.keyboard.type') { entered(); return held; }
+    if (request.command === 'scope.reset') {
+      return { data: { identityScope: 'scope-2', recoveryIdentity: { browser: 'browser', context: 'context-2', page: 'page-2' } } };
+    }
+    return undefined;
+  });
+  try {
+    await fixture.native.startAttempt({ attemptId: 'a1', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    const published = vi.fn();
+    const controller = new AbortController();
+    const pending = fixture.native.typeText('replacement', { replace: true }, { ...operation(), signal: controller.signal }).then(published);
+    const rejected = expect(pending).rejects.toMatchObject({ code: expected });
+    void rejected.catch(() => undefined);
+    await reached;
+    try { await fixture.native.reset(operation()); }
+    finally { if (aborted) controller.abort(); release({ error: reason, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' }); }
+    await rejected;
+    expect(published).not.toHaveBeenCalled();
+    expect(fixture.peer.requests.filter(request => request.command.startsWith('browser.keyboard.')).map(request => [request.command, request.args])).toEqual([
+      ['browser.keyboard.type', { identityScope: 'scope-1', text: 'replacement', replace: true }],
+    ]);
+  } finally { await fixture.native.dispose(cleanup()); }
 });
 
 it('opens no session for an attempt the runner gave up on while its basic-auth password resolved', async () => {

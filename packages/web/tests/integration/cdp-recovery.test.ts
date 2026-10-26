@@ -626,6 +626,9 @@ describe('CDP session recovery', () => {
       cdpEndpoint: () => remote.endpoint,
       reconnectEndpoint: () => { reconnected += 1; return remote.endpoint; },
     });
+    let failurePhase: 'fixture' | 'locate' | 'perform' | 'transportDropped' | 'observe' | 'dispose' = 'fixture';
+    let failed = false;
+    let failure: unknown;
     try {
       const fixture = fixtureOf(engine);
       const original = await witness(engine, remote);
@@ -666,25 +669,38 @@ describe('CDP session recovery', () => {
         });
       });
       recoveryPhase('locate');
+      failurePhase = 'locate';
       const [button] = await engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Purchase', exact: true } } }, operation());
       recoveryPhase('perform');
+      failurePhase = 'perform';
       await recoveryAssert(0, () => expect(recoverySelect(0, 'browser.perform', () => engine.perform!(button!.ref, { kind: 'tap' }, operation()))).rejects.toMatchObject({ retryable: false }));
+      failurePhase = 'transportDropped';
       await transportDropped;
       expect(reconnected).toBe(0);
       recoveryPhase('observe');
+      failurePhase = 'observe';
       await engine.observe!(operation());
       expect(await fixtureOf(engine).evaluate(() => sessionStorage.getItem('clicks'))).toBe('1');
       expect(reconnected).toBe(1);
     } catch (cause) {
+      console.error('P06_BODY_FAILURE', JSON.stringify({ phase: failurePhase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
       recoveryEvidence.getStore()?.failed('body', cause);
-      throw cause;
+      failed = true; failure = cause;
     } finally {
       recoveryEvidence.getStore()?.passed('body');
       recoveryPhase('dispose', 'cleanup');
-      await engine.dispose!(cleanup());
-      await closeRemoteChrome(remote);
-      recoveryEvidence.getStore()?.passed('cleanup');
+      failurePhase = 'dispose';
+      try {
+        await engine.dispose!(cleanup());
+        await closeRemoteChrome(remote);
+        recoveryEvidence.getStore()?.passed('cleanup');
+      }
+      catch (cause) {
+        console.error('P06_CLEANUP_FAILURE', JSON.stringify({ phase: failurePhase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+        if (!failed) { failed = true; failure = cause; }
+      }
     }
+    if (failed) throw failure;
   }), 60_000);
 
   it('rejects a different browser and never falls back to the provisioning resolver', recoveryCase('P07', async () => {

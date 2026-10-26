@@ -20,6 +20,7 @@ import type {
   OperationContext,
   SemanticNode,
 } from 'e2e/engine';
+import { EngineError } from 'e2e/engine';
 import { web, type Browser } from '../../src/index.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { NativeClient } from '../../src/native/client.ts';
@@ -295,17 +296,34 @@ describe('web engine lifecycle', () => {
 
   it('serves consecutive attempts from one browser and survives an attempt close', async () => {
     const engine = web();
+    let failurePhase: 'init' | 'a1-open' | 'a1-observe' | 'a1-end' | 'a2-open' | 'a2-end' | 'dispose' = 'init';
+    let failed = false;
+    let failure: unknown;
     try {
       await boot(engine, app);
+      failurePhase = 'a1-open';
       expect(await openAttempt(engine, app, artifactsDir, 'a1')).toBe('Home');
+      failurePhase = 'a1-observe';
       expect((await engine.observe!(operation('a1'))).location).toBe(`${app.url}/`);
+      failurePhase = 'a1-end';
       await engine.endAttempt!(cleanup());
       // The next attempt reuses the pooled browser process, not a new launch.
+      failurePhase = 'a2-open';
       expect(await openAttempt(engine, app, artifactsDir, 'a2')).toBe('Home');
+      failurePhase = 'a2-end';
       await engine.endAttempt!(cleanup());
+    } catch (cause) {
+      console.error('LIFECYCLE_BODY_FAILURE', JSON.stringify({ phase: failurePhase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+      failed = true; failure = cause;
     } finally {
-      await engine.dispose!(cleanup());
+      failurePhase = 'dispose';
+      try { await engine.dispose!(cleanup()); }
+      catch (cause) {
+        console.error('LIFECYCLE_CLEANUP_FAILURE', JSON.stringify({ phase: failurePhase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+        if (!failed) { failed = true; failure = cause; }
+      }
     }
+    if (failed) throw failure;
   });
 
   it('relaunches after dispose and stays idempotent', async () => {
@@ -458,6 +476,58 @@ describe('web engine lifecycle', () => {
         expect(lines.some((line) => line.startsWith('wheel:210,410:') && Number(line.split(':')[2]) > 0)).toBe(true);
         expect(lines).toContain('mousedown:221,420');
         expect(lines).toContain('mouseup:321,461');
+      });
+    });
+
+    it.each([
+      { name: 'inside', width: 400, height: 300, x: 80, y: 70, aimX: 80, aimY: 70 },
+      { name: 'overflow descendant', width: 100, height: 100, x: 120, y: 50, aimX: 120, aimY: 50 },
+      { name: 'outside', width: 400, height: 300, x: 500, y: 350, aimX: 200, aimY: 150 },
+      { name: 'covered', width: 400, height: 300, x: 80, y: 70, aimX: 200, aimY: 150 },
+      { name: 'iframe', width: 100, height: 100, x: 80, y: 70, aimX: 50, aimY: 50 },
+    ])('keeps native node wheel aiming compatible in a real renderer ($name)', async ({ name, width, height, x, y, aimX, aimY }) => {
+      await inAttempt(`wheel-${name}`, async () => {
+        const op = () => operation(`wheel-${name}`);
+        await engine.session!.open!(`${app.url}/`, op());
+        const browser = nativeBrowser(engine, op, app.url);
+        const userAgent = await browser.evaluate(() => navigator.userAgent);
+        console.info('LOCAL_POINTER_NATIVE_VERSION', /Chrome\/(\d+(?:\.\d+){3})/.exec(userAgent)?.[1] ?? 'unknown');
+        const page = `<!doctype html><html><body style="margin:0;width:1000px;height:800px">
+          <div id="wheel-parent" style="position:absolute;left:0;top:0;width:${width}px;height:${height}px;overflow:visible">
+            <div style="position:absolute;left:0;top:0;width:${name === 'overflow descendant' ? 150 : width}px;height:${height}px;background:#eee">wheel target</div>
+          </div>
+          ${name === 'covered' ? '<div style="position:absolute;left:60px;top:50px;width:40px;height:40px;background:#999">cover</div>' : ''}
+          <script>
+            window.wheelEvents=[];
+            document.addEventListener('mousemove', event => wheelEvents.push({type:'move',x:event.clientX,y:event.clientY}));
+            document.addEventListener('wheel', event => {wheelEvents.push({type:'wheel',x:event.clientX,y:event.clientY,dy:event.deltaY});event.preventDefault()}, {passive:false});
+          </script></body></html>`;
+        await replaceDocument(browser, name === 'iframe'
+          ? `<!doctype html><body style="margin:0"><iframe id="wheel-frame" style="position:absolute;left:20px;top:30px;width:200px;height:200px;border:0" srcdoc="${page.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"></iframe></body>`
+          : page);
+        if (name === 'iframe') {
+          await expect.poll(() => browser.evaluate(() => document.querySelector('iframe')?.contentDocument?.querySelector('#wheel-parent') != null)).toBe(true);
+        }
+        const target: LocatorExpression = name === 'iframe'
+          ? { kind: 'frame', selector: '#wheel-frame', source: { kind: 'selector', selector: '#wheel-parent' } }
+          : { kind: 'selector', selector: '#wheel-parent' };
+        const [node] = await engine.locate!(target, op());
+        expect(node).toBeDefined();
+        await engine.performAt!({ x, y }, { kind: 'hover' }, op());
+        await browser.evaluate((framed) => {
+          const win = framed ? document.querySelector('iframe')!.contentWindow! : window;
+          (win as unknown as { wheelEvents: unknown[] }).wheelEvents = [];
+          return null;
+        }, name === 'iframe');
+        await engine.perform!(node!.ref, { kind: 'swipe', direction: 'down' }, op());
+        const events = await browser.evaluate((framed) => {
+          const win = framed ? document.querySelector('iframe')!.contentWindow! : window;
+          return Array.from((win as unknown as { wheelEvents: { type: string; x: number; y: number; dy?: number }[] }).wheelEvents,
+            event => ({ ...event }));
+        }, name === 'iframe');
+        expect(events.filter(event => event.type === 'wheel')).toEqual([{ type: 'wheel', x: aimX, y: aimY, dy: height / 2 }]);
+        expect(events.filter(event => event.type === 'move')).toEqual(name === 'inside' || name === 'overflow descendant'
+          ? [] : [{ type: 'move', x: aimX, y: aimY }]);
       });
     });
 

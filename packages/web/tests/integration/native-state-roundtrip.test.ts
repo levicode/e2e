@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import type { OperationContext } from 'e2e/engine';
+import { EngineError, type OperationContext } from 'e2e/engine';
 import { web } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -43,6 +43,7 @@ it('restores cookies, local storage and structured IndexedDB before the first ap
     CI: process.env['CI'],
     HOME: process.env['HOME'],
     PATH: process.env['PATH'],
+    RUST_MIN_STACK: process.env['RUST_MIN_STACK'],
     TMPDIR: process.env['TMPDIR'],
     TMP: process.env['TMP'],
     TEMP: process.env['TEMP'],
@@ -71,27 +72,45 @@ it('restores cookies, local storage and structured IndexedDB before the first ap
     await expect.poll(() => reports.has(phase), { timeout: 5_000 }).toBe(true);
     return reports.get(phase);
   };
+  let step = 'init';
+  let failed = false;
+  let firstFailure: unknown;
+  const remember = (cause: unknown): void => { if (!failed) { failed = true; firstFailure = cause; } };
   try {
     await engine.init!({ runId: 'state-contract', targetName: 'web', projectRoot: process.cwd(), app: { site: '127.0.0.1' }, env: nativeEnv, headed: false, workerSlot: 0, log: () => undefined, signal: new AbortController().signal });
+    step = 'start';
     await engine.startAttempt!({ attemptId: 'state', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    step = 'seed-open';
     await engine.session!.open!(`${origin}/?phase=seed`, operation());
     expect(await readback('seed')).not.toHaveProperty('error');
     const cancelled = new AbortController();
     cancelled.abort();
     await expect(engine.state!.capture({ ...operation(), signal: cancelled.signal })).rejects.toMatchObject({ code: 'CANCELLED' });
+    step = 'capture';
     const state = await engine.state!.capture(operation());
+    step = 'reset';
     await engine.session!.reset!(operation());
     await engine.session!.open!(`${origin}/?phase=empty`, operation());
     expect(await readback('empty')).toMatchObject({ first: { cookie: '', local: null }, record: null });
     const beforeRestore = [...requests];
+    step = 'restore';
     await engine.state!.restore(state, operation());
     expect(requests, 'state bootstrap must not navigate or call the application server').toEqual(beforeRestore);
     await engine.session!.open!(`${origin}/?phase=restored`, operation());
     expect(await readback('restored')).toEqual({ phase: 'restored', first: { cookie: 'native-fixture=synthetic', local: 'stored' }, created: false, version: 3, indexes: ['byLabel'], record: { cycle: true, typedKind: 'Uint16Array', typed: [1, 65535], blob: 'fixture-payload', blobType: 'text/plain' } });
+  } catch (cause) {
+    remember(cause);
+    console.error('STATE_BODY_FAILURE', JSON.stringify({ step, stackForwarded: Object.hasOwn(nativeEnv, 'RUST_MIN_STACK'), code: cause instanceof EngineError ? cause.code : 'unknown' }));
   } finally {
-    try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 10_000 }); }
+    try {
+      try { await engine.endAttempt!({ signal: new AbortController().signal, timeoutMs: 10_000 }); }
+      catch (cause) { remember(cause); console.error('STATE_CLEANUP_FAILURE', JSON.stringify({ step: 'end', code: cause instanceof EngineError ? cause.code : 'unknown' })); }
+    }
     finally {
-      try { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 10_000 }); }
+      try {
+        try { await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 10_000 }); }
+        catch (cause) { remember(cause); console.error('STATE_CLEANUP_FAILURE', JSON.stringify({ step: 'dispose', code: cause instanceof EngineError ? cause.code : 'unknown' })); }
+      }
       finally {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -99,4 +118,5 @@ it('restores cookies, local storage and structured IndexedDB before the first ap
       }
     }
   }
+  if (failed) throw firstFailure;
 });

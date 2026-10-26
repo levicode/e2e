@@ -235,6 +235,9 @@ describe('native direct-point ordered forwarding', () => {
     ] as const;
     const originalActions = structuredClone(actions);
     const scope = surface.identityScope;
+    // Exact forwarding assumes no elapsed admission time; keep its original
+    // 1000ms assertion independent of scheduler latency in this payload test.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(Math.trunc(performance.now()));
     try {
       for (const action of actions) {
         await expect(surface.performAt(point, action, operation())).resolves.toBeUndefined();
@@ -248,6 +251,7 @@ describe('native direct-point ordered forwarding', () => {
       expect(point).toEqual({ x: 10, y: 20 });
       expect(actions).toEqual(originalActions);
     } finally {
+      clock.mockRestore();
       try { await surface.endAttempt(cleanup()); }
       finally { await surface.dispose(cleanup()); }
     }

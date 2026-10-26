@@ -830,7 +830,20 @@ export class NativeSurface implements NativeWebSurface {
     await this.engineCommand('browser.pointer', { identityScope: admitted.scope, point, action }, operation);
     await this.screenAfterAction(operation, admitted.attempt, admitted.scope);
   }
-  async typeText(text: string, options: { readonly replace: boolean }, operation: OperationContext): Promise<void> { const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation; await this.engineCommand('browser.keyboard.type', { identityScope: this.identityScope, text, replace: options.replace }, operation); await this.screenAfterAction(operation, admitted.attempt, admitted.scope); }
+  async typeText(text: string, options: { readonly replace: boolean }, operation: OperationContext): Promise<void> {
+    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
+    const epoch = admitted.attempt.epoch;
+    try { await this.engineCommand('browser.keyboard.type', { identityScope: admitted.scope, text, replace: options.replace }, operation); }
+    catch (cause) {
+      if (isNativeNotDispatched(cause)) this.assertAttempt(admitted.attempt);
+      if (!operation.signal.aborted && isNativeNotDispatched(cause) && this.attempt === admitted.attempt
+        && (admitted.attempt.scope !== admitted.scope || admitted.attempt.epoch !== epoch)) {
+        throw new EngineError('NODE_STALE', 'The focused document was replaced before typing dispatched', { retryable: true });
+      }
+      throw cause;
+    }
+    await this.screenAfterAction(operation, admitted.attempt, admitted.scope);
+  }
   async pressKey(key: string, operation: OperationContext): Promise<void> { const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation; await this.engineCommand('browser.keyboard.press', { identityScope: this.identityScope, key }, operation); await this.screenAfterAction(operation, admitted.attempt, admitted.scope); }
   async open(url: string, operation: OperationContext): Promise<void> { const attempt = this.requireAttempt(); const scope = attempt.scope; await this.command('page.navigate', { url, waitUntil: 'load' }, operation); await this.screenAfterAction(operation, attempt, scope); }
   async back(operation: OperationContext): Promise<void> { const attempt = this.requireAttempt(); const scope = attempt.scope; await this.command('page.back', {}, operation); await this.screenAfterAction(operation, attempt, scope); }

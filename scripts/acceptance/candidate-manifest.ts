@@ -57,7 +57,7 @@ export const CANDIDATE_SEMANTIC_FAULT_ASSERTIONS = [
 ] as const;
 export const CANDIDATE_CROSSCHECK_FILE = 'crosscheck.test.ts';
 export const CANDIDATE_DIFFERENTIAL_FIXTURES = [
-  'shadow section landmarks', 'inferred table headers', 'role fallback tokens', 'boolean attribute casing',
+  'shadow section landmarks', 'inferred table headers', 'explicitly hidden select choices', 'role fallback tokens', 'boolean attribute casing',
   'inputs', 'buttons and links', 'checked states', 'disabled states', 'expanded and selected',
   'landmarks and headings', 'tables and lists', 'names', 'generated content', 'hidden content', 'shadow and custom elements',
 ] as const;

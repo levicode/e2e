@@ -12,7 +12,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NodeRef } from 'e2e/engine';
 import type { Disagreement } from '../crosscheck/crosscheck.ts';
-import { nativeDocument } from '../helpers/native-browser.ts';
+import { nativeBrowserGraph, nativeDocument } from '../helpers/native-browser.ts';
 import { observedNodes } from '../helpers/native-correlation.ts';
 import { startNativeFixture, type NativeFixture } from '../helpers/native-fixture.ts';
 import { diffExpectations, keyOf, readExpectations, TODO_REASON, writeExpectations } from '../crosscheck/expectations.ts';
@@ -122,7 +122,10 @@ describe('axe-core conformance', () => {
       let checked = 0;
       let targets = 0;
       for (const [index, entry] of cases.entries()) {
-        await nativeDocument(fixture!.browser, `<!doctype html><html lang="en"><head>${EMPTY_BOXES}</head><body>${entry.html}${SHADOW_TEMPLATES}</body></html>`);
+        // Each independent markup case owns a bounded fixture budget; the table
+        // must not inherit the first case's already elapsed 30-second deadline.
+        const { browser, correlate } = nativeBrowserGraph(fixture!.engine, fixture!.operation);
+        await nativeDocument(browser, `<!doctype html><html lang="en"><head>${EMPTY_BOXES}</head><body>${entry.html}${SHADOW_TEMPLATES}</body></html>`);
         const snapshot = await fixture!.engine.observe!({ ...fixture!.operation(), origin: 'agent' });
         const selectors = asList(entry.target);
         const texts = entry.accessibleText === undefined ? undefined : asList(entry.accessibleText);
@@ -135,7 +138,7 @@ describe('axe-core conformance', () => {
           expect(matches.length, `${table} #${index}: ${selector} matches nothing`).toBe(1);
           located.push(matches[0]!.ref);
         }
-        const correlated = await fixture!.correlate(located, observedNodes(snapshot.root));
+        const correlated = await correlate(located, observedNodes(snapshot.root));
         for (const [position, selector] of selectors.entries()) {
           targets += 1;
           const node = correlated[position] ?? undefined;

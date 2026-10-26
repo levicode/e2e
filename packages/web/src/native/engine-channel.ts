@@ -39,6 +39,9 @@ export class EngineChannel {
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
     if (!result.ok && result.effects === 'unknown') throw resultError(result);
+    // A settled keyboard refusal carries no input prefix. Preserve that exact
+    // native evidence so the surface can classify a completed local reset.
+    if (!result.ok && name === 'browser.keyboard.type' && result.effects === 'not-dispatched' && result.scopeState === 'usable') throw resultError(result);
     try { this.assertOwner(owns); } catch (cause) {
       // A completed transition cannot leave a publication barrier pending after its owner retires.
       if (callbackTransition !== undefined) this.client.invalidate();

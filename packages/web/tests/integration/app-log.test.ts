@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppLogEntry, EngineCleanupContext, EngineFixtureContext, EngineSnapshot, OperationContext } from 'e2e/engine';
+import { EngineError } from 'e2e/engine';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { NativeClient } from '../../src/native/client.ts';
@@ -37,7 +38,7 @@ const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="windo
   frame.name = 'pay';
   frame.src = '/embed';
   document.body.append(frame);
-  setTimeout(() => { location.href = '/next'; }, 1000);
+  fetch('/moving-next').then(() => { location.href = '/next'; });
 </script></body></html>`;
 
 /** The pages a navigation lands on, each naming its own path; served from here, never from the request. */
@@ -52,12 +53,16 @@ const operation = (): OperationContext => ({ signal, timeoutMs: 30_000, runId: '
 describe('app log', () => {
   let server: Server;
   let url: string;
+  let releaseMovingNavigation: () => void;
 
   beforeAll(async () => {
+    const movingNavigation = new Promise<void>(resolve => { releaseMovingNavigation = resolve; });
     server = createServer((request, response) => {
       if (request.url === '/') {
         response.writeHead(200, { 'content-type': 'text/html' });
         response.end(PAGE);
+      } else if (request.url === '/moving-next') {
+        void movingNavigation.then(() => { response.writeHead(200); response.end(); });
       } else if (request.url === '/moving') {
         response.writeHead(200, { 'content-type': 'text/html' });
         response.end(MOVING);
@@ -129,6 +134,8 @@ describe('app log', () => {
         const went: string[] = [];
         const screens: EngineSnapshot[] = [];
         const facts: Record<string, string>[] = [];
+        let failed = false;
+        let failure: unknown;
         try {
           evidence.enter('init');
           await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
@@ -155,6 +162,7 @@ describe('app log', () => {
           await evidence.observer.select(1, 'capture.screenshot', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
           await evidence.observer.select(2, 'capture.screenshot', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
           evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
+          releaseMovingNavigation();
           const navigations = () => [...went];
           await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
           expect(navigations()).toEqual(expect.arrayContaining([
@@ -166,19 +174,32 @@ describe('app log', () => {
           await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
           expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
           evidence.passed('body');
-        } catch (cause) { evidence.failed(evidence.section, cause); throw cause; }
+        } catch (cause) {
+          console.error('APP_LOG_BODY_FAILURE', JSON.stringify({ phase: evidence.phase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+          evidence.failed(evidence.section, cause); failed = true; failure = cause;
+        }
         finally {
+          releaseMovingNavigation();
           evidence.enter('end', 'cleanup');
           let cleanupFailed = false;
           try {
-            await surface.endAttempt(cleanup()).catch((cause: unknown) => { cleanupFailed = true; evidence.failed('cleanup', cause); });
+            await surface.endAttempt(cleanup()).catch((cause: unknown) => {
+              cleanupFailed = true; evidence.failed('cleanup', cause);
+              console.error('APP_LOG_CLEANUP_FAILURE', JSON.stringify({ phase: evidence.phase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+              if (!failed) { failed = true; failure = cause; }
+            });
             evidence.enter('dispose', 'cleanup');
             await surface.dispose(cleanup());
             rmSync(artifactsDir, { recursive: true, force: true });
-          // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-          } catch (cause) { cleanupFailed = true; evidence.observer.failure('cleanup', cause); throw cause; }
+          } catch (cause) {
+            cleanupFailed = true;
+            console.error('APP_LOG_CLEANUP_FAILURE', JSON.stringify({ phase: evidence.phase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+            evidence.observer.failure('cleanup', cause);
+            if (!failed) { failed = true; failure = cause; }
+          }
           finally { evidence.finishBackstop(cleanupFailed); }
         }
+        if (failed) throw failure;
       });
     } finally {
       try { connection.mockRestore(); } catch { evidence.evidence.invalidate(); }
