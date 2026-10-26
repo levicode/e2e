@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
         path: native
         persist-credentials: false
     - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -33,9 +33,9 @@ jobs:
 
         cd native/cli
 
-        test "$(git rev-parse HEAD)" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        test "$(git rev-parse HEAD)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
 
-        test "$(git rev-parse HEAD^{tree})" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4
+        test "$(git rev-parse HEAD^{tree})" = c36e1b9bc438c6245c6861781e2502ab143d00b8
 
         test -z "$(git status --porcelain)"
 
@@ -60,9 +60,9 @@ jobs:
         sha256sum production acceptance-faults > SHA256SUMS
 
 
-        printf "%s\n" cc46f3eef108e690ef256a2fbea2c1ebfa93aec7 > native-source.sha
+        printf "%s\n" 9b742b5dcf785d1e05be582080e3a89696245ee3 > native-source.sha
 
-        printf "%s\n" 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4 > native-source.tree
+        printf "%s\n" c36e1b9bc438c6245c6861781e2502ab143d00b8 > native-source.tree
 
         printf "%s\n" "$GITHUB_RUN_ID" > producer-run.id
 
@@ -95,7 +95,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
         path: native
         persist-credentials: false
     - name: Compile all original default Cargo test targets once
@@ -109,9 +109,9 @@ jobs:
 
         cd native/cli
 
-        test "$(git rev-parse HEAD)" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        test "$(git rev-parse HEAD)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
 
-        test "$(git rev-parse HEAD^{tree})" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4
+        test "$(git rev-parse HEAD^{tree})" = c36e1b9bc438c6245c6861781e2502ab143d00b8
 
         test -z "$(git status --porcelain)"
 
@@ -130,6 +130,14 @@ jobs:
         mkdir -p "$GITHUB_WORKSPACE/evidence/cargo-timings"
 
         cp -a "$RUNNER_TEMP/native-regressions-target/cargo-timings/." "$GITHUB_WORKSPACE/evidence/cargo-timings/"
+
+        '
+    - name: Preserve available compiler timing report even when compilation fails
+      if: always()
+      run: 'mkdir -p evidence/cargo-timings
+
+        if [ -d "$RUNNER_TEMP/native-regressions-target/cargo-timings" ]; then cp -a "$RUNNER_TEMP/native-regressions-target/cargo-timings/."
+        evidence/cargo-timings/; fi
 
         '
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -325,7 +333,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: 141af04a8bffc39b5bc310408f1412504b304249
+        ref: eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
         path: source
         persist-credentials: false
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -345,9 +353,9 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        test "$(cat images/native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
 
-        test "$(cat images/native-source.tree)" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4
+        test "$(cat images/native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
 
         test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
 
@@ -411,7 +419,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: 141af04a8bffc39b5bc310408f1412504b304249
+        ref: eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
         path: source
         persist-credentials: false
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -431,9 +439,9 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        test "$(cat images/native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
 
-        test "$(cat images/native-source.tree)" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4
+        test "$(cat images/native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
 
         test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
 
@@ -519,7 +527,7 @@ jobs:
         \ n in encoder_names)],'releaseEligible':False},indent=2)+'\\n')\n(out/'encoder-contracts.result.json').write_text(json.dumps({'category':'fake-cdp-real-encoder-contract','required':encoder_contracts,'results':[r\
         \ for r in results if r['name'] in encoder_names],'failures':[f for f in failures if any(f.startswith(n+':') for n\
         \ in encoder_names)],'browserIdentityRequired':False,'releaseEligible':False},indent=2)+'\\n')\nsys.exit(1 if failures\
-        \ else 0)\nPY_CONTRACTS\ncat > \"$RUNNER_TEMP/exact-contracts.json\" <<'JSON_CONTRACTS'\n{\n  \"source\": \"cc46f3eef108e690ef256a2fbea2c1ebfa93aec7\"\
+        \ else 0)\nPY_CONTRACTS\ncat > \"$RUNNER_TEMP/exact-contracts.json\" <<'JSON_CONTRACTS'\n{\n  \"source\": \"9b742b5dcf785d1e05be582080e3a89696245ee3\"\
         ,\n  \"names\": [\n    {\n      \"index\": 1,\n      \"name\": \"native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup\"\
         ,\n      \"path\": \"cli/src/native/client_browser.rs\",\n      \"line\": 6020,\n      \"excerpt\": \"next-exact-ci/formal37-review/01-chromium_owned_scope_isolation_and_cleanup.rs\"\
         ,\n      \"lines\": 132,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
@@ -784,13 +792,13 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
         path: native
         persist-credentials: false
     - name: Compile acceptance-faults exact test harness only
       shell: bash
-      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7\n\
-        test \"$(git rev-parse HEAD^{tree})\" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4\ntest -z \"$(git status --porcelain)\"\
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = 9b742b5dcf785d1e05be582080e3a89696245ee3\n\
+        test \"$(git rev-parse HEAD^{tree})\" = c36e1b9bc438c6245c6861781e2502ab143d00b8\ntest -z \"$(git status --porcelain)\"\
         \nrustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
         export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --timings --no-default-features\
         \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\"\
@@ -810,6 +818,14 @@ jobs:
         ; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
         \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\
         \ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\" \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n"
+    - name: Preserve available compiler timing report even when compilation fails
+      if: always()
+      run: 'mkdir -p evidence/cargo-timings
+
+        if [ -d "$RUNNER_TEMP/native-regressions-target/cargo-timings" ]; then cp -a "$RUNNER_TEMP/native-regressions-target/cargo-timings/."
+        evidence/cargo-timings/; fi
+
+        '
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: optional-screenshot-fault-harness
@@ -832,7 +848,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
         path: native
         persist-credentials: false
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -846,17 +862,17 @@ jobs:
 
         cd native
 
-        test "$(git rev-parse HEAD)" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        test "$(git rev-parse HEAD)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
 
-        test "$(git rev-parse HEAD^{tree})" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4
+        test "$(git rev-parse HEAD^{tree})" = c36e1b9bc438c6245c6861781e2502ab143d00b8
 
         test -z "$(git status --porcelain)"
 
         cd ../native-harness
 
-        test "$(cat native-source.sha)" = cc46f3eef108e690ef256a2fbea2c1ebfa93aec7
+        test "$(cat native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
 
-        test "$(cat native-source.tree)" = 382e46c7e02dfc12e06c1fe72a779ceb687b4fa4
+        test "$(cat native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
 
         test "$(cat features.txt)" = acceptance-faults
 
