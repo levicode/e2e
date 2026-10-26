@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { candidateRevision } from './candidate-revision.ts';
 import { candidateSha, compilerHarnesses, verifyNativeInventory } from './candidate-native.ts';
-import { candidatePhaseEnvironment, candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures, verifySemanticFaults } from './candidate-web.ts';
+import { candidatePhaseEnvironment, semanticCleanupDiagnosticEvidence, candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures, verifySemanticFaults } from './candidate-web.ts';
 import { candidateSourceProblems, LEGACY_PRODUCTION_FILES, REQUIRED_MIGRATED_TEST_FILES } from './candidate-source.ts';
 import { CANDIDATE_GATES, OPTIONAL_CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
 import { CANDIDATE_CROSSCHECK_FILE, CANDIDATE_DIFFERENTIAL_FIXTURES, CANDIDATE_FAULT_FILE, CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_SEMANTIC_FAULT_ASSERTIONS, CANDIDATE_WEB_SUITES } from './candidate-manifest.ts';
@@ -208,14 +208,24 @@ test('fake-harness orchestration continues all exact contracts after failure and
 
 test('only semantic faults receive an exclusively created private native phase file', t => {
   const root = fixture(t);
-  const inherited = { AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: '/untrusted-inherited-path', KEEP: 'yes' };
-  for (const id of ['web-browser', 'package-imports', 'crosscheck-fixtures', 'public-callbacks']) {
+  const inherited = { AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: '/untrusted-inherited-path', AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: '/untrusted-cleanup-path', KEEP: 'yes' };
+  for (const id of [...CANDIDATE_WEB_SUITES.map(suite => suite.id), 'crosscheck-benchmark'].filter(id => id !== 'semantic-faults')) {
     assert.deepEqual(candidatePhaseEnvironment(id, inherited, root), { KEEP: 'yes' });
+    assert.equal(existsSync(join(root, 'semantic-faults.cleanup.jsonl')), false);
   }
   const path = join(root, 'semantic-faults.native-phases.jsonl');
   assert.equal(existsSync(path), false);
   const env = candidatePhaseEnvironment('semantic-faults', inherited, root);
-  assert.deepEqual(env, { KEEP: 'yes', AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: path });
+  const cleanup = join(root, 'semantic-faults.cleanup.jsonl');
+  assert.deepEqual(env, { KEEP: 'yes', AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: path, AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: cleanup });
+  assert.equal(fs.lstatSync(cleanup).isFile(), true);
+  assert.equal(fs.lstatSync(cleanup).isSymbolicLink(), false);
+  assert.equal(statSync(cleanup).mode & 0o777, 0o600);
+  assert.equal(readFileSync(cleanup, 'utf8'), '');
+  assert.deepEqual(semanticCleanupDiagnosticEvidence(env), { status: 'unknown', prepared: true, reason: 'raw-capture-not-validated' });
+  const cleanupStatus = join(root, 'semantic-faults.cleanup.status.json');
+  assert.deepEqual(JSON.parse(readFileSync(cleanupStatus, 'utf8')), semanticCleanupDiagnosticEvidence(env));
+  assert.equal(statSync(cleanupStatus).mode & 0o777, 0o600);
   assert.equal(statSync(path).mode & 0o777, 0o600);
   assert.equal(readFileSync(path, 'utf8'), '');
   for (const name of SEMANTIC_TRACE_CASES) {
@@ -233,6 +243,38 @@ test('native phase preparation refuses a preexisting symlink without modifying i
   symlinkSync(target, join(root, 'semantic-faults.native-phases.jsonl'));
   assert.throws(() => candidatePhaseEnvironment('semantic-faults', {}, root), { code: 'EEXIST' });
   assert.equal(readFileSync(target, 'utf8'), 'retained');
+});
+
+for (const kind of ['file', 'symlink'] as const) {
+  test(`semantic cleanup preparation refuses preexisting ${kind} while preserving original phases`, t => {
+    const root = fixture(t); const cleanup = join(root, 'semantic-faults.cleanup.jsonl');
+    const target = join(root, 'retained-cleanup');
+    if (kind === 'symlink') { writeFileSync(target, 'retained'); symlinkSync(target, cleanup); }
+    else writeFileSync(cleanup, 'retained');
+    const inherited = { AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: '/untrusted-cleanup-path', KEEP: 'yes' };
+    const env = candidatePhaseEnvironment('semantic-faults', inherited, root);
+    assert.equal(env.AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE, undefined);
+    assert.equal(inherited.AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE, '/untrusted-cleanup-path');
+    assert.equal(readFileSync(kind === 'symlink' ? target : cleanup, 'utf8'), 'retained');
+    assert.equal(fs.lstatSync(cleanup).isSymbolicLink(), kind === 'symlink');
+    assert.deepEqual(semanticCleanupDiagnosticEvidence(env), { status: 'unknown', prepared: false, reason: 'capture-not-prepared' });
+    assert.deepEqual(JSON.parse(readFileSync(join(root, 'semantic-faults.cleanup.status.json'), 'utf8')), semanticCleanupDiagnosticEvidence(env));
+    assert.equal(env.AGENT_BROWSER_ACCEPTANCE_PHASE_FILE, join(root, NATIVE_TRACE_FILE));
+    for (const file of [NATIVE_TRACE_FILE, ...SEMANTIC_TRACE_CASES.map(tsTraceFile)]) {
+      assert.equal(statSync(join(root, file)).mode & 0o777, 0o600);
+      assert.equal(readFileSync(join(root, file), 'utf8'), '');
+    }
+  });
+}
+
+test('semantic cleanup preparation preserves phases when supplementary status creation fails', t => {
+  const root = fixture(t); const status = join(root, 'semantic-faults.cleanup.status.json');
+  writeFileSync(status, 'retained');
+  const env = candidatePhaseEnvironment('semantic-faults', {}, root);
+  assert.equal(readFileSync(status, 'utf8'), 'retained');
+  assert.equal(env.AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE, join(root, 'semantic-faults.cleanup.jsonl'));
+  assert.equal(env.AGENT_BROWSER_ACCEPTANCE_PHASE_FILE, join(root, NATIVE_TRACE_FILE));
+  for (const file of [NATIVE_TRACE_FILE, ...SEMANTIC_TRACE_CASES.map(tsTraceFile)]) assert.equal(readFileSync(join(root, file), 'utf8'), '');
 });
 
 // Actual-path trace capture tests use ordinary temporary files and scalar records only.

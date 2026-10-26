@@ -123,8 +123,21 @@ export function candidatePhaseEnvironment(id: string, inherited: NodeJS.ProcessE
     writeFileSync(file, '', { flag: 'wx', mode: 0o600 });
     for (const name of SEMANTIC_TRACE_CASES) writeFileSync(resolve(output, tsTraceFile(name)), '', { flag: 'wx', mode: 0o600 });
     env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'] = file;
+    try {
+      const cleanup = resolve(output, 'semantic-faults.cleanup.jsonl');
+      writeFileSync(cleanup, '', { flag: 'wx', mode: 0o600 });
+      env['AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE'] = cleanup;
+    } catch { /* Missing diagnostics remain unknown; preserve the original phase capture. */ }
+    try {
+      writeFileSync(resolve(output, 'semantic-faults.cleanup.status.json'), JSON.stringify(semanticCleanupDiagnosticEvidence(env), null, 2), { flag: 'wx', mode: 0o600 });
+    } catch { /* Supplementary metadata must not change suite status or phase capture. */ }
   }
   return env;
+}
+/** Raw cleanup capture is supplementary, not validated acceptance evidence. */
+export function semanticCleanupDiagnosticEvidence(env: NodeJS.ProcessEnv) {
+  const prepared = env['AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE'] !== undefined;
+  return { status: 'unknown' as const, prepared, reason: prepared ? 'raw-capture-not-validated' : 'capture-not-prepared' };
 }
 function main(args: string[]): void {
   const [id, binaryArg, proofArg, outputArg, installerBinaryArg, installerProofArg] = args;
