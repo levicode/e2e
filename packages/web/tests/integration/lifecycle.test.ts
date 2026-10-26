@@ -1,3 +1,4 @@
+import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 import { LifecycleAttemptDiagnostic } from '../helpers/lifecycle-attempt-diagnostic.ts';
 import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 /**
@@ -1426,6 +1427,7 @@ describe('web engine lifecycle', () => {
     const diagnostic = new LifecycleAttemptDiagnostic();
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
+    const caseCapture = beginCaseCleanupCapture('video-refusal', test.task.meta as Record<string, unknown>);
     try {
       await withAttempt(engine, app, videoDir, 'v4', async () => {
         diagnostic.enter('open-first');
@@ -1449,10 +1451,12 @@ describe('web engine lifecycle', () => {
       }, undefined, diagnostic);
     } finally {
       try {
-        (test.task.meta as Record<string, unknown>)['videoAttemptDiagnostic'] = diagnostic.snapshot();
-        console.error('VIDEO_ATTEMPT_DIAGNOSTIC', JSON.stringify(diagnostic.snapshot()));
-      } catch { /* Diagnostics cannot replace a body or cleanup failure. */ }
-      rmSync(videoDir, { recursive: true, force: true });
+        try {
+          (test.task.meta as Record<string, unknown>)['videoAttemptDiagnostic'] = diagnostic.snapshot();
+          console.error('VIDEO_ATTEMPT_DIAGNOSTIC', JSON.stringify(diagnostic.snapshot()));
+        } catch { /* Diagnostics cannot replace a body or cleanup failure. */ }
+        rmSync(videoDir, { recursive: true, force: true });
+      } finally { caseCapture.finish(); }
     }
   });
 

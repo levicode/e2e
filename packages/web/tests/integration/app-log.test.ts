@@ -1,3 +1,4 @@
+import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 import { traceContractEvidence } from '../helpers/trace-contract-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
@@ -128,6 +129,7 @@ describe('app log', () => {
     let traceOrdinal: 0 | 1 | 2 = 0;
     const connect = NativeClient.connect;
     const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observeSyntheticConnection(connect(...args)));
+    const caseCapture = beginCaseCleanupCapture('p01', context.task.meta as Record<string, unknown>);
     try {
       return await evidence.observer.run(async () => {
         const surface = new NativeSurface({});
@@ -211,8 +213,10 @@ describe('app log', () => {
         if (failed) throw failure;
       });
     } finally {
-      try { connection.mockRestore(); } catch { evidence.evidence.invalidate(); }
-      evidence.observer.close();
+      try {
+        try { connection.mockRestore(); } catch { evidence.evidence.invalidate(); }
+        evidence.observer.close();
+      } finally { caseCapture.finish(); }
     }
   });
 });
