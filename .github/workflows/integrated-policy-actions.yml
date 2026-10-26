@@ -1,0 +1,401 @@
+name: integrated native policy actions and original producer diagnostics
+'on':
+  push:
+    branches:
+    - implement/integrated-policy-actions-ci
+permissions:
+  contents: read
+concurrency:
+  group: integrated-${{ github.sha }}
+  cancel-in-progress: false
+env:
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7
+        path: native
+        persist-credentials: false
+    - name: Build exact production and separate fault ELF (no tests or gate waiver)
+      shell: bash
+      run: 'set -euo pipefail
+
+        mkdir -p images evidence
+
+        cd native/cli
+
+        test "$(git rev-parse HEAD)" = d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7
+
+        test "$(git rev-parse HEAD^{tree})" = 92985c1815b8d0ce4b73e84c79e2cff2f5d3690a
+
+        test -z "$(git status --porcelain)"
+
+        rustup toolchain install 1.99.1 --profile minimal
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/web-functional-target"
+
+        rustc -Vv > "$GITHUB_WORKSPACE/evidence/rustc.txt"
+
+        cargo build --locked --profile ci  2>&1 | tee "$GITHUB_WORKSPACE/evidence/production-build.log"
+
+        cp "$CARGO_TARGET_DIR/ci/agent-browser" "$GITHUB_WORKSPACE/images/production"
+
+        cargo build --locked --profile ci  --features acceptance-faults 2>&1 | tee "$GITHUB_WORKSPACE/evidence/fault-build.log"
+
+        cp "$CARGO_TARGET_DIR/ci/agent-browser" "$GITHUB_WORKSPACE/images/acceptance-faults"
+
+        cd "$GITHUB_WORKSPACE/images"
+
+        sha256sum production acceptance-faults > SHA256SUMS
+
+
+        printf "%s\n" d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7 > native-source.sha
+
+        printf "%s\n" 92985c1815b8d0ce4b73e84c79e2cff2f5d3690a > native-source.tree
+
+        printf "%s\n" "$GITHUB_RUN_ID" > producer-run.id
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: integrated-native-images
+        path: images/
+        if-no-files-found: error
+        retention-days: 3
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integrated-build-evidence
+        path: evidence/
+        if-no-files-found: warn
+  native-units:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7
+        path: native
+        persist-credentials: false
+    - name: Compile exact native test harness (no browser auto-discovery)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7\n\
+        test \"$(git rev-parse HEAD^{tree})\" = 92985c1815b8d0ce4b73e84c79e2cff2f5d3690a\ntest -z \"$(git status --porcelain)\"\
+        \nrustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci  --bin agent-browser\
+        \ -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE'])\
+        \ / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile',\
+        \ {}).get('test') is True\n        and record.get('features') == ['default']\n        and record.get('executable')):\n\
+        \        paths.add(record['executable'])\nif build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected exactly one test executable,\
+        \ got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise SystemExit('Compiler-selected\
+        \ harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\
+        \nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests > SHA256SUMS)\n\nsha256sum Cargo.lock >\
+        \ \"$GITHUB_WORKSPACE/evidence/Cargo.lock.sha256\"\ncp \"$GITHUB_WORKSPACE/evidence/Cargo.lock.sha256\" \"$GITHUB_WORKSPACE/native-harness/Cargo.lock.sha256\"\
+        \necho \"ready=true\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: integrated-native-harness
+        path: native-harness/
+        if-no-files-found: error
+        retention-days: 2
+    - name: Run 51 reviewed exact native regressions (not full suite)
+      shell: bash
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
+        failed=0\nindex=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_missing_ack_never_becomes_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_error_ack_is_not_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_wrong_session_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_malformed_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_old_ack_cannot_retire_next_dialog_on_same_session'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_does_not_extend_expired_cleanup_budget'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_cleanup_wait_is_woken_by_exact_late_success_ack'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input'\
+        \ 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued'\
+        \ 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse'\
+        \ 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission'\
+        \ 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::terminal_cleanup_tests::terminal_cleanup_checkpoints_have_closed_payloads'\
+        \ 'native::client_observation_dispatch::tests::semantic_trace_retains_first_inventory_failure_without_enabling_capture'\
+        \ 'native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch' 'native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt'\
+        \ 'native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
+        \ 'native::client_actions::tests::retained_action_errors::ordinary_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
+        \ 'native::client_actions::tests::retained_action_errors::disabled_readonly_and_unsupported_fields_refuse_before_fill_mutation'\
+        \ 'native::client_actions::tests::retained_action_errors::valid_fields_and_inherited_contenteditable_keep_original_fill_path'\
+        \ 'native::client_actions::tests::retained_action_errors::readonly_race_after_fill_probe_keeps_mutation_unknown_without_input'\
+        \ 'native::client_observation::frame_policy::tests::original_typescript_url_and_hostname_truth_table' 'native::client_observation::frame_policy::tests::original_typescript_hostname_truth_table'\
+        \ 'native::client_observation::frame_policy::tests::exact_budget_three_excludes_data_without_truncating_and_closes_descendants'\
+        \ 'native::client_observation::frame_policy::tests::exact_depth_four_five_and_site_before_depth' 'native::client_observation::frame_policy::tests::original_document_then_child_dfs_budget_order'\
+        \ 'native::client_observation::frame_policy::tests::hidden_before_budget_and_missing_owner_is_not_a_policy_exemption'\
+        \ 'native::client_observation::semantic_frame_proof::tests::semantic_proof_rejects_other_owner_stale_url_policy_and_capture_revision'\
+        \ 'native::client_observation::semantic_frame_proof::tests::semantic_proof_replay_rejects_forged_hidden_budget_closure_and_emitted_omission'\
+        \ 'native::client_observation::semantic_frame_proof::tests::missing_native_url_never_inherits_the_real_empty_url_exception'\
+        \ 'native::client_observation::semantic_frame_proof::tests::frame_policy_is_not_an_observe_wire_override' 'native::client_observation_dispatch::tests::semantic_options_are_frozen_scope_policy_not_per_observe_input'\
+        \ 'native::client_browser::tests::configured_observation_site_is_frozen_without_normalizing_or_allow_all_default'\
+        \ 'native::client_browser::tests::candidate_advertises_the_complete_wired_public_contract' 'native::client_geometry::tests::semantic_exclusion_preserves_full_native_ownership_without_spatial_reads'\
+        \ 'native::client_observation::tests::successful_snapshot_publishes_once_and_stable_node_keeps_id' 'native::client_observation::tests::late_document_failure_keeps_previous_generation_and_consumes_ids'\
+        \ 'native::client_observation::equivalence_tests::original_observation_capture_deadline_preserves_per_capture_and_case_bounds'\
+        \ 'native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation'; do\n  index=$((index\
+        \ + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep -Fx \"$name: test\"\
+        \ \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One exclusive file per\
+        \ test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd)'\
+        \ \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"status\":\"prepared\"\
+        ,\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\n\
+        \  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
+        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\ndone\nexit \"\
+        $failed\"\n"
+    - name: Run normal default nonignored native suite without waivers
+      if: ${{ always() && steps.compile.outcome == 'success' }}
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: 'set -euo pipefail
+
+        cd native
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/native-regressions-target"
+
+        set +e
+
+        cargo test --locked --profile ci --manifest-path cli/Cargo.toml 2>&1 | tee "$GITHUB_WORKSPACE/evidence/default-native-unit.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/default-native-unit.exit"
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integrated-native-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+    outputs:
+      harness-ready: ${{ steps.compile.outputs.ready }}
+  web:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: 6ef38b876e68d0602ba789ef093b1d5a0345fe01
+        path: source
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: integrated-native-images
+        path: images
+    - name: Verify same-run source identity and image hashes
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7
+
+        test "$(cat images/native-source.tree)" = 92985c1815b8d0ce4b73e84c79e2cff2f5d3690a
+
+        test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
+        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
+        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - name: Run full original Web integration suite with per-case and routes diagnostics
+      if: ${{ success() && steps.setup.outcome == 'success' }}
+      run: bash recipe/scripts/web-functional/run.sh web
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integrated-full-web-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
+    needs: build
+  native-producers:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: 6ef38b876e68d0602ba789ef093b1d5a0345fe01
+        path: source
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: integrated-native-images
+        path: images
+    - name: Verify same-run source identity and image hashes
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7
+
+        test "$(cat images/native-source.tree)" = 92985c1815b8d0ce4b73e84c79e2cff2f5d3690a
+
+        test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
+        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
+        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: integrated-native-harness
+        path: native-harness
+    - name: Verify exact compiler harness identity and run seven original Chromium producer gates
+      run: 'set -euo pipefail
+
+        (cd native-harness; sha256sum -c SHA256SUMS)
+
+        test "$(cat native-harness/native-source.sha)" = d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7
+
+        test "$(cat native-harness/native-source.tree)" = 92985c1815b8d0ce4b73e84c79e2cff2f5d3690a
+
+        chmod +x native-harness/agent-browser-tests
+
+        python3 recipe/scripts/web-functional/run-native-producer.py native-harness/agent-browser-tests evidence/chromium-executable.json
+        evidence
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integrated-native-producer-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
+    needs:
+    - build
+    - native-units
+    if: ${{ always() && needs.build.result == 'success' && needs.native-units.outputs.harness-ready == 'true' }}

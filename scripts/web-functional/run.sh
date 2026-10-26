@@ -10,22 +10,12 @@ export PROOF="$out/negotiation.json" FAULT_PROOF="$out/fault-negotiation.json"
 cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
-PAIRED DIALOG ACK DIAGNOSTIC; no full acceptance claim and no imported passes.
-Fresh native GREEN f034e8dc639c8e3562885e1f0e0cd00797700d3e; unchanged E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
-RED tests retain their actual failures. GREEN exact native tests and original six browser cases run separately.
-Only CI-owned disposable browser profiles and loopback pages; original operation budgets and assertions.
-No whole Web, no package delivery, no main merge, no waiver of formal source-removal or installed-package gates.
+INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
+Native d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7; E2E 6ef38b876e68d0602ba789ef093b1d5a0345fe01.
+Normal native nonignored suite plus focused tests and seven exact original Chromium producer cases.
+Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
+Formal source-removal known 35 failures remain explicit; no main merge or package/release here.
 SCOPE
-if [[ "$mode" == restored-case ]]; then
-  cat > "$out/scope.txt" <<'RESTORED_SCOPE'
-ONE EXACT RESTORED CASE ONLY; not full acceptance, no imported test pass.
-Native f034e8dc639c8e3562885e1f0e0cd00797700d3e; E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
-The original beforeunload or Service Worker test body and operation budgets are unchanged.
-Owned CI-created temporary browser profiles and loopback fixture pages only. No real browser or user data.
-Each of the six matrix jobs runs one exact selected case once; other tests filtered out are not passes.
-Formal source-removal, package and installed/no-override gates remain separate and unchanged.
-RESTORED_SCOPE
-fi
 if [[ "$mode" == setup ]]; then
   # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
   # Repository/trust/signature settings and product tests remain unchanged.
@@ -60,8 +50,8 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = e75e4f347c286ce3764dc70cfb8c2059a32b2490
-  test "$(git rev-parse HEAD^{tree})" = ade8302e73ac21995e1dd0679a39722cc5ad9dc9
+  test "$(git rev-parse HEAD)" = 6ef38b876e68d0602ba789ef093b1d5a0345fe01
+  test "$(git rev-parse HEAD^{tree})" = 62e70796f35b4dc7f3fc0001ccf0137acea8610c
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
@@ -69,7 +59,7 @@ PY_VERIFY_CACHE
   pnpm install --frozen-lockfile
   pnpm run build
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
-  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts tests/unit/routes-case-diagnostic.test.ts tests/unit/native-action-error-boundaries.test.ts tests/unit/native-action-diagnostics.test.ts tests/unit/native-observe-frame-policy-capability.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
   set +e
   node scripts/acceptance/candidate-source.ts "$out"
   source_status=$?
@@ -109,18 +99,6 @@ PY_SAVE_CACHE
 fi
 run_group() {
  case "$mode" in
-  restored-case)
-   case "${E2E_CASE_ID:?}" in beforeunload-open|beforeunload-video|beforeunload-provider|beforeunload-dismiss-open|beforeunload-dismiss-video|service-worker) ;; *) return 2 ;; esac
-   case "${E2E_CASE_TEST_FILE:?}" in tests/integration/cdp-recovery.test.ts|tests/integration/protected-app.test.ts) ;; *) return 2 ;; esac
-   node -e 'const fs=require("node:fs"); const p=process.argv[1]; const fd=fs.openSync(p,"wx",0o600); fs.closeSync(fd)' "$out/restored.cleanup.jsonl" || return $?
-   node -e 'require("node:fs").writeFileSync(process.argv[1],JSON.stringify({schemaVersion:1,caseId:process.env.E2E_CASE_ID,file:process.env.E2E_CASE_TEST_FILE,title:process.env.E2E_CASE_TITLE,pattern:process.env.E2E_CASE_PATTERN,attempt:1,validation:"raw-not-validated",releaseEligible:false})+"\n")' "$out/restored-case.json" || return $?
-   AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$out/restored.cleanup.jsonl" pnpm --filter @e2e-dev/web exec vitest run --project integration "$E2E_CASE_TEST_FILE" -t "${E2E_CASE_PATTERN:?}" --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/restored.vitest.json" 2>&1 | tee "$out/restored.log"
-   pipeline_status=( "${PIPESTATUS[@]}" )
-   status=${pipeline_status[0]}
-   if [[ "$status" -eq 0 && "${pipeline_status[1]}" -ne 0 ]]; then status=${pipeline_status[1]}; fi
-   node -e 'const r=require(process.argv[1]); if(r.numPassedTests+r.numFailedTests!==1)throw Error("Expected exactly one executed restored case");' "$out/restored.vitest.json" || return $?
-   return "$status"
-   ;;
   p01-isolated|video-isolated)
    if [[ "$mode" == p01-isolated ]]; then
      file=tests/integration/app-log.test.ts
@@ -137,10 +115,10 @@ run_group() {
   web)
    # Raw bounded native metadata only; not a cleanup success/acceptance receipt.
    node --input-type=module -e "import {openSync,closeSync,writeFileSync} from 'node:fs'; closeSync(openSync(process.argv[1], 'wx', 0o600)); writeFileSync(process.argv[2], JSON.stringify({schemaVersion:1,status:'prepared',validation:'raw-not-validated',releaseEligible:false})+'\\n', {flag:'wx',mode:0o600});" "$out/web.cleanup.jsonl" "$out/web.cleanup.status.json" || return $?
-   # activatedHost is called only within these five test bodies; shared hooks do not invoke it.
-   AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$out/web.cleanup.jsonl" pnpm --filter @e2e-dev/web exec vitest run --project integration --maxWorkers=2 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/web-browser.vitest.json" \
-    --exclude '**/semantic-fallback.test.ts' --exclude '**/crosscheck.test.ts' --exclude '**/cli.test.ts' \
-    --testNamePattern='^(?!.*(?:beforeunload|leaves the host untouched until first (?:open|video) and allows a pre-open dialog handler|activates the borrowed first page through the registered dialog handler before provider recording|blocks service workers under headers)).*$' ;;
+   mkdir -m 700 "$out/case-cleanup" || return $?
+   test "$(realpath "$out/case-cleanup")" = "$out/case-cleanup" || return $?
+   E2E_CASE_CLEANUP_DIAGNOSTIC_DIR="$out/case-cleanup" AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$out/web.cleanup.jsonl" pnpm --filter @e2e-dev/web exec vitest run --project integration --maxWorkers=2 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/web-browser.vitest.json" \
+    --exclude '**/semantic-fallback.test.ts' --exclude '**/crosscheck.test.ts' --exclude '**/cli.test.ts' ;;
   differential) node scripts/acceptance/candidate-web.ts crosscheck-fixtures "$PROD" "$PROOF" "$out" ;;
   semantic) node scripts/acceptance/candidate-web.ts semantic-faults "$FAULT" "$FAULT_PROOF" "$out" ;;
   cli)
