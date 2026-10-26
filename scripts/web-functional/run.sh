@@ -11,10 +11,10 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
-Native d3f1ce0cb4afaa42fe2ef07f7bf9badce4729be7; E2E 6ef38b876e68d0602ba789ef093b1d5a0345fe01.
+Native 011700397727e2351c2c60fa04be96e17887702b; E2E 2bf08225ca8da97a9e15b763afa81dbaf4a239e6.
 Normal native nonignored suite plus focused tests and seven exact original Chromium producer cases.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
-Formal source-removal known 35 failures remain explicit; no main merge or package/release here.
+Formal source-removal is remeasured after conditional test-root migration; prior 35 failures are not silently waived; no main merge or package/release here.
 SCOPE
 if [[ "$mode" == setup ]]; then
   # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
@@ -50,8 +50,8 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = 6ef38b876e68d0602ba789ef093b1d5a0345fe01
-  test "$(git rev-parse HEAD^{tree})" = 62e70796f35b4dc7f3fc0001ccf0137acea8610c
+  test "$(git rev-parse HEAD)" = 2bf08225ca8da97a9e15b763afa81dbaf4a239e6
+  test "$(git rev-parse HEAD^{tree})" = faf17157406737cdfb2e26643dbc4e2a6fba3848
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
@@ -59,7 +59,7 @@ PY_VERIFY_CACHE
   pnpm install --frozen-lockfile
   pnpm run build
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
-  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts tests/unit/routes-case-diagnostic.test.ts tests/unit/native-action-error-boundaries.test.ts tests/unit/native-action-diagnostics.test.ts tests/unit/native-observe-frame-policy-capability.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts tests/unit/routes-case-diagnostic.test.ts tests/unit/actions.test.ts tests/unit/native-action-error-boundaries.test.ts tests/unit/native-action-diagnostics.test.ts tests/unit/native-observe-frame-policy-capability.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
   set +e
   node scripts/acceptance/candidate-source.ts "$out"
   source_status=$?
