@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native 21791353df84ea075e614d71e8d9f5b95333a300; E2E 91ef2332b3a03414430f93dfe7195cc5fd517878.
+Native 90e9c4bf51abf208400d60aae92572ebe9c9996e; E2E 982b3e980d9015ad92670b9fda09bdc6f47ade70.
 NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
 NOT RUN (excluded scope): protected-app service-worker registration P41.
 NOT RUN: native auto-discovery, optional benchmark sweep, iOS, macOS.
@@ -20,13 +20,14 @@ Known unresolved public semantics, NOT cleared by this matrix: pointer position 
 Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
 SCOPE
 if [[ "$mode" == setup ]]; then
-  test "$(git rev-parse HEAD)" = 91ef2332b3a03414430f93dfe7195cc5fd517878
+  test "$(git rev-parse HEAD)" = 982b3e980d9015ad92670b9fda09bdc6f47ade70
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
   chmod +x "$PROD" "$FAULT"
   pnpm install --frozen-lockfile
   pnpm run build
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
   set +e
   node scripts/acceptance/candidate-source.ts "$out"
   source_status=$?

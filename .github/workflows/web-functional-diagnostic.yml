@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 21791353df84ea075e614d71e8d9f5b95333a300
+          ref: 90e9c4bf51abf208400d60aae92572ebe9c9996e
           path: native
           persist-credentials: false
       - name: Compile exact native test harness (no browser auto-discovery)
@@ -32,8 +32,8 @@ jobs:
           set -euo pipefail
           mkdir -p evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 21791353df84ea075e614d71e8d9f5b95333a300
-          test "$(git rev-parse HEAD^{tree})" = 82299045d676b1d21765d00799a3d8122d8f81cc
+          test "$(git rev-parse HEAD)" = 90e9c4bf51abf208400d60aae92572ebe9c9996e
+          test "$(git rev-parse HEAD^{tree})" = 2a90808069de1448a100d574b09950ca0cf090cf
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -65,6 +65,19 @@ jobs:
               raise SystemExit('Compiler-selected harness is missing')
           (out / 'harness.path').write_text(harness + '\n')
           PY_HARNESS
+          mkdir -p "$GITHUB_WORKSPACE/native-harness"
+          harness="$(cat "$GITHUB_WORKSPACE/evidence/harness.path")"
+          cp "$harness" "$GITHUB_WORKSPACE/native-harness/agent-browser-tests"
+          git rev-parse HEAD > "$GITHUB_WORKSPACE/native-harness/native-source.sha"
+          git rev-parse HEAD^{tree} > "$GITHUB_WORKSPACE/native-harness/native-source.tree"
+          (cd "$GITHUB_WORKSPACE/native-harness"; sha256sum agent-browser-tests > SHA256SUMS)
+      - name: Save compiler-selected harness (not a test-pass receipt)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fixed-native-regression-harness
+          path: native-harness/
+          if-no-files-found: error
+          retention-days: 1
       - name: Run only the nine reviewed no-browser regression tests
         shell: bash
         env:
@@ -101,7 +114,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 21791353df84ea075e614d71e8d9f5b95333a300
+          ref: 90e9c4bf51abf208400d60aae92572ebe9c9996e
           path: native
           persist-credentials: false
       - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -110,8 +123,8 @@ jobs:
           set -euo pipefail
           mkdir -p images evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 21791353df84ea075e614d71e8d9f5b95333a300
-          test "$(git rev-parse HEAD^{tree})" = 82299045d676b1d21765d00799a3d8122d8f81cc
+          test "$(git rev-parse HEAD)" = 90e9c4bf51abf208400d60aae92572ebe9c9996e
+          test "$(git rev-parse HEAD^{tree})" = 2a90808069de1448a100d574b09950ca0cf090cf
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -148,7 +161,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 91ef2332b3a03414430f93dfe7195cc5fd517878
+          ref: 982b3e980d9015ad92670b9fda09bdc6f47ade70
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -191,7 +204,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 91ef2332b3a03414430f93dfe7195cc5fd517878
+          ref: 982b3e980d9015ad92670b9fda09bdc6f47ade70
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
