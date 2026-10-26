@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
-Native 011700397727e2351c2c60fa04be96e17887702b; E2E 2bf08225ca8da97a9e15b763afa81dbaf4a239e6.
+Native 011700397727e2351c2c60fa04be96e17887702b; E2E 4be49596fe85762b0d7947bbfd50d91b611a00f7.
 Normal native nonignored suite plus focused tests and seven exact original Chromium producer cases.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
 Formal source-removal is remeasured after conditional test-root migration; prior 35 failures are not silently waived; no main merge or package/release here.
@@ -50,8 +50,8 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = 2bf08225ca8da97a9e15b763afa81dbaf4a239e6
-  test "$(git rev-parse HEAD^{tree})" = faf17157406737cdfb2e26643dbc4e2a6fba3848
+  test "$(git rev-parse HEAD)" = 4be49596fe85762b0d7947bbfd50d91b611a00f7
+  test "$(git rev-parse HEAD^{tree})" = d5f033f957f85b4296f1d3982d87d04e0a1a52b3
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
