@@ -12,7 +12,8 @@ cd "$root"
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
 Native 9b742b5dcf785d1e05be582080e3a89696245ee3; E2E eed3e6a0adb746ab7f30f2c4fabf91971cf649ac.
-Normal native nonignored suite plus focused tests and all44 required browser/encoder contracts.
+This lane reuses verified prior-run binaries; no native compilation or default/focused suite is rerun here.
+All44 required browser/encoder contracts plus separate13 encoder contracts; producer/current run provenance is explicit.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
 Formal source-removal is remeasured after conditional test-root migration; prior 31 failures are not silently waived; no main merge or package/release here.
 SCOPE
@@ -51,7 +52,7 @@ PY_VERIFY_CACHE
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
   test "$(git rev-parse HEAD)" = eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
-  test "$(git rev-parse HEAD^{tree})" = d5f033f957f85b4296f1d3982d87d04e0a1a52b3
+  test "$(git rev-parse HEAD^{tree})" = 307621d5f97eb12e9837cdf84fee25425451f649
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
