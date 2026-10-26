@@ -1,0 +1,653 @@
+name: integrated naming mask media and default CLI regressions
+'on':
+  push:
+    branches:
+    - implement/integrated-production-repair-ci
+permissions:
+  contents: read
+concurrency:
+  group: production-repair-${{ github.sha }}
+  cancel-in-progress: false
+env:
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 6e974b470e925c51b8452bdb66cfdcfbc310a471
+        path: native
+        persist-credentials: false
+    - name: Build exact production and separate fault ELF (no tests or gate waiver)
+      shell: bash
+      run: 'set -euo pipefail
+
+        mkdir -p images evidence
+
+        cd native/cli
+
+        test "$(git rev-parse HEAD)" = 6e974b470e925c51b8452bdb66cfdcfbc310a471
+
+        test "$(git rev-parse HEAD^{tree})" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a
+
+        test -z "$(git status --porcelain)"
+
+        rustup toolchain install 1.99.1 --profile minimal
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/web-functional-target"
+
+        rustc -Vv > "$GITHUB_WORKSPACE/evidence/rustc.txt"
+
+        cargo build --locked --profile ci  2>&1 | tee "$GITHUB_WORKSPACE/evidence/production-build.log"
+
+        cp "$CARGO_TARGET_DIR/ci/agent-browser" "$GITHUB_WORKSPACE/images/production"
+
+        cargo build --locked --profile ci  --features acceptance-faults 2>&1 | tee "$GITHUB_WORKSPACE/evidence/fault-build.log"
+
+        cp "$CARGO_TARGET_DIR/ci/agent-browser" "$GITHUB_WORKSPACE/images/acceptance-faults"
+
+        cd "$GITHUB_WORKSPACE/images"
+
+        sha256sum production acceptance-faults > SHA256SUMS
+
+
+        printf "%s\n" 6e974b470e925c51b8452bdb66cfdcfbc310a471 > native-source.sha
+
+        printf "%s\n" bedd7add22e5bbc77c4734bf00d95cecce8f2d2a > native-source.tree
+
+        printf "%s\n" "$GITHUB_RUN_ID" > producer-run.id
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: integrated-native-images
+        path: images/
+        if-no-files-found: error
+        retention-days: 3
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integrated-build-evidence
+        path: evidence/
+        if-no-files-found: warn
+  compile-default:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - &id001
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - &id002
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 6e974b470e925c51b8452bdb66cfdcfbc310a471
+        path: native
+        persist-credentials: false
+    - name: Compile all original default Cargo test targets once
+      id: compile
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        printf ''%s\n'' ''{"pairedRedStatus":"not-executed-source-unavailable","pairedValidationClaim":false,"formalReleaseGate":false}''
+        > evidence/paired-comparison-status.json
+
+        cd native/cli
+
+        test "$(git rev-parse HEAD)" = 6e974b470e925c51b8452bdb66cfdcfbc310a471
+
+        test "$(git rev-parse HEAD^{tree})" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a
+
+        test -z "$(git status --porcelain)"
+
+        rustup toolchain install 1.99.1 --profile minimal
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/native-regressions-target"
+
+        cargo test --locked --profile ci --no-run --message-format=json > "$GITHUB_WORKSPACE/evidence/harness.jsonl" 2> "$GITHUB_WORKSPACE/evidence/harness-build.log"
+
+        python3 "$GITHUB_WORKSPACE/recipe/scripts/web-functional/pack-default-harnesses.py"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: all-default-native-harnesses
+        path: default-harnesses/
+        if-no-files-found: error
+        retention-days: 2
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: all-default-compile-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  focused-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    needs: compile-default
+    steps:
+    - *id001
+    - *id002
+    - &id003
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: all-default-native-harnesses
+        path: default-harnesses
+    - &id004
+      name: Restore exact compiler paths/source/assets and select unit harness
+      run: python3 recipe/scripts/web-functional/run-default-harnesses.py --restore-only
+    - name: Run 89 exact reviewed native prerequisites
+      shell: bash
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
+        failed=0\nindex=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_missing_ack_never_becomes_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_error_ack_is_not_successful_retirement'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_wrong_session_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_malformed_ack_preserves_integrity_failure'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_old_ack_cannot_retire_next_dialog_on_same_session'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_does_not_extend_expired_cleanup_budget'\
+        \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_cleanup_wait_is_woken_by_exact_late_success_ack'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_remote_eof_gets_bounded_recovery_without_replaying_input'\
+        \ 'native::client_tasks::fixed_read_eof_tests::fixed_read_eof_cleanup_failure_never_gains_recovery' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_explicit_reconnect_must_recover_session_without_replay'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_context_without_replay'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_callback_input_eof_never_offers_root_recovery'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io'\
+        \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued'\
+        \ 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse'\
+        \ 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission'\
+        \ 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::terminal_cleanup_tests::terminal_cleanup_checkpoints_have_closed_payloads'\
+        \ 'native::client_observation_dispatch::tests::semantic_trace_retains_first_inventory_failure_without_enabling_capture'\
+        \ 'native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch' 'native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt'\
+        \ 'native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
+        \ 'native::client_actions::tests::retained_action_errors::ordinary_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
+        \ 'native::client_actions::tests::retained_action_errors::disabled_readonly_and_unsupported_fields_refuse_before_fill_mutation'\
+        \ 'native::client_actions::tests::retained_action_errors::valid_fields_and_inherited_contenteditable_keep_original_fill_path'\
+        \ 'native::client_actions::tests::retained_action_errors::readonly_race_after_fill_probe_keeps_mutation_unknown_without_input'\
+        \ 'native::client_observation::frame_policy::tests::original_typescript_url_and_hostname_truth_table' 'native::client_observation::frame_policy::tests::original_typescript_hostname_truth_table'\
+        \ 'native::client_observation::frame_policy::tests::exact_budget_three_excludes_data_without_truncating_and_closes_descendants'\
+        \ 'native::client_observation::frame_policy::tests::exact_depth_four_five_and_site_before_depth' 'native::client_observation::frame_policy::tests::original_document_then_child_dfs_budget_order'\
+        \ 'native::client_observation::frame_policy::tests::hidden_before_budget_and_missing_owner_is_not_a_policy_exemption'\
+        \ 'native::client_observation::semantic_frame_proof::tests::semantic_proof_rejects_other_owner_stale_url_policy_and_capture_revision'\
+        \ 'native::client_observation::semantic_frame_proof::tests::semantic_proof_replay_rejects_forged_hidden_budget_closure_and_emitted_omission'\
+        \ 'native::client_observation::semantic_frame_proof::tests::missing_native_url_never_inherits_the_real_empty_url_exception'\
+        \ 'native::client_observation::semantic_frame_proof::tests::frame_policy_is_not_an_observe_wire_override' 'native::client_observation_dispatch::tests::semantic_options_are_frozen_scope_policy_not_per_observe_input'\
+        \ 'native::client_browser::tests::configured_observation_site_is_frozen_without_normalizing_or_allow_all_default'\
+        \ 'native::client_browser::tests::candidate_advertises_the_complete_wired_public_contract' 'native::client_geometry::tests::semantic_exclusion_preserves_full_native_ownership_without_spatial_reads'\
+        \ 'native::client_observation::tests::successful_snapshot_publishes_once_and_stable_node_keeps_id' 'native::client_observation::tests::late_document_failure_keeps_previous_generation_and_consumes_ids'\
+        \ 'native::client_observation::equivalence_tests::original_observation_capture_deadline_preserves_per_capture_and_case_bounds'\
+        \ 'native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation' 'native::client_actions::tests::readonly_pseudo_action_never_resolves_or_retargets_origin'\
+        \ 'native::client_actions::tests::preparation_effect_settlement_acked_not_actionable_is_completed_and_reusable' 'native::client_actions::tests::preparation_effect_settlement_acked_interception_is_completed_and_reusable'\
+        \ 'native::client_actions::tests::preparation_effect_settlement_unacked_input_release_remains_unknown' 'native::client_actions::tests::preparation_effect_settlement_unacked_first_scroll_remains_unknown'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_blocked_preaim_down_then_fast_left_waits_for_each_render'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_clear_centre_moves200_150_before_down150' 'native::client_actions::tests::retirement_node_swipes::node400x300_pointer80_70_preserves_position_across_directions'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_unknown_default_zero_still_aims_at_centre' 'native::client_actions::tests::retirement_node_swipes::node400x300_known_zero_is_distinct_from_unknown_zero'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_pointer_on_right_edge_still_aims_at_centre'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_covered_pointer_does_not_bypass_centre_targeting'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node100x100_overflow_child_keeps_hovered_pointer120_50'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_iframe_uses_original_centre_targeting' 'native::client_actions::tests::retirement_node_swipes::node400x300_explicit_hover_keeps_centre_mode_then_swipe_reuses_it'\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_paces_three_moves_over_48_ms'\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_cancel_after_first_move_releases_once'\
+        \ 'native::client_debt::tests::terminal_read_only_settled_ack_requires_operation_proof_and_exact_bindings' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_ack_before_remote_eof_keeps_unknown_but_closes_settled_owner'\
+        \ 'native::client_protected_read::tests::ordinary_read_policy_failure_uses_actual_dispatch_selector_and_clean_restore'\
+        \ 'native::client_observation::tests::public_button_name_proof_projects_exact_and_observed_compatibility' 'native::client_observation::tests::public_button_name_proof_preserves_priority_security_and_unavailable'\
+        \ 'native::client_observation::tests::public_button_name_proof_rejects_invalid_source_and_oversized_facts' 'native::client_observation::tests::ordinary_header_neighbor_proof_corrects_ax_without_changing_explicit_scope'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_exact_popup_detach_during_write_continues_live_pages_without_replay'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_exact_popup_detach_retires_real_command_debt_and_continues'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_detach_with_mismatched_operation_key_remains_failure'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_detach_cannot_clear_another_sessions_unknown_input_debt'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_missing_or_foreign_journal_cannot_dispatch_or_succeed'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_exact_detach_does_not_wait_for_queued_enrollment_configuration'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_live_popup_failure_remains_failure_and_is_not_replayed'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_target_destroyed_without_direct_detach_does_not_excuse_failure'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_conflicting_detach_target_id_does_not_excuse_failure'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_active_root_detach_never_becomes_popup_success' 'native::client_enrollment::tests::media_detach_tests::media_original_detach_receipt_does_not_excuse_same_text_replacement'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_cancelled_operation_is_not_rescued_by_exact_popup_detach'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_expired_original_deadline_cannot_be_renewed_by_owner_path'\
+        \ 'native::client_targets::tests::media_detach_receipt_is_bound_to_registry_tenure_and_direct_ready_page'; do\n  index=$((index\
+        \ + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep -Fx \"$name: test\"\
+        \ \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One exclusive file per\
+        \ test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd)'\
+        \ \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"status\":\"prepared\"\
+        ,\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\n\
+        \  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
+        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\ndone\nexit \"\
+        $failed\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: next-focused-native-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  default-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    needs: compile-default
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target:
+        - agent-browser
+        - dashboard_cli
+        - doctor_cli
+        - obscura_cli
+        - pin_tab_cli
+        - tls_cli
+    steps:
+    - *id001
+    - *id002
+    - *id003
+    - name: Execute entire default target, no filter and no ignored override
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: python3 recipe/scripts/web-functional/run-default-harnesses.py --target "${{ matrix.target }}"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: default-${{ matrix.target }}-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  web:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: 4be49596fe85762b0d7947bbfd50d91b611a00f7
+        path: source
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: integrated-native-images
+        path: images
+    - name: Verify same-run source identity and image hashes
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = 6e974b470e925c51b8452bdb66cfdcfbc310a471
+
+        test "$(cat images/native-source.tree)" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a
+
+        test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
+        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
+        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - name: Run full original Web integration suite with per-case and routes diagnostics
+      if: ${{ success() && steps.setup.outcome == 'success' }}
+      run: bash recipe/scripts/web-functional/run.sh web
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integrated-full-web-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
+    needs: build
+  native-producers:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: 4be49596fe85762b0d7947bbfd50d91b611a00f7
+        path: source
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: integrated-native-images
+        path: images
+    - name: Verify same-run source identity and image hashes
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = 6e974b470e925c51b8452bdb66cfdcfbc310a471
+
+        test "$(cat images/native-source.tree)" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a
+
+        test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
+        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
+        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - *id002
+    - *id003
+    - *id004
+    - name: Run original37 plus4 additional exact contracts; encoder-only identity separate
+      run: "set -euo pipefail\ncat > \"$RUNNER_TEMP/run-native-contracts.py\" <<'PY_CONTRACTS'\n\"\"\"Proposed exact41 evidence\
+        \ runner; original37 + explicitly classified extra4, no blanket execution.\"\"\"\nimport hashlib,json,os,pathlib,re,shutil,subprocess,sys,time\n\
+        harness=pathlib.Path(sys.argv[1]).resolve(); meta=json.loads(pathlib.Path(sys.argv[2]).read_text());out=pathlib.Path(sys.argv[3]).resolve();out.mkdir(parents=True,exist_ok=True)\n\
+        inventory=json.loads(pathlib.Path(sys.argv[4]).read_text());required=[x['name'] for x in inventory['names']];additional=inventory['additionalContracts'];names=required+additional\n\
+        assert len(required)==37 and len(names)==len(set(names))==41\nencoder_only=set(inventory['encoderOnly']);assert len(encoder_only)==1\n\
+        # These fixtures own fresh processes. Unexpected ambient attachment is a setup failure.\nfor key in ['AGENT_BROWSER_CDP','AGENT_BROWSER_AUTO_CONNECT','AGENT_BROWSER_PROVIDER','AGENT_BROWSER_PROFILE']:\n\
+        \ if os.environ.get(key):raise SystemExit('Unexpected ambient browser attachment/profile: '+key)\nchrome=pathlib.Path(meta['executablePath']).resolve();digest=hashlib.sha256(chrome.read_bytes()).hexdigest();assert\
+        \ digest==meta['sha256'];version=subprocess.check_output([str(chrome),'--version'],text=True).strip();assert '156.'\
+        \ in version\nencoder_paths={k:pathlib.Path(shutil.which(k)).resolve() for k in ['ffmpeg','ffprobe']}; encoder_hashes={k:hashlib.sha256(v.read_bytes()).hexdigest()\
+        \ for k,v in encoder_paths.items()}; versions={k:{'path':str(encoder_paths[k]),'sha256':encoder_hashes[k],'version':subprocess.check_output([k,'-version'],text=True).splitlines()[0]}\
+        \ for k in encoder_paths};(out/'encoder-tools.json').write_text(json.dumps(versions,indent=2)+'\\n')\nlisting=subprocess.run([str(harness),'--ignored','--list'],capture_output=True,text=True,timeout=30);(out/'native-ignored-inventory.log').write_text(listing.stdout+listing.stderr);assert\
+        \ listing.returncode==0\nfound=[x[:-6] for x in listing.stdout.splitlines() if x.endswith(': test')];assert len(found)==len(set(found))\n\
+        unknown=[x for x in found if x.startswith('native::client_') and x not in names+inventory['diagnostics']];failures=['unclassified:\
+        \ '+x for x in unknown];results=[]\nfor index,name in enumerate(names,1):\n stem=out/f'contract-{index:02}';timed_out=False;seen={};seen_encoders={};started=time.monotonic()\n\
+        \ exact=subprocess.run([str(harness),'--exact',name,'--ignored','--list'],capture_output=True,text=True,timeout=30);stem.with_suffix('.inventory').write_text(exact.stdout+exact.stderr)\n\
+        \ if exact.returncode or [x for x in exact.stdout.splitlines() if x.endswith(': test')]!=[name+': test']:\n  failures.append(name+':\
+        \ expected exactly one test');continue\n cleanup=stem.with_suffix('.cleanup.jsonl');fd=os.open(cleanup,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)\n\
+        \ with stem.with_suffix('.log').open('w') as log:\n  proc=subprocess.Popen([str(harness),'--exact',name,'--ignored','--test-threads=1','--nocapture'],cwd=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'native/cli',stdout=log,stderr=subprocess.STDOUT,env={**os.environ,'AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE':str(cleanup),'RUST_MIN_STACK':'16777216'})\n\
+        \  launched=time.monotonic()\n  while proc.poll() is None:\n   if time.monotonic()-launched>=180:\n    timed_out=True;proc.terminate()\n\
+        \    try:proc.wait(timeout=1)\n    except subprocess.TimeoutExpired:proc.kill();proc.wait()\n    break\n   table={}\n\
+        \   for entry in pathlib.Path('/proc').iterdir():\n    if not entry.name.isdigit():continue\n    try:table[int(entry.name)]=int((entry/'stat').read_text().rsplit(')',1)[1].split()[1])\n\
+        \    except (OSError,ValueError):pass\n   descendants={proc.pid}\n   while True:\n    old=len(descendants);descendants.update(pid\
+        \ for pid,parent in table.items() if parent in descendants)\n    if old==len(descendants):break\n   for pid in descendants-{proc.pid}:\n\
+        \    try:\n     exe=(pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True)\n     if exe==chrome:seen[pid]={'pid':pid,'executablePath':str(exe),'sha256':digest,'version':version}\n\
+        \     for tool,path in encoder_paths.items():\n      if exe==path:seen_encoders[tool]={'pid':pid,'executablePath':str(exe),'sha256':encoder_hashes[tool],'version':versions[tool]['version']}\n\
+        \    except OSError:pass\n   time.sleep(.01)\n  code=proc.wait()\n remaining=[]\n for pid in seen:\n  try:\n   if\
+        \ (pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True)==chrome:remaining.append(pid)\n  except OSError:pass\n\
+        \ counts=re.findall(r'test result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',stem.with_suffix('.log').read_text())\n\
+        \ unchanged=hashlib.sha256(chrome.read_bytes()).hexdigest()==digest\n receipt={'name':name,'kind':'original-required'\
+        \ if name in required else 'additional-required','attempt':1,'exitCode':code,'timedOut':timed_out,'outerTimeoutSeconds':180,'counts':counts,'observedDescendantEncoderBinaries':seen_encoders,'encoderBinariesUnchangedAfter':all(hashlib.sha256(v.read_bytes()).hexdigest()==encoder_hashes[k]\
+        \ for k,v in encoder_paths.items()),'observedDescendantBrowserBinaries':list(seen.values()),'remainingBrowserPids':remaining,'browserIdentityRequired':name\
+        \ not in encoder_only,'binaryUnchangedAfter':unchanged,'durationSeconds':time.monotonic()-started}\n stem.with_suffix('.result.json').write_text(json.dumps(receipt,indent=2)+'\\\
+        n');results.append(receipt)\n if code or timed_out or counts!=[('1','0','0')] or remaining or not unchanged or (name\
+        \ not in encoder_only and not seen) or (name in encoder_only and set(seen_encoders)!=set(encoder_paths)) or not receipt['encoderBinariesUnchangedAfter']:failures.append(name+':\
+        \ failed test or evidence')\n (out/'progress.json').write_text(json.dumps({'results':results,'failures':failures,'releaseEligible':False},indent=2)+'\\\
+        n')\n(out/'contracts.result.json').write_text(json.dumps({'required':required,'additional':additional,'excludedDiagnostics':inventory['diagnostics'],'results':results,'failures':failures,'releaseEligible':False},indent=2)+'\\\
+        n')\nsys.exit(1 if failures else 0)\n\nPY_CONTRACTS\ncat > evidence/exact-contracts.json <<'JSON_CONTRACTS'\n{\n \
+        \ \"additionalContracts\": [\n    \"native::client_observation::equivalence_tests::chromium_observation_frame_dfs_budget_eight_contract\"\
+        ,\n    \"native::client_observation::equivalence_tests::chromium_original_child_frame_budget_three_contract\",\n \
+        \   \"native::client_observation::equivalence_tests::chromium_original_offsite_data_frame_budget_three_contract\"\
+        ,\n    \"native::client_observation::equivalence_tests::chromium_original_onsite_frame_depth_four_five_contract\"\n\
+        \  ],\n  \"diagnostics\": [\n    \"native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment\"\
+        ,\n    \"native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable\"\
+        ,\n    \"native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline\"\
+        \n  ],\n  \"encoderOnly\": [\n    \"native::recording::tests::recording_sparse_frames_preserve_timestamps\"\n  ],\n\
+        \  \"names\": [\n    {\n      \"name\": \"native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::tests::chromium_native_observation_query_exact_and_secure_contract\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::tests::chromium_native_same_process_frame_coordinate_convention\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_twenty_controls_budget_and_frame_truncation_contract\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_embedded_control_and_password_public_labels_contract\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_observation_metadata_gc_and_exact_ref_actionability\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_query_churn_bounds_durable_metadata_without_evicting_authority\"\
+        \n    },\n    {\n      \"name\": \"native::client_browser::reference_lifetime_tests::chromium_located_reference_retirement_across_owned_attempts\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_observation_retirement_races_are_stale_not_deadline\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation::equivalence_tests::chromium_exact_read_retirement_races_are_stale_not_deadline\"\
+        \n    },\n    {\n      \"name\": \"native::client_protected_read::tests::chromium_animation_stabilization_preserves_visibility_and_native_reads\"\
+        \n    },\n    {\n      \"name\": \"native::client_page::tests::e2e_client_page_input_context_and_evaluate\"\n    },\n\
+        \    {\n      \"name\": \"native::client_actions::tests::chromium_exact_actions_fill_select_check_document_and_stale_ref\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_fixture_query_then_exact_check_without_observation\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_protected_pixels_then_exact_check_uses_committed_snapshot\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session\"\
+        \n    },\n    {\n      \"name\": \"native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_iframe_query_then_exact_check_without_observation\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_nested_frame_action_projects_input_and_checks_exact_ancestor_occlusion\"\
+        \n    },\n    {\n      \"name\": \"native::client_actions::tests::chromium_recording_attempt_segments_first_frame_size_and_scope_rotation\"\
+        \n    },\n    {\n      \"name\": \"native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script\"\
+        \n    },\n    {\n      \"name\": \"native::client_enrollment::tests::e2e_managed_blank_initialization_failure_prevents_navigation_request\"\
+        \n    },\n    {\n      \"name\": \"native::client_enrollment::tests::e2e_popup_initial_request_is_contained_when_configuration_fails\"\
+        \n    },\n    {\n      \"name\": \"native::client_enrollment::tests::e2e_borrowed_capture_observed_origins_and_native_bootstrap_lifetime\"\
+        \n    },\n    {\n      \"name\": \"native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page\"\
+        \n    },\n    {\n      \"name\": \"native::client_state::tests::chromium_duplicate_state_records_fail_instead_of_overwriting\"\
+        \n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query\"\
+        \n    },\n    {\n      \"name\": \"native::client_capture::tests::chromium_static_mask_preserves_public_pixels_and_restores_state\"\
+        \n    },\n    {\n      \"name\": \"native::client_capture::tests::chromium_shared_geometry_masks_transformed_frame_passwords\"\
+        \n    },\n    {\n      \"name\": \"native::client_capture::equivalence_tests::chromium_capture_retirement_races_publish_no_pixels_and_keep_typed_reason\"\
+        \n    },\n    {\n      \"name\": \"native::client_geometry::tests::chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale\"\
+        \n    },\n    {\n      \"name\": \"native::client_geometry::tests::chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots\"\
+        \n    },\n    {\n      \"name\": \"native::recording::tests::recording_sparse_frames_preserve_timestamps\"\n    },\n\
+        \    {\n      \"name\": \"native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released\"\
+        \n    },\n    {\n      \"name\": \"native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport\"\
+        \n    }\n  ]\n}\nJSON_CONTRACTS\npython3 \"$RUNNER_TEMP/run-native-contracts.py\" \"$(cat evidence/harness.path)\"\
+        \ evidence/chromium-executable.json evidence evidence/exact-contracts.json\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: required41-native-contract-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
+    needs:
+    - build
+    - compile-default
+  compile-fault-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 6e974b470e925c51b8452bdb66cfdcfbc310a471
+        path: native
+        persist-credentials: false
+    - name: Compile acceptance-faults exact test harness only
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = 6e974b470e925c51b8452bdb66cfdcfbc310a471\ntest \"\
+        $(git rev-parse HEAD^{tree})\" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a\ntest -z \"$(git status --porcelain)\"\nrustup toolchain install\
+        \ 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport\
+        \ CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --no-default-features\
+        \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\"\
+        \ 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import\
+        \ Path\nout = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out\
+        \ / 'harness.jsonl').read_text().splitlines():\n    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
+        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason') == 'compiler-artifact'\n\
+        \        and record.get('target', {}).get('name') == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
+        \ [])\n        and record.get('profile', {}).get('test') is True\n        and record.get('features') == ['acceptance-faults']\n\
+        \        and record.get('executable')):\n        paths.add(record['executable'])\nif build_finished != [True]:\n \
+        \   raise SystemExit('Missing or unsuccessful final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected\
+        \ exactly one test executable, got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise\
+        \ SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\n\
+        mkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp\
+        \ \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\n(cd \"$GITHUB_WORKSPACE/native-harness\"\
+        ; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: optional-screenshot-fault-harness
+        path: native-harness/
+        if-no-files-found: error
+        retention-days: 2
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: fault-harness-compile-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  fault-screenshot-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 6e974b470e925c51b8452bdb66cfdcfbc310a471
+        path: native
+        persist-credentials: false
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: optional-screenshot-fault-harness
+        path: native-harness
+    - name: Verify exact same-run fault harness source and bytes
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        cd native
+
+        test "$(git rev-parse HEAD)" = 6e974b470e925c51b8452bdb66cfdcfbc310a471
+
+        test "$(git rev-parse HEAD^{tree})" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a
+
+        test -z "$(git status --porcelain)"
+
+        cd ../native-harness
+
+        test "$(cat native-source.sha)" = 6e974b470e925c51b8452bdb66cfdcfbc310a471
+
+        test "$(cat native-source.tree)" = bedd7add22e5bbc77c4734bf00d95cecce8f2d2a
+
+        test "$(cat features.txt)" = acceptance-faults
+
+        test "$(cat producer-run.id)" = "$GITHUB_RUN_ID"
+
+        sha256sum -c SHA256SUMS
+
+        chmod +x agent-browser-tests
+
+        cp native-source.* features.txt producer-run.id SHA256SUMS ../evidence/
+
+        realpath agent-browser-tests > ../evidence/harness.path
+
+        '
+    - name: Run two original 80ms screenshot deadline regressions
+      shell: bash
+      env:
+        RUST_MIN_STACK: '16777216'
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
+        failed=0\nindex=0\nfor name in 'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_clean_late_ack_keeps_complete_tree_without_pixels'\
+        \ 'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_missing_ack_publishes_nothing_and_preserves_custody';\
+        \ do\n  index=$((index + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep\
+        \ -Fx \"$name: test\" \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One\
+        \ exclusive file per test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);\
+        \ os.close(fd)' \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"\
+        status\":\"prepared\",\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\
+        \n  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
+        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\ndone\nexit \"\
+        $failed\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: optional-screenshot-fault-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+    needs: compile-fault-tests
