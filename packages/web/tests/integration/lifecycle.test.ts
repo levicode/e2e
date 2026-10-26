@@ -1,3 +1,4 @@
+import { LifecycleAttemptDiagnostic } from '../helpers/lifecycle-attempt-diagnostic.ts';
 import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The native engine's lifecycle through the public contract: one shared
@@ -202,31 +203,42 @@ async function withAttempt(
   attemptId: string,
   body: () => Promise<void>,
   evidence?: LifecycleEvidence,
+  diagnostic?: LifecycleAttemptDiagnostic,
 ): Promise<void> {
   evidence?.phase('setup', 'init');
-  try { await boot(engine, app); }
-  catch (cause) { evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
+  diagnostic?.enter('init');
+  try { await boot(engine, app); diagnostic?.passed(); }
+  catch (cause) { diagnostic?.failed(cause); evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
   let started = false;
   try {
     evidence?.phase('setup', 'start');
+    diagnostic?.enter('start');
     await engine.startAttempt!(attempt(attemptId, artifactsDir));
     evidence?.passed('setup');
+    diagnostic?.passed();
     started = true;
+    diagnostic?.enter('body');
     await body();
+    diagnostic?.passed();
     evidence?.passed('body');
   } catch (cause) {
+    diagnostic?.failed(cause);
     evidence?.failed(started ? 'body' : 'setup', cause);
     throw cause;
   } finally {
     // Preserve the original sequential finally, including its masking behavior.
     try {
       evidence?.phase('cleanup', 'end');
+      diagnostic?.enter('end');
       await engine.endAttempt!(cleanup());
+      diagnostic?.passed();
       evidence?.phase('cleanup', 'dispose');
+      diagnostic?.enter('dispose');
       await engine.dispose!(cleanup());
+      diagnostic?.passed();
       evidence?.passed('cleanup');
     // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
-    } catch (cause) { evidence?.failed('cleanup', cause); throw cause; }
+    } catch (cause) { diagnostic?.failed(cause); evidence?.failed('cleanup', cause); throw cause; }
     finally { evidence?.finish(); }
   }
 }
@@ -1410,11 +1422,13 @@ describe('web engine lifecycle', () => {
     }
   });
 
-  it('rejects a video that cannot start and leaves the session working', async () => {
+  it('rejects a video that cannot start and leaves the session working', async (test) => {
+    const diagnostic = new LifecycleAttemptDiagnostic();
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
     try {
       await withAttempt(engine, app, videoDir, 'v4', async () => {
+        diagnostic.enter('open-first');
         await engine.session!.open!(`${app.url}/`, operation('v4'));
         const browser = fixtureOf(engine, 'v4');
         const command = EngineChannel.prototype.command;
@@ -1423,14 +1437,21 @@ describe('web engine lifecycle', () => {
           return command.call(this, name, args, context, transition);
         });
         try {
+          diagnostic.enter('reject-recording');
           await expect(engine.artifacts!.startVideo!(operation('v4'))).rejects.toThrow('screencast unavailable');
         } finally {
           spy.mockRestore();
         }
+        diagnostic.enter('open-after');
         await engine.session!.open!(`${app.url}/form`, operation('v4'));
+        diagnostic.enter('readback');
         expect(await browser.url()).toBe(`${app.url}/form`);
-      });
+      }, undefined, diagnostic);
     } finally {
+      try {
+        (test.task.meta as Record<string, unknown>)['videoAttemptDiagnostic'] = diagnostic.snapshot();
+        console.error('VIDEO_ATTEMPT_DIAGNOSTIC', JSON.stringify(diagnostic.snapshot()));
+      } catch { /* Diagnostics cannot replace a body or cleanup failure. */ }
       rmSync(videoDir, { recursive: true, force: true });
     }
   });
