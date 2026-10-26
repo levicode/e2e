@@ -1,0 +1,25 @@
+{
+  "producerRun": 40418477337,
+  "producerRecipe": "fbec77bbbb981d81f35a855dc4f00ce8d7055363",
+  "nativeSource": "9b742b5dcf785d1e05be582080e3a89696245ee3",
+  "nativeTree": "c36e1b9bc438c6245c6861781e2502ab143d00b8",
+  "e2eSource": "eed3e6a0adb746ab7f30f2c4fabf91971cf649ac",
+  "e2eTree": "307621d5f97eb12e9837cdf84fee25425451f649",
+  "artifacts": {
+    "images": {
+      "id": 12696901403,
+      "name": "integrated-native-images",
+      "sha256": "813ea72eb55a4ec161cb58b9d3e708a7da2a75019c837d4a88774921f8ee692e"
+    },
+    "default": {
+      "id": 12696594102,
+      "name": "all-default-native-harnesses",
+      "sha256": "509674240396abc3876fa9e21d4dd421adf18c3f1aa804f6ac50943df35a3832"
+    },
+    "feature": {
+      "id": 12696742863,
+      "name": "optional-screenshot-fault-harness",
+      "sha256": "550311c4f51f45fd4410156fe259890376671250df5c6727e6e6a1ff8d2ccdbc"
+    }
+  }
+}
