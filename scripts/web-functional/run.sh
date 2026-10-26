@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb; E2E 26dd30fd149f0b055bdfdbd789cd1c7490591e0b.
+Native 70ac7f3fb2a53de79c5fabf43b5009b7e5fefebb; E2E 63869dea6f1e05e6e0bc9b28cd8eb6cf7f24f430.
 NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
 NOT RUN (excluded scope): protected-app service-worker registration P41.
 NOT RUN: native auto-discovery, optional benchmark sweep, iOS.
@@ -54,8 +54,8 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = 26dd30fd149f0b055bdfdbd789cd1c7490591e0b
-  test "$(git rev-parse HEAD^{tree})" = a9e6b13236b45daebc19399a417bb72104d555b0
+  test "$(git rev-parse HEAD)" = 63869dea6f1e05e6e0bc9b28cd8eb6cf7f24f430
+  test "$(git rev-parse HEAD^{tree})" = 550f9a39edaf0d16ea4e1d4faa5d5e9e802a05e7
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
@@ -63,7 +63,7 @@ PY_VERIFY_CACHE
   pnpm install --frozen-lockfile
   pnpm run build
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
-  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
   set +e
   node scripts/acceptance/candidate-source.ts "$out"
   source_status=$?
