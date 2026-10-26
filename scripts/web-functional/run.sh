@@ -11,9 +11,9 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
-Native 9b742b5dcf785d1e05be582080e3a89696245ee3; E2E eed3e6a0adb746ab7f30f2c4fabf91971cf649ac.
+Native 9b742b5dcf785d1e05be582080e3a89696245ee3; E2E 539242d72edcc1880ca68844b98ea4d1cc986734.
 This lane reuses verified prior-run binaries; no native compilation or default/focused suite is rerun here.
-All44 required browser/encoder contracts plus separate13 encoder contracts; producer/current run provenance is explicit.
+Web-only lane; native contracts and feature tests run separately, producer/current run provenance is explicit.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
 Formal source-removal is remeasured after conditional test-root migration; prior 31 failures are not silently waived; no main merge or package/release here.
 SCOPE
@@ -51,8 +51,8 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
-  test "$(git rev-parse HEAD^{tree})" = 307621d5f97eb12e9837cdf84fee25425451f649
+  test "$(git rev-parse HEAD)" = 539242d72edcc1880ca68844b98ea4d1cc986734
+  test "$(git rev-parse HEAD^{tree})" = a21cc2426ac8f2d0c4b71d9a0832446bc6287dc0
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
@@ -60,6 +60,7 @@ PY_VERIFY_CACHE
   pnpm install --frozen-lockfile
   pnpm run build
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-surface.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-surface.vitest.json" 2>&1 | tee "$out/native-surface.log"
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts tests/unit/routes-case-diagnostic.test.ts tests/unit/actions.test.ts tests/unit/native-action-error-boundaries.test.ts tests/unit/native-action-diagnostics.test.ts tests/unit/native-observe-frame-policy-capability.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
   set +e
   node scripts/acceptance/candidate-source.ts "$out"

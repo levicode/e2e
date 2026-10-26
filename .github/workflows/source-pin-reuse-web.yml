@@ -32,7 +32,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
+        ref: 539242d72edcc1880ca68844b98ea4d1cc986734
         path: source
         persist-credentials: false
     - name: Assert source SHA, tree and ordinary CI native pin before setup
