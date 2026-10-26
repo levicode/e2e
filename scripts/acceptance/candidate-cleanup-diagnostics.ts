@@ -15,6 +15,7 @@ const frameFields = ['generation', 'pass', 'sealed', 'revisionMismatch', 'reserv
 const revisionEvents = ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'];
 const workerFields = ['generation', 'workerOrdinal', 'admissionStep', 'admissionState', 'waitingForDebugger'];
 const workerSteps = new Set(['owned-attachment', 'auxiliary-classification', 'register', 'purpose', 'config-gate', 'network-enable', 'network-bypass', 'fetch-enable', 'runtime-enable', 'recursive-autoattach', 'configured', 'resume-permit', 'resume-debugger', 'configuration-committed']);
+const terminalStages = new Set(['task-proof', 'owner-preconditions', 'runtime-release', 'persistent-probe', 'enrollment-proof', 'ledger-commands-present', 'physical-close', 'ordinary-close', 'shutdown-joins', 'final-commit']);
 const readonlyFields = ['generation', 'entryUs', 'ack', 'window', 'deadline', 'zeroInput', 'cleanup', 'error'];
 // Native restart diagnostics use process-local bounded ordinals, never native IDs.
 const targetFields: Record<string, readonly string[]> = {
@@ -52,13 +53,15 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const readonly = phase === 'ReadonlyPrepareFailure';
   const target = Object.hasOwn(targetFields, phase);
   const worker = phase === 'ServiceWorkerAdmission';
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
+  const terminal = phase === 'TerminalCleanupCheckpoint';
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
   const allowed = new Set([...required, ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
   if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && item.operationSeq !== 0) return false;
+  if (terminal && (item.operationSeq !== 0 || typeof item.terminalCleanupStage !== 'string' || !terminalStages.has(item.terminalCleanupStage) || typeof item.terminalCleanupOk !== 'boolean')) return false;
   if (worker) {
     if (item.operationSeq !== 0 || !natural(item.workerOrdinal) || item.workerOrdinal < 1 || item.workerOrdinal > 8) return false;
     if (typeof item.admissionStep !== 'string' || !workerSteps.has(item.admissionStep)) return false;
@@ -164,6 +167,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
     if (value.phase === 'CaptureLimitReached') reasons.add('capture-limit');
     if (value.phase === 'CaptureStarted') { if (ordinal !== 0) reasons.add('reused-pid'); continue; }
     if (value.phase === 'CaptureLimitReached') continue;
+    if (value.phase === 'TerminalCleanupCheckpoint') continue; // Independent stage fact, never cleanup success or complete lifecycle evidence.
     if (value.phase === 'ServiceWorkerAdmission') {
       const key = `${pid}:${value.workerOrdinal}`;
       const exact = JSON.stringify([value.generation, value.waitingForDebugger]);

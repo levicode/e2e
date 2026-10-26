@@ -398,3 +398,19 @@ test('missing, mixed or over-budget worker observations remain unknown', () => {
   ];
   for (const extra of cases) assert.equal(inspectCleanupBytes(lines(...completed(), ...extra)).status, 'unknown');
 });
+
+
+test('terminal cleanup checkpoints are closed metadata and cannot prove cleanup', () => {
+  const point = (ordinal: number, facts = {}) => record('TerminalCleanupCheckpoint', ordinal, { operationSeq: 0, terminalCleanupStage: 'final-commit', terminalCleanupOk: true, ...facts });
+  for (const terminalCleanupStage of ['task-proof', 'owner-preconditions', 'runtime-release', 'persistent-probe', 'enrollment-proof', 'ledger-commands-present', 'physical-close', 'ordinary-close', 'shutdown-joins', 'final-commit']) {
+    for (const terminalCleanupOk of [false, true]) assert.equal(validCleanupRecord(point(1, { terminalCleanupStage, terminalCleanupOk })), true);
+  }
+  for (const facts of [{ operationSeq: 1 }, { terminalCleanupStage: 'private' }, { terminalCleanupOk: 'true' }, { url: 'private' }, { generation: 1 }, { error: 'cleanup-failed' }]) assert.equal(validCleanupRecord(point(1, facts)), false);
+  for (const key of ['terminalCleanupStage', 'terminalCleanupOk']) { const value: Record<string, unknown> = point(1); delete value[key]; assert.equal(validCleanupRecord(value), false); }
+  const only = inspectCleanupBytes(lines(record('CaptureStarted', 0), point(1)));
+  assert.equal(only.status, 'unknown'); assert.ok(only.reasons.includes('no-cleanup-attempt'));
+  const existing = completed();
+  const alongside = inspectCleanupBytes(lines(...existing, point(4)));
+  assert.equal(alongside.status, 'complete-observed-snapshots');
+  assert.equal(alongside.records.find(value => value.phase === 'CleanupResult')?.cleanupResult, 'failed');
+});
