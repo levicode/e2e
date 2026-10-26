@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 DIAGNOSTIC ONLY; no release/acceptance claim; no imported prior passes.
-Native 188e2f68fc12d5dc3c71f682da83da2b05b28e92; E2E 124df445a5d7db105914174408c267090fdfae50.
+Native d0d67e8cbd856d1066ea77f89ee99edef09ee2e7; E2E 30e05ff98c4f958c4256d71c158b03039f9df509.
 NOT RUN (excluded scope): activated beforeunload tests: leaves host untouched first open/video; registered dialog before provider recording; unhandled beforeunload first open/video.
 NOT RUN (excluded scope): protected-app service-worker registration P41.
 NOT RUN: native auto-discovery, optional benchmark sweep, iOS, macOS.
@@ -20,7 +20,7 @@ Known unresolved public semantics, NOT cleared by this matrix: pointer position 
 Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
 SCOPE
 if [[ "$mode" == setup ]]; then
-  test "$(git rev-parse HEAD)" = 124df445a5d7db105914174408c267090fdfae50
+  test "$(git rev-parse HEAD)" = 30e05ff98c4f958c4256d71c158b03039f9df509
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"

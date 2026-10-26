@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/agent-browser
-          ref: 188e2f68fc12d5dc3c71f682da83da2b05b28e92
+          ref: d0d67e8cbd856d1066ea77f89ee99edef09ee2e7
           path: native
           persist-credentials: false
       - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -30,8 +30,8 @@ jobs:
           set -euo pipefail
           mkdir -p images evidence
           cd native/cli
-          test "$(git rev-parse HEAD)" = 188e2f68fc12d5dc3c71f682da83da2b05b28e92
-          test "$(git rev-parse HEAD^{tree})" = 4b4d04252c6f6988c4977f71cfc498d2fd4ec913
+          test "$(git rev-parse HEAD)" = d0d67e8cbd856d1066ea77f89ee99edef09ee2e7
+          test "$(git rev-parse HEAD^{tree})" = c66f6bd004e90c8c9e66efbdf32018f957980e9d
           test -z "$(git status --porcelain)"
           rustup toolchain install 1.99.1 --profile minimal
           unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 124df445a5d7db105914174408c267090fdfae50
+          ref: 30e05ff98c4f958c4256d71c158b03039f9df509
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -111,7 +111,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: levicode/e2e
-          ref: 124df445a5d7db105914174408c267090fdfae50
+          ref: 30e05ff98c4f958c4256d71c158b03039f9df509
           path: source
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
