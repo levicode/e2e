@@ -20,6 +20,16 @@ BLOCKED/NOT RUN: final producer, package-bundle and no-override installed-packag
 Final acceptance/retirement evidence for pointer position preservation and stale-reference mapping after focus/reset is NOT established by this diagnostic matrix.
 Legacy/oracle results (including observation.test.ts and read-node-names.test.ts) are reference results, not native implementation proof.
 SCOPE
+if [[ "$mode" == restored-case ]]; then
+  cat > "$out/scope.txt" <<'RESTORED_SCOPE'
+ONE EXACT RESTORED CASE ONLY; not full acceptance, no imported test pass.
+Native f4fa3c62d29208b7679fedbf0e3787f2923506a7; E2E e75e4f347c286ce3764dc70cfb8c2059a32b2490.
+The original beforeunload or Service Worker test body and operation budgets are unchanged.
+Owned CI-created temporary browser profiles and loopback fixture pages only. No real browser or user data.
+Each of the six matrix jobs runs one exact selected case once; other tests filtered out are not passes.
+Formal source-removal, package and installed/no-override gates remain separate and unchanged.
+RESTORED_SCOPE
+fi
 if [[ "$mode" == setup ]]; then
   # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
   # Repository/trust/signature settings and product tests remain unchanged.
@@ -103,6 +113,18 @@ PY_SAVE_CACHE
 fi
 run_group() {
  case "$mode" in
+  restored-case)
+   case "${E2E_CASE_ID:?}" in beforeunload-open|beforeunload-video|beforeunload-provider|beforeunload-dismiss-open|beforeunload-dismiss-video|service-worker) ;; *) return 2 ;; esac
+   case "${E2E_CASE_TEST_FILE:?}" in tests/integration/cdp-recovery.test.ts|tests/integration/protected-app.test.ts) ;; *) return 2 ;; esac
+   node -e 'const fs=require("node:fs"); const p=process.argv[1]; const fd=fs.openSync(p,"wx",0o600); fs.closeSync(fd)' "$out/restored.cleanup.jsonl" || return $?
+   node -e 'require("node:fs").writeFileSync(process.argv[1],JSON.stringify({schemaVersion:1,caseId:process.env.E2E_CASE_ID,file:process.env.E2E_CASE_TEST_FILE,title:process.env.E2E_CASE_TITLE,pattern:process.env.E2E_CASE_PATTERN,attempt:1,validation:"raw-not-validated",releaseEligible:false})+"\n")' "$out/restored-case.json" || return $?
+   AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$out/restored.cleanup.jsonl" pnpm --filter @e2e-dev/web exec vitest run --project integration "$E2E_CASE_TEST_FILE" -t "${E2E_CASE_PATTERN:?}" --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/restored.vitest.json" 2>&1 | tee "$out/restored.log"
+   pipeline_status=( "${PIPESTATUS[@]}" )
+   status=${pipeline_status[0]}
+   if [[ "$status" -eq 0 && "${pipeline_status[1]}" -ne 0 ]]; then status=${pipeline_status[1]}; fi
+   node -e 'const r=require(process.argv[1]); if(r.numPassedTests+r.numFailedTests!==1)throw Error("Expected exactly one executed restored case");' "$out/restored.vitest.json" || return $?
+   return "$status"
+   ;;
   p01-isolated|video-isolated)
    if [[ "$mode" == p01-isolated ]]; then
      file=tests/integration/app-log.test.ts
