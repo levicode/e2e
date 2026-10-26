@@ -1,7 +1,7 @@
 import { constants, openSync, closeSync, lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 
-type CaseId = 'p01' | 'video-refusal' | 'routes-suite';
+type CaseId = 'p01' | 'video-refusal' | 'routes-suite' | 'hung-recovery';
 type State = 'disabled' | 'ready' | 'unavailable' | 'environment-conflict';
 /** Test-process-local capture only: no retries, browser controls, or success authority. */
 export function beginCaseCleanupCapture(caseId: CaseId, meta: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): { finish(): void } {

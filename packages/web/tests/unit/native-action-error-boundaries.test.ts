@@ -7,8 +7,8 @@ import { NativeProtocolPeer, type PeerOutcome } from '../helpers/native-protocol
 
 const operation = (): OperationContext => ({ signal: new AbortController().signal, timeoutMs: 1000, runId: 'action-errors', attemptId: 'action-errors', origin: 'test' });
 
-// These are adapter proofs, not renderer proofs or retirement receipts. The
-// original actions:6/8/9/10/11/13/14/15/16 tests remain in normal discovery.
+// These are adapter proofs, not renderer proofs or retirement receipts.
+// Public action contracts also remain in actions.test.ts under normal discovery.
 describe('native action error boundaries', () => {
   it.each([
     { kind: 'tap' },
@@ -66,9 +66,9 @@ describe('native action error boundaries', () => {
     }
   });
 
-  it('keeps the sensitive noneditable producer outcome uncertain without leaking the submitted value', async () => {
-    // The matching producer fixture executes PREPARE_FILL on a scripted DIV.
-    // Unknown is not a claim that the DOM changed; it prevents a blind retry.
+  it('keeps a sensitive post-probe fill race uncertain without leaking the submitted value', async () => {
+    // The v2 producer admits an editable field, then makes it readonly before
+    // PREPARE_FILL. Unknown is not proof of a DOM change; it prevents blind retry.
     const context = operation();
     const secret = 'hunter2-plaintext';
     const peer = new NativeProtocolPeer(['terminal.close/1'], () => ({ error: 'not-actionable', effects: 'unknown', scopeState: 'quarantined' }));

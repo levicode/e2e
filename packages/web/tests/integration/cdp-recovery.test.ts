@@ -1,3 +1,4 @@
+import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 /** Real CDP transport drops preserve only the dedicated persistent context, never a replacement. */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -29,6 +30,7 @@ const recoveryTasks = new WeakMap<object, RecoveryEvidence>();
 interface RecoveryContract { schemaVersion: 1; caseId: SyntheticCaseId; invalid: boolean; facts: SyntheticFact[]; terminalCleanup: TerminalCloseEvidence }
 const recoveryContracts = new WeakMap<object, RecoveryContract>();
 const terminalObservers = new WeakMap<object, Array<() => void>>();
+const recoveryCaptures = new WeakMap<object, ReturnType<typeof beginCaseCleanupCapture>>();
 
 /** Reuse the existing observer's bounded facts; this never enables the synthetic batch. */
 function recoveryContractSink(context: TestContext, id: SyntheticCaseId): SyntheticEvidence {
@@ -178,6 +180,9 @@ describe('CDP session recovery', () => {
   let disconnectEvents = 0;
 
   beforeEach(test => {
+    if (test.task.name === 'bounds a hung reconnect resolver and propagates cancellation to it') {
+      recoveryCaptures.set(test.task, beginCaseCleanupCapture('hung-recovery', test.task.meta as Record<string, unknown>));
+    }
     disconnectEvents = 0;
     const observers: Array<() => void> = [];
     terminalObservers.set(test.task, observers);
@@ -217,6 +222,7 @@ describe('CDP session recovery', () => {
   });
 
   afterEach(async context => {
+    try {
     const diagnostic = recoveryTasks.get(context.task);
     diagnostic?.enter('backstop', 'cleanup');
     diagnostic?.evidence.record({ kind: 'ownership', phase: 'backstop', hosts: activeHosts.size, clients: activeEngines.size, relays: activeHosts.size, pendingCleanup: activeHosts.size + activeEngines.size + hostControls.size });
@@ -266,6 +272,10 @@ describe('CDP session recovery', () => {
           validatedClosed: 1, generationMatched: true, terminalAtExchange: true,
           ordinaryPendingAtExchange: 0, ordinaryPendingAfterClose: 0, settled: 'fulfilled' });
       }
+    }
+    } finally {
+      recoveryCaptures.get(context.task)?.finish();
+      recoveryCaptures.delete(context.task);
     }
   });
 

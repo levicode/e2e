@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticNode } from 'e2e/engine';
 import { CLOSED_SHADOW_ROOTS_INIT_SCRIPT } from '../../src/closed-shadow.ts';
 import { captureDocument } from '../../src/observation.ts';
-import { readSemanticsFunction } from '../../src/in-page/read-semantics.ts';
-import { SECURE_FIELD_SELECTOR } from '../../src/read-node.ts';
+import { startNativeFixture } from '../helpers/native-fixture.ts';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { observedNodes } from '../helpers/native-correlation.ts';
 
 let browser: Browser;
 let page: Page;
@@ -241,23 +242,44 @@ describe('names from content and precedence', () => {
     }
   });
 
+  // The actual producer GC/label receipts are separate from this public adapter
+  // contract: no old page-realm reader or fabricated metadata handle is used.
   it('keeps an embedded control\'s value out of label text and a secure field\'s value out of every name', async () => {
-    await page.setContent(`
-      <label for="qty">Qty <input value="5"> items</label><input id="qty" data-testid="label-for">
-      <button data-testid="secure">Unlock <input type="password" value="hunter2"> now</button>
-      <label for="pin">PIN <input type="password" value="hunter2"> field</label><input id="pin" data-testid="secure-label">
-    `);
-    const options = { testIdAttribute: 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR, mode: { kind: 'node' as const } };
-    const reads = await Promise.all(
-      (await page.locator('[data-testid]').all()).map((locator) => locator.evaluate(readSemanticsFunction<typeof options.mode>, options)),
-    );
-    const byTestId = new Map(reads.map((raw) => [raw.testId, raw] as const));
-    // Label text is what Playwright's getByLabel matches, which reads no control value.
-    expect(byTestId.get('label-for')?.labels).toEqual(['Qty items']);
-    expect(await page.getByLabel('Qty items', { exact: true }).getAttribute('data-testid')).toBe('label-for');
-    expect(byTestId.get('secure')?.name).toBe('Unlock now');
-    expect(byTestId.get('secure-label')?.name).toBe('PIN field');
-    expect(JSON.stringify(reads)).not.toContain('hunter2');
+    const fixture = await startNativeFixture('public-label-password-contract');
+    try {
+      await nativeDocument(fixture.browser, `
+        <label for="qty">Qty <input value="5"> items</label><input id="qty" data-testid="label-for">
+        <button data-testid="secure">Unlock <input type="password" value="hunter2"> now</button>
+        <label for="pin">PIN <input type="password" value="hunter2"> field</label><input id="pin" data-testid="secure-label">
+      `);
+      // Public label matching excludes the embedded value even though the
+      // accessible name of #qty legitimately includes it (Qty 5 items).
+      const label = await fixture.engine.locate!({ kind: 'query', query: { kind: 'label',
+        value: { kind: 'string', value: 'Qty items', exact: true },
+      } }, fixture.operation());
+      expect(label.map(node => node.testId)).toEqual(['label-for']);
+      expect(await fixture.engine.locate!({ kind: 'query', query: { kind: 'label',
+        value: { kind: 'string', value: 'Qty 5 items', exact: true },
+      } }, fixture.operation())).toEqual([]);
+      const reads = [];
+      for (const testId of ['label-for', 'secure', 'secure-label']) {
+        const found = await fixture.engine.locate!({ kind: 'query', query: {
+          kind: 'testId', value: { kind: 'string', value: testId, exact: true },
+        } }, fixture.operation());
+        expect(found).toHaveLength(1);
+        reads.push(found[0]!);
+      }
+      const byTestId = new Map(reads.map(node => [node.testId, node]));
+      expect(byTestId.get('secure')?.name).toBe('Unlock now');
+      expect(byTestId.get('secure-label')?.name).toBe('PIN field');
+      expect(JSON.stringify(reads)).not.toContain('hunter2');
+      const snapshot = await fixture.engine.observe!(fixture.operation());
+      const observed = new Map(observedNodes(snapshot.root).map(node => [node.testId, node]));
+      expect(observed.get('secure')?.name).toBe('Unlock now');
+      expect(observed.get('secure-label')?.name).toBe('PIN field');
+      expect(JSON.stringify(snapshot.root)).not.toContain('hunter2');
+      expect(snapshot.truncated).toBe(false);
+    } finally { await fixture.close(); }
   });
 
   it('reads aria-labelledby before aria-label, and either before a label element', async () => {
