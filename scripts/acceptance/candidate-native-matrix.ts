@@ -143,8 +143,8 @@ function inventoryPassed(proof: InventoryProof): boolean {
   const streams = [proof.default, proof.ignored, ...(proof.feature === null ? [] : [proof.feature])];
   if (!proof.verified || streams.some(value => !completed(value.process) || value.process.status !== 0 || value.entries === 0 || value.duplicates !== 0 || value.knownNames.length > value.entries)) return false;
   if (proof.mode === 'preparation') return proof.required.every(row => row.inDefault && !row.ignored && proof.default.knownNames.includes(row.name) && !proof.ignored.knownNames.includes(row.name));
-  return proof.feature !== null && proof.delta !== null && JSON.stringify(proof.delta.added) === JSON.stringify(REQUIRED_NATIVE_FEATURE_TESTS) && proof.delta.addedCount === 31 && proof.delta.unexpectedAddedCount === 0 && proof.delta.removedDefaultCount === 0
-    && proof.feature.entries === proof.default.entries + 31 && proof.required.every(row => !row.inDefault && row.inFeature && !row.ignored && !proof.default.knownNames.includes(row.name) && proof.feature!.knownNames.includes(row.name) && !proof.ignored.knownNames.includes(row.name));
+  return proof.feature !== null && proof.delta !== null && JSON.stringify(proof.delta.added) === JSON.stringify(REQUIRED_NATIVE_FEATURE_TESTS) && proof.delta.addedCount === REQUIRED_NATIVE_FEATURE_TESTS.length && proof.delta.unexpectedAddedCount === 0 && proof.delta.removedDefaultCount === 0
+    && proof.feature.entries === proof.default.entries + REQUIRED_NATIVE_FEATURE_TESTS.length && proof.required.every(row => !row.inDefault && row.inFeature && !row.ignored && !proof.default.knownNames.includes(row.name) && proof.feature!.knownNames.includes(row.name) && !proof.ignored.knownNames.includes(row.name));
 }
 export function normalizedTest(name: string, stdout: string): TestFacts {
   const running = [...stdout.matchAll(/^running (\d+) tests?$/gm)]; const results = [...stdout.matchAll(/^test (\S+) \.\.\. (ok|FAILED|ignored[^\n]*)$/gm)];
@@ -231,7 +231,7 @@ export function finalizeMatrixReceipt(mode: MatrixMode, steps: Record<string, { 
   const status: Status = eligible ? 'passed' : ['missing', 'skipped', 'cancelled'].includes(step) || execution === undefined ? 'unknown' : execution.status === 'unknown' ? 'unknown' : 'failed';
   return { schemaVersion: 1, kind: kind(mode), mode, status, step, prerequisites, complete, required: names(mode), results, binding: execution?.binding ?? null, inventory: execution?.inventory ?? null, compile: execution?.compile ?? null,
     executionStatus: execution?.status ?? 'missing', stage: execution?.stage ?? 'missing', releaseEligible: false, acceptanceEvidence: true,
-    note: mode === 'preparation' ? 'Required default-harness preparation regression: all eight exact tests must execute, none ignored, and all must pass. Historical CI14 RED is not rewritten.' : 'Required closed execution-time proof. Raw listings are not retained or reconstructed from hashes; current source/harness identity is rechecked. All 31 exact tests must pass.' };
+    note: mode === 'preparation' ? 'Required default-harness preparation regression: all eight exact tests must execute, none ignored, and all must pass. Historical CI14 RED is not rewritten.' : 'Required closed execution-time proof. Raw listings are not retained or reconstructed from hashes; current source/harness identity is rechecked. Every required exact feature test must pass.' };
 }
 const readProof = (path: string): unknown => { if (statSync(path).size > 4 * LIMIT) throw new Error('Proof exceeds bound'); return JSON.parse(readFileSync(path, 'utf8')); };
 /** Verify closed execution-time facts, NOT a reconstruction of discarded raw output from its hashes. */

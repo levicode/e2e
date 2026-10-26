@@ -1,0 +1,45 @@
+name: Verify source-pinned native runtime
+description: Bootstrap ordinary CI from its own source-built artifact; not installed-runtime acceptance.
+inputs:
+  artifact-id:
+    description: Exact artifact ID from this workflow's source build job
+    required: true
+  manifest-sha256:
+    description: Manifest digest passed independently by the source build job
+    required: true
+  run-attempt:
+    description: Producer attempt from the same source build job (retained on failed-job reruns)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Require one exact same-run artifact and a manifest digest
+      shell: bash
+      env:
+        ARTIFACT_ID: ${{ inputs.artifact-id }}
+        MANIFEST_SHA256: ${{ inputs.manifest-sha256 }}
+        PRODUCER_ATTEMPT: ${{ inputs.run-attempt }}
+      run: |
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+        [[ "$MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+        [[ "$PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ inputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify source, run, host, compiler and executable before use
+      shell: bash
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ inputs.manifest-sha256 }}
+        PRODUCER_ATTEMPT: ${{ inputs.run-attempt }}
+      run: node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime" "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+    - name: Prepare the exact native browser and recording tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps
+        if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+        fi

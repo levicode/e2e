@@ -42,12 +42,30 @@ export const REQUIRED_NATIVE_FEATURE_TESTS = [
   'native::client_settlement_trace::tests::acceptance_phase_largest_summary_and_detail_fit_record_bound',
   'native::client_settlement_trace::tests::acceptance_phase_decoded_message_and_io_error_never_serialize_secrets',
   'native::client_settlement_trace::tests::acceptance_phase_write_failure_stops_without_repair_or_retry',
+  'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_clean_late_ack_keeps_complete_tree_without_pixels',
+  'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_missing_ack_publishes_nothing_and_preserves_custody',
+  'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_immediate_positive',
+  'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_native_deadline_records_then_checks_contract',
+  'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_client_cancel_ack_records_then_checks_contract',
+  'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_peer_ax_schema_and_omitted_flags_match_real_protocol',
+  'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_terminal_failure_rejects_correlated_or_reusable_shapes',
+  'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_raw_ack_then_restore_past_transport_grace_preserves_owner',
+  'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_unacknowledged_raw_capture_cannot_regain_owner',
+  'native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded',
+  'native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations',
+  'native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures',
+  'native::client_observation_dispatch::tests::fallback_capture_error_ack_restores_exact_owner_and_preserves_prior_refs',
+  'native::client_observation_dispatch::tests::fallback_withheld_raw_ack_retains_masks_and_rejects_late_revival',
 ] as const;
 
-/** Source audit at b8dd484b71087aabe530d5c930082973f680d688; runtime inventory delta is also checked. */
+/** Previous exact Linux inventory 43 verified at native6e974b by run40379282749: original31 + ten pre-existing omissions + two screenshot contracts. Historical line numbers below identify the original audit; new module guards are source-verified at bedd7ad. Next source adds two mandatory raw-ACK regressions, requiring a new exact delta45 receipt. */
 export const FEATURE_TEST_CFG_SOURCES = [
-  { file: 'cli/src/native/client_observation_dispatch.rs', gate: 'direct acceptance-faults attribute', cfgGuardLines: [1944, 1957, 1962, 1968, 1990, 2004, 2015, 2027, 2033, 2052, 2062, 2074], count: 12 },
+  { file: 'cli/src/native/client_observation_dispatch.rs', gate: 'direct acceptance-faults attribute', cfgGuardLines: [1944, 1957, 1962, 1968, 1990, 2004, 2015, 2027, 2033, 2052, 2062, 2074], count: 14 },
   { file: 'cli/src/native/client_transport.rs', gate: 'direct acceptance-faults attribute', cfgGuardLines: [2783, 2843], count: 2 },
   { file: 'cli/src/native/client_test_faults.rs', gate: 'cli/src/native/mod.rs:100 module acceptance-faults attribute', testAttributeLines: [206, 239, 253, 267], count: 4 },
-  { file: 'cli/src/native/client_settlement_trace.rs', gate: 'cli/src/native/mod.rs:104 module acceptance-faults attribute; symlink/FIFO test additionally cfg(unix), applicable on Linux', testAttributeLines: [747, 788, 805, 836, 855, 871, 887, 912, 948, 967, 1000, 1035, 1077], count: 13 },
+  { file: 'cli/src/native/client_settlement_trace.rs', gate: 'tests submodule cfg(all(test, feature=acceptance-faults)); symlink/FIFO additionally cfg(unix), applicable on Linux', testAttributeLines: [747, 788, 805, 836, 855, 871, 887, 912, 948, 967, 1000, 1035, 1077], count: 13 },
+  { file: 'cli/src/native/client_optional_mask_retirement_tests.rs', gate: 'observation_dispatch cfg(test) supersession include; two direct acceptance-faults test attributes', cfgGuardLines: [706, 712], count: 2 },
+  { file: 'cli/src/native/client_settlement_trace.rs', gate: 'tests submodule cfg(all(test, feature=acceptance-faults)) at current line1867; three worker observer contracts', testAttributeLines: [1871, 1936, 1971], count: 3 },
+  { file: 'cli/src/native/client_browser_trace_retirement_tests.rs', gate: 'state_lifecycle_tests restart_transport_tests module acceptance-faults guard', count: 3 },
+  { file: 'cli/src/native/client_browser_observe_trace_timeout_tests.rs', gate: 'state_lifecycle_tests module acceptance-faults guard', count: 4 },
 ] as const;

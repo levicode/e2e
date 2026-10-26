@@ -23,6 +23,7 @@ import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs } from
 import { BrowserChannel, isNativeNotDispatched } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
 import { EngineChannel } from './native/engine-channel.ts';
+import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import type { EngineCommandMap, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
 import type { NativeClient } from './native/client.ts';
 import { connectNativeProcess } from './native/process.ts';
@@ -31,7 +32,7 @@ import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
 import { resolveNativeExecutable } from './native/runtime.ts';
 
 import { isNativeProcessCleanupUnresolved } from './native/process-cleanup.ts';
-import { REQUIRED_CAPABILITIES } from './native/capabilities.ts';
+import { PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './native/capabilities.ts';
 const SECURE_FIELD_SELECTOR = 'input[type="password" i]';
 const LIFECYCLE_TIMEOUT_MS = 3_600_000;
 const LATE_RECORDING_STOP_MS = 10_000;
@@ -66,6 +67,7 @@ interface Attempt {
   channel?: BrowserChannel;
   counter: number;
   videoCounter: number;
+  finalizedVideo?: FinalizedVideoFiles;
   readonly downloads: Map<string, Promise<Uint8Array | undefined>>;
 }
 
@@ -274,6 +276,8 @@ export class NativeSurface implements NativeWebSurface {
     const attempt = this.attempt ?? this.retiringAttempt;
     const client = this.client; const engine = this.engine; const connecting = this.connecting;
     attempt?.retirement.abort();
+    const finalizedCleanup = attempt?.finalizedVideo?.retire();
+    let finalizedCleanupProven = finalizedCleanup === undefined;
     this.attempt = undefined; this.retiringAttempt = attempt; this.listeners.clear(); attempt?.channel?.dispose();
     try {
       // Cancellation ACK is not settlement. Join only these captured ordinary
@@ -318,9 +322,18 @@ export class NativeSurface implements NativeWebSurface {
       if (this.persistent || this.workerSourceLost || failure !== undefined) {
         try { await this.closeClient(remaining(), client); } catch (cause) { failure ??= cause; }
       }
+      // Native close starts without waiting for local artifact IO. The local
+      // file owner must nevertheless settle within this same cleanup budget
+      // before the exact attempt/provider lease can be released.
+      if (finalizedCleanup !== undefined) {
+        try {
+          await raceAbort(() => finalizedCleanup, remaining().signal, 'retiring finalized video files');
+          remaining(); finalizedCleanupProven = true;
+        } catch (cause) { this.workerCleanupUnconfirmed = true; failure ??= cause; }
+      }
       // The same deadline governs every step. Late success cannot clear failed ownership.
       remaining();
-      if (this.client === undefined || !this.workerCleanupUnconfirmed) {
+      if (finalizedCleanupProven && (this.client === undefined || !this.workerCleanupUnconfirmed)) {
         try {
           const budget = remaining();
           await raceAbort(() => this.leases?.endAttempt(budget) ?? Promise.resolve(), budget.signal, 'releasing native attempt lease');
@@ -395,6 +408,15 @@ export class NativeSurface implements NativeWebSurface {
         // Retire only cached presentation. Routes, recordings, downloads, and the exact owner survive.
         if (this.client === client && this.attempt !== undefined) delete this.attempt.observationHighWater;
       });
+      client.onFinalizedRecording((owner, download, endsAt) => {
+        const ownerAttempt = this.attempt;
+        if (this.client !== client || ownerAttempt === undefined || ownerAttempt.scope !== owner.identityScope || ownerAttempt.finalizedVideo !== undefined || ownerAttempt.retirement.signal.aborted) return;
+        const files = new FinalizedVideoFiles({ artifactsDir: ownerAttempt.context.artifactsDir, allocatePart: () => ++ownerAttempt.videoCounter,
+          owns: () => this.client === client && this.attempt === ownerAttempt && ownerAttempt.scope === owner.identityScope,
+          retirement: ownerAttempt.retirement.signal });
+        ownerAttempt.finalizedVideo = files;
+        files.prepare(download, endsAt);
+      });
       this.engine = new EngineChannel(client, scope => {
         const owner = this.attempt ?? this.retiringAttempt;
         return () => this.client === client && owner !== undefined && (this.attempt === owner || this.retiringAttempt === owner) && owner.scope === scope;
@@ -441,6 +463,31 @@ export class NativeSurface implements NativeWebSurface {
     if (typeof payload['identityScope'] !== 'string') throw this.invalidate();
     if (payload['identityScope'] !== attempt.scope) return;
     const operation = this.operation(attempt.context.signal, event.decision?.timeoutMs ?? LIFECYCLE_TIMEOUT_MS);
+    if (event.event === 'scope.page-reopened') {
+      const recovery = payload['recoveryIdentity'];
+      const previous = attempt.recovery;
+      if (!this.requireClient().negotiation().capabilities.includes(PERSISTENT_PAGE_REOPEN_CAPABILITY)
+        || event.decision !== undefined || payload['version'] !== 1
+        || Object.keys(payload).toSorted().join(',') !== 'identityScope,previousPageIdentity,recoveryIdentity,version'
+        || recovery === null || typeof recovery !== 'object' || Array.isArray(recovery)
+        || Object.keys(recovery).toSorted().join(',') !== 'browser,context,page'
+        || !('browser' in recovery) || !('context' in recovery) || !('page' in recovery)
+        || previous === undefined || recovery.browser !== previous.browser || recovery.context !== previous.context
+        || payload['previousPageIdentity'] !== previous.page || typeof recovery.page !== 'string'
+        || recovery.page.length === 0 || recovery.page.length > 256 || Array.from(recovery.page).some(character => {
+          const code = character.codePointAt(0);
+          return code !== undefined && (code <= 0x1f || code === 0x7f);
+        })
+        || recovery.page === previous.page) throw this.invalidate();
+      // The scope/generation-fenced event precedes the caller's result. Keep
+      // the same attempt, routes and media; only old page evidence retires.
+      if (attempt.epoch === Number.MAX_SAFE_INTEGER) throw this.invalidate();
+      attempt.recovery = { browser: previous.browser, context: previous.context, page: recovery.page };
+      attempt.epoch += 1;
+      attempt.recoveryObservationRequired = true;
+      delete attempt.observationHighWater;
+      return;
+    }
     if (event.event === 'scope.disconnected') {
       if (payload['reason'] !== 'browser-connection-closed') throw this.invalidate();
       attempt.recoveryPending = true;
@@ -562,9 +609,10 @@ export class NativeSurface implements NativeWebSurface {
       }
     }
     const client = this.requireClient(); const publication = client.publicationCheckpoint();
-    const channel = attempt.channel;
+    const channel = attempt.channel; const pageEpoch = attempt.epoch;
     const result = await withinAttemptRequest(operation, attempt, current => channel.command(name, args, current));
     this.assertAttempt(attempt);
+    if ((name.startsWith('page.') && name !== 'page.navigate' || name.startsWith('input.') || name === 'fixture.correlate') && attempt.epoch !== pageEpoch) throw new EngineError('NODE_STALE', 'The application page changed during the operation', { retryable: true });
     if (name === 'fixture.correlate') this.assertPublication(client, publication);
     if (name === 'page.navigate' || name === 'page.reload' || name === 'page.back' || name === 'page.forward') this.tellEnvironment(attempt);
     if (name === 'network.routes.replace') this.registryCurrent = (args as BrowserCommandMap['network.routes.replace']['args']).version;
@@ -617,11 +665,12 @@ export class NativeSurface implements NativeWebSurface {
   }
 
   private async engineCommand<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext): Promise<EngineCommandMap[K]['result']> {
-    const attempt = this.requireAttempt(); const scope = attempt.scope;
+    const attempt = this.requireAttempt(); const scope = attempt.scope; const pageEpoch = attempt.epoch;
     const engine = this.requireEngine();
     const result = await withinAttemptRequest(operation, attempt, current => engine.command(name, args, current));
     this.assertAttempt(attempt);
     if (scope !== attempt.scope) throw invalidState('The browser scope changed during an operation');
+    if ((name.startsWith('browser.') || name.startsWith('fixture.') || name === 'capture.screenshot' || name === 'state.capture') && attempt.epoch !== pageEpoch) throw new EngineError('CANCELLED', 'The native page result owner has retired', { retryable: false });
     return result;
   }
   async observe(operation: OperationContext, options: EngineObserveOptions = {}): Promise<EngineSnapshot> {
@@ -639,7 +688,7 @@ export class NativeSurface implements NativeWebSurface {
         highWater = { epoch, scope, client, revision }; attempt.observationHighWater = highWater;
       } else if (revision > highWater.revision) highWater.revision = revision;
     }
-    const pixels = snapshot.pixels === undefined ? undefined : { data: await engine.readBlob(snapshot.pixels, scope, operation), mediaType: snapshot.pixels.mediaType, width: snapshot.pixels.width, height: snapshot.pixels.height, scale: snapshot.pixels.scale };
+    const pixels = snapshot.pixels === undefined ? undefined : { data: await engine.readBlob(snapshot.pixels, scope, operation, () => this.attempt === attempt && this.client === client && attempt.scope === scope && attempt.epoch === epoch), mediaType: snapshot.pixels.mediaType, width: snapshot.pixels.width, height: snapshot.pixels.height, scale: snapshot.pixels.scale };
     this.assertScope(attempt, scope); this.assertBudget(operation);
     this.assertObservationOwner(attempt, scope, epoch, client);
     this.assertPublication(client, publication);
@@ -659,20 +708,22 @@ export class NativeSurface implements NativeWebSurface {
   }
   async locate(expression: LocatorExpression, operation: OperationContext, options?: EngineLocateOptions): Promise<readonly SemanticNode[]> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
-    const scope = this.identityScope; const client = this.requireClient(); const publication = client.publicationCheckpoint();
+    const scope = this.identityScope; const client = this.requireClient(); const publication = client.publicationCheckpoint(); const pageEpoch = admitted.attempt.epoch;
     const result = await this.engineCommand(options?.purpose === 'fixture' ? 'fixture.query' : 'browser.query', { identityScope: scope, expression, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
     if (result.identityScope !== scope) throw this.invalidate();
     this.assertPublication(client, publication);
+    this.assertObservationOwner(admitted.attempt, scope, pageEpoch, client);
     return result.nodes;
   }
   async readFields(expression: LocatorExpression, fields: readonly EngineReadField[], operation: OperationContext): Promise<readonly EngineFieldValues[]> {
     fields = Object.freeze([...fields]);
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
-    const scope = admitted.scope; const client = this.requireClient(); const publication = client.publicationCheckpoint();
+    const scope = admitted.scope; const client = this.requireClient(); const publication = client.publicationCheckpoint(); const pageEpoch = admitted.attempt.epoch;
     const result = await this.engineCommand('fixture.read-fields', { identityScope: scope, expression, fields, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
     if (result.identityScope !== scope) throw this.invalidate();
     this.assertScope(admitted.attempt, scope);
     this.assertPublication(client, publication);
+    this.assertObservationOwner(admitted.attempt, scope, pageEpoch, client);
     return result.values;
   }
   async perform(ref: NodeRef, action: LocatorAction, operation: OperationContext): Promise<void> {
@@ -711,9 +762,10 @@ export class NativeSurface implements NativeWebSurface {
   async captureState(operation: OperationContext): Promise<EngineState> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
+    const pageEpoch = attempt.epoch; const client = this.requireClient();
     const state = await this.engineCommand('state.capture', { identityScope: scope }, operation);
-    const bytes = await engine.readBlob(state, scope, operation);
-    this.assertScope(attempt, scope); this.assertBudget(operation);
+    const bytes = await engine.readBlob(state, scope, operation, () => this.attempt === attempt && this.client === client && attempt.scope === scope && attempt.epoch === pageEpoch);
+    this.assertObservationOwner(attempt, scope, pageEpoch, client); this.assertBudget(operation);
     let data: unknown;
     try { data = JSON.parse(bytes.toString('utf8')); validateJsonValue(data, 'native storage state'); } catch { throw this.invalidate(); }
     if (data === null || typeof data !== 'object' || Array.isArray(data)) throw this.invalidate();
@@ -786,8 +838,15 @@ export class NativeSurface implements NativeWebSurface {
     return attempt.recordingStop;
   }
   async stopVideo(operation: OperationContext): Promise<readonly VideoSegment[]> {
+    // This attempt's frozen result is not an ordinary browser admission. In
+    // particular it cannot trigger recovery, stop a recorder, or reopen input.
+    if (this.attempt?.finalizedVideo !== undefined) {
+      this.assertCallback(); const attempt = this.requireAttempt(); this.assertAttempt(attempt); this.latch.throwPending(); this.assertBudget(operation);
+      return attempt.finalizedVideo!.claim(operation);
+    }
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt();
+    if (attempt.finalizedVideo !== undefined) return attempt.finalizedVideo.claim(operation);
     if (attempt.recordingStart !== undefined) await raceAbort(() => attempt.recordingStart!, operation.signal, 'starting provider video');
     if (this.leases?.recorder(attempt.context.attemptId) !== undefined) return raceAbort(() => this.stopProviderVideo(attempt, operation.signal), operation.signal, 'stopping provider recording');
     const scope = attempt.scope; const engine = this.requireEngine();
@@ -850,13 +909,14 @@ export class NativeSurface implements NativeWebSurface {
   async screenshot(label: string | undefined, operation: OperationContext): Promise<string> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
-    const client = this.requireClient(); const publication = client.publicationCheckpoint();
+    const client = this.requireClient(); const publication = client.publicationCheckpoint(); const pageEpoch = attempt.epoch;
     const image = await this.engineCommand('capture.screenshot', { identityScope: scope, secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
-    const bytes = await engine.readBlob(image, scope, operation);
+    const bytes = await engine.readBlob(image, scope, operation, () => this.attempt === attempt && this.client === client && attempt.scope === scope && attempt.epoch === pageEpoch);
     this.assertScope(attempt, scope); this.assertBudget(operation);
     this.assertPublication(client, publication);
+    this.assertObservationOwner(attempt, scope, pageEpoch, client);
     const target = this.artifactPath('screenshots', label, '.png');
-    await writeFile(target.absolute, bytes, { flag: 'wx' }); this.assertScope(attempt, scope); this.assertBudget(operation); this.assertPublication(client, publication); return target.relative;
+    await writeFile(target.absolute, bytes, { flag: 'wx' }); this.assertScope(attempt, scope); this.assertBudget(operation); this.assertPublication(client, publication); this.assertObservationOwner(attempt, scope, pageEpoch, client); return target.relative;
   }
 
   private tellEnvironment(attempt: Attempt): void {

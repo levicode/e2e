@@ -17,7 +17,7 @@ import { verifySyntheticEvidence } from './candidate-synthetic-evidence.ts';
 
 export const CANDIDATE_GATES = [
   'source', 'native-checkout', 'dependencies', 'acceptance-scripts', 'source-removal', 'packages', 'types',
-  'package-imports', 'toolchain', 'native-lint', 'native-build', 'native-units', 'browsers', 'native-browser',
+  'package-imports', 'toolchain', 'native-lint', 'native-build', 'native-units', 'browsers', 'native-browser', 'native-encoder',
   'preparation-diagnostic', 'preparation-diagnostic-receipt', 'controlled-preparation', 'native-proxy', 'fault-build', 'native-feature', 'native-feature-receipt', 'fault-proxy', 'web-unit', 'core-reference', 'crosscheck-fixtures',
   'web-browser', 'public-callbacks', 'semantic-faults', 'producer', 'bundle', 'installed',
 ] as const;
@@ -63,7 +63,7 @@ function main(args: string[]): void {
       const files = manifest.installation?.packages[name].files.filter(file => file.path.startsWith('dist/')).toSorted((a, b) => a.path.localeCompare(b.path));
       if (JSON.stringify(files) !== JSON.stringify(runtimeBuild[name])) throw new Error('Packed executable package bytes differ from suite-tested builds');
     }
-    const proofFiles = ['source-removal.result.json', 'baseline.result.json', 'browser.result.json', 'native-feature.result.json', 'preparation-diagnostic.result.json', 'controlled-preparation-diagnostic.json', 'negotiation.json', 'fault-negotiation.json', 'installed.result.json', ...suites.map(suite => `${suite.id}.result.json`)];
+    const proofFiles = ['source-removal.result.json', 'baseline.result.json', 'browser.result.json', 'encoder.result.json', 'native-feature.result.json', 'preparation-diagnostic.result.json', 'controlled-preparation-diagnostic.json', 'negotiation.json', 'fault-negotiation.json', 'installed.result.json', ...suites.map(suite => `${suite.id}.result.json`)];
     for (const file of proofFiles) {
       const proof = JSON.parse(readFileSync(join(output, file), 'utf8')) as { status: string; sourceRevision?: string; binarySha256?: string; runtimeBuild?: unknown };
       if (proof.status !== 'passed') throw new Error(`Missing passing receipt: ${file}`);

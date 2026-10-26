@@ -1,6 +1,6 @@
 /** Typed engine hooks share the Browser fixture's one native client. */
 import { createHash } from 'node:crypto';
-import { EngineError, LOCATOR_ACTION_KINDS, type JsonValue, type OperationContext } from 'e2e/engine';
+import { EngineError, TestError, LOCATOR_ACTION_KINDS, type JsonValue, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap } from './browser-contract.ts';
 import { resultError, type NativeActionErrorContext } from './browser-channel.ts';
 import { decodeBrowserResult } from './browser-decode.ts';
@@ -57,6 +57,13 @@ export class EngineChannel {
       if (callbackTransition !== undefined) this.client.invalidate();
       throw cause;
     }
+    // These read-only producers may complete temporary source protection before
+    // refusing pixels. Preserve the policy reason, but never claim no dispatch
+    // or grant replay authority for the completed prefix.
+    if (!result.ok && (name === 'browser.observe' || name === 'capture.screenshot')
+      && result.error?.code === 'policy-denied' && result.effects === 'completed' && result.scopeState === 'usable') {
+      throw new TestError('POLICY_DENIED', 'The native protected read was denied by policy after restoration', { retryable: false });
+    }
     if (!result.ok) {
       let frameDiagnostic: FrameQueryDiagnostic | undefined;
       if (result.error?.code === 'frame-not-found' || result.error?.code === 'frame-ambiguous') {
@@ -73,8 +80,9 @@ export class EngineChannel {
   }
 
   /** Read exact bytes, verify the final digest, and retire the scoped handle once. */
-  async readBlob(blob: NativeBlob, expectedScope: string, operation: OperationContext): Promise<Buffer> {
-    const capturedOwner = this.captureScope(expectedScope);
+  async readBlob(blob: NativeBlob, expectedScope: string, operation: OperationContext, pageOwner?: () => boolean): Promise<Buffer> {
+    const capturedScope = this.captureScope(expectedScope);
+    const capturedOwner = () => capturedScope() && (pageOwner?.() ?? true);
     const notRevoked = this.client.recoveryRevocationGuard();
     const owns = () => notRevoked() && capturedOwner(); this.assertOwner(owns);
     if (blob.identityScope !== expectedScope) throw this.client.invalidate();
@@ -94,7 +102,9 @@ export class EngineChannel {
         if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native artifact transfer was cancelled', { retryable: false });
         if (performance.now() >= endsAt) throw new EngineError('OPERATION_TIMEOUT', 'Native artifact transfer exceeded its deadline', { retryable: false });
         const maxBytes = 262144;
+        this.assertOwner(owns);
         const chunk = await this.command('blob.read', { identityScope: expectedScope, handle: blob.handle, offset, maxBytes }, remaining());
+        this.assertOwner(owns);
         const bytes = Buffer.from(chunk.base64, 'base64');
         if (bytes.length > maxBytes || chunk.nextOffset !== offset + bytes.length || chunk.nextOffset > blob.size || (!chunk.eof && bytes.length === 0)) throw this.client.invalidate();
         chunks.push(bytes); hash.update(bytes); offset = chunk.nextOffset;

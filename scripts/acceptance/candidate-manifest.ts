@@ -39,6 +39,14 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::recording::tests::recording_sparse_frames_preserve_timestamps',
   'native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released',
   'native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport',
+  // Additional original-budget producer contracts remain mandatory, not diagnostics.
+  'native::client_observation::equivalence_tests::chromium_observation_frame_dfs_budget_eight_contract',
+  'native::client_observation::equivalence_tests::chromium_original_child_frame_budget_three_contract',
+  'native::client_observation::equivalence_tests::chromium_original_offsite_data_frame_budget_three_contract',
+  'native::client_observation::equivalence_tests::chromium_original_onsite_frame_depth_four_five_contract',
+  'native::client_observation::equivalence_tests::chromium_svg_title_idref_public_names_contract',
+  'native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab',
+  'native::client_browser::recording_attempt_tests::chromium_two_attempt_recording_late_old_completion_cannot_mutate_new_artifact',
 ] as const;
 
 /** Not passes or waivers: ingress and controlled-window diagnostics stay outside acceptance. */

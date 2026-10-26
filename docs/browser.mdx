@@ -405,6 +405,8 @@ apply:
   [session](/authentication) on the target fails with `COLLECTION_ERROR`
   before its setup test signs in.
 
+If the application tab closes while the connection stays healthy, the next explicit page open or video-start activation can open one blank replacement in the same context after native verifies closure and completes prior-page cleanup. Other host tabs are left alone; reads and locator queries do not reopen a closed page. Uncertain creation or recording cleanup fails closed; the operation is not replayed.
+
 After a transport drop, the next operation reattaches through the lease's
 `reconnectEndpoint`, else its `cdpEndpoint`, and checks that it is the same
 browser.

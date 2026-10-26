@@ -48,7 +48,7 @@ npx e2e telemetry [disable|enable] # anonymous usage telemetry: status or switch
 | `--max-failures <n>` | Stop after n failures: the rest skip (cause `failure-limit`), running tests end `interrupted`; exit 1. |
 | `--max-duration <ms>` | Stop after ms of running tests, over config `maxDuration`: the rest skip (cause `time-limit`), running tests end `interrupted`, `RUN_TIMEOUT`; exit 1. |
 | `--repeat-each <n>` | Run every selected test n times, each run its own result (`repeat` 0 through n-1); add `--no-cache` or later runs replay the first's recording. The `Repeats` summary row names each unstable test's failed runs. |
-| `--reporter <ids>` | `list`, `json`, `junit`, `markdown`, comma-separated; `json` cannot combine with `list`. |
+| `--reporter <ids>` | `list`, `json`, `junit`, `markdown`, comma-separated; `json` cannot combine with `list`. An empty value is a usage error, exit 2. |
 | `--output <dir>` | Results directory, over the config's `output` (default `.e2e`). |
 | `--no-cache` | Replay cache off for this run. |
 | `--strict-cache` | Fail a step whose committed recording no longer replays (`REPLAY_STALE`, exit 2) instead of handing it to the agent; retries replay too, and the run never writes the cache. |
@@ -96,6 +96,15 @@ the change since that ref;
 with teardown. A runtime config uses one in-process worker. Await each run
 before starting the next and close every host first; overlaps reject with
 `RUNNER_BUSY`.
+
+`import { explore } from 'e2e/runner'` runs one exploration the same way:
+`cwd`, `config`, `goal`, `target`, `agent`, `session`, `maxSteps`, and
+`timeoutMs` as `e2e explore` takes them, plus `onEvent` and
+`interruptSignal`. It resolves with the run's result and `explore`, the
+record of the steps, findings, and why it ended. A goal or budget out of
+range, an unknown target or agent, or an agent with no model rejects before
+it starts (`INVALID_CONFIG`, `UNKNOWN_TARGET`, `MODEL_UNAVAILABLE`); branch
+on `isE2EError(error)` and `error.code`. It shares `run`'s reservation.
 
 With a `package.json` script `"test:e2e": "e2e run"`, pnpm forwards `--`
 literally: `pnpm test:e2e -- --headed` reaches e2e as `run -- --headed` and

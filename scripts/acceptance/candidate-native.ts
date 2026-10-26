@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS } from './candidate-manifest.ts';
+import { REQUIRED_ENCODER_CONTRACTS, REQUIRED_VIDEO_NORMAL_TESTS } from './candidate-video-manifest.ts';
 import { sha256 } from './bundle.ts';
 import { nativeContractLogName, nativeTestEvidence } from './native-evidence.ts';
 
@@ -38,15 +39,27 @@ export function compilerHarnesses(jsonLines: string, source: string, target: str
 export function verifyNativeInventory(listing: string): string[] {
   const names = listing.split('\n').filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
   if (new Set(names).size !== names.length) throw new Error('Duplicate native test discovery');
-  for (const name of CANDIDATE_NATIVE_CONTRACTS) if (!names.includes(name)) throw new Error(`Missing required native contract: ${name}`);
-  const classified = new Set<string>([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
+  for (const name of [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS]) if (!names.includes(name)) throw new Error(`Missing required native contract: ${name}`);
+  const classified = new Set<string>([...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
   for (const name of names) if (name.startsWith('native::client_') && !classified.has(name)) throw new Error(`Unclassified hosted public native contract: ${name}`);
   return names;
 }
 
+/** Default discovery includes ignored tests; explicit ignored discovery proves the exact partition. */
+export function verifyVideoInventory(defaultListing: string, ignoredListing: string): void {
+  const parse = (listing: string) => {
+    const names = listing.split('\n').filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
+    if (new Set(names).size !== names.length) throw new Error('Duplicate video test discovery');
+    return names;
+  };
+  const defaults = parse(defaultListing); const ignored = parse(ignoredListing);
+  for (const name of REQUIRED_VIDEO_NORMAL_TESTS) if (!defaults.includes(name) || ignored.includes(name)) throw new Error(`Missing or ignored normal video test: ${name}`);
+  for (const name of REQUIRED_ENCODER_CONTRACTS) if (!defaults.includes(name) || !ignored.includes(name)) throw new Error(`Missing or nonignored encoder contract: ${name}`);
+}
+
 function main(args: string[]): void {
   const [mode, sourceArg, targetArg, compilation, outputArg, expectedSha] = args;
-  if (!['baseline', 'browser'].includes(mode ?? '') || !sourceArg || !targetArg || !compilation || !outputArg || !expectedSha) throw new Error('usage: candidate-native.ts baseline|browser source target compiler.jsonl evidence expected-native-sha');
+  if (!['baseline', 'browser', 'encoder'].includes(mode ?? '') || !sourceArg || !targetArg || !compilation || !outputArg || !expectedSha) throw new Error('usage: candidate-native.ts baseline|browser|encoder source target compiler.jsonl evidence expected-native-sha');
   const source = resolve(sourceArg); const output = resolve(outputArg);
   mkdirSync(output, { recursive: true });
   const identity = sourceIdentity(source, expectedSha);
@@ -59,6 +72,12 @@ function main(args: string[]): void {
   };
   let discovered: string[] = [];
   if (mode === 'baseline') {
+    const unit = harnesses.find(item => item.name === 'agent-browser' && item.kind.includes('bin'))!;
+    const listing = run(unit, ['--list'], 30_000); const ignored = run(unit, ['--ignored', '--list'], 30_000);
+    try {
+      if (listing.status !== 0 || ignored.status !== 0) throw new Error('Video partition discovery failed');
+      verifyVideoInventory(listing.stdout, ignored.stdout);
+    } catch (error) { failures.push(String(error)); }
     let aggregate = '';
     for (const harness of harnesses) {
       const result = run(harness, ['--test-threads=1'], 600_000);
@@ -72,15 +91,16 @@ function main(args: string[]): void {
     try { nativeTestEvidence(aggregate); } catch (error) { failures.push(String(error)); }
   } else {
     const harness = harnesses.find(item => item.name === 'agent-browser' && item.kind.includes('bin'))!;
+    const required = mode === 'encoder' ? REQUIRED_ENCODER_CONTRACTS : CANDIDATE_NATIVE_CONTRACTS;
     const listing = run(harness, ['--ignored', '--list'], 30_000);
-    writeFileSync(join(output, 'native-ignored-inventory.log'), listing.stdout + listing.stderr);
+    writeFileSync(join(output, mode === 'encoder' ? 'encoder-ignored-inventory.log' : 'native-ignored-inventory.log'), listing.stdout + listing.stderr);
     try {
       if (listing.status !== 0) throw new Error('Native inventory listing failed');
       discovered = verifyNativeInventory(listing.stdout);
     } catch (error) { failures.push(String(error)); }
     // Do not hide independent failures, even if inventory is incomplete.
-    for (const name of CANDIDATE_NATIVE_CONTRACTS) {
-      const file = nativeContractLogName(name);
+    for (const name of required) {
+      const file = mode === 'encoder' ? nativeContractLogName(name).replace(/^browser-/, 'encoder-') : nativeContractLogName(name);
       try {
         const exactListing = run(harness, [name, '--exact', '--ignored', '--list'], 30_000);
         if (exactListing.status !== 0 || exactListing.stdout.split('\n').filter(line => line.endsWith(': test')).join('\n') !== `${name}: test`) throw new Error('Expected exactly one discovered contract');
@@ -95,7 +115,7 @@ function main(args: string[]): void {
   }
   if (hashFile(join(resolve(targetArg), 'ci', 'agent-browser')) !== productionBinarySha256) failures.push('Production runtime changed during harness execution');
   if (JSON.stringify(sourceIdentity(source, expectedSha)) !== JSON.stringify(identity)) failures.push('Native source changed');
-  writeFileSync(join(output, `${mode}.result.json`), JSON.stringify({ schemaVersion: 1, status: failures.length ? 'failed' : 'passed', source: identity, productionBinarySha256, compilerSha256: hashFile(compilation), harnesses, required: mode === 'browser' ? CANDIDATE_NATIVE_CONTRACTS : harnesses.map(item => item.name), discovered, excludedDiagnostics: CANDIDATE_NATIVE_DIAGNOSTICS, results, failures, releaseEligible: false }, null, 2));
+  writeFileSync(join(output, `${mode}.result.json`), JSON.stringify({ schemaVersion: 1, status: failures.length ? 'failed' : 'passed', source: identity, productionBinarySha256, compilerSha256: hashFile(compilation), harnesses, required: mode === 'baseline' ? harnesses.map(item => item.name) : mode === 'encoder' ? REQUIRED_ENCODER_CONTRACTS : CANDIDATE_NATIVE_CONTRACTS, ...(mode === 'encoder' ? { category: 'fake-cdp-real-encoder-contract', browserIdentityRequired: false } : {}), normalVideoRequired: mode === 'baseline' ? REQUIRED_VIDEO_NORMAL_TESTS : [], discovered, excludedDiagnostics: CANDIDATE_NATIVE_DIAGNOSTICS, results, failures, releaseEligible: false }, null, 2));
   if (failures.length) throw new Error(`Native ${mode} gate failed: ${failures.join('; ')}`);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main(process.argv.slice(2));

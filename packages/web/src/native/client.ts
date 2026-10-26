@@ -1,4 +1,5 @@
-import { DISCONNECTED_RECOVERY_CAPABILITY } from './capabilities.ts';
+import { DISCONNECTED_RECOVERY_CAPABILITY, TERMINAL_RECORDING_CAPABILITY } from './capabilities.ts';
+import { collectFinalizedRecording, type FinalizedRecordingIdentity, type FinalizedVideoBytes, type FinalizedRecordingCommand } from './finalized-recording.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import { EngineError, type JsonValue, type OperationContext } from 'e2e/engine';
@@ -18,7 +19,7 @@ export interface NativeChannel {
 }
 interface CallbackOwner { generation: number; identityScope: string | undefined; sequence: number; revoked: boolean; token: string; active: boolean; selected: boolean; expiresAt: number; epoch: number; timer?: ReturnType<typeof setTimeout> }
 interface Pending {
-  readonly kind: 'hello' | 'request' | 'decision' | 'cancel' | 'close';
+  readonly kind: 'hello' | 'request' | 'artifact' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
   readonly cancelTarget?: number;
   readonly callbackToken?: string;
@@ -57,6 +58,10 @@ export class NativeClient {
   private failure: EngineError | undefined;
   private closed = false;
   private terminal = false;
+  private terminalCleanupStarted: number | undefined;
+  private explicitClose = false;
+  private terminalArtifactSeq = 0;
+  private finalizedRecordingHandler: ((owner: FinalizedRecordingIdentity, bytes: Promise<readonly FinalizedVideoBytes[]>, endsAt: number) => void) | undefined;
   private recovery: { readonly scope: string; readonly operationSeq: number; claimed: boolean } | undefined;
   // Historical local handle fence only, never native admission authority.
   // Unlike callbackEpoch, ordinary same-scope restart does not change it.
@@ -126,6 +131,9 @@ export class NativeClient {
 
   /** Installs the owning surface's synchronous cache invalidation, before result resolution. */
   onOperationRetired(handler: () => void): void { this.retirementHandler = handler; }
+
+  /** Installs synchronous same-attempt ownership before the original failure is observed. */
+  onFinalizedRecording(handler: (owner: FinalizedRecordingIdentity, bytes: Promise<readonly FinalizedVideoBytes[]>, endsAt: number) => void): void { this.finalizedRecordingHandler = handler; }
 
   /** Captures only this invocation's native revocation state; does not grant new scope authority. */
   callbackRevocationGuard(): () => boolean {
@@ -220,12 +228,17 @@ export class NativeClient {
 
   /** Requires explicit native scope closure; killing a proxy alone is not successful browser cleanup. */
   close(context: OperationContext): Promise<void> {
+    // Explicit close never waits for artifacts or permits another frozen read.
+    this.explicitClose = true;
+    return this.startClose(context, this.terminalCleanupStarted ?? performance.now());
+  }
+
+  private startClose(context: OperationContext, started: number): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     if (this.failure !== undefined) return Promise.reject(this.failure);
     // Mandatory retirement has independent authority and a single fixed budget.
     // Never spread an operation context: its deadline getter may already throw.
-    const started = performance.now();
-    const cleanup: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs: 15000 };
+    const cleanup: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) };
     this.closing = this.finishClose(cleanup, started);
     void this.closing.catch(() => {});
     return this.closing;
@@ -246,8 +259,11 @@ export class NativeClient {
     } finally { this.dispose(); }
   }
 
-  private beginTerminalCleanup(): void {
+  private beginTerminalCleanup(failed?: Pending): void {
+    if (this.terminal) return;
     this.terminal = true;
+    const started = this.terminalCleanupStarted = performance.now();
+    this.terminalArtifactSeq = this.operationSeq;
     this.recovery = undefined;
     for (const callback of this.callbacks) {
       callback.revoked = true; callback.active = false;
@@ -257,7 +273,34 @@ export class NativeClient {
     this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
     // The one cleanup exchange bounds remaining correlation bookkeeping.
     for (const pending of this.pending.values()) if (pending.kind !== 'close') pending.clear();
-    void this.close({ runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 }).catch(() => {});
+    const cleanup: OperationContext = { runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 };
+    let collected: Promise<unknown> | undefined;
+    if (!this.explicitClose && this.closing === undefined && failed?.kind === 'request' && failed.callbackToken === undefined
+      && (failed.command === 'scope.reset' || failed.command === 'state.restore') && failed.identityScope !== undefined && failed.operationSeq !== undefined
+      && this.requiredCapabilities.includes(TERMINAL_RECORDING_CAPABILITY) && this.ready?.capabilities.includes(TERMINAL_RECORDING_CAPABILITY)) {
+      const owner = { identityScope: failed.identityScope, failedOperationSeq: failed.operationSeq };
+      const bytes = collectFinalizedRecording(owner, (command, args) => this.finalizedRecordingExchange(command, args, started));
+      // Register the owning promise synchronously. No artifact work delays or
+      // replaces the original business result, which remains Unknown.
+      void bytes.catch(() => {});
+      try { this.finalizedRecordingHandler?.(owner, bytes, started + 15000); } catch { /* Collection cannot replace the original operation failure. */ }
+      collected = bytes;
+    }
+    if (collected === undefined) void this.startClose(cleanup, started).catch(() => {});
+    else void collected.catch(() => {}).then(() => this.startClose(cleanup, started)).catch(() => {});
+  }
+
+  private async finalizedRecordingExchange(command: FinalizedRecordingCommand, args: Readonly<Record<string, JsonValue>>, started: number): Promise<unknown> {
+    if (!this.terminal || this.explicitClose || this.closing !== undefined || this.closed || this.ready === undefined || this.failure !== undefined) throw new EngineError('INVALID_STATE', 'The finalized recording collection has retired', { retryable: false });
+    if (this.terminalArtifactSeq === Number.MAX_SAFE_INTEGER) throw new EngineError('ENGINE_FAILURE', 'The finalized recording sequence was exhausted', { retryable: false });
+    const sequence = ++this.terminalArtifactSeq;
+    const context: OperationContext = { runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 - (performance.now() - started) };
+    const result = await this.exchange('artifact', { type: 'request', generation: this.ready.generation, operationSeq: sequence, timeoutMs: this.timeout(context), command, args }, context, sequence);
+    if (result.type !== 'result' || result.scopeState !== 'quarantined' || result.retention !== undefined || result.recovery !== undefined
+      || (result.ok ? result.effects !== 'completed' : result.effects !== 'not-dispatched')) throw this.invalidate();
+    if (!result.ok) throw new EngineError('ENGINE_FAILURE', 'The native finalized recording could not be collected', { retryable: false });
+    if (this.explicitClose || this.closed || this.failure !== undefined) throw new EngineError('INVALID_STATE', 'The finalized recording collection has retired', { retryable: false });
+    return result.data;
   }
 
   private awaitingQuarantinedResult(): boolean { return [...this.pending.values()].some(pending => pending.kind === 'request' && pending.quarantined); }
@@ -276,7 +319,9 @@ export class NativeClient {
   private exchange(kind: Pending['kind'], message: Readonly<Record<string, unknown>>, context: OperationContext, operationSeq?: number, callbackTransition?: number, cancelTarget?: number): Promise<ServerMessage> {
     const trace = this.channel.acceptanceTrace;
     const target = operationSeq ?? cancelTarget;
-    const facts = { kind, ...(target === undefined ? {} : { operationSeq: target }) };
+    // Artifact controls reuse request framing; diagnostics describe the wire kind.
+    const wireKind: Exclude<Pending['kind'], 'artifact'> = kind === 'artifact' ? 'request' : kind;
+    const facts = { kind: wireKind, ...(target === undefined ? {} : { operationSeq: target }) };
     if (this.failure !== undefined) { trace?.observe('ExchangeRefused', { ...facts, reason: 'already-failed' }); return Promise.reject(this.failure); }
     if (this.pending.size >= 322) { trace?.observe('ExchangeRefused', { ...facts, reason: 'capacity' }); return Promise.reject(new EngineError('ENGINE_FAILURE', 'The native browser protocol capacity was exceeded', { retryable: false })); }
     let timeout: number;
@@ -391,7 +436,7 @@ export class NativeClient {
     if (message.type === 'error') throw new ReceiveFailure('native-refusal', message.error.code);
     const pending = this.pending.get(message.id);
     if (pending === undefined || (pending.generation !== undefined && message.generation !== pending.generation)) throw new ReceiveFailure('response-correlation');
-    const expected = pending.kind === 'hello' ? 'ready' : pending.kind === 'request' ? 'result' : pending.kind === 'close' ? 'closed' : 'control-result';
+    const expected = pending.kind === 'hello' ? 'ready' : (pending.kind === 'request' || pending.kind === 'artifact') ? 'result' : pending.kind === 'close' ? 'closed' : 'control-result';
     if (message.type !== expected || (message.type === 'result' && message.operationSeq !== pending.operationSeq)) throw new ReceiveFailure('response-kind');
     if (message.type === 'ready') {
       if (message.scopeState !== 'usable') throw new ReceiveFailure('response-kind');
@@ -450,8 +495,8 @@ export class NativeClient {
       || (message.type === 'control-result' && pending.kind === 'cancel' && pending.quarantined === true)
       || this.recovery !== undefined && ((message.type === 'result' && message.recovery !== undefined)
       || (message.type === 'control-result' && pending.kind === 'cancel' && pending.cancelTarget === this.recovery.operationSeq));
-    if (!recoveryControl && (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed'))) {
-      if ((message.type === 'result' || message.type === 'control-result') && this.requiredCapabilities.includes('terminal.close/1') && this.ready?.capabilities.includes('terminal.close/1')) this.beginTerminalCleanup();
+    if (pending.kind !== 'artifact' && !recoveryControl && (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed'))) {
+      if ((message.type === 'result' || message.type === 'control-result') && this.requiredCapabilities.includes('terminal.close/1') && this.ready?.capabilities.includes('terminal.close/1')) this.beginTerminalCleanup(message.type === 'result' && !message.ok && message.effects === 'unknown' ? pending : undefined);
       else if (!this.terminal) this.fail('The native browser scope is no longer reusable');
     }
   }

@@ -145,6 +145,10 @@ export interface WebScreencastOptions {
 | --- | --- |
 | `INVALID_CONFIG` | Any other `size` or `quality` value, or another key, at config load. The old `web({ video })` spelling is also refused, naming `screencast`. |
 
+If replacing an ordinary context fails after its recording segments have fully finalized and their capture resources have been cleaned up, the same attempt can still collect those saved videos. This does not recover the browser: the original uncertain operation remains failed and ordinary commands remain unavailable. Only the already completed, immutable recording batch is transferred during bounded terminal cleanup; an active, incomplete, or unproven batch is an artifact failure, not an empty successful recording. Collection never starts a new capture or replays the failed transition. A later attempt cannot claim these files.
+
+This requires the coordinated native `terminal.recording-artifacts/1` capability. The adapter verifies byte counts and digests, saves files without overwriting existing paths, and returns a successfully collected batch once. An interrupted or failed collection remains a failure; it cannot make an unproven native teardown successful. Explicit close and the existing cleanup deadlines are not postponed by artifact traffic.
+
 #### `connect`
 
 Attaches to a remote browser over CDP instead of launching one locally.
@@ -189,14 +193,15 @@ The remote browser:
 - The attempt's first page is the browser's own first tab, navigated to
   `about:blank`, not a second tab beside it. A page opened later, such as
   the one `app.restart` opens, is a new tab.
+- If the application page closes while the CDP connection stays healthy, the next explicit page open or video-start activation creates one blank replacement in the same context only after native verifies the exact closed page and settles its resources. It never adopts or closes an unrelated host tab, and reads or locator queries alone do not reopen a closed page. An uncertain creation or unsettled recording fails closed rather than being replayed. This requires the negotiated `browser.persistent-page-reopen/1` contract, which refreshes the page identity before returning the operation result.
 
 How recovery runs:
 
 - After a disconnect, the next operation calls `reconnectEndpoint` once,
   within that operation's timeout and abort signal. The resolver must return
   the existing browser's endpoint.
-- The engine checks the persistent default context ID and the original
-  page's target ID. It refuses a browser that does not expose the default
+- The engine checks the persistent default context ID and the currently owned
+  application page's target ID, including a successfully reopened page. It refuses a browser that does not expose the default
   context ID. A missing page or a different context fails the attempt. A
   matching URL does not select a replacement tab.
 - The native backend validates secure-field protection before publishing a

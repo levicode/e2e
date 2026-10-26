@@ -170,3 +170,7 @@ is a product bug or a changed screen, not a flake: reproduce once with
 `--headed`, then fix the app or update locator and expectation together. A
 blocked agent step (`AUTH_CREDENTIAL_UNAVAILABLE`, `ENVIRONMENT_UNAVAILABLE`,
 `SEED_DATA_MISSING`) exits 2 or 3 on purpose: fix the environment.
+
+### Saved video after context replacement failure
+
+A native Web context replacement can fail while its previous video segments are already finalized and clean. The same attempt may collect that immutable batch during bounded cleanup, but the original unknown outcome still fails and normal browser commands stay unavailable. Do not retry the transition or treat saved video as recovery. Active or unproven recordings are not exported; artifact transfer or local file failures must not be reported as an empty successful recording. A new attempt cannot claim the old batch. This behavior requires the coordinated `terminal.recording-artifacts/1` native capability.

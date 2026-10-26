@@ -141,9 +141,11 @@ function rejectForwardedFlags(command: Command, files: readonly string[]): void 
 
 type Reporter = BuiltinReporter;
 
-/** Reporter ids, comma-separated; the CLI only rejects ids it does not know. */
+/** Reporter ids, comma-separated. */
 function parseReporters(value: string): Reporter[] {
-  return parseList(value).map((id) => {
+  const ids = parseList(value);
+  if (ids.length === 0) throw new InvalidArgumentError('must name at least one reporter');
+  return ids.map((id) => {
     if (!isBuiltinReporter(id)) {
       throw new InvalidArgumentError(`unknown reporter "${id}"; expected ${BUILTIN_REPORTERS.join(', ')}`);
     }
@@ -460,7 +462,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     .command('init')
     .summary('scaffold an ESM package, e2e.config.ts, an example test, .gitignore entries, and the agent skill')
     .description(
-      'Scaffold a project without touching existing files: an ESM package.json, e2e.config.ts, tests/example.e2e.ts, .gitignore entries, and the e2e skill for coding agents. Prompts for the engine, for AI support, and for the skill directories, then offers to install the dependencies; --yes takes the defaults, with the skill in .agents/skills and .claude/skills linked to it.',
+      'Scaffold a project without touching existing files: an ESM package.json, e2e.config.ts, an example test per engine, .gitignore entries, and the e2e skill for coding agents. Prompts for the engines, for AI support, and for the skill directories, then offers to install the dependencies; --yes takes the defaults, with the skill in .agents/skills and .claude/skills linked to it.',
     )
     .argument('[directory]', 'project directory, created when missing (default: the current directory)')
     .option('-y, --yes', 'skip the prompts; each answer not given as a flag takes its default: web, vercel, every skill and MCP location, no installation');
@@ -548,7 +550,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     .command('mcp')
     .summary('serve the project to a coding agent over MCP')
     .description(
-      'Serve an MCP server over stdio for a coding agent such as Claude Code or Cursor: open_session opens a live session on one target of any config the agent names, call runs the session\'s tools (observe, tap, type, press, select, scroll, navigate, type_secret, locate, screenshot, and the project\'s own), tools describes them, close_session ends it. The agent explores the real app before writing a test. Register it with the client, e.g. claude mcp add --scope project e2e -- npx e2e mcp.',
+      'Serve an MCP server over stdio for a coding agent such as Claude Code or Cursor: open_session opens a live session on one target of any config the agent names, call runs the session\'s tools (observe, tap, type, press, select, scroll, navigate, type_secret, locate, test_lines, screenshot, and the project\'s own), tools describes them, close_session ends it. Each action prints the test line that repeats it, so the agent writes a test while it walks the real app. Register it with the client, e.g. claude mcp add --scope project e2e -- npx e2e mcp.',
     )
     .option('--config <path>', 'config file (default: the nearest e2e.config.ts, .mts, .js, or .mjs)')
     .option('--target <name>', 'target every session opens on (default: the only target, or the one open_session names)')

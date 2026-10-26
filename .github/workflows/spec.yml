@@ -20,7 +20,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  native-runtime:
+    uses: ./.github/workflows/native-runtime.yml
+
   check:
+    needs: native-runtime
     runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
@@ -61,6 +65,12 @@ jobs:
         run: |
           pnpm exec tsc -p .dev/skills/babysit/scripts
           node --test .dev/skills/babysit/scripts/pr-status.test.ts
+      - name: Set up source-pinned native runtime
+        uses: ./.github/actions/native-runtime
+        with:
+          artifact-id: ${{ needs.native-runtime.outputs.artifact-id }}
+          manifest-sha256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
+          run-attempt: ${{ needs.native-runtime.outputs.run-attempt }}
       - name: Install browsers
         run: node packages/web/dist/bin.js install chromium --with-deps
       # On a pull request, Jev leaves out the tests the change can't affect;
@@ -72,6 +82,7 @@ jobs:
           AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
 
   test:
+    needs: native-runtime
     runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     strategy:
@@ -90,6 +101,12 @@ jobs:
           check-latest: true
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Set up source-pinned native runtime
+        uses: ./.github/actions/native-runtime
+        with:
+          artifact-id: ${{ needs.native-runtime.outputs.artifact-id }}
+          manifest-sha256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
+          run-attempt: ${{ needs.native-runtime.outputs.run-attempt }}
       - name: Install browsers
         run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
       - name: Unit and integration tests
@@ -120,7 +137,7 @@ jobs:
   # passes (the change cannot reach it); a failed or cancelled one fails it.
   gate:
     name: spec gate
-    needs: [check, test, install]
+    needs: [native-runtime, check, test, install]
     if: ${{ always() }}
     runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5

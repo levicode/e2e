@@ -6,6 +6,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { REQUIRED_ENCODER_CONTRACTS } from './candidate-video-manifest.ts';
 import { candidateRevision } from './candidate-revision.ts';
 import { candidateSha, compilerHarnesses, verifyNativeInventory } from './candidate-native.ts';
 import { candidatePhaseEnvironment, semanticCleanupDiagnosticEvidence, candidateFiles, candidateDistInventory, verifyCandidateRuntime, verifyCrosscheckFixtures, verifySemanticFaults } from './candidate-web.ts';
@@ -38,14 +39,14 @@ test('dedicated push is source-locked; manual selection needs an explicit immuta
 test('full native manifest extends foundation without weakening the foundation list', () => {
   for (const name of NATIVE_BROWSER_CONTRACTS) assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
   assert.equal(new Set(CANDIDATE_NATIVE_CONTRACTS).size, CANDIDATE_NATIVE_CONTRACTS.length);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 37);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44);
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract'));
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query'));
   for (const family of ['equivalence_tests', 'client_geometry', 'client_state', 'recording', 'borrowed_capture', 'borrowed_host']) assert.ok(CANDIDATE_NATIVE_CONTRACTS.some(name => name.includes(family)), family);
 });
 test('native discovery rejects missing, duplicated and unreviewed hosted tests', () => {
-  const list = [...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS].map(name => `${name}: test`).join('\n');
-  assert.equal(verifyNativeInventory(list).length, CANDIDATE_NATIVE_CONTRACTS.length + CANDIDATE_NATIVE_DIAGNOSTICS.length);
+  const list = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS].map(name => `${name}: test`).join('\n');
+  assert.equal(verifyNativeInventory(list).length, CANDIDATE_NATIVE_CONTRACTS.length + REQUIRED_ENCODER_CONTRACTS.length + CANDIDATE_NATIVE_DIAGNOSTICS.length);
   assert.throws(() => verifyNativeInventory(list.replace(`${CANDIDATE_NATIVE_CONTRACTS[0]}: test`, '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query: test', '')), /Missing required/);
   assert.throws(() => verifyNativeInventory(list.replace('native::client_actions::tests::chromium_protected_pixels_then_exact_check_uses_committed_snapshot: test', '')), /Missing required/);
@@ -88,12 +89,19 @@ test('production discovery excludes only the separately mandatory fault file', (
   assert.ok(selected.includes(join(directory, 'query-reference-replacement.test.ts')));
   assert.throws(() => candidateFiles(suite, directory, discovered.filter(file => !file.endsWith('query-reference-replacement.test.ts'))), /Missing required.*query-reference-replacement/s);
 });
-test('all 15 named differential fixtures and reconciliation must pass independently of optional sweep', () => {
+test('all named differential fixtures and reconciliation must pass independently of optional sweep', () => {
   const file = '/fixtures/crosscheck.test.ts';
-  const assertions = [...CANDIDATE_DIFFERENTIAL_FIXTURES.map(name => ({ fullName: `cross-check fixture: ${name}`, status: 'passed' })), { fullName: 'cross-check matches the expectations', status: 'passed' }, { fullName: 'cross-check web-benchmark scenarios every scenario', status: 'pending' }];
+  const reconciliation = 'cross-check matches the expectations';
+  const required = [...CANDIDATE_DIFFERENTIAL_FIXTURES.map(name => `cross-check fixture: ${name}`), reconciliation];
+  assert.equal(new Set(required).size, CANDIDATE_DIFFERENTIAL_FIXTURES.length + 1);
+  assert.equal(required.at(-1), reconciliation);
+  const assertions = [...required.map(fullName => ({ fullName, status: 'passed' })), { fullName: 'cross-check web-benchmark scenarios every scenario', status: 'pending' }];
   const report = { success: true, testResults: [{ name: file, status: 'passed', assertionResults: assertions }] };
-  assert.equal(verifyCrosscheckFixtures(report, [file]), 16);
-  for (let i = 0; i < 16; i++) {
+  assert.equal(verifyCrosscheckFixtures(report, [file]), required.length);
+  const withoutReconciliation = structuredClone(report);
+  withoutReconciliation.testResults[0]!.assertionResults = withoutReconciliation.testResults[0]!.assertionResults.filter(item => item.fullName !== reconciliation);
+  assert.throws(() => verifyCrosscheckFixtures(withoutReconciliation, [file]), /Missing mandatory/);
+  for (let i = 0; i < required.length; i++) {
     const removed = structuredClone(report); removed.testResults[0]!.assertionResults.splice(i, 1);
     assert.throws(() => verifyCrosscheckFixtures(removed, [file]), /Missing mandatory/);
     const skipped = structuredClone(report); skipped.testResults[0]!.assertionResults[i]!.status = 'pending';
@@ -182,7 +190,7 @@ test('hosted workflow has narrow opt-in triggers, isolates features, preserves i
   assert.match(installedFixture, /readFileSync\(resolve\(session.artifactsDir, await app.screenshot/);
 });
 
-test('fake-harness orchestration continues all exact contracts after failure and never seals success', t => {
+for (const mode of ['browser', 'encoder'] as const) test(`${mode} fake-harness orchestration continues all exact contracts after failure and never seals success`, t => {
   const root = fixture(t); const source = join(root, 'source'); const target = join(root, 'target'); const output = join(root, 'evidence');
   mkdirSync(join(source, 'cli/src'), { recursive: true }); mkdirSync(join(target, 'ci'), { recursive: true });
   writeFileSync(join(source, 'cli/Cargo.lock'), '# synthetic orchestration fixture, not compiled Rust');
@@ -192,17 +200,18 @@ test('fake-harness orchestration continues all exact contracts after failure and
   const commit = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   writeFileSync(join(target, 'ci/agent-browser'), 'synthetic production identity');
   const executable = join(target, 'ci/fake-harness'); const calls = join(root, 'calls');
-  const names = [...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
-  writeFileSync(executable, `#!${process.execPath}\nconst fs=require('node:fs'); const args=process.argv.slice(2); const name=args[0]; if(args.includes('--list')) console.log((args.includes('--exact') ? [name] : ${JSON.stringify(names)}).map(n=>n+': test').join('\\n')); else { fs.appendFileSync(${JSON.stringify(calls)},name+'\\n'); const fail=name===${JSON.stringify(names[0])}; console.log('test result: '+(fail?'FAILED':'ok')+'. '+(fail?0:1)+' passed; '+(fail?1:0)+' failed; 0 ignored;'); process.exit(fail?1:0); }\n`, { mode: 0o700 });
+  const names = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
+  const required = mode === 'encoder' ? REQUIRED_ENCODER_CONTRACTS : CANDIDATE_NATIVE_CONTRACTS;
+  writeFileSync(executable, `#!${process.execPath}\nconst fs=require('node:fs'); const args=process.argv.slice(2); const name=args[0]; if(args.includes('--list')) console.log((args.includes('--exact') ? [name] : ${JSON.stringify(names)}).map(n=>n+': test').join('\\n')); else { fs.appendFileSync(${JSON.stringify(calls)},name+'\\n'); const fail=name===${JSON.stringify(required[0])}; console.log('test result: '+(fail?'FAILED':'ok')+'. '+(fail?0:1)+' passed; '+(fail?1:0)+' failed; 0 ignored;'); process.exit(fail?1:0); }\n`, { mode: 0o700 });
   const compilation = join(root, 'compiler.jsonl'); writeFileSync(compilation, [
     { reason: 'compiler-artifact', executable, profile: { test: true }, features: [], target: { name: 'agent-browser', src_path: join(source, 'cli/src/main.rs'), kind: ['bin'] } },
     { reason: 'build-finished', success: true },
   ].map(value => JSON.stringify(value)).join('\n'));
-  const result = spawnSync(process.execPath, ['scripts/acceptance/candidate-native.ts', 'browser', source, target, compilation, output, commit], { encoding: 'utf8', timeout: 30_000 });
+  const result = spawnSync(process.execPath, ['scripts/acceptance/candidate-native.ts', mode, source, target, compilation, output, commit], { encoding: 'utf8', timeout: 30_000 });
   assert.equal(result.status, 1);
-  assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), [...CANDIDATE_NATIVE_CONTRACTS]);
-  const summary = JSON.parse(readFileSync(join(output, 'browser.result.json'), 'utf8')) as { status: string; failures: string[]; results: unknown[] };
-  assert.equal(summary.status, 'failed'); assert.equal(summary.failures.length, 1); assert.equal(summary.results.length, CANDIDATE_NATIVE_CONTRACTS.length - 1);
+  assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), [...required]);
+  const summary = JSON.parse(readFileSync(join(output, `${mode}.result.json`), 'utf8')) as { status: string; failures: string[]; results: unknown[] };
+  assert.equal(summary.status, 'failed'); assert.equal(summary.failures.length, 1); assert.equal(summary.results.length, required.length - 1);
 });
 
 

@@ -186,6 +186,12 @@ jobs:
         env:
           EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
         run: node scripts/acceptance/candidate-native.ts browser .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      - name: Execute 13 exact fake-CDP real-encoder contracts (not Chrome evidence)
+        id: native-encoder
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native.ts encoder .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
       # All eight preparation regressions now run in default and this exact must-pass stage.
       - name: Require all exact preparation settlement regressions using the default harness
         id: preparation-diagnostic
@@ -291,7 +297,7 @@ jobs:
         run: node scripts/acceptance/candidate-web.ts semantic-faults "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate/fault-negotiation.json .artifacts/native-candidate
       - name: Seal native producer identity (not a full-candidate pass)
         id: producer
-        if: ${{ !cancelled() && steps.native-units.outcome == 'success' && steps.native-browser.outcome == 'success' && steps.native-proxy.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native-units.outcome == 'success' && steps.native-browser.outcome == 'success' && steps.native-encoder.outcome == 'success' && steps.native-proxy.outcome == 'success' }}
         env:
           EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
         run: node scripts/acceptance/candidate-producer.ts .artifacts/native-source "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"

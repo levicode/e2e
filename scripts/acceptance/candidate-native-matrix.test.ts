@@ -50,14 +50,14 @@ function compiledFixture(root: string) {
 
 test('the two exact matrices preserve historical contracts and restore eight preparation regressions without exemptions', () => {
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8); assert.equal(new Set(PREPARATION_SETTLEMENT_TESTS).size, 8);
-  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 31); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 31);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 37); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
+  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 45); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 45);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
   assert.deepEqual(CANDIDATE_NATIVE_DIAGNOSTICS, [
     'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
     'native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable',
     'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline',
   ]);
-  assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 31);
+  assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 45);
   const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
   verifyNativeInventory(inventory);
   assert.throws(() => verifyNativeInventory(`${inventory}\n${PREPARATION_SETTLEMENT_TESTS[0]}_unreviewed: test`), /Unclassified/);
@@ -147,7 +147,7 @@ test('both receipts always enumerate every exact unique row, with missing execut
   for (const mode of ['preparation', 'feature'] as const) {
     const result = finalizeMatrixReceipt(mode, {});
     assert.equal(result.status, 'unknown'); assert.equal(result.complete, false);
-    assert.equal(result.results.length, mode === 'feature' ? 31 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
+    assert.equal(result.results.length, mode === 'feature' ? 45 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
     assert.ok(result.results.every(row => row.status === 'unknown' && row.testStatus === 'unknown' && row.execution === null));
     assert.equal(result.releaseEligible, false); assert.equal(result.acceptanceEvidence, true);
   }
@@ -163,12 +163,12 @@ test('any preparation failures remain failed mandatory evidence with all eight o
   assert.equal(finalizeMatrixReceipt('preparation', successfulSteps, matrix('preparation')).status, 'passed');
 });
 
-test('feature compilation failure preserves bounded error summary and all 31 unexecuted unknown rows', () => {
+test('feature compilation failure preserves bounded error summary and all 45 unexecuted unknown rows', () => {
   const result = finalizeMatrixReceipt('feature', { ...successfulSteps, 'native-feature': { outcome: 'failure' } });
   const execution = { ...matrix('feature'), stage: 'compile', status: 'failed' as const, results: result.results,
     compile: compilerProof(JSON.stringify({ reason: 'compiler-message', message: { level: 'error', code: { code: 'E0308' }, rendered: 'private path' } }), 'private stderr', { ...completed, status: 101 }, null) };
   const failed = finalizeMatrixReceipt('feature', { ...successfulSteps, 'native-feature': { outcome: 'failure' } }, execution);
-  assert.equal(failed.status, 'failed'); assert.equal(failed.complete, false); assert.equal(failed.results.length, 31); assert.ok(failed.results.every(row => row.testStatus === 'unknown'));
+  assert.equal(failed.status, 'failed'); assert.equal(failed.complete, false); assert.equal(failed.results.length, 45); assert.ok(failed.results.every(row => row.testStatus === 'unknown'));
   assert.deepEqual(failed.compile?.errorCodes, ['E0308']); assert.doesNotMatch(JSON.stringify(failed), /private path|private stderr/);
 });
 
@@ -298,7 +298,7 @@ test('foreign inventory names affect counts and verification but never enter clo
   const output = temp(t); const sentinel = 'SENTINEL_UNREVIEWED_TEST_NAME'; const defaults = ['historical_test', 'historical_ignored', ...PREPARATION_SETTLEMENT_TESTS];
   const full = listing([...defaults, ...REQUIRED_NATIVE_FEATURE_TESTS, sentinel]);
   const proof = inventoryProof('feature', processResult(listing(defaults)), processResult(full, 'SENTINEL_PRIVATE_STDERR'), processResult(listing(PREPARATION_SETTLEMENT_TESTS)));
-  assert.equal(proof.verified, false); assert.equal(proof.delta?.unexpectedAddedCount, 1); assert.equal(proof.delta?.addedCount, 32); assert.equal(proof.feature?.entries, defaults.length + 32);
+  assert.equal(proof.verified, false); assert.equal(proof.delta?.unexpectedAddedCount, 1); assert.equal(proof.delta?.addedCount, REQUIRED_NATIVE_FEATURE_TESTS.length + 1); assert.equal(proof.feature?.entries, defaults.length + REQUIRED_NATIVE_FEATURE_TESTS.length + 1);
   assert.equal(proof.feature?.stdout.sha256, sha256(Buffer.from(full))); assert.equal(proof.feature?.stdout.bytes, Buffer.byteLength(full));
   writeFileSync(join(output, 'inventory.json'), JSON.stringify(proof)); assert.doesNotMatch(readFileSync(join(output, 'inventory.json'), 'utf8'), /SENTINEL/);
 });
@@ -354,4 +354,31 @@ test('preparation final gate requires all eight unignored exact results and unch
   f.execution.results[0]!.status = 'passed'; f.seal();
   writeFileSync(f.normal.executable, 'replaced default harness');
   assert.throws(() => verifyPreparationMatrixReceipt(f.output, f.expected, f.paths));
+});
+
+test('all original-budget and new browser additions are mandatory exact contracts, never diagnostics', () => {
+  const additional = [
+  "native::client_observation::equivalence_tests::chromium_observation_frame_dfs_budget_eight_contract",
+  "native::client_observation::equivalence_tests::chromium_original_child_frame_budget_three_contract",
+  "native::client_observation::equivalence_tests::chromium_original_offsite_data_frame_budget_three_contract",
+  "native::client_observation::equivalence_tests::chromium_original_onsite_frame_depth_four_five_contract",
+    'native::client_observation::equivalence_tests::chromium_svg_title_idref_public_names_contract',
+    'native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab',
+    'native::client_browser::recording_attempt_tests::chromium_two_attempt_recording_late_old_completion_cannot_mutate_new_artifact',
+];
+  const full = [...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
+  for (const name of additional) {
+    assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
+    assert.ok(!(CANDIDATE_NATIVE_DIAGNOSTICS as readonly string[]).includes(name));
+    assert.throws(() => verifyNativeInventory(listing(full.filter(value => value !== name))), /Missing required native contract/);
+  }
+});
+
+test('every feature contract including ten historical omissions is mandatory and feature-only', () => {
+  const defaults = [...PREPARATION_SETTLEMENT_TESTS];
+  const full = [...defaults, ...REQUIRED_NATIVE_FEATURE_TESTS];
+  for (const name of REQUIRED_NATIVE_FEATURE_TESTS) {
+    assert.throws(() => verifyFeatureDelta(defaults, full.filter(value => value !== name), []));
+    assert.throws(() => verifyFeatureDelta([...defaults, name], full, []));
+  }
 });

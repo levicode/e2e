@@ -4,6 +4,12 @@ export const CONTINUE_EXACT_OWNER_CAPABILITY = 'operation.continue-exact-owner/1
 /** Explicit reconnect control after a real CDP disconnect, never action replay. */
 export const DISCONNECTED_RECOVERY_CAPABILITY = 'scope.reconnect-quarantined/1';
 
+/** Create-only persistent page reopen with exact owner identity refresh. */
+export const PERSISTENT_PAGE_REOPEN_CAPABILITY = 'browser.persistent-page-reopen/1';
+
+/** Read only completed attempt recordings after terminal context replacement failure. */
+export const TERMINAL_RECORDING_CAPABILITY = 'terminal.recording-artifacts/1';
+
 /** Optional AST support across browser.query, fixture.query, and fixture.read-fields. */
 export const QUERY_UNION_CAPABILITY = 'browser.query-union/1';
 
@@ -14,6 +20,8 @@ export const OBSERVE_FRAME_POLICY_CAPABILITY = 'browser.observe-frame-policy/1';
 export const REQUIRED_CAPABILITIES = [
   CONTINUE_EXACT_OWNER_CAPABILITY,
   DISCONNECTED_RECOVERY_CAPABILITY,
+  PERSISTENT_PAGE_REOPEN_CAPABILITY,
+  TERMINAL_RECORDING_CAPABILITY,
   OBSERVE_FRAME_POLICY_CAPABILITY,
   'terminal.close/1',
   'browser.scope/1', 'browser.lifecycle/1', 'browser.evaluate/1', 'browser.page/1',
