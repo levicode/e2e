@@ -1,6 +1,7 @@
 /** Real NativeSurface and NativeClient framing; native traversal semantics are tested in Rust. */
 import { tmpdir } from 'node:os';
 import { PassThrough, Writable } from 'node:stream';
+import { chromium } from 'playwright-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAppInfo, OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
@@ -8,6 +9,8 @@ import { NativeClient } from '../../src/native/client.ts';
 import { OBSERVE_FRAME_POLICY_CAPABILITY, REQUIRED_CAPABILITIES } from '../../src/native/capabilities.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import type { NativeEvent } from '../../src/native/protocol.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
+import type { PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { noSecrets } from '../helpers/secrets.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -20,6 +23,8 @@ const cleanup = () => ({ signal: new AbortController().signal, timeoutMs: 1000 }
 // Advertised and required capabilities are independent. A peer that uses the
 // same array for both cannot prove rejection of an old native implementation.
 function peer(advertised: readonly string[]) {
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   const frames: Record<string, unknown>[] = [];
   const output = new PassThrough();
   const send = (message: unknown) => queueMicrotask(() => { if (!output.destroyed) output.write(JSON.stringify(message) + '\n'); });
@@ -30,17 +35,22 @@ function peer(advertised: readonly string[]) {
       frames.push(frame);
       if (frame['type'] === 'hello') send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'frame-policy-peer', generation: 1, capabilities: advertised,
         limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
-      else if (frame['type'] === 'close') send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+      else if (frame['type'] === 'close') { resources.closeNative(); send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); }
       else if (frame['type'] === 'request') {
-        let data: unknown;
-        switch (frame['command']) {
-          case 'scope.open': data = { identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' } }; break;
-          case 'scope.configure': case 'network.routes.replace': case 'scope.end': data = null; break;
-          case 'page.activate': data = { activated: true }; break;
-          case 'browser.observe': data = { identityScope: 'scope', revision: String(++revision), viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: String(revision) }, role: 'document' } }; break;
-          default: throw new Error(`Unexpected frame-policy adapter command ${String(frame['command'])}`);
-        }
-        send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, data, effects: 'completed', scopeState: 'usable' });
+        void (async () => {
+          const outcome = await resources.respond(frame as unknown as PeerRequest, request => {
+            switch (request.command) {
+              case 'scope.configure': case 'network.routes.replace': return { data: null };
+              case 'page.activate': return { data: { activated: true } };
+              case 'browser.observe': return { data: { identityScope: 'scope', revision: String(++revision), viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: String(revision) }, role: 'document' } } };
+              default: return undefined;
+            }
+          });
+          send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'],
+            ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed', scopeState: 'usable' }
+              : { ok: false, error: { code: outcome.error }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable' }),
+          });
+        })().catch(cause => output.destroy(cause instanceof Error ? cause : new Error('Invalid frame-policy fixture response')));
       } else throw new Error('Unexpected frame-policy adapter frame');
       done();
     } catch (cause) { done(cause instanceof Error ? cause : new Error('Invalid adapter fixture frame')); }
@@ -101,7 +111,7 @@ describe('native observation frame-policy capability', () => {
       const configured = fixture.frames.find(frame => frame['command'] === 'scope.configure');
       expect(configured?.['args']).toEqual({ identityScope: 'scope', testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]', requestPolicy: site === undefined ? {} : { site }, downloads: { source: 'local' } });
       const before = fixture.frames.filter(frame => frame['type'] === 'request').map(frame => frame['command']);
-      expect(before).toEqual(['scope.open', 'scope.configure', 'network.routes.replace']);
+      expect(before).toEqual(['scope.interop.prepare', 'scope.interop.adopt', 'scope.configure', 'network.routes.replace']);
       // Mutation of caller-owned init data cannot rewrite the already configured
       // native policy through later observe requests. This is wire-flow evidence,
       // not a mock implementation of native same-site/default/depth semantics.

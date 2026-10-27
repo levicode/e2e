@@ -7,10 +7,12 @@
  * Conditional retirement: original closed-shadow:1/2/3 require their paired producer receipts.
  */
 import { tmpdir } from 'node:os';
+import { chromium } from 'playwright-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TestError, type OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -26,13 +28,15 @@ describe('NativeSurface clean policy boundary', () => {
   // Native branch/error-priority, no-capture and restoration proofs remain separate obligations.
   it.each([false, true])('preserves a clean policy refusal without adapter fallback (pixels=%s)', async pixels => {
     let peer!: NativeProtocolPeer;
+    const resources = new NativeInteropResources();
+    vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
     vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
-      peer = new NativeProtocolPeer(config.capabilities, request => {
-        if (request.command === 'scope.open') return { data: { identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' } } };
-        if (request.command === 'browser.observe') return { error: 'policy-denied' };
-        if (request.command === 'page.title') return { data: { title: 'still usable' } };
-        return { data: null };
-      });
+      peer = new NativeProtocolPeer(config.capabilities, request => resources.respond(request, call => {
+        if (call.command === 'browser.observe') return { error: 'policy-denied' };
+        if (call.command === 'page.title') return { data: { title: 'still usable' } };
+        if (call.command === 'scope.configure' || call.command === 'network.routes.replace') return { data: null };
+        return undefined;
+      }), { close: () => resources.closeNative() });
       return peer.connect(context, onEvent);
     });
     const surface = new NativeSurface({});

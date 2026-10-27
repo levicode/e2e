@@ -1,8 +1,10 @@
 import { tmpdir } from 'node:os';
+import { chromium } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -29,15 +31,15 @@ afterEach(async () => {
 /** Only adapter forwarding/decoding. Producer holds and cleanup run in native tests. */
 async function nativeCapture(reply: (request: PeerRequest) => PeerOutcome | Promise<PeerOutcome>) {
   let peer!: NativeProtocolPeer;
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, operation, onEvent) => {
     peer = new NativeProtocolPeer(options.capabilities, request => {
-      if (request.command === 'scope.open') return { data: {
-        identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' },
-      } };
-      if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(request.command)) return { data: null };
+      if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') return resources.respond(request);
+      if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
       if (request.command === 'page.title') return { data: { title: 'still usable' } };
       return reply(request);
-    });
+    }, { close: () => resources.closeNative() });
     return peer.connect(operation, onEvent);
   });
   const controller = new AbortController();

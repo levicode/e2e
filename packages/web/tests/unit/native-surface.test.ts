@@ -7,7 +7,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { defineEngine, EngineError, TestError, type EngineAttemptContext, type EngineFixtureContext, type OperationContext, type ProviderRecording } from 'e2e/engine';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
+import { createReplacementOperation, type ReplacementRequest } from '../helpers/native-interop-replacement.ts';
+import type { PeerRequest } from '../helpers/native-protocol-peer.ts';
+import { defineEngine, EngineError, TestError, type EngineAttemptContext, type EngineFixtureContext, type JsonValue, type OperationContext, type ProviderRecording } from 'e2e/engine';
 import * as uploadFiles from '../../src/native/upload-files.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { decodeEngineResult } from '../../src/native/engine-decode.ts';
@@ -54,30 +58,53 @@ let screenshotDelay = 0;
 let repeatContextIdentity = false;
 let preserveRestartScope = false;
 let coalescedTransitionEvent = false;
-let rejectScopeOpen: 'not-dispatched' | 'unknown' | undefined;
+let rejectStartup: { command: 'scope.open' | 'scope.interop.prepare'; effects: 'not-dispatched' | 'unknown' } | undefined;
 let releaseScopeEnd: (() => void) | undefined;
 let holdObservation = false;
 let observationHeld: (() => void) | undefined;
 let settleObservation: (() => void) | undefined;
 let acknowledgeCancel: (() => void) | undefined;
-let interceptRequest: ((frame: Record<string, unknown>, reply: (result: Record<string, unknown>) => void) => boolean) | undefined;
+let interceptRequest: ((frame: Record<string, unknown>, reply: (result: Record<string, unknown>) => void, resources: NativeInteropResources, replace: ((nextScope: string) => Promise<Record<string, unknown>>) | undefined) => boolean) | undefined;
 let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { token: string; timeoutMs: number }) => Promise<void>;
 beforeEach(() => {
   holdClose = false; releaseClose = undefined;
   continueExactOwner = false; environmentBrowser = 'Synthetic Chromium'; environmentUserAgent = 'synthetic-agent';
   interceptRequest = undefined; cancellationObserved = undefined;
   holdObservation = false; observationHeld = undefined; settleObservation = undefined; acknowledgeCancel = undefined;
-  downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectScopeOpen = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
+  downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectStartup = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
+  const resourcesByEndpoint = new Map<string, NativeInteropResources>();
+  vi.spyOn(chromium, 'connectOverCDP').mockReset().mockImplementation(endpoint => {
+    if (typeof endpoint !== 'string' || !resourcesByEndpoint.has(endpoint)) throw new Error('Unexpected synthetic PW endpoint');
+    return resourcesByEndpoint.get(endpoint)!.connectPlaywright(endpoint);
+  });
+  let connections = 0;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, connectOperation, onEvent) => {
+    const connection = ++connections;
+    // Captured per peer: an old terminal Close cannot retire another peer's model.
+    let resources: NativeInteropResources | undefined;
+    const model = (frame: Record<string, unknown>) => {
+      if (resources === undefined) {
+        const args = frame['args'] as Record<string, unknown>;
+        resources = new NativeInteropResources({
+          endpoint: typeof args['endpoint'] === 'string' ? args['endpoint'] : `ws://synthetic-interop.invalid/surface-${connection}`,
+          browserIdentity: 'browser-owner',
+          allocateContextIdentity: () => ({ contextId: repeatContextIdentity ? 'snapshot-default-context' : `context-${scopes + 1}`, targetId: `page-${scopes + 1}` }),
+          allocateScopeIdentity: () => `scope-${++scopes}`,
+        });
+        resourcesByEndpoint.set(resources.endpoint, resources);
+      }
+      return resources;
+    };
     // Explicit fixture activation is idempotent now that production requires it.
     const capabilities = continueExactOwner ? [...new Set([...options.capabilities, CONTINUE_EXACT_OWNER_CAPABILITY])] : options.capabilities;
     const output = new PassThrough();
+    const replacementDecisions = new Map<string, (decision: Record<string, JsonValue>) => void>();
     const send = (message: unknown) => queueMicrotask(() => output.write(JSON.stringify(message) + '\n'));
     const input = new Writable({ write(chunk: Buffer, _encoding, done) {
       const frame = JSON.parse(chunk.toString()) as Record<string, unknown>; frames.push(frame);
       if (frame['type'] === 'hello') send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic-peer', generation: 1, capabilities, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
       else if (frame['type'] === 'close') {
-        const respond = () => send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        const respond = () => { resources?.closeNative(); send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); };
         if (holdClose) releaseClose = respond; else respond();
       }
       else if (frame['type'] === 'cancel') {
@@ -85,12 +112,36 @@ beforeEach(() => {
         cancellationObserved?.();
       }
       else if (frame['type'] === 'decision') {
+        const token = String(frame['token']);
+        const replacement = replacementDecisions.get(token);
+        if (replacement !== undefined) {
+          replacementDecisions.delete(token); replacement(frame['decision'] as Record<string, JsonValue>);
+        } else if (token.startsWith('replacement-interop-')) throw new Error('Unknown or consumed replacement decision token');
         if (holdDecision) rejectHeldDecision = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
         else send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
       }
       else {
         const command = frame['command']; let data: unknown = null;
-        if (interceptRequest?.(frame, result => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, ...(result['ok'] === false ? {} : { data: null }), effects: 'completed', scopeState: 'usable', ...result }))) { done(); return; }
+        const reply = (outcome: Record<string, unknown>) => {
+          const result = { type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, ...(outcome['ok'] === false ? {} : { data: null }), effects: 'completed', scopeState: 'usable', ...outcome };
+          if (command === 'scope.reset' && coalescedTransitionEvent && result.ok) {
+            const event = { type: 'event', generation: 1, sequence: ++sequence, event: 'network.request', payload: { identityScope: currentScope, version: 1, registrationIds: [], request: { url: 'http://fixture.test/data', method: 'GET', headers: {} } }, decision: { token: 'replacement-callback', timeoutMs: 1000 } };
+            queueMicrotask(() => output.write(JSON.stringify(result) + '\n' + JSON.stringify(event) + '\n'));
+          } else send(result);
+        };
+        // Capture the original request deadline before a test may hold dispatch.
+        const replacement = command === 'scope.reset' || command === 'state.restore' ? createReplacementOperation(model(frame), frame as unknown as ReplacementRequest, (payload, timeoutMs) => {
+          const eventSequence = ++sequence; const token = `replacement-interop-${eventSequence}`;
+          const decision = new Promise<Record<string, JsonValue>>(resolve => replacementDecisions.set(token, resolve));
+          send({ type: 'event', generation: 1, sequence: eventSequence, event: 'scope.interop.replacement', payload, decision: { token, timeoutMs } });
+          return decision;
+        }) : undefined;
+        const replace = replacement === undefined ? undefined : async (nextScope: string) => {
+          const outcome = await replacement(nextScope);
+          currentScope = model(frame).currentIdentity()!.identityScope;
+          return 'data' in outcome ? { data: outcome.data } : { ok: false, error: { code: outcome.error }, effects: outcome.effects, scopeState: outcome.scopeState };
+        };
+        if (interceptRequest?.(frame, reply, model(frame), replace)) { done(); return; }
         if (command === 'recording.finalized.collect') {
           // This peer has no terminal encoder output. Refuse the read-only lane
           // accurately instead of manufacturing an ordinary usable success.
@@ -101,12 +152,35 @@ beforeEach(() => {
           settleObservation = () => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false, error: { code: 'deadline-exceeded' }, effects: 'not-dispatched', scopeState: 'usable' });
           observationHeld?.(); done(); return;
         }
-        if (command === 'scope.open' && rejectScopeOpen !== undefined) {
-          const effects = rejectScopeOpen; rejectScopeOpen = undefined;
+        if (rejectStartup !== undefined && command === rejectStartup.command) {
+          const effects = rejectStartup.effects; rejectStartup = undefined;
+          // Unknown prepare may already own its manager/ticket; do not equate
+          // its resource custody with a preflight not-dispatched refusal.
+          if (effects === 'unknown') model(frame).respond(frame as unknown as PeerRequest);
           send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false, error: { code: 'browser-failure' }, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' }); done(); return;
         }
-        if (command === 'scope.open') { currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, recoveryIdentity: { browser: 'browser-owner', context: repeatContextIdentity ? 'snapshot-default-context' : `context-${scopes}`, page: `page-${scopes}` } }; }
-        else if (command === 'scope.reset' || command === 'scope.restart' || command === 'scope.reconnect') { if (!(command === 'scope.restart' && preserveRestartScope)) currentScope = `scope-${++scopes}`; data = { identityScope: currentScope, ...(command === 'scope.restart' ? { recoveryIdentity: { browser: 'browser-owner', context: 'context-1', page: 'restarted-page' } } : {}) }; }
+        if (command === 'scope.open' || String(command).startsWith('scope.interop.') || command === 'scope.end') {
+          const resource = model(frame);
+          const outcome = resource.respond(frame as unknown as PeerRequest);
+          if (!('data' in outcome)) throw new Error('Unexpected unconfigured lifecycle refusal');
+          data = outcome.data; currentScope = resource.currentIdentity()?.identityScope ?? currentScope;
+        }
+        else if (replace !== undefined) {
+          void replace(`scope-${++scopes}`).then(reply).catch(cause => output.destroy(cause as Error));
+          done(); return;
+        }
+        else if (command === 'scope.reconnect') {
+          const resource = model(frame); const expected = resource.currentIdentity()!.recoveryIdentity;
+          const args = frame['args'] as Record<string, unknown>;
+          if (args['expectedBrowserIdentity'] !== expected.browser || args['expectedContextIdentity'] !== expected.context || args['expectedPageIdentity'] !== expected.page) throw new Error('Reconnect did not name the exact modeled browser/context/page');
+          data = resource.reconnectScope(String(args['identityScope']), `scope-${++scopes}`); currentScope = resource.currentIdentity()!.identityScope;
+        }
+        else if (command === 'scope.restart') {
+          const resource = model(frame); const old = resource.currentIdentity()!;
+          const nextScope = preserveRestartScope ? currentScope : `scope-${++scopes}`;
+          resource.replaceNativePage((frame['args'] as { identityScope: string }).identityScope, old.targetId, 'restarted-page', nextScope);
+          currentScope = nextScope; data = { identityScope: currentScope, recoveryIdentity: resource.currentIdentity()!.recoveryIdentity };
+        }
         else if (command === 'fixture.query' || command === 'browser.query') data = { identityScope: currentScope, revision: '1', nodes: queryNodes };
         else if (command === 'fixture.read-fields') {
           const fields = (frame['args'] as { fields: string[] }).fields;
@@ -131,13 +205,8 @@ beforeEach(() => {
         else if (command === 'browser.observe') data = { identityScope: currentScope, revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' } };
         else if (command === 'page.activate') data = { activated: true };
         else if (command === 'page.title') data = { title: 'Synthetic page' };
-        const respond = () => {
-          const result = { type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, data, effects: 'completed', scopeState: 'usable' };
-          if (command === 'scope.reset' && coalescedTransitionEvent) {
-            const event = { type: 'event', generation: 1, sequence: ++sequence, event: 'network.request', payload: { identityScope: currentScope, version: 1, registrationIds: [], request: { url: 'http://fixture.test/data', method: 'GET', headers: {} } }, decision: { token: 'replacement-callback', timeoutMs: 1000 } };
-            queueMicrotask(() => output.write(JSON.stringify(result) + '\n' + JSON.stringify(event) + '\n'));
-          } else send(result);
-        };
+        else if (!['scope.configure', 'network.routes.replace', 'network.responses.unsubscribe', 'network.body.release', 'dialog.register', 'download.unsubscribe', 'download.release', 'context.init-script', 'context.cookies.set', 'context.media', 'context.viewport', 'page.navigate', 'page.reload', 'page.back', 'page.forward', 'input.mouse', 'input.keyboard', 'browser.perform', 'browser.pointer', 'browser.drag', 'browser.keyboard.type', 'browser.keyboard.press', 'recording.start'].includes(String(command))) throw new Error(`Unexpected surface peer command ${String(command)}`);
+        const respond = () => reply({ data });
         if (command === 'scope.end' && holdScopeEnd) releaseScopeEnd = respond; else if (command === 'capture.screenshot' && screenshotDelay > 0) setTimeout(respond, screenshotDelay); else respond();
       }
       done();
@@ -229,7 +298,7 @@ describe('native environment report compatibility', () => {
     environmentBrowser = 'Chrome/999.0.0.0';
     await surface.command('page.reload', {}, operation()); await new Promise(resolve => setImmediate(resolve));
     expect(environment).toHaveBeenCalledOnce(); expect(frames.filter(frame => frame['command'] === 'session.environment')).toHaveLength(1);
-    expect((frames.findLast(frame => frame['command'] === 'scope.open')!['args'] as Record<string, unknown>)['userAgent']).toBe(configuredUserAgent);
+    expect((frames.findLast(frame => frame['command'] === 'scope.interop.prepare')!['args'] as Record<string, unknown>)['userAgent']).toBe(configuredUserAgent);
     await surface.dispose(cleanup());
   });
 });
@@ -999,7 +1068,7 @@ describe('native surface ownership and fixed policy binding', () => {
       const configured = frames.find(frame => frame['command'] === 'scope.configure');
       const nativeFixture: unknown = JSON.parse(await readFile(new URL('../fixtures/native-startup-hostname.json', import.meta.url), 'utf8'));
       expect(configured?.['args']).toEqual(nativeFixture);
-      expect(frames.find(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ blockServiceWorkers: false });
+      expect(frames.find(frame => frame['command'] === 'scope.interop.prepare')?.['args']).toMatchObject({ blockServiceWorkers: false });
       expect(frames.find(frame => frame['command'] === 'network.routes.replace')?.['args']).toEqual({ identityScope: 'scope-1', version: 1, registrationIds: [] });
     } finally { await surface.dispose(cleanup()); }
   });
@@ -1288,7 +1357,7 @@ describe('native surface ownership and fixed policy binding', () => {
     deliver(); await ending;
     expect(await initializing).toMatchObject({ code: 'CANCELLED' });
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
-    expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(0);
+    expect(frames.filter(frame => frame['command'] === 'scope.open' || frame['command'] === 'scope.interop.prepare')).toHaveLength(0);
   });
   it('does not launch after disposal while an initial endpoint resolver is pending', async () => {
     let deliver!: (endpoint: string) => void;
@@ -1356,8 +1425,8 @@ describe('native surface ownership and fixed policy binding', () => {
     const surface = new NativeSurface({}); await start(surface);
     await surface.endAttempt(cleanup()); await surface.startAttempt(context('second'));
     expect(vi.mocked(connectNativeProcess)).toHaveBeenCalledTimes(1);
-    expect(frames.find(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ blockServiceWorkers: false });
-    expect(frames.filter(frame => frame['command'] === 'scope.open').map(frame => frame['args'])).toMatchObject([{ source: 'launch', context: 'isolated' }, { source: 'reuse', context: 'isolated' }]);
+    expect(frames.find(frame => frame['command'] === 'scope.interop.prepare')?.['args']).toMatchObject({ blockServiceWorkers: false });
+    expect(frames.filter(frame => frame['command'] === 'scope.interop.prepare').map(frame => frame['args'])).toMatchObject([{ source: 'launch', context: 'isolated' }, { source: 'reuse', context: 'isolated' }]);
     expect(frames.filter(frame => frame['command'] === 'network.routes.replace').map(frame => frame['args'])).toEqual([{ version: 1, registrationIds: [], identityScope: 'scope-1' }, { version: 2, registrationIds: [], identityScope: 'scope-2' }]);
     await surface.dispose(cleanup());
   });
@@ -1403,7 +1472,7 @@ describe('native surface ownership and fixed policy binding', () => {
   });
   it('injects same-site headers for agent-only requests without constructing Browser fixture', async () => {
     const surface = new NativeSurface({ headers: { 'x-synthetic-token': 'allowed' } }); await start(surface);
-    expect(frames.find(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ blockServiceWorkers: true });
+    expect(frames.find(frame => frame['command'] === 'scope.interop.prepare')?.['args']).toMatchObject({ blockServiceWorkers: true });
     await sendEvent('network.request', { identityScope: currentScope, version: 1, registrationIds: [], request: { url: 'http://fixture.test/data', method: 'GET', headers: {} } }, { token: 'request-token', timeoutMs: 1000 });
     expect(frames.find(frame => frame['type'] === 'decision')?.['decision']).toEqual({ kind: 'continue', overrides: { headers: [{ name: 'x-synthetic-token', value: 'allowed' }] } });
     await surface.dispose(cleanup());
@@ -1732,8 +1801,8 @@ describe('native surface ownership and fixed policy binding', () => {
     let enterReset!: () => void; const resetting = new Promise<void>(resolve => { enterReset = resolve; });
     let finishReset!: () => void;
     let refused = false; let rejectResource: (() => void) | undefined;
-    let resetAdmitted = false;
-    interceptRequest = (frame, reply) => {
+    let resetAdmitted = false; let resetReplied = false;
+    interceptRequest = (frame, reply, _resourceModel, replace) => {
       if (frame['command'] === 'download.metadata') {
         finishRead = () => reply({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
         enterRead(); return true;
@@ -1745,7 +1814,10 @@ describe('native surface ownership and fixed policy binding', () => {
       }
       if (frame['command'] === 'scope.reset') {
         resetAdmitted = true; rejectResource?.(); enterReset();
-        finishReset = () => { currentScope = 'reset-published'; reply({ data: { identityScope: currentScope } }); };
+        finishReset = () => {
+          if (resetReplied) return; resetReplied = true;
+          void replace!('reset-published').then(reply);
+        };
         return true;
       }
       return false;
@@ -2058,13 +2130,13 @@ describe('native surface ownership and fixed policy binding', () => {
   it('cleans up an explicitly not-dispatched scope rejection without poisoning the client', async () => {
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release } });
-    rejectScopeOpen = 'not-dispatched';
+    rejectStartup = { command: 'scope.open', effects: 'not-dispatched' };
     await expect(start(surface)).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
     await expect(surface.endAttempt(cleanup())).resolves.toBeUndefined(); expect(release).toHaveBeenCalledTimes(1);
     await surface.dispose(cleanup());
   });
-  it('does not treat an unknown scope-open outcome as a clean rejection', async () => {
-    const surface = new NativeSurface({}); rejectScopeOpen = 'unknown';
+  it('does not treat an unknown prepare outcome as a clean rejection', async () => {
+    const surface = new NativeSurface({}); rejectStartup = { command: 'scope.interop.prepare', effects: 'unknown' };
     await expect(start(surface)).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
     await expect(surface.dispose(cleanup())).resolves.toBeUndefined();
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
@@ -2111,7 +2183,7 @@ describe('native surface ownership and fixed policy binding', () => {
     await new Promise(resolve => setImmediate(resolve));
     expect(started).toBe(false);
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
-    expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
+    expect(frames.filter(frame => frame['command'] === 'scope.interop.prepare')).toHaveLength(1);
     releaseScopeEnd!(); await Promise.all([first, second, next]); holdScopeEnd = false;
     await surface.dispose(cleanup());
   });
@@ -2197,7 +2269,7 @@ describe('native surface ownership and fixed policy binding', () => {
     await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
     await engine.startAttempt!(context('video-options'));
     try {
-      expect(frames.find(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ viewport });
+      expect(frames.find(frame => frame['command'] === 'scope.interop.prepare')?.['args']).toMatchObject({ viewport });
       expect(frames.filter(frame => frame['command'] === 'recording.start')).toEqual([]);
       await engine.artifacts!.startVideo!(operation());
       const starts = frames.filter(frame => frame['command'] === 'recording.start');
@@ -2404,7 +2476,7 @@ describe('native surface ownership and fixed policy binding', () => {
     await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
     await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement'));
     expect(acquire).toHaveBeenCalledTimes(2);
-    expect(frames.findLast(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ source: 'connect', endpoint: 'ws://synthetic.test/browser-2' });
+    expect(frames.findLast(frame => frame['command'] === 'scope.interop.prepare')?.['args']).toMatchObject({ source: 'connect', endpoint: 'ws://synthetic.test/browser-2' });
     await surface.dispose(cleanup()); expect(release).toHaveBeenCalledTimes(1);
   });
   it('replaces a retained worker browser after proven loss between attempts', async () => {
@@ -2414,7 +2486,7 @@ describe('native surface ownership and fixed policy binding', () => {
     await sendEvent('browser.disconnected', { reason: 'browser-connection-closed' });
     await surface.startAttempt(context('replacement'));
     expect(acquire).toHaveBeenCalledTimes(2);
-    expect(frames.findLast(frame => frame['command'] === 'scope.open')?.['args']).toMatchObject({ source: 'connect', endpoint: 'ws://synthetic.test/browser-2' });
+    expect(frames.findLast(frame => frame['command'] === 'scope.interop.prepare')?.['args']).toMatchObject({ source: 'connect', endpoint: 'ws://synthetic.test/browser-2' });
     await surface.dispose(cleanup());
   });
   it('ignores a worker loss callback from an already replaced native client tenure', async () => {
@@ -2643,6 +2715,7 @@ describe('caller-bounded cleanup with retained exact settlement', () => {
     const controller = new AbortController();
     const ending = surface.endAttempt({ signal: controller.signal, timeoutMs: mode === 'timeout' ? 10 : 100 });
     const owner = retirementState(surface).endingAttempt!;
+    await new Promise(resolve => setImmediate(resolve));
     const scopeEnd = frames.find(frame => frame['command'] === 'scope.end')!;
     expect(scopeEnd['timeoutMs']).toBeLessThanOrEqual(mode === 'timeout' ? 10 : 100);
     if (mode === 'abort') controller.abort();
@@ -2753,6 +2826,7 @@ describe('bounded native attempt cleanup ownership', () => {
     retired.downloads.set('retained-download', Promise.resolve(Buffer.from('old attempt')));
     expect(owner).toBeDefined();
     const expectedEnds = mode === 'already-aborted' ? 0 : 1;
+    await new Promise(resolve => setImmediate(resolve));
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(expectedEnds);
     if (expectedEnds > 0) expect(frames.find(frame => frame['command'] === 'scope.end')!['timeoutMs']).toBeLessThanOrEqual(mode === 'wait-timeout' ? 10 : 1000);
     if (mode === 'mid-wait-abort') controller.abort();
@@ -2765,7 +2839,7 @@ describe('bounded native attempt cleanup ownership', () => {
     await new Promise(resolve => setImmediate(resolve));
     expect(opened).toBe(false);
     await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
-    expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
+    expect(frames.filter(frame => frame['command'] === 'scope.interop.prepare')).toHaveLength(1);
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(expectedEnds);
     expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(expectedEnds);
     expect(retired.downloads.size).toBe(1);
@@ -2794,7 +2868,7 @@ describe('bounded native attempt cleanup ownership', () => {
     await expect(surface.endAttempt(cleanup())).rejects.toBe(failure);
     await expect(surface.startAttempt(context('still-must-not-open'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     await expect(surface.dispose(cleanup())).rejects.toBe(failure);
-    expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
+    expect(frames.filter(frame => frame['command'] === 'scope.interop.prepare')).toHaveLength(1);
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   });
@@ -2920,6 +2994,7 @@ describe('bounded native attempt cleanup ownership', () => {
     const duplicate = surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
     const disposing = surface.dispose(cleanup()).catch((cause: unknown) => cause);
     expect(retirementState(surface).endingAttempt).toBe(owner);
+    await new Promise(resolve => setImmediate(resolve));
     expect(stopped).toHaveBeenCalledTimes(2);
     expect(release).toHaveBeenCalledTimes(1);
     await expect(surface.startAttempt(context('no-business-during-reap'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
@@ -2951,6 +3026,7 @@ describe('bounded native attempt cleanup ownership', () => {
     surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'reentrant-lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release, record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: stopped }) } });
     await start(surface); await surface.startVideo(operation());
     const waiting = entry === 'end' ? surface.endAttempt(cleanup()) : surface.dispose(cleanup());
+    await new Promise(resolve => setImmediate(resolve));
     expect(retirementState(surface).endingAttempt).toBe(before);
     expect(stopped).toHaveBeenCalledTimes(1);
     finish(); await Promise.all([waiting, joined, disposal]);
@@ -3177,6 +3253,7 @@ it.each(['recorder', 'native-close', 'lease'] as const)('preserves first actual 
     const controller = new AbortController();
     const caller = surface.endAttempt({ signal: controller.signal, timeoutMs: 1000 });
     const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+    await new Promise(resolve => setImmediate(resolve));
     expect(stopped).toHaveBeenCalledTimes(1);
     controller.abort(); await caller;
     await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));

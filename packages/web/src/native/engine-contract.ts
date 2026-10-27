@@ -79,12 +79,12 @@ export interface EngineCommandMap {
   'browser.keyboard.press': { args: Scoped & { readonly key: string }; result: null };
   'capture.screenshot': { args: Scoped & { readonly secureFieldSelector: string; readonly purpose?: 'pixelsOnly' | 'trace' }; result: NativeImage };
   'state.capture': { args: Scoped; result: NativeBlob & { readonly format: 'agent-browser-storage-state'; readonly version: 1 } };
-  'state.restore': { args: Scoped & { readonly format: 'agent-browser-storage-state' | 'playwright-storage-state'; readonly version: 1; readonly bodyHandle: string }; result: Scoped };
+  'state.restore': { args: Scoped & { readonly format: 'agent-browser-storage-state' | 'playwright-storage-state'; readonly version: 1; readonly bodyHandle: string }; result: Scoped & { readonly activatePage?: boolean } };
   'recording.start': { args: Scoped & { readonly size?: ViewportSize; readonly quality?: number }; result: null };
   'recording.stop': { args: Scoped; result: Scoped & ({ readonly segments: readonly (NativeBlob & { readonly mediaType: 'video/webm'; readonly startedAt: string })[]; readonly missingSegment?: number } | { readonly missingSegment: number }) };
   'session.environment': { args: Scoped; result: Scoped & { readonly browser: string; readonly userAgent?: string } };
   'scope.restart': { args: Scoped; result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
-  'scope.reset': { args: Scoped; result: Scoped };
+  'scope.reset': { args: Scoped; result: Scoped & { readonly activatePage?: boolean } };
   'scope.reconnect': { args: Scoped & { readonly endpoint: string; readonly expectedBrowserIdentity: string; readonly expectedContextIdentity: string; readonly expectedPageIdentity: string }; result: Scoped };
   'blob.read': { args: Scoped & { readonly handle: string; readonly offset: number; readonly maxBytes: number }; result: { readonly base64: string; readonly nextOffset: number; readonly eof: boolean } };
 }

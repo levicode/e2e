@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.reopen-check.json","include":["src/index.ts","tests/integration/surface-of-native-persistent-reopen.test.ts"]}

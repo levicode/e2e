@@ -1,31 +1,59 @@
 /** An attempt owns pending connections and rejects work from retired generations. */
 import { tmpdir } from 'node:os';
+import { chromium } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, type EngineAttemptContext, type EngineHandle } from 'e2e/engine';
 import { web, type WebOptions } from '../../src/index.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeProtocolPeer, type PeerRequest, type PeerOutcome } from '../helpers/native-protocol-peer.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 const peers: NativeProtocolPeer[] = [];
+const interop: NativeInteropResources[] = [];
 
 /** Real public adapter/client; the peer supplies protocol responses, never browser behavior. */
 async function nativeAttempt(options: WebOptions = {}, respond?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome> | undefined, settle?: () => Promise<void>) {
   vi.mocked(connectNativeProcess).mockImplementation(async (settings, operation, onEvent) => {
     const index = peers.length + 1;
     let scope = `attempt-${index}`;
+    let resources: NativeInteropResources | undefined;
     const peer = new NativeProtocolPeer(settings.capabilities, frame => {
+      if (frame.command === 'scope.open') {
+        if (resources !== undefined) throw new Error('Persistent peer already owns its native resource model');
+        // This fixture borrows a modeled default context. Production
+        // identify + CDP binding must still prove its exact context and Page.
+        resources = new NativeInteropResources({
+          endpoint: String(frame.args['endpoint']), browserIdentity: `browser-${index}`,
+          allocateContextIdentity: () => ({ contextId: `context-${index}`, targetId: `page-${index}` }),
+          allocateScopeIdentity: () => scope,
+        });
+        interop.push(resources);
+        const opened = resources.respond(frame);
+        // A delayed/corrupted native receipt does not undo native ownership.
+        return respond?.(frame) ?? opened;
+      }
       const custom = respond?.(frame);
       if (custom !== undefined) return custom;
-      if (frame.command === 'scope.open') return { data: { identityScope: scope, recoveryIdentity: { browser: `browser-${index}`, context: `context-${index}`, page: `page-${index}` } } };
-      if (frame.command === 'scope.reconnect') { scope += '-reconnected'; return { data: { identityScope: scope } }; }
-      if (frame.command === 'page.title') return { data: { title: scope } };
-      if (frame.command === 'browser.observe') return { data: { identityScope: scope, revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' } } };
-      if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(frame.command)) return { data: null };
-      throw new Error(`Unexpected attempt peer command ${frame.command}`);
-    });
+      if (resources === undefined) throw new Error('Attempt command preceded native scope ownership');
+      return resources.respond(frame, request => {
+        if (request.command === 'scope.reconnect') {
+          const identity = resources!.currentIdentity()!;
+          expect(request.args).toMatchObject({ identityScope: scope,
+            expectedBrowserIdentity: identity.recoveryIdentity.browser,
+            expectedContextIdentity: identity.contextId, expectedPageIdentity: identity.targetId });
+          const next = `${scope}-reconnected`;
+          const data = resources!.reconnectScope(scope, next); scope = next;
+          return { data };
+        }
+        if (request.command === 'page.title') return { data: { title: scope } };
+        if (request.command === 'browser.observe') return { data: { identityScope: scope, revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' } } };
+        if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
+        throw new Error(`Unexpected attempt peer command ${request.command}`);
+      });
+    }, { close: () => resources?.closeNative() });
     peers.push(peer);
     return peer.connect(operation, onEvent, settle);
   });
@@ -98,7 +126,15 @@ describe('AttemptSession', () => {
     } finally { scheduled.mockRestore(); result.resolve({ data: null }); await engine.dispose!(cleanup()).catch(() => undefined); }
   });
 
-  beforeEach(() => { vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; });
+  beforeEach(() => {
+    vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; interop.length = 0;
+    // Explicit per-fixture transport seam; the production binding is not mocked.
+    vi.spyOn(chromium, 'connectOverCDP').mockImplementation(async endpoint => {
+      const resources = interop.findLast(resource => resource.endpoint === endpoint);
+      if (resources === undefined) throw new Error('No native resource owns this CDP endpoint');
+      return resources.connectPlaywright(endpoint);
+    });
+  });
   afterEach(() => { for (const peer of peers) peer.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
   it('leaves the persistent page at the window size under viewport: null', async () => {
@@ -108,7 +144,11 @@ describe('AttemptSession', () => {
       await nativeBrowser(engine, operation).title();
       const peer = peers[0]!;
       expect(peer.requests.find(frame => frame.command === 'scope.open')?.args).toMatchObject({ source: 'connect', context: 'persistent', viewport: null });
-      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title']);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.interop.identify', 'scope.configure', 'network.routes.replace', 'page.title']);
+      expect(chromium.connectOverCDP).toHaveBeenCalledWith('ws://synthetic.test/attempt', { timeout: expect.any(Number), noDefaults: true });
+      const raw = await vi.mocked(chromium.connectOverCDP).mock.results[0]!.value;
+      expect(raw.contexts()[0]!.pages()[0]!.setViewportSize).not.toHaveBeenCalled();
+      expect(interop[0]!.snapshot()).toMatchObject({ nativeContexts: 1, playwrightContexts: 1, playwrightClients: 1 });
       // The native TCP test borrowed_initial_page_without_viewport_is_never_resized_during_enrollment
       // checks actual set/clear metrics absence. CI7's real null-viewport window
       // test checks measurement; this peer proves only persistent null forwarding.
@@ -153,7 +193,7 @@ describe('AttemptSession', () => {
         { identityScope: 'attempt-1', width: 800, height: 600 },
         { identityScope: 'attempt-1', width: 0, height: 0 },
       ]);
-      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'context.viewport', 'page.title', 'context.viewport', 'context.viewport']);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.interop.identify', 'scope.configure', 'network.routes.replace', 'context.viewport', 'page.title', 'context.viewport', 'context.viewport']);
       await peer.event('scope.disconnected', { identityScope: 'attempt-1', reason: 'browser-connection-closed' });
       await rejectsInvalidViewports();
     } finally { await engine.dispose!(cleanup()); }
@@ -177,7 +217,7 @@ describe('AttemptSession', () => {
         { identityScope: 'attempt-1', reducedMotion: 'reduce' },
         { identityScope: 'attempt-1', colorScheme: 'light' },
       ]);
-      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media', 'context.media', 'page.title']);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.interop.identify', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media', 'context.media', 'page.title']);
       // Native TCP context_media_updates_active_page_before_popup_with_reversed_inventory
       // pins dark -> dark+reduce; context_configuration_merges_and_enrolls_without_reinstalling_scripts
       // pins light+reduce on a fresh session. CI7's public popup case grounds renderer inheritance.
@@ -197,7 +237,7 @@ describe('AttemptSession', () => {
       expect(peer.requests.filter(frame => frame.command === 'context.media').map(frame => frame.args)).toEqual([
         { identityScope: 'attempt-1', reducedMotion: 'reduce' },
       ]);
-      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media']);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.interop.identify', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media']);
       // CI7's public popup-media case executes app-created popup rendering.
       // Native TCP context_media_updates_active_page_before_popup_with_reversed_inventory
       // pins initial dark enrollment and merged active-before-popup writes.
@@ -238,7 +278,7 @@ describe('AttemptSession', () => {
       await firstCompletion;
       expect(completed).toEqual(['second', 'first']);
       expect(await browser.title()).toBe('attempt-1');
-      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media', 'context.media', 'page.title']);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.interop.identify', 'scope.configure', 'network.routes.replace', 'page.title', 'context.media', 'context.media', 'page.title']);
     } finally {
       firstResult.resolve({ data: null });
       try { await firstCompletion; } finally { await engine.dispose!(cleanup()); }
@@ -252,7 +292,7 @@ describe('AttemptSession', () => {
       await nativeBrowser(engine, operation).title();
       const peer = peers[0]!;
       expect(peer.requests.find(frame => frame.command === 'scope.open')?.args['media']).toEqual({});
-      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.configure', 'network.routes.replace', 'page.title']);
+      expect(peer.requests.map(frame => frame.command)).toEqual(['scope.open', 'scope.interop.identify', 'scope.configure', 'network.routes.replace', 'page.title']);
       // The peer proves no adapter media request, not browser preferences.
       // Native CDP absence is pinned by the production TCP regression
       // context_configuration_without_media_never_emulates_initial_or_child_sessions.

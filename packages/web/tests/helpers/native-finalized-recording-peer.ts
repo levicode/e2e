@@ -18,14 +18,14 @@ export class FinalizedRecordingPeer {
   readonly token = 'opaque-frozen-batch';
   failedSequence = 0;
   eventsSeen = 0;
-  constructor(readonly override: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined> = () => undefined, bytes: Buffer = Buffer.from('adapter-only immutable artifact bytes')) {
+  constructor(readonly override: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined> = () => undefined, bytes: Buffer = Buffer.from('adapter-only immutable artifact bytes'), lifecycle: { readonly close?: () => void } = {}) {
     this.bytes = bytes;
     this.input = new Writable({ write: (chunk: Buffer, _encoding, done) => {
       try {
         const frame = JSON.parse(chunk.toString()) as Record<string, unknown>; this.frames.push(frame);
         if (frame['type'] === 'hello') this.send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'artifact-peer', generation: 1,
           capabilities: this.advertised, scopeState: 'usable', limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 } });
-        else if (frame['type'] === 'close') this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        else if (frame['type'] === 'close') { lifecycle.close?.(); this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); }
         else if (frame['type'] === 'cancel') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'quarantined' });
         else if (frame['type'] === 'request') {
           const request = frame as unknown as ArtifactRequest; this.requests.push(request);

@@ -1,5 +1,6 @@
 /** Public policy classification only; a framed peer does not prove native mask coverage or cleanup. */
 import { tmpdir } from 'node:os';
+import { chromium } from 'playwright-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, TestError, type OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
@@ -8,6 +9,7 @@ import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { serverMessage, type Effects, type NativeResult, type ScopeState } from '../../src/native/protocol.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -97,15 +99,14 @@ describe.each(['engine', 'browser'] as const)('framed %s policy boundary', kind 
 describe('NativeSurface clean policy boundary', () => {
   it('retains a cleanly refused unopened client without trusting the policy code alone', async () => {
     let peer!: NativeProtocolPeer;
-    let opens = 0;
+    const resources = new NativeInteropResources();
+    resources.refuseNext('scope.interop.prepare', 'policy-denied');
+    const connectPW = vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
     vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
-      peer = new NativeProtocolPeer(config.capabilities, request => {
-        if (request.command === 'scope.open') {
-          if (++opens === 1) return { error: 'policy-denied' };
-          return { data: { identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' } } };
-        }
-        return { data: null };
-      });
+      peer = new NativeProtocolPeer(config.capabilities, request => resources.respond(request, call => {
+        if (call.command === 'scope.configure' || call.command === 'network.routes.replace') return { data: null };
+        return undefined;
+      }), { close: () => resources.closeNative() });
       return peer.connect(context, onEvent);
     });
     const surface = new NativeSurface({});
@@ -115,12 +116,19 @@ describe('NativeSurface clean policy boundary', () => {
     try {
       await expect(surface.startAttempt(attempt('denied'))).rejects.toMatchObject({ code: 'POLICY_DENIED', category: 'test' });
       expect(disposed).not.toHaveBeenCalled();
-      expect(peer.requests.map(request => request.command)).toEqual(['scope.open']);
+      expect(peer.requests.map(request => request.command)).toEqual(['scope.interop.prepare']);
+      expect(connectPW).not.toHaveBeenCalled();
+      expect(resources.snapshot()).toEqual({ prepared: false, nativeContexts: 0, playwrightClients: 0, playwrightContexts: 0, contextCloseEvents: 0 });
       await surface.endAttempt(cleanup());
       await expect(surface.startAttempt(attempt('next'))).resolves.toBeUndefined();
-      expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(2);
+      expect(peer.requests.filter(request => request.command === 'scope.interop.prepare')).toHaveLength(2);
+      expect(peer.requests.map(request => request.command)).toEqual(['scope.interop.prepare', 'scope.interop.prepare', 'scope.interop.adopt', 'scope.configure', 'network.routes.replace']);
+      expect(connectPW).toHaveBeenCalledOnce();
+      expect(resources.snapshot()).toEqual({ prepared: false, nativeContexts: 1, playwrightClients: 1, playwrightContexts: 1, contextCloseEvents: 0 });
       expect(disposed).not.toHaveBeenCalled();
     } finally { await surface.dispose(cleanup()); }
+    expect(peer.requests.map(request => request.command)).toEqual(['scope.interop.prepare', 'scope.interop.prepare', 'scope.interop.adopt', 'scope.configure', 'network.routes.replace', 'scope.interop.retire', 'scope.end']);
+    expect(resources.snapshot()).toEqual({ prepared: false, nativeContexts: 0, playwrightClients: 0, playwrightContexts: 0, contextCloseEvents: 1 });
   });
 
 

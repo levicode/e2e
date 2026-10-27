@@ -5,6 +5,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
+import type { PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { FinalizedRecordingPeer, artifactOperation, type ArtifactReply, type ArtifactRequest } from '../helpers/native-finalized-recording-peer.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-native' }));
@@ -27,12 +30,35 @@ afterEach(async () => {
   vi.useRealTimers();
   await Promise.allSettled(surfaces.splice(0).map(surface => surface.dispose({ signal: new AbortController().signal, timeoutMs: 1000 })));
   rmSync(artifactsDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
+const peerResources = new WeakMap<FinalizedRecordingPeer, NativeInteropResources>();
+function recordingPeer(override?: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined>): FinalizedRecordingPeer {
+  const resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/browser', browserIdentity: 'browser', allocateScopeIdentity: () => 'attempt-scope', allocateContextIdentity: () => ({ contextId: 'context', targetId: 'page' }) });
+  const peer = new FinalizedRecordingPeer(async request => {
+    if (request.command.startsWith('scope.interop.') || ['scope.open', 'scope.end'].includes(request.command)) {
+      const result = await resources.respond(request as PeerRequest);
+      return 'data' in result ? { ok: true, data: result.data, effects: 'completed', scopeState: 'usable' }
+        : { ok: false, error: { code: result.error }, effects: result.effects ?? 'not-dispatched', scopeState: 'usable' };
+    }
+    if (request.command === 'page.activate') return (await override?.(request)) ?? { ok: true, data: { activated: true }, effects: 'completed', scopeState: 'usable' };
+    // Artifact data, terminal receipts, delays, and faults stay in the existing peer.
+    if (!['scope.configure', 'network.routes.replace', 'page.activate', 'recording.start', 'recording.stop',
+      'scope.reset', 'state.restore', 'recording.finalized.collect', 'recording.finalized.read',
+      'recording.finalized.release', 'page.title', 'browser.pointer', 'capture.screenshot'].includes(request.command))
+      throw new Error(`Unexpected finalized fixture command ${request.command}`);
+    return override?.(request);
+  }, undefined, { close: () => resources.closeNative() });
+  peerResources.set(peer, resources);
+  return peer;
+}
 function connectPeer(peer: FinalizedRecordingPeer): void {
+  const resources = peerResources.get(peer)!;
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, operation, event) => peer.connect(config.capabilities, event, operation));
 }
 async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined>, options: ConstructorParameters<typeof NativeSurface>[0] = {}, replacePreparedWorker = false, startRecording = true) {
-  let peer = new FinalizedRecordingPeer(override); connectPeer(peer);
+  let peer = recordingPeer(override); connectPeer(peer);
   const surface = new NativeSurface(options); surfaces.push(surface);
   const prepared = await surface.prepare({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, slots: 1, signal: artifactOperation().signal, log: () => {} });
   await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: prepared?.env ?? {}, headed: false, workerSlot: 0, signal: artifactOperation().signal, log: () => {} });
@@ -41,7 +67,7 @@ async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | 
     // actually acquired after this framed disconnect is owned by the worker.
     peer.send({ type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } });
     await vi.waitFor(() => expect(peer.eventsSeen).toBe(1));
-    peer = new FinalizedRecordingPeer(override); connectPeer(peer);
+    peer = recordingPeer(override); connectPeer(peer);
   }
   await surface.startAttempt({ attemptId: 'attempt', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace });
   if (startRecording) await surface.startVideo(artifactOperation());
@@ -62,7 +88,7 @@ it('cannot hand an old attempt frozen result to a new attempt even if its peer r
   await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
   await vi.waitFor(() => expect(peer.requests.some(request => request.command === 'recording.finalized.read')).toBe(true));
   await surface.endAttempt({ signal: artifactOperation().signal, timeoutMs: 1000 }); release();
-  const next = new FinalizedRecordingPeer(request => request.command === 'recording.stop'
+  const next = recordingPeer(request => request.command === 'recording.stop'
     ? { ok: true, effects: 'completed', scopeState: 'usable', data: { identityScope: next.scope, segments: [] } } : undefined);
   connectPeer(next);
   await surface.startAttempt({ attemptId: 'next', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace });
@@ -123,7 +149,7 @@ it.each(['action', 'capture', 'connection'] as const)('collects immutable video 
   await expect(surface.performAt({ x: 1, y: 1 }, { kind: 'tap' }, artifactOperation())).rejects.toThrow();
   await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
   expect(peer.requests).toHaveLength(count);
-  expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(1);
+  expect(peer.requests.filter(request => request.command === 'scope.interop.adopt')).toHaveLength(1);
   expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
   expect(peer.requests.filter(request => request.command === command)).toHaveLength(1);
 });

@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","compilerOptions":{"rootDir":"../..","paths":{"e2e":["../e2e/dist/index.ts"],"e2e/engine":["../e2e/dist/engine/index.ts"]}},"include":["src/index.ts","tests/unit/native-persistent-page-reopen.test.ts"]}

@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { PassThrough, Writable } from 'node:stream';
+import { chromium } from 'playwright-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, TestError, type OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeClient } from '../../src/native/client.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -36,17 +38,17 @@ async function startNativeFallback() {
 /** Exercise public forwarding and artifact ownership, never native browser behavior. */
 async function nativeFallback(reply: (request: PeerRequest) => PeerOutcome | Promise<PeerOutcome>) {
   let peer!: NativeProtocolPeer;
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, context, onEvent) => {
     peer = new NativeProtocolPeer(options.capabilities, request => {
+      if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') return resources.respond(request);
       // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
       if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-      if (request.command === 'scope.open') return { data: {
-        identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' },
-      } };
       if (request.command === 'page.title') return { data: { title: 'still usable' } };
-      if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(request.command)) return { data: null };
+      if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
       return reply(request);
-    });
+    }, { close: () => resources.closeNative() });
     return peer.connect(context, onEvent);
   });
   return { surface: await startNativeFallback(), peer };
@@ -94,6 +96,8 @@ function deferred<T>() {
 
 /** Hold one real NativeClient observation and its cancel ACK independently. */
 async function cancellableNativeFallback() {
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   const output = new PassThrough();
   const frames: Record<string, unknown>[] = [];
   const observed = deferred<PeerRequest>();
@@ -116,12 +120,14 @@ async function cancellableNativeFallback() {
         else if (frame['type'] === 'request') {
           const request = frame as unknown as PeerRequest;
           if (request.command === 'browser.observe') observed.resolve(request);
-          else if (request.command === 'scope.open') result(request, { data: { identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' } } });
+          else if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') {
+            void Promise.resolve(resources.respond(request)).then(outcome => result(request, outcome)).catch(cause => output.destroy(cause instanceof Error ? cause : new Error('Invalid interop fixture response')));
+          }
           else if (request.command === 'page.title') result(request, { data: { title: 'still usable' } });
-          else if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(request.command)) result(request, { data: null });
+          else if (['scope.configure', 'network.routes.replace'].includes(request.command)) result(request, { data: null });
           else throw new Error(`Unexpected cancelled fallback command: ${request.command}`);
         } else if (frame['type'] === 'cancel') cancelled.resolve(frame);
-        else if (frame['type'] === 'close') send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        else if (frame['type'] === 'close') { resources.closeNative(); send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); }
         else throw new Error(`Unexpected cancellation peer frame: ${String(frame['type'])}`);
         done();
       } catch (cause) { done(cause instanceof Error ? cause : new Error('Invalid cancellation peer frame')); }

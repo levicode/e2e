@@ -6,6 +6,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { chromium } from 'playwright-core';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, withTimeout, type EngineAttemptContext, type EngineCleanupContext, type EngineFinishInfo, type EngineInitInfo, type EnginePrepareInfo, type OperationContext, type ProviderRecordContext, type ProviderRecording } from 'e2e/engine';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { web } from '../../src/index.ts';
 import { LeasedBrowsers, type BrowserLease, type BrowserProvider, type BrowserReleaseContext, type BrowserRequest } from '../../src/provider.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
@@ -21,7 +23,7 @@ import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 
-interface ProviderPeer { peer: NativeProtocolPeer; scope: string; dropBrowser(): Promise<void>; dropScope(): Promise<void> }
+interface ProviderPeer { peer: NativeProtocolPeer; resources?: NativeInteropResources; scope: string; dropBrowser(): Promise<void>; dropScope(): Promise<void> }
 const peers: ProviderPeer[] = [];
 let nextScope = 0;
 let repeatedContext: string | undefined;
@@ -32,7 +34,7 @@ const videoBytes = Buffer.from('synthetic native WebM transfer');
 /** Endpoints are asserted at actual scope attachment/recovery, not at proxy negotiation. */
 function endpoints(): unknown[] {
   return peers.flatMap(({ peer }) => peer.requests)
-    .filter(request => request.command === 'scope.reconnect' || (request.command === 'scope.open' && request.args['source'] === 'connect'))
+    .filter(request => request.command === 'scope.reconnect' || (['scope.open', 'scope.interop.prepare'].includes(request.command) && request.args['source'] === 'connect'))
     .map(request => request.args['endpoint']);
 }
 
@@ -45,26 +47,50 @@ function installNativePeers(): void {
       dropBrowser: () => owner.peer.event('browser.disconnected', { reason: 'browser-connection-closed' }),
       dropScope: () => owner.peer.event('scope.disconnected', { identityScope: owner.scope, reason: 'browser-connection-closed' }),
     };
+    const peerIndex = peers.length + 1;
+    let resourceIdentity = 0;
     owner.peer = new NativeProtocolPeer(options.capabilities, request => {
       const command = request.command;
-      // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
-      if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-      if (command === 'scope.open') {
-        if (failOpen) return { error: 'browser-failure' };
-        owner.scope = `scope-${++nextScope}`;
-        return { data: { identityScope: owner.scope, recoveryIdentity: { browser: `browser-${nextScope}`, context: repeatedContext ?? `context-${nextScope}`, page: `page-${nextScope}` } } };
+      if (command === 'scope.open' || command === 'scope.interop.prepare') {
+        // Each native manager owns its own resource inventory and PW endpoint.
+        // A worker's source:reuse keeps that manager, never a sibling's client.
+        owner.resources ??= new NativeInteropResources({
+          endpoint: command === 'scope.open' ? String(request.args['endpoint']) : `ws://synthetic-interop.invalid/provider-${peerIndex}`,
+          browserIdentity: `browser-${peerIndex}`,
+          allocateContextIdentity: () => {
+            resourceIdentity = ++nextScope;
+            return { contextId: repeatedContext ?? `context-${resourceIdentity}`, targetId: `page-${resourceIdentity}` };
+          },
+          allocateScopeIdentity: () => (owner.scope = `scope-${resourceIdentity}`),
+        });
+        // This fault precedes persistent attachment; no PW resource is allocated.
+        if (command === 'scope.open' && failOpen) return { error: 'browser-failure', effects: 'not-dispatched', scopeState: 'usable' };
       }
-      if (command === 'scope.reconnect') { owner.scope = `scope-${++nextScope}`; return { data: { identityScope: owner.scope } }; }
-      if (command === 'page.activate') return { data: { activated: true } };
+      if (owner.resources === undefined) throw new Error('Provider command preceded native ownership');
       if (command === 'scope.end' && failEnd) return { error: 'cleanup-failed', effects: 'unknown', scopeState: 'quarantined' };
-      if (['scope.configure', 'scope.end', 'network.routes.replace', 'recording.start'].includes(command)) return { data: null };
-      if (command === 'blob.release') return { data: { released: true } };
-      if (command === 'page.title') return { data: { title: 'reattached' } };
-      if (command === 'recording.stop') return { data: { identityScope: owner.scope, segments: [{ identityScope: owner.scope, handle: 'provider-unit-video', size: videoBytes.length,
-        sha256: createHash('sha256').update(videoBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-09-28T10:00:00.000Z' }] } };
-      if (command === 'blob.read') return { data: { base64: videoBytes.toString('base64'), nextOffset: videoBytes.length, eof: true } };
-      return { error: 'unsupported-command' };
-    });
+      return owner.resources.respond(request, frame => {
+        const command = frame.command;
+        // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
+        if (command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
+        if (command === 'scope.reconnect') {
+          const identity = owner.resources!.currentIdentity()!;
+          expect(frame.args).toMatchObject({ identityScope: owner.scope,
+            expectedBrowserIdentity: identity.recoveryIdentity.browser,
+            expectedContextIdentity: identity.contextId, expectedPageIdentity: identity.targetId });
+          const next = `scope-${++nextScope}`;
+          const data = owner.resources!.reconnectScope(owner.scope, next); owner.scope = next;
+          return { data };
+        }
+        if (command === 'page.activate') return { data: { activated: true } };
+        if (['scope.configure', 'network.routes.replace', 'recording.start'].includes(command)) return { data: null };
+        if (command === 'blob.release') return { data: { released: true } };
+        if (command === 'page.title') return { data: { title: 'reattached' } };
+        if (command === 'recording.stop') return { data: { identityScope: owner.scope, segments: [{ identityScope: owner.scope, handle: 'provider-unit-video', size: videoBytes.length,
+          sha256: createHash('sha256').update(videoBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-09-28T10:00:00.000Z' }] } };
+        if (command === 'blob.read') return { data: { base64: videoBytes.toString('base64'), nextOffset: videoBytes.length, eof: true } };
+        throw new Error(`Unexpected provider peer command ${command}`);
+      });
+    }, { close: () => owner.resources?.closeNative() });
     peers.push(owner);
     return owner.peer.connect(operation, onEvent);
   });
@@ -166,6 +192,12 @@ async function prepared(cloud: BrowserProvider, slots: number): Promise<{ runner
 beforeEach(() => {
   peers.length = 0; nextScope = 0; repeatedContext = undefined; failOpen = false; failEnd = false;
   installNativePeers();
+  // The only PW substitute is this fixture's resource-level CDP connection.
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(async endpoint => {
+    const resources = peers.findLast(owner => owner.resources?.endpoint === endpoint)?.resources;
+    if (resources === undefined) throw new Error('No provider resource owns this CDP endpoint');
+    return resources.connectPlaywright(endpoint);
+  });
 });
 afterEach(() => { for (const { peer } of peers) peer.dispose(); vi.restoreAllMocks(); });
 
@@ -263,8 +295,18 @@ describe('worker scope', () => {
     expect(connectNativeProcess).toHaveBeenCalledTimes(1);
     await worker.startAttempt(attempt('a1'));
     expect(endpoints()).toEqual(['wss://1.example']);
+    const owner = peers[0]!;
+    expect(owner.peer.requests.map(request => request.command)).toEqual([
+      'scope.interop.prepare', 'scope.interop.adopt', 'scope.configure', 'network.routes.replace',
+    ]);
+    expect(owner.peer.requests[0]!.args).toMatchObject({ source: 'connect', context: 'isolated', endpoint: 'wss://1.example' });
+    expect(chromium.connectOverCDP).toHaveBeenCalledWith(owner.resources!.endpoint, { timeout: expect.any(Number), noDefaults: true });
+    expect(owner.resources!.snapshot()).toMatchObject({ nativeContexts: 1, playwrightContexts: 1, playwrightClients: 1 });
     await worker.endAttempt(cleanup());
+    expect(owner.peer.requests.slice(-2).map(request => request.command)).toEqual(['scope.interop.retire', 'scope.end']);
+    expect(owner.resources!.snapshot()).toMatchObject({ nativeContexts: 0, playwrightContexts: 0, playwrightClients: 1, contextCloseEvents: 1 });
     await worker.dispose(cleanup());
+    expect(owner.resources!.snapshot()).toMatchObject({ playwrightClients: 0 });
     // The worker acquired nothing of its own, so it released nothing.
     expect(cloud.acquired).toHaveLength(2);
     expect(cloud.released).toEqual([]);
@@ -566,6 +608,8 @@ describe('attempt scope', () => {
     const worker = new NativeSurface({ browser: cloud.impl });
     await worker.init(initInfo(0, (await prepared(cloud.impl, 1)).env));
     await expect(worker.startAttempt(attempt('a1'))).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(chromium.connectOverCDP).not.toHaveBeenCalled();
+    expect(peers[0]!.resources!.snapshot()).toMatchObject({ nativeContexts: 0, playwrightContexts: 0, playwrightClients: 0 });
     expect(cloud.acquired).toHaveLength(1);
     expect(cloud.released).toEqual([]);
     const ended = await worker.endAttempt(cleanup()).then(() => ({ ok: true }), (cause: unknown) => ({ ok: false, cause }));
@@ -1232,4 +1276,86 @@ it.each(['same-turn', 'one-reaction', 'same-turn-repeat'] as const)('retirement:
     const failure = await receipt; expect((failure as Error).message).toContain(primary.message); expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
     await expect(worker.dispose(cleanup())).rejects.toBe(failure);
   } finally { rejectRelease(primary); rejectStop(secondary); await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo()); }
+});
+
+/** Probes operate through NativeSurface; only the exact old PW close receipt is held. */
+function deferredProbe<T>() {
+  let resolve!: (value: T) => void; let reject!: (cause: unknown) => void;
+  const promise = new Promise<T>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
+  return { promise, resolve, reject };
+}
+const probeCleanup = (): EngineCleanupContext => ({ timeoutMs: 5_000, signal: new AbortController().signal });
+
+async function replacementWithHeldClose() {
+  const cloud = provider(); const { runner, env } = await prepared(cloud.impl, 1);
+  const worker = new NativeSurface({ browser: cloud.impl });
+  await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.endAttempt(probeCleanup());
+  const old = peers[0]!;
+  const raw = await vi.mocked(chromium.connectOverCDP).mock.results[0]!.value;
+  const close = raw.close.bind(raw); const held = deferredProbe<void>();
+  const closing = vi.spyOn(raw, 'close').mockImplementation(async () => { await held.promise; await close(); });
+  await old.dropBrowser();
+  const starting = worker.startAttempt(attempt('a2')).then(() => undefined, (cause: unknown) => cause);
+  await vi.waitFor(() => expect(closing).toHaveBeenCalledTimes(1));
+  return { cloud, runner, worker, old, raw, held, closing, starting };
+}
+
+function expectReplacementStillFenced(state: Awaited<ReturnType<typeof replacementWithHeldClose>>) {
+  expect(state.cloud.acquired).toHaveLength(1);
+  expect(connectNativeProcess).toHaveBeenCalledTimes(1);
+  expect(chromium.connectOverCDP).toHaveBeenCalledTimes(1);
+  expect(state.closing).toHaveBeenCalledTimes(1);
+  expect(state.old.peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(state.old.resources!.snapshot()).toMatchObject({ nativeContexts: 0, playwrightContexts: 0, playwrightClients: 1 });
+}
+
+it('does not acquire or dial the replacement until the exact old PW close resolves', async () => {
+  const state = await replacementWithHeldClose();
+  try {
+    expectReplacementStillFenced(state);
+    let completed = false; void state.starting.then(() => { completed = true; });
+    await new Promise(resolve => setImmediate(resolve)); expect(completed).toBe(false);
+    expectReplacementStillFenced(state);
+    state.held.resolve(); expect(await state.starting).toBeUndefined();
+    expect(state.cloud.acquired).toHaveLength(2); expect(chromium.connectOverCDP).toHaveBeenCalledTimes(2);
+    expect(state.old.resources!.snapshot()).toMatchObject({ playwrightClients: 0 });
+    await state.worker.dispose(probeCleanup());
+    expect(state.cloud.released.map(lease => lease.id)).toEqual(['lease-1']);
+  } finally { state.held.resolve(); await state.starting; await state.worker.dispose(probeCleanup()).catch(() => undefined); await state.runner.finish(finishInfo()); }
+});
+
+it.each(['endAttempt', 'dispose', 'both'] as const)('concurrent %s joins a held old PW close with enough cleanup budget and cannot acquire a replacement', async kind => {
+  const state = await replacementWithHeldClose();
+  const cleanups: Promise<void>[] = []; let completed = 0;
+  try {
+    expectReplacementStillFenced(state);
+    if (kind !== 'dispose') cleanups.push(state.worker.endAttempt(probeCleanup()).then(() => { completed++; }));
+    if (kind !== 'endAttempt') cleanups.push(state.worker.dispose(probeCleanup()).then(() => { completed++; }));
+    await new Promise(resolve => setImmediate(resolve));
+    expect(completed).toBe(0); expectReplacementStillFenced(state);
+    state.held.resolve();
+    expect(await state.starting).toMatchObject({ code: 'CANCELLED' });
+    await Promise.all(cleanups); expect(completed).toBe(cleanups.length);
+    expect(state.cloud.acquired).toHaveLength(1); expect(chromium.connectOverCDP).toHaveBeenCalledTimes(1);
+    expect(state.closing).toHaveBeenCalledTimes(1);
+    expect(state.old.resources!.snapshot()).toMatchObject({ playwrightClients: 0 });
+  } finally { state.held.resolve(); await state.starting; await Promise.allSettled(cleanups); await state.worker.dispose(probeCleanup()).catch(() => undefined); await state.runner.finish(finishInfo()); }
+});
+
+it('retains an actual old PW close rejection for concurrent and repeated cleanup without acquiring a replacement', async () => {
+  const state = await replacementWithHeldClose();
+  const primary = new Error('exact old PW disconnect failed');
+  const ending = state.worker.endAttempt(probeCleanup()).catch((cause: unknown) => cause);
+  const disposal = state.worker.dispose(probeCleanup()).catch((cause: unknown) => cause);
+  try {
+    await new Promise(resolve => setImmediate(resolve)); expectReplacementStillFenced(state);
+    state.held.reject(primary);
+    expect(await state.starting).toBe(primary); expect(await ending).toBe(primary); expect(await disposal).toBe(primary);
+    await expect(state.worker.dispose(probeCleanup())).rejects.toBe(primary);
+    await expect(state.worker.endAttempt(probeCleanup())).rejects.toBe(primary);
+    await expect(state.worker.startAttempt(attempt('a3'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expectReplacementStillFenced(state);
+    // Failed PW disconnect is custody, not a synthetic disconnect or close event.
+    expect(state.raw.isConnected()).toBe(true);
+  } finally { state.held.reject(primary); await state.starting; await ending; await disposal; await state.runner.finish(finishInfo()); }
 });

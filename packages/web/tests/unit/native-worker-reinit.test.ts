@@ -1,9 +1,11 @@
 /** Worker re-init uses the actual surface and framed client, not a simulated lifecycle. */
-import { expect, it, beforeEach, vi } from 'vitest';
+import { expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import type { EngineInitInfo, OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 
@@ -21,18 +23,24 @@ beforeEach(() => {
   peers = []; unknownScopeEnd = false;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (config, context, onEvent) => {
     const worker = peers.length + 1; let scopes = 0;
+    const resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/browser', browserIdentity: `browser-${worker}`, allocateScopeIdentity: () => `worker-${worker}-scope-${++scopes}`, allocateContextIdentity: allocation => ({ contextId: `context-${worker}-${allocation}`, targetId: `page-${worker}-${allocation}` }) });
+    vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
     const peer = new NativeProtocolPeer(config.capabilities, request => {
-      // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
-      if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-      if (request.command === 'scope.open') return { data: { identityScope: `worker-${worker}-scope-${++scopes}`, recoveryIdentity: { browser: `browser-${worker}`, context: `context-${worker}-${scopes}`, page: `page-${worker}-${scopes}` } } };
-      if (request.command === 'page.title') return { data: { title: `worker-${worker}` } };
       if (request.command === 'scope.end' && unknownScopeEnd) return { error: 'browser-failure', effects: 'unknown', scopeState: 'quarantined' };
-      return { data: null };
-    });
+      return resources.respond(request, request => {
+        // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
+        if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
+        if (request.command === 'page.title') return { data: { title: `worker-${worker}` } };
+        if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
+        return undefined;
+      });
+    }, { close: () => resources.closeNative() });
     peers.push(peer);
     return peer.connect(context, onEvent);
   });
 });
+
+afterEach(() => { vi.restoreAllMocks(); for (const peer of peers) peer.dispose(); });
 
 it('relaunches the same surface after two disposes without reusing its closed browser', async () => {
   const surface = new NativeSurface({});
@@ -43,7 +51,7 @@ it('relaunches the same surface after two disposes without reusing its closed br
     await surface.startAttempt(attempt('second'));
     await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'worker-2' });
     expect(peers).toHaveLength(2);
-    expect(peers.map(peer => peer.requests.find(request => request.command === 'scope.open')?.args['source'])).toEqual(['launch', 'launch']);
+    expect(peers.map(peer => peer.requests.find(request => request.command === 'scope.interop.prepare')?.args['source'])).toEqual(['launch', 'launch']);
     expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   } finally { await surface.dispose(cleanup()); }
 });
@@ -114,7 +122,7 @@ it('does not let a retired endpoint resolution publish into a newly initialized 
     await new Promise<void>(resolve => setImmediate(resolve));
     await surface.startAttempt(attempt('new-owner'));
     expect(peers).toHaveLength(1);
-    expect(peers[0]!.requests.find(request => request.command === 'scope.open')?.args).toMatchObject({ source: 'connect', endpoint: 'ws://synthetic.test/new-worker' });
+    expect(peers[0]!.requests.find(request => request.command === 'scope.interop.prepare')?.args).toMatchObject({ source: 'connect', endpoint: 'ws://synthetic.test/new-worker' });
   } finally { await surface.dispose(cleanup()); }
 });
 
@@ -130,7 +138,9 @@ it('does not let a retired script read overwrite the newly initialized worker sc
     oldSource.resolve('retired-worker-source');
     await new Promise<void>(resolve => setImmediate(resolve));
     await surface.startAttempt(attempt('new-owner'));
-    expect(peers[0]!.requests.find(request => request.command === 'scope.open')?.args['initScripts']).toEqual(['new-worker-source\n//# sourceURL=/current/boot.js']);
+    expect(peers[0]!.requests.find(request => request.command === 'scope.interop.prepare')?.args['initScripts']).toEqual([]);
+    const browser = await vi.mocked(chromium.connectOverCDP).mock.results[0]!.value;
+    expect(browser.contexts()[0]!.addInitScript).toHaveBeenCalledExactlyOnceWith('new-worker-source\n//# sourceURL=/current/boot.js');
   } finally { oldSource.resolve('retired-worker-source'); read.mockReset(); await surface.dispose(cleanup()); }
 });
 
@@ -151,7 +161,7 @@ it('initializes a fresh worker after disposal confirms cleanup but still reports
     await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'worker-2' });
     expect(peers).toHaveLength(2);
     expect(() => oldFixture.identityScope).toThrow();
-    expect(peers.map(peer => peer.requests.find(request => request.command === 'scope.open')?.args['source'])).toEqual(['launch', 'launch']);
+    expect(peers.map(peer => peer.requests.find(request => request.command === 'scope.interop.prepare')?.args['source'])).toEqual(['launch', 'launch']);
     expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   } finally { await surface.dispose(cleanup()); }
 });

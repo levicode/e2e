@@ -8,7 +8,7 @@ import { decodeBrowserResult } from './browser-decode.ts';
 import { decodeEngineResult } from './engine-decode.ts';
 import { QUERY_UNION_CAPABILITY } from './capabilities.ts';
 import type { EngineCommandMap, NativeBlob, NativeTraceImage } from './engine-contract.ts';
-import type { NativeClient } from './client.ts';
+import { isClosedFrameCancellation, type NativeClient, type InteropReplacementHandler } from './client.ts';
 import { frameQuerySnapshot, queryDiagnostic, queryUsesUnion, type FrameQueryDiagnostic } from './query-diagnostic.ts';
 
 function captureActionErrorContext(action: EngineCommandMap['browser.perform']['args']['action'] | undefined): NativeActionErrorContext | undefined {
@@ -40,9 +40,9 @@ export function isUnavailableBlobRead(cause: unknown): boolean {
 export class EngineChannel {
   constructor(private readonly client: NativeClient, private readonly captureScope: (scope: string) => () => boolean = () => () => true) {}
 
-  command(name: 'capture.screenshot', args: EngineCommandMap['capture.screenshot']['args'] & { readonly purpose: 'trace' }, operation: OperationContext, callbackTransition?: number): Promise<NativeTraceImage>;
-  command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number): Promise<EngineCommandMap[K]['result']>;
-  async command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number): Promise<EngineCommandMap[K]['result']> {
+  command(name: 'capture.screenshot', args: EngineCommandMap['capture.screenshot']['args'] & { readonly purpose: 'trace' }, operation: OperationContext, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<NativeTraceImage>;
+  command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<EngineCommandMap[K]['result']>;
+  async command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<EngineCommandMap[K]['result']> {
     args = { ...args }; // Freeze dispatch purpose before asynchronous native work.
     // Capture only closed action facts before awaiting native authority. Caller
     // mutation cannot change the failure's verb or remove its sensitive marker.
@@ -78,7 +78,8 @@ export class EngineChannel {
       operation = { ...operation, timeoutMs: endsAt - performance.now() };
     }
     // The closed command map contains only structured JSON values.
-    const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
+    const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition, interop);
+    if ((name === 'scope.interop.retire' || name === 'scope.end' || name === 'scope.reset' || name === 'state.restore') && !result.ok && process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] === '1') process.stderr.write(`SCOPE_RETIREMENT_DIAGNOSTIC ${JSON.stringify({ command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
     if (!result.ok && result.effects === 'unknown') throw resultError(result, undefined, undefined, undefined, actionContext);
     // A settled keyboard refusal carries no input prefix. Preserve that exact
@@ -209,7 +210,7 @@ export class EngineChannel {
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const created = await this.browserCommand('blob.create', { size: bytes.length, sha256 }, remaining(), expectedScope);
     let failed = false;
-    let transferred = false;
+    let transferred = false; let closedByReceipt = false;
     try {
       if (created.size !== bytes.length || created.sha256 !== sha256 || created.maxChunkBytes <= 0 || created.maxChunkBytes > 262144) throw this.client.invalidate();
       for (let offset = 0; offset < bytes.length;) {
@@ -225,8 +226,14 @@ export class EngineChannel {
       const result = await work(created.handle, remaining());
       transferred = ownership === 'consume-on-success';
       return result;
-    } catch (cause) { failed = true; throw cause; }
-    finally { if (!transferred) await this.releaseBlob(created.handle, operation, failed, expectedScope, owns); }
+    } catch (cause) { failed = true; closedByReceipt = isClosedFrameCancellation(cause); throw cause; }
+    finally {
+      // A validated terminal replacement has revoked ordinary blob.release.
+      // Its native upload ledger is still owned by terminal Close, not released
+      // or transferred by this branch. Do not invalidate that cleanup authority.
+      const terminalCustody = ownership === 'consume-on-success' && (this.client.isTerminal() || closedByReceipt);
+      if (!transferred && !terminalCustody) await this.releaseBlob(created.handle, operation, failed, expectedScope, owns);
+    }
   }
 
   private async browserCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, expectedScope: string): Promise<BrowserCommandMap[K]['result']> {

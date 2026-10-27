@@ -20,18 +20,39 @@ export class NativeProtocolPeer {
   private readonly input: Writable;
   private eventSequence = 0;
   private readonly handled = new Map<number, () => void>();
+  private readonly decisionTokens = new Set<string>();
+  private readonly pendingDecisions = new Map<string, { expiresAt: number; resolve: (decision: Record<string, JsonValue>) => void; reject: (cause: Error) => void }>();
 
-  constructor(private readonly capabilities: readonly string[], request: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome>) {
+  constructor(private readonly capabilities: readonly string[], request: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome>, lifecycle: { readonly close?: () => void } = {}) {
     this.input = new Writable({ write: (chunk: Buffer, _encoding, done) => {
       try {
         const frame = JSON.parse(chunk.toString('utf8')) as Record<string, unknown>;
         this.frames.push(frame);
         if (frame['type'] === 'hello') this.send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic-provider-peer', generation: 1,
           capabilities: this.capabilities, scopeState: 'usable', limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 } });
-        else if (frame['type'] === 'decision') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
+        else if (frame['type'] === 'decision') {
+          if (Object.keys(frame).toSorted().join(',') !== 'decision,generation,id,token,type' || frame['generation'] !== 1 || typeof frame['id'] !== 'string' || frame['id'].length === 0 || typeof frame['token'] !== 'string' || frame['token'].length === 0) throw new Error('Malformed synthetic decision frame');
+          const token = frame['token']; const pending = this.pendingDecisions.get(token);
+          let accepted = !this.decisionTokens.has(token);
+          if (pending !== undefined) {
+            this.pendingDecisions.delete(token);
+            const decision = frame['decision'];
+            accepted = pending.expiresAt > Date.now() && decision !== null && typeof decision === 'object' && !Array.isArray(decision);
+            if (accepted) pending.resolve(decision as Record<string, JsonValue>);
+            else pending.reject(new Error('Synthetic decision token expired or received a malformed decision'));
+          }
+          // Broker consumption wakes the original request before this separate
+          // control receipt; it is not proof that Node has received that ACK.
+          this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted, ...(accepted ? {} : { error: { code: 'invalid-arguments' } }), scopeState: 'usable' });
+        }
         // Native's control lane ACKs cancellation independently of retained work.
         else if (frame['type'] === 'cancel') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
-        else if (frame['type'] === 'close') this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        else if (frame['type'] === 'close') {
+          // Explicit unit resource owners may model terminal native destruction.
+          // Transport dispose/protocol failure must not manufacture this receipt.
+          lifecycle.close?.();
+          this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        }
         else if (frame['type'] === 'request') {
           const call = frame as unknown as PeerRequest;
           this.requests.push(call);
@@ -59,8 +80,21 @@ export class NativeProtocolPeer {
     try { await withTimeout(handled, 1_000, () => new Error('Synthetic native event was not consumed')); } finally { this.handled.delete(sequence); }
   }
 
+  /** Explicit token exchange, including private events consumed inside Node.
+   * Unlike event(), it does not wait for a business onEvent callback. */
+  requestDecision(event: string, payload: Record<string, JsonValue>, decision: { token: string; timeoutMs: number }): Promise<Record<string, JsonValue>> {
+    if (this.output.destroyed || decision.token.length === 0 || this.decisionTokens.has(decision.token) || !Number.isFinite(decision.timeoutMs) || decision.timeoutMs <= 0) throw new Error('Synthetic decision requires a fresh token and its remaining operation budget');
+    this.decisionTokens.add(decision.token);
+    const result = new Promise<Record<string, JsonValue>>((resolve, reject) => this.pendingDecisions.set(decision.token, { expiresAt: Date.now() + decision.timeoutMs, resolve, reject }));
+    this.send({ type: 'event', generation: 1, sequence: ++this.eventSequence, event, payload, decision });
+    return result;
+  }
+
   /** Malformed transport input is never evidence that the leased browser died. */
   protocolFailure(): void { this.output.write('{not a native frame}\n'); }
-  dispose(): void { this.input.destroy(); this.output.destroy(); }
+  dispose(): void {
+    for (const pending of this.pendingDecisions.values()) pending.reject(new Error('Synthetic decision transport disposed before selection'));
+    this.pendingDecisions.clear(); this.input.destroy(); this.output.destroy();
+  }
   private send(message: unknown): void { queueMicrotask(() => { if (!this.output.destroyed) this.output.write(`${JSON.stringify(message)}\n`); }); }
 }

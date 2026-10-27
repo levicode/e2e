@@ -2,12 +2,13 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { PassThrough, Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineHandle, OperationContext, ProviderRecording } from 'e2e/engine';
 import { web } from '../../src/index.ts';
-import { NativeClient } from '../../src/native/client.ts';
+import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -20,20 +21,18 @@ const setupEvents: string[] = [];
 beforeEach(() => {
   activation = 'success'; setupEvents.length = 0;
   vi.mocked(connectNativeProcess).mockImplementation(async (options, context, onEvent) => {
-    const output = new PassThrough();
-    const send = (message: unknown) => queueMicrotask(() => output.write(JSON.stringify(message) + '\n'));
-    const input = new Writable({ write(chunk: Buffer, _encoding, done) {
-      const frame = JSON.parse(chunk.toString()) as Record<string, unknown>;
-      if (frame['type'] === 'hello') send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'provider-peer', generation: 1, capabilities: options.capabilities, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
-      else if (frame['type'] === 'close') send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
-      else if (frame['command'] === 'page.activate') {
+    const resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/browser' });
+    vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
+    const peer = new NativeProtocolPeer(options.capabilities, request => resources.respond(request, request => {
+      if (request.command === 'page.activate') {
         setupEvents.push('activate');
-        send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ...(activation === 'success' ? { ok: true, data: { activated: true }, effects: 'completed' } : { ok: false, error: { code: activation === 'cancel' ? 'cancelled' : 'browser-failure' }, effects: 'not-dispatched' }), scopeState: 'usable' });
+        return activation === 'success' ? { data: { activated: true } }
+          : { error: activation === 'cancel' ? 'cancelled' : 'browser-failure', effects: 'not-dispatched', scopeState: 'usable' };
       }
-      else send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, data: frame['command'] === 'scope.open' ? { identityScope: 'scope-1', recoveryIdentity: { browser: 'browser-1', context: 'context-1', page: 'page-1' } } : null, effects: 'completed', scopeState: 'usable' });
-      done();
-    } });
-    return NativeClient.connect({ readable: output, writable: input, dispose: () => { input.destroy(); output.destroy(); } }, options.capabilities, context, onEvent);
+      if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
+      return undefined;
+    }), { close: () => resources.closeNative() });
+    return peer.connect(context, onEvent);
   });
 });
 
@@ -42,7 +41,7 @@ describe('provider recording lifecycle', () => {
   const engines: EngineHandle[] = [];
   afterEach(async () => {
     try { for (const engine of engines.splice(0)) await engine.dispose!(cleanup()); }
-    finally { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); }
+    finally { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); vi.restoreAllMocks(); }
   });
   async function start(record: () => Promise<ProviderRecording>, release = async () => {}) {
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-provider-video-')); dirs.push(artifactsDir);

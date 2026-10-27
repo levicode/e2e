@@ -14,6 +14,8 @@ import { NativeSurface } from '../../src/native-surface.ts';
 import { web } from '../../src/index.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -24,18 +26,19 @@ const scope = 'video-scope';
 const bytes = Buffer.from('adapter-only finalized video bytes');
 let directory: string;
 beforeEach(() => { vi.clearAllMocks(); directory = mkdtempSync(path.join(tmpdir(), 'native-video-public-')); });
-afterEach(() => { rmSync(directory, { recursive: true, force: true }); });
+afterEach(() => { rmSync(directory, { recursive: true, force: true }); vi.restoreAllMocks(); });
 function segment(ordinal: number): Record<string, JsonValue> {
   return { identityScope: scope, handle: `video-${ordinal}`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), mediaType: 'video/webm', startedAt: `2026-10-21T00:00:0${ordinal}.000Z` };
 }
 function connectPeer(override?: (request: PeerRequest) => PeerOutcome | undefined | Promise<PeerOutcome | undefined>) {
   let peer!: NativeProtocolPeer;
+  const resources = new NativeInteropResources({ browserIdentity: 'browser', allocateScopeIdentity: () => scope, allocateContextIdentity: () => ({ contextId: 'context', targetId: 'page' }) });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
-    peer = new NativeProtocolPeer(config.capabilities, async request => {
+    peer = new NativeProtocolPeer(config.capabilities, request => resources.respond(request, async request => {
       const outcome = await override?.(request);
       if (outcome !== undefined) return outcome;
       switch (request.command) {
-        case 'scope.open': return { data: { identityScope: scope, recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' } } };
         case 'recording.stop': return { data: { identityScope: scope, segments: [] } };
         case 'page.title': return { data: { title: 'recording-survived' } };
         case 'blob.release': return { data: { released: true } };
@@ -44,11 +47,12 @@ function connectPeer(override?: (request: PeerRequest) => PeerOutcome | undefine
           expect(request.args['offset']).toBe(0);
           return { data: { base64: bytes.toString('base64'), nextOffset: bytes.length, eof: true } };
         }
-        case 'scope.configure': case 'network.routes.replace': case 'page.activate':
-        case 'recording.start': case 'scope.end': return { data: null };
+        case 'page.activate': return { data: { activated: true } };
+        case 'scope.configure': case 'network.routes.replace':
+        case 'recording.start': return { data: null };
         default: throw new Error(`Unmodeled video fixture command ${request.command}`);
       }
-    });
+    }), { close: () => resources.closeNative() });
     return peer.connect(context, onEvent);
   });
   return () => peer;
@@ -162,7 +166,7 @@ it('retains the first verified segment and continues the third after the second 
     await expect(surface.stopVideo(operation())).resolves.toEqual([]);
     expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(1);
     expect(peer.requests.filter(request => request.command === 'blob.read').map(request => request.args['handle'])).toEqual(['video-1', 'video-2', 'video-3']);
-    expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(1);
+    expect(peer.requests.filter(request => request.command === 'scope.interop.adopt')).toHaveLength(1);
   } finally { await surface.dispose(operation()); }
 });
 

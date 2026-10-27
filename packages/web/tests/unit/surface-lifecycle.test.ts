@@ -5,10 +5,13 @@ import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { secrets } from 'e2e';
 import { EngineError, type EngineFixtureContext, type OperationContext } from 'e2e/engine';
+import { chromium } from 'playwright-core';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeClient } from '../../src/native/client.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
+import { createReplacementOperation, type ReplacementRequest } from '../helpers/native-interop-replacement.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { FinalizedRecordingPeer, artifactOperation } from '../helpers/native-finalized-recording-peer.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
@@ -27,27 +30,31 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(artifactsDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
 
 // These cases exercise adapter-owned lifecycle through the actual framed client.
 // A synthetic peer acknowledges ownership; it does not prove remote browser cleanup.
 async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurface>[0] = {}, override?: (request: PeerRequest) => PeerOutcome | undefined | Promise<PeerOutcome | undefined>) {
   let peer!: NativeProtocolPeer; let scopes = 0;
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => `scope-${++scopes}` });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
     peer = new NativeProtocolPeer(config.capabilities, async request => {
+      if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') return resources.respond(request);
       const outcome = await override?.(request);
       if (outcome !== undefined) return outcome;
       // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
       if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-      if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
       if (request.command === 'page.title') return { data: { title: 'clean' } };
-      return { data: null };
-    });
+      if (['scope.configure', 'network.routes.replace', 'dialog.register'].includes(request.command)) return { data: null };
+      throw new Error(`Unexpected lifecycle command: ${request.command}`);
+    }, { close: () => resources.closeNative() });
     return peer.connect(context, onEvent);
   });
   const native = new NativeSurface(options);
   await native.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: operation().signal, log: () => undefined });
-  return { native, peer };
+  return { native, peer, resources };
 }
 
 it('keeps a late dialog failure on the attempt that registered it', async () => {
@@ -74,12 +81,15 @@ it('keeps a late dialog failure on the attempt that registered it', async () => 
 
 it('keeps a late route failure on the attempt that registered it', async () => {
   let peer!: NativeProtocolPeer; let scopes = 0;
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => `scope-${++scopes}` });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, context, onEvent) => {
     peer = new NativeProtocolPeer(options.capabilities, request => {
-      if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
+      if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') return resources.respond(request);
       if (request.command === 'page.title') return { data: { title: 'clean' } };
-      return { data: null };
-    });
+      if (['scope.configure', 'network.routes.replace', 'dialog.register'].includes(request.command)) return { data: null };
+      throw new Error(`Unexpected lifecycle command: ${request.command}`);
+    }, { close: () => resources.closeNative() });
     return peer.connect(context, onEvent);
   });
   const native = new NativeSurface({});
@@ -110,7 +120,21 @@ it('keeps a late route failure on the attempt that registered it', async () => {
 // public failed-reset collection without reopening ordinary command authority.
 it('returns the failed replacement immediately then collects its saved local video exactly once without reopening input', async () => {
   let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
-  const peer = new FinalizedRecordingPeer(async request => { if (request.command === 'recording.finalized.read') await held; return undefined; });
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'attempt-scope' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
+  const peer = new FinalizedRecordingPeer(async request => {
+    if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') {
+      const outcome = await resources.respond(request as PeerRequest);
+      return 'data' in outcome
+        ? { ok: true, data: outcome.data, effects: 'completed', scopeState: 'usable' }
+        : { ok: false, error: { code: outcome.error }, effects: outcome.effects ?? 'not-dispatched', scopeState: 'usable' };
+    }
+    if (request.command === 'page.activate') return { ok: true, data: { activated: true }, effects: 'completed', scopeState: 'usable' };
+    if (['scope.configure', 'network.routes.replace', 'recording.start'].includes(request.command)) return { ok: true, data: null, effects: 'completed', scopeState: 'usable' };
+    if (request.command === 'recording.finalized.read') await held;
+    if (['scope.reset', 'recording.finalized.collect', 'recording.finalized.read', 'recording.finalized.release'].includes(request.command)) return undefined;
+    throw new Error(`Unexpected finalized lifecycle command: ${request.command}`);
+  }, undefined, { close: () => resources.closeNative() });
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, event) => peer.connect(config.capabilities, event, context));
   const surface = new NativeSurface({});
   try {
@@ -154,19 +178,31 @@ it.each([
   const fixture = await nativeLifecycle({}, async request => {
     if (request.command === 'browser.keyboard.type') { entered(); return held; }
     if (request.command === 'scope.reset') {
-      return { data: { identityScope: 'scope-2', recoveryIdentity: { browser: 'browser', context: 'context-2', page: 'page-2' } } };
+      const replace = createReplacementOperation(fixture.resources, request as ReplacementRequest, (payload, timeoutMs) => fixture.peer.requestDecision('scope.interop.replacement', payload, { token: `reset-${request.operationSeq}-${String(payload['phase'])}`, timeoutMs }));
+      return replace('scope-2');
     }
+    if (request.command === 'page.activate') return { data: { activated: true } };
     return undefined;
   });
   try {
     await fixture.native.startAttempt({ attemptId: 'a1', artifactsDir, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    const original = fixture.resources.currentIdentity()!;
     const published = vi.fn();
     const controller = new AbortController();
     const pending = fixture.native.typeText('replacement', { replace: true }, { ...operation(), signal: controller.signal }).then(published);
     const rejected = expect(pending).rejects.toMatchObject({ code: expected });
     void rejected.catch(() => undefined);
     await reached;
-    try { await fixture.native.reset(operation()); }
+    try {
+      await fixture.native.reset(operation());
+      const replacement = fixture.resources.currentIdentity()!;
+      expect(replacement.contextId).not.toBe(original.contextId);
+      expect(fixture.resources.events).toContain(`native-context-destroyed:${original.contextId}`);
+      expect(fixture.resources.events.filter(event => event.startsWith('pw-context-created:'))).toEqual([`pw-context-created:${original.contextId}`, `pw-context-created:${replacement.contextId}`]);
+      expect(fixture.resources.snapshot()).toMatchObject({ nativeContexts: 1, playwrightContexts: 1, contextCloseEvents: 1 });
+      // These model-only receipts are produced by the actual old PW close and
+      // new allocation decisions, never by native-only wrapper substitution.
+    }
     finally { if (aborted) controller.abort(); release({ error: reason, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' }); }
     await rejected;
     expect(published).not.toHaveBeenCalled();
@@ -190,7 +226,8 @@ it('opens no session for an attempt the runner gave up on while its basic-auth p
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(peer.requests).toHaveLength(0);
     await native.startAttempt({ attemptId: 'next', artifactsDir, signal: operation().signal, resolveSecret: async () => 'next-password', ...ignoreTrace });
-    expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(1);
+    expect(peer.requests.filter(request => request.command === 'scope.interop.prepare')).toHaveLength(1);
+    expect(peer.requests.filter(request => request.command === 'scope.interop.adopt')).toHaveLength(1);
     expect(peer.requests.find(request => request.command === 'scope.configure')?.args).toMatchObject({ requestPolicy: { basicAuth: { username: 'ada', password: 'next-password' } } });
     expect(JSON.stringify(peer.frames)).not.toContain('late-password');
   } finally { await native.dispose(cleanup()); }
@@ -226,6 +263,8 @@ it('does not take a success screen or replay settled replacement-prefix cancella
 
 /** Hold one typing result and its cancel ACK through the actual NativeClient. */
 async function nativeFocusCancellation() {
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope-1' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   const output = new PassThrough();
   const frames: Record<string, unknown>[] = [];
   let typingStarted!: (request: PeerRequest) => void;
@@ -250,15 +289,17 @@ async function nativeFocusCancellation() {
         else if (frame['type'] === 'request') {
           const request = frame as unknown as PeerRequest;
           if (request.command === 'browser.keyboard.type') typingStarted(request);
-          else if (request.command === 'scope.open') result(request, { data: { identityScope: 'scope-1', recoveryIdentity: { browser: 'browser', context: 'context-1', page: 'page-1' } } });
+          else if (request.command.startsWith('scope.interop.') || request.command === 'scope.end') {
+            void Promise.resolve(resources.respond(request)).then(outcome => result(request, outcome)).catch(cause => output.destroy(cause instanceof Error ? cause : new Error('Invalid interop fixture response')));
+          }
           else if (request.command === 'browser.observe') result(request, { data: {
             identityScope: 'scope-1', revision: '1', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision: '1' }, role: 'document' },
           } });
           else if (request.command === 'page.title') result(request, { data: { title: 'clean' } });
-          else if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(request.command)) result(request, { data: null });
+          else if (['scope.configure', 'network.routes.replace'].includes(request.command)) result(request, { data: null });
           else throw new Error(`Unexpected focus-cancellation command: ${request.command}`);
         } else if (frame['type'] === 'cancel') cancelStarted(frame);
-        else if (frame['type'] === 'close') send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' });
+        else if (frame['type'] === 'close') { resources.closeNative(); send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); }
         else throw new Error(`Unexpected focus-cancellation frame: ${String(frame['type'])}`);
         done();
       } catch (cause) { done(cause instanceof Error ? cause : new Error('Invalid focus-cancellation frame')); }

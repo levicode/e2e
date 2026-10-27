@@ -43,11 +43,25 @@ interface Pending {
   quarantined?: boolean;
 }
 
+export type InteropReplacementDecision = { readonly kind: 'interop-retired' | 'interop-failed' } | { readonly kind: 'interop-created'; readonly contextId: string; readonly targetId: string };
+export type InteropReplacementNotice = { readonly phase: 'retire'; readonly contextId: string } | { readonly phase: 'create' };
+/** Private exact-operation callback, not an authorization interface or user handler. */
+export type InteropReplacementHandler = (notice: InteropReplacementNotice, respond: (decision: InteropReplacementDecision) => Promise<void>) => Promise<void>;
+interface InteropReplacement {
+  readonly operationSeq: number;
+  readonly operation: OperationContext;
+  readonly handler: InteropReplacementHandler;
+  phase: 'retire' | 'retiring' | 'create' | 'creating' | 'done';
+  pending: number;
+  readonly settlements: Set<Promise<void>>;
+}
+
 interface CallbackTransition {
   readonly epoch: number;
   readonly scope: string | undefined;
   readonly command: string;
   readonly retired: Promise<boolean>;
+  interop?: InteropReplacement;
   complete(retired: boolean): void;
 }
 
@@ -183,6 +197,7 @@ export class NativeClient {
     this.assertUsable();
     if (epoch !== this.callbackEpoch || epoch === Number.MAX_SAFE_INTEGER || (proof !== 'selected' && this.publishingEpoch !== epoch)) throw this.invalidate();
     if ((proof === 'scope-ended' && this.publishingCommand !== 'scope.end') || (proof === 'scope-reconnected' && this.publishingCommand !== 'scope.reconnect')) throw this.invalidate();
+    if (this.transition?.interop !== undefined && (this.transition.interop.phase !== 'done' || this.transition.interop.pending !== 0)) throw this.invalidate();
     const retiring = [...this.callbacks].filter(callback => callback.epoch === epoch && callback.active);
     if (proof === 'selected' && retiring.some(callback => !callback.selected)) throw this.invalidate();
     for (const callback of retiring) {
@@ -194,6 +209,12 @@ export class NativeClient {
     const replacementPublished = this.publishingEpoch === epoch && (this.publishingCommand === 'scope.reset' || this.publishingCommand === 'state.restore');
     this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(replacementPublished);
     for (const staged of this.stagedEvents.splice(0)) this.dispatchEvent(staged.event, staged.bytes, staged.arrived);
+  }
+
+  /** Join actual private control receipts before publishing the replacement. */
+  interopDecisionSettlement(epoch: number): Promise<void> {
+    if (this.transition?.epoch !== epoch || this.transition.interop === undefined) return Promise.reject(new EngineError('INVALID_STATE', 'No exact interop replacement is pending', { retryable: false }));
+    return Promise.all(this.transition.interop.settlements).then(() => undefined);
   }
 
   /** Only successful whole-scope replacement can retire old download resources. */
@@ -221,7 +242,7 @@ export class NativeClient {
   }
 
   /** Dispatches exactly once; a transport timeout cannot turn an uncertain effect into a retry. */
-  async request(command: string, args: Readonly<Record<string, JsonValue>>, context: OperationContext, callbackTransition?: number): Promise<NativeResult> {
+  async request(command: string, args: Readonly<Record<string, JsonValue>>, context: OperationContext, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<NativeResult> {
     const recovery = this.recovery;
     if (recovery === undefined) this.assertUsable();
     else {
@@ -238,6 +259,10 @@ export class NativeClient {
     if (callback !== undefined) {
       context = { ...context, timeoutMs: Math.min(context.timeoutMs, callback.expiresAt - performance.now()) };
     }
+    if (interop !== undefined && (callbackTransition === undefined || (command !== 'scope.reset' && command !== 'state.restore') || typeof args['identityScope'] !== 'string')) throw new EngineError('INVALID_STATE', 'Only an exact context replacement may own an interop decision', { retryable: false });
+    // Capture/validate caller authority before installing a publication owner.
+    // In particular, an already-expired getter must not strand a transition.
+    const interopDeadline = interop === undefined ? undefined : performance.now() + this.timeout(context);
     if (callbackTransition !== undefined) {
       if (callbackTransition !== this.callbackEpoch || this.transition !== undefined) throw this.invalidate();
       let complete!: (retired: boolean) => void;
@@ -245,6 +270,11 @@ export class NativeClient {
       this.transition = { epoch: callbackTransition, scope: typeof args['identityScope'] === 'string' ? args['identityScope'] : undefined, command, retired, complete };
     }
     const sequence = ++this.operationSeq;
+    if (interop !== undefined) {
+      const deadline = interopDeadline!;
+      const operation: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: context.signal, get timeoutMs() { return Math.max(0, deadline - performance.now()); } };
+      this.transition!.interop = { operationSeq: sequence, operation, handler: interop, phase: 'retire', pending: 0, settlements: new Set() };
+    }
     if (recovery !== undefined) recovery.claimed = true;
     let message: ServerMessage;
     try {
@@ -589,6 +619,10 @@ export class NativeClient {
 
   /** Post-ACK events wait for adapter publication, without delaying pre-ACK decisions. */
   private dispatchEvent(message: NativeEvent, bytes: number, arrived: number): void {
+    if (message.event === 'scope.interop.replacement') {
+      this.dispatchInteropReplacement(message, bytes);
+      return;
+    }
     const ownsRecovery = this.recoveryRevocationGuard();
     const publication = this.publicationEpoch;
     const payload = message.payload;
@@ -621,6 +655,51 @@ export class NativeClient {
       }
       return callback === undefined ? this.onEvent(message) : this.callback.run(callback, () => this.onEvent(message));
     }).catch(() => { if (ownsDelivery() && (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch))) this.fail('The native browser event handler failed'); }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
+  }
+
+  private dispatchInteropReplacement(message: NativeEvent, bytes: number): void {
+    const release = () => { this.activeEvents--; this.eventBytes -= bytes; };
+    const transition = this.transition;
+    const owner = transition?.interop;
+    const payload = message.payload;
+    if (this.failure !== undefined || this.terminal || this.closing !== undefined || this.closed || owner === undefined || transition === undefined
+      || message.decision === undefined || payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      release(); this.fail('The native interop decision has no live replacement owner'); return;
+    }
+    const data = payload as Record<string, unknown>;
+    const phase = data['phase'];
+    const retire = phase === 'retire';
+    const keys = retire ? 'contextId,identityScope,operationSeq,phase,version' : 'identityScope,operationSeq,phase,version';
+    if (Object.keys(data).toSorted().join(',') !== keys || data['version'] !== 1 || data['operationSeq'] !== owner.operationSeq
+      || data['identityScope'] !== transition.scope || (phase !== 'retire' && phase !== 'create') || owner.phase !== phase
+      || ![...this.pending.values()].some(pending => pending.kind === 'request' && pending.operationSeq === owner.operationSeq && pending.command === transition.command && pending.identityScope === transition.scope)
+      || (retire && (typeof data['contextId'] !== 'string' || data['contextId'].length === 0 || data['contextId'].length > 1024 || /\p{Cc}/u.test(data['contextId'])))) {
+      release(); this.fail('The native interop decision did not match its exact operation and phase'); return;
+    }
+    const notice: InteropReplacementNotice = retire ? { phase: 'retire', contextId: data['contextId'] as string } : { phase: 'create' };
+    owner.phase = retire ? 'retiring' : 'creating'; owner.pending++;
+    let responded = false;
+    const token = message.decision.token;
+    const respond = async (decision: InteropReplacementDecision): Promise<void> => {
+      if (responded || this.transition !== transition || this.failure !== undefined || this.terminal || this.closing !== undefined || this.closed) throw new EngineError('INVALID_STATE', 'The native replacement decision is no longer available', { retryable: false });
+      if (decision.kind !== 'interop-failed' && decision.kind !== (retire ? 'interop-retired' : 'interop-created')) throw new EngineError('INVALID_STATE', 'The replacement decision has the wrong phase', { retryable: false });
+      const left = this.timeout(owner.operation); // Ordinary effect authority ends here.
+      responded = true;
+      // Native may enqueue the next stage before this control ACK reaches Node.
+      // Its token still expires at the ORIGINAL native operation deadline.
+      owner.phase = decision.kind === 'interop-failed' ? 'done' : retire ? 'create' : 'done';
+      const receipt: OperationContext = { runId: owner.operation.runId, attemptId: owner.operation.attemptId, origin: owner.operation.origin, signal: new AbortController().signal, timeoutMs: Math.min(MAX_TIMEOUT_MS, left + 5000) };
+      const result = await this.exchange('decision', { type: 'decision', generation: message.generation, token, decision }, receipt);
+      if (result.type !== 'control-result') throw this.invalidate();
+      if (!result.accepted) throw rejectedDecision(new EngineError('ENGINE_FAILURE', 'The native replacement decision was expired or rejected', { retryable: false }));
+    };
+    // The owning surface retains this whole promise in its existing attempt
+    // journal. No generic callback timer may preempt the mutation's outcome.
+    const work = Promise.resolve().then(() => owner.handler(notice, respond)).finally(() => { owner.pending--; release(); });
+    owner.settlements.add(work);
+    // The captured surface owns actual failure; keep it available for its
+    // publication join without turning it into generic transport failure.
+    void work.catch(() => {});
   }
 
   private dispose(): void {

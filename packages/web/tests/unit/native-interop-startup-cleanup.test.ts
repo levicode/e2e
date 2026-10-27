@@ -3,16 +3,17 @@
 import { PassThrough, Writable } from 'node:stream';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EngineAttemptContext, EngineInitInfo } from 'e2e/engine';
+import { EngineError, type EngineAttemptContext, type EngineInitInfo, type OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
+import { connectionWaitDeparture } from '../../src/operation-budget.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
-import { connectPlaywrightClient, createPlaywrightContext, type PlaywrightBinding } from '../../src/native/playwright-binding.ts';
+import { bindExistingPlaywrightPage, connectPlaywrightClient, createPlaywrightContext, type PlaywrightBinding } from '../../src/native/playwright-binding.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-native' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 vi.mock('../../src/native/playwright-binding.ts', () => ({
-  connectPlaywrightClient: vi.fn(), createPlaywrightContext: vi.fn(),
+  connectPlaywrightClient: vi.fn(), createPlaywrightContext: vi.fn(), bindExistingPlaywrightPage: vi.fn(),
   bindPersistentPlaywrightContext: vi.fn(), disconnectedBindingMode: vi.fn(),
 }));
 function deferred<T>() {
@@ -35,6 +36,9 @@ function fixture() {
   const created = deferred<void>();
   const creationReturn = deferred<void>();
   let holdCreation = false;
+  let client: NativeClient;
+  let holdIdentify = false; let finishIdentifyError: (() => void) | undefined;
+  let holdRestart = false; let finishRestartUnknown: (() => void) | undefined; let finishRestartSuccess: (() => void) | undefined;
   let acceptAdopt = false;
   let holdContextClose = false;
   let rejectRetire = false;
@@ -50,7 +54,10 @@ function fixture() {
     isConnected: () => connected,
     close: async () => { calls.push('pw-close'); await rawJoin.promise; connected = false; contexts = 0; calls.push('pw-joined'); contextCloseJoin.resolve(); },
   } as unknown as Browser;
-  const binding: PlaywrightBinding = { browser, context, page: {} as Page, kind: 'isolated', contextId: 'own-context', targetId: 'own-page' };
+  const binding: PlaywrightBinding = { browser, context, page: { setViewportSize: async () => {}, emulateMedia: async () => {} } as unknown as Page, kind: 'isolated', contextId: 'own-context', targetId: 'own-page' };
+  const replacementPage = { setViewportSize: vi.fn(async () => { calls.push('viewport'); }), emulateMedia: vi.fn(async () => { calls.push('media'); }) } as unknown as Page;
+  const replacement: PlaywrightBinding = { ...binding, page: replacementPage, targetId: 'replacement-page' };
+  vi.mocked(bindExistingPlaywrightPage).mockImplementation(async () => { calls.push('bind-replacement'); return replacement; });
   vi.mocked(connectPlaywrightClient).mockResolvedValue(browser);
   vi.mocked(createPlaywrightContext).mockImplementation(async () => {
     contexts++; calls.push('pw-created'); created.resolve();
@@ -78,18 +85,38 @@ function fixture() {
         } else if (command === 'scope.interop.adopt') {
           if (acceptAdopt) reply({ ok: true, effects: 'completed', data: { identityScope: 'own-scope', recoveryIdentity: { browser: 'browser-owner', context: 'own-context', page: 'own-page' } } });
           else pending.set(command, reject);
+        } else if (command === 'scope.restart') {
+          calls.push('restart');
+          const success = () => reply({ ok: true, effects: 'completed', data: { identityScope: 'own-scope', recoveryIdentity: { browser: 'browser-owner', context: 'own-context', page: 'replacement-page' } } });
+          if (holdRestart) {
+            finishRestartUnknown = () => reply({ ok: false, error: { code: 'deadline-exceeded' }, effects: 'unknown', scopeState: 'quarantined' });
+            finishRestartSuccess = success;
+          } else success();
+        } else if (command === 'scope.interop.identify') {
+          calls.push('identify'); if (holdIdentify) { finishIdentifyError = () => reject('deadline-exceeded'); } else reply({ ok: true, effects: 'completed', data: { contextId: 'own-context', targetId: 'replacement-page', persistent: false } });
+        } else if (command === 'recording.finalized.collect') {
+          // This framed peer has no encoder output. A terminal read is refused
+          // with its real quarantined shape, never an ordinary usable null ACK.
+          reply({ ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'quarantined' });
         } else if (command === 'scope.interop.retire' && rejectRetire) reject('cancelled');
         else reply({ ok: true, effects: 'completed', data: null });
       }
       done();
     } });
-    return NativeClient.connect({ readable: output, writable: input,
+    client = await NativeClient.connect({ readable: output, writable: input,
       settle: async () => { calls.push('native-settle'); await nativeJoin.promise; prepared = false; calls.push('native-joined'); },
       dispose: () => { calls.push('native-dispose'); input.destroy(); output.destroy(); },
     }, options.capabilities, operation, onEvent);
+    return client;
   });
   return {
     calls, frames, nativeJoin, rawJoin, created, creationReturn, rawContextClose, contextCloseJoin,
+    replacement, client: () => client,
+    holdIdentify: () => { holdIdentify = true; },
+    finishIdentifyError: () => { if (!finishIdentifyError) throw new Error('identify not dispatched'); finishIdentifyError(); },
+    holdRestart: () => { holdRestart = true; },
+    finishRestartUnknown: () => { if (finishRestartUnknown === undefined) throw new Error('restart was not dispatched'); finishRestartUnknown(); },
+    finishRestartSuccess: () => { if (finishRestartSuccess === undefined) throw new Error('restart was not dispatched'); finishRestartSuccess(); },
     acceptAdopt: () => { acceptAdopt = true; },
     holdContextClose: () => { holdContextClose = true; },
     rejectRetire: () => { rejectRetire = true; },
@@ -287,4 +314,190 @@ it('direct dispose preserves the first raw-close failure even when native settle
   await expect(disposed).rejects.toBe(rawFailure);
   expect(peer.calls).toContain('pw-joined');
   await expect(surface.init(initInfo)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+});
+
+
+const restartOperation = (timeoutMs = 1000): OperationContext => ({ signal: new AbortController().signal, timeoutMs, runId: 'run', attemptId: 'attempt', origin: 'test' });
+it('publishes the same-context replacement and settings before releasing staged callbacks', async () => {
+  peer.acceptAdopt(); await start();
+  const context = surface.requireContext();
+  await surface.command('context.viewport', { width: 777, height: 555 }, restartOperation());
+  await surface.command('context.media', { colorScheme: 'dark' }, restartOperation());
+  await surface.command('context.media', { reducedMotion: 'reduce' }, restartOperation());
+  const original = peer.client().retireCallbacks.bind(peer.client());
+  const callbacks = vi.spyOn(peer.client(), 'retireCallbacks').mockImplementation((epoch, proof) => {
+    expect(surface.requirePage()).toBe(peer.replacement.page);
+    expect(surface.requireContext()).toBe(context);
+    peer.calls.push('callbacks'); return original(epoch, proof);
+  });
+  await surface.restart(restartOperation());
+  callbacks.mockRestore();
+  expect(bindExistingPlaywrightPage).toHaveBeenCalledWith(expect.objectContaining({ context }), { contextId: 'own-context', targetId: 'replacement-page', persistent: false }, expect.anything());
+  expect(peer.calls.filter(call => ['restart', 'identify', 'bind-replacement', 'viewport', 'media', 'callbacks'].includes(call))).toEqual(['restart', 'identify', 'bind-replacement', 'viewport', 'media', 'callbacks']);
+  expect(peer.replacement.page.setViewportSize).toHaveBeenCalledWith({ width: 777, height: 555 });
+  expect(peer.replacement.page.emulateMedia).toHaveBeenCalledWith({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  expect(surface.requirePage()).toBe(peer.replacement.page);
+});
+it('ACK then bind timeout does not replay restart or publish a Page, and terminal cleanup joins its actual receipt', async () => {
+  peer.acceptAdopt(); await start();
+  const binding = deferred<PlaywrightBinding>(); vi.mocked(bindExistingPlaywrightPage).mockReturnValue(binding.promise);
+  let failure: unknown;
+  await surface.restart(restartOperation(30)).catch(cause => { failure = cause; });
+  expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+  expect(bindExistingPlaywrightPage).toHaveBeenCalledTimes(1);
+  expect(() => surface.requirePage()).toThrow(expect.objectContaining({ code: 'INVALID_STATE' }));
+  await expect(surface.captureState(restartOperation())).rejects.toBe(failure);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  expect(peer.frames.some(frame => frame['command'] === 'state.capture')).toBe(false);
+  const ending = surface.endAttempt({ ...cleanup(), timeoutMs: 20 }); void ending.catch(() => {});
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  expect(peer.calls).not.toContain('native-dispose'); expect(peer.calls).not.toContain('pw-close');
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+  peer.rawJoin.resolve(); await ending;
+  await expect(surface.init(initInfo)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  const actualReceipt = new EngineError('CANCELLED', 'retained test binding departed', { retryable: false });
+  binding.reject(actualReceipt);
+  // The caller still received its original timeout; cleanup reports the later
+  // actual receipt, not that provisional wait departure.
+  await expect(surface.endAttempt(cleanup())).rejects.toBe(actualReceipt);
+  expect(peer.calls).toContain('native-joined'); expect(peer.calls).toContain('pw-joined');
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(peer.frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+it('concurrent endAttempt retains a post-ACK bind after clearing the active attempt', async () => {
+  peer.acceptAdopt(); await start();
+  const binding = deferred<PlaywrightBinding>(); vi.mocked(bindExistingPlaywrightPage).mockReturnValue(binding.promise);
+  const restarting = surface.restart(restartOperation()); void restarting.catch(() => {});
+  await expect.poll(() => vi.mocked(bindExistingPlaywrightPage).mock.calls.length).toBe(1);
+  await surface.endAttempt({ ...cleanup(), timeoutMs: 10 });
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+  peer.rawJoin.resolve(); binding.resolve(peer.replacement);
+  await expect(restarting).rejects.toMatchObject({ code: 'CANCELLED' });
+  await surface.endAttempt(cleanup());
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  expect(peer.replacement.page.setViewportSize).not.toHaveBeenCalled();
+  expect(peer.calls).toContain('pw-joined'); expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+
+it('does not turn a dispatched restart into a local safe timeout before its actual Unknown outcome', async () => {
+  peer.acceptAdopt(); peer.holdRestart(); await start();
+  let settled = false; let outcome: unknown;
+  const restarting = surface.restart(restartOperation(25)).then(() => { settled = true; }, cause => { settled = true; outcome = cause; });
+  await expect.poll(() => peer.calls.includes('restart')).toBe(true);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(peer.calls).toContain('cancel');
+    expect(settled).toBe(false);
+    expect(peer.calls).not.toContain('native-close'); expect(peer.calls).not.toContain('pw-close');
+  } finally { peer.finishRestartUnknown(); await restarting; }
+  expect(outcome).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+  expect(bindExistingPlaywrightPage).not.toHaveBeenCalled();
+  await expect(surface.captureState(restartOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  const ended = surface.endAttempt(cleanup()); void ended.catch(() => {});
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  expect(peer.calls).not.toContain('pw-close');
+  await expect(surface.init(initInfo)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  expect(connectNativeProcess).toHaveBeenCalledTimes(1);
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+  peer.rawJoin.resolve(); await ended;
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+
+
+it.each(['end', 'dispose'] as const)('adequate-budget %s cancels binding locally but still joins healthy terminal Close', async mode => {
+  peer.acceptAdopt(); await start();
+  vi.mocked(bindExistingPlaywrightPage).mockImplementation((_binding, _ids, active) => new Promise((_resolve, reject) => {
+    const retired = () => reject(connectionWaitDeparture(active.signal, 'test binding'));
+    active.signal.addEventListener('abort', retired, { once: true });
+    if (active.signal.aborted) retired();
+  }));
+  const restarting = surface.restart(restartOperation()); void restarting.catch(() => {});
+  await expect.poll(() => vi.mocked(bindExistingPlaywrightPage).mock.calls.length).toBe(1);
+  const closed = mode === 'end' ? surface.endAttempt(cleanup()) : surface.dispose(cleanup()); void closed.catch(() => {});
+  await expect(restarting).rejects.toMatchObject({ code: 'CANCELLED' });
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  expect(peer.calls).not.toContain('native-dispose'); expect(peer.calls).not.toContain('pw-close');
+  expect(peer.frames.some(frame => frame['command'] === 'scope.interop.retire' || frame['command'] === 'scope.end')).toBe(false);
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+  peer.rawJoin.resolve(); await closed;
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+  // Normal cancellation is not a permanent cleanup failure.
+  await surface.dispose(cleanup()); await surface.init(initInfo);
+});
+it.each(['end', 'dispose'] as const)('adequate-budget %s preserves a real late binding rejection with the same CANCELLED code', async mode => {
+  peer.acceptAdopt(); await start();
+  const binding = deferred<PlaywrightBinding>(); vi.mocked(bindExistingPlaywrightPage).mockReturnValue(binding.promise);
+  const restarting = surface.restart(restartOperation()); void restarting.catch(() => {});
+  await expect.poll(() => vi.mocked(bindExistingPlaywrightPage).mock.calls.length).toBe(1);
+  const closed = mode === 'end' ? surface.endAttempt(cleanup()) : surface.dispose(cleanup()); void closed.catch(() => {});
+  await expect(restarting).rejects.toMatchObject({ code: 'CANCELLED' });
+  const actual = new EngineError('CANCELLED', 'actual PW receipt failed after waiter departure', { retryable: false });
+  binding.reject(actual);
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+  peer.rawJoin.resolve(); await expect(closed).rejects.toBe(actual);
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(peer.frames.some(frame => frame['command'] === 'scope.interop.retire' || frame['command'] === 'scope.end')).toBe(false);
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+it('a native success ACK arriving during retirement cannot drop the continuous restart owner', async () => {
+  peer.acceptAdopt(); peer.holdRestart(); await start();
+  const restarting = surface.restart(restartOperation()); void restarting.catch(() => {});
+  await expect.poll(() => peer.calls.includes('restart')).toBe(true);
+  const closed = surface.endAttempt(cleanup()); void closed.catch(() => {});
+  await expect.poll(() => peer.calls.includes('cancel')).toBe(true);
+  peer.finishRestartSuccess();
+  await expect(restarting).rejects.toMatchObject({ code: 'CANCELLED' });
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  expect(bindExistingPlaywrightPage).not.toHaveBeenCalled();
+  expect(peer.frames.some(frame => frame['command'] === 'scope.interop.retire' || frame['command'] === 'scope.end')).toBe(false);
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+  peer.rawJoin.resolve(); await closed;
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+
+
+it.each(['success', 'CANCELLED', 'ENGINE_FAILURE'] as const)('restart caller timeout stays separate from late actual receipt %s', async mode => {
+  peer.acceptAdopt(); await start();
+  const binding = deferred<PlaywrightBinding>(); vi.mocked(bindExistingPlaywrightPage).mockReturnValue(binding.promise);
+  const result = surface.restart(restartOperation(45)).catch(error => error);
+  await expect.poll(() => vi.mocked(bindExistingPlaywrightPage).mock.calls.length).toBe(1);
+  const caller = await result; expect(caller).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  expect(() => surface.requirePage()).toThrow();
+  await expect(surface.captureState(restartOperation())).rejects.toBe(caller);
+  const receipt = mode === 'success' ? undefined : new EngineError(mode, 'late actual restart binding receipt', { retryable: false });
+  if (receipt) binding.reject(receipt); else binding.resolve(peer.replacement);
+  await tick(); peer.nativeJoin.resolve(); peer.rawJoin.resolve();
+  const retired = await surface.endAttempt(cleanup()).catch(error => error); expect(retired).toBe(receipt);
+  const disposed = await surface.dispose(cleanup()).catch(error => error); expect(disposed).toBe(receipt);
+  expect(await result).toBe(caller);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(peer.frames.some(frame => frame['command'] === 'scope.end' || frame['command'] === 'scope.interop.retire')).toBe(false);
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+
+
+it('a late real native timeout receipt is not confused with the provisional waiter timeout', async () => {
+  peer.acceptAdopt(); await start(); peer.holdIdentify();
+  const result = surface.restart(restartOperation(45)).catch(error => error);
+  await expect.poll(() => peer.calls.includes('identify')).toBe(true);
+  const caller = await result; expect(caller).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  const attempt = Reflect.get(surface, 'attempt') as { recoveryFailure: { error: unknown; provisional?: true }; wireRequests: Set<Promise<void>> };
+  expect(attempt.recoveryFailure.provisional).toBe(true); expect(attempt.wireRequests.size).toBeGreaterThan(0);
+  peer.finishIdentifyError(); await tick();
+  expect(attempt.recoveryFailure.provisional).toBeUndefined();
+  const actual = attempt.recoveryFailure.error;
+  expect(actual).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false }); expect(actual).not.toBe(caller);
+  peer.nativeJoin.resolve(); peer.rawJoin.resolve();
+  await expect(surface.endAttempt(cleanup())).rejects.toBe(actual);
+  await expect(surface.dispose(cleanup())).rejects.toBe(actual);
+  expect(await result).toBe(caller);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
 });

@@ -16,9 +16,13 @@ export const QUERY_UNION_CAPABILITY = 'browser.query-union/1';
 /** Observation and trace apply the scope-configured frame-site policy before traversal. */
 export const OBSERVE_FRAME_POLICY_CAPABILITY = 'browser.observe-frame-policy/1';
 
+/** Exact PW-context retirement/adoption within the original reset/restore operation. */
+export const INTEROP_CONTEXT_REPLACEMENT_CAPABILITY = 'browser.interop-context-replacement/1';
+
 /** Full public Web candidate contract. Advertising handlers is not acceptance certification. */
 export const REQUIRED_CAPABILITIES = [
   CONTINUE_EXACT_OWNER_CAPABILITY,
+  INTEROP_CONTEXT_REPLACEMENT_CAPABILITY,
   DISCONNECTED_RECOVERY_CAPABILITY,
   PERSISTENT_PAGE_REOPEN_CAPABILITY,
   TERMINAL_RECORDING_CAPABILITY,

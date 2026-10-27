@@ -30,7 +30,7 @@ export class BrowserChannel {
 
   get identityScope(): string { this.assertScope(); return this.scope; }
 
-  async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
+  async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, beforePagePublication?: () => void): Promise<BrowserCommandMap[K]['result']> {
     if (name === 'download.unsubscribe' || name === 'download.release') {
       this.assertScope();
       // A cancelled read still owns its native request until result and cancel ACK.
@@ -44,10 +44,10 @@ export class BrowserChannel {
         return this.dispatchCommand(name, args, { ...operation, ...remaining() });
       });
     }
-    return this.dispatchCommand(name, args, operation);
+    return this.dispatchCommand(name, args, operation, beforePagePublication);
   }
 
-  private async dispatchCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
+  private async dispatchCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, beforePagePublication?: () => void): Promise<BrowserCommandMap[K]['result']> {
     this.assertScope();
     const correlation = name === 'fixture.correlate' ? { args: snapshotCorrelationArgs(args), identityScope: this.scope } : undefined;
     let settling = this.client.cancelledSettlement(this.scope);
@@ -69,6 +69,14 @@ export class BrowserChannel {
       // receipt must retire this exact channel before it can own this cleanup.
       const retirement = this.client.scopeReplacementRetirement(this.scope);
       if (retirement !== undefined && await retirement && this.retired) return decodeBrowserResult(name, null);
+    }
+    // A page-creating continuation owns its captured attempt across this exact
+    // result. Preserve real failure evidence before local publication checks;
+    // on success let that owner detect retirement before the disposed channel.
+    // No other command acquires this continuation or changes its scope guard.
+    if (name === 'page.navigate' && beforePagePublication !== undefined) {
+      if (!result.ok) throw resultError(result);
+      beforePagePublication();
     }
     // Validated uncertainty survives scope retirement; it never authorizes publication.
     if (!result.ok && result.effects === 'unknown') throw resultError(result);
@@ -161,11 +169,15 @@ function sensitiveActionSuffix(action?: NativeActionErrorContext): string {
 
 /** Static protocol codes only. Never infer retryability from raw backend messages. */
 const cleanRejections = new WeakSet<EngineError | TestError>();
+const usableFailures = new WeakSet<EngineError | TestError>();
+/** Publication may finish a proven page-creation prefix; this grants no replay or native ownership authority. */
+export function isNativeUsableFailure(cause: unknown): boolean { return (cause instanceof EngineError || cause instanceof TestError) && usableFailures.has(cause); }
 /** Internal lifecycle evidence, never inferred from a public error string or caller-supplied code. */
 export function isNativeNotDispatched(cause: unknown): boolean { return (cause instanceof EngineError || cause instanceof TestError) && cleanRejections.has(cause); }
 export function resultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic, actionContext?: NativeActionErrorContext): EngineError | TestError {
   const failure = classifyResultError(result, checkedAction, queryDiagnostic, frameDiagnostic, actionContext);
   if (result.effects === 'not-dispatched' && result.scopeState === 'usable') cleanRejections.add(failure);
+  if (result.effects !== 'unknown' && result.scopeState === 'usable') usableFailures.add(failure);
   return failure;
 }
 function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'uncheck', queryDiagnostic?: QueryDiagnostic, frameDiagnostic?: FrameQueryDiagnostic, actionContext?: NativeActionErrorContext): EngineError | TestError {

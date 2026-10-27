@@ -1,10 +1,12 @@
 /** Deterministic framed-peer adapter witnesses, not native/Chromium capture proof. */
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import { chromium } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsonValue, OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -42,24 +44,26 @@ afterEach(async () => {
   surfaces.clear(); vi.useRealTimers(); vi.restoreAllMocks();
 });
 /** Uses the actual Surface, EngineChannel and NativeClient with controlled wire replies. */
-async function setup(reply: (request: PeerRequest) => PeerOutcome | Promise<PeerOutcome>) {
+async function setup(reply: (request: PeerRequest) => PeerOutcome | Promise<PeerOutcome>, mode: 'isolated' | 'persistent' = 'isolated') {
   let peer!: NativeProtocolPeer;
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, operation, onEvent) => {
     peer = new NativeProtocolPeer(options.capabilities, request => {
-      if (request.command === 'scope.open') return { data: { identityScope: scope, recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' } } };
-      if (['scope.configure', 'network.routes.replace', 'scope.end'].includes(request.command)) return { data: null };
+      if (request.command.startsWith('scope.interop.') || request.command === 'scope.open' || request.command === 'scope.end') return resources.respond(request);
+      if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
       if (request.command === 'browser.perform') return { data: null };
       if (request.command === 'page.title') return { data: { title: 'still usable' } };
       return reply(request);
-    });
+    }, { close: () => resources.closeNative() });
     return peer.connect(operation, onEvent);
   });
   const controller = new AbortController();
   const operation: OperationContext = { signal: controller.signal, timeoutMs: 80, runId: 'run', attemptId: 'attempt', origin: 'agent' };
-  const surface = new NativeSurface({}); surfaces.add(surface);
+  const surface = new NativeSurface(mode === 'persistent' ? { connect: { cdpEndpoint: () => resources.endpoint, reconnectEndpoint: () => resources.endpoint } } : {}); surfaces.add(surface);
   await surface.init({ runId: 'run', targetName: 'fixture', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: controller.signal, log: () => undefined });
   await surface.startAttempt({ attemptId: 'attempt', artifactsDir: tmpdir(), signal: controller.signal, resolveSecret: noSecrets, ...ignoreTrace });
-  return { surface, peer, operation, controller };
+  return { surface, peer, operation, controller, resources };
 }
 
 describe('native optional immutable pixel transfer', () => {
@@ -337,10 +341,15 @@ describe('optional transfer owner retirement', () => {
       if (request.command === 'browser.observe') return { data: snapshot() };
       if (request.command === 'blob.read') return read.promise;
       throw new Error(`Unexpected ${request.command}`);
-    });
+    }, 'persistent');
     const outcome = fixture.surface.observe(fixture.operation, { pixels: true }).catch((cause: unknown) => cause);
     await vi.advanceTimersByTimeAsync(10);
-    await fixture.peer.event('scope.page-reopened', { identityScope: scope, version: 1, previousPageIdentity: 'page', recoveryIdentity: { browser: 'browser', context: 'context', page: 'new-page' } });
+    // A persistent page-reopened notification retires only the old page owner.
+    const previous = fixture.resources.currentIdentity()!.recoveryIdentity;
+    fixture.resources.replaceNativePage(scope, previous.page, 'new-page');
+    expect(fixture.resources.currentIdentity()?.targetId).toBe('new-page');
+    expect(fixture.resources.snapshot().contextCloseEvents).toBe(0);
+    await fixture.peer.event('scope.page-reopened', { identityScope: scope, version: 1, previousPageIdentity: previous.page, recoveryIdentity: { ...previous, page: 'new-page' } });
     await vi.advanceTimersByTimeAsync(69);
     await expect(outcome).resolves.toMatchObject({ code: 'CANCELLED' });
     read.resolve(chunk()); await vi.advanceTimersByTimeAsync(0);
@@ -358,9 +367,15 @@ describe('optional transfer owner retirement', () => {
     });
     const pending = fixture.surface.observe(fixture.operation, { pixels: true });
     await vi.advanceTimersByTimeAsync(79); await pending;
+    const previous = fixture.resources.currentIdentity()!;
     const ending = fixture.surface.endAttempt({ signal: new AbortController().signal, timeoutMs: 1000 });
     read.resolve({ error: 'invalid-arguments' }); await ending;
     await fixture.surface.startAttempt({ attemptId: 'replacement', artifactsDir: tmpdir(), signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    const replacement = fixture.resources.currentIdentity()!;
+    expect(replacement.identityScope).toBe(previous.identityScope);
+    expect(replacement.contextId).not.toBe(previous.contextId);
+    expect(replacement.targetId).not.toBe(previous.targetId);
+    expect(fixture.resources.snapshot().contextCloseEvents).toBe(1);
     await expect(fixture.surface.command('page.title', {}, { ...fixture.operation, attemptId: 'replacement' })).resolves.toMatchObject({ title: 'still usable' });
     expect(fixture.peer.requests.filter(request => request.command === 'blob.release')).toHaveLength(0);
   });

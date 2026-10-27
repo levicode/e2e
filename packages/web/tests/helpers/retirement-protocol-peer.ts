@@ -25,7 +25,7 @@ export class NativeProtocolPeer {
   holdCloseUntil(wait: Promise<void>): void { this.closeWait = wait; }
   private readonly handled = new Map<number, () => void>();
 
-  constructor(private readonly capabilities: readonly string[], request: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome>) {
+  constructor(private readonly capabilities: readonly string[], request: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome>, lifecycle: { readonly close?: () => void } = {}) {
     this.input = new Writable({ write: (chunk: Buffer, _encoding, done) => {
       try {
         const frame = JSON.parse(chunk.toString('utf8')) as Record<string, unknown>;
@@ -35,7 +35,7 @@ export class NativeProtocolPeer {
         else if (frame['type'] === 'decision') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
         // Native's control lane ACKs cancellation independently of retained work.
         else if (frame['type'] === 'cancel') this.send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
-        else if (frame['type'] === 'close') void (this.closeWait ?? Promise.resolve()).then(() => this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }));
+        else if (frame['type'] === 'close') void (this.closeWait ?? Promise.resolve()).then(() => { lifecycle.close?.(); this.send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); }).catch(error => this.output.destroy(error instanceof Error ? error : new Error('Synthetic close failed')));
         else if (frame['type'] === 'request') {
           const call = frame as unknown as PeerRequest;
           this.requests.push(call);

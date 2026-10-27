@@ -72,6 +72,7 @@ function observation(value: unknown): NativeObservation {
 }
 const empty = (value: unknown): null => value === null ? null : invalid();
 const recoveryScope = (value: unknown) => { const item = record(value); const recovery = record(item['recoveryIdentity']); return { ...scoped(item), recoveryIdentity: { browser: identity(recovery['browser']), context: identity(recovery['context']), page: identity(recovery['page']) } }; };
+const replacementScope = (value: unknown) => { const item = record(value); return { ...scoped(item), ...(item['activatePage'] === undefined ? {} : { activatePage: bool(item['activatePage']) }) }; };
 const decoders = {
   'scope.open': recoveryScope,
   'scope.interop.prepare': (value: unknown) => { const item = record(value); if (Object.keys(item).length !== 2) invalid(); return { preparationId: identity(item['preparationId']), endpoint: text(item['endpoint']) }; },
@@ -80,7 +81,7 @@ const decoders = {
   'scope.interop.retire': empty,
   'scope.interop.identify': (value: unknown) => { const item = record(value); if (Object.keys(item).length !== 3) invalid(); return { contextId: identity(item['contextId']), targetId: identity(item['targetId']), persistent: bool(item['persistent']) }; },
   'page.activate': (value: unknown): { activated: true } => { const item = record(value); if (Object.keys(item).length !== 1 || item['activated'] !== true) invalid(); return { activated: true }; },
-  'scope.configure': empty, 'scope.end': empty, 'scope.restart': recoveryScope, 'scope.reset': scoped, 'scope.reconnect': scoped,
+  'scope.configure': empty, 'scope.end': empty, 'scope.restart': recoveryScope, 'scope.reset': replacementScope, 'scope.reconnect': scoped,
   'browser.observe': observation,
   'browser.trace': (value: unknown): NativeObservation => {
     const item = record(value);
@@ -93,7 +94,7 @@ const decoders = {
   'browser.perform': empty, 'browser.pointer': empty, 'browser.keyboard.type': empty, 'browser.keyboard.press': empty,
   'capture.screenshot': image,
   'state.capture': (value: unknown) => { const item = record(value); if (item['format'] !== 'agent-browser-storage-state' || item['version'] !== 1) invalid(); return { ...blob(item), format: 'agent-browser-storage-state' as const, version: 1 as const }; },
-  'state.restore': scoped,
+  'state.restore': replacementScope,
   'recording.start': empty,
   'recording.stop': (value: unknown) => { const item = record(value);
     const missing = Object.hasOwn(item, 'missingSegment');

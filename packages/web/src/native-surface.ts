@@ -2,7 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import type { Browser as PlaywrightBrowser, BrowserContext, Page } from 'playwright-core';
-import { bindPersistentPlaywrightContext, connectPlaywrightClient, createPlaywrightContext, disconnectedBindingMode, type PlaywrightBinding } from './native/playwright-binding.ts';
+import { bindExistingPlaywrightPage, bindPersistentPlaywrightContext, connectPlaywrightClient, createPlaywrightContext, disconnectedBindingMode, type PlaywrightBinding } from './native/playwright-binding.ts';
 import { mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -19,18 +19,18 @@ import {
 import { ConfiguredInitScripts } from './init-scripts.ts';
 import { LeasedBrowsers, type LeaseRecording } from './provider.ts';
 import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app.ts';
-import { connectionAbort, connectionDeadline, connectionWaitDeparture, isLocalBudgetDeparture, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
+import { connectionAbort, connectionCancellation, connectionDeadline, connectionWaitDeparture, isLocalBudgetDeparture, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
-import { BrowserChannel, isNativeNotDispatched } from './native/browser-channel.ts';
+import { BrowserChannel, isNativeNotDispatched, isNativeUsableFailure } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
 import { EngineChannel, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
 import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-aliases.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
 import type { EngineCommandMap, NativeImage, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
-import { isClosedFrameCancellation, type NativeClient } from './native/client.ts';
+import { isClosedFrameCancellation, type NativeClient, type InteropReplacementHandler } from './native/client.ts';
 import { connectNativeProcess } from './native/process.ts';
 import type { NativeEvent } from './native/protocol.ts';
 import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
@@ -48,12 +48,15 @@ interface Attempt {
   ready: boolean;
   pageReady: boolean;
   rawBinding?: PlaywrightBinding;
+  /** Exact native event evidence; PW work uses only its originating mutation budget. */
+  rawReopened?: { readonly binding: PlaywrightBinding; readonly recovery: RecoveryIdentity; readonly scope: string; readonly epoch: number };
   rawOpening?: Promise<void>;
   /** The actual public context.close receipt, retained through caller departure. */
   rawClosing?: Promise<void>;
   /** Prepare ACK owns resources even when the later adopt RPC never dispatches. */
   interopPrepared?: true;
   rawMedia?: ScopeCreationOptions['media'];
+  rawViewport?: ScopeCreationOptions['viewport'];
   readonly context: EngineAttemptContext;
   readonly retirement: AbortController;
   cleanupSignal?: AbortSignal;
@@ -78,7 +81,7 @@ interface Attempt {
   recoveryObservationRequired: boolean;
   recovering?: Promise<void> | undefined;
   /** The recovery owner fails this attempt, not only its current waiters. */
-  recoveryFailure?: { readonly error: unknown };
+  recoveryFailure?: { readonly error: unknown; readonly provisional?: true };
   channel?: BrowserChannel;
   counter: number;
   videoCounter: number;
@@ -214,8 +217,11 @@ export class NativeSurface implements NativeWebSurface {
       if (this.options.basicAuth !== undefined) attempt.credentials = await raceAbort(() => httpCredentials(this.options.basicAuth!, context.resolveSecret), startupSignal, 'resolving browser credentials');
       this.assertAttempt(attempt);
       if (this.workerSourceLost && !this.persistent) {
-        const retiredClient = this.client; this.client = undefined; this.engine = undefined; this.openedBefore = false;
-        await retiredClient?.close(operation);
+        // Retire both transports through their existing exact receipts before
+        // resolving a replacement worker. Keep them published while closing so
+        // concurrent attempt/worker cleanup joins, rather than loses, this owner.
+        const retiredClient = this.client;
+        await this.closeClient(operation, retiredClient);
         this.assertAttempt(attempt);
         this.workerEndpoint = this.leases === undefined
           ? this.options.connect === undefined ? undefined : await this.resolveEndpoint(this.options.connect.cdpEndpoint, startupSignal, 'connect.cdpEndpoint')
@@ -231,6 +237,7 @@ export class NativeSurface implements NativeWebSurface {
       this.assertAttempt(attempt);
       const creation = this.creationOptions();
       attempt.rawMedia = { ...creation.media };
+      attempt.rawViewport = creation.viewport;
       const args: EngineCommandMap['scope.open']['args'] = this.openedBefore && !this.persistent
         ? { ...creation, source: 'reuse', context: 'isolated' }
         : endpoint === undefined
@@ -330,7 +337,7 @@ export class NativeSurface implements NativeWebSurface {
   }
   private retireAttempt(context: EngineCleanupContext): Promise<void> {
     if (this.endingAttempt !== undefined) return this.endingAttempt;
-    if (this.retirementFailure !== undefined && this.retiringAttempt === undefined && this.connecting === undefined) return Promise.reject(this.retirementFailure);
+    if (this.retirementFailure !== undefined && this.attempt === undefined && this.retiringAttempt === undefined && this.connecting === undefined) return Promise.reject(this.retirementFailure);
     let resolve!: () => void; let reject!: (cause: unknown) => void;
     const owned = new Promise<void>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
     // Publish the existing owner before provider code can synchronously re-enter cleanup.
@@ -404,6 +411,10 @@ export class NativeSurface implements NativeWebSurface {
         await raceAbort(() => Promise.all(attempt.wireRequests), cleanup.signal, 'settling retired native requests');
         remaining();
       }
+      // The captured work records failed publication before its receipt settles.
+      // Normal retirement cancellation still needs terminal Close, not a second
+      // callback transition, but is not a failed cleanup receipt.
+      if (attempt?.recoveryFailure !== undefined && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
       if (connecting !== undefined) {
         await raceAbort(() => connecting.work.catch(() => undefined), cleanup.signal, 'retiring native connection');
         remaining();
@@ -433,7 +444,7 @@ export class NativeSurface implements NativeWebSurface {
           await raceAbort(() => retiring, cleanup.signal, 'retiring unread native video handles');
         }
       }
-      if (failure === undefined && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
+      if (failure === undefined && attempt?.recoveryFailure === undefined && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
         const callbackEpoch = client!.callbackCheckpoint();
         if (attempt.rawBinding?.kind === 'isolated') {
           const budget = remaining();
@@ -474,6 +485,7 @@ export class NativeSurface implements NativeWebSurface {
       if (attempt?.rawClosing !== undefined) try { await attempt.rawClosing; } catch (cause) { failed(cause); }
       if (scopeEnd !== undefined) try { await scopeEnd; } catch (cause) { failed(cause, true); }
       if (attempt !== undefined) await Promise.allSettled(attempt.wireRequests);
+      if (attempt?.recoveryFailure !== undefined && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
       if (connecting !== undefined) {
         await connecting.work.catch(() => undefined);
         if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure);
@@ -686,8 +698,12 @@ export class NativeSurface implements NativeWebSurface {
       // The scope/generation-fenced event precedes the caller's result. Keep
       // the same attempt, routes and media; only old page evidence retires.
       if (attempt.epoch === Number.MAX_SAFE_INTEGER) throw this.invalidate();
+      const binding = attempt.rawBinding;
+      if (binding?.kind !== 'persistent' || binding.contextId !== recovery.context || attempt.rawReopened !== undefined) throw this.invalidate();
       attempt.recovery = { browser: previous.browser, context: previous.context, page: recovery.page };
       attempt.epoch += 1;
+      attempt.rawReopened = { binding, recovery: attempt.recovery, scope: attempt.scope, epoch: attempt.epoch };
+      attempt.pageReady = false;
       attempt.recoveryObservationRequired = true;
       delete attempt.observationHighWater;
       return;
@@ -762,7 +778,7 @@ export class NativeSurface implements NativeWebSurface {
     if (timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native browser recovery exhausted the operation budget', { retryable: false });
     const current = { ...operation, get timeoutMs() {
       const remaining = endsAt - performance.now();
-      if (remaining <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native operation exhausted its deadline before dispatch', { retryable: false });
+      if (remaining <= 0) throw connectionDeadline('Native operation exhausted its deadline before dispatch');
       return remaining;
     } };
     return { attempt, scope: attempt.scope, operation: current };
@@ -831,7 +847,12 @@ export class NativeSurface implements NativeWebSurface {
     }
     const client = this.requireClient(); const publication = client.publicationCheckpoint();
     const channel = attempt.channel; const pageEpoch = attempt.epoch;
-    const result = await withinAttemptRequest(operation, attempt, current => channel.command(name, args, current));
+    const result = await withinAttemptRequest(operation, attempt, async current => {
+      const work = () => channel.command(name, args, current, name === 'page.navigate' ? () => {
+        if (attempt.retirement.signal.aborted) throw connectionCancellation('Page navigation publication retired with its attempt');
+      } : undefined);
+      return name === 'page.navigate' ? this.creatingPage(attempt, current, work) : work();
+    });
     this.assertAttempt(attempt);
     if ((name.startsWith('page.') && name !== 'page.navigate' || name.startsWith('input.') || name === 'fixture.correlate') && attempt.epoch !== pageEpoch) throw new EngineError('NODE_STALE', 'The application page changed during the operation', { retryable: true });
     if (name === 'fixture.correlate') {
@@ -840,7 +861,10 @@ export class NativeSurface implements NativeWebSurface {
       return { ...correlated, matches: correlation!.project(correlated.matches) } as BrowserCommandMap[K]['result'];
     }
     if (name === 'page.navigate' || name === 'page.reload' || name === 'page.back' || name === 'page.forward') { attempt.pageReady = true; this.tellEnvironment(attempt); }
-    if (attempt.rawBinding !== undefined && name === 'context.viewport') await attempt.rawBinding.page.setViewportSize(args as BrowserCommandMap['context.viewport']['args']);
+    if (attempt.rawBinding !== undefined && name === 'context.viewport') {
+      attempt.rawViewport = { ...args as BrowserCommandMap['context.viewport']['args'] };
+      await attempt.rawBinding.page.setViewportSize(attempt.rawViewport);
+    }
     if (attempt.rawBinding !== undefined && name === 'context.media') {
       attempt.rawMedia = { ...attempt.rawMedia, ...args as BrowserCommandMap['context.media']['args'] };
       await attempt.rawBinding.page.emulateMedia(attempt.rawMedia);
@@ -897,7 +921,10 @@ export class NativeSurface implements NativeWebSurface {
   private async engineCommand<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext): Promise<EngineCommandMap[K]['result']> {
     const attempt = this.requireAttempt(); const scope = attempt.scope; const pageEpoch = attempt.epoch;
     const engine = this.requireEngine();
-    const result = await withinAttemptRequest(operation, attempt, current => engine.command(name, args, current));
+    const result = await withinAttemptRequest(operation, attempt, async current => {
+      const work = () => engine.command(name, args, current);
+      return name === 'recording.start' ? this.creatingPage(attempt, current, work) : work();
+    });
     this.assertAttempt(attempt);
     if (scope !== attempt.scope) throw invalidState('The browser scope changed during an operation');
     if ((name.startsWith('browser.') || name.startsWith('fixture.') || name === 'capture.screenshot' || name === 'state.capture') && attempt.epoch !== pageEpoch) throw new EngineError('CANCELLED', 'The native page result owner has retired', { retryable: false });
@@ -1026,16 +1053,218 @@ export class NativeSurface implements NativeWebSurface {
     await stage(0, operation);
     await this.screenAfterAction(operation, attempt, scope);
   }
-  async restart(operation: OperationContext): Promise<void> { await this.transition('scope.restart', operation); }
+  /** Baseline ensurePage publishes before goto. A clean business failure does
+   * not undo a proven creation; finish its publication under this same owner
+   * and original budget, then preserve the exact business error for its caller. */
+  private async creatingPage<T>(attempt: Attempt, operation: OperationContext, work: () => Promise<T>): Promise<T> {
+    let outcome: T;
+    try { outcome = await work(); }
+    catch (cause) {
+      if (attempt.rawReopened !== undefined) {
+        if (isNativeUsableFailure(cause)) {
+          // Binding failures have their own retained cleanup receipt. They must
+          // not replace the earlier business error or borrow a later budget.
+          await this.publishReopenedPage(attempt, operation).catch(() => {});
+        } else this.recordPublicationFailure(attempt, cause);
+      }
+      throw cause;
+    }
+    await this.publishReopenedPage(attempt, operation);
+    return outcome;
+  }
+  /** The native refresh event precedes the creating mutation's actual result.
+   * It records identity only; no event-wide fresh timeout grants PW work. */
+  private async publishReopenedPage(attempt: Attempt, operation: OperationContext): Promise<void> {
+    const reopened = attempt.rawReopened;
+    if (reopened === undefined) return;
+    const failed = (error: unknown) => this.recordPublicationFailure(attempt, error);
+    const check = (current: OperationContext) => {
+      if (attempt.retirement.signal.aborted) throw connectionCancellation('Persistent page publication retired with its attempt');
+      this.assertScope(attempt, reopened.scope); assertPublicationBudget(current);
+      if (attempt.rawReopened !== reopened || attempt.epoch !== reopened.epoch) throw invalidState('Persistent page publication changed owners');
+    };
+    try {
+      await withPublicationBudget(operation, 'binding the reopened persistent Page', remaining => {
+        const current: OperationContext = { ...operation, signal: remaining().signal, get timeoutMs() { return remaining().timeoutMs; } };
+        return withinAttemptRequest(current, attempt, async active => {
+          try {
+            check(active);
+            const binding = await bindExistingPlaywrightPage(reopened.binding, { contextId: reopened.recovery.context, targetId: reopened.recovery.page }, active);
+            check(active);
+            if (attempt.rawViewport !== undefined && attempt.rawViewport !== null) { await binding.page.setViewportSize(attempt.rawViewport); check(active); }
+            await binding.page.emulateMedia(attempt.rawMedia ?? {}); check(active);
+            attempt.rawBinding = binding; delete attempt.rawReopened; attempt.pageReady = true;
+          } catch (cause) { failed(cause); throw cause; }
+        });
+      });
+    } catch (cause) { failed(cause); throw cause; }
+  }
+
+  /** A failed publication seals business use; only real receipts fail cleanup. */
+  private recordPublicationFailure(attempt: Attempt, error: unknown): void {
+    attempt.pageReady = false;
+    const provisional = isLocalBudgetDeparture(error) || isClosedFrameCancellation(error);
+    if (attempt.recoveryFailure === undefined || (attempt.recoveryFailure.provisional === true && !provisional)) {
+      attempt.recoveryFailure = { error, ...(provisional ? { provisional: true as const } : {}) };
+    }
+    // Never permanently latch a waiter timeout or synthetic closed-frame cancel.
+    // Its retained actual work can still succeed or supply the first real error.
+    if (!provisional && (this.attempt === attempt || this.retiringAttempt === attempt)) this.retirementFailure ??= error;
+  }
+
+  async restart(operation: OperationContext): Promise<void> {
+    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope);
+    const attempt = admitted.attempt; const client = this.requireClient(); const engine = this.requireEngine();
+    let nativeCompleted = false;
+    const failedPublication = (error: unknown) => {
+      if (nativeCompleted) this.recordPublicationFailure(attempt, error);
+    };
+    const checkPublication = (active: OperationContext) => {
+      if (attempt.retirement.signal.aborted) throw connectionCancellation('Restart publication retired with its attempt');
+      this.assertScope(attempt, admitted.scope); assertPublicationBudget(active);
+    };
+    try {
+      // One continuous journal spans mutation, ACK and public Page publication.
+      // It cannot disappear between a late native ACK and the binding phase.
+      await withinAttemptRequest(admitted.operation, attempt, async mutation => {
+        try {
+          const callbackEpoch = client.callbackCheckpoint();
+          // NativeClient owns real cancellation/result settlement; no outer
+          // waiter timeout may hide a dispatched mutation's late Unknown.
+          const result = await engine.command('scope.restart', { identityScope: admitted.scope }, mutation, callbackEpoch);
+          nativeCompleted = true; checkPublication(mutation);
+          await withPublicationBudget(mutation, 'binding restarted native page', remaining => {
+            const signal = remaining().signal;
+            const current: OperationContext = { ...mutation, signal, get timeoutMs() { return remaining().timeoutMs; } };
+            // A post-ACK waiter can leave while this nested actual receipt stays
+            // in the same journal until the PW session/settings work settles.
+            const owned = withinAttemptRequest(current, attempt, async active => {
+              try {
+                const previous = attempt.rawBinding;
+                if (previous !== undefined) {
+                  attempt.pageReady = false;
+                  const expected = await engine.command('scope.interop.identify', { identityScope: result.identityScope }, active);
+                  checkPublication(active);
+                  if (expected.persistent !== (previous.kind === 'persistent')) throw invalidState('Restart changed the native context ownership mode');
+                  const rebound = await bindExistingPlaywrightPage(previous, expected, active);
+                  checkPublication(active);
+                  if (attempt.rawViewport !== undefined && attempt.rawViewport !== null) {
+                    await rebound.page.setViewportSize(attempt.rawViewport);
+                    checkPublication(active);
+                  }
+                  await rebound.page.emulateMedia(attempt.rawMedia ?? {});
+                  checkPublication(active);
+                  attempt.rawBinding = rebound;
+                }
+                attempt.epoch += 1; attempt.scope = result.identityScope; attempt.recovery = result.recoveryIdentity;
+                attempt.pageReady = true; this.bindChannel(attempt);
+                // Staged events cannot observe the old Page after restart.
+                client.retireCallbacks(callbackEpoch);
+              } catch (cause) { failedPublication(cause); throw cause; }
+            });
+            return owned;
+          });
+        } catch (cause) { failedPublication(cause); throw cause; }
+      });
+    } catch (cause) { failedPublication(cause); throw cause; }
+  }
   async reset(operation: OperationContext): Promise<void> { if (this.persistent) throw invalidState('A persistent browser context cannot be replaced'); await this.transition('scope.reset', operation); }
-  private async transition(name: 'scope.restart' | 'scope.reset', operation: OperationContext): Promise<void> {
-    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
-    const attempt = this.requireAttempt();
-    const client = this.requireClient(); const callbackEpoch = client.callbackCheckpoint();
-    const result = await this.requireEngine().command(name, { identityScope: attempt.scope }, operation, callbackEpoch);
-    this.assertAttempt(attempt); client.retireCallbacks(callbackEpoch); attempt.epoch += 1; attempt.scope = result.identityScope;
-    if ('recoveryIdentity' in result) attempt.recovery = result.recoveryIdentity;
-    this.bindChannel(attempt);
+  private async transition(_name: 'scope.reset', operation: OperationContext): Promise<void> {
+    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope);
+    await this.replaceContext(admitted.attempt, admitted.scope, admitted.operation);
+  }
+  private async replaceContext(attempt: Attempt, scope: string, operation: OperationContext, restore?: Omit<EngineCommandMap['state.restore']['args'], 'identityScope' | 'bodyHandle'> & { readonly bytes: Uint8Array }): Promise<void> {
+    const previous = attempt.rawBinding;
+    if (previous?.kind !== 'isolated') throw invalidState('Context replacement requires its exact isolated Playwright owner');
+    const client = this.requireClient(); const engine = this.requireEngine();
+    const creation = this.creationOptions();
+    const options = { ...creation, viewport: attempt.rawViewport ?? creation.viewport, media: { ...attempt.rawMedia } };
+    let replacement: PlaywrightBinding | undefined;
+    let retired = false; let handoffStarted = false; let publishedScope: string | undefined; let nativeCompleted = false;
+    const decisions = new Set<Promise<void>>();
+    const failed = (error: unknown) => this.recordPublicationFailure(attempt, error);
+    const check = (active: OperationContext) => {
+      if (attempt.retirement.signal.aborted) throw connectionCancellation('Context replacement retired with its attempt');
+      this.assertScope(attempt, publishedScope ?? scope); assertPublicationBudget(active);
+    };
+    await withinAttemptRequest(operation, attempt, async mutation => {
+      const handler: InteropReplacementHandler = (notice, respond) => {
+        handoffStarted = true; // The validated native decision already owns phase-one resources.
+        const work = withinAttemptRequest(mutation, attempt, async active => {
+          let responseStarted = false;
+          try {
+            check(active);
+            if (notice.phase === 'retire') {
+              if (retired || notice.contextId !== previous.contextId) throw invalidState('Replacement did not name its exact old Playwright context');
+              attempt.pageReady = false;
+              attempt.rawClosing ??= previous.context.close();
+              await attempt.rawClosing; retired = true; check(active);
+              responseStarted = true; await respond({ kind: 'interop-retired' });
+            } else {
+              if (!retired || replacement !== undefined) throw invalidState('Replacement creation preceded exact old-context retirement');
+              const creating = createPlaywrightContext(previous.browser, options, active).then(value => { replacement = value; });
+              attempt.rawOpening = creating; void creating.catch(() => {});
+              await creating; check(active);
+              responseStarted = true; await respond({ kind: 'interop-created', contextId: replacement!.contextId, targetId: replacement!.targetId });
+            }
+          } catch (cause) {
+            failed(cause);
+            if (!responseStarted) {
+              // No fresh budget or arbitrary native command: only the still-live
+              // exact token can receive this static refusal. Preserve the PW cause.
+              try { await respond({ kind: 'interop-failed' }); } catch { /* Native cancellation/outcome still owns settlement. */ }
+            }
+            throw cause;
+          }
+        });
+        decisions.add(work);
+        void work.finally(() => decisions.delete(work)).catch(() => {});
+        return work;
+      };
+      try {
+        const callbackEpoch = client.callbackCheckpoint();
+        // Both replacement and later activation await their actual native result,
+        // never an outer waiter race that could overwrite a late Unknown.
+        const result = restore === undefined
+          ? await engine.command('scope.reset', { identityScope: scope }, mutation, callbackEpoch, handler)
+          : await engine.withUpload(restore.bytes, mutation,
+            (bodyHandle, remaining) => engine.command('state.restore', { format: restore.format, version: restore.version, bodyHandle, identityScope: scope }, remaining, callbackEpoch, handler), scope, 'consume-on-success');
+        // State-upload transfer completes at the actual native replacement ACK,
+        // not after unrelated PW configuration/activation. A later failure must
+        // not issue blob.release against the now-retired old context.
+        nativeCompleted = true;
+        await withPublicationBudget(mutation, 'configuring the replacement Playwright context', remaining => {
+          const current: OperationContext = { ...mutation, signal: remaining().signal, get timeoutMs() { return remaining().timeoutMs; } };
+          return withinAttemptRequest(current, attempt, async active => {
+            try {
+              await Promise.all(decisions); await client.interopDecisionSettlement(callbackEpoch); check(active);
+              const binding = replacement;
+              if (!retired || binding === undefined || result.activatePage === undefined) throw invalidState('Native replacement did not complete its exact Playwright handoff');
+              if (options.viewport !== null) { await binding.page.setViewportSize(options.viewport); check(active); }
+              await binding.page.emulateMedia(options.media); check(active);
+              // Exactly one registration, after native harness network protection.
+              for (const source of creation.initScripts) { await binding.context.addInitScript(source); check(active); }
+              attempt.rawBinding = binding; attempt.scope = result.identityScope; attempt.epoch++;
+              attempt.pageReady = false; delete attempt.rawClosing; publishedScope = result.identityScope;
+              this.bindChannel(attempt);
+              // Old download retirement uses replacement proof, not activation.
+              client.retireCallbacks(callbackEpoch);
+            } catch (cause) { failed(cause); throw cause; }
+          });
+        });
+        const activate = restore === undefined || result.activatePage === true || attempt.recording !== undefined;
+        if (activate) {
+          check(mutation);
+          await engine.command('page.activate', { identityScope: attempt.scope }, mutation);
+          check(mutation); attempt.pageReady = true;
+        }
+      } catch (cause) {
+        // A started handoff or completed mutation retains exact cleanup custody.
+        // A pre-dispatch refusal with no handoff keeps the ordinary clean path.
+        if (handoffStarted || retired || replacement !== undefined || nativeCompleted || attempt.recoveryFailure !== undefined) failed(cause);
+        throw cause;
+      }
+    });
   }
   async captureState(operation: OperationContext): Promise<EngineState> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
@@ -1054,19 +1283,16 @@ export class NativeSurface implements NativeWebSurface {
     if (this.persistent) throw invalidState('A persistent browser context cannot be replaced');
     if ((state.format !== 'agent-browser-storage-state' && state.format !== 'playwright-storage-state') || state.version !== 1 || state.data === null || typeof state.data !== 'object' || Array.isArray(state.data)) throw invalidState('Unsupported browser storage state envelope');
     validateJsonValue(state.data, 'browser storage state');
-    const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
-    const client = this.requireClient(); const callbackEpoch = client.callbackCheckpoint();
-    await engine.withUpload(Buffer.from(JSON.stringify(state.data)), operation, async (bodyHandle, remaining) => {
-      this.assertScope(attempt, scope);
-      const result = await engine.command('state.restore', { identityScope: scope, format: state.format as 'agent-browser-storage-state' | 'playwright-storage-state', version: 1, bodyHandle }, remaining, callbackEpoch);
-      this.assertAttempt(attempt); client.retireCallbacks(callbackEpoch); attempt.epoch += 1; attempt.scope = result.identityScope; this.bindChannel(attempt);
-    }, scope, 'consume-on-success');
+    const attempt = this.requireAttempt(); const scope = attempt.scope;
+    await this.replaceContext(attempt, scope, operation, { format: state.format, version: 1, bytes: Buffer.from(JSON.stringify(state.data)) });
   }
   async startVideo(operation: OperationContext): Promise<void> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const recorder = this.leases?.recorder(attempt.context.attemptId);
-    await this.requireEngine().command('page.activate', { identityScope: admitted.scope }, operation);
-    attempt.pageReady = true;
+    await withinAttemptRequest(operation, attempt, async current => {
+      await this.creatingPage(attempt, current, () => this.requireEngine().command('page.activate', { identityScope: admitted.scope }, current));
+      this.assertScope(attempt, admitted.scope); attempt.pageReady = true;
+    });
     if (recorder !== undefined) {
       this.assertScope(attempt, admitted.scope); this.assertBudget(operation);
       if (attempt.recording !== undefined) return;
@@ -1311,6 +1537,25 @@ function observationRevision(value: string): bigint | undefined {
 function invalidState(message: string): EngineError { return new EngineError('INVALID_STATE', message, { retryable: false }); }
 
 /** Ordinary requests retire with their captured attempt, never mandatory cleanup. */
+/** Classify only our owned publication waiter, never its borrowed work error. */
+async function withPublicationBudget<T>(operation: OperationContext, label: string, work: (remaining: () => ConnectionBudget) => Promise<T>): Promise<T> {
+  let waiterSignal: AbortSignal | undefined;
+  try {
+    return await withConnectionBudget(operation, label, remaining => {
+      waiterSignal = remaining().signal;
+      return work(remaining);
+    });
+  } catch (cause) {
+    if (operation.signal.aborted) throw connectionWaitDeparture(operation.signal, label);
+    if (waiterSignal?.aborted === true) throw connectionWaitDeparture(waiterSignal, label);
+    throw cause;
+  }
+}
+function assertPublicationBudget(operation: OperationContext): void {
+  if (operation.signal.aborted) throw connectionWaitDeparture(operation.signal, 'Native publication');
+  if (operation.timeoutMs <= 0) throw connectionDeadline('Native publication exhausted its original deadline');
+}
+
 async function withinAttemptRequest<T>(operation: OperationContext, attempt: Attempt, work: (operation: OperationContext) => Promise<T>): Promise<T> {
   let settle!: () => void;
   const settled = new Promise<void>(resolve => { settle = resolve; });

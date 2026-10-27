@@ -4,9 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { OperationContext } from 'e2e/engine';
+import type { JsonValue, OperationContext } from 'e2e/engine';
 import { NativeClient } from '../../src/native/client.ts';
+import type { PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { web } from '../../src/index.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 
@@ -17,7 +20,7 @@ vi.mock('node:fs/promises', async importOriginal => {
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); vi.restoreAllMocks(); });
 const turn = () => new Promise<void>(resolve => setImmediate(resolve));
 
 async function fixture() {
@@ -26,6 +29,8 @@ async function fixture() {
   const controller = new AbortController();
   const operation = (timeoutMs = 1_000): OperationContext => ({ signal: controller.signal, timeoutMs, runId: 'route-claim', attemptId: 'synthetic', origin: 'test' });
   const cleanup = () => ({ signal: new AbortController().signal, timeoutMs: 1_000 });
+  const resources = new NativeInteropResources({ allocateScopeIdentity: () => 'scope-1' });
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   const frames: Record<string, unknown>[] = [];
   const output = new PassThrough();
   const send = (message: unknown) => queueMicrotask(() => output.write(JSON.stringify(message) + '\n'));
@@ -34,7 +39,7 @@ async function fixture() {
   let fail: string | undefined;
   let rejectDecision = false;
   let sequence = 0;
-  let blob: Record<string, unknown> = {};
+  let blob: Record<string, JsonValue> = {};
   let eventDone: Promise<void> = Promise.resolve();
   let finishEvent: (() => void) | undefined;
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (options, context, onEvent) => {
@@ -43,7 +48,7 @@ async function fixture() {
       const command = frame['command']; const args = frame['args'] as Record<string, unknown>;
       let response: unknown;
       if (frame['type'] === 'hello') response = { type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'route-claim-peer', generation: 1, capabilities: options.capabilities, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' };
-      else if (frame['type'] === 'close') response = { type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' };
+      else if (frame['type'] === 'close') { resources.closeNative(); response = { type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }; }
       else if (frame['type'] === 'cancel') {
         const original = frames.find(item => item['type'] === 'request' && item['operationSeq'] === frame['operationSeq'])!;
         send({ type: 'result', id: original['id'], generation: 1, operationSeq: original['operationSeq'], ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
@@ -54,14 +59,18 @@ async function fixture() {
         rejectDecision = false;
       }
       else {
-        let data: unknown = null;
-        if (command === 'scope.open') data = { identityScope: 'scope-1', recoveryIdentity: { browser: 'browser-1', context: 'context-1', page: 'page-1' } };
-        else if (command === 'blob.create') { blob = { handle: 'route-body', size: args['size'], sha256: args['sha256'] }; data = { ...blob, maxChunkBytes: 65536 }; }
-        else if (command === 'blob.write') data = { nextOffset: Number(args['offset']) + Buffer.from(String(args['base64']), 'base64').length };
-        else if (command === 'blob.seal') data = blob;
-        else if (command === 'blob.release') data = { released: true };
-        else if (command === 'page.title') data = { title: 'Synthetic title' };
-        response = { type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ...(command === fail ? { ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched' } : { ok: true, data, effects: 'completed' }), scopeState: 'usable' };
+        const outcome = resources.respond(frame as unknown as PeerRequest, () => {
+          let data: JsonValue;
+          if (command === 'blob.create') { blob = { handle: 'route-body', size: args['size'] as number, sha256: args['sha256'] as string }; data = { ...blob, maxChunkBytes: 65536 }; }
+          else if (command === 'blob.write') data = { nextOffset: Number(args['offset']) + Buffer.from(String(args['base64']), 'base64').length };
+          else if (command === 'blob.seal') data = blob;
+          else if (command === 'blob.release') data = { released: true };
+          else if (command === 'page.title') data = { title: 'Synthetic title' };
+          else if (['scope.configure', 'network.routes.replace'].includes(String(command))) data = null;
+          else return undefined;
+          return command === fail ? { error: 'browser-failure', effects: 'not-dispatched', scopeState: 'usable' } : { data };
+        });
+        response = { type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed' } : { ok: false, error: { code: outcome.error }, effects: outcome.effects }), scopeState: outcome.scopeState ?? 'usable' };
       }
       if (hold === (command ?? frame['type'])) held = () => send(response); else send(response);
       done();
