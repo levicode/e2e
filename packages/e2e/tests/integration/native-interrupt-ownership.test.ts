@@ -97,7 +97,13 @@ test('holds a browser', async ({ app }) => { await app.open('/'); log('test.star
         run: { errors: unknown[]; results: { status: string; attempts: unknown[] }[] };
       };
       expect(report.run.errors, output).toEqual([]);
-      expect(report.run.results.map(result => [result.status, result.attempts.length])).toEqual([['interrupted', 1]]);
+      // Force abandons the unfinished unit: the unchanged scheduler preserves
+      // only completed attempts. The original one-Ctrl-C test still requires
+      // one interrupted attempt; this stuck afterEach has not published one.
+      expect(report.run.results).toMatchObject([{
+        status: 'skipped', attempts: [],
+        skip: { cause: 'infrastructure-unavailable', reason: 'run interrupted before execution' },
+      }]);
     } else {
       // No engine dispose can run: native cleanup must follow the dead owner's pipe EOF.
       process.kill(worker, 'SIGKILL');
