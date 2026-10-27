@@ -1,6 +1,6 @@
 /** Typed engine hooks share the Browser fixture's one native client. */
 import { createHash } from 'node:crypto';
-import { withConnectionBudget } from '../operation-budget.ts';
+import { connectionCancellation, connectionDeadline, withConnectionBudget } from '../operation-budget.ts';
 import { EngineError, TestError, LOCATOR_ACTION_KINDS, type JsonValue, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap } from './browser-contract.ts';
 import { resultError, type NativeActionErrorContext } from './browser-channel.ts';
@@ -139,9 +139,9 @@ export class EngineChannel {
           // A changed scope/client is not authority to release into its replacement.
           // The enclosing attempt retains this batch until native retirement is proven.
           if (!owns()) return;
-          if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native blob batch cleanup was cancelled', { retryable: false });
+          if (operation.signal.aborted) throw connectionCancellation('Native blob batch cleanup was cancelled');
           const timeoutMs = endsAt - performance.now();
-          if (timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native blob batch cleanup exceeded its original budget', { retryable: false });
+          if (timeoutMs <= 0) throw connectionDeadline('Native blob batch cleanup exceeded its original budget');
           const result = await this.client.request('blob.release', { identityScope: expectedScope, handle }, { ...operation, timeoutMs });
           this.assertOwner(owns);
           if (!result.ok) throw resultError(result);

@@ -56,6 +56,48 @@ const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal 
 const operation = (timeoutMs = 1_000, signal = new AbortController().signal) => ({ timeoutMs, signal, runId: 'run', attemptId: 'a1', origin: 'test' as const });
 
 describe('AttemptSession', () => {
+  it('retains a genuine native timeout receipt even when terminal close succeeds', async () => {
+    const engine = await nativeAttempt({}, frame => frame.command === 'scope.end'
+      ? { error: 'deadline-exceeded', effects: 'not-dispatched', scopeState: 'usable' } : undefined);
+    await engine.startAttempt!(nativeContext());
+    const failure = await engine.endAttempt!(cleanup()).catch(cause => cause);
+    expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    expect(peers[0]!.requests.filter(frame => frame.command === 'scope.end')).toHaveLength(1);
+    expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(engine.dispose!(cleanup())).rejects.toBe(failure);
+  });
+
+  it('does not turn an earlier local readiness deadline into an exact cleanup failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const result = deferred<PeerOutcome>(); const reached = deferred<void>();
+    let hold = true;
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'scope.configure' || !hold) return undefined;
+      hold = false; reached.resolve(); return result.promise;
+    });
+    const starting = engine.startAttempt!(nativeContext()).catch(cause => cause);
+    await reached.promise;
+    const scheduler = globalThis.setTimeout;
+    // Explicitly exercise local readiness expiration before its parent signal.
+    // This is a controlled timer order, not a browser timing claim.
+    const scheduled = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+      const localBudget = String(callback).includes('controller.abort(timeout())');
+      return scheduler(callback, localBudget && delay !== undefined ? Math.max(0, delay - 1) : delay, ...args);
+    }) as typeof setTimeout);
+    const ending = engine.endAttempt!(cleanup()).catch(cause => cause);
+    try {
+      await vi.advanceTimersByTimeAsync(999);
+      const failure = await ending;
+      expect(failure).toBeUndefined();
+      expect(await starting).toMatchObject({ code: 'CANCELLED' });
+      expect(peers[0]!.requests.filter(frame => frame.command === 'scope.end')).toEqual([]);
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      result.resolve({ data: null });
+      await expect(engine.dispose!(cleanup())).resolves.toBeUndefined();
+    } finally { scheduled.mockRestore(); result.resolve({ data: null }); await engine.dispose!(cleanup()).catch(() => undefined); }
+  });
+
   beforeEach(() => { vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; });
   afterEach(() => { for (const peer of peers) peer.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); });
 

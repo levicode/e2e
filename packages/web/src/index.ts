@@ -8,7 +8,7 @@
 import { test as base } from 'e2e';
 import type { Browser } from './browser.ts';
 
-export { web } from './engine.ts';
+export { web, surfaceOf, type PlaywrightLiveSurface } from './engine.ts';
 export type { WebBasicAuth, WebConnectOptions, WebOptions, WebScreencastOptions } from './web-options.ts';
 export type { WebInitScript } from './init-scripts.ts';
 export type { WebMedia } from './media.ts';

@@ -18,6 +18,7 @@ import {
   type EngineHandle,
 } from 'e2e/engine';
 import { createRequire } from 'node:module';
+import type { Page, BrowserContext } from 'playwright-core';
 import { asBrowserProvider } from './provider.ts';
 import { NativeSurface } from './native-surface.ts';
 import type { WebOptions } from './web-options.ts';
@@ -28,6 +29,18 @@ import { FIELD_VALUE_CONTROL, headerProblem } from './protected-app.ts';
 
 /** App fields only a device target reads. */
 const NATIVE_APP_KEYS = ['bundleId', 'appPath', 'launchArguments', 'permissions'] as const;
+
+const surfaces = new WeakMap<EngineHandle, NativeSurface>();
+/** Real browser objects for trusted out-of-band tools; harness authorization and replay are bypassed. */
+export interface PlaywrightLiveSurface {
+  readonly page: () => Page;
+  readonly context: () => BrowserContext;
+}
+/** Context is ready after startAttempt; Page after first open/goto/recording activation. */
+export function surfaceOf(engine: EngineHandle): PlaywrightLiveSurface | undefined {
+  const surface = surfaces.get(engine);
+  return surface === undefined ? undefined : { page: () => surface.requirePage(), context: () => surface.requireContext() };
+}
 
 /** Creates one native Web adapter: one browser per worker, isolated attempt scopes. */
 export function web(options: WebOptions = {}): EngineHandle {
@@ -133,6 +146,7 @@ export function web(options: WebOptions = {}): EngineHandle {
       browser: (context) => createBrowserFixture(surface.fixtureSurface(), context),
     },
   });
+  surfaces.set(handle, surface);
   return handle;
 }
 

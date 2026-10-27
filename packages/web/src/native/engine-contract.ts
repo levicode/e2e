@@ -58,6 +58,11 @@ export interface EngineCommandMap {
     | { readonly source: 'connect'; readonly context: 'isolated' | 'persistent'; readonly endpoint: string }
     | { readonly source: 'reuse'; readonly context: 'isolated' }
   ); result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
+  'scope.interop.prepare': { args: EngineCommandMap['scope.open']['args'] & { readonly preparationId: string }; result: { readonly preparationId: string; readonly endpoint: string } };
+  'scope.interop.adopt': { args: { readonly preparationId: string; readonly contextId: string; readonly targetId: string }; result: Scoped & { readonly recoveryIdentity: RecoveryIdentity } };
+  'scope.interop.retire': { args: Scoped & { readonly contextId: string }; result: null };
+  'scope.interop.abort': { args: { readonly preparationId: string }; result: null };
+  'scope.interop.identify': { args: Scoped; result: { readonly contextId: string; readonly targetId: string; readonly persistent: boolean } };
   'scope.configure': { args: Scoped & ReadPolicy & { readonly requestPolicy: { readonly site?: string; readonly headers?: Readonly<Record<string, string>>; readonly basicAuth?: { readonly username: string; readonly password: string } }; readonly downloads: { readonly source: 'local' } | { readonly source: 'provider'; readonly remoteDirectory: string } }; result: null };
   'page.activate': { args: Scoped; result: { readonly activated: true } };
   'scope.end': { args: Scoped; result: null };

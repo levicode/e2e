@@ -3,10 +3,18 @@ import { collectFinalizedRecording, type FinalizedRecordingIdentity, type Finali
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import { EngineError, type JsonValue, type OperationContext } from 'e2e/engine';
+import { connectionCancellation, connectionDeadline } from '../operation-budget.ts';
 import { rejectedDecision } from './decision-outcome.ts';
 import { NativeFrameError, NativeFrames } from './frames.ts';
 import { acceptanceIo, type AcceptanceTrace, type AcceptanceReason } from './acceptance-trace.ts';
 import { MAX_FRAME_BYTES, MAX_TIMEOUT_MS, NATIVE_PROTOCOL, serverMessage, type NativeEvent, type NativeReady, type NativeResult, type ServerMessage } from './protocol.ts';
+
+// Only a validated closed frame can mint this local cancellation. It is not
+// an actual failed operation receipt, nor proof of transport/lease settlement.
+const closedFrameCancellations = new WeakSet<EngineError>();
+export function isClosedFrameCancellation(cause: unknown): boolean {
+  return cause instanceof EngineError && closedFrameCancellations.has(cause);
+}
 
 /** The native CLI proxy owns the actual daemon connection and browser lifecycle. */
 export interface NativeChannel {
@@ -326,8 +334,9 @@ export class NativeClient {
   }
 
   private timeout(context: OperationContext): number {
-    if (context.signal.aborted) throw new EngineError('CANCELLED', 'The native browser operation was cancelled before dispatch', { retryable: false });
-    if (!Number.isFinite(context.timeoutMs) || context.timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'The native browser operation budget expired before dispatch', { retryable: false });
+    if (context.signal.aborted) throw connectionCancellation('The native browser operation was cancelled before dispatch');
+    if (!Number.isFinite(context.timeoutMs)) throw new EngineError('OPERATION_TIMEOUT', 'The native browser operation budget expired before dispatch', { retryable: false });
+    if (context.timeoutMs <= 0) throw connectionDeadline('The native browser operation budget expired before dispatch');
     return Math.min(Math.ceil(context.timeoutMs), this.ready?.limits.maxTimeoutMs ?? MAX_TIMEOUT_MS, MAX_TIMEOUT_MS);
   }
 
@@ -499,7 +508,12 @@ export class NativeClient {
     if (!pending.draining) { this.pending.delete(message.id); pending.clear(); }
     if (message.type === 'closed') {
       this.closed = true;
-      for (const other of this.pending.values()) { other.clear(); other.reject(new EngineError('CANCELLED', 'The native browser scope closed', { retryable: false })); }
+      for (const other of this.pending.values()) {
+        other.clear();
+        const cancelled = new EngineError('CANCELLED', 'The native browser scope closed', { retryable: false });
+        closedFrameCancellations.add(cancelled);
+        other.reject(cancelled);
+      }
       this.pending.clear();
     }
     if (pending.callbackTransition !== undefined && message.type === 'result') {

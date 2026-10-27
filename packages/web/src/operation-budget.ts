@@ -1,6 +1,30 @@
 /** One deadline for connection recovery and the operation it precedes. */
 import { EngineError, raceAbort } from 'e2e/engine';
 
+// Object identity distinguishes our local wait departure from a real native or
+// provider cleanup receipt with the same public error code.
+const localBudgetDepartures = new WeakSet<EngineError>();
+export function isLocalBudgetDeparture(cause: unknown): boolean {
+  return cause instanceof EngineError && localBudgetDepartures.has(cause);
+}
+export function connectionDeadline(message: string): EngineError {
+  const failure = new EngineError('OPERATION_TIMEOUT', message, { retryable: false });
+  localBudgetDepartures.add(failure);
+  return failure;
+}
+export function connectionCancellation(message: string): EngineError {
+  const failure = new EngineError('CANCELLED', message, { retryable: false });
+  localBudgetDepartures.add(failure);
+  return failure;
+}
+/** Own the waiter error; never tag a borrowed signal reason/receipt object. */
+export function connectionWaitDeparture(signal: AbortSignal, label: string): EngineError {
+  const reason = connectionAbort(signal, label);
+  const failure = new EngineError(reason.code, reason.message, { retryable: false });
+  localBudgetDepartures.add(failure);
+  return failure;
+}
+
 export interface ConnectionBudget {
   readonly timeoutMs: number;
   readonly signal: AbortSignal;
@@ -73,7 +97,7 @@ export async function withConnectionBudget<T>(
   const controller = new AbortController();
   const signal = AbortSignal.any([budget.signal, controller.signal]);
   const endsAt = performance.now() + budget.timeoutMs;
-  const timeout = () => new EngineError('OPERATION_TIMEOUT', `${label} timed out`, { retryable: false });
+  const timeout = () => connectionDeadline(`${label} timed out`);
   const timer = setTimeout(() => controller.abort(timeout()), Math.max(0, budget.timeoutMs));
   const remaining = (): ConnectionBudget => {
     if (signal.aborted) throw connectionAbort(signal, label);

@@ -1,5 +1,8 @@
 /** One native adapter owns a worker browser and each attempt's scoped resources. */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import type { Browser as PlaywrightBrowser, BrowserContext, Page } from 'playwright-core';
+import { bindPersistentPlaywrightContext, connectPlaywrightClient, createPlaywrightContext, disconnectedBindingMode, type PlaywrightBinding } from './native/playwright-binding.ts';
 import { mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,7 +19,7 @@ import {
 import { ConfiguredInitScripts } from './init-scripts.ts';
 import { LeasedBrowsers, type LeaseRecording } from './provider.ts';
 import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app.ts';
-import { connectionAbort, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
+import { connectionAbort, connectionDeadline, connectionWaitDeparture, isLocalBudgetDeparture, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
@@ -27,7 +30,7 @@ import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
 import type { EngineCommandMap, NativeImage, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
-import type { NativeClient } from './native/client.ts';
+import { isClosedFrameCancellation, type NativeClient } from './native/client.ts';
 import { connectNativeProcess } from './native/process.ts';
 import type { NativeEvent } from './native/protocol.ts';
 import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
@@ -43,6 +46,14 @@ interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
 interface Attempt {
   epoch: number;
   ready: boolean;
+  pageReady: boolean;
+  rawBinding?: PlaywrightBinding;
+  rawOpening?: Promise<void>;
+  /** The actual public context.close receipt, retained through caller departure. */
+  rawClosing?: Promise<void>;
+  /** Prepare ACK owns resources even when the later adopt RPC never dispatches. */
+  interopPrepared?: true;
+  rawMedia?: ScopeCreationOptions['media'];
   readonly context: EngineAttemptContext;
   readonly retirement: AbortController;
   cleanupSignal?: AbortSignal;
@@ -98,6 +109,8 @@ export class NativeSurface implements NativeWebSurface {
   private engine: EngineChannel | undefined;
   private executable: string | undefined;
   private workerEndpoint: string | undefined;
+  private playwrightClient: PlaywrightBrowser | undefined;
+  private playwrightClosing: Promise<void> | undefined;
   private workerSourceLost = false;
   private openedBefore = false;
   private readonly callbackOwner = new AsyncLocalStorage<{ attempt: Attempt; epoch: number; notRevoked: () => boolean }>();
@@ -150,6 +163,7 @@ export class NativeSurface implements NativeWebSurface {
   }
   async finish(info: EngineFinishInfo): Promise<void> { await this.leases?.finish(info); }
   async init(info: EngineInitInfo): Promise<void> {
+    if (this.endingAttempt !== undefined || this.retiringAttempt !== undefined || this.playwrightClosing !== undefined) throw invalidState('Native/PW retirement is still owned');
     this.leases?.assertCanInit();
     if (this.disposing !== undefined) throw invalidState('Native worker disposal is still pending');
     if (this.workerRetirement.signal.aborted) {
@@ -183,10 +197,16 @@ export class NativeSurface implements NativeWebSurface {
       await raceAbort(() => retirement, context.signal, 'waiting for native attempt retirement');
     }
     if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, ready: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
+    const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
-    const operation = this.operation(startupSignal);
+    const startingOperation = this.operation(startupSignal);
+    const startupDeadline = performance.now() + startingOperation.timeoutMs;
+    const operation: OperationContext = { ...startingOperation, get timeoutMs() {
+      const remaining = startupDeadline - performance.now();
+      if (remaining <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Browser startup exhausted its original deadline', { retryable: false });
+      return remaining;
+    } };
     let openDispatched = false;
     let attemptLeaseAcquired = false;
     let policyRejectedClient: NativeClient | undefined;
@@ -210,13 +230,39 @@ export class NativeSurface implements NativeWebSurface {
       if (this.client === undefined) await this.connect(operation);
       this.assertAttempt(attempt);
       const creation = this.creationOptions();
+      attempt.rawMedia = { ...creation.media };
       const args: EngineCommandMap['scope.open']['args'] = this.openedBefore && !this.persistent
         ? { ...creation, source: 'reuse', context: 'isolated' }
         : endpoint === undefined
           ? { ...creation, source: 'launch', context: 'isolated', headless: this.initInfo?.headed !== true }
           : { ...creation, source: 'connect', context: this.persistent ? 'persistent' : 'isolated', endpoint };
       openDispatched = true;
-      const opened = await this.requireEngine().command('scope.open', args, operation);
+      const establishing = (async () => {
+        if (this.persistent) {
+          const opened = await this.requireEngine().command('scope.open', args, operation);
+          attempt.scope = opened.identityScope; attempt.recovery = opened.recoveryIdentity;
+          const ids = await this.requireEngine().command('scope.interop.identify', { identityScope: opened.identityScope }, operation);
+          if (!ids.persistent || endpoint === undefined) throw this.invalidate();
+          this.playwrightClient = await connectPlaywrightClient(endpoint, operation);
+          attempt.rawBinding = await bindPersistentPlaywrightContext(this.playwrightClient, ids, operation);
+          if (creation.viewport !== null) await attempt.rawBinding.page.setViewportSize(creation.viewport);
+          await attempt.rawBinding.page.emulateMedia(creation.media);
+          return opened;
+        }
+        const preparationId = randomUUID();
+        // PW owns user-script registration for this isolated context. Native owns
+        // its runtime, harness network policy and observation/action machinery.
+        const prepared = await this.requireEngine().command('scope.interop.prepare', { ...args, initScripts: [], preparationId }, operation);
+        attempt.interopPrepared = true;
+        if (prepared.preparationId !== preparationId) throw this.invalidate();
+        if (this.playwrightClient === undefined) this.playwrightClient = await connectPlaywrightClient(prepared.endpoint, operation);
+        if (!this.playwrightClient.isConnected()) throw invalidState('The isolated Playwright context was lost; it cannot recover as a persistent default context');
+        attempt.rawBinding = await createPlaywrightContext(this.playwrightClient, creation, operation);
+        return this.requireEngine().command('scope.interop.adopt', { preparationId, contextId: attempt.rawBinding.contextId, targetId: attempt.rawBinding.targetId }, operation);
+      })();
+      attempt.rawOpening = establishing.then(() => undefined);
+      void attempt.rawOpening.catch(() => {});
+      const opened = await establishing;
       this.assertAttempt(attempt);
       attempt.scope = opened.identityScope; attempt.recovery = opened.recoveryIdentity;
       if (this.persistent && this.leases === undefined) {
@@ -245,13 +291,27 @@ export class NativeSurface implements NativeWebSurface {
       this.assertAttempt(attempt);
       if (startupSignal.aborted) throw new EngineError('CANCELLED', 'Native attempt startup was cancelled', { retryable: false });
       this.registryCurrent = version;
+      if (attempt.rawBinding?.kind === 'isolated') {
+        // Reserve a script-free blank Page first. Register user scripts only
+        // after native ownership, headers, routes and dialogs are installed.
+        // Activation refreshes that same Page before the first app navigation.
+        for (const source of creation.initScripts) {
+          await attempt.rawBinding.context.addInitScript(source);
+          this.assertAttempt(attempt); this.assertBudget(operation);
+        }
+      }
       attempt.ready = true;
     } catch (cause) {
       // A healthy, fully opened scope rejected only by local policy still needs scope.end.
       // The existing retirement owner fences business work and preserves cleanup failures.
-      if (!this.persistent && openDispatched && !attemptLeaseAcquired && attempt.scope === '' && isNativeNotDispatched(cause) && this.attempt === attempt) {
-        // A confirmed usable, undispatched open owns no scope to retire.
-        // Keep the exact healthy client, not merely a matching policy error code.
+      if (attempt.interopPrepared && this.attempt === attempt) {
+        // No fresh ordinary scope.end budget: only the existing exact Close
+        // safety authority may retire earlier prepare/PW allocations here.
+        attempt.retirement.abort();
+        void this.retireAttempt({ signal: attempt.retirement.signal, timeoutMs: 0 }).catch(() => {});
+      } else if (!this.persistent && openDispatched && !attempt.interopPrepared && !attemptLeaseAcquired && attempt.scope === '' && isNativeNotDispatched(cause) && this.attempt === attempt) {
+        // A settled refusal of prepare itself owns no new browser/context.
+        // Unlike adopt refusal after prepare ACK, it can retain the healthy worker.
         attempt.credentials = undefined; this.attempt = undefined;
       } else if (policyRejectedClient !== undefined && this.client === policyRejectedClient && this.attempt === attempt) {
         // Keep the unpublished owner for endAttempt's caller-provided cleanup budget.
@@ -301,11 +361,14 @@ export class NativeSurface implements NativeWebSurface {
     const videoRetirements = new Set<Promise<void>>();
     if (attempt?.recordingStop !== undefined) recordingStops.add(attempt.recordingStop);
     let scopeEnd: Promise<unknown> | undefined;
+    let peerRetirement: Promise<unknown> | undefined;
     let scopeEnded = false;
     let failure: unknown = this.retirementFailure;
     const failed = (cause: unknown, departed = false) => {
       // A departed waiter is not a failed exact-owner cleanup receipt.
-      if (departed && cleanup.signal.aborted && cause instanceof EngineError && (cause.code === 'CANCELLED' || cause.code === 'OPERATION_TIMEOUT')) return;
+      if (departed && (isLocalBudgetDeparture(cause) || isClosedFrameCancellation(cause))) return;
+      // Synthetic closed-frame cancellation is not settlement: the mandatory
+      // close/transport/provider receipts below must still prove retirement.
       failure ??= cause;
       this.retirementFailure ??= cause;
     };
@@ -333,6 +396,10 @@ export class NativeSurface implements NativeWebSurface {
     if (attempt !== undefined) attempt.credentials = undefined;
     try {
       remaining();
+      if (attempt?.rawOpening !== undefined) {
+        await raceAbort(() => attempt.rawOpening!.catch(() => undefined), cleanup.signal, 'joining Playwright context creation');
+        remaining();
+      }
       if (attempt !== undefined && attempt.wireRequests.size > 0) {
         await raceAbort(() => Promise.all(attempt.wireRequests), cleanup.signal, 'settling retired native requests');
         remaining();
@@ -367,20 +434,32 @@ export class NativeSurface implements NativeWebSurface {
         }
       }
       if (failure === undefined && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
-        const callbackEpoch = client!.callbackCheckpoint(); const budget = remaining();
+        const callbackEpoch = client!.callbackCheckpoint();
+        if (attempt.rawBinding?.kind === 'isolated') {
+          const budget = remaining();
+          peerRetirement = receipt(engine.command('scope.interop.retire', { identityScope: attempt.scope, contextId: attempt.rawBinding.contextId }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId)), true);
+          await raceAbort(() => peerRetirement!, cleanup.signal, 'draining native ownership before Playwright retirement');
+          remaining();
+          // PW owns this wrapper: successful public close emits its close event
+          // and removes it from browser.contexts(), unlike native-only disposal.
+          attempt.rawClosing ??= attempt.rawBinding.context.close();
+          receipt(attempt.rawClosing);
+          await raceAbort(() => attempt.rawClosing!, cleanup.signal, 'closing the exact Playwright context');
+        }
+        const budget = remaining();
         scopeEnd = engine.command('scope.end', { identityScope: attempt.scope }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId), callbackEpoch);
         receipt(scopeEnd, true);
         await raceAbort(() => scopeEnd!, cleanup.signal, 'ending native scope');
         scopeEnded = true; client!.retireCallbacks(callbackEpoch, 'scope-ended');
       }
-    } catch (cause) { failed(cause, true); }
+    } catch (cause) { failed(cleanup.signal.aborted ? connectionWaitDeparture(cleanup.signal, 'Native cleanup') : cause, true); }
 
     // NativeClient.close retains its existing independent terminal-safety budget.
     // Give it only the caller's remaining wait before independent lease release.
     const needsClose = client !== undefined && ((attempt !== undefined && !scopeEnded) || this.persistent || this.workerSourceLost || failure !== undefined || cleanup.signal.aborted);
     const closing = receipt(needsClose ? this.closeClient(cleanup, client) : Promise.resolve());
     try { await raceAbort(() => closing, cleanup.signal, 'waiting for native close'); }
-    catch (cause) { failed(cause, true); }
+    catch (cause) { failed(cleanup.signal.aborted ? connectionWaitDeparture(cleanup.signal, 'waiting for native close') : cause, true); }
     // Release billing with the original signal, even if expired. Its actual
     // receipt remains owned; a later cleanup caller cannot reissue release.
     const releasing = receipt(this.leases?.endAttempt(cleanup) ?? Promise.resolve());
@@ -390,6 +469,9 @@ export class NativeSurface implements NativeWebSurface {
     try {
       try { await closing; if (this.client !== client) nativeRetired = true; } catch (cause) { failed(cause); }
       // Join already-owned work, not new effects. Cancel ACK alone is not settlement.
+      if (attempt?.rawOpening !== undefined) await attempt.rawOpening.catch(() => undefined);
+      if (peerRetirement !== undefined) try { await peerRetirement; } catch (cause) { failed(cause, true); }
+      if (attempt?.rawClosing !== undefined) try { await attempt.rawClosing; } catch (cause) { failed(cause); }
       if (scopeEnd !== undefined) try { await scopeEnd; } catch (cause) { failed(cause, true); }
       if (attempt !== undefined) await Promise.allSettled(attempt.wireRequests);
       if (connecting !== undefined) {
@@ -427,7 +509,7 @@ export class NativeSurface implements NativeWebSurface {
       const disposed = () => {
         // A reported old failure is not unresolved custody. Only explicit init
         // may create a fresh tenure after every owner is confirmed disposed.
-        this.workerRestartable = !this.workerCleanupUnconfirmed && this.client === undefined && this.attempt === undefined && this.retiringAttempt === undefined && this.connecting === undefined;
+        this.workerRestartable = !this.workerCleanupUnconfirmed && this.client === undefined && this.playwrightClient === undefined && this.playwrightClosing === undefined && this.attempt === undefined && this.retiringAttempt === undefined && this.connecting === undefined;
         if (this.disposing === owned) this.disposing = undefined;
       };
       const deadline = cleanupDeadline(context);
@@ -450,20 +532,42 @@ export class NativeSurface implements NativeWebSurface {
     });
   }
   private onlyPendingWorkerAcquisition(): boolean {
-    // Bridge integration must also exclude retained PW/prepared custody here.
-    if (this.leases?.hasOnlyPendingWorkerAcquisition() !== true || this.retirementFailure !== undefined || this.workerCleanupUnconfirmed || this.client !== undefined || this.connecting !== undefined) return false;
+    // Pending acquisition is not an exemption for genuine PW/prepared custody.
+    if (this.leases?.hasOnlyPendingWorkerAcquisition() !== true || this.retirementFailure !== undefined || this.workerCleanupUnconfirmed || this.client !== undefined || this.playwrightClient !== undefined || this.playwrightClosing !== undefined || this.connecting !== undefined) return false;
     const attempt = this.attempt ?? this.retiringAttempt;
-    return attempt === undefined || (!attempt.ready && attempt.scope === '' && attempt.channel === undefined && attempt.wireRequests.size === 0
+    return attempt === undefined || (!attempt.ready && attempt.rawOpening === undefined && attempt.rawClosing === undefined && attempt.rawBinding === undefined && attempt.interopPrepared !== true && attempt.scope === '' && attempt.channel === undefined && attempt.wireRequests.size === 0
       && attempt.recording === undefined && attempt.recordingStop === undefined && attempt.recordingStarts.size === 0
       && attempt.lateRecordings.size === 0 && attempt.lateRecordingStops.size === 0 && attempt.finalizedVideo === undefined
       && attempt.nativeVideoStop === undefined && attempt.videoBlobBatches.size === 0 && attempt.downloads.size === 0);
   }
   private async closeClient(context: EngineCleanupContext, client = this.client): Promise<void> {
-    try {
-      await client?.close(this.operation(context.signal, context.timeoutMs));
-      if (this.client === client) { this.client = undefined; this.engine = undefined; this.openedBefore = false; }
+    // Capture the exact pending ownership before any await. Context close may
+    // await a PW close event, so join it only AFTER the PW disconnect receipt.
+    const attempt = this.attempt ?? this.retiringAttempt;
+    const rawOpening = attempt?.rawOpening;
+    let failure: unknown;
+    let nativeClosed = false;
+    try { await client?.close(this.operation(context.signal, context.timeoutMs)); nativeClosed = true; }
+    catch (cause) { failure = cause; }
+    if (rawOpening !== undefined) await rawOpening.catch(() => undefined);
+    if (this.client === client) {
+      const raw = this.playwrightClient;
+      if (raw !== undefined) {
+        try {
+          const closing = this.playwrightClosing ??= raw.close();
+          await closing;
+          if (this.playwrightClient === raw) this.playwrightClient = undefined;
+          if (this.playwrightClosing === closing) this.playwrightClosing = undefined;
+        } catch (cause) { failure ??= cause; }
+      }
+      // An earlier close rejection remains the attempt's first failure. It is
+      // not an excuse to drop this receipt or deadlock disconnect behind it.
+      if (attempt?.rawClosing !== undefined) await attempt.rawClosing.catch(() => undefined);
+      if (nativeClosed && this.playwrightClient === undefined && this.playwrightClosing === undefined && this.client === client) {
+        this.client = undefined; this.engine = undefined; this.openedBefore = false;
+      }
     }
-    catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
+    if (failure !== undefined) { this.workerCleanupUnconfirmed = true; throw failure; }
   }
   private async closeWorker(cleanup: EngineCleanupContext): Promise<void> {
     let failure: unknown;
@@ -667,6 +771,7 @@ export class NativeSurface implements NativeWebSurface {
   private async ensureConnected(operation: OperationContext, attempt: Attempt): Promise<void> {
     this.assertAttempt(attempt);
     if (attempt.recoveryFailure !== undefined) throw attempt.recoveryFailure.error;
+    if (attempt.rawBinding !== undefined && disconnectedBindingMode(attempt.rawBinding) === 'isolated-context-lost') throw invalidState('The isolated context was destroyed with its Playwright connection; a fresh attempt is required');
     if (this.requireClient().recoveryScope() === attempt.scope) attempt.recoveryPending = true;
     if (!attempt.recoveryPending) return;
     if (attempt.reconnect === undefined || attempt.recovery === undefined) throw invalidState('The native browser disconnected and has no persistent recovery contract');
@@ -734,7 +839,12 @@ export class NativeSurface implements NativeWebSurface {
       const correlated = result as BrowserCommandMap['fixture.correlate']['result'];
       return { ...correlated, matches: correlation!.project(correlated.matches) } as BrowserCommandMap[K]['result'];
     }
-    if (name === 'page.navigate' || name === 'page.reload' || name === 'page.back' || name === 'page.forward') this.tellEnvironment(attempt);
+    if (name === 'page.navigate' || name === 'page.reload' || name === 'page.back' || name === 'page.forward') { attempt.pageReady = true; this.tellEnvironment(attempt); }
+    if (attempt.rawBinding !== undefined && name === 'context.viewport') await attempt.rawBinding.page.setViewportSize(args as BrowserCommandMap['context.viewport']['args']);
+    if (attempt.rawBinding !== undefined && name === 'context.media') {
+      attempt.rawMedia = { ...attempt.rawMedia, ...args as BrowserCommandMap['context.media']['args'] };
+      await attempt.rawBinding.page.emulateMedia(attempt.rawMedia);
+    }
     if (name === 'network.routes.replace') this.registryCurrent = (args as BrowserCommandMap['network.routes.replace']['args']).version;
     return result;
   }
@@ -955,8 +1065,9 @@ export class NativeSurface implements NativeWebSurface {
   async startVideo(operation: OperationContext): Promise<void> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const recorder = this.leases?.recorder(attempt.context.attemptId);
+    await this.requireEngine().command('page.activate', { identityScope: admitted.scope }, operation);
+    attempt.pageReady = true;
     if (recorder !== undefined) {
-      await this.requireEngine().command('page.activate', { identityScope: admitted.scope }, operation);
       this.assertScope(attempt, admitted.scope); this.assertBudget(operation);
       if (attempt.recording !== undefined) return;
       if (attempt.recordingStart === undefined) {
@@ -1174,6 +1285,8 @@ export class NativeSurface implements NativeWebSurface {
   private operation(signal: AbortSignal, timeoutMs = LIFECYCLE_TIMEOUT_MS, attemptId = this.attempt?.context.attemptId ?? ''): OperationContext {
     return { signal, timeoutMs, runId: this.initInfo?.runId ?? '', attemptId, origin: 'test' };
   }
+  requireContext(): BrowserContext { const binding = this.requireAttempt().rawBinding; if (binding === undefined) throw invalidState('No live Playwright context exists'); return binding.context; }
+  requirePage(): Page { const attempt = this.requireAttempt(); if (!attempt.pageReady || attempt.rawBinding === undefined) throw invalidState('No page is ready before app.open(), browser.goto(), or recording activation'); return attempt.rawBinding.page; }
   private requireAttempt(): Attempt { if (this.attempt === undefined || !this.attempt.ready || this.attempt.scope === '') throw invalidState('No native browser attempt is ready'); return this.attempt; }
   private assertScope(attempt: Attempt, scope: string): void { this.assertAttempt(attempt); if (attempt.scope !== scope) throw new EngineError('CANCELLED', 'The native browser scope has retired', { retryable: false }); }
   /** A reused scope string cannot restore a retired observation's publication owner. */
@@ -1226,7 +1339,7 @@ function cleanupDeadline(context: EngineCleanupContext): CleanupDeadline {
   const controller = new AbortController();
   const signal = AbortSignal.any([context.signal, controller.signal]);
   const endsAt = performance.now() + context.timeoutMs;
-  const expire = () => controller.abort(new EngineError('OPERATION_TIMEOUT', 'Native cleanup exhausted its caller budget', { retryable: false }));
+  const expire = () => controller.abort(connectionDeadline('Native cleanup exhausted its caller budget'));
   const timer = setTimeout(expire, Math.max(0, context.timeoutMs));
   if (context.timeoutMs <= 0) expire();
   return {
