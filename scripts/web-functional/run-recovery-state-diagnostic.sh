@@ -12,8 +12,16 @@ case "$DIAGNOSTIC_CASE" in
 esac
 printf '%s\n' 'One original case, one attempt, original operation/test budgets. Same verified native9b source/binary. Not a fix, not full Web, no imported passes; a nonreproduction is not a repair.' > "$out/scope.txt"
 cd "$GITHUB_WORKSPACE/source"
+pattern='^CDP session recovery > shares recovery between concurrent operations while a cancelled waiter dispatches nothing$'
+pnpm --filter @e2e-dev/web exec vitest list --project integration "$DIAGNOSTIC_FILE" --no-staticParse -t "$pattern" --json="$out/selected-collect.json"
+python3 - "$out/selected-collect.json" <<'PY_COLLECT'
+import json,sys,os
+j=json.load(open(sys.argv[1]));assert len(j)==1
+assert j[0]['name']=='CDP session recovery > shares recovery between concurrent operations while a cancelled waiter dispatches nothing'
+assert j[0]['file'].endswith('/'+os.environ['DIAGNOSTIC_FILE'])
+PY_COLLECT
 set +e
-pnpm --filter @e2e-dev/web exec vitest run --project integration "$DIAGNOSTIC_FILE" -t "^${DIAGNOSTIC_TITLE}$" --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/case.vitest.json" 2>&1 | tee "$out/case.log"
+pnpm --filter @e2e-dev/web exec vitest run --project integration "$DIAGNOSTIC_FILE" -t "$pattern" --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/case.vitest.json" 2>&1 | tee "$out/case.log"
 status=${PIPESTATUS[0]}
 set -e
 printf '%s\n' "$status" > "$out/case.exit"

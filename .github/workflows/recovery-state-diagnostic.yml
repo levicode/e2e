@@ -82,11 +82,11 @@ jobs:
     - name: Seed public apt archives from verified prior run (not test evidence)
       env:
         GH_TOKEN: ${{ github.token }}
-      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
-        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
-        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
-        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
-        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\" | curl --fail\
+        \ --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\n\
+        python3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
     - name: Probe orchestration regressions (not native runtime proof)
       working-directory: source
       run: node --test scripts/acceptance/probe-native.test.ts
@@ -133,6 +133,3 @@ jobs:
         - case: concurrent-recovery
           file: tests/integration/cdp-recovery.test.ts
           title: CDP session recovery shares recovery between concurrent operations while a cancelled waiter dispatches nothing
-        - case: state-roundtrip
-          file: tests/integration/native-state-roundtrip.test.ts
-          title: restores cookies, local storage and structured IndexedDB before the first app script without bootstrap requests
