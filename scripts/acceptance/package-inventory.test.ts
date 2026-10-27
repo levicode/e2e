@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { create } from 'tar';
+import { create, Header } from 'tar';
 import { packageInventory } from './package-inventory.ts';
 import { sha256, type PackageInventory } from './bundle.ts';
 
@@ -37,6 +37,44 @@ async function withInventory(run: (root: string) => Promise<void>): Promise<void
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+/**
+ * Build an archive whose second member is larger than one tar read, so the identity member
+ * rejects while the archive is still being listed. Extracting it would cost 17MiB per case,
+ * so the member is a sparse hole rather than written bytes.
+ */
+function writeSparseArchive(root: string, metadata: string, size = 17 * 1024 * 1024): string {
+  const file = join(root, 'sparse.tgz');
+  const fd = openSync(file, 'w');
+  const addHeader = (path: string, entrySize: number, offset: number): void => {
+    const header = new Header({ path, mode: 0o644, size: entrySize, type: 'File', mtime: new Date(0) });
+    header.encode();
+    const block = header.block;
+    assert.ok(block, 'tar header block');
+    writeSync(fd, block, 0, 512, offset);
+  };
+  const bytes = Buffer.from(metadata);
+  addHeader('package/package.json', bytes.length, 0);
+  writeSync(fd, bytes, 0, bytes.length, 512);
+  addHeader('package/large.bin', size, 1024);
+  ftruncateSync(fd, 1536 + size + 1024);
+  closeSync(fd);
+  return file;
+}
+
+/** Count rejections that escape to the process while `run` settles, so a late handler can't hide. */
+async function expectNoUnhandledRejection(run: () => Promise<void>): Promise<void> {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await run();
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+  assert.deepEqual(unhandled, []);
 }
 
 test('reads a scoped package identity and hashes the actual packed bytes in path order', async () => {
@@ -112,5 +150,78 @@ test('rejects a missing or malformed package.json', async () => {
 test('rejects a missing archive without leaving work pending', async () => {
   await withInventory(async (root) => {
     await assert.rejects(packageInventory(join(root, 'absent.tgz')));
+  });
+});
+
+test('rejects an invalid identity read before the archive finishes listing, without an unhandled rejection', async () => {
+  await withInventory(async (root) => {
+    const archive = writeSparseArchive(root, identity(42, '1.0.0'));
+    await expectNoUnhandledRejection(async () => {
+      await assert.rejects(packageInventory(archive), /identity is missing/);
+    });
+  });
+  await withInventory(async (root) => {
+    const archive = writeSparseArchive(root, identity('e2e', 42));
+    await expectNoUnhandledRejection(async () => {
+      await assert.rejects(packageInventory(archive), /identity is missing/);
+    });
+  });
+  await withInventory(async (root) => {
+    const archive = writeSparseArchive(root, '{ not json');
+    await expectNoUnhandledRejection(async () => {
+      await assert.rejects(packageInventory(archive), SyntaxError);
+    });
+  });
+});
+
+test('accepts a valid identity from a large archive and stays clean across repeated reads', async () => {
+  await withInventory(async (root) => {
+    const archive = writeSparseArchive(root, identity('e2e', '1.0.0'));
+    await expectNoUnhandledRejection(async () => {
+      const inventory = await packageInventory(archive);
+      assert.equal(inventory.name, 'e2e');
+      assert.equal(inventory.version, '1.0.0');
+      assert.deepEqual(inventory.files.map(file => file.path), ['large.bin', 'package.json']);
+    });
+  });
+  await withInventory(async (root) => {
+    const invalid = writeSparseArchive(root, identity(42, '1.0.0'));
+    const valid = await writeArchive(root, { 'package.json': identity('e2e', '1.0.0'), 'a.js': 'a' });
+    await expectNoUnhandledRejection(async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await assert.rejects(packageInventory(invalid), /identity is missing/);
+        assert.equal((await packageInventory(valid)).name, 'e2e');
+      }
+    });
+  });
+});
+
+test('propagates a listing failure to a caller try/catch without an unhandled rejection', async () => {
+  await withInventory(async (root) => {
+    const complete = readFileSync(await writeArchive(root, { 'package.json': identity('e2e', '1.0.0'), 'a.bin': 'x'.repeat(200_000) }));
+    const truncated = join(root, 'truncated.tgz');
+    writeFileSync(truncated, complete.subarray(0, complete.length - 100));
+    await expectNoUnhandledRejection(async () => {
+      let rejection: unknown;
+      try {
+        await packageInventory(truncated);
+      } catch (error) {
+        rejection = error;
+      }
+      assert.ok(rejection instanceof Error, 'the caller catches a normal rejection');
+    });
+  });
+  await withInventory(async (root) => {
+    const archive = writeSparseArchive(root, identity(42, '1.0.0'));
+    await expectNoUnhandledRejection(async () => {
+      let rejection: unknown;
+      try {
+        await packageInventory(archive);
+      } catch (error) {
+        rejection = error;
+      }
+      assert.ok(rejection instanceof Error, 'the caller catches a normal rejection');
+      assert.match(rejection.message, /identity is missing/);
+    });
   });
 });

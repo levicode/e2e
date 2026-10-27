@@ -4,6 +4,17 @@ import { sha256, type BundleFile, type PackageInventory } from './bundle.ts';
 /** A packed identity is a real JSON string, so a truthy value is not enough. */
 const identityPart = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 
+/**
+ * Watch a member read from the moment it starts. A read can reject while the archive is
+ * still being listed, long before this function decides to rethrow; without a handler
+ * attached here that rejection surfaces as an unhandled process-level rejection.
+ * `Promise.allSettled` still reports the original rejection for the final throw.
+ */
+const trackMember = (member: Promise<void>): Promise<void> => {
+  member.catch(() => {});
+  return member;
+};
+
 /** Read the actual packed bytes, not a guessed list of source/dist files. Never extract archives. */
 export async function packageInventory(archive: string): Promise<PackageInventory> {
   const files: BundleFile[] = [];
@@ -18,7 +29,7 @@ export async function packageInventory(archive: string): Promise<PackageInventor
     const path = entry.path.slice('package/'.length);
     if (!path || path.includes('\\') || path.split('/').some(part => !part || part === '.' || part === '..') || seen.has(path)) { unsafe = new Error('Package archive contains an unsafe member'); entry.resume(); return; }
     seen.add(path);
-    pending.push(new Promise<void>((resolve, reject) => {
+    pending.push(trackMember(new Promise<void>((resolve, reject) => {
       const chunks: Buffer[] = [];
       entry.on('data', chunk => chunks.push(Buffer.from(chunk)));
       entry.on('error', reject);
@@ -36,7 +47,7 @@ export async function packageInventory(archive: string): Promise<PackageInventor
           resolve();
         } catch (error) { reject(error); }
       });
-    }));
+    })));
   } });
   // Settle every member so a rejected read never surfaces as an unhandled rejection.
   const settled = await Promise.allSettled(pending);
