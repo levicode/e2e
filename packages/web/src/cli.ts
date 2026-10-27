@@ -1,17 +1,18 @@
-/** The `e2e-web` command: browser installs with the Playwright version this engine pins. */
+/** Explicit browser installation through the matched native runtime. */
 
-import { BROWSER_NAMES, isBrowserName } from './browser-connection.ts';
-import { runPlaywrightCli } from './install.ts';
+import { runNativeInstall } from './native/install.ts';
+const BROWSER_NAMES = ['chromium'] as const;
+const isBrowserName = (name: string) => name === 'chromium';
 
-const BROWSER_ARGS = `[${BROWSER_NAMES.join('|')} ...] [--with-deps]`;
+const BROWSER_ARGS = '[chromium] [--with-deps]';
 
 const USAGE = `Usage: npx @e2e-dev/web install ${BROWSER_ARGS}
        bunx @e2e-dev/web install ${BROWSER_ARGS}
        pnpm exec e2e-web install ${BROWSER_ARGS}
 
-Installs browsers for the Playwright version @e2e-dev/web runs. Installs
-chromium when no browser is named. --with-deps also installs the system
-libraries the browsers need on Linux.
+Installs Chromium through the explicitly configured matching native runtime.
+No runtime or browser is installed implicitly at startup. --with-deps also
+installs the system libraries Chromium needs on Linux.
 `;
 
 /** What `main` writes to and spawns; tests replace them. */
@@ -24,7 +25,7 @@ export interface CliIo {
 const PROCESS_IO: CliIo = {
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
-  run: runPlaywrightCli,
+  run: runNativeInstall,
 };
 
 /** Runs `e2e-web` with the arguments after the command name and resolves to the exit code. */
@@ -50,5 +51,5 @@ export async function main(args: readonly string[], io: CliIo = PROCESS_IO): Pro
     io.stderr(`unknown browser "${unknownBrowser}"; expected one of ${BROWSER_NAMES.join(', ')}\n`);
     return 2;
   }
-  return io.run(['install', ...options, ...(names.length > 0 ? names : ['chromium'])]);
+  return io.run(options.includes('--with-deps') ? ['install', '--with-deps'] : ['install']);
 }

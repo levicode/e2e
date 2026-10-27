@@ -48,7 +48,7 @@ async function boot(engine: EngineHandle, app: FixtureApp): Promise<void> {
     targetName: 'web',
     projectRoot: process.cwd(),
     app: { site: new URL(app.url).hostname },
-    env: {},
+    env: process.env,
     headed: false,
     workerSlot: 0,
     log: () => undefined,
@@ -96,6 +96,17 @@ describe('an exact label query composed as a has filter', () => {
     expect((await locate(byLabel('Name', true, true))).map((node) => node.states?.hidden)).toEqual([undefined]);
     expect(await testIds(rowsWith(byLabel('Name', true, true)))).toEqual(['row-name']);
     expect(await testIds(rowsWith(byLabel('Name', false, true)))).toEqual(['row-last-name', 'row-name']);
+  });
+
+  it('unions two queries in document order, counting an overlapping row once', async () => {
+    const testId = (value: string): LocatorExpression => ({
+      kind: 'query',
+      query: { kind: 'testId', value: { kind: 'string', value, exact: true } },
+    });
+    const union: LocatorExpression = { kind: 'union', left: testId('row-quoted'), right: testId('row-last-name') };
+    expect(await testIds(union)).toEqual(['row-last-name', 'row-quoted']);
+    expect(await testIds({ kind: 'union', left: testId('row-quoted'), right: testId('row-quoted') })).toEqual(['row-quoted']);
+    expect(await testIds({ kind: 'index', source: union, index: 'first' })).toEqual(['row-last-name']);
   });
 
   it('composes onto a position and a child query, and acts on the row it picked', async () => {

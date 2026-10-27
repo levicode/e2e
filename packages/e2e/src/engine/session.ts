@@ -1,3 +1,5 @@
+import { ReferenceEvidence } from './reference-evidence.ts';
+import { decodeEngineFieldValues, validateEngineReadFields } from './field-values.ts';
 /**
  * The engine-to-session adapter. One adapter per attempt satisfies
  * the internal `TargetSession` surface over the engine contract, so the agent
@@ -135,6 +137,22 @@ function isEngineSnapshot(value: unknown): value is EngineSnapshot {
   return typeof root === 'object' && root !== null && typeof (root as SemanticNode).ref?.id === 'string' && typeof viewport === 'object' && viewport !== null;
 }
 
+/** A viewport capability cannot masquerade as one of the semantic element refs. */
+function viewportReference(snapshot: EngineSnapshot, revision: string): NodeRef | undefined {
+  const ref = snapshot.viewportRef;
+  if (ref === undefined) return undefined;
+  if (ref === null || typeof ref !== 'object' || typeof ref.id !== 'string' || ref.id.length === 0 || typeof ref.revision !== 'string') {
+    throw new EngineError('INVALID_STATE', 'An engine viewport capability must be a node reference', { retryable: false });
+  }
+  const pending = [snapshot.root];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (node.ref.id === ref.id) throw new EngineError('INVALID_STATE', 'A viewport capability must be separate from semantic element references', { retryable: false });
+    if (node.children !== undefined) pending.push(...node.children);
+  }
+  return { ...ref, revision };
+}
+
 /** Located refs are pruned oldest-first past this bound so the map cannot grow unboundedly. */
 const MAX_LOCATED_REFS = 2048;
 
@@ -228,8 +246,10 @@ function declaredVerbs(engine: EngineHandle | undefined): ReadonlySet<GrammarVer
 export function createEngineSession(options: EngineSessionOptions): TargetSession {
   const { engine, targetName } = options;
   let revision = 0;
+  const evidence = new ReferenceEvidence(engine?.referenceRevisions === 'engine');
   /** The root ref of the newest observation, the address of a viewport swipe; unset until the first observation. */
   let root: NodeRef | undefined;
+  let explicitViewport: NodeRef | undefined;
 
   const unsupported = (what: string): never => {
     const remedy =
@@ -263,6 +283,10 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
   // which the locator engine treats as retryable: it re-resolves and reads again.
   let locateRevision = 0;
   const located = new Map<string, SemanticNode>();
+  const retireReferences = () => {
+    evidence.retire();
+    if (engine?.referenceRevisions === 'engine') { root = undefined; explicitViewport = undefined; located.clear(); }
+  };
 
   const stale = (ref: NodeRef): EngineError =>
     new EngineError('NODE_STALE', `node ${ref.id} is stale; re-resolve`, { retryable: true });
@@ -280,6 +304,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
   };
 
   const locateRaw = guard('locators (screen)', engine?.locate);
+  const readFieldsRaw = guard('fixture field reads', engine?.readFields);
   const observeRaw = guard('observation', engine?.observe);
   const performRaw = guard('actions', engine?.perform);
   const actions: ReadonlySet<LocatorActionKind> = new Set(engine?.actions ?? []);
@@ -290,8 +315,8 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
   const app: SessionApp = {
     open: guard('navigation', engine?.session?.open),
     back: guard('back navigation', engine?.session?.back),
-    restart: guard('app restart', engine?.session?.restart),
-    reset: guard('app state reset', engine?.session?.reset),
+    restart: async (...args) => { retireReferences(); return guard('app restart', engine?.session?.restart)(...args); },
+    reset: async (...args) => { retireReferences(); return guard('app state reset', engine?.session?.reset)(...args); },
   };
 
   const artifacts: SessionArtifacts = {
@@ -329,15 +354,25 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
     screens: {
       traced,
       push(snapshot) {
-        if (screenSink === undefined || !isEngineSnapshot(snapshot) || snapshot.treeUnavailable === true) return;
+        if (screenSink === undefined || !isEngineSnapshot(snapshot)) return;
         screenRevision += 1;
         const minted = `${SCREEN_REVISION_PREFIX}${screenRevision}`;
+        if (snapshot.treeUnavailable === true) {
+          if (snapshot.pixels === undefined || Object.keys(snapshot.root).some(key => key !== 'ref')) return;
+          showScreen({ kind: 'pixels', root: { ...snapshot.root.ref, revision: minted }, revision: minted,
+            capturedAt: new Date().toISOString(), viewport: snapshot.viewport, pixels: snapshot.pixels,
+            ...(snapshot.identityScope === undefined ? {} : { identityScope: snapshot.identityScope }),
+            redaction: { secureNodeCount: 0, maskedRegionCount: snapshot.maskedRegionCount ?? 0 } });
+          return;
+        }
         showScreen({
           kind: 'semantic',
           root: { ...snapshot.root.ref, revision: minted },
+          ...(snapshot.viewportRef === undefined ? {} : { viewportRef: viewportReference(snapshot, minted)! }),
           revision: minted,
           capturedAt: new Date().toISOString(),
           ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
+          ...(snapshot.identityScope === undefined ? {} : { identityScope: snapshot.identityScope }),
           viewport: snapshot.viewport,
           redaction: { secureNodeCount: countSecure(snapshot.root), maskedRegionCount: 0 },
           tree: stampRevision(snapshot.root, minted),
@@ -353,9 +388,10 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
       ? {}
       : {
           captureState: guard('state capture', engine.state.capture),
-          restoreState: guard('state restore', engine.state.restore),
+          restoreState: async (...args) => { retireReferences(); return guard('state restore', engine.state!.restore)(...args); },
         }),
     async observe(operation, observeOptions) {
+      const epoch = evidence.checkpoint();
       const snapshot = await observeRaw(
         operation,
         {
@@ -364,12 +400,16 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
           ...(observeOptions?.comparable === true ? { comparable: true } : {}),
         },
       );
+      evidence.scopeOf(snapshot.identityScope, epoch);
       const minted = `${OBSERVE_REVISION_PREFIX}${revision + 1}`;
+      evidence.capture([snapshot.root], minted, snapshot.viewportRef);
       const metadata = {
         root: { ...snapshot.root.ref, revision: minted },
+          ...(snapshot.viewportRef === undefined ? {} : { viewportRef: viewportReference(snapshot, minted)! }),
         revision: minted,
         capturedAt: new Date().toISOString(),
         ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
+        ...(snapshot.identityScope === undefined ? {} : { identityScope: snapshot.identityScope }),
         viewport: snapshot.viewport,
         redaction: {
           secureNodeCount: countSecure(snapshot.root),
@@ -385,11 +425,13 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         }
         located.clear();
         revision += 1;
-        root = metadata.root;
+        explicitViewport = metadata.viewportRef;
+        root = metadata.viewportRef ?? metadata.root;
         return { ...metadata, kind: 'pixels', pixels: snapshot.pixels };
       }
       revision += 1;
-      root = metadata.root;
+      explicitViewport = metadata.viewportRef;
+      root = metadata.viewportRef ?? metadata.root;
       const observation: Observation = {
         ...metadata,
         kind: 'semantic',
@@ -401,18 +443,21 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
       showScreen(observation);
       return observation;
     },
-    async locate(expression, operation) {
+    async locate(expression, operation, locateOptions) {
+      const epoch = evidence.checkpoint();
       // An engine answers `visible` inside scopes, filters, and indices, where
       // only it can; the harness holds a top-level query to the same predicate
       // so a direct query never resolves to a node its own state calls hidden.
-      const nodes = (await locateRaw(expression, operation)).filter(
+      const nodes = (await locateRaw(expression, operation, { purpose: locateOptions?.purpose ?? 'protected' })).filter(
         (node) =>
           !(expression.kind === 'query' && expression.query.visible === true) ||
           node.states?.hidden !== true,
       );
+      evidence.assert(epoch);
       locateRevision += 1;
       const locateRev = `${LOCATE_REVISION_PREFIX}${locateRevision}`;
       const refs: NodeRef[] = [];
+      evidence.capture(nodes, locateRev);
       for (const node of nodes) {
         const stamped = stampRevision(node, locateRev);
         located.delete(stamped.ref.id);
@@ -425,10 +470,21 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
       }
       return refs;
     },
+    ...(engine?.readFields === undefined ? {} : {
+      readFields: async (expression, fields, operation) => {
+        const epoch = evidence.checkpoint();
+        validateEngineReadFields(fields);
+        fields = Object.freeze([...fields]);
+        const values = await readFieldsRaw(expression, fields, operation, { purpose: 'fixture' });
+        evidence.assert(epoch);
+        return decodeEngineFieldValues(values, fields);
+      },
+    } satisfies Pick<TargetSession, 'readFields'>),
     async read(ref) {
       if (engine?.locate === undefined) unsupported('locators (screen)');
       const node = located.get(ref.id);
       if (node === undefined || node.ref.revision !== ref.revision) throw stale(ref);
+      evidence.resolve(ref);
       return node;
     },
     async perform(ref, action, operation) {
@@ -437,14 +493,18 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         unsupported(`modifiers on the "${action.kind}" action`);
       }
       if (action.kind === 'press') requireKey(action.key);
+      if (explicitViewport?.id === ref.id && action.kind !== 'swipe') throw new EngineError('INVALID_STATE', 'A viewport capability accepts only viewport swipe operations', { retryable: false });
+      if (action.kind === 'dragTo' && explicitViewport?.id === action.target.id) throw new EngineError('INVALID_STATE', 'A viewport capability is not a drag target', { retryable: false });
+      if (/^s\d+$/.test(ref.revision) || (action.kind === 'dragTo' && /^s\d+$/.test(action.target.revision))) throw stale(ref);
       rejectSupersededLocate(ref);
       if (action.kind === 'dragTo') rejectSupersededLocate(action.target);
-      await performRaw(ref, action, operation);
+      await performRaw(evidence.resolve(ref), action.kind === 'dragTo' ? { ...action, target: evidence.resolve(action.target) } : action, operation);
     },
     async swipe(direction, momentum, operation) {
       if (!actions.has('swipe')) unsupported('swipe gestures');
-      const target = root ?? (await session.observe(operation)).root;
-      await performRaw(target, { kind: 'swipe', direction, ...(momentum === undefined ? {} : { momentum }) }, operation);
+      const observed = root === undefined ? await session.observe(operation) : undefined;
+      const target = root ?? observed!.viewportRef ?? observed!.root;
+      await performRaw(evidence.resolve(target), { kind: 'swipe', direction, ...(momentum === undefined ? {} : { momentum }) }, operation);
     },
     async performAt(point, action, operation) {
       if (!pointerActions.has(action.kind)) unsupported(`the "${action.kind}" action at a point`);
@@ -466,6 +526,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
     close: guard('attempt end', async (operation) => {
       if (ended) return;
       ended = true;
+      retireReferences();
       await engine?.endAttempt?.({ signal: operation.signal, timeoutMs: operation.timeoutMs });
     }),
   };

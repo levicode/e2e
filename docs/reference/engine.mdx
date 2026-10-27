@@ -88,12 +88,14 @@ rules:
 | `spiVersion` | Anything but `1`. |
 | `platform` | Empty. |
 | `workers` | Not a positive safe integer. |
-| `observe`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
+| `observe`, `locate`, `readFields`, `perform`, `performAt`, `prepare`, `finish`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
 | any other top-level key | On an object literal, `app` included: declare the app on the target and check it in `validateApp`. A class instance's own fields are not checked. |
 | `perform`, `locate`, `performAt`, `keyboard` | Declared without `observe`. |
+| `readFields` | Declared without `locate`. |
 | `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
+| `referenceRevisions` | Present with a value other than `'engine'`. |
 | `keyboard`, `state`, `artifacts`, `session` | An unknown key or a non-function member. `keyboard` without `type` and `press`; `state` without both `capture` and `restore`; `artifacts` without `screenshot`; `startVideo` without `stopVideo`, or the reverse. |
 | `secrets` | Not an array of `secrets.get()` handles. |
 | `fixtures` | Not an object, a fixture that is not a factory function, or a fixture name that is not a lower-camel identifier or shadows `agent`, `app`, `screen`, `platform`, or `session`. |
@@ -122,6 +124,7 @@ The body of one target. Every member but `name`, `version`, and
 | [`locate`](#capabilities) | method |
 | [`performAt`, `pointerActions`](#pointer-actions) | method, kinds |
 | [`tapModifiers`](#capabilities) | `boolean` |
+| `referenceRevisions` | `'engine'` (optional) |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | factories |
 | [`state`](#state) | `EngineStateCapability` |
@@ -192,13 +195,21 @@ export interface Engine {
   locate?(
     expression: LocatorExpression,
     context: OperationContext,
+    options?: { readonly purpose: 'protected' | 'fixture' },
   ): Promise<readonly SemanticNode[]>;
+  /** Optional fixture-only current values, without refs or geometry. */
+  readFields?(
+    expression: LocatorExpression,
+    fields: readonly EngineReadField[],
+    context: OperationContext,
+    options: { readonly purpose: 'fixture' },
+  ): Promise<readonly EngineFieldValues[]>;
   /**
    * capability: pointer - requires observation. Performs one pointer action
    * at a viewport point, in the CSS pixels of `SemanticNode.rect`, with no
-   * node behind it: the agent's `tap_at` verb lands here when the point the
-   * model named in a screenshot sits on nothing the tree lists (a shape on a
-   * canvas, a pin on a map, a control in a system sheet), and so do a test's
+   * node behind it: the agent's `tap_at` and `hover_at` verbs land here with
+   * the point the model named in a screenshot (a shape on a canvas, a pin on
+   * a map, a control in a system sheet or one the tree lists), and so do a test's
    * `screen.tapAt`, `screen.swipe({ from, to })`, and `tap({ position })`.
    * Dispatch the pointer at the point as given; the harness has clamped an
    * agent's point to the viewport and validated a test's. Throw
@@ -220,6 +231,7 @@ export interface Engine {
    * reaches the engine.
    */
   readonly tapModifiers?: boolean;
+  readonly referenceRevisions?: 'engine';
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -252,9 +264,12 @@ export interface Engine {
   readonly session?: EngineSession;
   /**
    * Runs once per target in the runner, after collection and before workers,
-   * app commands, and the run's clock start. Download dependencies or boot
-   * devices here; report progress through `info.log`. No launch timeout
-   * applies. A failure ends the run as an infrastructure error.
+   * app commands, and the run's clock start. A run with nothing to run (the
+   * test filters left nothing, or `--pass-with-no-tests` on an empty
+   * selection) prepares no target, and so calls no `finish`. Download
+   * dependencies or boot devices here; report progress through `info.log`.
+   * No launch timeout applies. A failure ends the run as an infrastructure
+   * error.
    * The result can lower the target's worker cap, for example after
    * discovering how many devices are available.
    */
@@ -385,11 +400,12 @@ An undeclared verb is absent from the toolset.
 | `dismiss_keyboard` | `keyboard.dismiss` |
 
 - `clear` and `focus` unlock no verb.
-- `tap_at`, `hover_at`, `type_at`, `press_at`, and `select_at` go through
-  `perform` when the point lands on a node the tree lists.
-- When the point lands on nothing the tree lists, `tap_at` and `hover_at`
-  go through `performAt` (the `tap` and `hover` pointer kinds), and
-  `type_at` and `press_at` fall back to `keyboard`.
+- `tap_at` and `hover_at` go through `performAt` (the `tap` and `hover`
+  pointer kinds). Without that kind they go through `perform` when the point
+  lands on a node the tree lists.
+- `type_at`, `press_at`, and `select_at` go through `perform` when the point
+  lands on a node the tree lists. Elsewhere `type_at` and `press_at` fall
+  back to `keyboard`.
 
 #### Test APIs
 
@@ -565,8 +581,9 @@ export interface EnginePrepareInfo {
    * The worker slots the run will start for this target, `0` to `slots - 1`:
    * the run's worker cap, the engine's declared `workers`, and the work units
    * selected for the target, whichever is smallest; `0` when nothing runs on
-   * it. Provision for exactly these slots (boot that many devices of a pool);
-   * `init` then finds them ready.
+   * it while another target has work. A run with nothing to run prepares no
+   * target. Provision for exactly these slots (boot that many devices of a
+   * pool); `init` then finds them ready.
    */
   readonly slots: number;
   /**
@@ -867,13 +884,68 @@ export interface EngineDisposeContext extends EngineCleanupContext {
 | Field | Type |
 | --- | --- |
 | `location` | `string` |
+| `identityScope` | `string` |
 | `root` | `SemanticNode` |
+| `viewportRef` | `NodeRef` (optional) |
 | `viewport` | `ViewportSize` |
 | [`truncated`](#truncated-trees) | `boolean` |
 | `keyboardVisible` | `boolean` |
 | [`treeUnavailable`](#pixel-fallback) | `true` |
 | `pixels` | `ObservationPixels` |
 | `maskedRegionCount` | `number` |
+
+An optional `identityScope` is an opaque namespace for live element identity.
+Keep it stable while recovering a stale element by its descriptor is valid.
+Change it when resetting or replacing the context makes prior elements unrelated.
+The runner then discards live target history and refuses to relocate an earlier
+reference into the new scope, even when an element has the same name. The value
+is not model input. Element ids must not be reused for unrelated elements within
+an attempt, even across scope changes, because executor targets contain only an id.
+Engines that omit it keep their existing recovery behavior;
+the stable viewport capability remains usable across resets. Changing scope does not
+clear secret exposure, pixel taint, or attempt accounting.
+
+The runner selects a locator read purpose through the optional third `locate`
+argument. Omission means `protected`: model-facing MCP locate must meet the same
+privacy guarantees as protected observations. Deterministic test fixtures explicitly
+use `fixture`, retaining their existing reads and callback behavior. This is not a
+model tool argument. Both paths keep secure fields masked; a protected read failure
+must never retry through the fixture path. Engines with a two-argument `locate`
+remain source-compatible and may apply their existing stricter policy to both.
+
+An optional `viewportRef` separates viewport scrolling from the actual document
+root. `screen.swipe()` and untargeted agent scrolling use it, while direct root
+clicks, reads, and drags continue to address the exact document root. Its id must
+remain stable across restart/reset, and it accepts only viewport swipe operations.
+Do not put this capability into the semantic tree or expose invented DOM metadata.
+Without this field, existing engines keep using the root for viewport scrolling.
+
+An engine that validates its own reference revisions opts into
+`referenceRevisions: 'engine'`. The runner still mints presentation revisions
+for observations and locator reads, but privately retains the exact
+original reference and identity scope. Before an action, including both ends
+of a drag and viewport swipes, it restores only that exact provenance. It does
+not allocate new element IDs, look up the newest revision by ID, or semantically
+rebind a stale element. Missing or evicted presentation references fail with
+`NODE_STALE`. The bridge atomically admits a complete batch of at most 16,384 references
+(including any viewport capability), with a maximum tree depth of 256. An
+oversized batch fails before publishing; older retained batches may be evicted.
+Scope transitions and
+attempt retirement invalidate old evidence. Reset, restart, and state restore
+also retire pending acquisitions before dispatch. Engines omitting the opt-in
+continue to receive the existing runner revision format unchanged. Trace-only `s<number>` references are never actionable. Pixel-only trace
+snapshots do not advance semantic reference authority or replace the model's
+observation. Native Web uses protected screenshot capture for optional action
+traces, including the first action before any observation. Native capture issues
+an exact Page viewport capability and returns its captured viewport and location;
+the adapter does not invent a semantic root or reuse a cached observation reference.
+This publication does not advance semantic revisions or replace node membership.
+A newer observation, recovery, cancellation, or owner change discards a pending
+trace after its original image handle is released.
+
+Core
+presentation revisions use the reserved `b<number>`, `l<number>`, and
+`s<number>` namespaces; undecorated engine refs remain engine-validated.
 
 Return the surface as it is right now. The runner mints the revision and
 stamps it onto every ref. When `pixels` are present, it checks that
@@ -887,6 +959,8 @@ childless root and include `pixels`.
  * observation byte budget apply to every engine equally.
  */
 export interface EngineSnapshot {
+  /** Opaque live-element namespace; changes prevent cross-scope relocation. */
+  readonly identityScope?: string;
   /**
    * Where the surface is, as an opaque address the platform understands: a
    * URL on a document platform, the foreground screen or activity on a
@@ -897,15 +971,14 @@ export interface EngineSnapshot {
    */
   readonly location?: string;
   /**
-   * The observation tree under one root the engine minted. The root's id MUST
-   * be stable for the surface across observations: `perform(root, swipe)` is
-   * the viewport swipe, and the harness addresses it from an earlier
-   * observation, possibly one taken before a `restart` or `reset`, so the
-   * root swipe MUST NOT depend on a live handle from that observation. A
-   * platform with several top-level elements (a device's windows) wraps them
-   * in a root of its own.
+   * The actual semantic root. Without viewportRef its id remains stable
+   * across observations/reset, preserving legacy perform(root, swipe).
+   * With viewportRef it is an exact element ref and can change with the
+   * document; old element refs must not rebind to replacements.
    */
   readonly root: SemanticNode;
+  /** Stable viewport-only operation capability, never a semantic DOM node. */
+  readonly viewportRef?: NodeRef;
   /** The viewport `SemanticNode.rect` and `ViewportPoint` are measured in, in CSS pixels. */
   readonly viewport: ViewportSize;
   /**
@@ -1402,7 +1475,17 @@ export const RETRYABLE_ENGINE_ERROR_CODES: ReadonlySet<EngineErrorCode> = new Se
 ]);
 ```
 
+Native locator-action refusals name the requested action. Sensitive fill diagnostics use a fixed `[redacted]` marker, not the submitted value or a raw renderer cause. Native fill checks whether the exact target accepts text before reserving a mutation; that extra read uses the original operation deadline. The mutation path rechecks the target, so a later DOM change can still produce an unknown outcome. An unknown outcome remains `ACTION_MAY_HAVE_COMMITTED` and non-retryable. Its message does not claim that input was dispatched: preparation such as scrolling or focusing may also have effects.
+
 #### Timeouts at a deadline
+
+Native point input waits within its original operation budget for older input
+to settle. If that budget ends before the new input is dispatched, it reports
+`OPERATION_TIMEOUT` with `retryable: false`, not `ACTION_MAY_HAVE_COMMITTED`.
+The earlier input remains owned until actual settlement; its unknown receipt
+is never rewritten or made replayable by the new timeout. A late reply
+cannot reopen a quarantined or retired scope. Input already dispatched without
+a confirmed outcome still reports `ACTION_MAY_HAVE_COMMITTED`.
 
 An `OPERATION_TIMEOUT` on a locate or read that started with under 100 ms of
 a waiting call's deadline left, after one that completed, ends the wait
@@ -1423,6 +1506,10 @@ An `EngineError` a contributed fixture method throws is mapped by the table
 above, so a fixture over a session that ended reports `APP_NOT_OPEN` the way
 an observation would. A method can also fail a step with the runner's own
 error classes, exported from the same entry.
+
+The native Web adapter reports `TestError('POLICY_DENIED')` only for a
+policy refusal with no dispatched action and a usable scope. A policy label
+never overrides unknown effects or makes a closed or quarantined scope reusable.
 
 ```ts
 throw new TestError('ASSERTION_FAILED', 'expected the receipt to print');
@@ -1518,6 +1605,7 @@ async locate(expression) {
   engine reproduces it.
 - A `selector` expression needs the `selector` option.
 - A `frame` expression is `FRAME_NOT_FOUND`.
+- A `union` expression matches either branch in document order, without duplicate nodes.
 
 #### `urlMatches`
 
@@ -2241,3 +2329,9 @@ scope, filter, or index too.
 `@e2e-dev/web` ([reference](/reference/web)) and `@e2e-dev/mobile`
 ([reference](/reference/mobile)) implement this contract with the same
 public `defineEngine`.
+
+### Pure fixture field reads
+
+An engine may implement `readFields` alongside `locate`, using the same matcher, policy, cancellation, and owner checks. It resolves once and returns only requested fields plus mandatory `states.secure`. `EngineReadField` excludes `ref`, `rect`, and `children`; `EngineFieldValues` never establishes action authority. Core validates the closed projection without capturing references, advancing presentation revisions, or replacing an existing locate cache. Unknown or repeated fields, unrequested output, missing secure metadata, and leaked secure values are refused.
+
+Fixture `textContent`, `inputValue`, `getAttribute`, value/state predicates, and `allTextContents` use the hook when present. Polling, strict cardinality, missing frames, normalization, missing values, and secure-read denial retain their existing contracts. Geometry, actions, protected expectations, `count`, and `all` keep the reference path. Engines without the optional hook retain the earlier read behavior. Native Web requires negotiated `browser.fixture-read-fields/1`, and never falls back when the native capability or read authority is absent. A live native callback may independently read current values while input debt remains, without forgiving that debt or promising transaction consistency.

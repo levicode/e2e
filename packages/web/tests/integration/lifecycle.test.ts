@@ -1,5 +1,8 @@
+import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
+import { LifecycleAttemptDiagnostic } from '../helpers/lifecycle-attempt-diagnostic.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
 /**
- * The playwright engine's lifecycle through the public contract: one shared
+ * The native engine's lifecycle through the public contract: one shared
  * browser per engine, one context per attempt, and honest idempotent
  * teardown. No runner involved - the hooks are driven directly, the way the
  * attempt executor drives them.
@@ -8,21 +11,69 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { BrowserContext, Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type {
   VideoFile,
   VideoSegment,
   EngineCleanupContext,
+  EngineFixtureContext,
   EngineHandle,
   LocatorExpression,
   OperationContext,
   SemanticNode,
 } from 'e2e/engine';
-import { web, surfaceOf } from '../../src/index.ts';
+import { EngineError } from 'e2e/engine';
+import { web, type Browser } from '../../src/index.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { beginSyntheticCase, type SyntheticCommand, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
+
+/** Synchronous boundary facts only; never wrap or repeat a browser operation. */
+class LifecycleEvidence {
+  readonly evidence: SyntheticEvidence;
+  readonly outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
+  currentPhase: SyntheticPhase = 'init';
+  private active: { section: keyof SyntheticOutcome; phase: SyntheticPhase } | undefined;
+
+  observer: SyntheticNativeObserver;
+  private restore = () => {};
+  constructor(caseId: SyntheticCaseId) {
+    this.evidence = beginSyntheticCase(caseId);
+    this.observer = new SyntheticNativeObserver(this.evidence, () => this.currentPhase);
+    if (caseId !== 'P27') {
+      try {
+        const connect = NativeClient.connect;
+        const spy = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => this.observer.connection(connect(...args)));
+        this.restore = () => spy.mockRestore();
+      } catch { this.evidence.invalidate(); }
+    }
+  }
+  select<T>(ordinal: number, command: SyntheticCommand, body: () => T): T { return this.observer.select(ordinal, command, body); }
+  assert<T>(ordinal: number, body: () => T): T { return this.observer.assert(ordinal, body); }
+  phase(section: keyof SyntheticOutcome, phase: SyntheticPhase): void {
+    this.returned();
+    this.currentPhase = phase;
+    this.outcome[section] = 'incomplete';
+    this.active = { section, phase };
+    this.evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+  }
+  returned(): void {
+    // Enter facts plus explicit section/matcher outcomes replace redundant automatic phase passes.
+    this.active = undefined;
+  }
+  passed(section: keyof SyntheticOutcome): void { this.returned(); this.outcome[section] = 'passed'; this.evidence.record({ kind: 'phase', section, phase: this.currentPhase, state: 'passed' }); }
+  failed(section: keyof SyntheticOutcome, cause?: unknown): void {
+    if (cause !== undefined) this.observer.failure(section, cause);
+    if (this.active !== undefined) this.evidence.record({ kind: 'phase', ...this.active, state: 'failed' });
+    this.active = undefined;
+    this.outcome[section] = 'failed';
+  }
+  finish(): void { this.observer.close(); try { this.restore(); } catch { this.evidence.invalidate(); } this.evidence.finish(this.outcome); }
+}
 
 /** The segments as files: a local recording never links, so a link here is a failure. */
 function videoFiles(segments: readonly VideoSegment[]): VideoFile[] {
@@ -54,17 +105,16 @@ function* walk(node: SemanticNode): Generator<SemanticNode> {
   for (const child of node.children ?? []) yield* walk(child);
 }
 
-/** Runs one attempt on a booted engine and always tears it down. */
 /**
  * Decodes a recording inside the page and reads its last frame: the frame's
  * size, how much of it is the grey a screencast pads a smaller frame with,
  * and how much of it is content.
  */
 async function lastFrame(
-  page: Page,
+  browser: Browser,
   webm: Buffer,
 ): Promise<{ width: number; height: number; padded: number; inked: number }> {
-  return page.evaluate(async (bytes) => {
+  return browser.evaluate(async (bytes) => {
     const video = document.createElement('video');
     video.muted = true;
     video.src = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'video/webm' }));
@@ -97,73 +147,100 @@ async function lastFrame(
   }, [...webm]);
 }
 
-/**
- * Watches the frames the engine's screencast delivers, so a test can hold a
- * video segment open until it received a painted one: Playwright writes a
- * white frame for a segment stopped before its first frame arrived.
- */
-function watchPaint() {
-  const painted = new WeakSet<Page>();
-  const restores: (() => void)[] = [];
-  const watchPage = (page: Page): void => {
-    const start = page.screencast.start.bind(page.screencast);
-    const spy = vi.spyOn(page.screencast, 'start').mockImplementation((options) => start({
-      ...options,
-      onFrame: async (frame) => {
-        const hasPaint = await page.evaluate(async (bytes) => {
-          const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }));
-          const canvas = document.createElement('canvas');
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          const context = canvas.getContext('2d')!;
-          context.drawImage(bitmap, 0, 0);
-          bitmap.close();
-          const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-          for (let index = 0; index < data.length; index += 4) {
-            if (data[index]! < 200 || data[index + 1]! < 200 || data[index + 2]! < 200) return true;
-          }
-          return false;
-        }, [...frame.data]).catch(() => false);
-        if (hasPaint) painted.add(page);
-        await options?.onFrame?.(frame);
-      },
-    }));
-    restores.push(() => spy.mockRestore());
-  };
-  return {
-    /** Observes the context's pages, including those it opens later, before their recording starts. */
-    watchContext(context: BrowserContext): void {
-      context.on('page', watchPage);
-      for (const page of context.pages()) watchPage(page);
-    },
-    /** Waits for a painted frame delivered after this call, so a page that painted for an earlier segment cannot pass for this one. */
-    async settle(page: Page): Promise<void> {
-      painted.delete(page);
-      // A static page may not repaint after navigation overtakes its first screencast frame.
-      await page.screenshot();
-      await expect.poll(() => painted.has(page), { timeout: 5_000, message: 'the recorder received a painted frame' }).toBe(true);
-    },
-    /** Removes every observer, so none reaches the next test. */
-    restore(): void {
-      while (restores.length > 0) restores.pop()!();
-    },
-  };
+const fixtures = new WeakMap<EngineHandle, { attemptId: string; browser: Browser }>();
+
+/** Build the public browser fixture for the current attempt without exposing a backend handle. */
+function fixtureOf(engine: EngineHandle, attemptId: string): Browser {
+  const existing = fixtures.get(engine);
+  if (existing?.attemptId === attemptId) return existing.browser;
+  const browser = engine.fixtures!['browser']!({
+    operation: () => operation(attemptId),
+    expectable: (target: object) => target,
+    fixture: (_name: string, target: object) => target,
+  } as unknown as EngineFixtureContext) as Browser;
+  fixtures.set(engine, { attemptId, browser });
+  return browser;
 }
 
+/** Install a synthetic document through trusted evaluation, including its inline scripts. */
+async function replaceDocument(browser: Browser, html: string): Promise<void> {
+  await browser.evaluate((content) => {
+    document.open();
+    document.write(content);
+    document.close();
+    return null;
+  }, html);
+}
+
+/** Keep this segment painting for a bounded interval; decoding its final frame proves capture. */
+async function paintSegment(browser: Browser): Promise<void> {
+  await browser.evaluate(async () => {
+    const marker = document.createElement('div');
+    marker.setAttribute('aria-hidden', 'true');
+    marker.style.cssText = 'position:fixed;bottom:0;right:0;width:4px;height:4px;pointer-events:none;z-index:2147483647';
+    document.body.append(marker);
+    const started = performance.now();
+    let frame = 0;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('The recording fixture did not paint within 5 seconds')), 5_000);
+        const paint = () => {
+          marker.style.backgroundColor = frame++ % 2 === 0 ? '#000' : '#f00';
+          if (performance.now() - started >= 1_000) { clearTimeout(timeout); resolve(); }
+          else requestAnimationFrame(paint);
+        };
+        requestAnimationFrame(paint);
+      });
+    } finally { marker.remove(); }
+    return null;
+  });
+}
+
+/** Runs one attempt on a booted engine and always tears it down. */
 async function withAttempt(
   engine: EngineHandle,
   app: FixtureApp,
   artifactsDir: string,
   attemptId: string,
   body: () => Promise<void>,
+  evidence?: LifecycleEvidence,
+  diagnostic?: LifecycleAttemptDiagnostic,
 ): Promise<void> {
-  await boot(engine, app);
+  evidence?.phase('setup', 'init');
+  diagnostic?.enter('init');
+  try { await boot(engine, app); diagnostic?.passed(); }
+  catch (cause) { diagnostic?.failed(cause); evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
+  let started = false;
   try {
+    evidence?.phase('setup', 'start');
+    diagnostic?.enter('start');
     await engine.startAttempt!(attempt(attemptId, artifactsDir));
+    evidence?.passed('setup');
+    diagnostic?.passed();
+    started = true;
+    diagnostic?.enter('body');
     await body();
+    diagnostic?.passed();
+    evidence?.passed('body');
+  } catch (cause) {
+    diagnostic?.failed(cause);
+    evidence?.failed(started ? 'body' : 'setup', cause);
+    throw cause;
   } finally {
-    await engine.endAttempt!(cleanup());
-    await engine.dispose!(cleanup());
+    // Preserve the original sequential finally, including its masking behavior.
+    try {
+      evidence?.phase('cleanup', 'end');
+      diagnostic?.enter('end');
+      await engine.endAttempt!(cleanup());
+      diagnostic?.passed();
+      evidence?.phase('cleanup', 'dispose');
+      diagnostic?.enter('dispose');
+      await engine.dispose!(cleanup());
+      diagnostic?.passed();
+      evidence?.passed('cleanup');
+    // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+    } catch (cause) { diagnostic?.failed(cause); evidence?.failed('cleanup', cause); throw cause; }
+    finally { evidence?.finish(); }
   }
 }
 
@@ -173,7 +250,7 @@ async function boot(engine: EngineHandle, app: FixtureApp): Promise<void> {
     targetName: 'web',
     projectRoot: process.cwd(),
     app: { site: new URL(app.url).hostname },
-    env: {},
+    env: process.env,
     headed: false,
     workerSlot: 0,
     log: () => undefined,
@@ -186,13 +263,18 @@ async function openAttempt(
   app: FixtureApp,
   artifactsDir: string,
   attemptId: string,
+  evidence?: LifecycleEvidence,
 ): Promise<string> {
+  evidence?.phase('body', 'start');
   await engine.startAttempt!({ attemptId, artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+  evidence?.phase('body', 'navigate');
   await engine.session!.open!(`${app.url}/`, operation(attemptId));
+  evidence?.phase('body', 'locate');
   const nodes = await engine.locate!(
     { kind: 'query', query: { kind: 'role', value: { kind: 'string', value: 'heading', exact: true } } },
     operation(attemptId),
   );
+  evidence?.phase('body', 'assertion');
   return nodes[0]?.name ?? '';
 }
 
@@ -227,17 +309,34 @@ describe('web engine lifecycle', () => {
 
   it('serves consecutive attempts from one browser and survives an attempt close', async () => {
     const engine = web();
+    let failurePhase: 'init' | 'a1-open' | 'a1-observe' | 'a1-end' | 'a2-open' | 'a2-end' | 'dispose' = 'init';
+    let failed = false;
+    let failure: unknown;
     try {
       await boot(engine, app);
+      failurePhase = 'a1-open';
       expect(await openAttempt(engine, app, artifactsDir, 'a1')).toBe('Home');
+      failurePhase = 'a1-observe';
       expect((await engine.observe!(operation('a1'))).location).toBe(`${app.url}/`);
+      failurePhase = 'a1-end';
       await engine.endAttempt!(cleanup());
       // The next attempt reuses the pooled browser process, not a new launch.
+      failurePhase = 'a2-open';
       expect(await openAttempt(engine, app, artifactsDir, 'a2')).toBe('Home');
+      failurePhase = 'a2-end';
       await engine.endAttempt!(cleanup());
+    } catch (cause) {
+      console.error('LIFECYCLE_BODY_FAILURE', JSON.stringify({ phase: failurePhase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+      failed = true; failure = cause;
     } finally {
-      await engine.dispose!(cleanup());
+      failurePhase = 'dispose';
+      try { await engine.dispose!(cleanup()); }
+      catch (cause) {
+        console.error('LIFECYCLE_CLEANUP_FAILURE', JSON.stringify({ phase: failurePhase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+        if (!failed) { failed = true; failure = cause; }
+      }
     }
+    if (failed) throw failure;
   });
 
   it('relaunches after dispose and stays idempotent', async () => {
@@ -259,14 +358,33 @@ describe('web engine lifecycle', () => {
 
   describe('on one shared browser, a fresh attempt per test', () => {
     const engine = web();
+    let priorAttemptRetired = true;
 
-    /** Runs one attempt on the shared engine and always ends it. */
-    async function inAttempt(attemptId: string, body: () => Promise<void>, dir = artifactsDir): Promise<void> {
-      await engine.startAttempt!(attempt(attemptId, dir));
+    /** Runs one attempt only after its predecessor's actual end has returned. */
+    async function inAttempt(attemptId: string, body: () => Promise<void>, dir = artifactsDir, evidence?: LifecycleEvidence, endContext: () => EngineCleanupContext = cleanup): Promise<void> {
+      evidence?.phase('setup', 'start');
+      try {
+        if (!priorAttemptRetired) throw new Error('The shared engine still has an unfinished or failed attempt retirement');
+        priorAttemptRetired = false;
+        await engine.startAttempt!(attempt(attemptId, dir));
+      }
+      catch (cause) { evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
+      evidence?.passed('setup');
       try {
         await body();
-      } finally {
-        await engine.endAttempt!(cleanup());
+        evidence?.passed('body');
+      } catch (cause) { evidence?.failed('body', cause); throw cause; }
+      finally {
+        try {
+          evidence?.phase('cleanup', 'end');
+          await engine.endAttempt!(endContext());
+          // A hard Vitest timeout does not cancel its async body. Keep later
+          // bodies fenced until this exact end succeeds; failure never reopens it.
+          priorAttemptRetired = true;
+          evidence?.passed('cleanup');
+        // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+        } catch (cause) { evidence?.failed('cleanup', cause); throw cause; }
+        finally { evidence?.finish(); }
       }
     }
 
@@ -283,7 +401,7 @@ describe('web engine lifecycle', () => {
         await engine.session!.open!(`${app.url}/form`, operation('d1'));
 
         const snapshot = await engine.observe!(operation('d1'));
-        expect(snapshot.root.ref.id).toBe('root');
+        expect(snapshot.root.ref.id).toMatch(/^@e[1-9][0-9]*$/);
         expect(snapshot.root.role).toBe('document');
         expect(snapshot.root.children?.length ?? 0).toBeGreaterThan(0);
         expect(snapshot.location).toBe(`${app.url}/form`);
@@ -371,6 +489,58 @@ describe('web engine lifecycle', () => {
         expect(lines.some((line) => line.startsWith('wheel:210,410:') && Number(line.split(':')[2]) > 0)).toBe(true);
         expect(lines).toContain('mousedown:221,420');
         expect(lines).toContain('mouseup:321,461');
+      });
+    });
+
+    it.each([
+      { name: 'inside', width: 400, height: 300, x: 80, y: 70, aimX: 80, aimY: 70 },
+      { name: 'overflow descendant', width: 100, height: 100, x: 120, y: 50, aimX: 120, aimY: 50 },
+      { name: 'outside', width: 400, height: 300, x: 500, y: 350, aimX: 200, aimY: 150 },
+      { name: 'covered', width: 400, height: 300, x: 80, y: 70, aimX: 200, aimY: 150 },
+      { name: 'iframe', width: 100, height: 100, x: 80, y: 70, aimX: 50, aimY: 50 },
+    ])('keeps native node wheel aiming compatible in a real renderer ($name)', async ({ name, width, height, x, y, aimX, aimY }) => {
+      await inAttempt(`wheel-${name}`, async () => {
+        const op = () => operation(`wheel-${name}`);
+        await engine.session!.open!(`${app.url}/`, op());
+        const browser = nativeBrowser(engine, op, app.url);
+        const userAgent = await browser.evaluate(() => navigator.userAgent);
+        console.info('LOCAL_POINTER_NATIVE_VERSION', /Chrome\/(\d+(?:\.\d+){3})/.exec(userAgent)?.[1] ?? 'unknown');
+        const page = `<!doctype html><html><body style="margin:0;width:1000px;height:800px">
+          <div id="wheel-parent" style="position:absolute;left:0;top:0;width:${width}px;height:${height}px;overflow:visible">
+            <div style="position:absolute;left:0;top:0;width:${name === 'overflow descendant' ? 150 : width}px;height:${height}px;background:#eee">wheel target</div>
+          </div>
+          ${name === 'covered' ? '<div style="position:absolute;left:60px;top:50px;width:40px;height:40px;background:#999">cover</div>' : ''}
+          <script>
+            window.wheelEvents=[];
+            document.addEventListener('mousemove', event => wheelEvents.push({type:'move',x:event.clientX,y:event.clientY}));
+            document.addEventListener('wheel', event => {wheelEvents.push({type:'wheel',x:event.clientX,y:event.clientY,dy:event.deltaY});event.preventDefault()}, {passive:false});
+          </script></body></html>`;
+        await replaceDocument(browser, name === 'iframe'
+          ? `<!doctype html><body style="margin:0"><iframe id="wheel-frame" style="position:absolute;left:20px;top:30px;width:200px;height:200px;border:0" srcdoc="${page.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"></iframe></body>`
+          : page);
+        if (name === 'iframe') {
+          await expect.poll(() => browser.evaluate(() => document.querySelector('iframe')?.contentDocument?.querySelector('#wheel-parent') != null)).toBe(true);
+        }
+        const target: LocatorExpression = name === 'iframe'
+          ? { kind: 'frame', selector: '#wheel-frame', source: { kind: 'selector', selector: '#wheel-parent' } }
+          : { kind: 'selector', selector: '#wheel-parent' };
+        const [node] = await engine.locate!(target, op());
+        expect(node).toBeDefined();
+        await engine.performAt!({ x, y }, { kind: 'hover' }, op());
+        await browser.evaluate((framed) => {
+          const win = framed ? document.querySelector('iframe')!.contentWindow! : window;
+          (win as unknown as { wheelEvents: unknown[] }).wheelEvents = [];
+          return null;
+        }, name === 'iframe');
+        await engine.perform!(node!.ref, { kind: 'swipe', direction: 'down' }, op());
+        const events = await browser.evaluate((framed) => {
+          const win = framed ? document.querySelector('iframe')!.contentWindow! : window;
+          return Array.from((win as unknown as { wheelEvents: { type: string; x: number; y: number; dy?: number }[] }).wheelEvents,
+            event => ({ ...event }));
+        }, name === 'iframe');
+        expect(events.filter(event => event.type === 'wheel')).toEqual([{ type: 'wheel', x: aimX, y: aimY, dy: height / 2 }]);
+        expect(events.filter(event => event.type === 'move')).toEqual(name === 'inside' || name === 'overflow descendant'
+          ? [] : [{ type: 'move', x: aimX, y: aimY }]);
       });
     });
 
@@ -490,7 +660,8 @@ describe('web engine lifecycle', () => {
         };
         await expect(engine.locate!(child, operation('dv1'))).rejects.toMatchObject({
           code: 'UNSUPPORTED_CAPABILITY',
-          message: 'displayValue queries cannot scope child queries or serve as a has-filter in this engine',
+          message: 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine',
+          retryable: false,
         });
         await expect(
           engine.locate!({ kind: 'filter', source: byRole('main'), has: shared }, operation('dv1')),
@@ -499,6 +670,7 @@ describe('web engine lifecycle', () => {
     });
 
     it('excludes hidden twins from a visible query, for every query kind and under an index', async () => {
+      const evidence = new LifecycleEvidence('P24');
       const query = (
         kind: 'text' | 'label' | 'placeholder' | 'displayValue' | 'testId' | 'role',
         value: string,
@@ -508,7 +680,9 @@ describe('web engine lifecycle', () => {
         query: { kind, value: { kind: 'string', value, exact: true }, ...(visible ? { visible: true } : {}) },
       });
       await inAttempt('v1', async () => {
+        evidence.phase('body', 'open');
         await engine.session!.open!(`${app.url}/twins`, operation('v1'));
+        evidence.phase('body', 'locate');
 
         const twins: Array<[Parameters<typeof query>[0], string]> = [
           ['text', 'No memories yet'],
@@ -589,17 +763,20 @@ describe('web engine lifecycle', () => {
         await engine.perform!(search!.ref, { kind: 'fill', value: 'launch', sensitive: false }, operation('v1'));
         const filled = await engine.locate!(query('displayValue', 'launch', false), operation('v1'));
         expect(filled.map((node) => node.states?.hidden)).toEqual([undefined]);
-      });
+      }, artifactsDir, evidence);
     });
 
     it('applies visible before an index, filter, or scope, so a hidden twin is never selected', async () => {
+      const evidence = new LifecycleEvidence('P25');
       const text = (value: string, visible: boolean): Extract<LocatorExpression, { kind: 'query' }> => ({
         kind: 'query',
         query: { kind: 'text', value: { kind: 'string', value, exact: true }, ...(visible ? { visible: true } : {}) },
       });
       const hidden = (nodes: readonly SemanticNode[]) => nodes.map((node) => node.states?.hidden);
       await inAttempt('v2', async () => {
+        evidence.phase('body', 'open');
         await engine.session!.open!(`${app.url}/twins`, operation('v2'));
+        evidence.phase('body', 'locate');
         const locate = (expression: LocatorExpression) => engine.locate!(expression, operation('v2'));
 
         // The hidden paragraph comes first in document order.
@@ -638,7 +815,7 @@ describe('web engine lifecycle', () => {
         const panels = await locate(panel(true));
         expect(hidden(panels)).toEqual([undefined]);
         await engine.perform!(scoped[0]!.ref, { kind: 'tap' }, operation('v2'));
-      });
+      }, artifactsDir, evidence);
     });
 
     it('takes a display-value position among shown matches when the query is visible', async () => {
@@ -709,100 +886,184 @@ describe('web engine lifecycle', () => {
     it('reports a located ref stale once a second element matches it, and acts on neither', async () => {
       await inAttempt('amb1', async () => {
         await engine.session!.open!(`${app.url}/`, operation('amb1'));
-        const page = surfaceOf(engine)!.page();
-        await page.setContent('<script>window.taps = 0</script><button onclick="taps++">Go</button>');
+        const browser = fixtureOf(engine, 'amb1');
+        await replaceDocument(browser, '<script>window.taps = 0</script><button onclick="taps++">Go</button>');
         const [go] = await engine.locate!(byRole('button'), operation('amb1'));
-        await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<button onclick="taps++">Go</button>'));
+        await browser.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<button onclick="taps++">Go</button>'); return null; });
 
         await expect(engine.perform!(go!.ref, { kind: 'tap' }, operation('amb1'))).rejects.toMatchObject({
           code: 'NODE_STALE',
           retryable: true,
         });
-        expect(await page.evaluate(() => (window as unknown as { taps: number }).taps)).toBe(0);
+        expect(await browser.evaluate(() => (window as unknown as { taps: number }).taps)).toBe(0);
       });
     });
 
     it('reports a drag whose drop target turns ambiguous after the press as possibly committed', async () => {
+      const evidence = new LifecycleEvidence('P26');
       await inAttempt('amb2', async () => {
+        evidence.phase('body', 'navigate');
         await engine.session!.open!(`${app.url}/`, operation('amb2'));
-        const page = surfaceOf(engine)!.page();
-        await page.setContent(`
+        const browser = fixtureOf(engine, 'amb2');
+        await replaceDocument(browser, `
           <script>window.downs = 0</script>
           <button onmousedown="downs++; document.body.insertAdjacentHTML('beforeend', '<div role=region>Drop</div>')">Card</button>
           <div role="region">Drop</div>`);
-        const [card] = await engine.locate!(byRole('button'), operation('amb2'));
-        const [zone] = await engine.locate!(byRole('region'), operation('amb2'));
+        evidence.phase('body', 'initial-locate');
+        const cards = await engine.locate!(byRole('button'), operation('amb2'));
+        const zones = await engine.locate!(byRole('region'), operation('amb2'));
+        // Retain the existing results before either .ref is accessed. No new query or renderer read.
+        evidence.evidence.observe(() => ({
+          kind: 'drag-acquisition', sourcePresent: cards.length > 0, targetPresent: zones.length > 0,
+          sourceUnique: cards.length === 1, targetUnique: zones.length === 1,
+          sourceCount: cards.length, targetCount: zones.length,
+        }));
+        const [card] = cards;
+        const [zone] = zones;
 
+        evidence.phase('body', 'perform');
         await expect(
           engine.perform!(card!.ref, { kind: 'dragTo', target: zone!.ref }, operation('amb2')),
         ).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
-        expect(await page.evaluate(() => (window as unknown as { downs: number }).downs)).toBe(1);
-      });
+        evidence.phase('body', 'assertion');
+        expect(await browser.evaluate(() => (window as unknown as { downs: number }).downs)).toBe(1);
+      }, artifactsDir, evidence);
     });
 
-    it('mints one root id that survives navigation, and swipes the viewport when it is the target', async () => {
+    it('mints native document ids and keeps a separate viewport ref across navigation for swipes', async () => {
       await inAttempt('r1', async () => {
         await engine.session!.open!(`${app.url}/form`, operation('r1'));
         const first = await engine.observe!(operation('r1'));
-        expect(first.root.ref.id).toBe('root');
+        expect(first.root.ref.id).toMatch(/^@e[1-9][0-9]*$/);
+        expect(first.viewportRef?.id).toMatch(/^@e[1-9][0-9]*$/);
+        expect(first.viewportRef?.id).not.toBe(first.root.ref.id);
         expect(first.root.name).toBe('Fixture Form');
-        // The element ids under the root are stamped in the page; the root's is the engine's.
-        expect([...walk(first.root)].slice(1).every((node) => /^n\d+$/.test(node.ref.id))).toBe(true);
+        // Document and element ids come from the same native identity registry.
+        expect([...walk(first.root)].every((node) => /^@e[1-9][0-9]*$/.test(node.ref.id))).toBe(true);
 
-        // A new document stamps new numbers; the root keeps its id.
+        // A new document gets new ids while the viewport target survives navigation.
         await engine.session!.open!(`${app.url}/`, operation('r1'));
         const second = await engine.observe!(operation('r1'));
-        expect(second.root.ref.id).toBe('root');
+        expect(second.root.ref.id).toMatch(/^@e[1-9][0-9]*$/);
+        expect(second.root.ref.id).not.toBe(first.root.ref.id);
+        expect(second.viewportRef).toEqual(first.viewportRef);
         expect(second.root.name).toBe('Fixture Home');
         expect(second.location).toBe(`${app.url}/`);
 
-        // The viewport swipe arrives as a swipe on the root, addressed from an earlier observation.
-        const page = surfaceOf(engine)!.page();
-        await page.setContent('<div style="height: 5000px">tall</div>');
-        await engine.perform!(first.root.ref, { kind: 'swipe', direction: 'down' }, operation('r1'));
-        await page.waitForFunction(() => window.scrollY > 0);
-        expect(await page.evaluate(() => window.scrollY)).toBe(360);
-        await engine.perform!(first.root.ref, { kind: 'swipe', direction: 'up', momentum: 'fast' }, operation('r1'));
-        await page.waitForFunction(() => window.scrollY === 0);
+        // The viewport swipe uses its own ref from the earlier observation, never the document ref.
+        const browser = fixtureOf(engine, 'r1');
+        await replaceDocument(browser, '<div style="height: 5000px">tall</div>');
+        await engine.perform!(first.viewportRef!, { kind: 'swipe', direction: 'down' }, operation('r1'));
+        await expect.poll(() => browser.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+        expect(await browser.evaluate(() => window.scrollY)).toBe(360);
+        await engine.perform!(first.viewportRef!, { kind: 'swipe', direction: 'up', momentum: 'fast' }, operation('r1'));
+        await expect.poll(() => browser.evaluate(() => window.scrollY)).toBe(0);
       });
     });
 
     it('refuses to swipe a node with no box even when its child is under aim', async () => {
-      await inAttempt('dc2', async () => {
-        await engine.session!.open!(`${app.url}/`, operation('dc2'));
-        const page = surfaceOf(engine)!.page();
-        await page.setContent(`
-          <body style="margin: 0"><ul aria-label="Feed" style="display: contents"><li style="display: block; height: 400px">Item</li></ul></body>`);
-        const [feed] = await engine.locate!(byRole('list'), operation('dc2'));
-        await expect(
-          engine.perform!(feed!.ref, { kind: 'swipe', direction: 'down' }, operation('dc2')),
-        ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+      const evidence = new LifecycleEvidence('P27');
+      const observer = evidence.observer = new SyntheticNativeObserver(evidence.evidence, () => evidence.currentPhase);
+      const caseDeadline = performance.now() + 30_000;
+      const settleReserveMs = 10_000;
+      const swipeBudgetMs = 1_000;
+      const boundedOperation = (attemptId: string, maximumMs = 5_000): OperationContext => {
+        const timeoutMs = Math.min(maximumMs, caseDeadline - performance.now() - settleReserveMs);
+        if (timeoutMs <= 0) throw new Error('No operation budget remains before required attempt retirement');
+        return { ...operation(attemptId), timeoutMs };
+      };
+      const boundedCleanup = (): EngineCleanupContext => ({ ...cleanup(), timeoutMs: 5_000 });
+      const performed: { timeoutMs: number; result: ReturnType<NativeClient['request']> }[] = [];
+      const request = NativeClient.prototype.request;
+      const spy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
+        if ((args[0] !== 'browser.perform' && args[0] !== 'scope.end') || args[2].attemptId !== 'dc2') return request.apply(this, args);
+        const timeoutMs = args[2].timeoutMs;
+        const result = request.apply(this, args);
+        observer.observePromise(args[0], evidence.currentPhase, result);
+        if (args[0] === 'browser.perform') performed.push({ timeoutMs, result });
+        return result;
       });
+      try {
+        await inAttempt('dc2', async () => {
+          evidence.phase('body', 'navigate');
+          await engine.session!.open!(`${app.url}/`, boundedOperation('dc2'));
+          // Use the real fixture graph for setup/readback, not fixtureOf's
+          // fabricated EngineFixtureContext. The retained-ref action stays exact.
+          const browser = nativeBrowser(engine, () => boundedOperation('dc2'), app.url);
+          evidence.phase('body', 'document');
+          await replaceDocument(browser, `
+            <body style="margin: 0"><ul aria-label="Feed" style="display: contents"><li style="display: block; height: 400px">Item</li></ul>
+            <div style="height:4000px"></div><script>
+              window.noBoxEvents = { input: 0, scroll: 0 };
+              for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend', 'wheel', 'keydown', 'keyup', 'input']) {
+                addEventListener(type, () => noBoxEvents.input++, true);
+              }
+              addEventListener('scroll', () => noBoxEvents.scroll++, true);
+            </script></body>`);
+          evidence.phase('body', 'locate');
+          const [feed] = await engine.locate!(byRole('list'), boundedOperation('dc2'));
+          evidence.phase('body', 'perform');
+          // The actionability wait must fit inside the unchanged 30s case,
+          // leaving time for native settlement, end, and a fresh attempt.
+          await evidence.assert(0, () => expect(
+            evidence.select(0, 'browser.perform', () => engine.perform!(feed!.ref, { kind: 'swipe', direction: 'down' }, boundedOperation('dc2', swipeBudgetMs))),
+          ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' }));
+          evidence.phase('body', 'assertion');
+          expect(performed).toHaveLength(1);
+          expect(performed[0]!.timeoutMs).toBeGreaterThan(0);
+          expect(performed[0]!.timeoutMs).toBeLessThanOrEqual(swipeBudgetMs);
+          expect(await performed[0]!.result).toMatchObject({
+            ok: false, error: { code: 'not-actionable' }, effects: 'not-dispatched', scopeState: 'usable',
+          });
+          expect(await browser.evaluate(() => ({
+            ...(window as unknown as { noBoxEvents: { input: number; scroll: number } }).noBoxEvents,
+            x: scrollX, y: scrollY,
+          }))).toEqual({ input: 0, scroll: 0, x: 0, y: 0 });
+        }, artifactsDir, evidence, boundedCleanup);
+        // This body is unreachable if the original attempt's end rejected or
+        // is still pending. Do not hide a retirement failure by starting anew.
+        await inAttempt('dc2-next', async () => {
+          await engine.session!.open!(`${app.url}/`, boundedOperation('dc2-next'));
+          const headings = await engine.locate!(byRole('heading'), boundedOperation('dc2-next'));
+          expect(headings[0]?.name).toBe('Home');
+        }, artifactsDir, undefined, boundedCleanup);
+      } finally { spy.mockRestore(); }
     });
 
     it('walks through a display:contents element to the fields it lays out', async () => {
+      const evidence = new LifecycleEvidence('P28');
       await inAttempt('dc1', async () => {
+        evidence.phase('body', 'navigate');
         await engine.session!.open!(`${app.url}/contents`, operation('dc1'));
+        evidence.phase('body', 'observe');
         const snapshot = await engine.observe!(operation('dc1'));
+        evidence.phase('body', 'assertion');
         const fields = [...walk(snapshot.root)].filter((node) => node.role === 'textbox').map((node) => node.name);
         expect(fields).toEqual(['Email', 'First name']);
-      });
+      }, artifactsDir, evidence);
     });
 
     it('masks a password inside a closed shadow root in artifact screenshots', async () => {
+      const evidence = new LifecycleEvidence('P29');
       const shotDir = mkdtempSync(path.join(tmpdir(), 'e2e-shot-'));
       try {
         await inAttempt('cm1', async () => {
+          evidence.phase('body', 'navigate');
           await engine.session!.open!(`${app.url}/closed-login`, operation('cm1'));
+          evidence.phase('body', 'observe');
           const snapshot = await engine.observe!(operation('cm1'));
+          evidence.phase('body', 'assertion');
           const nodes = [...walk(snapshot.root)];
           const user = nodes.find((node) => node.role === 'textbox' && node.name === 'User');
           const password = nodes.find((node) => node.states?.secure === true);
           expect(user?.rect).toBeDefined();
           expect(password?.rect).toBeDefined();
+          evidence.phase('body', 'perform');
           await engine.perform!(password!.ref, { kind: 'fill', value: 'hunter2', sensitive: true }, operation('cm1'));
 
+          evidence.phase('body', 'screenshot');
           const relative = await engine.artifacts!.screenshot('closed', operation('cm1'));
+          evidence.phase('body', 'assertion');
           const image = decodePng(new Uint8Array(readFileSync(path.join(shotDir, relative))));
           const centre = (rect: NonNullable<SemanticNode['rect']>) =>
             [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)] as const;
@@ -810,36 +1071,47 @@ describe('web engine lifecycle', () => {
           const [ux, uy] = centre(user!.rect!);
           expect(image.pixelAt(px, py).slice(0, 3)).toEqual([0, 0, 0]);
           expect(image.pixelAt(ux, uy).slice(0, 3)).toEqual([255, 255, 255]);
-        }, shotDir);
+        }, shotDir, evidence);
       } finally {
         rmSync(shotDir, { recursive: true, force: true });
       }
     });
 
     it('masks a password inside an iframe in artifact screenshots and observed pixels', async () => {
+      const evidence = new LifecycleEvidence('P30');
       const shotDir = mkdtempSync(path.join(tmpdir(), 'e2e-shot-'));
       const field = 'position:absolute;left:20px;width:160px;height:40px;border:0;padding:0;background:#f00;color:#f00';
       const frame = `<body style="margin:0"><input type="password" value="hunter2" style="${field};top:20px"><input value="plain" style="${field};top:100px"></body>`;
       try {
         await inAttempt('fm1', async () => {
+          evidence.phase('body', 'navigate');
           await engine.session!.open!(`${app.url}/`, operation('fm1'));
-          const page = surfaceOf(engine)!.page();
-          await page.setContent(
+          const browser = fixtureOf(engine, 'fm1');
+          evidence.phase('body', 'document');
+          await replaceDocument(browser,
             `<body style="margin:0"><iframe srcdoc='${frame}' style="position:absolute;left:0;top:0;width:400px;height:200px;border:0"></iframe></body>`,
           );
-          await page.frameLocator('iframe').locator('input[type=password]').waitFor();
+          evidence.phase('body', 'readiness');
+          await expect.poll(() => browser.evaluate(() =>
+            document.querySelector('iframe')?.contentDocument?.querySelector('input[type=password]') != null
+            && document.querySelector('iframe')?.contentDocument?.readyState === 'complete',
+          )).toBe(true);
 
+          evidence.phase('body', 'screenshot');
           const relative = await engine.artifacts!.screenshot('framed', operation('fm1'));
+          evidence.phase('body', 'assertion');
           const shot = decodePng(new Uint8Array(readFileSync(path.join(shotDir, relative))));
           expect(shot.pixelAt(100, 40).slice(0, 3)).toEqual([0, 0, 0]);
           expect(shot.pixelAt(100, 120).slice(0, 3)).toEqual([255, 0, 0]);
 
+          evidence.phase('body', 'observe');
           const observed = await engine.observe!(operation('fm1'), { pixels: true });
+          evidence.phase('body', 'assertion');
           expect(observed.maskedRegionCount).toBeGreaterThanOrEqual(1);
           const pixels = decodePng(observed.pixels!.data);
           expect(pixels.pixelAt(100, 40).slice(0, 3)).toEqual([0, 0, 0]);
           expect(pixels.pixelAt(100, 120).slice(0, 3)).toEqual([255, 0, 0]);
-        }, shotDir);
+        }, shotDir, evidence);
       } finally {
         rmSync(shotDir, { recursive: true, force: true });
       }
@@ -887,82 +1159,135 @@ describe('web engine lifecycle', () => {
   });
 
   it('stops waiting on cleanup once its budget is aborted, and recovers on the next attempt', async () => {
+    const evidence = new LifecycleEvidence('P31');
     const engine = web();
+    let booted = false;
     try {
+      evidence.phase('setup', 'init');
       await boot(engine, app);
-      expect(await openAttempt(engine, app, artifactsDir, 'g1')).toBe('Home');
+      evidence.passed('setup');
+      booted = true;
+      expect(await openAttempt(engine, app, artifactsDir, 'g1', evidence)).toBe('Home');
+      evidence.phase('body', 'abort');
       const exhausted = new AbortController();
       exhausted.abort();
-      await expect(engine.endAttempt!({ signal: exhausted.signal, timeoutMs: 0 })).resolves.toBeUndefined();
-      expect(await openAttempt(engine, app, artifactsDir, 'g2')).toBe('Home');
-    } finally {
-      await engine.endAttempt!(cleanup());
-      await engine.dispose!(cleanup());
+      evidence.phase('body', 'end');
+      await evidence.assert(0, () => expect(evidence.select(0, 'scope.end', () => engine.endAttempt!({ signal: exhausted.signal, timeoutMs: 0 }))).resolves.toBeUndefined());
+      evidence.phase('body', 'start');
+      const next = await evidence.select(1, 'scope.open', () => openAttempt(engine, app, artifactsDir, 'g2', evidence));
+      evidence.assert(1, () => expect(next).toBe('Home'));
+      evidence.passed('body');
+    } catch (cause) { evidence.failed(booted ? 'body' : 'setup', cause); throw cause; }
+    finally {
+      try {
+        evidence.phase('cleanup', 'end');
+        await engine.endAttempt!(cleanup());
+        evidence.phase('cleanup', 'dispose');
+        await engine.dispose!(cleanup());
+        evidence.passed('cleanup');
+      // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+      } catch (cause) { evidence.failed('cleanup', cause); throw cause; }
+      finally { evidence.finish(); }
     }
   });
 
-  it('cancels an in-flight operation when its signal aborts instead of waiting out Playwright', async () => {
+  it('cancels an in-flight native operation when its signal aborts', async () => {
+    const evidence = new LifecycleEvidence('P32');
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 'h1', async () => {
       const controller = new AbortController();
       const started = Date.now();
-      const pending = engine.session!.open!(`${app.url}/slow`, operation('h1', controller.signal));
-      setTimeout(() => controller.abort(), 100);
-      await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
+      evidence.phase('body', 'navigate');
+      const pending = evidence.select(0, 'page.navigate', () => engine.session!.open!(`${app.url}/slow`, operation('h1', controller.signal)));
+      setTimeout(() => {
+        evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'enter' });
+        controller.abort();
+        evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'passed' });
+      }, 100);
+      await evidence.assert(0, () => expect(pending).rejects.toMatchObject({ code: 'CANCELLED' }));
+      evidence.phase('body', 'assertion');
       expect(Date.now() - started).toBeLessThan(3_000);
-    });
+    }, evidence);
   });
 
   it('round-trips persisted state through capture and restore, and reset drops it', async () => {
+    const evidence = new LifecycleEvidence('P33');
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 's1', async () => {
-      const token = async (): Promise<string> => {
-        const [heading] = await engine.locate!(byRole('heading'), operation('s1'));
+      const token = async (selected = false): Promise<string> => {
+        evidence.phase('body', 'locate');
+        const [heading] = await (selected ? evidence.select(4, 'browser.query', () => engine.locate!(byRole('heading'), operation('s1'))) : engine.locate!(byRole('heading'), operation('s1')));
+        evidence.phase('body', 'assertion');
         return heading?.name ?? '';
       };
+      evidence.phase('body', 'navigate');
       await engine.session!.open!(`${app.url}/state?set=abc`, operation('s1'));
       expect(await token()).toBe('abc');
+      evidence.phase('body', 'state-capture');
       const state = await engine.state!.capture(operation('s1'));
-      expect(state.format).toBe('playwright-storage-state');
+      evidence.phase('body', 'assertion');
+      expect(state.format).toBe('agent-browser-storage-state');
+      expect(state.version).toBe(1);
 
+      evidence.phase('body', 'state-reset');
       await engine.session!.reset!(operation('s1'));
+      evidence.phase('body', 'navigate');
       await engine.session!.open!(`${app.url}/state`, operation('s1'));
       expect(await token()).toBe('none');
 
+      evidence.phase('body', 'state-restore');
       await engine.state!.restore(state, operation('s1'));
+      evidence.phase('body', 'navigate');
       await engine.session!.open!(`${app.url}/state`, operation('s1'));
       expect(await token()).toBe('abc');
 
       // A restart keeps the persisted state and shows nothing until the harness reopens the app.
-      await engine.session!.restart!(operation('s1'));
-      expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
-      expect((await engine.observe!(operation('s1'))).location).toBe('about:blank');
-      await engine.session!.open!(`${app.url}/state`, operation('s1'));
-      expect(await token()).toBe('abc');
+      evidence.phase('body', 'restart');
+      await evidence.select(0, 'scope.restart', () => engine.session!.restart!(operation('s1')));
+      evidence.phase('body', 'url');
+      const blankUrl = await evidence.select(1, 'page.url', () => fixtureOf(engine, 's1').url());
+      evidence.assert(1, () => expect(blankUrl).toBe('about:blank'));
+      evidence.phase('body', 'observe');
+      const blank = await evidence.select(2, 'browser.observe', () => engine.observe!(operation('s1')));
+      evidence.assert(2, () => expect(blank.location).toBe('about:blank'));
+      evidence.phase('body', 'navigate');
+      await evidence.select(3, 'page.navigate', () => engine.session!.open!(`${app.url}/state`, operation('s1')));
+      const restoredToken = await token(true);
+      evidence.assert(4, () => expect(restoredToken).toBe('abc'));
 
-      await expect(
-        engine.state!.restore({ format: 'playwright-storage-state', version: 1, data: '/etc/passwd' }, operation('s1')),
-      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
-    });
+      evidence.phase('body', 'assertion');
+      await evidence.assert(5, () => expect(
+        evidence.select(5, 'state.restore', () => engine.state!.restore({ format: 'playwright-storage-state', version: 1, data: '/etc/passwd' }, operation('s1'))),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' }));
+    }, evidence);
   });
 
   it('follows the window under viewport: null, reports the measured size, and swipes by it', async () => {
     const engine = web({ viewport: null });
-    await withAttempt(engine, app, artifactsDir, 'w1', async () => {
-      await engine.session!.open!(`${app.url}/form`, operation('w1'));
-      const page = surfaceOf(engine)!.page();
-      expect(page.viewportSize()).toBeNull();
-      const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-      expect(measured.width).toBeGreaterThan(0);
-      const snapshot = await engine.observe!(operation('w1'), { pixels: true });
-      expect(snapshot.viewport).toEqual(measured);
-      expect(snapshot.pixels).toBeDefined();
-
-      await page.setContent('<div style="height: 5000px">tall</div>');
-      await engine.perform!(snapshot.root.ref, { kind: 'swipe', direction: 'down' }, operation('w1'));
-      await page.waitForFunction(() => window.scrollY > 0);
-      expect(await page.evaluate(() => window.scrollY)).toBe(Math.round(measured.height / 2));
+    const openedViewport: unknown[] = [];
+    const command = EngineChannel.prototype.command;
+    const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context, transition) {
+      if (name === 'scope.open') openedViewport.push('viewport' in args ? args.viewport : undefined);
+      return command.call(this, name, args, context, transition);
     });
+    try {
+      await withAttempt(engine, app, artifactsDir, 'w1', async () => {
+        await engine.session!.open!(`${app.url}/form`, operation('w1'));
+        const browser = fixtureOf(engine, 'w1');
+        expect(openedViewport).toEqual([null]);
+        const measured = await browser.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+        expect(measured.width).toBeGreaterThan(0);
+        const snapshot = await engine.observe!(operation('w1'), { pixels: true });
+        expect(snapshot.viewport).toEqual(measured);
+        expect(snapshot.pixels).toBeDefined();
+
+        await replaceDocument(browser, '<div style="height: 5000px">tall</div>');
+        expect(snapshot.viewportRef).toBeDefined();
+        await engine.perform!(snapshot.viewportRef!, { kind: 'swipe', direction: 'down' }, operation('w1'));
+        await expect.poll(() => browser.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+        expect(await browser.evaluate(() => window.scrollY)).toBe(Math.round(measured.height / 2));
+      });
+    } finally { spy.mockRestore(); }
   });
 
   it('reports the configured test-id attribute as testId, on observed and located nodes alike', async () => {
@@ -973,7 +1298,7 @@ describe('web engine lifecycle', () => {
     });
     await withAttempt(engine, app, artifactsDir, 'tid1', async () => {
       await engine.session!.open!(`${app.url}/`, operation('tid1'));
-      await surfaceOf(engine)!.page().setContent(
+      await replaceDocument(fixtureOf(engine, 'tid1'),
         '<button data-qa="go">Go</button><button data-testid="stop">Stop</button>',
       );
       const observed = [...walk((await engine.observe!(operation('tid1'))).root)];
@@ -991,52 +1316,61 @@ describe('web engine lifecycle', () => {
   });
 
   it('records a video per page at the viewport size: a restart and a state reset each continue in a new segment', async () => {
+    const evidence = new LifecycleEvidence('P34');
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
     const nodesOf = (snapshot: { root: SemanticNode }) => [...walk(snapshot.root)];
-    const paint = watchPaint();
-    const restores: (() => void)[] = [];
     try {
       await withAttempt(engine, app, videoDir, 'v1', async () => {
+        evidence.phase('body', 'navigate');
         await engine.session!.open!(`${app.url}/form`, operation('v1'));
-        const context = surfaceOf(engine)!.context();
-        paint.watchContext(context);
-        const browser = context.browser()!;
-        const newContext = browser.newContext.bind(browser);
-        const contextSpy = vi.spyOn(browser, 'newContext').mockImplementation(async (options) => {
-          const next = await newContext(options);
-          paint.watchContext(next);
-          return next;
-        });
-        restores.push(() => contextSpy.mockRestore());
+        const browser = fixtureOf(engine, 'v1');
+        evidence.phase('body', 'video-start');
         await engine.artifacts!.startVideo!(operation('v1'));
-        const page = surfaceOf(engine)!.page();
-        const viewport = page.viewportSize()!;
+        evidence.phase('body', 'observe');
+        const initialDocument = (await engine.observe!(operation('v1'))).root.ref;
+        evidence.phase('body', 'viewport');
+        const viewport = await browser.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         // Observations, actions, and captures run as they would without a recording.
+        evidence.phase('body', 'observe');
         const observed = nodesOf(await engine.observe!(operation('v1'), { pixels: true }));
         const textbox = observed.find((node) => node.role === 'textbox' && node.name === 'First');
+        evidence.phase('body', 'perform');
         await engine.perform!(textbox!.ref, { kind: 'fill', value: 'recorded', sensitive: false }, operation('v1'));
+        evidence.phase('body', 'screenshot');
         await engine.artifacts!.screenshot('shot', operation('v1'));
-        await paint.settle(surfaceOf(engine)!.page());
+        evidence.phase('body', 'readiness');
+        await paintSegment(browser);
         // A restart closes the page and opens another, blank until the harness
         // reopens the app: the recording continues in a second segment.
-        await engine.session!.restart!(operation('v1'));
-        expect(surfaceOf(engine)!.page()).not.toBe(page);
-        expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+        evidence.phase('body', 'restart');
+        await evidence.select(0, 'scope.restart', () => engine.session!.restart!(operation('v1')));
+        evidence.phase('body', 'observe');
+        expect((await engine.observe!(operation('v1'))).root.ref.id).not.toBe(initialDocument.id);
+        evidence.phase('body', 'evaluate');
+        expect(await fixtureOf(engine, 'v1').url()).toBe('about:blank');
+        evidence.phase('body', 'navigate');
         await engine.session!.open!(`${app.url}/form`, operation('v1'));
-        await paint.settle(surfaceOf(engine)!.page());
+        evidence.phase('body', 'readiness');
+        await paintSegment(browser);
         // A state reset recreates the context; the recording continues in a third.
+        evidence.phase('body', 'state-reset');
         await engine.session!.reset!(operation('v1'));
-        expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+        evidence.phase('body', 'evaluate');
+        expect(await fixtureOf(engine, 'v1').url()).toBe('about:blank');
+        evidence.phase('body', 'navigate');
         await engine.session!.open!(`${app.url}/`, operation('v1'));
-        await paint.settle(surfaceOf(engine)!.page());
+        evidence.phase('body', 'readiness');
+        await paintSegment(browser);
+        evidence.phase('body', 'video-stop');
         const segments = videoFiles(await engine.artifacts!.stopVideo!(operation('v1')));
+        evidence.phase('body', 'assertion');
         expect(segments.map((segment) => segment.path)).toEqual([
           'video/video.webm',
           'video/video-part2.webm',
           'video/video-part3.webm',
         ]);
-        const viewer = surfaceOf(engine)!.page();
+        const viewer = fixtureOf(engine, 'v1');
         for (const segment of segments) {
           const absolute = path.join(videoDir, segment.path);
           expect(existsSync(absolute), segment.path).toBe(true);
@@ -1047,15 +1381,15 @@ describe('web engine lifecycle', () => {
           // Every segment shows the page at the attempt's viewport size: no
           // grey padding from a screencast another client sized smaller, and
           // some ink, so the page painted into it.
+          evidence.phase('body', 'video-decode');
           const frame = await lastFrame(viewer, readFileSync(absolute));
+          evidence.phase('body', 'assertion');
           expect({ width: frame.width, height: frame.height }, segment.path).toEqual(viewport);
           expect(frame.padded, `${segment.path} padded`).toBeLessThan(0.01);
           expect(frame.inked, `${segment.path} inked`).toBeGreaterThan(0.0005);
         }
-      });
+      }, evidence);
     } finally {
-      for (const restore of restores) restore();
-      paint.restore();
       rmSync(videoDir, { recursive: true, force: true });
     }
   });
@@ -1063,19 +1397,17 @@ describe('web engine lifecycle', () => {
   it('records a video started mid-attempt at the viewport size, each time it starts', async () => {
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
-    const paint = watchPaint();
     try {
       await withAttempt(engine, app, videoDir, 'v3', async () => {
         // A host that records on demand, after the page is open.
         await engine.session!.open!(`${app.url}/`, operation('v3'));
-        paint.watchContext(surfaceOf(engine)!.context());
-        const viewer = surfaceOf(engine)!.page();
-        const viewport = viewer.viewportSize()!;
+        const viewer = fixtureOf(engine, 'v3');
+        const viewport = await viewer.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         const segments: VideoFile[] = [];
         for (const url of [`${app.url}/form`, `${app.url}/`]) {
           await engine.artifacts!.startVideo!(operation('v3'));
           await engine.session!.open!(url, operation('v3'));
-          await paint.settle(viewer);
+          await paintSegment(viewer);
           segments.push(...videoFiles(await engine.artifacts!.stopVideo!(operation('v3'))));
         }
         expect(segments.map((segment) => segment.path)).toEqual(['video/video.webm', 'video/video-part2.webm']);
@@ -1087,29 +1419,44 @@ describe('web engine lifecycle', () => {
         }
       });
     } finally {
-      paint.restore();
       rmSync(videoDir, { recursive: true, force: true });
     }
   });
 
-  it('rejects a video that cannot start and leaves the session working', async () => {
+  it('rejects a video that cannot start and leaves the session working', async (test) => {
+    const diagnostic = new LifecycleAttemptDiagnostic();
     const engine = web();
     const videoDir = mkdtempSync(path.join(tmpdir(), 'e2e-video-'));
+    const caseCapture = beginCaseCleanupCapture('video-refusal', test.task.meta as Record<string, unknown>);
     try {
       await withAttempt(engine, app, videoDir, 'v4', async () => {
+        diagnostic.enter('open-first');
         await engine.session!.open!(`${app.url}/`, operation('v4'));
-        const page = surfaceOf(engine)!.page();
-        const spy = vi.spyOn(page.screencast, 'start').mockRejectedValueOnce(new Error('screencast unavailable'));
+        const browser = fixtureOf(engine, 'v4');
+        const command = EngineChannel.prototype.command;
+        const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context, transition) {
+          if (name === 'recording.start') return Promise.reject(new Error('screencast unavailable'));
+          return command.call(this, name, args, context, transition);
+        });
         try {
+          diagnostic.enter('reject-recording');
           await expect(engine.artifacts!.startVideo!(operation('v4'))).rejects.toThrow('screencast unavailable');
         } finally {
           spy.mockRestore();
         }
+        diagnostic.enter('open-after');
         await engine.session!.open!(`${app.url}/form`, operation('v4'));
-        expect(surfaceOf(engine)!.page().url()).toBe(`${app.url}/form`);
-      });
+        diagnostic.enter('readback');
+        expect(await browser.url()).toBe(`${app.url}/form`);
+      }, undefined, diagnostic);
     } finally {
-      rmSync(videoDir, { recursive: true, force: true });
+      try {
+        try {
+          (test.task.meta as Record<string, unknown>)['videoAttemptDiagnostic'] = diagnostic.snapshot();
+          console.error('VIDEO_ATTEMPT_DIAGNOSTIC', JSON.stringify(diagnostic.snapshot()));
+        } catch { /* Diagnostics cannot replace a body or cleanup failure. */ }
+        rmSync(videoDir, { recursive: true, force: true });
+      } finally { caseCapture.finish(); }
     }
   });
 
@@ -1120,7 +1467,7 @@ describe('web engine lifecycle', () => {
       await withAttempt(engine, app, videoDir, 'v2', async () => {
         await engine.artifacts!.startVideo!(operation('v2'));
         // The page exists before any navigation: the recording owns its screencast.
-        expect(surfaceOf(engine)!.page().url()).toBe('about:blank');
+        expect(await fixtureOf(engine, 'v2').url()).toBe('about:blank');
         await engine.session!.open!(`${app.url}/`, operation('v2'));
         const segments = videoFiles(await engine.artifacts!.stopVideo!(operation('v2')));
         expect(segments.map((segment) => segment.path)).toEqual(['video/video.webm']);

@@ -10,6 +10,8 @@
  * check. `check-install-scripts.ts` names the package that would cause it;
  * this proves the install itself.
  *
+ * Downloaded bundle mode: append <bundle root> <verified manifest sha256>.
+ * This checks package installation, not browser/runtime capability acceptance.
  * Usage: `node scripts/install-smoke.ts <pnpm major or version>` after
  * `pnpm run build`, e.g. `node scripts/install-smoke.ts 11`. Needs the npm
  * registry for the published dependencies. Exits 1 naming what failed.
@@ -20,8 +22,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPO_ROOT } from './public-packages.ts';
+import { containedFile, verifyBundle } from './acceptance/bundle.ts';
 
 const pnpmVersion = process.argv[2];
+const bundleRoot = process.argv[3];
+const bundleDigest = process.argv[4];
+if ((bundleRoot === undefined) !== (bundleDigest === undefined)) throw new Error('Downloaded bundle mode requires root AND independently verified manifest digest');
+const bundle = bundleRoot === undefined ? undefined : verifyBundle(bundleRoot, bundleDigest!);
 if (pnpmVersion === undefined) {
   process.stderr.write('usage: node scripts/install-smoke.ts <pnpm version>\n');
   process.exit(2);
@@ -48,12 +55,20 @@ const pnpm = (args: readonly string[]) => run(project, 'npx', ['--yes', `pnpm@${
 
 const problems: string[] = [];
 try {
-  for (const name of PACKAGES) {
+  for (const name of bundle === undefined ? PACKAGES : []) {
     const packed = run(join(REPO_ROOT, 'packages', name), 'pnpm', ['pack', '--pack-destination', tarballs]);
     if (packed.status !== 0) throw new Error(`pnpm pack failed in packages/${name}:\n${packed.output}`);
   }
   const files = readdirSync(tarballs);
-  const tarball = (prefix: string): string => `file:${join(tarballs, files.find((file) => file.startsWith(prefix))!)}`;
+  const tarball = (prefix: string): string => {
+    if (bundle && bundleRoot) {
+      const member = prefix === 'e2e-0' ? bundle.packages.core : prefix === 'e2e-dev-web-' ? bundle.packages.web : bundle.packages.mobile;
+      return `file:${containedFile(bundleRoot, member.path)}`;
+    }
+    const matches = files.filter((file) => file.startsWith(prefix));
+    if (matches.length !== 1) throw new Error(`Expected exactly one packed tarball for ${prefix}`);
+    return `file:${join(tarballs, matches[0]!)}`;
+  };
   writeFileSync(
     join(project, 'package.json'),
     JSON.stringify({

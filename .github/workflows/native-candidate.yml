@@ -1,0 +1,359 @@
+name: native full public candidate (Linux, not release acceptance)
+
+# Opt-in only. No model credentials, private fixtures, publishing, caches or foundation artifact reuse.
+on:
+  push:
+    branches: [implement/native-full-ci]
+  workflow_dispatch:
+    inputs:
+      native_sha:
+        description: Exact reviewed PUBLIC 40-character commit in levicode/agent-browser
+        type: string
+        required: true
+      benchmark_sweep:
+        description: Also run the optional repository-local synthetic benchmark sweep (never a private site)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: native-candidate-${{ github.ref }}-${{ inputs.native_sha }}
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '2'
+      RUSTUP_TOOLCHAIN: stable
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - name: Pin immutable public native source and fresh isolated paths
+        id: source
+        env:
+          INPUT_NATIVE_SHA: ${{ inputs.native_sha }}
+          INPUT_BENCHMARK_SWEEP: ${{ inputs.benchmark_sweep }}
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/native-candidate "$RUNNER_TEMP/native-candidate-home" "$RUNNER_TEMP/native-candidate-bin"
+          node scripts/acceptance/candidate-revision.ts
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/native-candidate-target" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$RUNNER_TEMP/native-candidate-cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}" >> "$GITHUB_ENV"
+          echo "HOME=$RUNNER_TEMP/native-candidate-home" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/native-candidate-playwright" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: native-checkout
+        with:
+          repository: levicode/agent-browser
+          ref: ${{ steps.source.outputs.sha }}
+          path: .artifacts/native-source
+          persist-credentials: false
+      - name: Install locked public dependencies
+        id: dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Require removed production backend sources and migrated tests
+        id: source-removal
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node scripts/acceptance/candidate-source.ts .artifacts/native-candidate
+      - name: Build actual complete public packages including core and Web
+        id: packages
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          pnpm run build
+      # Read-only source reference. No dependency install, build, or script from this checkout runs.
+      - name: Test the fail-closed acceptance scripts
+        id: acceptance-scripts
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+        run: node --test 'scripts/acceptance/*.test.ts'
+      - name: Check complete package and test source types
+        id: types
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+        run: |
+          pnpm --filter e2e run typecheck
+          pnpm --filter @e2e-dev/web run typecheck
+          pnpm exec tsc --project scripts
+      - name: Retain the production package import gate
+        id: package-imports
+        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+        run: node scripts/acceptance/candidate-web.ts package-imports - - .artifacts/native-candidate
+      - name: Install official stable Rust
+        id: toolchain
+        if: ${{ !cancelled() && steps.native-checkout.outcome == 'success' }}
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Check all native compilation boundaries before browser execution
+        id: native-lint
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        working-directory: .artifacts/native-source/cli
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          test "$(git rev-parse HEAD)" = "$EXPECTED_NATIVE_SHA"
+          test -z "$(git status --porcelain)"
+          out="$GITHUB_WORKSPACE/.artifacts/native-candidate"
+          mkdir -p "$out"
+          printf '%s\n' "$EXPECTED_NATIVE_SHA" > "$out/native-compile-source.txt"
+          failed=0
+          check_boundary() {
+            local name="$1" status=0
+            shift
+            if "$@" > "$out/$name.log" 2>&1; then
+              status=0
+            else
+              status=$?
+              failed=1
+            fi
+            printf '%s\n' "$status" > "$out/$name.exit"
+            cat "$out/$name.log"
+          }
+          check_boundary native-format-check cargo fmt -- --check
+          check_boundary native-default-clippy cargo clippy --locked --profile ci --no-default-features --all-targets -- -D warnings
+          check_boundary native-feature-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --tests
+          check_boundary native-proxy-check cargo check --locked --profile ci --no-default-features --features acceptance-faults --test client-proxy-fixture
+          test "$failed" -eq 0
+      - name: Compile production runtime and source-matched default harnesses once
+        id: native-build
+        if: ${{ !cancelled() && steps.native-lint.outcome == 'success' }}
+        working-directory: .artifacts/native-source/cli
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          test "$(git rev-parse HEAD)" = "$EXPECTED_NATIVE_SHA"
+          test -z "$(git status --porcelain)"
+          rustc -Vv > "$GITHUB_WORKSPACE/.artifacts/native-candidate/native-rustc-version.txt"
+          cargo --version > "$GITHUB_WORKSPACE/.artifacts/native-candidate/native-cargo-version.txt"
+          cargo build --locked --profile ci --no-default-features --message-format=json > "$GITHUB_WORKSPACE/.artifacts/native-candidate/production-compiler.jsonl"
+          cargo test --locked --profile ci --no-default-features --no-run --message-format=json > "$GITHUB_WORKSPACE/.artifacts/native-candidate/compiler.jsonl"
+          cp "$CARGO_TARGET_DIR/ci/agent-browser" "$RUNNER_TEMP/native-candidate-bin/production"
+      - name: Bind exact default build bytes for diagnostic-only reuse
+        id: focused-build
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.acceptance-scripts.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-focused-artifact.ts capture .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      - name: Install official Chromium, read-only oracle browser and real recording codecs
+        id: browsers
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/native-candidate-bin/production" install --with-deps
+          pnpm --filter @e2e-dev/web exec playwright-core install chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
+          chrome="$(node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" .artifacts/native-candidate/chromium-executable.json)"
+          echo "E2E_CHROMIUM_EXECUTABLE=$chrome" >> "$GITHUB_ENV"
+      - name: Negotiate the production runtime through built Web and exercise owned scope
+        id: native-proxy
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' && steps.packages.outcome == 'success' }}
+        run: |
+          node --input-type=module -e "import { REQUIRED_CAPABILITIES } from './packages/web/dist/native/capabilities.js'; process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > .artifacts/native-candidate/required-capabilities.json
+          node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/required-capabilities.json .artifacts/native-candidate/negotiation.json
+      - name: Execute every compiled default harness (record upstream ignored inventory)
+        id: native-units
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native.ts baseline .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      - name: Execute exact complete hosted native contract inventory
+        id: native-browser
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native.ts browser .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      - name: Execute 13 exact fake-CDP real-encoder contracts (not Chrome evidence)
+        id: native-encoder
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native.ts encoder .artifacts/native-source "$CARGO_TARGET_DIR" .artifacts/native-candidate/compiler.jsonl .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      # All eight preparation regressions now run in default and this exact must-pass stage.
+      - name: Require all exact preparation settlement regressions using the default harness
+        id: preparation-diagnostic
+        timeout-minutes: 10
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.packages.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native-matrix.ts preparation .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" - .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      # Run only after the default harnesses: their CARGO_BIN_EXE path must still be production.
+      - name: Record two controlled preparation schedules without acceptance exemptions
+        id: controlled-preparation
+        timeout-minutes: 3
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.packages.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-controlled-preparation.ts .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      # Independent diagnostic-only reuse: a later failed test does not invalidate verified build bytes.
+      # Reuse the existing closed preparation listing. Never execute another harness just to package it.
+      - name: Stage bounded exact-source production and default harness (not acceptance)
+        id: focused-artifact
+        if: ${{ !cancelled() && steps.focused-build.outcome == 'success' && steps.browsers.outcome == 'success' && steps.acceptance-scripts.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-focused-artifact.ts stage .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA" "$RUNNER_TEMP/native-candidate-focused-artifact"
+      - name: Compile separate non-distributable acceptance-faults runtime
+        id: fault-build
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        working-directory: .artifacts/native-source/cli
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          rustc -Vv > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-rustc-version.txt"
+          cargo build --locked --profile ci --no-default-features --features acceptance-faults --message-format=json > "$GITHUB_WORKSPACE/.artifacts/native-candidate/fault-compiler.jsonl"
+          cp "$CARGO_TARGET_DIR/ci/agent-browser" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults"
+      # This test binary is not the fault runtime. All 31 feature-only tests are an additional mandatory gate.
+      - name: Compile one source-matched feature harness and require every exact feature-only test
+        id: native-feature
+        timeout-minutes: 30
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' && steps.fault-build.outcome == 'success' && steps.packages.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-native-matrix.ts feature .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      # Scripted-peer diagnostics are independent of browser/broker acceptance. Never replace a gate.
+      # Run after default harnesses, and preserve both separately copied runtime binaries.
+      - name: Run bounded production byte-proxy diagnostic (not semantic recovery evidence)
+        id: proxy-diagnostic
+        timeout-minutes: 25
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.packages.outcome == 'success' && steps.native-build.outcome == 'success' && steps.fault-build.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-proxy-diagnostic.ts run .artifacts/native-source "$CARGO_TARGET_DIR" "$RUNNER_TEMP/native-candidate-bin/production" "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      - name: Negotiate the separate fault runtime
+        id: fault-proxy
+        if: ${{ !cancelled() && steps.fault-build.outcome == 'success' && steps.browsers.outcome == 'success' && steps.packages.outcome == 'success' }}
+        run: |
+          node --input-type=module -e "import { REQUIRED_CAPABILITIES } from './packages/web/dist/native/capabilities.js'; process.stdout.write(JSON.stringify([...REQUIRED_CAPABILITIES, 'acceptance.faults/1']))" > .artifacts/native-candidate/fault-capabilities.json
+          node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate/fault-capabilities.json .artifacts/native-candidate/fault-negotiation.json
+      - name: Run complete Web unit inventory
+        id: web-unit
+        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        run: node scripts/acceptance/candidate-web.ts web-unit "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
+      - name: Run core canonical-reference contract
+        id: core-reference
+        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        run: node scripts/acceptance/candidate-web.ts core-reference "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
+      - name: Run all mandatory differential fixtures and expectation reconciliations
+        id: crosscheck-fixtures
+        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        run: node scripts/acceptance/candidate-web.ts crosscheck-fixtures "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
+      - name: Build benchmark fixtures (no agent/model suite)
+        id: benchmark-build
+        if: ${{ !cancelled() && steps.source.outputs.benchmark_sweep == 'true' && steps.packages.outcome == 'success' }}
+        run: pnpm --filter @e2e-dev/web-benchmark run build
+      - name: Serve synthetic benchmark fixtures
+        id: benchmark
+        if: ${{ !cancelled() && steps.benchmark-build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          setsid pnpm --filter @e2e-dev/web-benchmark run start > .artifacts/native-candidate/benchmark.log 2>&1 &
+          echo "$!" > .artifacts/native-candidate/benchmark.pid
+          node --input-type=module -e "const end = Date.now() + 60000; let ready = false; while (Date.now() < end) { try { const r = await fetch('http://127.0.0.1:4280', { signal: AbortSignal.timeout(2000) }); if (r.ok) { ready = true; break; } } catch {} await new Promise(r => setTimeout(r, 500)); } if (!ready) throw new Error('Benchmark did not become ready');"
+      - name: Run production web-browser contracts and isolated P14 installer fixture
+        id: web-browser
+        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' && steps.fault-proxy.outcome == 'success' }}
+        env:
+          E2E_SYNTHETIC_EVIDENCE_BATCH: '1'
+        run: node scripts/acceptance/candidate-web.ts web-browser "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate/fault-negotiation.json
+      - name: Run requested optional local synthetic benchmark sweep
+        id: crosscheck-benchmark
+        if: ${{ !cancelled() && steps.source.outputs.benchmark_sweep == 'true' && steps.native-proxy.outcome == 'success' && steps.benchmark.outcome == 'success' }}
+        env:
+          CROSSCHECK_BENCHMARK_URL: http://127.0.0.1:4280
+        run: node scripts/acceptance/candidate-web.ts crosscheck-benchmark "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
+      - name: Run genuine built-package public callbacks and native primitives
+        id: public-callbacks
+        if: ${{ !cancelled() && steps.native-proxy.outcome == 'success' }}
+        env:
+          E2E_SYNTHETIC_EVIDENCE_BATCH: '1'
+        run: node scripts/acceptance/candidate-web.ts public-callbacks "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/negotiation.json .artifacts/native-candidate
+      - name: Run mandatory semantic fault suite only on feature runtime
+        id: semantic-faults
+        if: ${{ !cancelled() && steps.fault-proxy.outcome == 'success' }}
+        run: node scripts/acceptance/candidate-web.ts semantic-faults "$RUNNER_TEMP/native-candidate-bin/acceptance-faults" .artifacts/native-candidate/fault-negotiation.json .artifacts/native-candidate
+      - name: Seal native producer identity (not a full-candidate pass)
+        id: producer
+        if: ${{ !cancelled() && steps.native-units.outcome == 'success' && steps.native-browser.outcome == 'success' && steps.native-encoder.outcome == 'success' && steps.native-proxy.outcome == 'success' }}
+        env:
+          EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+        run: node scripts/acceptance/candidate-producer.ts .artifacts/native-source "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate "$EXPECTED_NATIVE_SHA"
+      - name: Assemble fresh installable production bundle without publishing
+        id: bundle
+        if: ${{ !cancelled() && steps.producer.outcome == 'success' && steps.packages.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          node scripts/acceptance/package-bundle.ts "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/native-candidate/producer.json .artifacts/native-candidate/negotiation.json "$RUNNER_TEMP/native-candidate-bundle"
+          digest="$(sha256sum "$RUNNER_TEMP/native-candidate-bundle/manifest.json" | cut -d ' ' -f 1)"
+          echo "manifest_sha256=$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify installed package graph and exercise actual public runtime
+        id: installed
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+        env:
+          EXPECTED_MANIFEST_SHA256: ${{ steps.bundle.outputs.manifest_sha256 }}
+        run: node scripts/acceptance/candidate-installed.ts "$RUNNER_TEMP/native-candidate-bundle" "$EXPECTED_MANIFEST_SHA256" "$RUNNER_TEMP/native-candidate-consumer" .artifacts/native-candidate
+      - name: Stop owned benchmark fixture process group
+        if: ${{ always() }}
+        run: |
+          if test -f .artifacts/native-candidate/benchmark.pid; then
+            kill -- "-$(cat .artifacts/native-candidate/benchmark.pid)" 2>/dev/null || true
+          fi
+      - name: Verify mandatory preparation settlement evidence
+        id: preparation-diagnostic-receipt
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+        run: node scripts/acceptance/candidate-native-matrix.ts receipt preparation .artifacts/native-candidate
+      - name: Require complete feature matrix receipt including compiler failure or missing execution
+        id: native-feature-receipt
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+        run: node scripts/acceptance/candidate-native-matrix.ts receipt feature .artifacts/native-candidate
+      # Every independent failure/skip remains red; diagnostic success never waives source removal.
+      - name: Require every complete candidate gate
+        id: candidate-gate
+        if: ${{ !cancelled() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+          BENCHMARK_SWEEP: ${{ steps.source.outputs.benchmark_sweep }}
+          EXPECTED_MANIFEST_SHA256: ${{ steps.bundle.outputs.manifest_sha256 }}
+        run: node scripts/acceptance/candidate-receipt.ts "$RUNNER_TEMP/native-candidate-bundle" .artifacts/native-candidate
+      - name: Record independent proxy diagnostic outcome including failure or skip
+        id: proxy-diagnostic-receipt
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOMES: ${{ toJSON(steps) }}
+        run: node scripts/acceptance/candidate-proxy-diagnostic.ts receipt .artifacts/native-candidate
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        name: Upload verified diagnostic-only native build (never a release bundle)
+        if: ${{ !cancelled() && steps.focused-artifact.outcome == 'success' }}
+        with:
+          name: native-focused-diagnostic-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-candidate-focused-artifact/
+          if-no-files-found: error
+          retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: native-candidate-evidence-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/native-candidate/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && steps.candidate-gate.outcome == 'success' }}
+        with:
+          name: native-public-candidate-linux-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-candidate-bundle/
+          if-no-files-found: error

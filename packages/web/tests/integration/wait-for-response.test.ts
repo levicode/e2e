@@ -3,10 +3,14 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { Page } from 'playwright-core';
-import { withTimeout, type EngineFixtureContext } from 'e2e/engine';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chromium, type Browser as HostBrowser } from 'playwright-core';
+import { withTimeout, type EngineFixtureContext, type EngineHandle } from 'e2e/engine';
+import { web } from '../../src/index.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
+import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { createBrowserFixture, type Browser } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -20,11 +24,12 @@ import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
  * than an empty reply.
  */
 function startBodyServer(): Promise<{ server: Server; url: string }> {
+  let documentNumber = 0;
   const server = createServer((request, response) => {
     switch (request.url) {
       case '/':
         response.writeHead(200, { 'content-type': 'text/html' });
-        response.end('<!doctype html><title>Bodies</title><h1>Bodies</h1>');
+        response.end(`<!doctype html><html data-document="${++documentNumber}"><title>Bodies</title><h1>Bodies</h1></html>`);
         return;
       case '/api/full':
         response.writeHead(200, { 'content-type': 'application/json' });
@@ -71,25 +76,31 @@ function startBodyServer(): Promise<{ server: Server; url: string }> {
 }
 
 describe('browser.waitForResponse bodies', () => {
-  const surface = new PlaywrightSurface({});
+  const surface = new NativeSurface({});
   const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-wait-for-response-'));
   const signal = new AbortController().signal;
   let server: Server;
   let origin: string;
-  let page: Page;
   let browser: Browser;
   let operationBudgetMs: number;
+  const openedScopes: string[] = [];
 
   beforeAll(async () => {
     ({ server, url: origin } = await startBodyServer());
     await surface.init({ runId: 'responses', targetName: 'web', projectRoot: process.cwd(),
-      app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+      app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
   });
 
   beforeEach(async () => {
+    openedScopes.length = 0;
+    const command = EngineChannel.prototype.command;
+    vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, operation, transition) {
+      if (name === 'scope.open') openedScopes.push(name);
+      return command.call(this, name, args, operation, transition);
+    });
     await surface.startAttempt({ attemptId: 'responses', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
     operationBudgetMs = 2_000;
-    browser = createBrowserFixture(surface, {
+    browser = createBrowserFixture(surface.fixtureSurface(), {
       app: { resolveUrl: (url: string) => new URL(url, `${origin}/`).href },
       timeouts: { test: 5_000 },
       operation: (timeoutMs = operationBudgetMs) => ({ signal, timeoutMs, runId: 'responses', attemptId: 'responses', origin: 'test' }),
@@ -99,7 +110,8 @@ describe('browser.waitForResponse bodies', () => {
   });
 
   afterEach(async () => {
-    await surface.endAttempt({ signal, timeoutMs: 5_000 });
+    try { await surface.endAttempt({ signal, timeoutMs: 5_000 }); }
+    finally { vi.restoreAllMocks(); }
   });
 
   afterAll(async () => {
@@ -113,21 +125,20 @@ describe('browser.waitForResponse bodies', () => {
    * returns the response `waitForResponse` observed for it.
    */
   async function observe(pathname: string, options?: { timeout: number }) {
-    page = await surface.ensurePage();
-    await page.goto(`${origin}/`);
+    await browser.goto(`${origin}/`);
     // The harness's step bound, as the fixture recorder applies it to every `browser` call.
     const bound = options?.timeout ?? 2_000;
     const [response] = await Promise.all([
       withTimeout(browser.waitForResponse(`**${pathname}`, options), bound, () => new Error(`step exceeded ${bound}ms`)),
-      page.evaluate(
-        (url) => { void fetch(url).then((reply) => reply.text()).catch(() => undefined); },
+      browser.evaluate(
+        (url) => { void fetch(url).then((reply) => reply.text()).catch(() => undefined); return null; },
         `${origin}${pathname}`,
       ),
     ]);
     return response;
   }
 
-  it('observes the first navigation before any page is open', async () => {
+  it('observes the first navigation before any public page command with one opened scope', async () => {
     const [response] = await Promise.all([
       browser.waitForResponse(`${origin}/`),
       browser.goto('/'),
@@ -135,8 +146,13 @@ describe('browser.waitForResponse bodies', () => {
     expect(response.url).toBe(`${origin}/`);
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toBe('text/html');
-    await expect(response.text()).resolves.toContain('<h1>Bodies</h1>');
-    expect(surface.requireContext().pages()).toEqual([surface.requirePage()]);
+    const body = await response.text();
+    expect(body).toContain('<h1>Bodies</h1>');
+    const identity = await browser.evaluate(() => document.documentElement.dataset.document ?? null);
+    expect(identity).not.toBeNull();
+    expect(body).toContain(`data-document="${identity}"`);
+    expect(openedScopes).toEqual(['scope.open']);
+    // The independent target-inventory case below also rules out an extra blank page.
   });
 
   it('reads a full body as text and JSON', async () => {
@@ -190,5 +206,79 @@ describe('browser.waitForResponse bodies', () => {
       code: 'ACTION_FAILED',
       message: expect.stringContaining('Response body is unavailable for redirect responses'),
     });
+  });
+});
+
+
+describe('first navigation target inventory', () => {
+  it('observes the response on the original target without leaving an extra blank page in its context', async () => {
+    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-response-targets-'));
+    const signal = new AbortController().signal;
+    const operation = { signal, timeoutMs: 10_000, runId: 'response-targets', attemptId: 'targets', origin: 'test' as const };
+    let server: Server | undefined;
+    let remote: RemoteChrome | undefined;
+    let control: HostBrowser | undefined;
+    let engine: EngineHandle | undefined;
+    const failures: unknown[] = [];
+    const settle = async (work: readonly Promise<unknown>[]) => {
+      for (const result of await Promise.allSettled(work)) if (result.status === 'rejected') failures.push(result.reason);
+    };
+    try {
+      const app = await startBodyServer();
+      server = app.server;
+      remote = await launchRemoteChrome();
+      const endpoint = remote.endpoint;
+      control = await chromium.connectOverCDP(endpoint);
+      const inventory = await control.newBrowserCDPSession();
+      const baseline = (await inventory.send('Target.getTargets')).targetInfos;
+      const existingTargets = new Set(baseline.map(info => info.targetId));
+      const existingContexts = new Set(baseline.map(info => info.browserContextId));
+      engine = web({ connect: { cdpEndpoint: () => endpoint } });
+      await engine.init!({ runId: operation.runId, targetName: 'web', projectRoot: process.cwd(),
+        app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+      await engine.startAttempt!({ attemptId: operation.attemptId, artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+      const created = (await inventory.send('Target.getTargets')).targetInfos
+        .filter(info => info.type === 'page' && !existingTargets.has(info.targetId));
+      expect(created).toHaveLength(1);
+      const before = created[0]!;
+      expect(before.browserContextId).toBeTypeOf('string');
+      expect(existingContexts.has(before.browserContextId)).toBe(false);
+      const contextTargets = async () => (await inventory.send('Target.getTargets')).targetInfos
+        .filter(info => info.type === 'page' && info.browserContextId === before.browserContextId);
+      expect((await contextTargets()).map(info => info.targetId)).toEqual([before.targetId]);
+      const browser = nativeBrowser(engine, () => operation, app.url);
+      // No public Browser command activates the blank target before these concurrent calls.
+      const [response] = await Promise.all([browser.waitForResponse(`${app.url}/`), browser.goto('/')]);
+      expect(response.url).toBe(`${app.url}/`);
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toBe('text/html');
+      const body = await response.text();
+      expect(body).toContain('<h1>Bodies</h1>');
+      const targets = await contextTargets();
+      expect(targets.map(info => info.targetId)).toEqual([before.targetId]);
+      expect(targets[0]!.url).toBe(`${app.url}/`);
+      const matches = [];
+      for (const page of control.contexts().flatMap(context => context.pages())) {
+        const session = await page.context().newCDPSession(page);
+        try {
+          if ((await session.send('Target.getTargetInfo')).targetInfo.targetId === before.targetId) matches.push(page);
+        } finally { await session.detach(); }
+      }
+      expect(matches).toHaveLength(1);
+      const original = matches[0]!;
+      expect(original.url()).toBe(`${app.url}/`);
+      const observedIdentity = await browser.evaluate(() => document.documentElement.dataset.document ?? null);
+      expect(observedIdentity).not.toBeNull();
+      expect(await original.getAttribute('html', 'data-document')).toBe(observedIdentity);
+      expect(body).toContain(`data-document="${observedIdentity}"`);
+      await inventory.detach();
+    } catch (cause) { failures.push(cause); } finally {
+      if (engine !== undefined) await settle([engine.dispose!({ signal, timeoutMs: 5_000 })]);
+      if (control !== undefined) await settle([control.close()]);
+      if (remote !== undefined) await settle([closeRemoteChrome(remote)]);
+      if (server !== undefined) await settle([new Promise<void>((resolve, reject) => server!.close(error => error === undefined ? resolve() : reject(error)))]);
+      rmSync(artifactsDir, { recursive: true, force: true });
+    }
+    if (failures.length > 0) throw new AggregateError(failures, 'Response target fixture failed');
   });
 });

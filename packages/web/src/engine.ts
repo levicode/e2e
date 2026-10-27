@@ -1,12 +1,11 @@
 /**
- * The Playwright engine for e2e: a browser body built with the
+ * The native Web engine for e2e: a browser body built with the
  * public `defineEngine`, validated by the same rules and graded by the same
  * capabilities as any other engine. Core imports nothing from here; this
  * package imports the contract from `e2e/engine` and contributes the `browser`
  * fixture the way a device engine contributes `device`.
  */
 
-import type { BrowserContext, Page } from 'playwright-core';
 import {
   ConfigurationError,
   defineEngine,
@@ -20,7 +19,8 @@ import {
 } from 'e2e/engine';
 import { createRequire } from 'node:module';
 import { asBrowserProvider } from './provider.ts';
-import { PlaywrightSurface, type WebOptions } from './surface.ts';
+import { NativeSurface } from './native-surface.ts';
+import type { WebOptions } from './web-options.ts';
 import { createBrowserFixture } from './browser.ts';
 import { validateInitScripts } from './init-scripts.ts';
 import { MEDIA_KEYS, mediaProblem } from './media.ts';
@@ -29,29 +29,7 @@ import { FIELD_VALUE_CONTROL, headerProblem } from './protected-app.ts';
 /** App fields only a device target reads. */
 const NATIVE_APP_KEYS = ['bundleId', 'appPath', 'launchArguments', 'permissions'] as const;
 
-/** Creates one Playwright engine: one browser per worker, one context per attempt. */
-const surfaces = new WeakMap<EngineHandle, PlaywrightSurface>();
-
-/**
- * The live browser objects behind a `web()` handle, for agent-side code
- * that replaces the toolset wholesale (spec chapter 16) and drives the page with
- * its own Playwright tooling. Both accessors read the current attempt: the
- * context exists from `startAttempt`, the page from the first `app.open()` or
- * `browser.goto()`, and either throws `INVALID_STATE` before that. The harness
- * remains the notary for what it witnesses; a caller here acts out of band.
- */
-export interface PlaywrightLiveSurface {
-  readonly page: () => Page;
-  readonly context: () => BrowserContext;
-}
-
-/** The live surface of a handle this module created, or undefined for any other engine. */
-export function surfaceOf(engine: EngineHandle): PlaywrightLiveSurface | undefined {
-  const surface = surfaces.get(engine);
-  if (surface === undefined) return undefined;
-  return { page: () => surface.requirePage(), context: () => surface.requireContext() };
-}
-
+/** Creates one native Web adapter: one browser per worker, isolated attempt scopes. */
 export function web(options: WebOptions = {}): EngineHandle {
   if ('allowedOrigins' in options) {
     throw new ConfigurationError(
@@ -66,6 +44,7 @@ export function web(options: WebOptions = {}): EngineHandle {
     );
   }
   rejectUnknownKeys('web()', options, WEB_OPTION_KEYS);
+  if (typeof options.browser === 'string' && options.browser !== 'chromium') throw new ConfigurationError('UNSUPPORTED_CAPABILITY', 'The native Web engine currently supports Chromium only');
   const provider = typeof options.browser === 'object' && options.browser !== null ? asBrowserProvider(options.browser) : undefined;
   if (provider !== undefined && options.connect !== undefined) {
     throw new ConfigurationError(
@@ -100,7 +79,7 @@ export function web(options: WebOptions = {}): EngineHandle {
       `${mode} uses a persistent context; ${creationOptions.join(', ')} ${creationOptions.length === 1 ? 'requires' : 'require'} a newly created context`,
     );
   }
-  const surface = new PlaywrightSurface(options);
+  const surface = new NativeSurface(options);
   const handle = defineEngine({
     name: 'web',
     version: ownVersion(),
@@ -114,12 +93,14 @@ export function web(options: WebOptions = {}): EngineHandle {
     endAttempt: (context) => surface.endAttempt(context),
     dispose: (context) => surface.dispose(context),
     observe: (operation, observeOptions) => surface.observe(operation, observeOptions),
-    locate: (expression, operation) => surface.locate(expression, operation),
+    locate: (expression, operation, locateOptions) => surface.locate(expression, operation, locateOptions),
+    readFields: (expression, fields, operation) => surface.readFields(expression, fields, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
     // A browser honors every action kind of the contract; `actions.ts` dispatches each.
     actions: LOCATOR_ACTION_KINDS,
-    // Playwright holds each modifier for the click.
+    // Native input holds each modifier for the click.
     tapModifiers: true,
+    referenceRevisions: 'engine',
     // A page takes every pointer action of the contract at a bare point too.
     performAt: (point, action, operation) => surface.performAt(point, action, operation),
     pointerActions: POINTER_ACTION_KINDS,
@@ -149,10 +130,9 @@ export function web(options: WebOptions = {}): EngineHandle {
           },
         }),
     fixtures: {
-      browser: (context) => createBrowserFixture(surface, context),
+      browser: (context) => createBrowserFixture(surface.fixtureSurface(), context),
     },
   });
-  surfaces.set(handle, surface);
   return handle;
 }
 

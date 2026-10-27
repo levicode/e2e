@@ -20,11 +20,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  native-runtime:
+    uses: ./.github/workflows/native-runtime.yml
+
   check:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: native-runtime
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The base branch and the merge base, for the testbed's --changed-since.
+          fetch-depth: 0
       - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -58,13 +65,25 @@ jobs:
         run: |
           pnpm exec tsc -p .dev/skills/babysit/scripts
           node --test .dev/skills/babysit/scripts/pr-status.test.ts
+      - name: Set up source-pinned native runtime
+        uses: ./.github/actions/native-runtime
+        with:
+          artifact-id: ${{ needs.native-runtime.outputs.artifact-id }}
+          manifest-sha256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
+          run-attempt: ${{ needs.native-runtime.outputs.run-attempt }}
       - name: Install browsers
         run: node packages/web/dist/bin.js install chromium --with-deps
+      # On a pull request, Jev leaves out the tests the change can't affect;
+      # the merge queue and main pass no --changed-since and run every test.
+      # Without the key (a fork's pull request), every test runs.
       - name: Testbed
-        run: pnpm --filter @e2e-dev/testbed test
+        run: pnpm --filter @e2e-dev/testbed test ${{ github.event_name == 'pull_request' && format('--changed-since origin/{0}', github.base_ref) || '' }}
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
 
   test:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: native-runtime
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -82,6 +101,12 @@ jobs:
           check-latest: true
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Set up source-pinned native runtime
+        uses: ./.github/actions/native-runtime
+        with:
+          artifact-id: ${{ needs.native-runtime.outputs.artifact-id }}
+          manifest-sha256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
+          run-attempt: ${{ needs.native-runtime.outputs.run-attempt }}
       - name: Install browsers
         run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
       - name: Unit and integration tests
@@ -90,7 +115,7 @@ jobs:
   # A new user's first install of the packed packages, which pnpm 11 and
   # later fail on any dependency build script (scripts/install-smoke.ts).
   install:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -112,9 +137,9 @@ jobs:
   # passes (the change cannot reach it); a failed or cancelled one fails it.
   gate:
     name: spec gate
-    needs: [check, test, install]
+    needs: [native-runtime, check, test, install]
     if: ${{ always() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require every job to pass or skip

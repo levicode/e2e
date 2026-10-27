@@ -4,28 +4,29 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EngineFixtureContext } from 'e2e/engine';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
 import { createBrowserFixture, type Browser } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 describe('held keyboard input', () => {
-  const surface = new PlaywrightSurface({});
+  const surface = new NativeSurface({});
   const projectRoot = mkdtempSync(path.join(tmpdir(), 'e2e-held-keys-'));
   const signal = new AbortController().signal;
   let browser: Browser;
   beforeAll(async () => {
-    await surface.init({ runId: 'held', targetName: 'web', projectRoot, app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+    await surface.init({ runId: 'held', targetName: 'web', projectRoot, app: {}, env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
   });
   beforeEach(async () => {
     await surface.startAttempt({ attemptId: 'held', artifactsDir: projectRoot, signal, resolveSecret: noSecrets, ...ignoreTrace });
-    const page = await surface.ensurePage();
-    await page.setContent('<h1 id="events"></h1>');
-    browser = createBrowserFixture(surface, {
+    // These cases test an opened page, not the separate lazy-activation refusal contract.
+    await surface.open('about:blank', { signal, timeoutMs: 5_000, runId: 'held', attemptId: 'held', origin: 'test' });
+    browser = createBrowserFixture(surface.fixtureSurface(), {
       app: { resolveUrl: (url: string) => url },
       operation: (timeoutMs = 5000) => ({ signal, timeoutMs, runId: 'held', attemptId: 'held', origin: 'test' }),
       expectable: (target: object) => target,
       fixture: (_name: string, target: object) => target,
     } as unknown as EngineFixtureContext);
     await browser.evaluate(() => {
+      document.body.innerHTML = '<h1 id="events"></h1>';
       for (const type of ['keydown', 'keyup']) document.addEventListener(type, event => {
         if (!(event instanceof KeyboardEvent)) return;
         const output = document.querySelector('#events');

@@ -10,12 +10,16 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secrets } from 'e2e';
 import type { EngineCleanupContext, EngineFixtureContext, OperationContext } from 'e2e/engine';
 import { createBrowserFixture, type Browser } from '../../src/browser.ts';
-import { PlaywrightSurface, type WebOptions } from '../../src/surface.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
+import type { WebOptions } from '../../src/web-options.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { beginSyntheticCase, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 
 declare global {
   interface Window {
@@ -24,7 +28,12 @@ declare global {
   }
 }
 
-const BOOT = '<script>window.seenAtBoot = [...(window.trail ?? [])];</script>';
+const BOOT = `<script>
+  window.seenAtBoot = [...(window.trail ?? [])];
+  window.addEventListener('load', () => {
+    window.opener?.postMessage({ kind: 'init-script-boot', trail: window.seenAtBoot }, location.origin);
+  });
+</script>`;
 const PAGES: Record<string, string> = {
   '/': `<!doctype html><html><head>${BOOT}</head><body><h1>Home</h1></body></html>`,
   '/framed': `<!doctype html><html><head>${BOOT}</head><body><iframe src="/"></iframe></body></html>`,
@@ -56,14 +65,14 @@ describe('init scripts', () => {
   });
 
   /** Boots one worker of a surface with `options` and runs `body` in one attempt with its `browser` fixture. */
-  async function attempt(options: WebOptions, body: (browser: Browser, surface: PlaywrightSurface) => Promise<void>): Promise<void> {
-    const surface = new PlaywrightSurface(options);
+  async function attempt(options: WebOptions, body: (browser: Browser, surface: NativeSurface) => Promise<void>): Promise<void> {
+    const surface = new NativeSurface(options);
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-init-scripts-artifacts-'));
     try {
       await surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: { site: '127.0.0.1' },
-        env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+        env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
       await surface.startAttempt({ attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
-      const browser = createBrowserFixture(surface, {
+      const browser = createBrowserFixture(surface.fixtureSurface(), {
         operation,
         app: { resolveUrl: (target: string) => new URL(target, url).href },
         timeouts: { test: 30_000, assertion: 5_000 },
@@ -81,29 +90,127 @@ describe('init scripts', () => {
   const seenAtBoot = (browser: Browser) => browser.evaluate(() => window.seenAtBoot ?? null);
 
   it('runs the configured scripts in order before the page, in frames, new tabs, and replaced contexts', async () => {
+    const evidence = beginSyntheticCase('P22');
+    let phase: SyntheticPhase = 'init';
+    const observer = new SyntheticNativeObserver(evidence, () => phase);
+    /** Boots one worker of a surface with `options` and runs `body` in one attempt with its `browser` fixture. */
+    async function diagnosedAttempt(options: WebOptions, body: (browser: Browser, surface: NativeSurface) => Promise<void>): Promise<void> {
+      const outcome: SyntheticOutcome = { setup: 'incomplete', body: 'not-started', cleanup: 'not-started' };
+      phase = 'init';
+      let restore = () => {};
+      try {
+        const connect = NativeClient.connect;
+        const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observer.connection(connect(...args)));
+        restore = () => connection.mockRestore();
+      } catch { evidence.invalidate(); }
+      let section: 'setup' | 'body' | 'cleanup' = 'setup';
+      const surface = new NativeSurface(options);
+      const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-init-scripts-artifacts-'));
+      try {
+        evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+        await surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: { site: '127.0.0.1' },
+          env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+        evidence.record({ kind: 'phase', section, phase, state: 'passed' }); phase = 'start';
+        evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+        await surface.startAttempt({ attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
+        evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+        const browser = createBrowserFixture(surface.fixtureSurface(), {
+          operation,
+          app: { resolveUrl: (target: string) => new URL(target, url).href },
+          timeouts: { test: 30_000, assertion: 5_000 },
+          expectable: (target: object) => target,
+          fixture: (_name: string, target: object) => target,
+        } as unknown as EngineFixtureContext);
+        outcome.setup = 'passed'; outcome.body = 'incomplete'; section = 'body'; phase = 'action';
+        evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+        await body(browser, surface);
+        outcome.body = 'passed'; evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+      } catch (cause) {
+        observer.failure(section, cause); outcome[section] = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+        throw cause;
+      } finally {
+        section = 'cleanup'; outcome.cleanup = 'incomplete'; phase = 'end';
+        try {
+          evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+          let endFailed = false;
+          await surface.endAttempt(cleanup()).catch((cause: unknown) => {
+            observer.failure('cleanup', cause);
+            endFailed = true; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+          });
+          if (!endFailed) evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+          phase = 'dispose'; evidence.record({ kind: 'phase', section, phase, state: 'enter' });
+          await surface.dispose(cleanup());
+          evidence.record({ kind: 'phase', section, phase, state: 'passed' });
+          rmSync(artifactsDir, { recursive: true, force: true });
+          outcome.cleanup = endFailed ? 'failed' : 'passed';
+        } catch (cause) {
+          observer.failure('cleanup', cause); outcome.cleanup = 'failed'; evidence.record({ kind: 'phase', section, phase, state: 'failed' });
+          // eslint-disable-next-line no-unsafe-finally -- Preserve the original cleanup exception precedence.
+          throw cause;
+        } finally { observer.close(); try { restore(); } catch { evidence.invalidate(); } evidence.finish(outcome); }
+      }
+    }
+
+    /** Stage ordinals identify fixture samples, never native document/session tenure. */
+    const recordTrail = (lifecyclePhase: 'main' | 'frame' | 'popup' | 'reset', fixtureLifecycleOrdinal: 0 | 1 | 2 | 3, trail: unknown): void => {
+      for (const scriptOrdinal of [0, 1, 2, 3] as const) evidence.observe(() => {
+        const expected = ['source', 'file', 'function', 'method'];
+        const valid = Array.isArray(trail) && trail.every(item => typeof item === 'string' && expected.includes(item));
+        if (!valid) evidence.invalidate();
+        return { kind: 'script-boot', phase: lifecyclePhase, fixtureLifecycleOrdinal, scriptOrdinal,
+          executionCount: valid ? trail.filter(item => item === expected[scriptOrdinal]).length : null,
+          exactOrder: valid ? trail.length === expected.length && trail.every((item, index) => item === expected[index]) : null };
+      });
+    };
     const initScripts: WebOptions['initScripts'] = [
       "(window.trail ??= []).push('source');",
       { path: 'from-file.js' },
       () => { (window.trail ??= []).push('function'); },
       { method() { (window.trail ??= []).push('method'); } }.method,
     ];
-    await attempt({ initScripts }, async (browser, surface) => {
+    await diagnosedAttempt({ initScripts }, async (browser, surface) => {
       const expected = ['source', 'file', 'function', 'method'];
+      evidence.record({ kind: 'phase', section: 'body', phase: 'navigate', state: 'enter' });
       await browser.goto('/framed');
-      expect(await seenAtBoot(browser)).toEqual(expected);
-      const frame = surface.requirePage().frames()[1]!;
-      await frame.waitForLoadState();
-      expect(await frame.evaluate(() => window.seenAtBoot)).toEqual(expected);
+      evidence.record({ kind: 'phase', section: 'body', phase: 'navigate', state: 'passed' });
+      const mainTrail = await seenAtBoot(browser); recordTrail('main', 0, mainTrail);
+      expect(mainTrail).toEqual(expected);
+      let frameTrail: unknown = null;
+      // The extra local continuation changes scheduling, not the original renderer request or poll timeout.
+      try {
+        await expect.poll(() => browser.evaluate(() =>
+          document.querySelector('iframe')?.contentWindow?.seenAtBoot ?? null,
+        ).then(value => { frameTrail = value; return value; })).toEqual(expected);
+      } finally { recordTrail('frame', 1, frameTrail); }
 
-      const opened = surface.requireContext().waitForEvent('page');
-      await browser.evaluate((target) => { window.open(target); return null; }, `${url}/`);
-      const tab = await opened;
-      await tab.waitForLoadState();
-      expect(await tab.evaluate(() => window.seenAtBoot)).toEqual(expected);
+      phase = 'popup';
+      evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'enter' });
+      const tabTrail = await observer.select(0, 'page.evaluate', () => browser.evaluate((target) => new Promise<string[]>((resolve, reject) => {
+        let tab: Window | null = null;
+        const loaded = (event: MessageEvent) => {
+          if (event.origin !== location.origin || event.source !== tab) return;
+          const data = event.data as { kind?: unknown; trail?: unknown } | null;
+          if (data?.kind !== 'init-script-boot' || !Array.isArray(data.trail) || !data.trail.every(item => typeof item === 'string')) return;
+          window.removeEventListener('message', loaded);
+          resolve(data.trail);
+        };
+        window.addEventListener('message', loaded);
+        tab = window.open(target);
+        if (tab === null) {
+          window.removeEventListener('message', loaded);
+          reject(new Error('The init-script fixture popup did not open'));
+        }
+      }), `${url}/`));
+      evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'passed' });
+      recordTrail('popup', 2, tabTrail);
+      observer.assert(0, () => expect(tabTrail).toEqual(expected));
 
+      evidence.record({ kind: 'phase', section: 'body', phase: 'reset', state: 'enter' });
       await surface.reset(operation());
+      evidence.record({ kind: 'phase', section: 'body', phase: 'reset', state: 'passed' });
       await browser.goto('/');
-      expect(await seenAtBoot(browser)).toEqual(expected);
+      const resetTrail = await seenAtBoot(browser); recordTrail('reset', 3, resetTrail);
+      expect(resetTrail).toEqual(expected);
     });
   });
 
@@ -142,10 +249,10 @@ describe('init scripts', () => {
   });
 
   it('fails the run, and a worker, with INVALID_CONFIG when a configured file cannot be read', async () => {
-    const surface = new PlaywrightSurface({ initScripts: [{ path: 'nope.js' }] });
-    await expect(surface.prepare({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, slots: 1, env: {},
+    const surface = new NativeSurface({ initScripts: [{ path: 'nope.js' }] });
+    await expect(surface.prepare({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, slots: 1, env: process.env,
       signal, headed: false, log: () => undefined })).rejects.toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringMatching(/nope\.js \(ENOENT\)/) });
-    await expect(surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, env: {}, headed: false,
+    await expect(surface.init({ runId: 'init-scripts', targetName: 'web', projectRoot, app: {}, env: process.env, headed: false,
       workerSlot: 0, signal, log: () => undefined })).rejects.toMatchObject({
       code: 'INVALID_CONFIG',
       message: expect.stringMatching(/web\(\{ initScripts \}\)\[0\] path cannot be read: .*nope\.js \(ENOENT\)/),

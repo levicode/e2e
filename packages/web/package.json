@@ -1,7 +1,7 @@
 {
   "name": "@e2e-dev/web",
-  "version": "0.15.2",
-  "description": "Web engine for e2e agentic end-to-end testing, built on Playwright",
+  "version": "0.15.3",
+  "description": "Web engine for e2e agentic end-to-end testing, built on native agent-browser",
   "keywords": [
     "e2e",
     "end-to-end",
@@ -10,7 +10,7 @@
     "web-testing",
     "browser-testing",
     "browser-automation",
-    "playwright",
+    "agent-browser",
     "chromium"
   ],
   "license": "Apache-2.0",
@@ -55,18 +55,20 @@
     "test:unit": "vitest run tests/unit"
   },
   "dependencies": {
-    "playwright-core": "1.64.1"
+    "mime-types": "3.0.2"
   },
   "peerDependencies": {
     "e2e": ">=0.18.0 <1"
   },
   "devDependencies": {
-    "@types/node": "26.6.2",
-    "e2e": "workspace:*",
+    "@types/mime-types": "3.0.1",
+    "@types/node": "26.6.5",
     "@types/pngjs": "6.0.5",
+    "e2e": "workspace:*",
+    "playwright-core": "1.64.1",
     "pngjs": "7.0.0",
     "typescript": "7.0.2",
-    "vitest": "5.0.1"
+    "vitest": "5.0.5"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

@@ -26,3 +26,6 @@ packages/e2e/docs/
 .env*
 # `pnpm run canary` writes this changeset and consumes it in the same run.
 .changeset/canary.md
+
+# Local acceptance evidence is not source or a reusable test-pass cache.
+.artifacts/

@@ -1,7 +1,8 @@
 /** Observation capture, redaction, and model serialization. */
 
+import { referenceText } from './reference-text.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../engine/contract.ts';
-import type { Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
+import type { NodeRef, Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
 import type { SecretLedger } from '../internal/redact.ts';
 import { collapseText } from '../internal/text.ts';
 import { sleep } from '../internal/time.ts';
@@ -44,6 +45,10 @@ export type SemanticAgentObservation = Extract<AgentObservation, { kind: 'semant
 
 /** Identity, geometry, and redacted prose shared by both evidence variants. */
 interface AgentObservationMetadata {
+  /** Internal stable viewport capability; omitted from executor/model observations. */
+  readonly viewportRef?: NodeRef;
+  /** Opaque live-element namespace, not rendered or sent to the model. */
+  readonly identityScope?: string;
   /** Where the surface was when captured, when the platform has a location. */
   readonly location?: string;
   /** Location projected to path and query when it is a URL, otherwise kept opaque. */
@@ -83,6 +88,8 @@ export function prepareObservation(
   const path = location === undefined ? undefined : observationPath(location);
   const metadata = {
     revision: observation.revision,
+    ...(observation.viewportRef === undefined ? {} : { viewportRef: observation.viewportRef }),
+    ...(observation.identityScope === undefined ? {} : { identityScope: observation.identityScope }),
     ...(location === undefined ? {} : { location }),
     ...(path === undefined ? {} : { path }),
     viewport: observation.viewport,
@@ -374,7 +381,7 @@ export const INTERACTIVE_ROLES: ReadonlySet<string> = new Set([
 export function interactiveNodeCount(observation: Pick<ExecutorObservation, 'text'>): number {
   let count = 0;
   for (const line of observation.text.split('\n')) {
-    const role = /^\s*#\S+ (\S+)/.exec(line)?.[1];
+    const role = /^\s*[#@]\S+ (\S+)/.exec(line)?.[1];
     if (role !== undefined && INTERACTIVE_ROLES.has(role)) count += 1;
   }
   return count;
@@ -417,14 +424,14 @@ const MAX_INDENT_DEPTH = 10;
 const MAX_HREF_LENGTH = 256;
 
 /**
- * Renders one node as `#id role "name" text="..." value="..." selection="..." [states]`. Role-less text
+ * Renders one node as `reference role "name" text="..." value="..." selection="..." [states]`. Role-less text
  * holders omit the role token entirely: on a large screen they are half the
  * lines, and the model needs their text, not a filler word. A link target on
  * `appOrigin`, the app base URL's, renders as its path.
  */
 export function formatNode(node: RedactedNode, depth: number, appOrigin?: string): string {
   const description = describeNode(node, appOrigin);
-  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}#${node.ref.id}${description === '' ? '' : ` ${description}`}`;
+  return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}${referenceText(node.ref.id)}${description === '' ? '' : ` ${description}`}`;
 }
 
 /**
@@ -517,7 +524,7 @@ function boundHref(href: string): string {
 export function observationShape(observation: AgentObservation): string | undefined {
   if (observation.kind === 'pixels') return undefined;
   const text = observation.text
-    .replaceAll(/(^|\n)(\s*)#\S+/g, '$1$2')
+    .replaceAll(/(^|\n)(\s*)[#@]\S+/g, '$1$2')
     .replaceAll(/ \[([^\]]*)\]/g, (_match, states: string) => {
       const stable = states.split(' ').filter((state) => state !== 'focused');
       return stable.length === 0 ? '' : ` [${stable.join(' ')}]`;

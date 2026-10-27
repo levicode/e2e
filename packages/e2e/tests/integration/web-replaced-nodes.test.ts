@@ -11,6 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
+import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
 import { resultByTitle, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 const SUITE = `import { test } from '@e2e-dev/web';
@@ -126,33 +127,33 @@ describe('reads of a node replaced every frame', () => {
 
   it('never reads the live field as hidden through a detached node', () => {
     const result = resultByTitle(outcome, 'a field replaced every frame never reads as hidden');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('never reads the live field as hidden while the runner is starved', () => {
     const result = resultByTitle(outcome, 'a field replaced every frame never reads as hidden on a starved runner');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('reads a stable neighbor of a replaced field without tripping on it', () => {
     const result = resultByTitle(outcome, 'a stable field beside one replaced every frame reads as shown');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it.each(['testId', 'label', 'displayValue'])('fails toBeHidden on the live field by %s', (kind) => {
     const result = resultByTitle(outcome, `toBeHidden fails on a field replaced every frame: ${kind}`);
     expect(result.status).toBe('failed');
     // A last sample that lands on a replaced node past the deadline reports the locator unresolved.
-    expect(['ASSERTION_FAILED', 'LOCATOR_NOT_FOUND']).toContain(result.attempts[0]!.error?.code);
+    expect(['ASSERTION_FAILED', 'LOCATOR_NOT_FOUND'], closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toContain(result.attempts[0]!.error?.code);
   });
 
   it('resolves a stable field among churning candidates within a short deadline', () => {
     const result = resultByTitle(outcome, 'a stable field among fields replaced every frame resolves promptly');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('still reads a genuinely removed field as hidden', () => {
     const result = resultByTitle(outcome, 'a field removed while it is being replaced reads as hidden');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 });

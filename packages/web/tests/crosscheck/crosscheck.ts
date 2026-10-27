@@ -1,18 +1,20 @@
 /**
  * Differential check of the engine's semantic tree against two oracles on
  * the same live page: Chrome's own accessibility tree over CDP, and
- * Playwright's `getByRole` resolution. Every node the engine reports is
- * tagged in the DOM, then looked up in both; every interactive node Chrome
- * exposes that the engine left out is reported too.
+ * Playwright's `getByRole` resolution. Protected observation refs are joined
+ * to temporary DOM markers by native acquisition correlation, then looked up
+ * in both oracles. Interactive Chrome nodes absent from observation count
+ * as missing even if a fixture query can find them.
  *
  * The result is a list of disagreements keyed without node ids, so a list
  * can be committed as the expected state of a page and diffed on the next
  * run (`expectations.ts`).
  */
 
-import type { ElementHandle, Page } from 'playwright-core';
-import type { SemanticNode } from 'e2e/engine';
-import { captureDocument } from '../../src/observation.ts';
+import { randomUUID } from 'node:crypto';
+import type { CDPSession, Page } from 'playwright-core';
+import type { LocatorExpression, SemanticNode } from 'e2e/engine';
+import type { NativeOracle } from '../helpers/native-oracle.ts';
 
 /** One field on which the engine and an oracle read a node differently. */
 export interface Disagreement {
@@ -45,7 +47,7 @@ const ARIA_ROLE: Readonly<Record<string, string>> = { image: 'img' };
 
 /**
  * Roles the tree names from content where accname, Chrome, and Playwright
- * leave them unnamed (`NAME_FROM_CONTENT_ROLES` in `src/in-page/read-semantics.ts`):
+ * leave them unnamed:
  * a list row or a status message is read by what it says.
  */
 const ENGINE_NAMED_ROLES = new Set(['listitem', 'status', 'alert']);
@@ -98,8 +100,7 @@ const INTERACTIVE_CHROME_ROLES = new Set([
 
 /**
  * Icon-font glyphs, private-use code points, which the tree drops from a
- * name (`ICON_GLYPHS` in `src/in-page/read-semantics.ts`) and the engine's
- * role locator tolerates (`glyphTolerantName` in `src/locators.ts`). Removed
+ * name and the engine's role locator tolerates. Removed
  * from Chrome's name before it is compared, and allowed around the words of
  * the name `getByRole` is asked for.
  */
@@ -114,8 +115,8 @@ function glyphTolerant(name: string): RegExp {
 /** The ARIA states compared, as Chrome's AX property names. */
 const STATES = ['checked', 'disabled', 'expanded', 'selected', 'pressed'] as const;
 
-/** The attribute each published element carries its node id in. */
-export const MARKER = 'data-e2e-crosscheck';
+/** Temporary oracle identity, never model metadata or a guessed native ref. */
+const MARKER = 'data-e2e-crosscheck';
 
 function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
   out.push(node);
@@ -131,52 +132,171 @@ function describe(role: string, name: string): string {
   return `${role} ${JSON.stringify(name)}`;
 }
 
-/** One capture through the engine's own reader, with the element behind each node id. */
-export async function captureTagged(page: Page): Promise<{
-  nodes: SemanticNode[];
-  elements: Map<string, ElementHandle<Element>>;
-  facts: Map<string, ElementFacts>;
-}> {
-  let nextId = 1;
-  const elements = new Map<string, ElementHandle<Element>>();
-  const { tree } = await captureDocument(
-    {
-      testIdAttribute: 'data-testid',
-      site: undefined,
-      reserveIds: (count) => {
-        const first = nextId;
-        nextId += count;
-        return first;
-      },
-      commit: (id, element) => {
-        elements.set(id, element);
-      },
-    },
-    page,
-    { framePath: [], budget: 5000, deadline: Date.now() + 30_000, signal: new AbortController().signal },
-  );
-  const facts = new Map<string, ElementFacts>();
-  for (const [id, element] of elements) {
-    facts.set(id, await element.evaluate((el, [attribute, value]) => {
-      el.setAttribute(attribute!, value!);
-      const root = el.getRootNode();
-      const view = el.ownerDocument.defaultView;
-      return {
-        inChildFrame: view !== null && view !== view.top,
-        inClosedShadow: root instanceof ShadowRoot && root.mode === 'closed',
-        editingHost: el instanceof HTMLElement && el.isContentEditable,
-        svgRoot: el instanceof SVGSVGElement,
-      };
-    }, [MARKER, id]));
+interface OracleNode {
+  readonly nodeType: number;
+  readonly backendNodeId: number;
+  readonly attributes?: readonly string[];
+  readonly children?: readonly OracleNode[];
+  readonly shadowRoots?: readonly OracleNode[];
+  readonly shadowRootType?: string;
+  readonly frameId?: string;
+  readonly contentDocument?: OracleNode;
+}
+
+interface TaggedElement {
+  readonly token: string;
+  readonly frameId: string;
+  readonly cdp: CDPSession;
+  readonly objectId: string;
+  readonly previous: string | null;
+  facts?: ElementFacts;
+}
+
+/** Instrument only the owned oracle, after protected capture, and restore every marker afterwards. */
+async function tagOracleElements(page: Page) {
+  const group = `e2e-crosscheck-${randomUUID()}`;
+  const sessions: CDPSession[] = [];
+  const elements: TaggedElement[] = [];
+  const edges = new Map<string, { parent: string; selector: string }>();
+  const restore = async (): Promise<void> => {
+    const failures: unknown[] = [];
+    for (const element of elements.toReversed()) {
+      try {
+        const result = await element.cdp.send('Runtime.callFunctionOn', {
+          objectId: element.objectId,
+          functionDeclaration: 'function(attribute, previous) { if (previous === null) this.removeAttribute(attribute); else this.setAttribute(attribute, previous); }',
+          arguments: [{ value: MARKER }, { value: element.previous }], returnByValue: true,
+        });
+        if (result.exceptionDetails !== undefined) throw new Error('Oracle marker restoration failed');
+      } catch (cause) { failures.push(cause); }
+    }
+    for (const cdp of sessions) {
+      try { await cdp.send('Runtime.releaseObjectGroup', { objectGroup: group }); } catch (cause) { failures.push(cause); }
+      try { await cdp.detach(); } catch (cause) { failures.push(cause); }
+    }
+    if (failures.length > 0) throw new AggregateError(failures, 'Crosscheck oracle cleanup failed');
+  };
+  try {
+    const main = await page.context().newCDPSession(page);
+    sessions.push(main);
+    const mainFrameId = (await main.send('Page.getFrameTree')).frameTree.frame.id;
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      try { sessions.push(await page.context().newCDPSession(frame)); }
+      catch (cause) {
+        // Pinned Playwright reports this only for a frame already in its parent's CDP session.
+        if (!(cause instanceof Error) || !cause.message.includes("This frame does not have a separate CDP session, it is a part of the parent frame's session")) throw cause;
+      }
+    }
+    const visited = new Set<string>();
+    const walk = async (cdp: CDPSession, node: OracleNode, frameId: string): Promise<void> => {
+      if (node.shadowRootType === 'user-agent') return;
+      const key = `${frameId}:${node.backendNodeId}`;
+      if (visited.has(key)) return;
+      visited.add(key);
+      if (node.nodeType === 1) {
+        const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendNodeId, objectGroup: group });
+        if (object.objectId === undefined) throw new Error('Oracle could not resolve an element');
+        const attributeIndex = node.attributes?.findIndex((attribute, index) => index % 2 === 0 && attribute === MARKER) ?? -1;
+        const previous = attributeIndex < 0 ? null : node.attributes![attributeIndex + 1]!;
+        const token = `${group}-${elements.length}`;
+        const element: TaggedElement = { token, frameId, cdp, objectId: object.objectId, previous };
+        elements.push(element);
+        const read = await cdp.send('Runtime.callFunctionOn', {
+          objectId: object.objectId,
+          functionDeclaration: `function(attribute, token) {
+            this.setAttribute(attribute, token);
+            const root = this.getRootNode();
+            const view = this.ownerDocument.defaultView;
+            return {
+              inChildFrame: view !== null && view !== view.top,
+              inClosedShadow: root instanceof ShadowRoot && root.mode === 'closed',
+              editingHost: this instanceof HTMLElement && this.isContentEditable,
+              svgRoot: this instanceof SVGSVGElement,
+            };
+          }`,
+          arguments: [{ value: MARKER }, { value: token }], returnByValue: true,
+        });
+        if (read.exceptionDetails !== undefined || read.result.value === undefined) throw new Error('Oracle could not read element facts');
+        element.facts = read.result.value as ElementFacts;
+        if (node.frameId !== undefined && node.frameId !== frameId) edges.set(node.frameId, { parent: frameId, selector: `[${MARKER}=${JSON.stringify(token)}]` });
+      }
+      for (const child of [...node.children ?? [], ...node.shadowRoots ?? []]) await walk(cdp, child, frameId);
+      if (node.contentDocument !== undefined) {
+        if (node.frameId === undefined) throw new Error('Oracle frame owner has no frame identity');
+        await walk(cdp, node.contentDocument, node.frameId);
+      }
+    };
+    for (const cdp of sessions) {
+      const frameId = (await cdp.send('Page.getFrameTree')).frameTree.frame.id;
+      const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+      await walk(cdp, root, frameId);
+    }
+    const paths = new Map<string, readonly string[]>([[mainFrameId, []]]);
+    const pathFor = (frameId: string, visiting = new Set<string>()): readonly string[] => {
+      const known = paths.get(frameId);
+      if (known !== undefined) return known;
+      const edge = edges.get(frameId);
+      if (edge === undefined || visiting.has(frameId)) throw new Error('Oracle cannot prove the child frame chain');
+      visiting.add(frameId);
+      const path = [...pathFor(edge.parent, visiting), edge.selector];
+      paths.set(frameId, path);
+      return path;
+    };
+    for (const element of elements) pathFor(element.frameId);
+    return { elements, paths, restore };
+  } catch (cause) {
+    try { await restore(); }
+    catch (cleanupError) { throw new AggregateError([cause, cleanupError], 'Oracle setup and cleanup failed', { cause: cleanupError }); }
+    throw cause;
   }
-  return { nodes: flatten(tree), elements, facts };
+}
+
+/** Join exact marker/ref identities without borrowing any fixture-query semantics for the model. */
+async function captureTagged(fixture: NativeOracle) {
+  const snapshot = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent', timeoutMs: 30_000 });
+  const nodes = flatten(snapshot.root);
+  const tagged = await tagOracleElements(fixture.oracle);
+  try {
+    const byToken = new Map(tagged.elements.map(element => [element.token, element]));
+    const facts = new Map<string, ElementFacts>();
+    const markers = new Map<string, string>();
+    const ids = new Map<string, string>();
+    for (const [frameId, path] of tagged.paths) {
+      const expression = path.reduceRight<LocatorExpression>((source, selector) => ({ kind: 'frame', selector, source }), { kind: 'selector', selector: `[${MARKER}]` });
+      // Explicit fixture reads preserve attributes; protected observation does not.
+      // Only the marker and exact ref participate in this join, never query metadata.
+      const matches = await fixture.engine.locate!(expression, { ...fixture.operation(), timeoutMs: 30_000 }, { purpose: 'fixture' });
+      const correlated = await fixture.correlate(matches.map(match => match.ref), nodes, { ...fixture.operation(), timeoutMs: 30_000 });
+      for (const [index, match] of matches.entries()) {
+        const token = match.attributes?.[MARKER];
+        const element = token === undefined ? undefined : byToken.get(token);
+        if (element === undefined || element.frameId !== frameId || element.facts === undefined) throw new Error('Fixture query did not identify an exact oracle element');
+        const observed = correlated[index];
+        if (observed === null) continue;
+        if (observed === undefined) throw new Error('Crosscheck identity correlation omitted a result');
+        if (markers.has(observed.ref.id) || ids.has(token!)) throw new Error('Crosscheck identity join is not one-to-one');
+        facts.set(observed.ref.id, element.facts);
+        markers.set(observed.ref.id, token!);
+        ids.set(token!, observed.ref.id);
+      }
+    }
+    for (const node of nodes) {
+      if (node.role !== undefined && !STRUCTURAL_ROLES.has(node.role) && !facts.has(node.ref.id)) throw new Error(`No exact DOM identity for observed ref ${node.ref.id}`);
+    }
+    return { nodes, facts, markers, ids, restore: tagged.restore };
+  } catch (cause) {
+    try { await tagged.restore(); }
+    catch (cleanupError) { throw new AggregateError([cause, cleanupError], 'Crosscheck identity join and cleanup failed', { cause: cleanupError }); }
+    throw cause;
+  }
 }
 
 /** Where an element sits, for the policies above and the oracles' reach. */
 interface ElementFacts {
   /** Neither oracle reads a child frame from the top page. */
   readonly inChildFrame: boolean;
-  /** Playwright cannot pierce a closed root; the engine records them at creation. */
+  /** Playwright cannot pierce a closed root; the native engine can read it. */
   readonly inClosedShadow: boolean;
   /** An editor's host, which the tree reads as the `textbox` it is. Chrome calls it `generic`. */
   readonly editingHost: boolean;
@@ -194,8 +314,9 @@ interface AXNode {
 }
 
 /** Chrome's AX node for every tagged element, and the AX nodes whose element carries no tag. */
-async function chromeTree(page: Page): Promise<{ byId: Map<string, AXNode>; untagged: AXNode[] }> {
+async function chromeTree(page: Page, ids: ReadonlyMap<string, string>): Promise<{ byId: Map<string, AXNode>; untagged: AXNode[] }> {
   const cdp = await page.context().newCDPSession(page);
+  const group = `e2e-crosscheck-ax-${randomUUID()}`;
   try {
     await cdp.send('DOM.enable');
     await cdp.send('Accessibility.enable');
@@ -204,7 +325,7 @@ async function chromeTree(page: Page): Promise<{ byId: Map<string, AXNode>; unta
     const untagged: AXNode[] = [];
     for (const node of nodes as readonly AXNode[]) {
       if (node.backendDOMNodeId === undefined) continue;
-      const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendDOMNodeId });
+      const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendDOMNodeId, objectGroup: group });
       if (object.objectId === undefined) continue;
       const { result } = await cdp.send('Runtime.callFunctionOn', {
         objectId: object.objectId,
@@ -219,12 +340,15 @@ async function chromeTree(page: Page): Promise<{ byId: Map<string, AXNode>; unta
         }`,
         returnByValue: true,
       });
-      if (typeof result.value !== 'string') untagged.push(node);
-      else if (result.value !== '') byId.set(result.value, node);
+      if (result.value === '') continue;
+      const id = typeof result.value === 'string' ? ids.get(result.value) : undefined;
+      if (id === undefined) untagged.push(node);
+      else byId.set(id, node);
     }
     return { byId, untagged };
   } finally {
-    await cdp.detach();
+    try { await cdp.send('Runtime.releaseObjectGroup', { objectGroup: group }); }
+    finally { await cdp.detach(); }
   }
 }
 
@@ -267,7 +391,7 @@ function compareWithChrome(node: SemanticNode, ax: AXNode, facts: ElementFacts, 
 }
 
 /** Whether `getByRole(role, { name, exact })` finds the engine's element among its matches. */
-async function compareWithPlaywright(page: Page, node: SemanticNode, into: Disagreement[]): Promise<void> {
+async function compareWithPlaywright(page: Page, node: SemanticNode, marker: string, into: Disagreement[]): Promise<void> {
   const name = node.name ?? '';
   const role = ARIA_ROLE[node.role!] ?? node.role!;
   const label = describe(node.role!, name);
@@ -276,18 +400,19 @@ async function compareWithPlaywright(page: Page, node: SemanticNode, into: Disag
       // `includeHidden` also changes how Playwright computes names, so it is
       // set only for a node the tree itself reports hidden.
       .getByRole(role as Parameters<Page['getByRole']>[0], { name: glyphTolerant(name), includeHidden: node.states?.hidden === true })
-      .evaluateAll((elements, [attribute, id]) => elements.some((element) => element.getAttribute(attribute!) === id), [MARKER, node.ref.id]);
+      .evaluateAll((elements, [attribute, id]) => elements.some((element) => element.getAttribute(attribute!) === id), [MARKER, marker]);
     if (!found) into.push({ oracle: 'playwright', field: 'getByRole', ours: 'match', theirs: 'no match', node: label });
   } catch (error) {
     into.push({ oracle: 'playwright', field: 'getByRole', ours: 'match', theirs: `error: ${(error as Error).message.split('\n')[0]}`, node: label });
   }
 }
 
-/** Cross-checks the page as it is now; the page keeps the marker attributes afterwards. */
-export async function crossCheck(page: Page): Promise<CrossCheckResult> {
-  const { nodes, elements, facts } = await captureTagged(page);
+/** Cross-check the protected snapshot and restore the oracle's temporary markers even on failure. */
+export async function crossCheck(fixture: NativeOracle): Promise<CrossCheckResult> {
+  const page = fixture.oracle;
+  const { nodes, facts, markers, ids, restore } = await captureTagged(fixture);
   try {
-    const chrome = await chromeTree(page);
+    const chrome = await chromeTree(page, ids);
     const disagreements: Disagreement[] = [];
     let compared = 0;
     for (const node of nodes) {
@@ -300,7 +425,7 @@ export async function crossCheck(page: Page): Promise<CrossCheckResult> {
       else compareWithChrome(node, ax, fact, disagreements);
       const playwrightReads = !fact.inClosedShadow && !ENGINE_NAMED_ROLES.has(node.role) && !NON_ARIA_ROLES.has(node.role) &&
         !(node.role === 'textbox' && fact.editingHost);
-      if (node.name !== undefined && node.name !== '' && playwrightReads) await compareWithPlaywright(page, node, disagreements);
+      if (node.name !== undefined && node.name !== '' && playwrightReads) await compareWithPlaywright(page, node, markers.get(node.ref.id)!, disagreements);
     }
     for (const ax of chrome.untagged) {
       const role = String(ax.role?.value ?? '');
@@ -309,6 +434,6 @@ export async function crossCheck(page: Page): Promise<CrossCheckResult> {
     }
     return { compared, disagreements };
   } finally {
-    await Promise.all([...elements.values()].map((element) => element.dispose()));
+    await restore();
   }
 }

@@ -1,3 +1,6 @@
+import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
+import { traceContractEvidence } from '../helpers/trace-contract-evidence.ts';
+import { observeSyntheticConnection, SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The app log: what a page does on its own during an attempt reaches the
  * harness as one line each, from a real browser: console output, exceptions
@@ -13,10 +16,12 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppLogEntry, EngineCleanupContext, EngineFixtureContext, EngineSnapshot, OperationContext } from 'e2e/engine';
+import { EngineError } from 'e2e/engine';
 import { createBrowserFixture } from '../../src/browser.ts';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
+import { NativeClient } from '../../src/native/client.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 const PAGE = `<!doctype html><html><body><h1>Todos</h1><script>
@@ -29,12 +34,14 @@ const PAGE = `<!doctype html><html><body><h1>Todos</h1><script>
   setTimeout(() => { throw new RangeError('render loop exceeded'); }, 0);
 </script></body></html>`;
 
-const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="window.open('/tab', '_blank')">Help</button><script>
+// Keep the three positive live-screen reads separate from popup enrollment.
+// The third real tap opens the app tab, proving the earlier taps were not no-ops.
+const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="this.dataset.taps = String(Number(this.dataset.taps || 0) + 1); if (this.dataset.taps === '3') window.open('/tab', '_blank')">Help</button><script>
   const frame = document.createElement('iframe');
   frame.name = 'pay';
   frame.src = '/embed';
   document.body.append(frame);
-  setTimeout(() => { location.href = '/next'; }, 1000);
+  fetch('/moving-next').then(() => { location.href = '/next'; });
 </script></body></html>`;
 
 /** The pages a navigation lands on, each naming its own path; served from here, never from the request. */
@@ -49,12 +56,16 @@ const operation = (): OperationContext => ({ signal, timeoutMs: 30_000, runId: '
 describe('app log', () => {
   let server: Server;
   let url: string;
+  let releaseMovingNavigation: () => void;
 
   beforeAll(async () => {
+    const movingNavigation = new Promise<void>(resolve => { releaseMovingNavigation = resolve; });
     server = createServer((request, response) => {
       if (request.url === '/') {
         response.writeHead(200, { 'content-type': 'text/html' });
         response.end(PAGE);
+      } else if (request.url === '/moving-next') {
+        void movingNavigation.then(() => { response.writeHead(200); response.end(); });
       } else if (request.url === '/moving') {
         response.writeHead(200, { 'content-type': 'text/html' });
         response.end(MOVING);
@@ -80,14 +91,14 @@ describe('app log', () => {
   });
 
   it('reports console output, uncaught exceptions, and error responses, one line each', async () => {
-    const surface = new PlaywrightSurface({});
+    const surface = new NativeSurface({});
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
     const entries: AppLogEntry[] = [];
     try {
       await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
-        env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
+        env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
       await surface.startAttempt({ attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace, appLog: (entry) => entries.push(entry) });
-      const browser = createBrowserFixture(surface, {
+      const browser = createBrowserFixture(surface.fixtureSurface(), {
         operation,
         app: { resolveUrl: (target: string) => new URL(target, url).href },
         timeouts: { test: 30_000, assertion: 5_000 },
@@ -114,46 +125,105 @@ describe('app log', () => {
     }
   });
 
-  it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async () => {
-    const surface = new PlaywrightSurface({});
-    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
-    const entries: AppLogEntry[] = [];
-    const went: string[] = [];
-    const screens: EngineSnapshot[] = [];
-    const facts: Record<string, string>[] = [];
+  it('tells where the page went, apart from its own navigations, the screen each action left, and the browser', async (context) => {
+    const diagnostic = traceContractEvidence(context.task.meta);
+    const evidence = new SyntheticRecoveryEvidence(diagnostic.evidence);
+    let traceOrdinal: 0 | 1 | 2 | undefined = 0;
+    const connect = NativeClient.connect;
+    const connection = vi.spyOn(NativeClient, 'connect').mockImplementation((...args) => observeSyntheticConnection(connect(...args)));
+    const caseCapture = beginCaseCleanupCapture('p01', context.task.meta as Record<string, unknown>);
     try {
-      await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
-        env: {}, headed: false, workerSlot: 0, signal, log: () => undefined });
-      await surface.startAttempt({
-        attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
-        appLog: (entry) => entries.push(entry),
-        navigation: (line) => went.push(line),
-        screen: (snapshot) => screens.push(snapshot),
-        environment: (told) => facts.push({ ...told }),
+      return await evidence.observer.run(async () => {
+        const surface = new NativeSurface({});
+        const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-app-log-'));
+        const entries: AppLogEntry[] = [];
+        const went: string[] = [];
+        const screens: EngineSnapshot[] = [];
+        const facts: Record<string, string>[] = [];
+        let failed = false;
+        let failure: unknown;
+        try {
+          evidence.enter('init');
+          await surface.init({ runId: 'app-log', targetName: 'web', projectRoot: artifactsDir, app: { site: '127.0.0.1' },
+            env: process.env, headed: false, workerSlot: 0, signal, log: () => undefined });
+          evidence.enter('start');
+          await surface.startAttempt({
+            attemptId: 'a', artifactsDir, signal, resolveSecret: noSecrets,
+            appLog: (entry) => entries.push(entry),
+            navigation: (line) => went.push(line),
+            screen: (snapshot) => { screens.push(snapshot); if (traceOrdinal !== undefined) diagnostic.contract.screenCounts[traceOrdinal]++; },
+            environment: (told) => facts.push({ ...told }),
+          });
+          evidence.passed('setup');
+          evidence.enter('open', 'body');
+          let traceStarted = performance.now();
+          await evidence.observer.select(0, 'browser.trace', () => surface.open(`${url}/moving`, operation()));
+          diagnostic.contract.elapsedMs[0] = Math.ceil(performance.now() - traceStarted);
+          evidence.enter('assertion');
+          evidence.observer.assert(0, () => {
+            expect(screens).toHaveLength(1);
+            expect(screens[0]!.location).toBe(`${url}/moving`);
+          });
+          // The screen is the trace's, never published: a ref from the observation acts after it, twice.
+          const observed = await surface.observe(operation());
+          const help = observed.root.children?.find((node) => node.role === 'button');
+          traceOrdinal = 1; traceStarted = performance.now();
+          await evidence.observer.select(1, 'browser.trace', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          diagnostic.contract.elapsedMs[1] = Math.ceil(performance.now() - traceStarted);
+          traceOrdinal = 2; traceStarted = performance.now();
+          await evidence.observer.select(2, 'browser.trace', () => surface.perform(help!.ref, { kind: 'tap' }, operation()));
+          diagnostic.contract.elapsedMs[2] = Math.ceil(performance.now() - traceStarted);
+          evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
+          expect(screens.every(screen => screen.pixels === undefined && screen.treeUnavailable !== true && screen.root.children?.some(node => node.role === 'button' && node.name === 'Help'))).toBe(true);
+          // Popup enrollment can exhaust the documented one-second best-effort
+          // trace budget. It must not weaken the three successful reads above,
+          // fail this separate action, or hide the app's navigation events.
+          traceOrdinal = undefined;
+          await surface.perform(help!.ref, { kind: 'tap' }, operation());
+          releaseMovingNavigation();
+          const navigations = () => [...went];
+          await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
+          expect(navigations()).toEqual(expect.arrayContaining([
+            `frame "pay" loaded ${url}/embed`,
+            `the app opened a new tab at ${url}/tab; the test stays on its page`,
+          ]));
+          expect(navigations().some((text) => text.includes('/moving'))).toBe(false);
+          expect(navigations().some((text) => text.startsWith('the new tab navigated'))).toBe(false);
+          await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
+          expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
+          evidence.passed('body');
+        } catch (cause) {
+          console.error('APP_LOG_BODY_FAILURE', JSON.stringify({ phase: evidence.phase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+          evidence.failed(evidence.section, cause); failed = true; failure = cause;
+        }
+        finally {
+          releaseMovingNavigation();
+          evidence.enter('end', 'cleanup');
+          let cleanupFailed = false;
+          try {
+            await surface.endAttempt(cleanup()).catch((cause: unknown) => {
+              cleanupFailed = true; evidence.failed('cleanup', cause);
+              console.error('APP_LOG_CLEANUP_FAILURE', JSON.stringify({ phase: evidence.phase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+              if (!failed) { failed = true; failure = cause; }
+            });
+            evidence.enter('dispose', 'cleanup');
+            await surface.dispose(cleanup());
+            rmSync(artifactsDir, { recursive: true, force: true });
+          } catch (cause) {
+            cleanupFailed = true;
+            console.error('APP_LOG_CLEANUP_FAILURE', JSON.stringify({ phase: evidence.phase, code: cause instanceof EngineError ? cause.code : 'unknown' }));
+            evidence.observer.failure('cleanup', cause);
+            if (!failed) { failed = true; failure = cause; }
+          }
+          finally { evidence.finishBackstop(cleanupFailed); }
+        }
+        if (failed) throw failure;
       });
-      await surface.open(`${url}/moving`, operation());
-      expect(screens).toHaveLength(1);
-      expect(screens[0]!.location).toBe(`${url}/moving`);
-      // The screen is the trace's, never published: a ref from the observation acts after it, twice.
-      const observed = await surface.observe(operation());
-      const help = observed.root.children?.find((node) => node.role === 'button');
-      await surface.perform(help!.ref, { kind: 'tap' }, operation());
-      await surface.perform(help!.ref, { kind: 'tap' }, operation());
-      expect(screens).toHaveLength(3);
-      const navigations = () => [...went];
-      await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
-      expect(navigations()).toEqual(expect.arrayContaining([
-        `frame "pay" loaded ${url}/embed`,
-        `the app opened a new tab at ${url}/tab; the test stays on its page`,
-      ]));
-      expect(navigations().some((text) => text.includes('/moving'))).toBe(false);
-      expect(navigations().some((text) => text.startsWith('the new tab navigated'))).toBe(false);
-      await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
-      expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
     } finally {
-      await surface.endAttempt(cleanup()).catch(() => undefined);
-      await surface.dispose(cleanup());
-      rmSync(artifactsDir, { recursive: true, force: true });
+      try {
+        try { connection.mockRestore(); } catch { evidence.evidence.invalidate(); }
+        evidence.observer.close();
+      } finally { caseCapture.finish(); }
     }
   });
 });

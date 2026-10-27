@@ -6,8 +6,9 @@ icon: "globe"
 "twitter:image": "https://e2e.tester.army/docs/images/og/reference/web.png?v=66fee465a4"
 ---
 
-`@e2e-dev/web` is the browser engine. It drives Chromium, Firefox, and WebKit
-through Playwright. A web target names it as its engine with `web()`, and it
+`@e2e-dev/web` is the browser engine. It drives Chromium through one native agent-browser command adapter.
+The complete native contract must negotiate successfully; there is no alternate
+Playwright runtime or reduced-capability fallback. A web target names it as its engine with `web()`, and it
 contributes the `browser` fixture for browser-only work.
 
 ```ts title="e2e.config.ts"
@@ -32,6 +33,14 @@ test('orders in dark mode', async ({ app, browser, screen }) => {
   await expect(screen.getByRole('heading', { name: 'Orders' })).toBeVisible();
 });
 ```
+
+If native startup fails, the adapter waits for its owned proxy to terminate
+under a fresh bounded cleanup budget, even if startup was cancelled. If proxy
+termination cannot be confirmed, the original startup failure remains primary
+and the connection retains a cleanup failure; a worker-owned provider lease is
+not released through that unresolved connection. There is no automatic restart
+or action replay. Proxy termination alone is not proof of browser/context
+cleanup, which remains the native lifecycle contract's responsibility.
 
 ## Reference
 
@@ -79,14 +88,16 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 The browser to launch, or a provider that leases hosted browsers.
 
 ```ts
-web({ browser: 'firefox' }); // default: 'chromium'
+web({ browser: 'chromium' }); // default
 ```
 
-- `'chromium'`, `'firefox'`, or `'webkit'`.
+- The current native backend supports `'chromium'`. Firefox and WebKit are not
+  accepted by this implementation.
 - A `BrowserProvider` leases hosted browsers instead: one per worker slot for
   the run, or one per attempt ([`WebOptions`](#weboptions)). The engine
-  drives each one as chromium over CDP, whether it is Chromium or another CDP
-  server such as [Lightpanda](/integrations/lightpanda).
+  connects through its native Chromium backend. A CDP-compatible endpoint alone
+  does not establish full feature parity; alternative engines such as Lightpanda
+  require their own native backend conformance before support is claimed.
 - A provider with `scope: 'attempt'` rides a persistent context, with the
   limits under [Recovering a CDP transport](#recovering-a-cdp-transport).
 - [Hosted browsers](/browser#hosted-browsers) has the `BrowserProvider`
@@ -125,7 +136,7 @@ web({ screencast: { size: { width: 800, height: 450 }, quality: 60 } });
 export interface WebScreencastOptions {
   /** Frame size in pixels; default the viewport's, or the window's under `viewport: null`. A smaller size makes a smaller file. */
   readonly size?: ViewportSize;
-  /** JPEG quality of each captured frame, 0 through 100; Playwright's default when unset. */
+  /** JPEG quality of each captured frame, 0 through 100; the native backend's default when unset. */
   readonly quality?: number;
 }
 ```
@@ -133,6 +144,10 @@ export interface WebScreencastOptions {
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | Any other `size` or `quality` value, or another key, at config load. The old `web({ video })` spelling is also refused, naming `screencast`. |
+
+If replacing an ordinary context fails after its recording segments have fully finalized and their capture resources have been cleaned up, the same attempt can still collect those saved videos. This does not recover the browser: the original uncertain operation remains failed and ordinary commands remain unavailable. Only the already completed, immutable recording batch is transferred during bounded terminal cleanup; an active, incomplete, or unproven batch is an artifact failure, not an empty successful recording. Collection never starts a new capture or replays the failed transition. A later attempt cannot claim these files.
+
+This requires the coordinated native `terminal.recording-artifacts/1` capability. The adapter verifies byte counts and digests, saves files without overwriting existing paths, and returns a successfully collected batch once. An interrupted or failed collection remains a failure; it cannot make an unproven native teardown successful. Explicit close and the existing cleanup deadlines are not postponed by artifact traffic.
 
 #### `connect`
 
@@ -168,31 +183,48 @@ The remote browser:
 
 - Every attempt, retries included, needs its own fresh browser from
   `cdpEndpoint`. One long-lived browser cannot serve a suite.
+- Reusing a browser context across attempts is rejected before business work.
+  If native attachment succeeded and remains healthy, the engine still retires
+  that known scope and detaches; cleanup failure remains fatal and does not
+  authorize another attempt.
 - The remote must have only its default context.
 - The host must delete the browser when the attempt ends. Engine cleanup
   detaches its connection and does not terminate the host's browser.
 - The attempt's first page is the browser's own first tab, navigated to
   `about:blank`, not a second tab beside it. A page opened later, such as
   the one `app.restart` opens, is a new tab.
+- If the application page closes while the CDP connection stays healthy, the next explicit page open or video-start activation creates one blank replacement in the same context only after native verifies the exact closed page and settles its resources. It never adopts or closes an unrelated host tab, and reads or locator queries alone do not reopen a closed page. An uncertain creation or unsettled recording fails closed rather than being replayed. This requires the negotiated `browser.persistent-page-reopen/1` contract, which refreshes the page identity before returning the operation result.
 
 How recovery runs:
 
 - After a disconnect, the next operation calls `reconnectEndpoint` once,
   within that operation's timeout and abort signal. The resolver must return
   the existing browser's endpoint.
-- The engine checks the persistent default context ID and the original
-  page's target ID. It refuses a browser that does not expose the default
+- The engine checks the persistent default context ID and the currently owned
+  application page's target ID, including a successfully reopened page. It refuses a browser that does not expose the default
   context ID. A missing page or a different context fails the attempt. A
   matching URL does not select a replacement tab.
-- The engine installs secure-field masking before it publishes each CDP
-  binding. An incompatible Playwright version fails the connection instead of
-  exposing pixels.
-- The original page's frames must keep their closed shadow DOM tracking
-  hooks. Existing closed roots cannot recover without a reload of the
-  application. Mask queries reject any untracked document.
+- The native backend validates secure-field protection before publishing a
+  usable scope. A missing required protection capability fails startup instead
+  of exposing pixels.
+- The original page and its closed shadow roots must remain provably protected
+  after reconnect. Recovery never substitutes a similarly named tab or silently
+  downgrades protected capture to an unprotected fixture read.
 - Endpoint resolution, CDP attachment, setup, and dispatch share one timeout.
   Cancelling a concurrent waiter does not cancel the operation that started
   recovery. Cancelling that recovery owner fails the shared recovery.
+- An observation still transferring pixels when recovery starts is retired.
+  Its original blob is released before the adapter rejects it as retryable
+  `NODE_STALE`; cancellation, retired ownership, and cleanup failures retain
+  precedence. A successful reconnect permits fresh observations, not publication
+  of the old snapshot. A failed recovery does not revive that snapshot.
+- A recovery owner's first failure belongs to that attempt. Its concurrent
+  waiters and later admitted operations receive that same failure without resolving
+  or reconnecting again; an owner timeout stays `OPERATION_TIMEOUT` for all
+  of them. A waiter's own cancellation or timeout affects only that waiter.
+  Only ending the attempt and starting a fresh one clears a failed recovery;
+  restarting the document or issuing another operation does not. Persistent
+  contexts do not support state reset.
 
 | Throws | When |
 | --- | --- |
@@ -208,15 +240,18 @@ What survives:
 - Operations already dispatched are never retried.
 - Recovery clears old node references. Observation-derived `tapAt` calls,
   observation-root swipes, and focused engine keyboard input need a fresh
-  engine observation before they resume.
+  engine observation before they resume. For observation-derived points, only a
+  successful public observation of the recovered connection restores input, after
+  any requested pixels finish transferring. Locator reads, direct fixture input,
+  screenshots, and optional action traces do not restore that evidence.
 - An observation or locator read started before recovery cannot publish
   references after the connection changes. Each attempt owns its binding and
   recordings, so late cleanup cannot change a later attempt.
 - The deterministic `browser.mouse` and `browser.keyboard` fixtures stay
   available without an agent observation. Test code owns its input and can
   read current geometry and focus with `browser.evaluate` before acting.
-- Code that uses `surfaceOf(engine)` must read its accessors again after
-  recovery. Playwright objects it kept belong to the disconnected transport.
+- Custom executors use typed fixture operations and fresh observation references,
+  not retained Playwright objects. See [custom executor migration](#custom-executor-migration).
 
 A `browser` provider with `scope: 'attempt'` rides the same persistent
 context, with the same limits. The lease's `cdpEndpoint` provisions the
@@ -535,10 +570,10 @@ const conditions = browser.locator(
 
 <Note>
 Every `screen` query searches its scope and each closed shadow root the page
-attached under it, with Playwright's own role, name, text, label, and
+attached under it, with the native resolver's compatible role, name, text, label, and
 attribute matching and each node found once. A control the observed tree
 lists inside a closed root resolves and takes actions and reads. `locator`,
-`frameLocator`, and `filter({ hasText })` keep Playwright's reach and stop at
+`frameLocator`, and `filter({ hasText })` keep their selector reach and stop at
 a closed root; the [browser guide](/browser#shadow-dom) has the details.
 </Note>
 
@@ -863,7 +898,10 @@ const file = await browser.waitForDownload(() =>
   hosted browser.
 - On a hosted browser the file comes back through the provider's
   [`downloads`](/browser#downloads-on-the-provider).
-- The wait includes the trigger's own time.
+- Pending connection recovery completes before the waiter is armed and the
+  trigger runs. The waiter remains bound to that recovered scope; a later
+  scope replacement cannot satisfy it.
+- The wait includes recovery and the trigger's own time.
 
 | Throws | When |
 | --- | --- |
@@ -901,15 +939,10 @@ await browser.mouse.up();
 
 ## Installing browsers
 
-The package pins `playwright-core` to an exact version, so the engine always
-runs the Playwright it was tested against. An app that depends on Playwright
-itself keeps its own copy. The two share a browser cache only when their
-versions match.
-
-A missing browser downloads once per run, before the run's clock starts. To
-install browsers as their own step, in CI or a container image, run the
-package's command. It installs the browsers for the engine's pinned
-Playwright:
+The Web engine uses a matching trusted native agent-browser executable. Its
+Chromium installer is run only when explicitly requested, as a separate CI or
+image-preparation step. Tests do not download browsers or install Linux system
+libraries implicitly.
 
 <CodeGroup>
 ```bash npm
@@ -925,18 +958,24 @@ bunx @e2e-dev/web install chromium --with-deps
 ```
 </CodeGroup>
 
-- Name any of `chromium`, `firefox`, and `webkit`. With none named it
-  installs `chromium`.
+- Only `chromium` is accepted by this native backend; with no name it installs
+  Chromium. The command invokes the explicitly resolved matching native binary,
+  without a shell, PATH fallback, or implicit package-manager install.
 - `--with-deps` also installs the system libraries the browsers need on
   Linux.
-- The command exits with the installer's exit code.
+- The command exits with the native installer's exit code. Runtime bundle
+  installation and trust verification are separate prerequisites; the developer
+  override is `E2E_AGENT_BROWSER_EXECUTABLE`, an absolute trusted executable path.
+- Starting a test never implicitly runs the installer or installs system dependencies.
+- Reports display recognized Chromium product versions as `chromium <version>`
+  and preserve the configured user-agent text.
 
 ## Semantic capture recovery
 
 When the semantic reader times out, agent observations can recover with a
 fresh viewport screenshot.
 
-- Playwright runs a new secure-field mask sweep across every reachable frame,
+- The native backend runs a new secure-field mask sweep across every reachable frame,
   including open and closed shadow roots. Every mask probe must succeed.
 - The observation reports unavailable semantics and clears earlier node
   references.
@@ -950,36 +989,25 @@ When fallback is permitted, the reader reserves one quarter of the remaining
 observation budget, capped at two seconds, for the screenshot. The deadline
 covers the page walk, metadata and element readback, and nested frames.
 
-Semantic metadata crosses the Playwright connection as one JSON string, to
-cut serialization overhead. Actions still use the live element handles
-captured with that metadata. A page that replaces `JSON.stringify`, or adds
-`toJSON` methods to object or array prototypes, gets structured transfer.
-Cleanup does not wait for stalled protocol replies. An abandoned reader
-cannot reuse node IDs or publish handles over a newer observation.
+Semantic metadata crosses the native command boundary as typed JSON with native
+`@e` references and canonical string revisions. Model-visible observations use
+the protected capture transaction; deterministic fixture reads use the same
+native resolver without granting a model-selectable privacy bypass. Abandoned
+readers cannot reuse exact reference IDs or publish handles over a newer scope.
+Cleanup remains owned until it completes or the affected scope is quarantined.
 
-## surfaceOf
+## Custom executor migration
 
-Returns the live Playwright surface of a `web()` handle, for a
-[custom executor](/executors#driving-the-page-yourself) that drives the page
-itself.
+The native Web engine does not export `surfaceOf` or `PlaywrightLiveSurface`.
+A native backend is not a Playwright `Page` or `BrowserContext`; there is no
+compatibility shim that pretends otherwise. Keep custom executors on the
+public `StepExecutor` observation/actions contract, and capture the typed
+`Browser` fixture for deterministic application operations. See
+[custom executors](/executors#driving-the-page-yourself).
 
-```ts
-import { web, surfaceOf } from '@e2e-dev/web';
-
-const engine = web();
-const live = surfaceOf(engine);   // PlaywrightLiveSurface | undefined
-live!.page();                     // the Page of the current attempt
-live!.context();                  // its BrowserContext
-```
-
-- It returns `undefined` for a handle from another package.
-- Direct Playwright calls are not recorded as steps.
-- After [CDP recovery](#recovering-a-cdp-transport), read the accessors
-  again.
-
-| Throws | When |
-| --- | --- |
-| `INVALID_STATE` | An accessor called outside an active attempt. |
+Existing arbitrary Playwright helpers must be ported to these operations;
+changing the import alone does not migrate them. The adapter uses one native
+command/event implementation, not a selectable legacy runtime.
 
 ## Types
 
@@ -988,12 +1016,12 @@ The package exports these types for typing config helpers and fixtures:
 `WebBasicAuth`, `WebInitScript`, `BrowserName`, `BrowserProvider`,
 `BrowserProviderScope`, `BrowserRequest`, `BrowserLease`,
 `BrowserReleaseContext`, `BrowserProviderDownloads`,
-`BrowserDownloadContext`, `PlaywrightLiveSurface`, `Browser`, `FrameScreen`,
+`BrowserDownloadContext`, `Browser`, `FrameScreen`,
 `BrowserExpectation`, `WebRoute`, `RouteFulfillResponse`,
 `RouteContinueOverrides`, `WebResponse`, `Cookie`, `CookieFields`, `Dialog`,
 and `DialogHandler`.
 
-The runtime exports are `web`, [`surfaceOf`](#surfaceof), and `test`,
+The runtime exports are `web` and `test`,
 `describe`, `beforeEach`, `afterEach`, `beforeAll`, and `afterAll`, typed
 with the `browser` fixture.
 
@@ -1206,3 +1234,62 @@ export type JsonValue =
 The [browser guide](/browser) shows these members in recipes and covers
 [hosted browsers](/browser#hosted-browsers). The portable operations live on
 the [`app`](/reference/app) fixture.
+
+### Terminal native cleanup
+
+An uncertain native action always reports non-retryable `ACTION_MAY_HAVE_COMMITTED`.
+It is never replayed, and a late response cannot change that outcome.
+
+With mutually negotiated `operation.continue-exact-owner/1`, a strict native
+retirement descriptor can keep the same owner and identity scope usable. Only
+that operation and its callback authority retire; unrelated routes, auth and
+dialog handlers, recording, downloads, and installed configuration remain.
+Earlier node and viewport references become stale, and in-flight old captures
+cannot publish a new observation. A fresh explicit point action does not need
+an observation or a viewport reference. Native live admission decides whether
+new work can dispatch while old work drains; descriptor debt counts and a later
+successful read do not prove an uncertain action completed or all debt cleared.
+The Web adapter requires this coordinated capability; older native runtimes fail
+negotiation rather than silently changing uncertainty semantics.
+
+A disconnect during an action can instead leave that result `unknown` and its
+old scope quarantined. With mutually negotiated `scope.reconnect-quarantined/1`,
+a qualified native recovery descriptor permits one explicit reconnect to the
+same browser, context and page. The next operation uses the existing recovery
+budget; old local producers must retire before the new scope is published.
+The original action is never replayed, its debt remains recorded, and recovery
+does not prove that it never executed. Fresh observation restores public point
+input; a later explicit action is a new intention, not a retry of the old one.
+Old handles across this terminal boundary belong to native retirement, rather
+than a late JavaScript release into the replacement scope. Ordinary same-scope
+restart and usable exact-owner retention still finish their original cleanup.
+
+Without either negotiated qualification, or after an unrelated integrity or
+cleanup failure, the client stops ordinary commands and callbacks. The negotiated
+`terminal.close/1` capability permits one separately bounded close exchange.
+Cleanup requires its correlated native acknowledgement and proxy settlement,
+not EOF or process exit alone. Concurrent cleanup callers share that outcome;
+cleanup does not reconnect or make a terminal client reusable. A failed
+`scope.end` remains a cleanup failure even if final shutdown later succeeds.
+
+
+Attempt cleanup has one independent 15-second owner budget shared by recording,
+native scope, connection, and lease cleanup. Cancelling or exhausting an
+`endAttempt` caller's budget resolves that caller's wait, not the cleanup itself.
+Concurrent callers join the same work. The next attempt waits under its own
+signal and cannot open a scope or acquire a lease until cleanup succeeds.
+An owner deadline or cleanup failure permanently blocks reuse, even if an old
+operation later succeeds. Provider leases remain held when native or recording
+cleanup is unconfirmed; cleanup never replays a business action.
+
+A later explicit cleanup call may make another bounded attempt to reap retained
+resources, sharing that work with concurrent cleanup callers. Successful reaping
+can release the exact lease once, but every later cleanup call still reports the
+original failure and the worker stays unusable. There is no automatic retry loop.
+An already-started mandatory native close retains its separate, existing
+15-second upper bound; a late close acknowledgement cannot undo the adapter's
+owner deadline or restore reuse.
+
+### Locator values inside native callbacks
+
+Native Web negotiates `browser.fixture-read-fields/1` for pure locator field reads. A live, native-verified callback can read current values in its own scope while an outer request is pending. Secure-field denial still applies, and the read does not publish references, clear input debt, permit actions, or promise a transaction-consistent snapshot. Stale, expired, cancelled, or cross-scope callbacks fail closed. This is a fixed native matcher/projection, not an evaluation or alternate query engine. Older native binaries lacking the capability are unsupported; there is no fallback.

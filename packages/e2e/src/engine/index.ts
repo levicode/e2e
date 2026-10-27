@@ -31,11 +31,12 @@ import { engineBrand } from '../internal/brands.ts';
 // config options get.
 export { ConfigurationError, InfrastructureError, TestError } from '../internal/errors.ts';
 export { rejectUnknownKeys, rejectUnknownOptions } from '../internal/options.ts';
-export { validateJsonValue, type JsonValueRules } from '../internal/json-value.ts';
+export { validateJsonValue, jsonValueProblem, type JsonValueRules } from '../internal/json-value.ts';
 export { describePattern, matchesText, toTextPattern } from '../internal/text.ts';
 export { resolveExpression, type ResolveExpressionOptions } from './resolve.ts';
 export type { TextMatch } from '../types.ts';
 export { raceAbort } from './timing.ts';
+export { decodeEngineFieldValues, validateEngineReadFields } from './field-values.ts';
 export { isProviderRecording, stopProviderRecording } from './recording.ts';
 export type {
   ProviderRecordContext,
@@ -50,6 +51,8 @@ export { obj, type WithoutUndefined } from '../internal/objects.ts';
 import type { AppPermissionState, Expectable, Locator, Screen, Secret } from '../types.ts';
 import type {
   EngineSpiVersion,
+  EngineReadField,
+  EngineFieldValues,
   LocatorAction,
   LocatorActionKind,
   LocatorExpression,
@@ -399,8 +402,9 @@ export interface EnginePrepareInfo {
    * The worker slots the run will start for this target, `0` to `slots - 1`:
    * the run's worker cap, the engine's declared `workers`, and the work units
    * selected for the target, whichever is smallest; `0` when nothing runs on
-   * it. Provision for exactly these slots (boot that many devices of a pool);
-   * `init` then finds them ready.
+   * it while another target has work. A run with nothing to run prepares no
+   * target. Provision for exactly these slots (boot that many devices of a
+   * pool); `init` then finds them ready.
    */
   readonly slots: number;
   /**
@@ -600,6 +604,12 @@ export interface EngineDisposeContext extends EngineCleanupContext {
   readonly reuseSignal?: AbortSignal;
 }
 
+/** Runner-selected projection boundary, never a model-supplied locator option. */
+export interface EngineLocateOptions {
+  /** Protected is the default. Fixture reads retain deterministic API semantics. */
+  readonly purpose: 'protected' | 'fixture';
+}
+
 export interface EngineObserveOptions {
   /** Requests masked viewport pixels for the same revision as the tree. */
   readonly pixels?: boolean;
@@ -620,6 +630,16 @@ export interface EngineObserveOptions {
  */
 export interface EngineSnapshot {
   /**
+   * Opaque identity namespace for live element references. Keep it stable while
+   * descriptor-based recovery is valid; change it when a reset or replacement
+   * makes earlier elements unrelated, even if their names are identical.
+   * Element ids must not be reused for unrelated elements within an attempt,
+   * including after a scope change: executor targets contain only the id.
+   * This is internal routing metadata, never model input. Omission preserves
+   * legacy recovery. The stable viewport root is not an element handle.
+   */
+  readonly identityScope?: string;
+  /**
    * Where the surface is, as an opaque address the platform understands: a
    * URL on a document platform, the foreground screen or activity on a
    * device, the front window on a desktop. The harness shows it to the model
@@ -629,15 +649,21 @@ export interface EngineSnapshot {
    */
   readonly location?: string;
   /**
-   * The observation tree under one root the engine minted. The root's id MUST
-   * be stable for the surface across observations: `perform(root, swipe)` is
-   * the viewport swipe, and the harness addresses it from an earlier
-   * observation, possibly one taken before a `restart` or `reset`, so the
-   * root swipe MUST NOT depend on a live handle from that observation. A
-   * platform with several top-level elements (a device's windows) wraps them
-   * in a root of its own.
+   * The semantic tree under its actual root. Without `viewportRef`, the root
+   * id must remain stable across observations, restart, and reset because
+   * `perform(root, swipe)` is also the legacy viewport operation. With an
+   * explicit `viewportRef`, the tree root is an ordinary exact element ref:
+   * it may change with the document and must never rebind to a replacement.
    */
   readonly root: SemanticNode;
+  /**
+   * Optional stable viewport-operation capability, separate from the tree's
+   * exact element root. Its id survives restart/reset, may only receive a
+   * viewport swipe, and is not a DOM target for read, click, drag, or query.
+   * Omission preserves legacy root-as-viewport behavior. This routing metadata
+   * is not a semantic node and must not be rendered as an actionable element.
+   */
+  readonly viewportRef?: NodeRef;
   /** The viewport `SemanticNode.rect` and `ViewportPoint` are measured in. */
   readonly viewport: ViewportSize;
   /**
@@ -741,13 +767,26 @@ export interface Engine {
   locate?(
     expression: LocatorExpression,
     context: OperationContext,
+    options?: EngineLocateOptions,
   ): Promise<readonly SemanticNode[]>;
+  /**
+   * Optional pure fixture reads. Resolve once with the same matcher and policy
+   * as locate, but return only requested fields plus states.secure. Never mint
+   * refs, publish an observation, or imply transaction consistency. Geometry,
+   * actions, and protected assertions keep their reference-backed paths.
+   */
+  readFields?(
+    expression: LocatorExpression,
+    fields: readonly EngineReadField[],
+    context: OperationContext,
+    options: { readonly purpose: 'fixture' },
+  ): Promise<readonly EngineFieldValues[]>;
   /**
    * capability: pointer - requires observation. Performs one pointer action
    * at a viewport point, in the CSS pixels of `SemanticNode.rect`, with no
-   * node behind it: the agent's `tap_at` verb lands here when the point the
-   * model named in a screenshot sits on nothing the tree lists (a shape on a
-   * canvas, a pin on a map, a control in a system sheet), and so do a test's
+   * node behind it: the agent's `tap_at` and `hover_at` verbs land here with
+   * the point the model named in a screenshot (a shape on a canvas, a pin on
+   * a map, a control in a system sheet or one the tree lists), and so do a test's
    * `screen.tapAt`, `screen.swipe({ from, to })`, and `tap({ position })`.
    * Dispatch the pointer at the point as given; the harness has clamped an
    * agent's point to the viewport and validated a test's. Throw
@@ -770,6 +809,9 @@ export interface Engine {
    * that predates the field never drops one silently.
    */
   readonly tapModifiers?: boolean;
+  /** Opt in to receiving exact engine-produced ref revisions, privately preserved
+   * across harness presentation revisions. Omitted keeps legacy revision inputs. */
+  readonly referenceRevisions?: 'engine';
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -800,10 +842,12 @@ export interface Engine {
    * through `info.log`. It runs after collection and before the run's clock
    * starts: `plan` is emitted, the report's `startedAt` taken, and the app
    * started only once every target is prepared, so a download is never part
-   * of a run's duration. Failure is infrastructure and ends the run before
-   * any test executes. The result may lower the target's worker cap for this
-   * run, for an engine that only learns its capacity here (a device pool
-   * discovered from the booted devices).
+   * of a run's duration. A run with nothing to run (the test filters left
+   * nothing, or `--pass-with-no-tests` on an empty selection) prepares no
+   * target, and so calls no `finish`. Failure is infrastructure and ends the
+   * run before any test executes. The result may lower the target's worker
+   * cap for this run, for an engine that only learns its capacity here (a
+   * device pool discovered from the booted devices).
    */
   prepare?(info: EnginePrepareInfo): Promise<void | EnginePrepareResult>;
   /**

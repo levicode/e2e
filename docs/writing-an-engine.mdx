@@ -133,7 +133,7 @@ one node can't do a declared action, throw `UNSUPPORTED_CAPABILITY`.
 
 | Hook | When | Use it to |
 | --- | --- | --- |
-| `prepare` | One time per target, in the runner process | Install runtimes. The `env` it returns reaches every worker |
+| `prepare` | One time per target, in the runner process, on a run with tests to run | Install runtimes. The `env` it returns reaches every worker |
 | `init` | One time per worker, before its first attempt | Boot devices. It must also work on an engine that was disposed |
 | `startAttempt` | Before each attempt | Create the test's UI |
 | `settleAttempt` | After the body, and again after teardown | Throw the error of a test callback no step awaited, such as a dialog handler |
@@ -239,7 +239,10 @@ Throw `EngineError` with a code from the
 
 - Only `NODE_STALE` and `FRAME_NOT_FOUND` can be retryable.
 - Use `ACTION_MAY_HAVE_COMMITTED` when an action may already have taken
-  effect, so the runner doesn't repeat it.
+  effect, so the runner doesn't repeat it. If native admission instead exhausts
+  the original budget with proof that the new input was never dispatched, use
+  non-retryable `OPERATION_TIMEOUT`. Do not treat that timeout as settlement of
+  older unknown input or as permission to replay it.
 - `INVALID_STATE` becomes `APP_NOT_OPEN`, and `UNSUPPORTED_CAPABILITY` is a
   configuration error.
 - Unknown errors become infrastructure failures.

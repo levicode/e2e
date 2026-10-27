@@ -2,12 +2,14 @@
 
 import {
   type TargetSession,
+  type EngineLocateOptions,
   type LocatorAction,
   type LocatorExpression,
   type NodeRef,
   type OperationContext,
   type PointerAction,
   type SemanticNode,
+  type EngineReadField,
   type ViewportPoint,
 } from '../engine/surface.ts';
 import {
@@ -28,7 +30,7 @@ import type { AttemptBudget } from '../run/budget.ts';
 import type { StepEvent } from '../run/steps.ts';
 
 /** Canonical visibility predicate over a semantic node snapshot. */
-export function isNodeVisible(node: SemanticNode | null): node is SemanticNode {
+export function isNodeVisible<T extends SemanticNode | Pick<SemanticNode, 'states'>>(node: T | null): node is T {
   return node !== null && node.states?.hidden !== true;
 }
 
@@ -38,7 +40,7 @@ export function isNodeVisible(node: SemanticNode | null): node is SemanticNode {
  * lookup by name alone would answer `Object.prototype` members like
  * `constructor` or `toString` for an attribute the element never had.
  */
-export function attributeOf(node: SemanticNode, name: string): string | null {
+export function attributeOf(node: Pick<SemanticNode, 'attributes'>, name: string): string | null {
   const attributes = node.attributes;
   if (attributes === undefined || !Object.hasOwn(attributes, name)) return null;
   return attributes[name] ?? null;
@@ -49,7 +51,7 @@ export function attributeOf(node: SemanticNode, name: string): string | null {
  * the engine withholds them there, so what reads as missing is redacted, not
  * empty or absent.
  */
-export function denySecureRead(nodes: readonly SemanticNode[], label: string): void {
+export function denySecureRead(nodes: readonly (SemanticNode | Pick<SemanticNode, 'states'>)[], label: string): void {
   if (nodes.some((node) => node.states?.secure === true)) {
     throw new ConfigurationError('POLICY_DENIED', `reading values from a secure field is denied: ${label}`);
   }
@@ -62,6 +64,8 @@ export function denySecureRead(nodes: readonly SemanticNode[], label: string): v
 type MissingFrame = 'wait' | 'empty';
 
 interface LocatorEngineOptions {
+  /** Bound by the runner, never read from a model locator or tool arguments. */
+  readonly readPurpose?: EngineLocateOptions['purpose'];
   readonly session: TargetSession;
   /** The running phase's signal and deadline, read per operation. */
   readonly budget: AttemptBudget;
@@ -181,12 +185,13 @@ export class LocatorEngine {
     expression: LocatorExpression,
     deadline: Deadline,
     missingFrame: MissingFrame = 'wait',
+    purpose: EngineLocateOptions['purpose'] = this.options.readPurpose ?? 'protected',
   ): Promise<readonly NodeRef[]> {
     let retried: unknown;
     for (;;) {
       const startedWithMs = deadline.remaining();
       try {
-        return await this.session.locate(expression, this.operationWithin(deadline));
+        return await this.session.locate(expression, this.operationWithin(deadline), { purpose });
       } catch (cause) {
         // A retry the deadline cut off saw nothing new: the wait ends on the failure it was retrying.
         if (retried !== undefined && cutOffAtDeadline(cause, startedWithMs)) throw translateLocatorError(retried, expression);
@@ -242,23 +247,18 @@ export class LocatorEngine {
   }
 
   /**
-   * Resolves every current match for an assertion poll: a missing frame or a
-   * stale resolve is retried within the caller's deadline, like a node that
-   * is not there yet.
+   * Resolves every current match at once, without waiting for one. A frame
+   * the engine reports missing is zero matches, since nothing under it is in
+   * the document. A stale resolve is still retried within the deadline, as
+   * every resolve does: that repairs a race with a navigation, it does not
+   * wait for a match.
    */
-  async resolveAll(expression: LocatorExpression, deadline: Deadline): Promise<readonly NodeRef[]> {
-    return this.resolveOnce(expression, deadline);
-  }
-
-  /**
-   * Resolves every current match at once, for the reads that promise not to
-   * wait (`count`, `all`). A frame the engine reports missing is zero
-   * matches, since nothing under it is in the document. A stale resolve is
-   * still retried within the action timeout, as every resolve does: that
-   * repairs a race with a navigation, it does not wait for a match.
-   */
-  async resolveNow(expression: LocatorExpression): Promise<readonly NodeRef[]> {
-    return this.resolveOnce(expression, this.deadline(this.options.actionTimeout), 'empty');
+  async resolveNow(
+    expression: LocatorExpression,
+    deadline: Deadline = this.deadline(this.options.actionTimeout),
+    options?: { readonly purpose: 'protected' },
+  ): Promise<readonly NodeRef[]> {
+    return this.resolveOnce(expression, deadline, 'empty', options?.purpose);
   }
 
   /**
@@ -284,28 +284,68 @@ export class LocatorEngine {
     }
   }
 
-  /**
-   * Reads every current match for an assertion poll, in document order. A
-   * ref superseded between resolve and read re-resolves the whole set while
-   * the deadline remains, since one stale member says nothing about the
-   * others; a stale set at the deadline is `LOCATOR_NOT_FOUND`.
-   */
-  async readAll(expression: LocatorExpression, deadline: Deadline): Promise<readonly SemanticNode[]> {
-    return this.readEvery(expression, deadline, 'wait');
-  }
-
-  /** Reads every current match at once, for `allTextContents`: a missing frame reads as no matches. */
-  async readAllNow(expression: LocatorExpression, deadline: Deadline = this.deadline(this.options.actionTimeout)): Promise<readonly SemanticNode[]> {
-    return this.readEvery(expression, deadline, 'empty');
-  }
-
-  private async readEvery(
-    expression: LocatorExpression,
-    deadline: Deadline,
-    missingFrame: MissingFrame,
-  ): Promise<readonly SemanticNode[]> {
+  /** Pure fixture fields keep cardinality/polling but publish no references. */
+  async readFields(expression: LocatorExpression, fields: readonly EngineReadField[]): Promise<Pick<SemanticNode, EngineReadField>> {
+    if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return this.read(expression);
+    const deadline = this.deadline(this.options.actionTimeout);
+    const startedMs = Date.now();
+    const notFound = (cause?: unknown) => new TestError('LOCATOR_NOT_FOUND', `locator matched no nodes within ${describeExpression(expression)}`, {
+      details: locatorDetails(expression, Date.now() - startedMs), ...(cause === undefined ? {} : { cause }),
+    });
+    let sampled = false;
     for (;;) {
-      const refs = await this.resolveOnce(expression, deadline, missingFrame);
+      const startedWithMs = deadline.remaining();
+      let values: readonly Pick<SemanticNode, EngineReadField>[];
+      try { values = await this.fieldValues(expression, fields, deadline, 'wait'); }
+      catch (cause) {
+        if (sampled && cutOffAtDeadline(cause, startedWithMs)) throw notFound(cause);
+        throw cause;
+      }
+      sampled = true;
+      const value = assertSingle(values, expression);
+      if (value !== null) return value;
+      if (deadline.expired()) throw notFound();
+      await sleep(POLL_INTERVAL_MS, this.signal);
+    }
+  }
+
+  async readFieldsNow(expression: LocatorExpression, fields: readonly EngineReadField[]): Promise<Pick<SemanticNode, EngineReadField> | null> {
+    if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return this.readNow(expression);
+    return assertSingle(await this.fieldValues(expression, fields, this.deadline(this.options.actionTimeout), 'empty'), expression);
+  }
+
+  async readAllFieldsNow(expression: LocatorExpression, fields: readonly EngineReadField[]): Promise<readonly Pick<SemanticNode, EngineReadField>[]> {
+    if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return this.readAllNow(expression);
+    return this.fieldValues(expression, fields, this.deadline(this.options.actionTimeout), 'empty');
+  }
+
+  private async fieldValues(expression: LocatorExpression, fields: readonly EngineReadField[], deadline: Deadline, missingFrame: MissingFrame): Promise<readonly Pick<SemanticNode, EngineReadField>[]> {
+    let retried: unknown;
+    for (;;) {
+      const startedWithMs = deadline.remaining();
+      try { return await this.session.readFields!(expression, fields, this.operationWithin(deadline)); }
+      catch (cause) {
+        if (retried !== undefined && cutOffAtDeadline(cause, startedWithMs)) throw translateLocatorError(retried, expression);
+        const engineError = asEngineError(cause);
+        if (engineError?.retryable === true) {
+          if (missingFrame === 'empty' && engineError.code === 'FRAME_NOT_FOUND') return [];
+          if (!deadline.expired()) { retried = cause; await sleep(POLL_INTERVAL_MS, this.signal); continue; }
+        }
+        throw translateLocatorError(cause, expression);
+      }
+    }
+  }
+
+  /**
+   * Reads every current match at once, in document order: a missing frame
+   * reads as no matches. A ref superseded between resolve and read
+   * re-resolves the whole set while the deadline remains, since one stale
+   * member says nothing about the others; a stale set at the deadline is
+   * `LOCATOR_NOT_FOUND`.
+   */
+  async readAllNow(expression: LocatorExpression, deadline: Deadline = this.deadline(this.options.actionTimeout)): Promise<readonly SemanticNode[]> {
+    for (;;) {
+      const refs = await this.resolveOnce(expression, deadline, 'empty');
       try {
         const nodes: SemanticNode[] = [];
         for (const ref of refs) nodes.push(await this.session.read(ref, this.operationWithin(deadline)));
@@ -592,7 +632,7 @@ function describeNode(node: SemanticNode, redact: (text: string) => string): str
 }
 
 /** Zero matches -> null; one -> the ref; many -> LOCATOR_AMBIGUOUS. */
-function assertSingle(refs: readonly NodeRef[], expression: LocatorExpression): NodeRef | null {
+function assertSingle<T>(refs: readonly T[], expression: LocatorExpression): T | null {
   if (refs.length > 1) {
     throw new TestError(
       'LOCATOR_AMBIGUOUS',

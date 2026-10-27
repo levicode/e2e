@@ -8,6 +8,7 @@
  * the engine; the dispatcher and the pixel tier ask the feed.
  */
 
+import { referenceText } from './reference-text.ts';
 import type { SemanticNode } from '../engine/surface.ts';
 import { relocateDescriptor } from '../cache/relocate.ts';
 import { TestError } from '../internal/errors.ts';
@@ -99,6 +100,8 @@ export class ObservationFeed {
   private visionDegraded: VisionDegradation | undefined;
   /** True once pixels this feed cleared were handed to the executor as model input. */
   private pixelsSent = false;
+  /** Whether any semantic observation in this step stopped at a capture or byte limit. */
+  private observationTruncated = false;
 
   constructor(
     private readonly runtime: AgentContext,
@@ -253,12 +256,12 @@ export class ObservationFeed {
   /**
    * Re-finds a node that went stale: one fresh capture, then the trace
    * recorder's own descriptor matching (`cache/relocate.ts`) against it,
-   * exactly one match or nothing. The capture is taken directly rather than
-   * through the queued observe: this runs inside a queued action body, and a
+   * exactly one match in the original identity scope or nothing. The capture
+   * is taken directly rather than through the queued observe: this runs inside a queued action body, and a
    * queued observation would wait on its own caller.
    */
-  async relocate(stale: RedactedNode): Promise<{ node: RedactedNode; observation: SemanticAgentObservation } | undefined> {
-    const descriptor = describeTarget(stale);
+  async relocate(stale: Resolved): Promise<{ node: RedactedNode; observation: SemanticAgentObservation } | undefined> {
+    const descriptor = describeTarget(stale.node);
     if (descriptor === undefined) return undefined;
     this.accounting.checkpoint();
     const observation = await instrumentPhase(
@@ -268,7 +271,7 @@ export class ObservationFeed {
       observationDetail,
     );
     this.publish(observation);
-    if (observation.kind === 'pixels') return undefined;
+    if (observation.kind === 'pixels' || observation.identityScope !== stale.observation.identityScope) return undefined;
     const relocated = relocateDescriptor(descriptor, observation.nodes);
     if (relocated.kind !== 'found') return undefined;
     const node = observation.nodes.get(relocated.id);
@@ -293,9 +296,10 @@ export class ObservationFeed {
     return observation;
   }
 
-  /** The step's pixel record for the report. */
-  visionReport(): Pick<StepAgentDetails, 'visionInput' | 'visionDegraded'> {
+  /** The step's observation and pixel record for the report. */
+  reportDetails(): Pick<StepAgentDetails, 'observationTruncated' | 'visionInput' | 'visionDegraded'> {
     return {
+      ...(this.observationTruncated ? { observationTruncated: true } : {}),
       ...(this.pixelsSent ? { visionInput: true } : {}),
       ...(this.visionDegraded === undefined ? {} : { visionDegraded: this.visionDegraded }),
     };
@@ -351,7 +355,15 @@ export class ObservationFeed {
 
   /** Makes an observation the newest, remembers it among the recent ones, and books its size. */
   private publish(observation: AgentObservation): void {
+    if (this.newest !== undefined && this.newest.identityScope !== observation.identityScope) {
+      this.recent.length = 0;
+      this.opening = undefined;
+      this.pendingChange = undefined;
+    }
     this.newest = observation;
+    if (observation.kind === 'semantic' && observation.truncated) {
+      this.observationTruncated = true;
+    }
     if (observation.kind === 'pixels') this.recent.length = 0;
     else this.recent.push(observation);
     if (this.recent.length > MAX_RECENT_OBSERVATIONS) this.recent.shift();
@@ -473,6 +485,6 @@ function echoesInput(node: SemanticNode): boolean {
 export function nodeGone(id: string, latest: SemanticAgentObservation): AgentError {
   return new AgentError(
     'LOCATOR_NOT_FOUND',
-    `node #${id} is not on the current screen (observation ${latest.revision}); it was removed or never existed`,
+    `node ${referenceText(id)} is not on the current screen (observation ${latest.revision}); it was removed or never existed`,
   );
 }
