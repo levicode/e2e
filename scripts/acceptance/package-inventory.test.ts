@@ -12,7 +12,7 @@ const identity = (name: unknown, version: unknown): string => JSON.stringify({ n
 /** Pack synthetic bytes in this test's scratch directory; never extract an archive. */
 async function writeArchive(
   root: string,
-  members: Record<string, string | Uint8Array>,
+  members: Record<string, string>,
   options: { symlinks?: Record<string, string>; entries?: string[]; prefix?: string; rootMembers?: Record<string, string> } = {},
 ): Promise<string> {
   const stage = join(root, 'stage');

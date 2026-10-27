@@ -1,6 +1,7 @@
 import { list } from 'tar';
 import { sha256, type BundleFile, type PackageInventory } from './bundle.ts';
 
+/** A packed identity is a real JSON string, so a truthy value is not enough. */
 const identityPart = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 
 /** Read the actual packed bytes, not a guessed list of source/dist files. Never extract archives. */
