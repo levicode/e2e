@@ -910,7 +910,9 @@ const file = await browser.waitForDownload(() =>
 - The wait includes recovery and the trigger's own time.
 - Cancellation discards unpublished files. Native resource cleanup stays with
   the owning attempt rather than the cancelled test body, without extending
-  the public wait. A real cleanup failure still fails attempt cleanup.
+  the public wait. A cancelled native read must settle before its subscription
+  and handle are released; cleanup does not recover or create another scope.
+  A real cleanup failure still fails attempt cleanup.
 
 | Throws | When |
 | --- | --- |

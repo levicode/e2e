@@ -1,5 +1,5 @@
 import { PassThrough, Writable } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { OperationContext } from 'e2e/engine';
 import type { BrowserDecision } from '../../src/native/browser-contract.ts';
 import { BrowserChannel } from '../../src/native/browser-channel.ts';
@@ -32,6 +32,62 @@ async function opened() {
 const responseEvent = (): NativeEvent => ({ type: 'event', generation: 1, sequence: 1, event: 'network.response', payload: { identityScope: 'scope-1', activePage: true, handle: 'body-1', url: 'http://fixture.test/data', status: 200, headers: {} } });
 
 describe('typed native browser channel', () => {
+  it('does not grant a fresh cleanup budget while a cancelled download is settling', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const fixture = await opened();
+    const controller = new AbortController();
+    const reading = fixture.channel.command('download.read', { handle: 'held', offset: 0, maxBytes: 1 }, { ...operation(), signal: controller.signal }).catch(cause => cause);
+    const request = fixture.requests.at(-1)!;
+    controller.abort(); const cancel = fixture.requests.at(-1)!;
+    let finished = false;
+    const retiring = fixture.channel.command('download.unsubscribe', { subscriptionId: 'old' }, { ...operation(), timeoutMs: 100 }).catch(cause => cause).finally(() => { finished = true; });
+    try {
+      await vi.advanceTimersByTimeAsync(99); expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await retiring).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      fixture.send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+      expect(await reading).toMatchObject({ code: 'CANCELLED' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.requests.filter(frame => frame['command'] === 'download.unsubscribe')).toEqual([]);
+      expect(fixture.requests.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      const title = fixture.channel.command('page.title', {}, operation()); fixture.result({ title: 'still usable' });
+      await expect(title).resolves.toEqual({ title: 'still usable' });
+    } finally { await fixture.close().catch(() => undefined); vi.useRealTimers(); }
+  });
+
+  it('never sends a delayed download cleanup to a replacement channel owner', async () => {
+    const fixture = await opened(); const controller = new AbortController();
+    const reading = fixture.channel.command('download.read', { handle: 'held', offset: 0, maxBytes: 1 }, { ...operation(), signal: controller.signal }).catch(cause => cause);
+    const request = fixture.requests.at(-1)!;
+    controller.abort(); const cancel = fixture.requests.at(-1)!;
+    const retiring = fixture.channel.command('download.unsubscribe', { subscriptionId: 'same-id' }, operation()).catch(cause => cause);
+    fixture.reset();
+    fixture.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+    fixture.send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+    expect(await reading).toMatchObject({ code: 'INVALID_STATE' });
+    expect(await retiring).toMatchObject({ code: 'INVALID_STATE' });
+    expect(fixture.requests.filter(frame => frame['command'] === 'download.unsubscribe')).toEqual([]);
+    const replacement = new BrowserChannel(fixture.client, { identityScope: () => 'scope-2', operation });
+    const subscription = replacement.command('download.subscribe', {}, operation()); fixture.result({ subscriptionId: 'same-id' });
+    await expect(subscription).resolves.toEqual({ subscriptionId: 'same-id', identityScope: 'scope-2' });
+    await fixture.close();
+  });
+
+  it('does not turn an unknown cancelled outcome into cleanup permission', async () => {
+    const fixture = await opened(); const controller = new AbortController();
+    const reading = fixture.channel.command('download.read', { handle: 'held', offset: 0, maxBytes: 1 }, { ...operation(), signal: controller.signal }).catch(cause => cause);
+    const request = fixture.requests.at(-1)!;
+    controller.abort();
+    const retiring = fixture.channel.command('download.unsubscribe', { subscriptionId: 'old' }, operation()).catch(cause => cause);
+    fixture.send({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined' });
+    expect(await reading).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    expect(await retiring).toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(fixture.requests.filter(frame => frame['command'] === 'download.unsubscribe')).toEqual([]);
+    expect(fixture.requests.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+    await fixture.close().catch(() => undefined);
+  });
+
   it('decodes the actual transport result and never exposes the envelope', async () => {
     const fixture = await opened();
     const pending = fixture.channel.command('page.title', {}, operation());

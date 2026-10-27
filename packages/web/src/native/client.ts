@@ -30,6 +30,7 @@ interface Pending {
   readonly resolve: (message: ServerMessage) => void;
   readonly reject: (error: EngineError) => void;
   readonly clear: () => void;
+  readonly settlement: Promise<void>;
   draining?: boolean;
   quarantined?: boolean;
 }
@@ -176,6 +177,13 @@ export class NativeClient {
     if (this.publishingEpoch !== undefined && this.publishingEpoch !== epoch) throw this.invalidate();
     this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
     for (const staged of this.stagedEvents.splice(0)) this.dispatchEvent(staged.event, staged.bytes, staged.arrived);
+  }
+
+  /** Captures only existing exact-scope cancellation proofs, never live work or a new request. */
+  cancelledSettlement(identityScope: string): Promise<void> | undefined {
+    this.assertUsable();
+    const draining = [...this.pending.values()].filter(pending => pending.draining && pending.identityScope === identityScope);
+    return draining.length === 0 ? undefined : Promise.all(draining.map(pending => pending.settlement)).then(() => undefined);
   }
 
   /** Dispatches exactly once; a transport timeout cannot turn an uncertain effect into a retry. */
@@ -339,6 +347,8 @@ export class NativeClient {
       trace?.observe('ExchangeRefused', { ...facts, reason: refusal });
       return Promise.reject(cause instanceof EngineError ? cause : new EngineError('ENGINE_FAILURE', 'The native browser request exceeded its protocol bounds', { retryable: false }));
     }
+    let retire!: () => void;
+    const settlement = new Promise<void>(resolve => { retire = resolve; });
     return new Promise((resolve, reject) => {
       let settlementTimer: ReturnType<typeof setTimeout> | undefined;
       let cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined;
@@ -350,6 +360,7 @@ export class NativeClient {
         finished = true;
         this.pending.delete(id); clear();
         if (cancellation !== undefined) this.settlingRequests--;
+        retire();
         // A local deadline may race the native cancellation signal. Only a reusable,
         // definitive failure can preserve the caller's original timeout reason.
         if (cancellation === 'OPERATION_TIMEOUT' && settled.type === 'result' && !settled.ok && settled.effects !== 'unknown' && settled.scopeState === 'usable' && (settled.error?.code === 'cancelled' || settled.error?.code === 'deadline-exceeded')) {
@@ -392,7 +403,7 @@ export class NativeClient {
       };
       const args = message['args'];
       const scope = args !== null && typeof args === 'object' && 'identityScope' in args && typeof args.identityScope === 'string' ? args.identityScope : undefined;
-      this.pending.set(id, { kind, ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject, clear });
+      this.pending.set(id, { kind, ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
       context.signal.addEventListener('abort', abort, { once: true });
       if (context.signal.aborted) { abort(); return; }
       if (trace === undefined) {

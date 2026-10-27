@@ -1576,6 +1576,84 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { finish?.(Buffer.from('late synthetic bytes')); await waiting; await surface.dispose(cleanup()).catch(() => undefined); await rm(directory, { recursive: true, force: true }); }
   });
 
+  it.each([
+    ['download.read', 'ack-first', 'trigger'], ['download.read', 'result-first', 'trigger'],
+    ['download.metadata', 'ack-first', 'trigger'], ['download.metadata', 'result-first', 'trigger'],
+    ['download.read', 'ack-first', 'deadline'], ['download.read', 'result-first', 'deadline'],
+  ] as const)('waits for both cancellation proofs before retiring %s (%s, %s)', async (heldCommand, order, primaryKind) => {
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const directory = await mkdtemp(path.join(tmpdir(), 'download-cancel-settlement-'));
+    await surface.startAttempt({ ...context('download-settlement'), artifactsDir: directory });
+    if (primaryKind === 'deadline') vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const scope = surface.identityScope;
+    let readEntered!: () => void; const reading = new Promise<void>(resolve => { readEntered = resolve; });
+    let finishRead!: () => void;
+    let businessEntered!: () => void; const businessStarted = new Promise<void>(resolve => { businessEntered = resolve; });
+    let finishBusiness!: () => void; let holdBusiness = true;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'page.title' && holdBusiness) {
+        holdBusiness = false; finishBusiness = () => reply({ data: { title: 'held unrelated work' } });
+        businessEntered(); return true;
+      }
+      if (frame['command'] === heldCommand) {
+        finishRead = () => reply({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+        readEntered(); return true;
+      }
+      if (frame['command'] === 'download.metadata') { reply({ data: { identityScope: scope, source: 'local' } }); return true; }
+      return false;
+    };
+    let cancelled!: () => void; const cancelling = new Promise<void>(resolve => { cancelled = resolve; });
+    cancellationObserved = cancelled;
+    let businessFinished = false;
+    const business = surface.command('page.title', {}, operation()).finally(() => { businessFinished = true; });
+    void business.catch(() => undefined);
+    await businessStarted;
+    const attached = vi.fn();
+    const fixture = createBrowserFixture(surface.fixtureSurface(), {
+      operation: (timeoutMs = 1000) => ({ ...operation(), timeoutMs }), signal, attachArtifact: attached,
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext);
+    const primary = new Error('trigger fails with a real native read in flight');
+    const waiting = fixture.waitForDownload(async () => {
+      await sendEvent('download.started', { identityScope: scope, activePage: true, handle: 'held-native-download', suggestedFilename: 'held.bin' });
+      await reading;
+      if (primaryKind === 'trigger') throw primary;
+    }, { timeout: 100 }).catch(cause => cause);
+    let settled = false;
+    let settling: Promise<unknown> | undefined;
+    try {
+      if (primaryKind === 'deadline') {
+        await reading;
+        await vi.advanceTimersByTimeAsync(100);
+        expect(await waiting).toMatchObject({ code: 'ACTION_FAILED', message: 'download did not complete within 100ms' });
+      } else expect(await waiting).toBe(primary);
+      await cancelling;
+      settling = surface.latch.settle(cleanup()).then(() => { settled = true; }, cause => { settled = true; return cause; });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe')).toEqual([]);
+      (order === 'ack-first' ? acknowledgeCancel : finishRead)!();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe')).toEqual([]);
+      (order === 'ack-first' ? finishRead : acknowledgeCancel)!();
+      await expect(settling).resolves.toBeUndefined();
+      expect(businessFinished).toBe(false);
+      finishBusiness(); await expect(business).resolves.toEqual({ title: 'held unrelated work' });
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe').map(frame => frame['args'])).toEqual([{ identityScope: scope, subscriptionId: 'synthetic-subscription' }]);
+      expect(frames.filter(frame => frame['command'] === 'download.release').map(frame => frame['args'])).toEqual([{ identityScope: scope, handle: 'held-native-download' }]);
+      expect(attached).not.toHaveBeenCalled();
+      expect(await readdir(path.join(directory, 'downloads'))).toEqual([]);
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+    } finally {
+      acknowledgeCancel?.(); finishRead?.(); finishBusiness?.(); await waiting; await settling; await business.catch(() => undefined);
+      await surface.dispose(cleanup()).catch(() => undefined); await rm(directory, { recursive: true, force: true });
+      if (primaryKind === 'deadline') vi.useRealTimers();
+    }
+  });
+
   it('cleans the captured download scope without initiating recovery for a cancelled caller', async () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface);

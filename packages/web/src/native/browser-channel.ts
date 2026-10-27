@@ -5,6 +5,7 @@ import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs, valid
 import type { NativeClient } from './client.ts';
 import type { NativeEvent, NativeResult } from './protocol.ts';
 import type { FrameQueryDiagnostic, QueryDiagnostic } from './query-diagnostic.ts';
+import { withConnectionBudget } from '../operation-budget.ts';
 
 /** The lifecycle surface supplies current attempt identity and bounded cleanup context. */
 export interface BrowserChannelContext {
@@ -30,6 +31,23 @@ export class BrowserChannel {
   get identityScope(): string { this.assertScope(); return this.scope; }
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
+    if (name === 'download.unsubscribe' || name === 'download.release') {
+      this.assertScope();
+      // A cancelled read still owns its native request until result and cancel ACK.
+      // Join only those proofs under this cleanup's existing budget, not recovery.
+      return withConnectionBudget(operation, 'download resource cleanup', async remaining => {
+        for (;;) {
+          const settling = this.client.cancelledSettlement(this.scope);
+          if (settling === undefined) break;
+          await settling;
+        }
+        return this.dispatchCommand(name, args, { ...operation, ...remaining() });
+      });
+    }
+    return this.dispatchCommand(name, args, operation);
+  }
+
+  private async dispatchCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
     this.assertScope();
     const correlation = name === 'fixture.correlate' ? { args: snapshotCorrelationArgs(args), identityScope: this.scope } : undefined;
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
