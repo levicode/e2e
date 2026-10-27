@@ -7,8 +7,7 @@ icon: "globe"
 ---
 
 `@e2e-dev/web` is the browser engine. It drives Chromium through one native agent-browser command adapter.
-The complete native contract must negotiate successfully; there is no alternate
-Playwright runtime or reduced-capability fallback. A web target names it as its engine with `web()`, and it
+The complete native contract must negotiate successfully. A real Playwright client can attach to the same native-owned Chromium for trusted raw access; it never launches a second browser or selects an old-engine fallback. A web target names it as its engine with `web()`, and it
 contributes the `browser` fixture for browser-only work.
 
 ```ts title="e2e.config.ts"
@@ -1005,18 +1004,25 @@ native resolver without granting a model-selectable privacy bypass. Abandoned
 readers cannot reuse exact reference IDs or publish handles over a newer scope.
 Cleanup remains owned until it completes or the affected scope is quarantined.
 
+## surfaceOf
+
+`surfaceOf(engine)` returns the actual Playwright `Page` and `BrowserContext` behind a `web()` handle for trusted [custom executors](/executors#driving-the-page-yourself). It returns `undefined` for another engine. The context accessor is ready after `startAttempt`; the Page accessor remains `INVALID_STATE` until first open, goto, or recording activation. Both reject outside an active attempt. Direct calls bypass harness action authorization and are not recorded or replayed as steps.
+
+```ts
+import { web, surfaceOf } from '@e2e-dev/web';
+const engine = web();
+const live = surfaceOf(engine);
+live!.page();
+live!.context();
+```
+
+The native engine owns Chromium and its ordinary actions, observations, network policy and recording lifecycle. The objects above are real Playwright objects on that same browser, not reduced facades. An isolated context exposes its reserved blank Page through raw `context.pages()` before public `page()` becomes ready; first navigation reuses that Page and does not create a second tab.
+
+**Unreleased integration slice:** fresh startup and final cleanup are the current executable gate, not full release acceptance. Same-transport worker reuse, context replacement, and persistent client recovery still require their integration proofs. Persistent binding selects the exact existing default context and target; it must not rebuild lost document state in an incognito context. Read the accessors again after a completed recovery.
+
 ## Custom executor migration
 
-The native Web engine does not export `surfaceOf` or `PlaywrightLiveSurface`.
-A native backend is not a Playwright `Page` or `BrowserContext`; there is no
-compatibility shim that pretends otherwise. Keep custom executors on the
-public `StepExecutor` observation/actions contract, and capture the typed
-`Browser` fixture for deterministic application operations. See
-[custom executors](/executors#driving-the-page-yourself).
-
-Existing arbitrary Playwright helpers must be ported to these operations;
-changing the import alone does not migrate them. The adapter uses one native
-command/event implementation, not a selectable legacy runtime.
+Existing Playwright helpers use `surfaceOf` rather than being forced onto a smaller fixture API. For recorded and authorized harness operations, keep using the public `StepExecutor` and typed `Browser` fixture.
 
 ## Types
 
@@ -1030,7 +1036,7 @@ The package exports these types for typing config helpers and fixtures:
 `RouteContinueOverrides`, `WebResponse`, `Cookie`, `CookieFields`, `Dialog`,
 and `DialogHandler`.
 
-The runtime exports are `web` and `test`,
+The runtime exports include `web`, `surfaceOf`, and `test`,
 `describe`, `beforeEach`, `afterEach`, `beforeAll`, and `afterAll`, typed
 with the `browser` fixture.
 

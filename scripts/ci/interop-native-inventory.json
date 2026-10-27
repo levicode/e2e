@@ -1,0 +1,29 @@
+{
+  "features": [
+    "acceptance-faults"
+  ],
+  "count": 21,
+  "selectors": [
+    "native::client_browser::interop_adoption::tests::exact_fresh_context_adopts_reserved_page_without_creation_or_enrollment",
+    "native::client_browser::interop_adoption::tests::preexisting_or_wrong_or_missing_context_never_gains_destruction_authority",
+    "native::client_browser::interop_adoption::tests::changed_target_after_attach_detaches_session_and_disposes_only_proven_new_context",
+    "native::client_browser::interop_adoption::tests::cancellation_before_and_after_exact_identity_retains_original_cleanup_owner",
+    "native::client_browser::interop_adoption::tests::explicit_abort_and_changed_operation_are_transport_only_for_borrowed_browser",
+    "native::client_browser::interop_adoption::tests::malformed_context_inventory_and_page_metadata_do_not_mint_ownership",
+    "native::client_browser::interop_adoption::tests::cancelled_expired_or_callback_prepare_never_queries_or_deletes_host_resources",
+    "native::client_browser::interop_adoption::tests::custody_tests::settled_prepare_later_real_adoption_and_joined_exact_cleanup",
+    "native::client_browser::interop_adoption::tests::custody_tests::idle_expiry_uses_independent_lifetime_after_prepare_settlement",
+    "native::client_browser::interop_adoption::tests::custody_tests::mismatch_does_not_cancel_owner_and_dispatch_rechecks_after_abort",
+    "native::client_browser::interop_adoption::tests::custody_tests::dropped_adopt_and_abort_waiters_do_not_lose_cleanup_join",
+    "native::client_browser::interop_adoption::tests::custody_tests::failed_cleanup_keeps_original_owner_and_rejects_replacement",
+    "native::client_browser::interop_adoption::tests::custody_tests::owned_manager_cleanup_preserves_real_process_close_and_wait_path",
+    "native::client_browser::interop_adoption::tests::custody_tests::actual_browser_shutdown_signals_preparation_before_lifecycle_join",
+    "native::client_browser::interop_adoption::tests::custody_tests::dropped_prepare_waiter_keeps_resource_until_ready_failure_cleanup",
+    "native::client_browser::interop_preparation::publication_tests::usable_publication_atomically_ends_preparation_cleanup_authority",
+    "native::client_browser::interop_preparation::publication_tests::cancellation_or_expiry_before_publication_keeps_application_closed",
+    "native::client_session::preparation_deadline_tests::later_rpc_has_real_new_identity_but_same_original_deadline",
+    "native::client_session::preparation_deadline_tests::expired_lifetime_and_mismatched_ticket_reject_and_consume_sequence",
+    "native::client_session::preparation_deadline_tests::cap_never_extends_requested_or_callback_parent_deadline",
+    "native::client_transport::preparation_admission_tests::preparation_cap_is_applied_before_real_framed_admission"
+  ]
+}

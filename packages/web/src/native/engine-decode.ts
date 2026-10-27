@@ -74,6 +74,10 @@ const empty = (value: unknown): null => value === null ? null : invalid();
 const recoveryScope = (value: unknown) => { const item = record(value); const recovery = record(item['recoveryIdentity']); return { ...scoped(item), recoveryIdentity: { browser: identity(recovery['browser']), context: identity(recovery['context']), page: identity(recovery['page']) } }; };
 const decoders = {
   'scope.open': recoveryScope,
+  'scope.interop.prepare': (value: unknown) => { const item = record(value); if (Object.keys(item).length !== 2) invalid(); return { preparationId: identity(item['preparationId']), endpoint: text(item['endpoint']) }; },
+  'scope.interop.adopt': recoveryScope,
+  'scope.interop.abort': empty,
+  'scope.interop.identify': (value: unknown) => { const item = record(value); if (Object.keys(item).length !== 3) invalid(); return { contextId: identity(item['contextId']), targetId: identity(item['targetId']), persistent: bool(item['persistent']) }; },
   'page.activate': (value: unknown): { activated: true } => { const item = record(value); if (Object.keys(item).length !== 1 || item['activated'] !== true) invalid(); return { activated: true }; },
   'scope.configure': empty, 'scope.end': empty, 'scope.restart': recoveryScope, 'scope.reset': scoped, 'scope.reconnect': scoped,
   'browser.observe': observation,

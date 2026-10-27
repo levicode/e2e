@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "paths": {
+      "e2e": [
+        "../e2e/src/index.ts"
+      ],
+      "e2e/engine": [
+        "../e2e/src/engine/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/index.ts",
+    "tests/unit/surface-of.test.ts",
+    "tests/integration/surface-of-native-fresh.test.ts",
+    "tests/unit/playwright-binding.test.ts",
+    "tests/unit/native-interop-startup-cleanup.test.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
+}

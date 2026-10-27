@@ -1,18 +1,32 @@
-/** The approved extension boundary is typed fixtures and executor context, not a fake Page. */
-import { describe, expect, it } from 'vitest';
-import * as publicWeb from '../../src/index.ts';
-import { NativeSurface } from '../../src/native-surface.ts';
+/**
+ * `surfaceOf` hands agent-side code the live page and context behind a
+ * `web()` handle, and nothing for any other engine. Without an
+ * attempt there is nothing live, so both accessors refuse with INVALID_STATE.
+ */
 
-describe('native public extension boundary', () => {
-  it('does not export a counterfeit Playwright surface or a parallel engine factory', () => {
-    expect(publicWeb).not.toHaveProperty('surfaceOf');
-    expect(publicWeb).not.toHaveProperty('agentBrowser');
-    expect(publicWeb.web()).toMatchObject({ name: 'web' });
+import { describe, expect, it } from 'vitest';
+import { EngineError, defineEngine } from 'e2e/engine';
+import { web, surfaceOf } from '../../src/index.ts';
+
+describe('surfaceOf', () => {
+  it('returns a live surface for a playwright handle and undefined for a foreign one', () => {
+    const handle = web();
+    expect(surfaceOf(handle)).toBeDefined();
+    const other = defineEngine({ name: 'other', version: '1', spiVersion: 1 });
+    expect(surfaceOf(other)).toBeUndefined();
   });
-  it('refuses a typed fixture view before an attempt is running', () => {
-    const surface = new NativeSurface({});
-    expect(() => surface.fixtureSurface()).toThrow(expect.objectContaining({ code: 'INVALID_STATE' }));
-    expect(surface).not.toHaveProperty('requirePage');
-    expect(surface).not.toHaveProperty('requireContext');
+
+  it('refuses the page and the context before an attempt is running', () => {
+    const live = surfaceOf(web());
+    expect(live).toBeDefined();
+    for (const read of [() => live?.context(), () => live?.page()]) {
+      try {
+        read();
+        throw new Error('expected INVALID_STATE');
+      } catch (error) {
+        expect(error).toBeInstanceOf(EngineError);
+        expect((error as EngineError).code).toBe('INVALID_STATE');
+      }
+    }
   });
 });
