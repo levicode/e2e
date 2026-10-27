@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
+        ref: b4845341a7420957ee262db349660e0a4ae65117
         path: native
         persist-credentials: false
     - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -33,9 +33,9 @@ jobs:
 
         cd native/cli
 
-        test "$(git rev-parse HEAD)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(git rev-parse HEAD)" = b4845341a7420957ee262db349660e0a4ae65117
 
-        test "$(git rev-parse HEAD^{tree})" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(git rev-parse HEAD^{tree})" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a
 
         test -z "$(git status --porcelain)"
 
@@ -60,9 +60,9 @@ jobs:
         sha256sum production acceptance-faults > SHA256SUMS
 
 
-        printf "%s\n" 9b742b5dcf785d1e05be582080e3a89696245ee3 > native-source.sha
+        printf "%s\n" b4845341a7420957ee262db349660e0a4ae65117 > native-source.sha
 
-        printf "%s\n" c36e1b9bc438c6245c6861781e2502ab143d00b8 > native-source.tree
+        printf "%s\n" cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a > native-source.tree
 
         printf "%s\n" "$GITHUB_RUN_ID" > producer-run.id
 
@@ -95,7 +95,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
+        ref: b4845341a7420957ee262db349660e0a4ae65117
         path: native
         persist-credentials: false
     - name: Compile all original default Cargo test targets once
@@ -109,9 +109,9 @@ jobs:
 
         cd native/cli
 
-        test "$(git rev-parse HEAD)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(git rev-parse HEAD)" = b4845341a7420957ee262db349660e0a4ae65117
 
-        test "$(git rev-parse HEAD^{tree})" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(git rev-parse HEAD^{tree})" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a
 
         test -z "$(git status --porcelain)"
 
@@ -168,7 +168,7 @@ jobs:
     - &id004
       name: Restore exact compiler paths/source/assets and select unit harness
       run: python3 recipe/scripts/web-functional/run-default-harnesses.py --restore-only
-    - name: Run 120 exact original and new native prerequisites
+    - name: Run 121 exact original and new native prerequisites
       run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
         failed=0\nindex=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
         \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_missing_ack_never_becomes_successful_retirement'\
@@ -258,13 +258,14 @@ jobs:
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_foreign_generation_reused_sequence_callback_and_schema_are_not_admitted'\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_traffic_never_renews_original_ten_second_cutoff'\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_commands_never_enter_ordinary_executor_dispatch'\
-        \ 'native::client_browser::state_lifecycle_tests::terminal_recording_tests::poisoned_terminal_recording_custody_never_proves_closed';\
-        \ do\n  index=$((index + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep\
-        \ -Fx \"$name: test\" \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One\
-        \ exclusive file per test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);\
-        \ os.close(fd)' \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"\
-        status\":\"prepared\",\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\
-        \n  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ 'native::client_browser::state_lifecycle_tests::terminal_recording_tests::poisoned_terminal_recording_custody_never_proves_closed'\
+        \ 'native::client_restart::tests::reopened_result_proof_preserves_payload_and_exact_publication_fence'; do\n  index=$((index\
+        \ + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep -Fx \"$name: test\"\
+        \ \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One exclusive file per\
+        \ test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd)'\
+        \ \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"status\":\"prepared\"\
+        ,\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\n\
+        \  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
         \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
         \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\n  # The ten\
         \ new normal tests must actually execute, not silently succeed as ignored.\n  if ! python3 - \"$name\" \"evidence/test-$index.log\"\
@@ -333,7 +334,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
+        ref: fd8c9d08ea846be97dd4f475611240372ce8acc9
         path: source
         persist-credentials: false
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -353,9 +354,9 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(cat images/native-source.sha)" = b4845341a7420957ee262db349660e0a4ae65117
 
-        test "$(cat images/native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(cat images/native-source.tree)" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a
 
         test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
 
@@ -367,11 +368,11 @@ jobs:
     - name: Seed public apt archives from verified prior run (not test evidence)
       env:
         GH_TOKEN: ${{ github.token }}
-      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
-        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
-        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
-        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
-        \nrm -- \"$zip\"\n"
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
+        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
+        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
+        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
+        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
     - name: Probe orchestration regressions (not native runtime proof)
       working-directory: source
       run: node --test scripts/acceptance/probe-native.test.ts
@@ -419,7 +420,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: eed3e6a0adb746ab7f30f2c4fabf91971cf649ac
+        ref: fd8c9d08ea846be97dd4f475611240372ce8acc9
         path: source
         persist-credentials: false
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -439,9 +440,9 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(cat images/native-source.sha)" = b4845341a7420957ee262db349660e0a4ae65117
 
-        test "$(cat images/native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(cat images/native-source.tree)" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a
 
         test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
 
@@ -453,11 +454,11 @@ jobs:
     - name: Seed public apt archives from verified prior run (not test evidence)
       env:
         GH_TOKEN: ${{ github.token }}
-      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\ncurl --fail --silent --show-error --location --retry\
-        \ 2 --max-time 180 \\\n  -H \"Authorization: Bearer $GH_TOKEN\" -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
-        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum\
-        \ -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
-        \nrm -- \"$zip\"\n"
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
+        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
+        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
+        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
+        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
     - name: Probe orchestration regressions (not native runtime proof)
       working-directory: source
       run: node --test scripts/acceptance/probe-native.test.ts
@@ -527,7 +528,7 @@ jobs:
         \ n in encoder_names)],'releaseEligible':False},indent=2)+'\\n')\n(out/'encoder-contracts.result.json').write_text(json.dumps({'category':'fake-cdp-real-encoder-contract','required':encoder_contracts,'results':[r\
         \ for r in results if r['name'] in encoder_names],'failures':[f for f in failures if any(f.startswith(n+':') for n\
         \ in encoder_names)],'browserIdentityRequired':False,'releaseEligible':False},indent=2)+'\\n')\nsys.exit(1 if failures\
-        \ else 0)\nPY_CONTRACTS\ncat > \"$RUNNER_TEMP/exact-contracts.json\" <<'JSON_CONTRACTS'\n{\n  \"source\": \"9b742b5dcf785d1e05be582080e3a89696245ee3\"\
+        \ else 0)\nPY_CONTRACTS\ncat > \"$RUNNER_TEMP/exact-contracts.json\" <<'JSON_CONTRACTS'\n{\n  \"source\": \"b4845341a7420957ee262db349660e0a4ae65117\"\
         ,\n  \"names\": [\n    {\n      \"index\": 1,\n      \"name\": \"native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup\"\
         ,\n      \"path\": \"cli/src/native/client_browser.rs\",\n      \"line\": 6020,\n      \"excerpt\": \"next-exact-ci/formal37-review/01-chromium_owned_scope_isolation_and_cleanup.rs\"\
         ,\n      \"lines\": 132,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
@@ -792,13 +793,13 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
+        ref: b4845341a7420957ee262db349660e0a4ae65117
         path: native
         persist-credentials: false
     - name: Compile acceptance-faults exact test harness only
       shell: bash
-      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = 9b742b5dcf785d1e05be582080e3a89696245ee3\n\
-        test \"$(git rev-parse HEAD^{tree})\" = c36e1b9bc438c6245c6861781e2502ab143d00b8\ntest -z \"$(git status --porcelain)\"\
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = b4845341a7420957ee262db349660e0a4ae65117\n\
+        test \"$(git rev-parse HEAD^{tree})\" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a\ntest -z \"$(git status --porcelain)\"\
         \nrustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
         export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --timings --no-default-features\
         \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\"\
@@ -847,8 +848,13 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
         repository: levicode/agent-browser
-        ref: 9b742b5dcf785d1e05be582080e3a89696245ee3
+        ref: b4845341a7420957ee262db349660e0a4ae65117
         path: native
         persist-credentials: false
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -862,17 +868,17 @@ jobs:
 
         cd native
 
-        test "$(git rev-parse HEAD)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(git rev-parse HEAD)" = b4845341a7420957ee262db349660e0a4ae65117
 
-        test "$(git rev-parse HEAD^{tree})" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(git rev-parse HEAD^{tree})" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a
 
         test -z "$(git status --porcelain)"
 
         cd ../native-harness
 
-        test "$(cat native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(cat native-source.sha)" = b4845341a7420957ee262db349660e0a4ae65117
 
-        test "$(cat native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(cat native-source.tree)" = cb17ae3ab0656bbc7703a85a123a8e43f7f3fc6a
 
         test "$(cat features.txt)" = acceptance-faults
 
