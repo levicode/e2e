@@ -196,7 +196,7 @@ export class NativeSurface implements NativeWebSurface {
         this.assertAttempt(attempt);
         this.workerEndpoint = this.leases === undefined
           ? this.options.connect === undefined ? undefined : await this.resolveEndpoint(this.options.connect.cdpEndpoint, startupSignal, 'connect.cdpEndpoint')
-          : await raceAbort(() => this.leases!.endpoint(startupSignal), startupSignal, 'resolving worker browser replacement');
+          : await raceAbort(() => this.leases!.endpoint(startupSignal, 'attempt'), startupSignal, 'resolving worker browser replacement');
         this.assertAttempt(attempt); this.workerSourceLost = false;
       }
       let endpoint = this.workerEndpoint;
@@ -290,6 +290,7 @@ export class NativeSurface implements NativeWebSurface {
     const client = this.client; const engine = this.engine; const connecting = this.connecting;
     if (connecting !== undefined) this.clientTenure++;
     if (attempt !== undefined) attempt.cleanupSignal = cleanup.signal;
+    this.leases?.retireWorkerAcquisition(cleanup, 'attempt');
     attempt?.retirement.abort(); this.references.retire();
     const finalizedCleanup = attempt?.finalizedVideo?.retire();
     const recordingStarts = [...(attempt?.recordingStarts ?? [])];
@@ -310,6 +311,7 @@ export class NativeSurface implements NativeWebSurface {
       void work.catch(cause => { failed(cause, departed); });
       return work;
     };
+    this.leases?.retireWorkerAcquisition(cleanup, 'attempt', cause => { failed(cause); });
     if (finalizedCleanup !== undefined) receipt(finalizedCleanup);
     for (const stopping of recordingStops) receipt(stopping);
     if (attempt !== undefined) for (const stopping of attempt.lateRecordingStops.values()) receipt(stopping);
@@ -402,7 +404,6 @@ export class NativeSurface implements NativeWebSurface {
   }
 
   dispose(context: EngineCleanupContext): Promise<void> {
-    this.workerRetirement.abort();
     if (this.disposing === undefined) {
       let resolve!: () => void; let reject!: (cause: unknown) => void;
       const owned = new Promise<void>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
@@ -415,6 +416,8 @@ export class NativeSurface implements NativeWebSurface {
         if (this.disposing === owned) this.disposing = undefined;
       };
       const deadline = cleanupDeadline(context);
+      this.leases?.retireWorkerAcquisition(deadline.context);
+      this.workerRetirement.abort();
       void this.closeWorker(deadline.context).finally(deadline.dispose).then(() => {
         disposed(); resolve();
       }, cause => {
@@ -422,7 +425,22 @@ export class NativeSurface implements NativeWebSurface {
       });
     }
     const owned = this.disposing;
-    return withConnectionBudget(context, 'disposing native worker', () => owned);
+    let settled = false;
+    void owned.then(() => { settled = true; }, () => { settled = true; });
+    return withConnectionBudget(context, 'disposing native worker', () => owned).catch(cause => {
+      // The original provider contract lets a caller leave an uncommitted attach.
+      // This is not permission to hide held-resource cleanup or a real owner error.
+      if (!settled && cause instanceof EngineError && (cause.code === 'CANCELLED' || cause.code === 'OPERATION_TIMEOUT') && this.onlyPendingWorkerAcquisition()) return;
+      throw cause;
+    });
+  }
+  private onlyPendingWorkerAcquisition(): boolean {
+    // Bridge integration must also exclude retained PW/prepared custody here.
+    if (this.leases?.hasOnlyPendingWorkerAcquisition() !== true || this.retirementFailure !== undefined || this.workerCleanupUnconfirmed || this.client !== undefined || this.connecting !== undefined) return false;
+    const attempt = this.attempt ?? this.retiringAttempt;
+    return attempt === undefined || (!attempt.ready && attempt.scope === '' && attempt.channel === undefined && attempt.wireRequests.size === 0
+      && attempt.recording === undefined && attempt.recordingStop === undefined && attempt.recordingStarts.size === 0
+      && attempt.lateRecordings.size === 0 && attempt.lateRecordingStops.size === 0 && attempt.finalizedVideo === undefined && attempt.downloads.size === 0);
   }
   private async closeClient(context: EngineCleanupContext, client = this.client): Promise<void> {
     try {
@@ -437,6 +455,7 @@ export class NativeSurface implements NativeWebSurface {
       void work.catch(cause => { failure ??= cause; this.retirementFailure ??= cause; });
       return work;
     };
+    this.leases?.retireWorkerAcquisition(cleanup, undefined, cause => { failure ??= cause; this.retirementFailure ??= cause; });
     const attempt = receipt(this.retireAttempt(cleanup));
     try { await raceAbort(() => attempt, cleanup.signal, 'waiting for native attempt cleanup'); }
     catch (cause) { if (!cleanup.signal.aborted) failure ??= cause; }
@@ -444,7 +463,7 @@ export class NativeSurface implements NativeWebSurface {
     const closing = receipt(this.closeClient(cleanup));
     try { await raceAbort(() => closing, cleanup.signal, 'waiting for native worker close'); }
     catch (cause) { if (!cleanup.signal.aborted) failure ??= cause; }
-    const releasing = receipt((this.leases?.dispose(cleanup) ?? Promise.resolve()).catch(cause => { this.workerCleanupUnconfirmed = true; throw cause; }));
+    const releasing = receipt((this.leases?.dispose(cleanup, cause => { failure ??= cause; this.retirementFailure ??= cause; }) ?? Promise.resolve()).catch(cause => { this.workerCleanupUnconfirmed = true; throw cause; }));
     for (const work of [attempt, closing, releasing]) {
       try { await work; } catch (cause) { failure ??= cause; this.retirementFailure ??= cause; }
     }

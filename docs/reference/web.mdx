@@ -1301,9 +1301,24 @@ Cleanup attempts to release each exact provider lease once even when other
 cleanup fails or outlives the caller, using the same signal rather than a fresh
 budget. A late
 release receipt can finish that original work; a later caller never reissues it.
+Synchronous cleanup reentry also joins the published receipt rather than
+invoking provider release again.
 Releasing the lease does not clear unresolved native or artifact custody.
 
+A pending worker replacement also remains owned until its acquisition and any
+late release settle. Ending an attempt retires only replacements requested by
+that attempt, not the worker lease shared across attempts. Disposal revokes
+init-owned acquisitions too, while independently releasing an already-held
+worker replacement. Cleanup captures its signal before notifying provider abort
+handlers; a later caller cannot renew it or retry an uncertain release.
+A disposal caller may leave normally when its only remaining work is an
+uncommitted worker acquisition and no acquired resource remains unresolved.
+The acquisition stays owned: init remains blocked, and a real late cleanup
+failure is still reported by the retained owner and subsequent cleanup calls.
+
 A genuine cleanup failure stays primary even if other cleanup later succeeds.
+Provider release failures are recorded when their actual receipts reject, not
+when a later teardown join reaches them.
 An explicit cleanup call may reap retained resources, but cannot retry an
 uncertain lease release or grant old fixtures new authority. There is no
 automatic retry loop. Once `dispose` confirms that no cleanup remains unresolved,

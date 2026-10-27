@@ -355,11 +355,20 @@ class ActDispatch {
         this.dispatchStep(),
         new Promise<never>((_, reject) => {
           const { signal } = accounting;
+          const abort = () => {
+            // AbortSignal.reason is caller data (often a DOMException), not
+            // an agent verdict. Classify through the runtime's own signal and
+            // clock before cache settlement can mistake cancellation for a
+            // failed action and evict the recording at a derived-data gap.
+            let cause: unknown = signal.reason;
+            try { accounting.checkpoint(cause); } catch (error) { cause = error; }
+            reject(cause);
+          };
           if (signal.aborted) {
-            reject(signal.reason as Error);
+            abort();
             return;
           }
-          signal.addEventListener('abort', () => reject(signal.reason as Error), { once: true });
+          signal.addEventListener('abort', abort, { once: true });
         }),
       ]);
     } finally {

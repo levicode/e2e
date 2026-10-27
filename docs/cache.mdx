@@ -58,7 +58,9 @@ A step that took no action records nothing and reports no `write`.
 
 A failing attempt still saves the steps verified before the failure. It
 deletes unverified entries and the replays involved in the failure. A custom store needs a `delete` method for this. Cancelling
-a run leaves the cache unchanged.
+a run leaves the cache unchanged, including when a replay has reached a
+[gap](#limits-and-gaps) and is waiting for a custom executor. An executor
+throwing an error named `AbortError` is not by itself a run cancellation.
 
 <Accordion title="Failures where no model answered">
 An attempt whose only failures are ones where no model answered evicts

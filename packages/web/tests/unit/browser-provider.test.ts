@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { withTimeout, type EngineAttemptContext, type EngineCleanupContext, type EngineFinishInfo, type EngineInitInfo, type EnginePrepareInfo, type OperationContext, type ProviderRecordContext, type ProviderRecording } from 'e2e/engine';
+import { EngineError, withTimeout, type EngineAttemptContext, type EngineCleanupContext, type EngineFinishInfo, type EngineInitInfo, type EnginePrepareInfo, type OperationContext, type ProviderRecordContext, type ProviderRecording } from 'e2e/engine';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 import { web } from '../../src/index.ts';
@@ -1018,4 +1018,216 @@ it('publishes pending lease custody before a provider synchronously re-enters cl
     expect(() => leases.init(initInfo(0, env))).not.toThrow();
     expect(release).toHaveBeenCalledTimes(1);
   } finally { finishRelease(); await starting; }
+});
+
+it.each(['attempt', 'init'] as const)('captures worker cleanup authority before synchronous %s acquire abort notification', async lifetime => {
+  let markedSignal: AbortSignal | undefined; let signalAtAbort: AbortSignal | undefined; let releaseSignal: AbortSignal | undefined;
+  let finishRelease!: () => void; const receipt = new Promise<void>(resolve => { finishRelease = resolve; });
+  let acquisitions = 0; let releases = 0;
+  const cloud: BrowserProvider = {
+    name: 'sync-worker-acquire', scope: 'worker',
+    acquire(request) {
+      if (acquisitions++ === 0) return Promise.resolve({ id: 'prepared', cdpEndpoint: 'wss://prepared.example' });
+      return new Promise(resolve => request.signal.addEventListener('abort', () => {
+        signalAtAbort = markedSignal;
+        resolve({ id: 'late', cdpEndpoint: 'wss://late.example' });
+      }, { once: true }));
+    },
+    async release(_lease, context) { releases++; releaseSignal = context.signal; await receipt; },
+  };
+  const retire = LeasedBrowsers.prototype.retireWorkerAcquisition;
+  vi.spyOn(LeasedBrowsers.prototype, 'retireWorkerAcquisition').mockImplementation(function (this: LeasedBrowsers, context, owner, observer) {
+    markedSignal = context.signal; retire.call(this, context, owner, observer);
+  });
+  if (lifetime === 'init') {
+    const endpoint = LeasedBrowsers.prototype.endpoint;
+    vi.spyOn(LeasedBrowsers.prototype, 'endpoint').mockImplementation(async function (this: LeasedBrowsers, signal, owner) {
+      // Exercise init-owned replacement while preserving real provider acquire/release.
+      await endpoint.call(this, signal, owner); return endpoint.call(this, signal, owner);
+    });
+  }
+  const { runner, env } = await prepared(cloud, 1); const worker = new NativeSurface({ browser: cloud });
+  let starting: Promise<unknown>;
+  try {
+    if (lifetime === 'attempt') {
+      await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.endAttempt(cleanup());
+      await peers[0]!.dropBrowser(); markedSignal = undefined;
+      starting = worker.startAttempt(attempt('a2')).catch((cause: unknown) => cause);
+    } else starting = worker.init(initInfo(0, env)).catch((cause: unknown) => cause);
+    await vi.waitFor(() => expect(acquisitions).toBe(2));
+    const budget = { signal: AbortSignal.abort(), timeoutMs: 0 };
+    await (lifetime === 'attempt' ? worker.endAttempt(budget) : worker.dispose(budget)).catch(() => undefined);
+    await vi.waitFor(() => expect(releases).toBe(1));
+    expect(signalAtAbort).toBeDefined(); expect(releaseSignal).toBe(signalAtAbort); expect(releaseSignal!.aborted).toBe(true);
+    await expect(worker.init(initInfo(0, env))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    finishRelease(); await starting;
+    await worker.dispose(cleanup()); expect(releases).toBe(1);
+  } finally {
+    finishRelease(); await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo());
+  }
+});
+
+it.each(['current lease', 'recorder'] as const)('does not turn pending replacement into permission to hide held %s cleanup timeout', async held => {
+  const cloud = provider(); let stop!: () => void; let releaseCurrent!: () => void;
+  const stopped = new Promise<void>(resolve => { stop = resolve; });
+  const currentReleased = new Promise<void>(resolve => { releaseCurrent = resolve; });
+  cloud.impl.record = async () => ({ startedAt: new Date().toISOString(), async stop() { await stopped; return { url: 'https://fixture.invalid/worker-video.mp4', mediaType: 'video/mp4' }; } });
+  const originalRelease = cloud.impl.release.bind(cloud.impl);
+  cloud.impl.release = async (lease, context) => { await originalRelease(lease, context); if (lease.id === 'lease-1' && held === 'current lease') await currentReleased; };
+  const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  let grant!: () => void; const granted = new Promise<void>(resolve => { grant = resolve; });
+  let requested = false; let opening: Promise<unknown> | undefined;
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1'));
+    if (held === 'current lease') {
+      await worker.endAttempt(cleanup()); await peers.at(-1)!.dropBrowser();
+      await worker.startAttempt(attempt('a2')); await worker.endAttempt(cleanup()); await peers.at(-1)!.dropBrowser();
+    } else await worker.startVideo(operation());
+    const acquire = cloud.impl.acquire.bind(cloud.impl);
+    cloud.impl.acquire = async request => { requested = true; await granted; return acquire(request); };
+    opening = (held === 'current lease' ? worker.startAttempt(attempt('a3'))
+      : (worker as unknown as { leases: LeasedBrowsers }).leases.endpoint(new AbortController().signal, 'attempt')).catch((cause: unknown) => cause);
+    await expect.poll(() => requested).toBe(true);
+    await expect(worker.dispose({ timeoutMs: 20, signal: new AbortController().signal })).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    await expect(worker.init(initInfo(0, env))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  } finally {
+    grant(); stop(); releaseCurrent(); await opening;
+    await worker.dispose(cleanup()); await runner.finish(finishInfo());
+  }
+});
+
+it('does not treat an acquired late worker lease with a pending release receipt as acquisition-only waiting', async () => {
+  const cloud = provider(); const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  let grant!: () => void; const granted = new Promise<void>(resolve => { grant = resolve; });
+  let finishRelease!: () => void; const releaseReceipt = new Promise<void>(resolve => { finishRelease = resolve; });
+  const acquire = cloud.impl.acquire.bind(cloud.impl); const release = cloud.impl.release.bind(cloud.impl);
+  let requested = false; let opening: Promise<unknown> | undefined;
+  cloud.impl.acquire = async request => { requested = true; await granted; return acquire(request); };
+  cloud.impl.release = async (lease, context) => { await release(lease, context); if (lease.id === 'lease-1') await releaseReceipt; };
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.endAttempt(cleanup()); await peers.at(-1)!.dropBrowser();
+    opening = worker.startAttempt(attempt('a2')).catch((cause: unknown) => cause); await expect.poll(() => requested).toBe(true);
+    const disposal = worker.dispose({ timeoutMs: 100, signal: new AbortController().signal });
+    const rejected = expect(disposal).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    grant(); await rejected;
+    expect(cloud.released.map(lease => lease.id)).toEqual(['lease-1']);
+    await expect(worker.init(initInfo(0, env))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  } finally { grant(); finishRelease(); await opening; await worker.dispose(cleanup()); await runner.finish(finishInfo()); }
+});
+
+it('reports a real late release timeout after an acquisition-only dispose caller has left normally', async () => {
+  const cloud = provider(); const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  const primary = new EngineError('OPERATION_TIMEOUT', 'actual late release failed', { retryable: false });
+  let grant!: () => void; const granted = new Promise<void>(resolve => { grant = resolve; });
+  const acquire = cloud.impl.acquire.bind(cloud.impl); const release = cloud.impl.release.bind(cloud.impl);
+  let requested = false; let opening: Promise<unknown> | undefined;
+  cloud.impl.acquire = async request => { requested = true; await granted; return acquire(request); };
+  cloud.impl.release = async (lease, context) => { await release(lease, context); if (lease.id === 'lease-1') throw primary; };
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.endAttempt(cleanup()); await peers.at(-1)!.dropBrowser();
+    opening = worker.startAttempt(attempt('a2')).catch((cause: unknown) => cause); await expect.poll(() => requested).toBe(true);
+    const caller = worker.dispose({ timeoutMs: 20, signal: new AbortController().signal });
+    const owner = (worker as unknown as { disposing?: Promise<void> }).disposing;
+    expect(owner).toBeDefined(); const receipt = owner!.catch((cause: unknown) => cause);
+    await caller; await expect(worker.init(initInfo(0, env))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    grant(); await opening; expect(await receipt).toBe(primary);
+    await expect(worker.dispose(cleanup())).rejects.toBe(primary);
+    await expect(worker.init(initInfo(0, env))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(cloud.released.map(lease => lease.id)).toEqual(['lease-1']);
+  } finally { grant(); await opening; await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo()); }
+});
+
+it('preserves an earlier worker rollback failure while a held recorder fails later', async () => {
+  const cloud = provider(); let rejectStop!: (cause: unknown) => void;
+  const stop = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  cloud.impl.record = async () => ({ startedAt: new Date().toISOString(), stop: () => stop });
+  const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  const primary = new Error('worker rollback failed first'); const secondary = new Error('recorder failed second');
+  let grant!: () => void; const granted = new Promise<void>(resolve => { grant = resolve; });
+  const acquire = cloud.impl.acquire.bind(cloud.impl); const release = cloud.impl.release.bind(cloud.impl);
+  let requested = false; let opening: Promise<unknown> | undefined;
+  cloud.impl.acquire = async request => { requested = true; await granted; return acquire(request); };
+  cloud.impl.release = async (lease, context) => { await release(lease, context); if (lease.id === 'lease-1') throw primary; };
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.startVideo(operation());
+    opening = (worker as unknown as { leases: LeasedBrowsers }).leases.endpoint(new AbortController().signal, 'attempt').catch((cause: unknown) => cause);
+    await expect.poll(() => requested).toBe(true);
+    const disposing = worker.dispose(cleanup()).catch((cause: unknown) => cause);
+    grant(); await expect.poll(() => cloud.released.some(lease => lease.id === 'lease-1')).toBe(true);
+    await new Promise(resolve => setImmediate(resolve)); rejectStop(secondary);
+    const failure = await disposing; expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+    await expect(worker.dispose(cleanup())).rejects.toBe(failure);
+  } finally { grant(); rejectStop(secondary); await opening; await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo()); }
+});
+
+it('observes held-current release failure before a later recorder error while acquisition still waits', async () => {
+  const cloud = provider(); let rejectStop!: (cause: unknown) => void;
+  const stop = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  cloud.impl.record = async () => ({ startedAt: new Date().toISOString(), stop: () => stop });
+  const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  const primary = new Error('held current release failed first'); const secondary = new Error('recorder failed second');
+  let grant!: () => void; const granted = new Promise<void>(resolve => { grant = resolve; });
+  const acquire = cloud.impl.acquire.bind(cloud.impl); const release = cloud.impl.release.bind(cloud.impl);
+  let requested = false; let opening: Promise<unknown> | undefined;
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.endAttempt(cleanup()); await peers.at(-1)!.dropBrowser();
+    await worker.startAttempt(attempt('a2')); await worker.startVideo(operation());
+    cloud.impl.acquire = async request => { requested = true; await granted; return acquire(request); };
+    cloud.impl.release = async (lease, context) => { await release(lease, context); if (lease.id === 'lease-1') throw primary; };
+    opening = (worker as unknown as { leases: LeasedBrowsers }).leases.endpoint(new AbortController().signal, 'attempt').catch((cause: unknown) => cause);
+    await expect.poll(() => requested).toBe(true);
+    const caller = worker.dispose({ timeoutMs: 20, signal: new AbortController().signal }).catch((cause: unknown) => cause);
+    const owner = (worker as unknown as { disposing?: Promise<void> }).disposing;
+    expect(owner).toBeDefined(); const receipt = owner!.catch((cause: unknown) => cause);
+    expect(await caller).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    await expect.poll(() => cloud.released.some(lease => lease.id === 'lease-1')).toBe(true);
+    await new Promise(resolve => setImmediate(resolve)); rejectStop(secondary); grant();
+    const failure = await receipt; expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+    await expect(worker.dispose(cleanup())).rejects.toBe(failure);
+  } finally { grant(); rejectStop(secondary); await opening; await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo()); }
+});
+
+it.each(['same-turn', 'one-reaction', 'same-turn-repeat'] as const)('retirement: current release first without pending acquire (%s)', async order => {
+  const cloud = provider(); let rejectStop!: (cause: unknown) => void; let rejectRelease!: (cause: unknown) => void;
+  const stop = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  const currentRelease = new Promise<void>((_resolve, reject) => { rejectRelease = reject; });
+  cloud.impl.record = async () => ({ startedAt: new Date().toISOString(), stop: () => stop });
+  const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  const primary = new Error('held release first, no acquire'); const secondary = new Error('recorder second, no acquire');
+  const release = cloud.impl.release.bind(cloud.impl); let requested = false;
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.endAttempt(cleanup()); await peers.at(-1)!.dropBrowser();
+    await worker.startAttempt(attempt('a2')); await worker.startVideo(operation());
+    cloud.impl.release = (lease, context) => { if (lease.id !== 'lease-1') return release(lease, context); requested = true; return currentRelease; };
+    const caller = worker.dispose({ timeoutMs: 20, signal: new AbortController().signal }).catch((cause: unknown) => cause);
+    const owner = (worker as unknown as { disposing?: Promise<void> }).disposing;
+    expect(owner).toBeDefined(); const receipt = owner!.catch((cause: unknown) => cause);
+    expect(await caller).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    await expect.poll(() => requested).toBe(true);
+    rejectRelease(primary); if (order === 'one-reaction') await Promise.resolve(); rejectStop(secondary);
+    const failure = await receipt; expect((failure as Error).message).toContain(primary.message); expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+    await expect(worker.dispose(cleanup())).rejects.toBe(failure);
+  } finally { rejectRelease(primary); rejectStop(secondary); await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo()); }
+});
+
+it.each(['same-turn', 'one-reaction', 'same-turn-repeat'] as const)('retirement: attempt release first before recorder (%s)', async order => {
+  const cloud = provider({ scope: 'attempt' }); let rejectStop!: (cause: unknown) => void; let rejectRelease!: (cause: unknown) => void;
+  const stop = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  const currentRelease = new Promise<void>((_resolve, reject) => { rejectRelease = reject; });
+  cloud.impl.record = async () => ({ startedAt: new Date().toISOString(), stop: () => stop });
+  const { runner, env } = await prepared(cloud.impl, 1); const worker = new NativeSurface({ browser: cloud.impl });
+  const primary = new Error('held release first, no acquire'); const secondary = new Error('recorder second, no acquire');
+  const release = cloud.impl.release.bind(cloud.impl); let requested = false;
+  try {
+    await worker.init(initInfo(0, env)); await worker.startAttempt(attempt('a1')); await worker.startVideo(operation());
+    cloud.impl.release = (lease, context) => { if (lease.id !== 'lease-0') return release(lease, context); requested = true; return currentRelease; };
+    const caller = worker.dispose({ timeoutMs: 20, signal: new AbortController().signal }).catch((cause: unknown) => cause);
+    const owner = (worker as unknown as { disposing?: Promise<void> }).disposing;
+    expect(owner).toBeDefined(); const receipt = owner!.catch((cause: unknown) => cause);
+    expect(await caller).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    await expect.poll(() => requested).toBe(true);
+    rejectRelease(primary); if (order === 'one-reaction') await Promise.resolve(); rejectStop(secondary);
+    const failure = await receipt; expect((failure as Error).message).toContain(primary.message); expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+    await expect(worker.dispose(cleanup())).rejects.toBe(failure);
+  } finally { rejectRelease(primary); rejectStop(secondary); await worker.dispose(cleanup()).catch(() => undefined); await runner.finish(finishInfo()); }
 });

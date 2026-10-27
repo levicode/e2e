@@ -314,8 +314,6 @@ interface WorkerLease {
   readonly owned: boolean;
 }
 
-const discard = (): void => undefined;
-
 /**
  * Browsers a provider leases for one target, on both sides of the worker
  * boundary. In the runner, `prepare` leases one per slot, all at once (hosted
@@ -334,6 +332,13 @@ interface PendingAttemptLease {
   cleanupFailure?: unknown;
 }
 
+interface PendingWorkerLease extends PendingAttemptLease {
+  readonly lifetime: 'init' | 'attempt';
+  retired: boolean;
+  lease?: BrowserLease;
+  observeCleanupFailure?: (cause: unknown) => void;
+}
+
 export class LeasedBrowsers {
   readonly scope: BrowserProviderScope;
   /** The provider's name, for messages. */
@@ -350,6 +355,7 @@ export class LeasedBrowsers {
   private attemptRelease: Promise<void> | undefined;
   private attemptAcquisition: PendingAttemptLease | undefined;
   private workerRelease: Promise<void> | undefined;
+  private workerAcquisition: PendingWorkerLease | undefined;
   /** The attempt whose lease is being acquired or held; a lease that arrives for any other attempt is released, not committed. */
   private opened: object | undefined;
   /** This worker's tenure, replaced by `init` and `dispose`; a replacement lease that arrives for an earlier one is released, not committed. */
@@ -456,7 +462,7 @@ export class LeasedBrowsers {
    * the workers `prepare` reported.
    */
   assertCanInit(): void {
-    if (this.attemptAcquisition !== undefined || this.attempt !== undefined || (this.current?.owned === true && this.workerRelease !== undefined)) throw invalidState('Provider cleanup remains unresolved');
+    if (this.attemptAcquisition !== undefined || this.workerAcquisition !== undefined || this.attempt !== undefined || (this.current?.owned === true && this.workerRelease !== undefined)) throw invalidState('Provider cleanup remains unresolved');
   }
 
   init(info: EngineInitInfo): void {
@@ -499,12 +505,13 @@ export class LeasedBrowsers {
    * the slot's lease the first time, and a replacement the worker leases
    * itself every time after, since the connection only asks again once the
    * browser it had dropped. A dead lease is released by the side that
-   * acquired it: the worker here, best effort, or the runner in `finish`. A
+   * acquired it: the worker here or the runner in `finish`. A failed worker
+   * release remains owned and blocks reuse. A
    * replacement that arrives once the attempt was cancelled or the worker
    * disposed is given straight back and never committed.
    */
-  async endpoint(signal: AbortSignal): Promise<string> {
-    if (this.workerRelease !== undefined) throw invalidState('The provider worker lease is retiring');
+  async endpoint(signal: AbortSignal, lifetime: 'init' | 'attempt' = 'init'): Promise<string> {
+    if (this.workerRelease !== undefined || this.workerAcquisition !== undefined) throw invalidState('The provider worker lease is retiring');
     const run = this.requireRun();
     const previous = this.current;
     if (previous !== undefined && !this.attached) {
@@ -512,15 +519,35 @@ export class LeasedBrowsers {
       return previous.lease.cdpEndpoint;
     }
     const { tenure } = this;
-    const lease = await this.acquire({ runId: run.runId, targetName: run.targetName, slot: run.slot, slots: run.slots, env: run.env, signal, log: run.log });
-    if (signal.aborted || this.tenure !== tenure) {
-      await this.provider.release(lease, this.releaseContext(run, signal)).catch(discard);
-      throw new EngineError('CANCELLED', `browser lease from "${this.provider.name}" arrived after the worker gave up; released`, { retryable: false });
-    }
-    this.current = { lease, owned: true };
-    this.attached = true;
-    if (previous?.owned === true) await this.provider.release(previous.lease, this.releaseContext(run, signal)).catch(discard);
-    return lease.cdpEndpoint;
+    let resolve!: (lease: BrowserLease) => void;
+    let reject!: (cause: unknown) => void;
+    const work = new Promise<BrowserLease>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
+    const acquisition: PendingWorkerLease = { lifetime, retired: false, work, cleanup: work.then(() => undefined, () => {
+      if (acquisition.cleanupFailure !== undefined) throw acquisition.cleanupFailure;
+    }).then(() => {
+      if (this.workerAcquisition === acquisition) this.workerAcquisition = undefined;
+    }) };
+    // Publish exact custody before acquire/release can synchronously re-enter cleanup.
+    this.workerAcquisition = acquisition;
+    void acquisition.cleanup.catch(() => {});
+    const releaseOwned = (lease: BrowserLease) => this.release(lease, acquisition.cleanupSignal ?? signal, cause => {
+      acquisition.cleanupFailure ??= cause;
+      acquisition.observeCleanupFailure?.(acquisition.cleanupFailure);
+    }, run);
+    const acquireOwned = async () => {
+      const lease = await this.acquire({ runId: run.runId, targetName: run.targetName, slot: run.slot, slots: run.slots, env: run.env, signal, log: run.log });
+      acquisition.lease = lease;
+      if (signal.aborted || this.tenure !== tenure || acquisition.retired) {
+        await releaseOwned(lease);
+        throw new EngineError('CANCELLED', `browser lease from "${this.provider.name}" arrived after the worker gave up; released`, { retryable: false });
+      }
+      this.current = { lease, owned: true };
+      this.attached = true;
+      if (previous?.owned === true) await releaseOwned(previous.lease);
+      return lease;
+    };
+    void acquireOwned().then(resolve, reject);
+    return (await acquisition.work).cdpEndpoint;
   }
 
   /**
@@ -570,8 +597,32 @@ export class LeasedBrowsers {
     return acquisition.work;
   }
 
+  /** No acquired worker resource is hidden behind this pending acquisition. */
+  hasOnlyPendingWorkerAcquisition(): boolean {
+    const acquisition = this.workerAcquisition;
+    return acquisition !== undefined && acquisition.lease === undefined && acquisition.cleanupFailure === undefined
+      && this.current?.owned !== true && this.attempt === undefined && this.attemptAcquisition === undefined;
+  }
+
+  /** Mark-only: capture cleanup authority before abort handlers can return a lease. */
+  retireWorkerAcquisition(context: EngineCleanupContext, lifetime?: 'attempt', observeFailure?: (cause: unknown) => void): void {
+    const acquisition = this.workerAcquisition;
+    if (acquisition === undefined || (lifetime !== undefined && acquisition.lifetime !== lifetime)) return;
+    acquisition.retired = true; acquisition.cleanupSignal ??= context.signal;
+    if (observeFailure !== undefined) acquisition.observeCleanupFailure ??= observeFailure;
+    if (acquisition.cleanupFailure !== undefined) acquisition.observeCleanupFailure?.(acquisition.cleanupFailure);
+  }
+
   /** Releases the attempt's lease, when one was granted; idempotent, and safe after a failed `startAttempt`. */
   endAttempt(context: EngineCleanupContext): Promise<void> {
+    if (this.scope === 'worker') {
+      const acquisition = this.workerAcquisition;
+      if (acquisition?.lifetime !== 'attempt') return Promise.resolve();
+      this.retireWorkerAcquisition(context, 'attempt');
+      // A committed worker lease spans attempts; only this attempt's pending
+      // replacement/rollback belongs to its end hook.
+      return acquisition.cleanup;
+    }
     this.opened = undefined;
     if (this.attemptRelease !== undefined) return this.attemptRelease;
     const acquisition = this.attemptAcquisition;
@@ -580,26 +631,51 @@ export class LeasedBrowsers {
     const release = async () => {
       if (acquisition !== undefined) await acquisition.cleanup;
       if (lease === undefined) return;
-      await this.release(lease, context);
+      await this.release(lease, context.signal);
       if (this.attempt === lease) this.attempt = undefined;
     };
-    this.attemptRelease = release();
-    void this.attemptRelease.catch(() => {});
-    return this.attemptRelease;
+    let resolve!: () => void; let reject!: (cause: unknown) => void;
+    const owned = new Promise<void>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
+    // Provider release may synchronously re-enter this cleanup hook.
+    this.attemptRelease = owned;
+    void owned.catch(() => {});
+    void release().then(resolve, reject);
+    return owned;
   }
 
   /** Releases only the worker-owned replacement; caches failure without retrying an uncertain release. */
-  dispose(context: EngineCleanupContext): Promise<void> {
+  dispose(context: EngineCleanupContext, observeFailure?: (cause: unknown) => void): Promise<void> {
     this.attached = false;
     this.tenure = {};
     if (this.workerRelease !== undefined) return this.workerRelease;
+    const acquisition = this.workerAcquisition;
+    this.retireWorkerAcquisition(context);
     const current = this.current;
-    if (current === undefined || !current.owned) return Promise.resolve();
-    this.workerRelease = this.release(current.lease, context).then(() => {
+    if (acquisition === undefined && (current === undefined || !current.owned)) return Promise.resolve();
+    let resolve!: () => void; let reject!: (cause: unknown) => void;
+    const owned = new Promise<void>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
+    this.workerRelease = owned;
+    void owned.catch(() => {});
+    let failure: unknown = acquisition?.cleanupFailure;
+    const acquisitionFailure = acquisition?.observeCleanupFailure;
+    const recordFailure = (cause: unknown) => {
+      failure ??= cause;
+      // The worker release owner exists even with no pending acquisition.
+      // Notify its surface at the actual receipt, not the composite join.
+      observeFailure?.(failure);
+      if (acquisitionFailure !== observeFailure) acquisitionFailure?.(failure);
+    };
+    // Both provider release receipts report from the same rejection layer, before
+    // their cleanup/ownership projections can reorder the first real failure.
+    if (acquisition !== undefined) acquisition.observeCleanupFailure = recordFailure;
+    const observe = (work: Promise<void>) => work.catch(cause => { recordFailure(cause); throw cause; });
+    const pending = observe(acquisition?.cleanup ?? Promise.resolve());
+    // Do not serialize billing finalization behind a provider that ignores abort.
+    const releasing = observe(current?.owned === true ? this.release(current.lease, context.signal, recordFailure).then(() => {
       if (this.current === current) this.current = undefined;
-    });
-    void this.workerRelease.catch(() => {});
-    return this.workerRelease;
+    }) : Promise.resolve());
+    void Promise.allSettled([pending, releasing]).then(() => { if (failure !== undefined) reject(failure); else resolve(); });
+    return owned;
   }
 
   /**
@@ -687,13 +763,13 @@ export class LeasedBrowsers {
   }
 
   /** Retains the exact release receipt; the surface bounds callers without losing late proof. */
-  private async release(lease: BrowserLease, budget: EngineCleanupContext): Promise<void> {
-    const run = this.requireRun();
+  private async release(lease: BrowserLease, signal: AbortSignal, observeFailure?: (cause: unknown) => void, run = this.requireRun()): Promise<void> {
     try {
-      await this.provider.release(lease, this.releaseContext(run, budget.signal));
+      await this.provider.release(lease, this.releaseContext(run, signal));
     } catch (cause) {
-      if (cause instanceof EngineError) throw cause;
-      throw new EngineError('ENGINE_FAILURE', `browser provider "${this.provider.name}" could not release browser ${lease.id}: ${message(cause)}`, { retryable: false, cause });
+      const failure = cause instanceof EngineError ? cause : new EngineError('ENGINE_FAILURE', `browser provider "${this.provider.name}" could not release browser ${lease.id}: ${message(cause)}`, { retryable: false, cause });
+      observeFailure?.(failure);
+      throw failure;
     }
   }
 

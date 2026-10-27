@@ -72,3 +72,18 @@ it('retains failed late attempt release and original cleanup signal', async () =
   expect(repeat).toBe(failure);
   expect({ failure: (failure as EngineError | undefined)?.cause, initRejected, originalSignal: release.mock.calls[0]?.[1].signal === budget.signal }).toEqual({ failure: releaseFailure, initRejected: true, originalSignal: true });
 });
+
+it('publishes a single attempt release receipt before provider.release reenters endAttempt', async () => {
+  const released = deferred<void>(); let leases!: LeasedBrowsers; let reentered: Promise<void> | undefined;
+  const release = vi.fn(() => {
+    if (release.mock.calls.length === 1) reentered = leases.endAttempt(cancelled());
+    return released.promise;
+  });
+  leases = new LeasedBrowsers({ name: 'reentrant-attempt-release', scope: 'attempt', acquire: async () => lease('owned'), release });
+  const prepared = await leases.prepare(prepare); leases.init(init(prepared.env ?? {}));
+  await leases.startAttempt(attempt()); await tick();
+  const ending = leases.endAttempt(cancelled());
+  try { expect(release).toHaveBeenCalledTimes(1); expect(reentered).toBe(ending); }
+  finally { released.resolve(); await ending; await reentered; }
+  await leases.endAttempt(cancelled()); expect(release).toHaveBeenCalledTimes(1);
+});
