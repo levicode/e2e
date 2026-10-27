@@ -22,7 +22,7 @@ const count = (value: unknown): number | undefined => typeof value === 'number' 
 /** Extract closed labels only; no substrings, messages, paths, selectors, or opaque identities leave this projection. */
 function reason(value: unknown): string[] {
   if (typeof value !== 'string') return [];
-  const text = value.slice(0, 16_384);
+  const text = value.substring(0, 16_384);
   const facts = [...CODES, ...NATIVE_REASONS].filter(code => text.includes(code));
   if (text.includes('outcome is unknown') || text.includes('action may have committed')) facts.push('unknown-effects');
   if (text.includes('not an input') || text.includes('not editable')) facts.push('unsupported-fill');
@@ -44,30 +44,30 @@ function tool(value: unknown): string | undefined {
 
 /** Bounded closed rows from known fixtures only; called after run, never during execution or settlement. */
 export function actionOutcomeDiagnostics(outcome: unknown): readonly unknown[] {
-  return list(object(outcome)['results'], 256).flatMap(value => {
-    const result = object(value);
+  return list(object(outcome)['results'], 256).flatMap(resultValue => {
+    const result = object(resultValue);
     const title = object(result['test'])['title'];
     const id = typeof title === 'string' && Object.hasOwn(CASES, title) ? CASES[title] : undefined;
     if (id === undefined) return [];
     return [{
       case: id, status: token(result['status'], STATUSES),
-      attempts: list(result['attempts'], 4).map(value => {
-        const attempt = object(value);
+      attempts: list(result['attempts'], 4).map(attemptValue => {
+        const attempt = object(attemptValue);
         return {
           status: token(attempt['status'], STATUSES), cleanup: token(attempt['cleanup'], STATUSES), error: error(attempt['error']),
-          steps: list(attempt['steps'], 32).map(value => {
-            const step = object(value);
+          steps: list(attempt['steps'], 32).map(stepValue => {
+            const step = object(stepValue);
             const cache = object(step['cache']);
             return {
               kind: token(step['kind'], KINDS), api: token(step['api'], APIS), status: token(step['status'], STATUSES), error: error(step['error']),
               durationMs: duration(step['durationMs']), modelCalls: count(object(step['metrics'])['modelCalls']),
               cache: { mode: token(cache['mode'], ['self-finalized', 'agent-concluded', 'missed']), replayedActions: count(cache['replayedActions']), totalActions: count(cache['totalActions']), detail: reason(cache['detail']) },
-              events: list(step['events'], 128).map(value => {
-                const event = object(value);
+              events: list(step['events'], 128).map(eventValue => {
+                const event = object(eventValue);
                 return { durationMs: duration(event['durationMs']), kind: token(event['kind'], KINDS), name: tool(event['name']), status: token(event['status'], STATUSES), code: token(event['code'], CODES), reason: reason(event['detail']) };
               }),
-              turns: list(step['turns'], 32).map(value => {
-                const turn = object(value);
+              turns: list(step['turns'], 32).map(turnValue => {
+                const turn = object(turnValue);
                 return { tools: list(turn['calls'], 16).map(tool), reason: reason(turn['outcome']), image: typeof turn['outcome'] === 'string' && turn['outcome'].includes('"type":"file"') };
               }),
             };
