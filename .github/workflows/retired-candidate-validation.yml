@@ -1,0 +1,131 @@
+name: Post-retirement exact candidate Web and semantic validation
+'on':
+  push:
+    branches:
+    - implement/retired-candidate-validation-ci
+permissions:
+  contents: read
+concurrency:
+  group: retired-candidate-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  web:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: c226f98570dae9ed69a3f5cf42ef6aa29c4053a2
+        path: source
+        persist-credentials: false
+    - name: Assert source SHA, tree and ordinary CI native pin before setup
+      run: 'python3 - <<''PY_PINS''
+
+        import json,pathlib,subprocess
+
+        p=json.loads(pathlib.Path(''recipe/scripts/web-functional/source-reuse-pins.json'').read_text())
+
+        def git(arg):return subprocess.check_output([''git'',''-C'',''source'',''rev-parse'',arg],text=True).strip()
+
+        assert git(''HEAD'')==p[''e2eSource''] and git(''HEAD^{tree}'')==p[''e2eTree'']
+
+        c=json.loads(pathlib.Path(''source/.github/native-candidate.json'').read_text())
+
+        assert c[''commit'']==p[''nativeSource'']
+
+        PY_PINS'
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - name: Verify and download exact prior-run images artifact
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 recipe/scripts/web-functional/reuse-source-artifacts.py images
+    - name: Verify prior-run source identity and image hashes (not new build evidence)
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
+
+        test "$(cat images/native-source.tree)" = 3db554fb7897c6becc6b42d970d448fa44600902
+
+        test "$(cat images/producer-run.id)" = 40434656328
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
+        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
+        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
+        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
+        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - name: Fresh workspace typecheck and all source controls
+      working-directory: source
+      run: 'pnpm --filter @e2e-dev/web exec tsc --noEmit
+
+        node --test scripts/acceptance/candidate-synthetic-evidence.test.ts scripts/acceptance/native-embedded-surface.test.ts'
+    - name: Run unchanged selected full group
+      if: ${{ success() && steps.setup.outcome == 'success' }}
+      run: bash recipe/scripts/web-functional/run.sh "${{ matrix.group }}"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: retired-candidate-${{ matrix.group }}-evidence
+        path: evidence/
+        retention-days: 7
+        if-no-files-found: warn
+    strategy:
+      fail-fast: false
+      matrix:
+        group:
+        - web
+        - semantic
+      max-parallel: 2
+    name: Post-retirement ${{ matrix.group }}
