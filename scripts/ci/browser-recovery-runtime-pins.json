@@ -1,26 +1,26 @@
 {
-  "artifactId": 12752118010,
-  "artifactName": "ci-native-runtime-Native interop allocation uncertainty finite validation-40544356482-1",
-  "artifactSize": 13891549,
-  "artifactDigest": "sha256:156ec759d404c0788c3b639681f91761fa2591ba1dbb745b46a9aa0f8aa40ad3",
-  "manifestSha256": "d66fca0a645408cbd840fba5f927a410ccab4146f3ab9074382b8dd5c20e618f",
+  "artifactId": 12758646262,
+  "artifactName": "ci-native-runtime-Exact navigation fence and event resource retirement-40557778606-1",
+  "artifactSize": 13856091,
+  "artifactDigest": "sha256:244e6ce7386f0d22fac8c190843f9c3180bdfb6b414330a30c62e18071e435d5",
+  "manifestSha256": "7196240898d9352402d740c702ebb858388a6ca9862ffe36af1bebfa8b2d32a1",
   "expected": {
     "source": {
-      "commit": "0460f6bdc043195e72fa697a318691869461f5ee",
-      "tree": "a74ef1b4c5799bd4c0a125a727746feab3d08595"
+      "commit": "fda2a4679293969850b6b369a9702a243bd597e5",
+      "tree": "d9f68bcea1e9433814e9065d09d9e900b3cddabb"
     },
     "repository": "levicode/e2e",
-    "runId": "40544356482",
+    "runId": "40557778606",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf"
+    "nativeCommit": "ff4c3a0db75261f2b083b583a740c3290e5b4a1c"
   },
   "nativeSource": {
-    "commit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
-    "tree": "f7a53c5498970b5e05dffc95e53a080d5324af36"
+    "commit": "ff4c3a0db75261f2b083b583a740c3290e5b4a1c",
+    "tree": "8961a69b41b38d47c7e77fc025958e04eba201bf"
   },
-  "binarySha256": "f25e1f6469d2afd962344c1afd0fd299aee7faff799e4646aa8b807d78fc0d5c",
-  "harnessNative": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
-  "scope": "Exact 74ec ordinary production reuse from 405443; new Node source, finite diagnostic lanes, not full acceptance."
+  "binarySha256": "e5f36d5461587d93ee51b8475d994ab51081f11bfebd1bd2d74587743506639f",
+  "harnessNative": "ff4c3a0db75261f2b083b583a740c3290e5b4a1c",
+  "scope": "Exact ff4c ordinary reuse; diagnostic-only Node stage logs, unchanged reset/restore test2 and budgets."
 }

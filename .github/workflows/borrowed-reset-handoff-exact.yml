@@ -1,0 +1,211 @@
+name: Exact borrowed reset handoff diagnostic
+'on':
+  push:
+    branches:
+    - diagnostic/borrowed-reset-handoff-exact-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: borrowed-reset-handoff-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: ff4c3a0db75261f2b083b583a740c3290e5b4a1c
+  NATIVE_SOURCE_TREE: 8961a69b41b38d47c7e77fc025958e04eba201bf
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  interop-reset-restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Restore exact prior ff4c ordinary artifact
+      timeout-minutes: 4
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        python3 scripts/ci/download-browser-recovery-runtime.py
+
+        '
+    - name: Verify exact prior source compiler host and binary
+      id: verify
+      run: 'set -euo pipefail
+
+        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+      timeout-minutes: 1
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat evidence/borrowed-chrome.path)"
+
+        ldd "$chrome" > evidence/borrowed-chrome-ldd.txt
+
+        ! grep -q ''not found'' evidence/borrowed-chrome-ldd.txt
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > evidence/borrowed-chrome-preflight.html
+        2> evidence/borrowed-chrome-preflight.log
+
+        '
+    - name: Typecheck exact interop source (full units run independently)
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec tsc --noEmit -p tsconfig.interop-check.json
+
+        '
+    - name: Execute exact 2 real interop-reset-restore cases
+      if: ${{ always() && steps.verify.outcome == 'success' && steps.chrome.outcome
+        == 'success' && steps.build.outcome == 'success' }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        pnpm --filter @e2e-dev/web exec vitest list --config vitest.interop-replacement.config.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_COLLECT''
+
+        import json
+
+        r=json.load(open(''evidence/collection.json''));assert len(r)==2,len(r)
+
+        PY_COLLECT
+
+        export E2E_INTEROP_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/receipts"
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run --config vitest.interop-replacement.config.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee evidence/tests.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/tests.exit
+
+        python3 - <<''PY_RESULTS''
+
+        import json,pathlib
+
+        r=json.load(open(''evidence/results.json''));a=[x for t in r[''testResults'']
+        for x in t[''assertionResults'']];counts={k:r[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};json.dump(counts,open(''evidence/counts.json'',''w''),indent=2)
+
+        assert len(a)==r[''numTotalTests'']==2 and r[''numPendingTests'']==0
+
+        receipts=[json.load(open(p)) for p in pathlib.Path(''evidence/receipts'').glob(''*.json'')];assert
+        len(receipts)==2,len(receipts)
+
+        assert r[''numPassedTests'']==2 and r[''numFailedTests'']==0
+
+        assert all(x[''runtime'']==''passed'' and x[''cleanup'']==''passed'' for x
+        in receipts)
+
+        PY_RESULTS
+
+        test "$status" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: interop-reset-restore-real-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '1'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '1'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '1'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'

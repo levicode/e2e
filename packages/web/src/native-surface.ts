@@ -1274,9 +1274,12 @@ export class NativeSurface implements NativeWebSurface {
             if (notice.phase === 'retire') {
               if (retired || notice.contextId !== previous.contextId) throw invalidState('Replacement did not name its exact old Playwright context');
               attempt.pageReady = false;
+              traceBinding('retire-before-close', previous);
               attempt.rawClosing ??= previous.context.close();
-              await attempt.rawClosing; retired = true; check(active);
+              await attempt.rawClosing; retired = true; traceBinding('retire-after-close', previous); check(active);
+              traceBinding('retire-before-response', previous);
               responseStarted = true; await respond({ kind: 'interop-retired' });
+              traceBinding('retire-after-response', previous);
             } else {
               if (!retired || replacement !== undefined) throw invalidState('Replacement creation preceded exact old-context retirement');
               const creating = createPlaywrightContext(previous.browser, options, active).then(value => {
@@ -1291,6 +1294,9 @@ export class NativeSurface implements NativeWebSurface {
               responseStarted = true; await respond({ kind: 'interop-created', contextId: replacement!.contextId, targetId: replacement!.targetId });
             }
           } catch (cause) {
+            if (process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') {
+              console.error('INTEROP_HANDLER_FAILURE', JSON.stringify({ phase: notice.phase, responseStarted, retired, attemptRetired: attempt.retirement.signal.aborted, budgetAborted: active.signal.aborted, timeoutNonPositive: active.timeoutMs <= 0 }));
+            }
             failed(cause);
             if (!responseStarted) {
               // No fresh budget or arbitrary native command: only the still-live
