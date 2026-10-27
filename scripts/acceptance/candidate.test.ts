@@ -218,7 +218,7 @@ for (const mode of ['browser', 'encoder'] as const) test(`${mode} fake-harness o
 test('only semantic faults receive an exclusively created private native phase file', t => {
   const root = fixture(t);
   const inherited = { AGENT_BROWSER_ACCEPTANCE_PHASE_FILE: '/untrusted-inherited-path', AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: '/untrusted-cleanup-path', KEEP: 'yes' };
-  for (const id of [...CANDIDATE_WEB_SUITES.map(suite => suite.id), 'crosscheck-benchmark'].filter(id => id !== 'semantic-faults')) {
+  for (const id of [...CANDIDATE_WEB_SUITES.map(suite => suite.id), 'crosscheck-benchmark'].filter(suiteId => suiteId !== 'semantic-faults')) {
     assert.deepEqual(candidatePhaseEnvironment(id, inherited, root), { KEEP: 'yes' });
     assert.equal(existsSync(join(root, 'semantic-faults.cleanup.jsonl')), false);
   }

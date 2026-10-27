@@ -76,7 +76,7 @@ test('producer packaging cannot omit or misclassify the separate encoder categor
   for (const bad of [undefined, {}, { ...proof, status: 'failed' }, { ...proof, source: {} }, { ...proof, productionBinarySha256: 'c'.repeat(64) },
     { ...proof, browserIdentityRequired: true }, { ...proof, category: 'browser' }, { ...proof, failures: ['failed'] }, { ...proof, required: REQUIRED_ENCODER_CONTRACTS.slice(1) },
     { ...proof, results: proof.results.slice(1) }, { ...proof, results: proof.results.map((row, i) => i ? row : { ...row, ignored: 1 }) },
-    { ...proof, results: proof.results.map((row, i) => i ? row : { ...row, passed: 0 }) }, { ...proof, results: [...proof.results].reverse() }]) {
+    { ...proof, results: proof.results.map((row, i) => i ? row : { ...row, passed: 0 }) }, { ...proof, results: proof.results.toReversed() }]) {
     assert.throws(() => verifyEncoderProducerGate(bad, source, binary));
   }
   const producer = readFileSync(new URL('./candidate-producer.ts', import.meta.url), 'utf8');
