@@ -27,11 +27,11 @@ beforeEach(() => {
     vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
     const peer = new NativeProtocolPeer(config.capabilities, request => {
       if (request.command === 'scope.end' && unknownScopeEnd) return { error: 'browser-failure', effects: 'unknown', scopeState: 'quarantined' };
-      return resources.respond(request, request => {
+      return resources.respond(request, command => {
         // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
-        if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-        if (request.command === 'page.title') return { data: { title: `worker-${worker}` } };
-        if (['scope.configure', 'network.routes.replace'].includes(request.command)) return { data: null };
+        if (command.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
+        if (command.command === 'page.title') return { data: { title: `worker-${worker}` } };
+        if (['scope.configure', 'network.routes.replace'].includes(command.command)) return { data: null };
         return undefined;
       });
     }, { close: () => resources.closeNative() });
