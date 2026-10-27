@@ -22,6 +22,8 @@ beforeEach(() => {
   vi.mocked(connectNativeProcess).mockReset().mockImplementation(async (config, context, onEvent) => {
     const worker = peers.length + 1; let scopes = 0;
     const peer = new NativeProtocolPeer(config.capabilities, request => {
+      // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
+      if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
       if (request.command === 'scope.open') return { data: { identityScope: `worker-${worker}-scope-${++scopes}`, recoveryIdentity: { browser: `browser-${worker}`, context: `context-${worker}-${scopes}`, page: `page-${worker}-${scopes}` } } };
       if (request.command === 'page.title') return { data: { title: `worker-${worker}` } };
       if (request.command === 'scope.end' && unknownScopeEnd) return { error: 'browser-failure', effects: 'unknown', scopeState: 'quarantined' };

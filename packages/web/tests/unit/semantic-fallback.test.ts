@@ -38,6 +38,8 @@ async function nativeFallback(reply: (request: PeerRequest) => PeerOutcome | Pro
   let peer!: NativeProtocolPeer;
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (options, context, onEvent) => {
     peer = new NativeProtocolPeer(options.capabilities, request => {
+      // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
+      if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
       if (request.command === 'scope.open') return { data: {
         identityScope: 'scope', recoveryIdentity: { browser: 'browser', context: 'context', page: 'page' },
       } };
@@ -341,17 +343,22 @@ describe('native fallback adapter ownership', () => {
       const failure: unknown = await surface.observe(operation(), { pixelFallback: true }).catch((cause: unknown) => cause);
       expect(failure).toBeInstanceOf(EngineError);
       expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+      // Settle the automatic terminal close before freezing the no-new-frame oracle.
+      // A cleanup frame is not a fallback retry or application admission.
+      await vi.waitFor(() => expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1));
       const frames = peer.frames.length;
       await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
       expect(peer.frames).toHaveLength(frames);
-      expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe']);
+      expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe', 'recording.finalized.collect']);
+      const [observation, collection] = peer.requests.slice(start);
+      expect(collection?.args).toEqual({ identityScope: 'scope', failedOperationSeq: observation!.operationSeq });
     } finally {
       surfaces.delete(surface);
       // terminal.close/1 permits confirmed cleanup, never application reuse or
       // relabeling the original ACTION_MAY_HAVE_COMMITTED outcome as success.
       await expect(surface.dispose({ signal: operation().signal, timeoutMs: 1000 })).resolves.toBeUndefined();
       expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
-      expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe']);
+      expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe', 'recording.finalized.collect']);
     }
   });
 });

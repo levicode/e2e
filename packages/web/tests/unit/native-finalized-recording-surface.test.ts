@@ -31,7 +31,7 @@ afterEach(async () => {
 function connectPeer(peer: FinalizedRecordingPeer): void {
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, operation, event) => peer.connect(config.capabilities, event, operation));
 }
-async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined>, options: ConstructorParameters<typeof NativeSurface>[0] = {}, replacePreparedWorker = false) {
+async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined>, options: ConstructorParameters<typeof NativeSurface>[0] = {}, replacePreparedWorker = false, startRecording = true) {
   let peer = new FinalizedRecordingPeer(override); connectPeer(peer);
   const surface = new NativeSurface(options); surfaces.push(surface);
   const prepared = await surface.prepare({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, slots: 1, signal: artifactOperation().signal, log: () => {} });
@@ -44,7 +44,7 @@ async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | 
     peer = new FinalizedRecordingPeer(override); connectPeer(peer);
   }
   await surface.startAttempt({ attemptId: 'attempt', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace });
-  await surface.startVideo(artifactOperation());
+  if (startRecording) await surface.startVideo(artifactOperation());
   return { peer, surface };
 }
 it('does not replace the reset failure or pretend empty success when frozen collection is refused', async () => {
@@ -177,4 +177,56 @@ it('terminal collection preserves first read-refusal after later deadline instea
   const saved = await surface.stopVideo(artifactOperation());
   expect(first).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native finalized recording could not be collected' });
   expect(saved).toHaveLength(1);
+});
+
+// A legal empty terminal-artifact lane is not a failed native close receipt.
+// This peer proves framed adapter/lease ownership, not a producer or Chromium.
+it.each([
+  { startRecording: false, collection: 'unavailable' },
+  { startRecording: true, collection: 'unavailable' },
+  { startRecording: false, collection: 'held' },
+  { startRecording: true, collection: 'held' },
+] as const)('releases the exact worker after confirmed close with $collection collection (recorder=$startRecording)', async ({ startRecording, collection }) => {
+  let unblock!: () => void;
+  const held = new Promise<void>(resolve => { unblock = resolve; });
+  const release = vi.fn(async (_lease: { id: string }) => {});
+  let acquisitions = 0;
+  const acquire = vi.fn(async () => ({ id: `lease-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }));
+  const { peer, surface } = await fixture(async request => {
+    if (request.command === 'page.title') {
+      peer.failedSequence = request.operationSeq;
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined' };
+    }
+    if (request.command === 'recording.finalized.collect') {
+      if (collection === 'held') await held;
+      return { ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    }
+    return undefined;
+  }, { browser: { name: 'finalized-provider', scope: 'worker', acquire, release } }, true, startRecording);
+  try {
+    const failure = await surface.command('page.title', {}, artifactOperation()).catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+    await vi.waitFor(() => expect(peer.requests.filter(request => request.command === 'recording.finalized.collect')).toHaveLength(1));
+    const requests = peer.requests.length;
+    await expect(surface.command('page.title', {}, artifactOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(peer.requests).toHaveLength(requests);
+    if (collection === 'unavailable') {
+      // Absence is an artifact failure, never successful [] and never cleanup poison.
+      await expect(surface.stopVideo(artifactOperation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    }
+    await expect(surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 })).resolves.toBeUndefined();
+    expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'lease-2' }), expect.any(Object));
+    expect(acquire).toHaveBeenCalledTimes(2);
+    const [failed] = peer.requests.filter(request => request.command === 'page.title');
+    expect(peer.requests.filter(request => request.command.startsWith('recording.finalized.')).map(request => [request.command, request.args])).toEqual([
+      ['recording.finalized.collect', { identityScope: peer.scope, failedOperationSeq: failed!.operationSeq }],
+    ]);
+    expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+    unblock();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    await surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 });
+    expect(peer.requests).toHaveLength(requests);
+    expect(release).toHaveBeenCalledTimes(1);
+  } finally { unblock(); }
 });

@@ -47,6 +47,8 @@ function installNativePeers(): void {
     };
     owner.peer = new NativeProtocolPeer(options.capabilities, request => {
       const command = request.command;
+      // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
+      if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
       if (command === 'scope.open') {
         if (failOpen) return { error: 'browser-failure' };
         owner.scope = `scope-${++nextScope}`;

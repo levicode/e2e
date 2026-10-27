@@ -37,6 +37,8 @@ async function nativeLifecycle(options: ConstructorParameters<typeof NativeSurfa
     peer = new NativeProtocolPeer(config.capabilities, async request => {
       const outcome = await override?.(request);
       if (outcome !== undefined) return outcome;
+      // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
+      if (request.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
       if (request.command === 'scope.open') return { data: { identityScope: `scope-${++scopes}`, recoveryIdentity: { browser: 'browser', context: `context-${scopes}`, page: `page-${scopes}` } } };
       if (request.command === 'page.title') return { data: { title: 'clean' } };
       return { data: null };
