@@ -1,0 +1,90 @@
+name: Exact 256 focused selector module recovery
+'on':
+  push:
+    branches:
+    - implement/native-focused-256-module-recovery-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: native-focused-256-module-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 7efa360664285c14c3aa04d11c4f7d470d0cb10a
+  NATIVE_SOURCE_TREE: 743c2ec499f9b26a793e19c77515810972db43d7
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  native-focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: '12748651507'
+        path: native-harness
+        merge-multiple: true
+        run-id: '40532721646'
+        github-token: ${{ github.token }}
+    - name: Verify exact previous-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: 66b27ee11829be432b3fc2bc3c27b27d928cb0c7a3314883a4c2f97c23d47f5d
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "40532721646"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Run all original 256 exact cases after actual-list module correction
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        python3 scripts/ci/run-optional-observe-tests.py native-harness/agent-browser-tests
+        scripts/ci/optional-observe-inventory.json evidence/native-focused
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: native-focused-256-module-recovery-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7

@@ -257,9 +257,9 @@
     "native::client_observation::tests::historical_content_names_reject_invalid_proofs_and_bound_observation_only",
     "native::client_observation::tests::ax_omitted_listitem_content_facts_decline_without_weakening_validation",
     "native::client_observation::tests::suppressed_listitem_content_facts_reach_author_graph_compaction",
-    "native::client_session::exact_retention_tests::private_replacement_decisions_are_exact_typed_and_sequential",
-    "native::client_session::exact_retention_tests::private_replacement_decisions_cannot_acquire_scope_or_unstarted_authority",
-    "native::client_session::exact_retention_tests::private_created_metadata_is_bounded_and_cannot_smuggle_commands"
+    "native::client_session::interop_replacement_decision_tests::private_replacement_decisions_are_exact_typed_and_sequential",
+    "native::client_session::interop_replacement_decision_tests::private_replacement_decisions_cannot_acquire_scope_or_unstarted_authority",
+    "native::client_session::interop_replacement_decision_tests::private_created_metadata_is_bounded_and_cannot_smuggle_commands"
   ],
   "groups": {
     "original174": {
