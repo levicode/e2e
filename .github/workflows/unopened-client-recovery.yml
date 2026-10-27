@@ -1,0 +1,143 @@
+name: Unopened-client reuse and metadata source guards
+'on':
+  push:
+    branches:
+    - implement/unopened-client-recovery-ci
+permissions:
+  contents: read
+concurrency:
+  group: unopened-client-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 496037c4b4b0bb75d3d13186603a7c9e5eaa576d
+  NATIVE_SOURCE_TREE: 368c71da0de2ae94f9677a62f0d38fcbad18c576
+jobs:
+  metadata-fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native-source
+        persist-credentials: false
+        fetch-depth: 3
+    - name: Run exact-source existing scripted metadata fixtures
+      run: "set -euo pipefail\ntest \"$(git -C native-source rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\"\ntest \"\
+        $(git -C native-source rev-parse HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git -C native-source\
+        \ status --porcelain)\"\nfor fixture in author-metadata locator-projection query-matcher visibility fresh-fields;\
+        \ do\n node \"native-source/cli/tests/fixtures/native-observation-$fixture.cjs\" 2>&1 | tee \"evidence/$fixture.log\"\
+        \ndone\nsha256sum native-source/cli/src/native/client_observation.rs native-source/cli/tests/fixtures/native-observation-{author-metadata,locator-projection,query-matcher,visibility}.cjs\
+        \ > evidence/fixture-source.sha256\n\nexport SELECTOR_NATIVE_ROOT=\"$GITHUB_WORKSPACE/native-source\"\n\
+        export SELECTOR_BASE=2b9e0a00ee6466e55c52dacdba1d4f1bece2e2aa\nexport SELECTOR_BASELINE_FILE=\"$RUNNER_TEMP/selector-baseline.rs\"\
+        \nexport SELECTOR_PARSER_BIN=\"$RUNNER_TEMP/selector-parser\"\ngit -C native-source merge-base --is-ancestor\
+        \ \"$SELECTOR_BASE\" HEAD\ngit -C native-source show \"$SELECTOR_BASE:cli/src/native/client_observation.rs\"\
+        \ > \"$SELECTOR_BASELINE_FILE\"\nprintf '%s  %s\\n' 26c18f70cf57c4bf6ac71d41f82e054fa332008ce28a9aba8a3556db36a32fab\
+        \ \"$SELECTOR_BASELINE_FILE\" | sha256sum --check\npython3 - <<'PY_PARSER'\nimport os,json\nfrom pathlib\
+        \ import Path\nsource=Path(os.environ['SELECTOR_NATIVE_ROOT'])/'cli/src/native/client_observation/selector.rs'\n\
+        wrapper='#[path = '+json.dumps(str(source))+']\\nmod selector;\\nfn main() { for input in std::env::args().skip(1)\
+        \ { match selector::parse(&input) { Ok(parts) => { for part in parts { print!(\"{}:\", part.engine); for\
+        \ byte in part.body.as_bytes() { print!(\"{byte:02x}\"); } print!(\";\"); } println!(); }, Err(error) =>\
+        \ println!(\"!{error:?}\"), } } }\\n'\n(Path(os.environ['RUNNER_TEMP'])/'selector-parser.rs').write_text(wrapper)\n\
+        PY_PARSER\nrustup toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > evidence/parser-rustc.txt\n\
+        rustc +1.99.1 --edition 2021 \"$RUNNER_TEMP/selector-parser.rs\" -o \"$SELECTOR_PARSER_BIN\"\nsha256sum\
+        \ \"$SELECTOR_PARSER_BIN\" native-source/cli/src/native/client_observation/selector.rs scripts/ci/run-selector-matcher-fixture.mjs\
+        \ > evidence/selector-source.sha256\nnode scripts/ci/run-selector-matcher-fixture.mjs 2>&1 | tee evidence/selector-matcher.log\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: i04-scripted-metadata-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  adapter-units:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+    - name: Full Web unit and source type checks
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec tsc --noEmit
+
+        pnpm exec oxlint packages/e2e/src/expect/async.ts packages/e2e/src/locator/engine.ts packages/e2e/tests/helpers/action-outcome-diagnostics.ts
+        packages/e2e/tests/integration/web-selector-chains.test.ts packages/e2e/tests/unit/action-outcome-diagnostics.test.ts
+        packages/e2e/tests/unit/locator-field-assertions.test.ts packages/web/src/native-surface.ts packages/web/src/native/browser-channel.ts
+        packages/web/src/native/protocol.ts packages/web/tests/unit/native-finalized-recording-surface.test.ts packages/web/tests/unit/native-selector-errors.test.ts
+        packages/web/tests/unit/native-worker-reinit.test.ts
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/web-units.json"
+        2>&1 | tee evidence/web-units.log
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: optional-observe-adapter-unit-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7

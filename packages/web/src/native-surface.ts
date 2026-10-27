@@ -246,7 +246,11 @@ export class NativeSurface implements NativeWebSurface {
     } catch (cause) {
       // A healthy, fully opened scope rejected only by local policy still needs scope.end.
       // The existing retirement owner fences business work and preserves cleanup failures.
-      if (policyRejectedClient !== undefined && this.client === policyRejectedClient && this.attempt === attempt) {
+      if (!this.persistent && openDispatched && !attemptLeaseAcquired && attempt.scope === '' && isNativeNotDispatched(cause) && this.attempt === attempt) {
+        // A confirmed usable, undispatched open owns no scope to retire.
+        // Keep the exact healthy client, not merely a matching policy error code.
+        attempt.credentials = undefined; this.attempt = undefined;
+      } else if (policyRejectedClient !== undefined && this.client === policyRejectedClient && this.attempt === attempt) {
         // Keep the unpublished owner for endAttempt's caller-provided cleanup budget.
         attempt.retirement.abort();
       }
