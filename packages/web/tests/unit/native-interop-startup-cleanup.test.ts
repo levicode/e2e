@@ -229,7 +229,11 @@ describe('prepared interop custody survives a later clean rejection', () => {
     await surface.endAttempt({ ...cleanup(), timeoutMs: 1 });
     await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
     peer.nativeJoin.resolve(); await tick();
-    expect(peer.calls).not.toContain('pw-close');
+    // A published PW client must disconnect before an opening receipt that may
+    // itself need that disconnect can settle. Calling close is not its receipt.
+    await expect.poll(() => peer.calls.includes('pw-close')).toBe(true);
+    expect(peer.calls.filter(call => call === 'pw-close')).toHaveLength(1);
+    expect(peer.resources()).toEqual({ prepared: false, contexts: 1, connected: true });
     let disposed = false;
     const closing = surface.dispose(cleanup()); void closing.then(() => { disposed = true; });
     peer.creationReturn.resolve();
