@@ -1,8 +1,8 @@
-name: Exact fixture and selector recovery
+name: Exact fixture and selector mechanical repair
 'on':
   push:
     branches:
-    - implement/exact-fixture-selector-recovery-ci
+    - implement/exact-fixture-selector-mechanical-ci
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -91,74 +91,7 @@ jobs:
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: always()
       with:
-        name: recovery-optional-observe-adapter-unit-evidence
-        path: evidence/
-        if-no-files-found: error
-        retention-days: 7
-  core-checks:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-      with:
-        node-version: 24
-    - name: Capture exact recipe source and reject unfilled pins
-      run: 'set -euo pipefail
-
-        mkdir -p evidence
-
-        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
-
-        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
-
-        test -z "$(git status --porcelain --untracked-files=no)"
-
-        git rev-parse HEAD > evidence/e2e-source.sha
-
-        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
-
-        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
-
-        node --version > evidence/node.version
-
-        node --input-type=module -e ''import fs from "node:fs";import assert from
-        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
-
-        '
-    - run: pnpm install --frozen-lockfile
-    - name: Build actual public core and web adapter
-      run: 'pnpm --filter e2e run build
-
-        pnpm --filter @e2e-dev/web run build'
-    - name: Core complete source typecheck and unit tests
-      run: 'set -euo pipefail
-
-        pnpm --filter e2e exec tsc --noEmit 2>&1 | tee evidence/core-typecheck.log
-
-        pnpm --filter e2e exec vitest run tests/unit --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/core-units.json" 2>&1 | tee
-        evidence/core-units.log'
-    - name: Exact package inventory parser 11 regression tests
-      run: 'set -euo pipefail
-
-        node --experimental-transform-types --test --test-reporter=tap scripts/acceptance/package-inventory.test.ts
-        scripts/acceptance/bundle.test.ts 2>&1 | tee evidence/package-inventory-tests.tap
-
-        grep -qx ''# tests 11'' evidence/package-inventory-tests.tap
-
-        grep -qx ''# pass 11'' evidence/package-inventory-tests.tap
-
-        grep -qx ''# fail 0'' evidence/package-inventory-tests.tap
-
-        '
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      if: always()
-      with:
-        name: recovery-optional-observe-core-checks
+        name: mechanical-recovery-optional-observe-adapter-unit-evidence
         path: evidence/
         if-no-files-found: error
         retention-days: 7
@@ -168,6 +101,12 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
         persist-credentials: false
     - name: Capture exact recovery source
       run: 'mkdir -p evidence
@@ -214,6 +153,14 @@ jobs:
     - name: Verify binary and run all 174 exact tests
       run: 'set -euo pipefail
 
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test -z "$(git -C native status --porcelain)"
+
+        test -f native/cli/Cargo.toml
+
         python3 - <<''PY_VERIFY''
 
         import pathlib,hashlib,os
@@ -252,7 +199,7 @@ jobs:
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: always()
       with:
-        name: recovery-native174-evidence
+        name: mechanical-recovery-native174-evidence
         path: evidence/
         if-no-files-found: error
         retention-days: 7

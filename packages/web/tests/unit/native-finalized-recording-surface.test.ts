@@ -218,7 +218,7 @@ it.each([
     expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     expect(release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'lease-2' }), expect.any(Object));
     expect(acquire).toHaveBeenCalledTimes(2);
-    const [failed] = peer.requests.filter(request => request.command === 'page.title');
+    const failed = peer.requests.find(request => request.command === 'page.title');
     expect(peer.requests.filter(request => request.command.startsWith('recording.finalized.')).map(request => [request.command, request.args])).toEqual([
       ['recording.finalized.collect', { identityScope: peer.scope, failedOperationSeq: failed!.operationSeq }],
     ]);
