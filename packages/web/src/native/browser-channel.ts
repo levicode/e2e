@@ -62,7 +62,7 @@ export class BrowserChannel {
     }
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
     const result = await this.client.request(name, { ...(correlation?.args ?? args), identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
-    if (name === 'download.release' && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
+    if ((name === 'download.release' || name === 'download.metadata' || name === 'download.read') && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
     if ((name === 'download.release' || name === 'download.unsubscribe') && !result.ok
       && result.error?.code === 'scope-unavailable' && result.effects === 'not-dispatched' && result.scopeState === 'usable') {
       // Native scope replacement closes admission before publishing its owner. Its
