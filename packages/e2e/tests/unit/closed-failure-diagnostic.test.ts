@@ -32,3 +32,53 @@ describe('closed integration failure diagnostics', () => {
     expect(facts.attempts[0].cleanup).toBe('other');
   });
 });
+
+describe('first lifecycle failure provenance', () => {
+  it('distinguishes a completed app.open from the direct read that sees a retired session', () => {
+    const facts = JSON.parse(closedFailureDiagnostic([{
+      error: { code: 'APP_NOT_OPEN', phase: 'body', message: 'The native browser session is not available' },
+      cleanup: 'failed', secondaryErrors: [{ code: 'ENGINE_FAILURE', phase: 'cleanup', message: 'The native browser did not confirm scope closure' }],
+      steps: [{ index: 0, api: 'app.open', source: { line: 39 }, status: 'passed', durationMs: 321 }],
+    }]));
+    expect(facts.attempts[0]).toEqual({
+      error: { code: 'APP_NOT_OPEN', phase: 'body', origin: 'client-session-unavailable' },
+      cleanup: 'failed', secondaryErrors: [{ code: 'ENGINE_FAILURE', phase: 'cleanup', origin: 'close-unconfirmed' }],
+      failedSteps: [], lastCompletedStep: { index: 0, api: 'app.open', line: 39, durationMs: 321 },
+    });
+  });
+
+  it('recognizes only exact fixed lifecycle messages or the exact first stack line', () => {
+    const raw = 'secret-value-and-url';
+    const facts = JSON.parse(closedFailureDiagnostic([
+      { error: { code: 'APP_NOT_OPEN', phase: 'launch', message: raw, stack: `EngineError: An attempt is active or its provider recording cleanup is unresolved\n${raw}` }, cleanup: 'complete', secondaryErrors: [], steps: [] },
+      { error: { code: 'APP_NOT_OPEN', phase: 'body', message: `The native browser session is not available ${raw}`, stack: `${raw}\nEngineError: The native browser session is not available\n` }, cleanup: 'complete', secondaryErrors: [],
+        steps: [{ index: 0, api: raw, source: { line: 1 }, status: 'passed', durationMs: 2 }] },
+    ]));
+    expect(facts.attempts[0].error.origin).toBe('attempt-cleanup-unresolved');
+    expect(facts.attempts[1].error.origin).toBeUndefined();
+    expect(facts.attempts[1].lastCompletedStep.api).toBe('other');
+    expect(JSON.stringify(facts)).not.toContain(raw);
+  });
+});
+
+describe('closed numeric diagnostic facts', () => {
+  it.each([NaN, Infinity, -Infinity, { toJSON() { throw new Error('untrusted object must never serialize'); } }])('refuses non-finite or nonnumeric step facts (%#)', (raw) => {
+    const step = { index: raw as number, api: 'app.open', source: { line: raw as number }, durationMs: raw as number };
+    const facts = JSON.parse(closedFailureDiagnostic([{
+      cleanup: 'complete', secondaryErrors: [], steps: [{ ...step, status: 'passed' }, { ...step, status: 'failed' }],
+    }]));
+    expect(facts.attempts[0].lastCompletedStep).toEqual({ index: 'unknown', api: 'app.open', line: 'unknown', durationMs: 'unknown' });
+    expect(facts.attempts[0].failedSteps).toEqual([{ index: 'unknown', line: 'unknown', durationMs: 'unknown' }]);
+  });
+
+  it('preserves finite numbers and the absence of optional source lines', () => {
+    const facts = JSON.parse(closedFailureDiagnostic([{
+      cleanup: 'complete', secondaryErrors: [], steps: [
+        { index: 0, api: 'app.open', status: 'passed', durationMs: 1.25 },
+        { index: 1, source: { line: 42 }, status: 'failed', durationMs: 0 },
+      ],
+    }]));
+    expect(facts.attempts[0].lastCompletedStep).toEqual({ index: 0, api: 'app.open', durationMs: 1.25 });
+    expect(facts.attempts[0].failedSteps).toEqual([{ index: 1, line: 42, durationMs: 0 }]);
+  });
+});

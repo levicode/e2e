@@ -57,7 +57,7 @@ def safe_diagnostic(value):
     return value
 
 def project_output(path):
-    result = {"activation": [], "phases": [], "counts": [], "rejectedDiagnosticRows": 0, "oversizeLines": 0,
+    result = {"panicSites": [], "activation": [], "phases": [], "counts": [], "rejectedDiagnosticRows": 0, "oversizeLines": 0,
               "webSocket": {"closeReported": False, "errorReported": False, "closeReports": 0, "errorReports": 0, "observations": [], "observationsTruncated": False}}
     with path.open("r", encoding="utf-8", errors="replace") as source:
         while True:
@@ -69,6 +69,10 @@ def project_output(path):
                 while line and not line.endswith("\n"):
                     line = source.readline(16385)
                 continue
+            # Preserve only repository source locations, never panic message/value.
+            match = re.fullmatch(r"thread '[^\r\n]{1,512}' (?:\(\d{1,12}\) )?panicked at (src/native/[a-z_]{1,100}\.rs):([0-9]{1,7}):([0-9]{1,5}):\n?", line)
+            if match and len(result["panicSites"]) < 8:
+                result["panicSites"].append({"file": match.group(1), "line": int(match.group(2)), "column": int(match.group(3))})
             # Existing debug prints arbitrary close reasons/errors. Retain only
             # occurrence facts, not the reason, error string, or inferred cause.
             for marker, flag, counter in [("[cdp] WebSocket Close:", "closeReported", "closeReports"), ("[cdp] WebSocket Error:", "errorReported", "errorReports")]:
