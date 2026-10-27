@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { exactRecoveryTicketReady } from '../helpers/native-disconnect.ts';
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { OperationContext } from 'e2e/engine';
@@ -64,6 +65,40 @@ describe('negotiated disconnected-owner recovery', () => {
       { ...message, recovery: { version: 1, identityScope: '' } },
       { ...message, recovery: { version: 1, identityScope: scope, timeoutMs: 5000 } },
     ]) expect(() => serverMessage(invalid, capabilities)).toThrow(NativeFrameError);
+  });
+
+  it('observes exact recovery when its receipt precedes and suppresses the ordinary disconnect event', async () => {
+    const handler = vi.fn(); const fixture = await opened(capabilities, handler);
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(false);
+    fixture.client.callbackCheckpoint();
+    const action = fixture.client.request('session.environment', { identityScope: scope }, context());
+    fixture.send(fixture.unknown(fixture.requests.at(-1)!));
+    expect(await action).toMatchObject({ ok: false, effects: 'unknown', scopeState: 'quarantined' });
+    fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } });
+    await Promise.resolve();
+    expect(handler).not.toHaveBeenCalled();
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(true);
+    expect(exactRecoveryTicketReady(fixture.client, 'other-owner')).toBe(false);
+    expect(() => fixture.client.callbackCheckpoint()).toThrow(); // An old ticket cannot satisfy a new fault injection.
+    expect(fixture.requests.map(request => request['type'])).toEqual(['hello', 'request']);
+    await close(fixture);
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(false);
+  });
+
+  it('never treats a claimed ticket or a failed client as disconnect readiness', async () => {
+    const fixture = await opened();
+    const action = fixture.client.request('session.environment', { identityScope: scope }, context());
+    fixture.send(fixture.unknown(fixture.requests.at(-1)!)); await action;
+    const checkpoint = fixture.client.reconnectCheckpoint(scope);
+    const recovering = fixture.client.request('scope.reconnect', { identityScope: scope }, context(), checkpoint);
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(false);
+    fixture.send(fixture.result(fixture.requests.at(-1)!)); await recovering;
+    fixture.client.retireCallbacks(checkpoint, 'scope-reconnected'); await close(fixture);
+    const failed = await opened();
+    const pending = failed.client.request('session.environment', { identityScope: scope }, context());
+    failed.send(failed.unknown(failed.requests.at(-1)!)); await pending;
+    failed.client.invalidate();
+    expect(exactRecoveryTicketReady(failed.client, scope)).toBe(false);
   });
 
   it('retains Unknown and permits only one explicit exact-scope reconnect, without replay', async () => {

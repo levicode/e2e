@@ -19,7 +19,8 @@ import { NativeFrames as FrameReader } from '../../src/native/frames.ts';
 import { MAX_FRAME_BYTES, serverMessage } from '../../src/native/protocol.ts';
 import { BrowserChannel } from '../../src/native/browser-channel.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
-import { nativeBrowser } from '../helpers/native-browser.ts';
+import { nativeBrowser, nativeBrowserGraph } from '../helpers/native-browser.ts';
+import { exactRecoveryTicketReady } from '../helpers/native-disconnect.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 import { beginSyntheticCase, validSyntheticFact, type SyntheticEvidence, type SyntheticFact, type SyntheticCaseId, type SyntheticCommand, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
 import { observeSyntheticConnection, SyntheticRecoveryEvidence as RecoveryEvidence, type RecoverySection } from '../helpers/synthetic-native-outcomes.ts';
@@ -175,7 +176,10 @@ describe('CDP session recovery', () => {
   const activeEngines = new Set<EngineHandle>();
   const activeHosts = new Set<RecoveryHost>();
   const hostControls = new Map<RecoveryHost, { browser: HostBrowser; noDefaults: boolean }>();
-  const fixtures = new Map<EngineHandle, { browser: Browser; timeoutMs: number }>();
+  const fixtures = new Map<EngineHandle, { browser: Browser; timeoutMs: number; identityScope(): string }>();
+  const openingEngine = new AsyncLocalStorage<EngineHandle>();
+  const nativeClients = new WeakMap<EngineHandle, NativeClient>();
+  const engineDisconnects = new WeakMap<EngineHandle, number>();
   const attemptArtifacts = new WeakMap<EngineHandle, string>();
   let disconnectEvents = 0;
 
@@ -188,11 +192,18 @@ describe('CDP session recovery', () => {
     terminalObservers.set(test.task, observers);
     const connect = NativeClient.connect;
     vi.spyOn(NativeClient, 'connect').mockImplementation((channel, capabilities, context, onEvent) => {
+      const engine = openingEngine.getStore();
+      let connected: NativeClient | undefined;
       const promise = observeSyntheticConnection(connect(channel, capabilities, context, async event => {
         await onEvent(event);
-        if (event.event === 'browser.disconnected') disconnectEvents += 1;
+        if (event.event === 'browser.disconnected') {
+          disconnectEvents += 1;
+          if (engine !== undefined && nativeClients.get(engine) === connected) engineDisconnects.set(engine, (engineDisconnects.get(engine) ?? 0) + 1);
+        }
       }));
       void promise.then(client => {
+        connected = client;
+        if (engine !== undefined) { nativeClients.set(engine, client); engineDisconnects.set(engine, 0); }
         const contract = recoveryContracts.get(test.task);
         if (contract !== undefined) {
           if (observers.length !== 0) { contract.invalid = true; return; }
@@ -203,12 +214,20 @@ describe('CDP session recovery', () => {
     });
   });
 
-  /** Wait for the adapter to consume the real disconnection, not an arbitrary delay. */
-  async function disconnect(remote: RecoveryHost): Promise<void> {
+  /** EOF may publish either its lifecycle event or an exact quarantined recovery receipt first. */
+  async function disconnect(remote: RecoveryHost, engine: EngineHandle): Promise<void> {
     recoveryPhase('disconnect');
-    const previous = disconnectEvents;
+    const client = nativeClients.get(engine);
+    if (client === undefined) throw new Error('No native client belongs to this recovery engine');
+    fixtureOf(engine);
+    const scope = fixtures.get(engine)!.identityScope();
+    expect(client.recoveryScope()).toBeUndefined();
+    client.callbackCheckpoint(); // Existing failure, terminal, close or quarantine is not a new loss observation.
+    const previous = engineDisconnects.get(engine) ?? 0;
     remote.disconnect();
-    await expect.poll(() => disconnectEvents, { timeout: 5_000 }).toBeGreaterThan(previous);
+    await expect.poll(() => nativeClients.get(engine) === client && (
+      (engineDisconnects.get(engine) ?? 0) > previous || exactRecoveryTicketReady(client, scope)
+    ), { timeout: 5_000 }).toBe(true);
   }
 
   beforeAll(async () => {
@@ -293,8 +312,9 @@ describe('CDP session recovery', () => {
   function fixtureOf(engine: EngineHandle, timeoutMs = 10_000): Browser {
     const existing = fixtures.get(engine);
     if (existing !== undefined) { existing.timeoutMs = timeoutMs; return existing.browser; }
-    const entry = { timeoutMs, browser: undefined as unknown as Browser };
-    entry.browser = nativeBrowser(engine, () => operation(entry.timeoutMs), app.url);
+    const entry = { timeoutMs, browser: undefined as unknown as Browser, identityScope: () => '' };
+    const graph = nativeBrowserGraph(engine, () => operation(entry.timeoutMs), app.url);
+    entry.browser = graph.browser; entry.identityScope = graph.identityScope;
     fixtures.set(engine, entry);
     return entry.browser;
   }
@@ -363,10 +383,10 @@ describe('CDP session recovery', () => {
       app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
       signal: new AbortController().signal, log: () => undefined };
     const prepared = await engine.prepare!({ ...info, slots: 1 });
-    await engine.init!({ ...info, env: { ...prepared?.env, ...info.env }, workerSlot: 0 });
+    await openingEngine.run(engine, () => engine.init!({ ...info, env: { ...prepared?.env, ...info.env }, workerSlot: 0 }));
     // Each engine attempt owns its artifacts; production intentionally refuses to overwrite video files.
     const attemptArtifactsDir = freshArtifacts(engine);
-    await engine.startAttempt!({ attemptId: 'a1', artifactsDir: attemptArtifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    await openingEngine.run(engine, () => engine.startAttempt!({ attemptId: 'a1', artifactsDir: attemptArtifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace }));
     if (open) await engine.session!.open!(`${app.url}/login`, operation());
     recoveryEvidence.getStore()?.passed('setup');
     recoveryPhase('dispatch', 'body');
@@ -487,7 +507,7 @@ describe('CDP session recovery', () => {
         step = 'dialog'; recoveryPhase('dialog', 'body');
         await fixture.onDialog('accept');
         step = 'disconnect'; recoveryPhase('disconnect', 'body');
-        await disconnect(remote);
+        await disconnect(remote, engine);
 
         step = 'recovered-locate'; recoveryPhase('recovered-locate', 'body');
         expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login');
@@ -611,7 +631,7 @@ describe('CDP session recovery', () => {
         }).toBe(true); passed();
         const popupReduced = () => fixture.evaluate(() => (window as unknown as { recoveryPopup: Window }).recoveryPopup.matchMedia('(prefers-reduced-motion: reduce)').matches);
         enter('media-read'); expect(await popupReduced()).toBe(true); passed();
-        enter('disconnect'); await disconnect(remote); passed();
+        enter('disconnect'); await disconnect(remote, engine); passed();
         enter('recovered-locate'); expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login'); passed();
         enter('media-read'); expect(await media()).toEqual({ dark: true, reduce: true }); passed();
         // The actual popup Window survives, not another page chosen by URL.
@@ -648,7 +668,7 @@ describe('CDP session recovery', () => {
       await engine.session!.open!(`${app.url}/login`, operation());
       expect(await trail()).toEqual(['config', 'test']);
 
-      await disconnect(remote);
+      await disconnect(remote, engine);
       await engine.session!.open!(`${app.url}/login`, operation());
       expect(await trail()).toEqual(['config', 'test']);
     } finally {
@@ -753,7 +773,7 @@ describe('CDP session recovery', () => {
       reconnectEndpoint: () => replacement.endpoint,
     });
     try {
-      await disconnect(remote);
+      await disconnect(remote, engine);
       recoveryPhase('observe');
       let firstFailure: unknown;
       await recoveryAssert(0, async () => {
@@ -793,7 +813,7 @@ describe('CDP session recovery', () => {
       await original.page.close();
       expect(original.page.isClosed()).toBe(true);
       expect(other.isClosed()).toBe(false);
-      await disconnect(remote);
+      await disconnect(remote, engine);
       recoveryPhase('observe');
       let firstFailure: unknown;
       await recoveryAssert(0, async () => {
@@ -1016,7 +1036,7 @@ describe('CDP session recovery', () => {
         return endpoint;
       },
     });
-    await disconnect(remote);
+    await disconnect(remote, engine);
     const first = engine.locate!(heading, operation());
     await requested;
     const controller = new AbortController();
@@ -1039,7 +1059,7 @@ describe('CDP session recovery', () => {
       },
     });
     const original = await witness(engine, remote);
-    await disconnect(remote);
+    await disconnect(remote, engine);
     // The witness graph captured its original 10s config. Use a new real graph, not a mutable callback, for this 1s operation.
     const budgeted = nativeBrowser(engine, () => operation(1_000), app.url);
     let published = false;
@@ -1062,7 +1082,7 @@ describe('CDP session recovery', () => {
     await engine.artifacts!.startVideo!(operation());
     recoveryPhase('screenshot');
     await engine.artifacts!.screenshot('before-reconnect', operation());
-    await disconnect(remote);
+    await disconnect(remote, engine);
     recoveryPhase('observe');
     await engine.observe!(operation());
     await fixtureOf(engine).evaluate(() => { document.body.style.background = 'blue'; return null; });
@@ -1104,7 +1124,7 @@ describe('CDP session recovery', () => {
         document.body.append(link);
         return null;
       });
-      await disconnect(remote);
+      await disconnect(remote, engine);
       let triggered = 0;
       recoveryPhase('download-arm');
       const download = await fixtureOf(engine).waitForDownload(async () => {
@@ -1149,7 +1169,7 @@ describe('CDP session recovery', () => {
     });
     await engine.observe!(operation());
     await fixtureOf(engine).evaluate(() => { document.querySelector<HTMLElement>('#pointer-target')!.style.left = '260px'; return null; });
-    await disconnect(remote);
+    await disconnect(remote, engine);
 
     const fixture = fixtureOf(engine);
     const point = await fixture.evaluate(() => {
@@ -1193,7 +1213,7 @@ describe('CDP session recovery', () => {
       return null;
     });
     await engine.observe!(operation());
-    await disconnect(remote);
+    await disconnect(remote, engine);
     await expect(engine.keyboard!.type('replacement', { replace: true }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
     await expect(engine.keyboard!.press('Enter', operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
     const fixture = fixtureOf(engine);
@@ -1238,7 +1258,7 @@ describe('CDP session recovery', () => {
       recoveryPhase('observe');
       const oldObservation = engine.observe!(operation(), { pixels: true }).catch((cause: unknown) => cause);
       await pixelsReached;
-      await disconnect(remote);
+      await disconnect(remote, engine);
       recoveryPhase('locate');
       const recovery = engine.locate!(heading, operation());
       await reconnectRequested;
@@ -1284,7 +1304,7 @@ describe('CDP session recovery', () => {
       return null;
     });
     for (const reconnect of [false, true]) {
-      if (reconnect) await disconnect(remote);
+      if (reconnect) await disconnect(remote, engine);
       const snapshot = await engine.observe!(operation(), { pixels: true });
       expect(snapshot.maskedRegionCount).toBe(2);
       expect(snapshot.pixels).toBeDefined();
@@ -1335,7 +1355,7 @@ describe('CDP session recovery', () => {
     const remote = await host();
     const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
     const original = await witness(engine, remote);
-    await disconnect(remote);
+    await disconnect(remote, engine);
     await original.page.goto(`${app.url}/form`);
     await original.page.evaluate(() => {
       document.body.innerHTML = '';

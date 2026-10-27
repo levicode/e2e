@@ -18,7 +18,7 @@ import { correlateObserved, type CorrelateObserved } from './native-correlation.
  * helper lifetime; each action uses the caller's initial per-action timeout.
  * No fabricated EngineFixtureContext or replacement locator implementation.
  */
-export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): { browser: Browser; session: TargetSession; correlate: CorrelateObserved } {
+export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): { browser: Browser; session: TargetSession; correlate: CorrelateObserved; identityScope(): string } {
   const current = operation();
   const config = resolveConfig({ targets: [{ name: 'web', platform: 'web', engine, app: { url: baseUrl } }], cache: 'off', timeout: 30_000, actionTimeout: current.timeoutMs, assertionTimeout: current.timeoutMs }, { projectRoot: process.cwd(), env: process.env });
   const steps = new StepRecorder(current.attemptId);
@@ -33,7 +33,7 @@ export function nativeBrowserGraph(engine: EngineHandle, operation: () => Operat
     });
     return Reflect.get(fixtures, 'browser') as Browser;
   });
-  return { browser: captured.value, session, correlate: correlateObserved(captured.surface, operation) };
+  return { browser: captured.value, session, correlate: correlateObserved(captured.surface, operation), identityScope: () => captured.surface.identityScope };
 }
 
 /** Existing fixture-only callers keep the same real graph and public Browser surface. */
