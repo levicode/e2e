@@ -137,7 +137,7 @@ describe('provider recording lifecycle', () => {
     land({ startedAt: '2026-09-28T10:00:00.000Z', stop: stopped });
     await vi.waitFor(() => expect(stopped).toHaveBeenCalledTimes(1));
     await expect(engine.endAttempt!({ ...cleanup(), timeoutMs: 10 })).resolves.toBeUndefined();
-    expect(released).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(released).toHaveBeenCalledTimes(1));
     const retry = engine.endAttempt!(cleanup()); await new Promise(resolve => setImmediate(resolve));
     expect(stopped).toHaveBeenCalledTimes(1); finish(); await retry;
     expect(stopped).toHaveBeenCalledTimes(1); expect(released).toHaveBeenCalledTimes(1);

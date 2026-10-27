@@ -908,6 +908,9 @@ const file = await browser.waitForDownload(() =>
   trigger runs. The waiter remains bound to that recovered scope; a later
   scope replacement cannot satisfy it.
 - The wait includes recovery and the trigger's own time.
+- Cancellation discards unpublished files. Native resource cleanup stays with
+  the owning attempt rather than the cancelled test body, without extending
+  the public wait. A real cleanup failure still fails attempt cleanup.
 
 | Throws | When |
 | --- | --- |
@@ -1279,29 +1282,31 @@ cleanup does not reconnect or make a terminal client reusable. A failed
 `scope.end` remains a cleanup failure even if final shutdown later succeeds.
 
 
-Attempt cleanup has one independent 15-second owner budget shared by recording,
-native scope, connection, and lease cleanup. Cancelling or exhausting an
-`endAttempt` caller's budget resolves that caller's wait, not the cleanup itself.
-Concurrent callers join the same work. The next attempt waits under its own
-signal and cannot open a scope or acquire a lease until cleanup succeeds.
-An owner deadline or cleanup failure blocks attempt reuse, even if an old
-operation later succeeds. Cleanup attempts to release each exact provider lease
-even when native, recording, or local artifact cleanup fails, without replacing
-the original cleanup error. Lease release uses the same cleanup signal, not a
-fresh budget; unresolved native and artifact custody still blocks UI reuse.
-Cleanup never replays a business action.
+Attempt cleanup uses the caller's signal and remaining budget for ordinary
+scope and provider work. A pre-cancelled hook retires its fixture authority
+without dispatching `scope.end`. Concurrent callers join the same work; they
+cannot renew its effect deadline. Cancelling or exhausting an `endAttempt`
+caller's budget resolves that caller's wait, not proof of completed cleanup.
 
-A later explicit cleanup call may make another bounded attempt to reap retained
-resources, sharing that work with concurrent cleanup callers. Successful reaping
-never retries an already attempted lease release, and every later cleanup call
-still reports the original failure. There is no automatic retry loop. Once
-`dispose` confirms that no native, recording, artifact, or lease cleanup remains
-unresolved, explicit `init` may create a fresh worker on the same engine handle.
-It creates a new native worker, never revives the retired scope, and leaves old
-fixtures invalid.
-An already-started mandatory native close retains its separate, existing
-15-second upper bound; a late close acknowledgement cannot undo the adapter's
-owner deadline or restore reuse.
+Native terminal close keeps its independent, existing 15-second safety bound.
+The adapter retains its actual close acknowledgement and proxy settlement,
+along with already-started recorder, artifact, and provider-release receipts.
+The next attempt waits under its own signal and cannot use an uncertain old
+scope. Cancel ACK alone is not cleanup proof, and cleanup never replays a
+business action.
+
+Cleanup attempts to release each exact provider lease once even when other
+cleanup fails or outlives the caller, using the same signal rather than a fresh
+budget. A late
+release receipt can finish that original work; a later caller never reissues it.
+Releasing the lease does not clear unresolved native or artifact custody.
+
+A genuine cleanup failure stays primary even if other cleanup later succeeds.
+An explicit cleanup call may reap retained resources, but cannot retry an
+uncertain lease release or grant old fixtures new authority. There is no
+automatic retry loop. Once `dispose` confirms that no cleanup remains unresolved,
+explicit `init` may create a fresh native worker on the same engine handle,
+without reviving the retired scope or its fixtures.
 
 ### Locator values inside native callbacks
 

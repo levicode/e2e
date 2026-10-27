@@ -23,7 +23,8 @@ const TITLES = [
 ] as const;
 const INTERRUPTED = 'run interruption discards a held download';
 const RECOVERED = 'a new attempt downloads after run interruption';
-const NAMES = ['concurrent', 'nested', 'capture-failure', 'after-failure', 'throw-held', 'after-throw', 'cancelled', 'after-cancel', 'stream', 'after-stream', 'capacity', 'interrupt', 'after-interrupt'];
+const BURST = 'Chrome drops the eleventh burst request before native download events';
+const NAMES = ['concurrent', 'nested', 'capture-failure', 'after-failure', 'throw-held', 'after-throw', 'cancelled', 'after-cancel', 'stream', 'after-stream', 'capacity', 'burst', 'interrupt', 'after-interrupt'];
 const HELD = new Set(['concurrent', 'capture-failure', 'throw-held', 'cancelled', 'interrupt']);
 const SOURCE = readFileSync(new URL('../fixtures/download-lifecycle.e2e.ts', import.meta.url), 'utf8');
 
@@ -33,6 +34,45 @@ function downloadFiles(root: string, relative = ''): string[] {
     return statSync(path.join(root, file)).isDirectory() ? downloadFiles(root, file)
       : file.split(path.sep).includes('downloads') ? [file.split(path.sep).join('/')] : [];
   });
+}
+
+/** Observes Chrome directly without changing download behavior or native frames. */
+async function observeChromeDownload(endpoint: string, url: string, started: () => void): Promise<() => Promise<void>> {
+  const socket = new WebSocket(endpoint);
+  const closed = new Promise<void>(resolve => socket.addEventListener('close', () => resolve(), { once: true }));
+  const close = async (): Promise<void> => { socket.close(); await closed; };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Chrome observer connection deadline')), 10_000);
+      socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
+      socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Chrome observer connection failed')); }, { once: true });
+    });
+    let id = 0;
+    const command = (method: 'Target.getTargets' | 'Target.attachToTarget' | 'Page.enable', params: object, sessionId?: string): Promise<Record<string, unknown>> => new Promise((resolve, reject) => {
+      const requestId = ++id;
+      const timer = setTimeout(() => { socket.removeEventListener('message', receive); reject(new Error(`Chrome observer ${method} deadline`)); }, 10_000);
+      function receive(event: MessageEvent) {
+        const message = JSON.parse(String(event.data)) as { id?: number; error?: unknown; result?: Record<string, unknown> };
+        if (message.id !== requestId) return;
+        clearTimeout(timer); socket.removeEventListener('message', receive);
+        if (message.error !== undefined || message.result === undefined) reject(new Error(`Chrome observer ${method} failed`));
+        else resolve(message.result);
+      }
+      socket.addEventListener('message', receive);
+      socket.send(JSON.stringify({ id: requestId, method, params, ...(sessionId === undefined ? {} : { sessionId }) }));
+    });
+    const targets = (await command('Target.getTargets', {}))['targetInfos'] as { type: string; url: string; targetId: string }[];
+    const pages = targets.filter(target => target.type === 'page' && target.url === new URL('/', url).href);
+    if (pages.length !== 1) throw new Error('Chrome observer needs exactly one synthetic page');
+    const sessionId = (await command('Target.attachToTarget', { targetId: pages[0]!.targetId, flatten: true }))['sessionId'];
+    if (typeof sessionId !== 'string') throw new Error('Chrome observer has no session');
+    socket.addEventListener('message', event => {
+      const message = JSON.parse(String(event.data)) as { method?: string; sessionId?: string; params?: { url?: string } };
+      if (message.sessionId === sessionId && message.method === 'Page.downloadWillBegin' && message.params?.url === url) started();
+    });
+    await command('Page.enable', {}, sessionId);
+    return close;
+  } catch (cause) { await close(); throw cause; }
 }
 
 describe('native download lifecycle through the public fixture', () => {
@@ -47,6 +87,8 @@ describe('native download lifecycle through the public fixture', () => {
   let main: RunOutcome;
   let interrupted: RunOutcome;
   let recovered: RunOutcome;
+  let origin: string;
+  const observers: (() => Promise<void>)[] = [];
   const event = (name: string) => {
     let gate = gates.get(name);
     if (gate === undefined) {
@@ -65,6 +107,19 @@ describe('native download lifecycle through the public fixture', () => {
       const pathname = new URL(request.url ?? '/', 'http://fixture.test').pathname;
       if (pathname.startsWith('/control/')) {
         const [, , action, name] = pathname.split('/');
+        if (action === 'observe' && (name === 'stream' || name === 'capacity' || name === 'burst')) {
+          let starts = 0;
+          void observeChromeDownload(chrome!.endpoint, `${origin}/file/${name}`, () => {
+            mark(`chrome-${name}-started`);
+            starts++;
+            if (name === 'capacity' && starts === 129) mark('chrome-capacity-all-started');
+            if (name === 'burst' && starts === 10) mark('chrome-burst-ten-started');
+            if (name === 'burst' && starts === 11) mark('chrome-burst-eleven-started');
+          }).then(close => {
+            observers.push(close); mark(`chrome-${name}-observer-ready`); response.end('observing');
+          }, () => { mark(`chrome-${name}-observer-failed`); response.writeHead(500).end('observer failed'); });
+          return;
+        }
         if (!name || (action !== 'wait' && action !== 'release')) { response.writeHead(400).end(); return; }
         if (action === 'release') { mark(`release-${name}`); response.end('released'); }
         else void event(name).promise.then(() => { response.end('observed'); });
@@ -78,13 +133,18 @@ describe('native download lifecycle through the public fixture', () => {
       if (pathname.startsWith('/file/')) {
         const name = pathname.slice('/file/'.length);
         if (!NAMES.includes(name)) { response.writeHead(404).end(); return; }
-        const bytes = Buffer.from(`${name}\nsynthetic download\u0000\u00ff\n`);
-        response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="${name}.bin"`, 'content-length': bytes.length });
+        if (name === 'capacity' || name === 'burst') mark(`request-${name}`);
+        const bytes = name === 'stream' ? Buffer.alloc(4097, 0x61) : Buffer.from(`${name}\nsynthetic download\u0000\u00ff\n`);
+        response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="${name}.bin"`, 'content-length': bytes.length,
+          ...(name === 'stream' ? { 'x-content-type-options': 'nosniff' } : {}) });
         if (name === 'stream') {
           response.on('close', () => mark('stream-closed'));
-          response.write(bytes.subarray(0, 1));
+          // A one-byte response may still be in Chromium's MIME sniffing path.
+          // Send a full prefix, retaining EOF; the independent Chrome event
+          // proves creation instead of inferring it from the server's write.
+          response.write(bytes.subarray(0, -1));
           mark('stream-started');
-          void event('release-stream').promise.then(() => response.end(bytes.subarray(1)));
+          void event('release-stream').promise.then(() => response.end(bytes.subarray(-1)));
         } else response.end(bytes);
         return;
       }
@@ -92,7 +152,7 @@ describe('native download lifecycle through the public fixture', () => {
       response.end(`<!doctype html><title>Synthetic downloads</title><h1>Downloads</h1>${NAMES.map(name => `<a id="${name}" href="/file/${name}" download>${name}</a>`).join('<br>')}`);
     });
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
-    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     disk = mkdtempSync(path.join(tmpdir(), 'e2e-download-lifecycle-'));
     chrome = await launchRemoteChrome();
     const provider: BrowserProvider = {
@@ -133,12 +193,12 @@ describe('native download lifecycle through the public fixture', () => {
       completed.push({ outcome, project });
       return outcome;
     };
-    main = await run(TITLES.map(title => new RegExp(`^${title}$`)));
+    main = await run([...TITLES, BURST].map(title => new RegExp(`^${title}$`)));
     const controller = new AbortController();
     const cancellation = run([new RegExp(`^${INTERRUPTED}$`)], controller.signal);
     void cancellation.catch(() => undefined);
     try {
-      await Promise.race([event('read-interrupt').promise, cancellation.then(() => { throw new Error('interrupted run ended before its held read'); })]);
+      await Promise.race([Promise.all([event('read-interrupt').promise, event('release-interrupt-tap-finished').promise]), cancellation.then(() => { throw new Error('interrupted run ended before its held read and completed tap'); })]);
       controller.abort();
       await Promise.race([event('aborted-interrupt').promise, cancellation.then(() => { throw new Error('interrupted run ended without aborting its held read'); })]);
     } finally {
@@ -165,6 +225,7 @@ describe('native download lifecycle through the public fixture', () => {
       }
     } catch (cause) { failures.push(cause); }
     const releases = [
+      async () => { for (const close of observers) await close(); },
       async () => { if (chrome !== undefined) await closeRemoteChrome(chrome); },
       async () => { server?.closeAllConnections(); if (server?.listening) await new Promise<void>((resolve, reject) => server!.close(cause => cause ? reject(cause) : resolve())); },
       async () => { for (const project of projects) project.cleanup(); },
@@ -210,6 +271,10 @@ describe('native download lifecycle through the public fixture', () => {
     expect(events.filter(name => name === 'read-concurrent')).toHaveLength(1);
     expect(events.filter(name => name === 'read-nested')).toHaveLength(1);
     expect(events).not.toContain('read-stream');
+    expect(events).toContain('chrome-stream-started');
+    expect(events).not.toContain('chrome-stream-observer-failed');
+    expect(events.indexOf('chrome-stream-observer-ready')).toBeLessThan(events.indexOf('chrome-stream-started'));
+    expect(events.indexOf('chrome-stream-started')).toBeLessThan(events.indexOf('release-stream'));
   });
 
   it('crosses the native 128-entry limit without accumulating live downloads', () => {
@@ -218,6 +283,22 @@ describe('native download lifecycle through the public fixture', () => {
     expect(attempt.steps.filter(step => step.api === 'browser.waitForDownload')).toHaveLength(129);
     expect(events.filter(name => name === 'read-capacity')).toHaveLength(129);
     expect(events.filter(name => name === 'returned-capacity')).toHaveLength(129);
+    expect(events.filter(name => name === 'request-capacity')).toHaveLength(129);
+    expect(events.filter(name => name === 'chrome-capacity-started')).toHaveLength(129);
+    expect(events).not.toContain('chrome-capacity-observer-failed');
+    expect(events.indexOf('chrome-capacity-observer-ready')).toBeLessThan(events.indexOf('chrome-capacity-started'));
+  });
+
+  it('distinguishes Chrome burst throttling from missing native events', () => {
+    const result = resultByTitle(main, BURST);
+    expect(result.status, JSON.stringify(result.attempts)).toBe('passed');
+    expect(result.attempts[0]!.cleanup).toBe('complete');
+    expect(result.attempts[0]!.artifacts.filter(artifact => artifact.kind === 'download')).toHaveLength(2);
+    expect(events).toContain('release-burst-eleven-clicks-under-second');
+    expect(events.filter(name => name === 'request-burst')).toHaveLength(11);
+    expect(events.filter(name => name === 'chrome-burst-started')).toHaveLength(11);
+    expect(events).not.toContain('chrome-burst-observer-failed');
+    expect(events.indexOf('chrome-burst-observer-ready')).toBeLessThan(events.indexOf('chrome-burst-started'));
   });
 
   it('interrupts a real held read, completes cleanup and downloads in a new attempt', () => {
@@ -227,6 +308,8 @@ describe('native download lifecycle through the public fixture', () => {
     expect(attempt.cleanup).toBe('complete');
     expect(attempt.artifacts.filter(artifact => artifact.kind === 'download')).toEqual([]);
     expect(events.indexOf('read-interrupt')).toBeLessThan(events.indexOf('aborted-interrupt'));
+    expect(events).toContain('release-interrupt-tap-finished');
+    expect(events.indexOf('release-interrupt-tap-finished')).toBeLessThan(events.indexOf('aborted-interrupt'));
     expect(events.indexOf('aborted-interrupt')).toBeLessThan(events.indexOf('release-interrupt'));
     expect(events.filter(name => name === 'returned-interrupt')).toHaveLength(1);
     expect(resultByTitle(recovered, RECOVERED).status).toBe('passed');

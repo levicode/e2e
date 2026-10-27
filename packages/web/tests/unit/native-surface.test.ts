@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -1133,6 +1133,7 @@ describe('native surface ownership and fixed policy binding', () => {
       if (name === 'scope.end') cleanupSignal = current.signal;
       return original.call(this, name, args, current, transition);
     });
+    try {
     const caller = new AbortController();
     const peer = holdRequests(command);
     const pending = (channel === 'engine'
@@ -1141,7 +1142,7 @@ describe('native surface ownership and fixed policy binding', () => {
     const held = await peer.next(command);
     const oldSignal = requestSignal!;
     expect(getEventListeners(oldSignal, 'abort')).toHaveLength(1);
-    holdScopeEnd = true;
+    holdClose = true;
     const cleanupCaller = new AbortController();
     const first = surface.endAttempt({ signal: cleanupCaller.signal, timeoutMs: 1000 });
     const second = surface.endAttempt(cleanup());
@@ -1157,12 +1158,13 @@ describe('native surface ownership and fixed policy binding', () => {
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
     held.fail('cancelled'); await pending;
     await new Promise(resolve => setImmediate(resolve));
-    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
-    expect(cleanupSignal?.aborted).toBe(false);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+    expect(cleanupSignal).toBeUndefined();
+    expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     let opened = false;
     const next = surface.startAttempt(context('next-after-cancel')).then(() => { opened = true; });
     await new Promise(resolve => setImmediate(resolve)); expect(opened).toBe(false);
-    releaseScopeEnd!(); holdScopeEnd = false; await second; await next;
+    releaseClose!(); holdClose = false; await second; await next;
     const fresh = (channel === 'engine'
       ? surface.locate({ kind: 'selector', selector: '#fresh' }, operation())
       : surface.command('page.title', {}, operation()));
@@ -1175,7 +1177,7 @@ describe('native surface ownership and fixed policy binding', () => {
     freshRequest.succeed(channel === 'engine' ? { identityScope: currentScope, revision: '1', nodes: [] } : { title: 'fresh' });
     await fresh;
     expect(getEventListeners(freshSignal, 'abort')).toHaveLength(0);
-    interceptRequest = undefined; inspect.mockRestore(); await surface.dispose(cleanup());
+    } finally { interceptRequest = undefined; inspect.mockRestore(); holdClose = false; releaseClose?.(); await surface.dispose(cleanup()).catch(() => undefined); }
   });
   it.each(['engine', 'browser'] as const)('preserves an already dispatched %s Unknown while retirement joins its request', async channel => {
     continueExactOwner = true;
@@ -1222,19 +1224,19 @@ describe('native surface ownership and fixed policy binding', () => {
     const pending = surface.locate({ kind: 'selector', selector: '#held' }, { ...operation(), timeoutMs: 30_000 }).catch((cause: unknown) => cause);
     const held = await peer.next('browser.query'); holdScopeEnd = true;
     try {
-      const waiter = surface.endAttempt(cleanup());
+      const waiter = surface.endAttempt({ ...cleanup(), timeoutMs: 5000 });
       const owner = retirementState(surface).endingAttempt!;
-      await vi.advanceTimersByTimeAsync(4_000); await waiter;
+      await vi.advanceTimersByTimeAsync(4_000);
       expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
       acknowledgeCancel!(); held.fail('cancelled'); await pending;
       await vi.advanceTimersByTimeAsync(0);
       const end = frames.find(frame => frame['command'] === 'scope.end')!;
-      expect(end['timeoutMs']).toBeGreaterThan(10_000);
-      expect(end['timeoutMs']).toBeLessThanOrEqual(11_000);
-      releaseScopeEnd!(); holdScopeEnd = false; await owner;
+      expect(end['timeoutMs']).toBeGreaterThan(0);
+      expect(end['timeoutMs']).toBeLessThanOrEqual(1000);
+      releaseScopeEnd!(); holdScopeEnd = false; await owner; await waiter;
     } finally { vi.useRealTimers(); interceptRequest = undefined; await surface.dispose(cleanup()); }
   });
-  it('keeps a request-join timeout failed even after that exact request returns late', async () => {
+  it('retains an expired request owner until exact settlement without renewing ordinary cleanup', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const original = NativeClient.prototype.request;
     let deliver!: (result: Awaited<ReturnType<NativeClient['request']>>) => void;
@@ -1250,19 +1252,22 @@ describe('native surface ownership and fixed policy binding', () => {
     const waiter = surface.endAttempt(cleanup());
     const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
     try {
-      await vi.advanceTimersByTimeAsync(15_000); await waiter;
-      const failure = await owner;
-      expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT', message: 'retiring native attempt timed out' });
+      await vi.advanceTimersByTimeAsync(1000); await waiter;
+      let settled = false; void owner.then(() => { settled = true; });
       expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
-      await expect(surface.startAttempt(context('blocked-before-late'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(settled).toBe(false);
+      const controller = new AbortController();
+      const next = surface.startAttempt(context('waiting-before-late', controller.signal)).catch((cause: unknown) => cause);
+      controller.abort(); expect(await next).toMatchObject({ code: 'CANCELLED' });
       deliver({ type: 'result', id: 'held-query', generation: 1, operationSeq: 4, ok: true, data: { identityScope: scope, revision: '1', nodes: [] }, effects: 'completed', scopeState: 'usable' });
       await expect(pending).resolves.toMatchObject({ code: 'CANCELLED' });
-      await vi.advanceTimersByTimeAsync(0);
-      expect(retirementState(surface).retirementFailure).toBe(failure);
+      await owner;
+      expect(retirementState(surface).retirementFailure).toBeUndefined();
       expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
-      await expect(surface.startAttempt(context('blocked-after-late'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       request.mockRestore(); vi.useRealTimers();
-      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+      await surface.startAttempt(context('fresh-after-proof'));
+      expect(vi.mocked(connectNativeProcess)).toHaveBeenCalledTimes(2);
+      await surface.dispose(cleanup());
     } finally { request.mockRestore(); vi.useRealTimers(); }
   });
   it('closes a late native handshake instead of publishing it after disposal', async () => {
@@ -1521,6 +1526,73 @@ describe('native surface ownership and fixed policy binding', () => {
         { identityScope: currentScope, subscriptionId: 'synthetic-subscription' },
       ]);
     } finally { resume(); await surface.dispose(cleanup()); }
+  });
+
+  it('retires a download event with its scope owner after the attempt signal aborts', async () => {
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const controller = new AbortController(); await surface.startAttempt(context('cancelled-download', controller.signal));
+    const scope = surface.identityScope;
+    let finish!: () => void;
+    surface.subscribe('download.started', () => new Promise<void>(resolve => { finish = resolve; }));
+    try {
+      await sendEvent('download.started', { identityScope: scope, activePage: true, handle: 'cancelled-download', suggestedFilename: 'cancelled.bin' });
+      controller.abort(); finish();
+      await expect(surface.latch.settle(cleanup())).resolves.toBeUndefined();
+      expect(frames.filter(frame => frame['command'] === 'download.release').map(frame => frame['args'])).toEqual([{ identityScope: scope, handle: 'cancelled-download' }]);
+      await expect(surface.endAttempt(cleanup())).resolves.toBeUndefined();
+      expect(frames.filter(frame => frame['command'] === 'scope.end').map(frame => frame['args'])).toContainEqual({ identityScope: scope });
+    } finally { finish?.(); await surface.dispose(cleanup()).catch(() => undefined); }
+  });
+
+  it('unsubscribes a cancelled download without poisoning exact-scope cleanup', async () => {
+    let entered!: () => void; const reading = new Promise<void>(resolve => { entered = resolve; });
+    let finish!: (bytes: Uint8Array) => void;
+    const surface = new NativeSurface({ browser: {
+      name: 'cancelled-download', scope: 'worker',
+      acquire: async () => ({ id: 'lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release: async () => {},
+      downloads: { dir: '/synthetic-downloads', read: async () => { entered(); return new Promise<Uint8Array>(resolve => { finish = resolve; }); } },
+    } });
+    await start(surface); await surface.endAttempt(cleanup());
+    const directory = await mkdtemp(path.join(tmpdir(), 'cancelled-download-'));
+    const controller = new AbortController(); await surface.startAttempt({ ...context('cancelled-download', controller.signal), artifactsDir: directory });
+    const scope = surface.identityScope; const attached = vi.fn();
+    const fixture = createBrowserFixture(surface.fixtureSurface(), {
+      operation: () => ({ ...operation(), signal: controller.signal }), signal: controller.signal, attachArtifact: attached,
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext);
+    const waiting = fixture.waitForDownload(async () => {
+      await sendEvent('download.started', { identityScope: scope, activePage: true, handle: 'held-download', suggestedFilename: 'cancelled.bin' });
+    }).catch(cause => cause);
+    try {
+      await reading; controller.abort();
+      expect(await waiting).toMatchObject({ code: 'CANCELLED' });
+      finish(Buffer.from('late synthetic bytes'));
+      await expect(surface.latch.settle(cleanup())).resolves.toBeUndefined();
+      expect(attached).not.toHaveBeenCalled();
+      expect(await readdir(path.join(directory, 'downloads'))).toEqual([]);
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe').map(frame => frame['args'])).toEqual([{ identityScope: scope, subscriptionId: 'synthetic-subscription' }]);
+      await expect(surface.endAttempt(cleanup())).resolves.toBeUndefined();
+    } finally { finish?.(Buffer.from('late synthetic bytes')); await waiting; await surface.dispose(cleanup()).catch(() => undefined); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it('cleans the captured download scope without initiating recovery for a cancelled caller', async () => {
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
+    await start(surface);
+    const oldScope = surface.identityScope;
+    const { subscriptionId } = await surface.command('download.subscribe', {}, operation());
+    await sendEvent('scope.disconnected', { identityScope: oldScope, reason: 'browser-connection-closed' });
+    try {
+      const result = await surface.command('download.unsubscribe', { subscriptionId }, { ...operation(), signal: AbortSignal.abort() }).catch(cause => cause);
+      expect(frames.filter(frame => frame['command'] === 'scope.reconnect')).toEqual([]);
+      expect(surface.identityScope).toBe(oldScope);
+      expect(result).toBeNull();
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe').map(frame => frame['args'])).toEqual([{ identityScope: oldScope, subscriptionId }]);
+      // Only subsequent business work may recover, and it still succeeds.
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(surface.identityScope).not.toBe(oldScope);
+      expect(frames.filter(frame => frame['command'] === 'scope.reconnect')).toHaveLength(1);
+    } finally { await surface.dispose(cleanup()); }
   });
 
   it('arms a download waiter only after subscription recovery and cleans the recovered scope', async () => {
@@ -1809,14 +1881,14 @@ describe('native surface ownership and fixed policy binding', () => {
     expect(stopped).toHaveBeenCalledTimes(1); expect(release).toHaveBeenCalledTimes(1);
     await surface.dispose(cleanup());
   });
-  it('retains an unresolved recorder lease after the caller leaves and joins the same cleanup', async () => {
+  it('retains an unresolved recorder owner after releasing its lease at the caller deadline', async () => {
     let finish!: (recording: ProviderRecording) => void;
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release, record: () => new Promise<ProviderRecording>(resolve => { finish = resolve; }) } });
     await start(surface); const starting = surface.startVideo(operation()).catch((cause: unknown) => cause);
     await new Promise(resolve => setImmediate(resolve));
     await expect(surface.endAttempt({ ...cleanup(), timeoutMs: 10 })).resolves.toBeUndefined();
-    expect(release).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
     const controller = new AbortController();
     const next = surface.startAttempt(context('next', controller.signal)).catch((cause: unknown) => cause);
     controller.abort();
@@ -2089,9 +2161,9 @@ describe('native surface ownership and fixed policy binding', () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface); await surface.endAttempt(cleanup()); holdScopeEnd = true;
     await expect(surface.startAttempt(context('reused-context'))).rejects.toThrow(/reused a browser/);
-    await vi.waitFor(() => expect(releaseScopeEnd).toBeDefined());
     await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
     const first = surface.endAttempt(cleanup()); const second = surface.endAttempt(cleanup());
+    await vi.waitFor(() => expect(releaseScopeEnd).toBeDefined());
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(2);
     releaseScopeEnd!(); await Promise.all([first, second]); await surface.dispose(cleanup());
     expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(2);
@@ -2288,16 +2360,17 @@ describe('provider release is independent from failed native cleanup', () => {
 
   it('keeps the primary recorder failure when release exhausts the same cleanup budget', async () => {
     const primary = new Error('primary recorder stop failed before release timeout');
-    const release = vi.fn(async () => new Promise<void>(() => {}));
+    const release = vi.fn(async (_lease: unknown, budget: { signal: AbortSignal }) => new Promise<void>((_resolve, reject) => { budget.signal.addEventListener('abort', () => reject(new Error('release aborted')), { once: true }); }));
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'release-timeout', cdpEndpoint: 'ws://synthetic.test/browser' }), release,
       record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: async () => { throw primary; } }),
     } });
     await start(surface); await surface.startVideo(operation());
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     try {
-      const ending = surface.endAttempt({ signal, timeoutMs: 20_000 }).catch((cause: unknown) => cause);
-      await vi.advanceTimersByTimeAsync(15_000);
-      const failure = await ending;
+      const ending = surface.endAttempt({ signal, timeoutMs: 1000 }).catch((cause: unknown) => cause);
+      const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+      await vi.advanceTimersByTimeAsync(1000); await ending;
+      const failure = await owner;
       expect(release).toHaveBeenCalledTimes(1);
       expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
       await expect(surface.dispose(cleanup())).rejects.toBe(failure);
@@ -2323,11 +2396,134 @@ describe('provider release is independent from failed native cleanup', () => {
   });
 });
 
+describe('caller-bounded cleanup with retained exact settlement', () => {
+  it('revokes synchronously on pre-cancel and waits for native close without dispatching scope.end', async () => {
+    const surface = new NativeSurface({}); await start(surface); const old = surface.fixtureSurface();
+    holdClose = true;
+    const ending = surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+    expect(() => old.identityScope).toThrow();
+    await expect(ending).resolves.toBeUndefined();
+    const owner = retirementState(surface).endingAttempt!;
+    expect(owner).toBeDefined();
+    expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
+    const nextController = new AbortController();
+    const next = surface.startAttempt(context('cancelled-next-wait', nextController.signal)).catch((cause: unknown) => cause);
+    nextController.abort(); expect(await next).toMatchObject({ code: 'CANCELLED' });
+    expect(retirementState(surface).endingAttempt).toBe(owner);
+    releaseClose!(); await owner; holdClose = false;
+    await surface.startAttempt(context('fresh-after-close'));
+    expect(vi.mocked(connectNativeProcess)).toHaveBeenCalledTimes(2);
+    expect(() => old.identityScope).toThrow();
+    await surface.dispose(cleanup());
+  });
+
+  it.each(['abort', 'timeout'] as const)('keeps one owner after caller %s until actual close, not just cancel ACK', async mode => {
+    const surface = new NativeSurface({}); await start(surface); holdScopeEnd = true; holdClose = true;
+    const controller = new AbortController();
+    const ending = surface.endAttempt({ signal: controller.signal, timeoutMs: mode === 'timeout' ? 10 : 100 });
+    const owner = retirementState(surface).endingAttempt!;
+    const scopeEnd = frames.find(frame => frame['command'] === 'scope.end')!;
+    expect(scopeEnd['timeoutMs']).toBeLessThanOrEqual(mode === 'timeout' ? 10 : 100);
+    if (mode === 'abort') controller.abort();
+    await ending;
+    await vi.waitFor(() => expect(releaseClose).toBeDefined());
+    acknowledgeCancel?.();
+    let settled = false; void owner.then(() => { settled = true; });
+    const duplicate = surface.endAttempt({ ...cleanup(), timeoutMs: 5000 });
+    let started = false; const next = surface.startAttempt(context('next-after-retained-close')).then(() => { started = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false); expect(started).toBe(false);
+    expect(retirementState(surface).endingAttempt).toBe(owner);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+    expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    releaseClose!(); await Promise.all([owner, duplicate, next]); holdClose = false; holdScopeEnd = false;
+    expect(started).toBe(true);
+    expect(vi.mocked(connectNativeProcess)).toHaveBeenCalledTimes(2);
+    await surface.dispose(cleanup());
+  });
+
+  it('retains a late cleanup failure after the caller aborts even when terminal close succeeds', async () => {
+    const surface = new NativeSurface({}); await start(surface); const peer = holdRequests('scope.end'); holdClose = true;
+    const controller = new AbortController();
+    const ending = surface.endAttempt({ ...cleanup(), signal: controller.signal });
+    const request = await peer.next('scope.end'); const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+    controller.abort(); await ending;
+    request.fail('cleanup-failed', 'unknown');
+    await vi.waitFor(() => expect(releaseClose).toBeDefined()); releaseClose!();
+    const failure = await owner;
+    expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    await expect(surface.startAttempt(context('not-after-real-cleanup-failure'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+  });
+
+  it('keeps missing native close proof unresolved through the existing safety deadline', async () => {
+    const surface = new NativeSurface({}); await start(surface); holdClose = true;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+      const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+      let completed = false; void owner.then(() => { completed = true; });
+      await vi.advanceTimersByTimeAsync(14_999); expect(completed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const failure = await owner;
+      expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      await expect(surface.startAttempt(context('no-close-proof'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+      expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      expect(frames.some(frame => frame['command'] === 'scope.end')).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('releases a worker-owned lease at the caller deadline while retaining its unfinished recorder', async () => {
+    let acquisitions = 0; let finishStop!: () => void;
+    const release = vi.fn(async (_lease: unknown, _current: { signal: AbortSignal }) => {});
+    const stop = vi.fn((_current: { signal: AbortSignal }) => new Promise<{ url: string; mediaType: string }>(resolve => { finishStop = () => resolve({ url: 'https://synthetic.test/worker.mp4', mediaType: 'video/mp4' }); }));
+    const surface = new NativeSurface({ browser: { name: 'synthetic', acquire: async () => ({ id: `worker-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }), release,
+      record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop }),
+    } });
+    await start(surface); await sendEvent('scope.disconnected', { identityScope: currentScope, reason: 'browser-connection-closed' });
+    await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement')); await surface.startVideo(operation());
+    const departing = surface.dispose({ signal, timeoutMs: 10 });
+    const owner = (surface as unknown as { disposing: Promise<void> }).disposing;
+    await expect(departing).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(release.mock.calls[0]![0]).toMatchObject({ id: 'worker-2' });
+    expect(release.mock.calls[0]![1].signal.aborted).toBe(true);
+    expect(stop.mock.calls[0]![0].signal.aborted).toBe(true);
+    expect(retirementState(surface).retiringAttempt).toBeDefined();
+    finishStop(); await owner;
+    expect(release).toHaveBeenCalledTimes(1); expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains actual provider receipts after the caller deadline without extending their effect signal', async () => {
+    let finishStop!: () => void; let finishRelease!: () => void;
+    const stop = vi.fn((_current: { signal: AbortSignal }) => new Promise<{ url: string; mediaType: string }>(resolve => { finishStop = () => resolve({ url: 'https://synthetic.test/ended.mp4', mediaType: 'video/mp4' }); }));
+    const release = vi.fn((_lease: unknown, _current: { signal: AbortSignal }) => new Promise<void>(resolve => { finishRelease = resolve; }));
+    let acquired = 0;
+    const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: `lease-${++acquired}`, cdpEndpoint: 'ws://synthetic.test/browser' }), release,
+      record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop }),
+    } });
+    await start(surface); await surface.startVideo(operation());
+    await surface.endAttempt({ signal, timeoutMs: 10 });
+    const owner = retirementState(surface).endingAttempt!;
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(stop.mock.calls[0]![0].signal.aborted).toBe(true);
+    expect(release.mock.calls[0]![1].signal).toBe(stop.mock.calls[0]![0].signal);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+    let started = false; const next = surface.startAttempt(context('after-real-receipts')).then(() => { started = true; });
+    finishStop(); await new Promise(resolve => setImmediate(resolve)); expect(started).toBe(false);
+    finishRelease(); await Promise.all([owner, next]);
+    expect(acquired).toBe(2); expect(release).toHaveBeenCalledTimes(1); expect(stop).toHaveBeenCalledTimes(1);
+    const disposing = surface.dispose(cleanup()); await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(2)); finishRelease(); await disposing;
+  });
+});
+
 describe('bounded native attempt cleanup ownership', () => {
   it.each(['already-aborted', 'mid-wait-abort', 'wait-timeout'] as const)('finishes one owned cleanup after %s without granting early business authority', async mode => {
     const surface = new NativeSurface({}); await start(surface);
     await surface.observe(operation());
-    holdScopeEnd = true;
+    holdScopeEnd = true; holdClose = true;
     const controller = new AbortController();
     if (mode === 'already-aborted') controller.abort();
     const waiting = surface.endAttempt({ signal: controller.signal, timeoutMs: mode === 'already-aborted' ? 0 : mode === 'wait-timeout' ? 10 : 1000 });
@@ -2335,8 +2531,9 @@ describe('bounded native attempt cleanup ownership', () => {
     const retired = retirementState(surface).retiringAttempt!;
     retired.downloads.set('retained-download', Promise.resolve(Buffer.from('old attempt')));
     expect(owner).toBeDefined();
-    expect(frames.filter(frame => frame['command'] === 'scope.end')).toMatchObject([{ timeoutMs: expect.any(Number) }]);
-    expect(frames.find(frame => frame['command'] === 'scope.end')!['timeoutMs']).toBeGreaterThan(1000);
+    const expectedEnds = mode === 'already-aborted' ? 0 : 1;
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(expectedEnds);
+    if (expectedEnds > 0) expect(frames.find(frame => frame['command'] === 'scope.end')!['timeoutMs']).toBeLessThanOrEqual(mode === 'wait-timeout' ? 10 : 1000);
     if (mode === 'mid-wait-abort') controller.abort();
     await expect(waiting).resolves.toBeUndefined();
     const duplicate = surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
@@ -2348,10 +2545,10 @@ describe('bounded native attempt cleanup ownership', () => {
     expect(opened).toBe(false);
     await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
     expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
-    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
-    expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(expectedEnds);
+    expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(expectedEnds);
     expect(retired.downloads.size).toBe(1);
-    releaseScopeEnd!(); await owner; await next; holdScopeEnd = false;
+    releaseClose!(); await owner; await next; holdScopeEnd = false; holdClose = false;
     expect(retirementState(surface)).toMatchObject({ retiringAttempt: undefined, endingAttempt: undefined, retirementFailure: undefined });
     expect(retired.downloads.size).toBe(0);
     expect(retired.observationHighWater).toBeUndefined();
@@ -2362,11 +2559,14 @@ describe('bounded native attempt cleanup ownership', () => {
   it('keeps a late native cleanup failure permanent after its caller has left', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const peer = holdRequests('scope.end');
-    await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+    holdClose = true; const controller = new AbortController();
+    const ending = surface.endAttempt({ ...cleanup(), signal: controller.signal });
     const request = await peer.next('scope.end');
+    controller.abort(); await ending;
     const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
     const next = surface.startAttempt(context('must-not-open')).catch((cause: unknown) => cause);
     request.fail('cleanup-failed', 'unknown');
+    await vi.waitFor(() => expect(releaseClose).toBeDefined()); releaseClose!();
     const failure = await owner;
     expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
     expect(await next).toBe(failure);
@@ -2378,7 +2578,7 @@ describe('bounded native attempt cleanup ownership', () => {
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   });
 
-  it('spends one owner deadline across recorder and native cleanup, releasing the lease when that deadline expires', async () => {
+  it('spends one caller deadline across recorder and scope cleanup, retaining native close after expiry', async () => {
     let finishRecording!: () => void;
     const release = vi.fn(async (_lease: unknown, _context: { signal: AbortSignal }) => {});
     const stopped = vi.fn(() => new Promise<{ url: string; mediaType: string }>(resolve => { finishRecording = () => resolve({ url: 'https://synthetic.test/video', mediaType: 'video/mp4' }); }));
@@ -2387,8 +2587,8 @@ describe('bounded native attempt cleanup ownership', () => {
     await start(surface); await surface.startVideo(operation());
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     try {
-      holdScopeEnd = true;
-      await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+      holdScopeEnd = true; holdClose = true;
+      const waiting = surface.endAttempt({ signal, timeoutMs: 15_000 });
       const retired = retirementState(surface).retiringAttempt;
       const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
       await vi.advanceTimersByTimeAsync(9000);
@@ -2398,22 +2598,24 @@ describe('bounded native attempt cleanup ownership', () => {
       expect(frames.find(frame => frame['command'] === 'scope.end')).toMatchObject({ timeoutMs: 6000 });
       expect(release).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(6000);
-      const failure = await owner;
-      expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+      await waiting;
       expect(retirementState(surface).retiringAttempt).toBe(retired);
       expect(release).toHaveBeenCalledTimes(1);
       expect(release.mock.calls[0]![1].signal.aborted).toBe(true);
-      releaseScopeEnd!(); acknowledgeCancel?.(); await vi.advanceTimersByTimeAsync(0);
-      await expect(surface.startAttempt(context('after-late-native-success'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
-      await expect(surface.endAttempt(cleanup())).rejects.toBe(failure);
-      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
-      expect(retirementState(surface).retirementFailure).toBe(failure);
-      expect(release).toHaveBeenCalledTimes(1);
       expect(acquire).toHaveBeenCalledTimes(1);
+      let finished = false; void owner.then(() => { finished = true; });
+      releaseScopeEnd!(); acknowledgeCancel?.(); await vi.advanceTimersByTimeAsync(0);
+      expect(finished).toBe(false);
+      releaseClose!(); await owner; holdClose = false; holdScopeEnd = false;
+      expect(retirementState(surface).retirementFailure).toBeUndefined();
+      await surface.startAttempt(context('fresh-after-terminal-proof'));
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(connectNativeProcess)).toHaveBeenCalledTimes(2);
+      await surface.dispose(cleanup());
     } finally { vi.useRealTimers(); }
   });
 
-  it('passes only the owner remainder to native close and joins its late correlated proof only on explicit reaping', async () => {
+  it('passes the caller remainder to native close while retaining its independent correlated proof', async () => {
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'late-close-lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release } });
     await start(surface);
@@ -2422,24 +2624,24 @@ describe('bounded native attempt cleanup ownership', () => {
     holdScopeEnd = true; holdClose = true;
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     try {
-      await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+      const waiting = surface.endAttempt({ signal, timeoutMs: 15_000 });
       const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
       await vi.advanceTimersByTimeAsync(9000); releaseScopeEnd!(); await vi.advanceTimersByTimeAsync(0);
       expect(close).toHaveBeenCalledTimes(1);
       expect(close.mock.calls[0]![0].timeoutMs).toBe(6000);
       const nativeClose = close.mock.results[0]!.value as Promise<void>;
       await vi.advanceTimersByTimeAsync(6000);
-      const failure = await owner;
-      expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      await waiting;
       expect(release).toHaveBeenCalledTimes(1);
-      releaseClose!(); await nativeClose; await vi.advanceTimersByTimeAsync(0);
       expect(retirementState(surface).client).toBe(client);
       expect(retirementState(surface).retiringAttempt).toBeDefined();
-      expect(retirementState(surface).retirementFailure).toBe(failure);
-      expect(release).toHaveBeenCalledTimes(1);
-      await expect(surface.startAttempt(context('not-after-late-close'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
-      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
-      expect(close.mock.results.slice(1).every(result => result.value === nativeClose)).toBe(true);
+      let finished = false; void owner.then(() => { finished = true; });
+      await vi.advanceTimersByTimeAsync(0); expect(finished).toBe(false);
+      releaseClose!(); await nativeClose; await owner;
+      expect(retirementState(surface).client).toBeUndefined();
+      expect(retirementState(surface).retiringAttempt).toBeUndefined();
+      expect(retirementState(surface).retirementFailure).toBeUndefined();
+      await surface.dispose(cleanup());
       expect(release).toHaveBeenCalledTimes(1);
       expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     } finally { close.mockRestore(); vi.useRealTimers(); }
@@ -2463,7 +2665,7 @@ describe('bounded native attempt cleanup ownership', () => {
     await expect(surface.endAttempt(cleanup())).rejects.toBe(cleanupFailure);
     await expect(surface.dispose(cleanup())).rejects.toBe(cleanupFailure);
     await expect(surface.startAttempt(context('not-after-recorder-failure'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
-    expect(stopped).toHaveBeenCalledTimes(4);
+    expect(stopped).toHaveBeenCalledTimes(3);
     expect(release).toHaveBeenCalledTimes(1);
     expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
   });
@@ -2536,20 +2738,20 @@ describe('bounded native attempt cleanup ownership', () => {
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   });
 
-  it('does not release a lease or dispatch shutdown while disposal joins a pending attempt owner', async () => {
+  it('joins retained terminal cleanup without granting a later caller new ordinary cleanup authority', async () => {
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'joined-lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release } });
-    await start(surface); holdScopeEnd = true;
+    await start(surface); holdClose = true;
     await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
     const owner = retirementState(surface).endingAttempt;
     await expect(surface.dispose({ signal: AbortSignal.abort(), timeoutMs: 0 })).rejects.toMatchObject({ code: 'CANCELLED' });
     const disposing = surface.dispose(cleanup());
     await new Promise(resolve => setImmediate(resolve));
     expect(retirementState(surface).endingAttempt).toBe(owner);
-    expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(0);
-    expect(release).not.toHaveBeenCalled();
-    releaseScopeEnd!(); await disposing;
-    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+    expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    releaseClose!(); await disposing;
+    expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     expect(release).toHaveBeenCalledTimes(1);
   });
@@ -2727,4 +2929,116 @@ describe('native Web public reference compatibility', () => {
     } finally { await surface.dispose(cleanup()); }
   });
 
+});
+
+
+it.each(['recorder', 'native-close', 'lease'] as const)('preserves first actual cleanup failure (%s) after the caller departs', async first => {
+  const errors = {
+    recorder: new Error('first-order recorder receipt'),
+    'native-close': new Error('first-order native close receipt'),
+    lease: new Error('first-order lease receipt'),
+  };
+  let rejectStop!: (cause: unknown) => void;
+  let rejectClose!: (cause: unknown) => void;
+  let rejectRelease!: (cause: unknown) => void;
+  const stopReceipt = new Promise<{ url: string; mediaType: string }>((_, reject) => { rejectStop = reject; });
+  const closeReceipt = new Promise<void>((_, reject) => { rejectClose = reject; });
+  const releaseReceipt = new Promise<void>((_, reject) => { rejectRelease = reject; });
+  const stopped = vi.fn(() => stopReceipt);
+  const release = vi.fn(() => releaseReceipt);
+  const surface = new NativeSurface({ browser: { name: 'ordered-cleanup-fixture', scope: 'attempt',
+    acquire: async () => ({ id: 'ordered-cleanup-lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release,
+    record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: stopped }),
+  } });
+  await start(surface); await surface.startVideo(operation());
+  const close = vi.spyOn(NativeClient.prototype, 'close').mockImplementation(() => closeReceipt);
+  try {
+    const controller = new AbortController();
+    const caller = surface.endAttempt({ signal: controller.signal, timeoutMs: 1000 });
+    const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+    expect(stopped).toHaveBeenCalledTimes(1);
+    controller.abort(); await caller;
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(close).toHaveBeenCalled();
+    // A second cleanup caller joins the same owner, not a new cleanup effect.
+    const disposing = surface.dispose(cleanup()).catch((cause: unknown) => cause);
+    const reject = { recorder: rejectStop, 'native-close': rejectClose, lease: rejectRelease };
+    const order = [first, ...(['recorder', 'native-close', 'lease'] as const).filter(kind => kind !== first)];
+    for (const kind of order) {
+      reject[kind](errors[kind]);
+      // Prove actual receipt order rather than an arbitrary Promise.all order.
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    const failure = await owner;
+    if (first === 'native-close') expect(failure).toBe(errors[first]);
+    else expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: errors[first] });
+    expect(await disposing).toBe(failure);
+    expect(release).toHaveBeenCalledTimes(1);
+    await expect(surface.startAttempt(context('blocked'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  } finally { close.mockRestore(); await surface.dispose(cleanup()).catch(() => undefined); }
+});
+
+it('records first exact late recorder failure rather than mutable last failure', async () => {
+  const primary = new Error('first late rollback failure');
+  const secondary = new Error('second late rollback failure');
+  const finishes: Array<(recording: ProviderRecording) => void> = [];
+  const rejects: Array<(cause: unknown) => void> = [];
+  const stops = [0, 1].map(() => {
+    const work = new Promise<{ url: string; mediaType: string }>((_, reject) => { rejects.push(reject); });
+    return vi.fn(() => work);
+  });
+  const record = vi.fn(() => new Promise<ProviderRecording>(resolve => { finishes.push(resolve); }));
+  const release = vi.fn(async () => {});
+  const surface = new NativeSurface({ browser: { name: 'late-order-review', scope: 'attempt', acquire: async () => ({ id: 'late-order', cdpEndpoint: 'ws://synthetic.test/browser' }), release, record } });
+  await start(surface);
+  const firstController = new AbortController();
+  const first = surface.startVideo({ ...operation(), signal: firstController.signal }).catch((cause: unknown) => cause);
+  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
+  firstController.abort(); await first;
+  const second = surface.startVideo(operation()).catch((cause: unknown) => cause);
+  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(2));
+  await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+  const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+  try {
+    finishes[0]!({ startedAt: '2026-10-21T00:00:00.000Z', stop: stops[0]! });
+    finishes[1]!({ startedAt: '2026-10-21T00:00:00.000Z', stop: stops[1]! });
+    await vi.waitFor(() => expect(stops.every(stop => stop.mock.calls.length === 1)).toBe(true));
+    rejects[0]!(primary); rejects[1]!(secondary);
+    const failure = await owner; await second;
+    expect((failure as EngineError).cause).toBe(primary);
+    expect(release).toHaveBeenCalledTimes(1);
+    await expect(surface.startAttempt(context('no-reuse'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  } finally { await surface.dispose(cleanup()).catch(() => undefined); }
+});
+
+
+it('observes late rollback failure before a subsequently failed native close', async () => {
+  let finish!: (recording: ProviderRecording) => void;
+  let rejectStop!: (cause: unknown) => void;
+  let rejectClose!: (cause: unknown) => void;
+  const primary = new Error('late rollback already known');
+  const secondary = new Error('native close subsequently failed');
+  const stopReceipt = new Promise<{ url: string; mediaType: string }>((_, reject) => { rejectStop = reject; });
+  const closeReceipt = new Promise<void>((_, reject) => { rejectClose = reject; });
+  const stopped = vi.fn(() => stopReceipt);
+  const release = vi.fn(async () => {});
+  const record = vi.fn(() => new Promise<ProviderRecording>(resolve => { finish = resolve; }));
+  const surface = new NativeSurface({ browser: { name: 'late-close-order', scope: 'attempt', acquire: async () => ({ id: 'late-close-order', cdpEndpoint: 'ws://synthetic.test/browser' }), release, record } });
+  await start(surface);
+  const starting = surface.startVideo(operation()).catch((cause: unknown) => cause);
+  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
+  const close = vi.spyOn(NativeClient.prototype, 'close').mockImplementation(() => closeReceipt);
+  try {
+    await surface.endAttempt({ signal: AbortSignal.abort(), timeoutMs: 0 });
+    const owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+    const retired = retirementState(surface).retiringAttempt as unknown as { lateRecordingFailure?: unknown };
+    finish({ startedAt: '2026-10-21T00:00:00.000Z', stop: stopped });
+    await vi.waitFor(() => expect(stopped).toHaveBeenCalledTimes(1));
+    rejectStop(primary);
+    for (let turn = 0; turn < 20 && retired.lateRecordingFailure === undefined; turn++) await Promise.resolve();
+    expect(retired.lateRecordingFailure).toMatchObject({ cause: primary });
+    rejectClose(secondary);
+    const failure = await owner; await starting;
+    expect((failure as EngineError).cause).toBe(primary);
+  } finally { close.mockRestore(); await surface.dispose(cleanup()).catch(() => undefined); }
 });

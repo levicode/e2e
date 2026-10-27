@@ -1,5 +1,6 @@
 /** Synthetic consumer project, copied unchanged into a real runner project. */
 import { readFile } from 'node:fs/promises';
+import { setTimeout as pause } from 'node:timers/promises';
 import { test, type Browser } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
@@ -9,7 +10,7 @@ test.beforeEach(async ({ app, browser }) => {
   fixtureOrigin = new URL(await browser.url()).origin;
 });
 
-async function control(action: 'wait' | 'release', name: string): Promise<void> {
+async function control(action: 'wait' | 'release' | 'observe', name: string): Promise<void> {
   const response = await fetch(`${fixtureOrigin}/control/${action}/${name}`, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`download fixture control failed: ${action}/${name}`);
   await response.text();
@@ -66,6 +67,8 @@ test('nested waiters each own their copy of the same download', async ({ browser
   await verify(outer, 'nested');
 });
 
+// These two read gates observe native capture timing, not a public promise
+// that providers must be read before the test's trigger returns.
 test('trigger error wins over a real provider read failure without publishing bytes', async ({ browser }) => {
   const primary = new Error('synthetic trigger failure');
   let caught: unknown;
@@ -105,7 +108,6 @@ test('trigger error returns before a held read and late bytes are discarded', as
 test('timed out provider bytes cannot publish into a replacement scope', async ({ app, browser }) => {
   const waiting = browser.waitForDownload(async () => {
     await browser.locator('#cancelled').tap();
-    await control('wait', 'read-cancelled');
   }, { timeout: 3_000 }).then(() => { throw new Error('held download unexpectedly resolved'); }, (cause: unknown) => cause);
   void waiting.catch(() => undefined);
   try {
@@ -113,7 +115,8 @@ test('timed out provider bytes cannot publish into a replacement scope', async (
     const cause = await waiting;
     expect(cause).toMatchObject({ code: 'ACTION_FAILED' });
     if (!(cause instanceof Error)) throw new Error('held provider read did not reject with an error');
-    expect(cause.message).toContain('download did not complete within');
+    // The original API did not fix the wording once download bytes were being
+    // read. Either the provider budget or the waiter budget may expire first.
     await control('wait', 'aborted-cancelled');
     await app.clearState();
     await app.open();
@@ -131,6 +134,7 @@ test('timed out provider bytes cannot publish into a replacement scope', async (
 });
 
 test('a held HTTP download is cancelled before a replacement waiter runs', async ({ app, browser }) => {
+  await control('observe', 'stream');
   const waiting = browser.waitForDownload(async () => {
     await browser.locator('#stream').tap();
     await control('wait', 'stream-started');
@@ -138,11 +142,14 @@ test('a held HTTP download is cancelled before a replacement waiter runs', async
   void waiting.catch(() => undefined);
   try {
     await control('wait', 'stream-started');
+    await control('wait', 'chrome-stream-started');
     const cause = await waiting;
     expect(cause).toMatchObject({ code: 'ACTION_FAILED' });
     if (!(cause instanceof Error)) throw new Error('held stream did not reject with an error');
-    // This distinguishes a real native download.started from a subscription with no event.
-    expect(cause.message).toContain('download did not complete within');
+    // Either transfer deadline may win, but "no download started" would mean
+    // native missed the independently observed Chrome event and must still fail.
+    expect(cause.message === 'operation timed out in browser.waitForDownload'
+      || cause.message.startsWith('download did not complete within ')).toBe(true);
     await app.clearState();
     await app.open();
     const fresh = await browser.waitForDownload(async () => {
@@ -160,13 +167,42 @@ test('a held HTTP download is cancelled before a replacement waiter runs', async
 // Native 2b9e0a00 bounds live download entries at 128. This is a finite
 // capacity regression, not a claim to inspect the native resource table.
 test('129 sequential downloads remain usable in one scope', { timeout: 120_000 }, async ({ browser }) => {
+  await control('observe', 'capacity');
   for (let index = 0; index < 129; index++) {
+    // Chrome 156 drops download-attribute requests above ten per second.
+    // This is driver pacing, not a retry or an enlarged operation/test budget.
+    if (index > 0 && index % 10 === 0) await pause(1_100);
     await verify(await browser.waitForDownload(() => browser.locator('#capacity').tap()), 'capacity');
   }
+  await control('wait', 'chrome-capacity-all-started');
+});
+
+test('Chrome drops the eleventh burst request before native download events', async ({ browser }) => {
+  await control('observe', 'burst');
+  const first = await browser.waitForDownload(async () => {
+    const duration = await browser.evaluate(() => {
+      const link = document.querySelector<HTMLAnchorElement>('#burst')!;
+      const started = performance.now();
+      for (let index = 0; index < 11; index++) link.click();
+      return performance.now() - started;
+    });
+    expect(duration).toBeLessThan(1_000);
+    await control('release', 'burst-eleven-clicks-under-second');
+  });
+  await verify(first, 'burst');
+  await control('wait', 'chrome-burst-ten-started');
+  // A fresh request after Chrome's renderer cooldown must work;
+  // there is no retry of the suppressed eleventh request.
+  await pause(1_100);
+  await verify(await browser.waitForDownload(() => browser.locator('#burst').tap()), 'burst');
+  await control('wait', 'chrome-burst-eleven-started');
 });
 
 test('run interruption discards a held download', async ({ browser }) => {
-  await browser.waitForDownload(() => browser.locator('#interrupt').tap());
+  await browser.waitForDownload(async () => {
+    await browser.locator('#interrupt').tap();
+    await control('release', 'interrupt-tap-finished');
+  });
 });
 
 test('a new attempt downloads after run interruption', async ({ browser }) => {

@@ -381,7 +381,7 @@ export class NativeClient {
         void this.exchange('cancel', { type: 'cancel', generation: this.ready.generation, operationSeq }, cancelContext, undefined, undefined, operationSeq).then(() => {
           trace?.observe('CancelExchangeResolved', { operationSeq });
           cancelAcknowledged = true; complete();
-        }).catch(() => { if (!finished) this.fail('The native browser cancellation did not settle', code); });
+        }).catch(() => { if (!finished && !this.closed) this.fail('The native browser cancellation did not settle', code); });
       };
       const abort = () => abandon('CANCELLED');
       const timer = setTimeout(() => abandon('OPERATION_TIMEOUT'), timeout);

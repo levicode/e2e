@@ -771,6 +771,23 @@ describe('terminal cleanup control', () => {
     receipt(peer);
     await peer.client.close(context());
   });
+  it('accepts exact close proof before cancel ACK without treating the retired cancel as a cleanup failure', async () => {
+    const settle = vi.fn(async () => {});
+    const peer = await terminalPeer(settle);
+    const controller = new AbortController();
+    const action = peer.client.request('page.navigate', {}, context(controller.signal));
+    const rejected = expect(action).rejects.toMatchObject({ code: 'CANCELLED' });
+    controller.abort();
+    expect(peer.requests.filter(request => request['type'] === 'cancel')).toHaveLength(1);
+    const closing = peer.client.close(context());
+    receipt(peer);
+    await rejected;
+    await expect(closing).resolves.toBeUndefined();
+    expect(settle).toHaveBeenCalledOnce();
+    expect(peer.dispose).toHaveBeenCalledOnce();
+    expect(peer.client.close(context())).toBe(closing);
+    await expect(peer.client.request('page.navigate', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  });
   it.each(['eof', 'stale', 'cleanup-failed', 'malformed'] as const)('retains cleanup failure for %s without rewriting Unknown', async fault => {
     const peer = await terminalPeer();
     const action = peer.client.request('page.navigate', {}, context());

@@ -16,7 +16,7 @@ import {
 import { ConfiguredInitScripts } from './init-scripts.ts';
 import { LeasedBrowsers, type LeaseRecording } from './provider.ts';
 import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app.ts';
-import { withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
+import { connectionAbort, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
@@ -37,7 +37,6 @@ import { PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './nati
 const SECURE_FIELD_SELECTOR = 'input[type="password" i]';
 const LIFECYCLE_TIMEOUT_MS = 3_600_000;
 const LATE_RECORDING_STOP_MS = 10_000;
-const RETIREMENT_TIMEOUT_MS = 15_000;
 interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEventMap]) => void | Promise<void>; unsubscribe?: (() => void) | undefined }
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
 interface Attempt {
@@ -45,6 +44,9 @@ interface Attempt {
   ready: boolean;
   readonly context: EngineAttemptContext;
   readonly retirement: AbortController;
+  cleanupSignal?: AbortSignal;
+  lateRecordingFailure?: unknown;
+  observeLateRecordingFailure?: (cause: unknown) => void;
   readonly wireRequests: Set<Promise<void>>;
   scope: string;
   recovery?: RecoveryIdentity;
@@ -145,6 +147,7 @@ export class NativeSurface implements NativeWebSurface {
   }
   async finish(info: EngineFinishInfo): Promise<void> { await this.leases?.finish(info); }
   async init(info: EngineInitInfo): Promise<void> {
+    this.leases?.assertCanInit();
     if (this.disposing !== undefined) throw invalidState('Native worker disposal is still pending');
     if (this.workerRetirement.signal.aborted) {
       if (!this.workerRestartable) throw invalidState('Native worker cleanup has not been confirmed');
@@ -244,7 +247,8 @@ export class NativeSurface implements NativeWebSurface {
       // A healthy, fully opened scope rejected only by local policy still needs scope.end.
       // The existing retirement owner fences business work and preserves cleanup failures.
       if (policyRejectedClient !== undefined && this.client === policyRejectedClient && this.attempt === attempt) {
-        void this.retireAttempt().catch(() => {});
+        // Keep the unpublished owner for endAttempt's caller-provided cleanup budget.
+        attempt.retirement.abort();
       }
       // Unknown or partially opened scopes remain unusable; do not generalize the policy exception.
       else if (openDispatched && this.attempt === attempt && this.client !== undefined && !this.client.isTerminal() && !(attempt.scope === '' && isNativeNotDispatched(cause))) this.client.invalidate();
@@ -254,10 +258,10 @@ export class NativeSurface implements NativeWebSurface {
   }
   settleAttempt(context: EngineCleanupContext): Promise<void> { return this.latch.settle(context); }
   endAttempt(context: EngineCleanupContext): Promise<void> {
-    // Caller cancellation ends only this wait, never the exact retirement work.
-    return waitForRetirement(this.retireAttempt(), context);
+    // Ordinary cleanup uses this budget; exact mandatory retirement stays owned.
+    return waitForRetirement(this.retireAttempt(context), context);
   }
-  private retireAttempt(): Promise<void> {
+  private retireAttempt(context: EngineCleanupContext): Promise<void> {
     if (this.endingAttempt !== undefined) return this.endingAttempt;
     if (this.retirementFailure !== undefined && this.retiringAttempt === undefined && this.connecting === undefined) return Promise.reject(this.retirementFailure);
     let resolve!: () => void; let reject!: (cause: unknown) => void;
@@ -265,7 +269,8 @@ export class NativeSurface implements NativeWebSurface {
     // Publish the existing owner before provider code can synchronously re-enter cleanup.
     this.endingAttempt = owned;
     void owned.catch(() => {});
-    void withConnectionBudget({ signal: new AbortController().signal, timeoutMs: RETIREMENT_TIMEOUT_MS }, 'retiring native attempt', remaining => this.closeAttempt(remaining)).then(() => {
+    const deadline = cleanupDeadline(context);
+    void this.closeAttempt(deadline).finally(deadline.dispose).then(() => {
       if (this.endingAttempt === owned) this.endingAttempt = undefined;
       resolve();
     }, cause => {
@@ -275,87 +280,120 @@ export class NativeSurface implements NativeWebSurface {
     });
     return owned;
   }
-  private async closeAttempt(remaining: () => ConnectionBudget): Promise<void> {
-    const cleanup = remaining();
+  private async closeAttempt(deadline: CleanupDeadline): Promise<void> {
+    const cleanup = deadline.context; const remaining = deadline.remaining;
     const attempt = this.attempt ?? this.retiringAttempt;
     const client = this.client; const engine = this.engine; const connecting = this.connecting;
-    attempt?.retirement.abort();
-    this.references.retire();
+    if (connecting !== undefined) this.clientTenure++;
+    if (attempt !== undefined) attempt.cleanupSignal = cleanup.signal;
+    attempt?.retirement.abort(); this.references.retire();
     const finalizedCleanup = attempt?.finalizedVideo?.retire();
-    let finalizedCleanupProven = finalizedCleanup === undefined;
-    let resourcesRetired = false;
+    const recordingStarts = [...(attempt?.recordingStarts ?? [])];
+    const recordingStops = new Set<Promise<unknown>>();
+    if (attempt?.recordingStop !== undefined) recordingStops.add(attempt.recordingStop);
+    let scopeEnd: Promise<unknown> | undefined;
+    let scopeEnded = false;
     let failure: unknown = this.retirementFailure;
+    const failed = (cause: unknown, departed = false) => {
+      // A departed waiter is not a failed exact-owner cleanup receipt.
+      if (departed && cleanup.signal.aborted && cause instanceof EngineError && (cause.code === 'CANCELLED' || cause.code === 'OPERATION_TIMEOUT')) return;
+      failure ??= cause;
+      this.retirementFailure ??= cause;
+    };
+    // Observe exact receipts when they settle. Joining them in teardown order
+    // must not reorder the first real failure after the caller has departed.
+    const receipt = <T>(work: Promise<T>, departed = false): Promise<T> => {
+      void work.catch(cause => { failed(cause, departed); });
+      return work;
+    };
+    if (finalizedCleanup !== undefined) receipt(finalizedCleanup);
+    for (const stopping of recordingStops) receipt(stopping);
+    if (attempt !== undefined) for (const stopping of attempt.lateRecordingStops.values()) receipt(stopping);
+    if (attempt !== undefined) {
+      // New rollback receipts can arrive after this retirement has started.
+      // Observe their actual failure, not the later body-cancellation chain.
+      attempt.observeLateRecordingFailure = failed;
+      if (attempt.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure);
+    }
+    if (connecting !== undefined) {
+      const observed = () => { if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure); };
+      void connecting.work.then(observed, observed);
+    }
     this.attempt = undefined; this.retiringAttempt = attempt; this.listeners.clear(); attempt?.channel?.dispose();
+    if (attempt !== undefined) attempt.credentials = undefined;
     try {
-      // Cancellation ACK is not settlement. Join only these captured ordinary
-      // requests before scope.end enters the client's unchanged settlement gate.
+      remaining();
       if (attempt !== undefined && attempt.wireRequests.size > 0) {
-        await raceAbort(() => Promise.all(attempt.wireRequests), remaining().signal, 'settling retired native requests');
+        await raceAbort(() => Promise.all(attempt.wireRequests), cleanup.signal, 'settling retired native requests');
         remaining();
       }
-      // A late process handshake remains owned until its fresh-signal close completes.
       if (connecting !== undefined) {
-        this.clientTenure++;
-        await raceAbort(() => connecting.work.catch(() => undefined), remaining().signal, 'retiring native connection');
+        await raceAbort(() => connecting.work.catch(() => undefined), cleanup.signal, 'retiring native connection');
         remaining();
         if (connecting.cleanupFailure !== undefined) throw connecting.cleanupFailure;
       }
-      // Give an asynchronous recorder the cleanup budget to arrive and stop.
-      if (attempt !== undefined && attempt.recordingStarts.size > 0) {
-        await raceAbort(() => Promise.allSettled(attempt.recordingStarts), remaining().signal, 'retiring provider recording starts');
+      if (recordingStarts.length > 0) {
+        await raceAbort(() => Promise.allSettled(recordingStarts), cleanup.signal, 'retiring provider recording starts');
         remaining();
       }
       if (attempt !== undefined) for (const recording of attempt.lateRecordings) {
-        const budget = remaining();
-        await raceAbort(() => this.stopLateProviderRecording(attempt, recording, budget.signal), budget.signal, 'retiring late provider recording');
+        remaining();
+        const stopping = receipt(this.stopLateProviderRecording(attempt, recording, cleanup.signal)); recordingStops.add(stopping);
+        await raceAbort(() => stopping, cleanup.signal, 'retiring late provider recording');
         remaining();
       }
       if (attempt?.recording !== undefined) {
-        const budget = remaining();
-        await raceAbort(() => this.stopProviderVideo(attempt, budget.signal), budget.signal, 'retiring provider recording');
+        remaining();
+        const stopping = receipt(this.stopProviderVideo(attempt, cleanup.signal)); recordingStops.add(stopping);
+        await raceAbort(() => stopping, cleanup.signal, 'retiring provider recording');
         remaining();
       }
-      try {
-        if (failure !== undefined || client?.isTerminal() || client?.recoveryScope() !== undefined) {
-          await this.closeClient(remaining(), client);
-        } else if (attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
-          const callbackEpoch = client!.callbackCheckpoint(); const budget = remaining();
-          await raceAbort(() => engine.command('scope.end', { identityScope: attempt.scope }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId), callbackEpoch), budget.signal, 'ending native scope');
-          remaining();
-          client!.retireCallbacks(callbackEpoch, 'scope-ended');
-        }
-      } catch (cause) { failure ??= cause; }
-      if (this.persistent || this.workerSourceLost || failure !== undefined) {
-        try { await this.closeClient(remaining(), client); } catch (cause) { failure ??= cause; }
+      if (failure === undefined && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
+        const callbackEpoch = client!.callbackCheckpoint(); const budget = remaining();
+        scopeEnd = engine.command('scope.end', { identityScope: attempt.scope }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId), callbackEpoch);
+        receipt(scopeEnd, true);
+        await raceAbort(() => scopeEnd!, cleanup.signal, 'ending native scope');
+        scopeEnded = true; client!.retireCallbacks(callbackEpoch, 'scope-ended');
       }
-      // Native close starts without waiting for local artifact IO. The local
-      // file owner must nevertheless settle within this same cleanup budget
-      // before its local custody can be retired.
+    } catch (cause) { failed(cause, true); }
+
+    // NativeClient.close retains its existing independent terminal-safety budget.
+    // Give it only the caller's remaining wait before independent lease release.
+    const needsClose = client !== undefined && ((attempt !== undefined && !scopeEnded) || this.persistent || this.workerSourceLost || failure !== undefined || cleanup.signal.aborted);
+    const closing = receipt(needsClose ? this.closeClient(cleanup, client) : Promise.resolve());
+    try { await raceAbort(() => closing, cleanup.signal, 'waiting for native close'); }
+    catch (cause) { failed(cause, true); }
+    // Release billing with the original signal, even if expired. Its actual
+    // receipt remains owned; a later cleanup caller cannot reissue release.
+    const releasing = receipt(this.leases?.endAttempt(cleanup) ?? Promise.resolve());
+    let nativeRetired = !needsClose && (scopeEnded || attempt === undefined || client === undefined);
+    let finalizedCleanupProven = finalizedCleanup === undefined;
+    let released = false;
+    try {
+      try { await closing; if (this.client !== client) nativeRetired = true; } catch (cause) { failed(cause); }
+      // Join already-owned work, not new effects. Cancel ACK alone is not settlement.
+      if (scopeEnd !== undefined) try { await scopeEnd; } catch (cause) { failed(cause, true); }
+      if (attempt !== undefined) await Promise.allSettled(attempt.wireRequests);
+      if (connecting !== undefined) {
+        await connecting.work.catch(() => undefined);
+        if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure);
+      }
+      await Promise.allSettled(recordingStarts);
+      for (const stopping of recordingStops) try { await stopping; } catch (cause) { failed(cause); }
+      if (attempt?.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure);
       if (finalizedCleanup !== undefined) {
-        try {
-          await raceAbort(() => finalizedCleanup, remaining().signal, 'retiring finalized video files');
-          remaining(); finalizedCleanupProven = true;
-        } catch (cause) { this.workerCleanupUnconfirmed = true; failure ??= cause; }
+        try { await finalizedCleanup; finalizedCleanupProven = true; }
+        catch (cause) { this.workerCleanupUnconfirmed = true; failed(cause); }
       }
-      // The same deadline governs every step. Late success cannot clear failed ownership.
-      remaining();
-      resourcesRetired = finalizedCleanupProven && (this.client === undefined || !this.workerCleanupUnconfirmed);
-    } catch (cause) { failure ??= cause; }
-    finally {
-      // Retain the primary failure before lease finalization can exhaust the budget.
-      if (!cleanup.signal.aborted) this.retirementFailure ??= failure;
-      // Revoking the billed lease does not establish native or artifact cleanup.
-      // Invoke release even after this same budget expired; never grant a new one.
-      let released = false;
-      try { await this.leases?.endAttempt(cleanup); released = true; }
-      catch (cause) { this.workerCleanupUnconfirmed = true; failure ??= cause; }
-      if (resourcesRetired && released) {
+      try { await releasing; released = true; }
+      catch (cause) { this.workerCleanupUnconfirmed = true; failed(cause); }
+      const recordingsRetired = attempt === undefined || (attempt.recording === undefined && attempt.recordingStarts.size === 0 && attempt.lateRecordings.size === 0);
+      if (nativeRetired && finalizedCleanupProven && recordingsRetired && released && connecting?.cleanupFailure === undefined) {
         attempt?.downloads.clear();
         if (attempt !== undefined) delete attempt.observationHighWater;
         this.retiringAttempt = undefined;
-      }
-      if (attempt !== undefined) attempt.credentials = undefined;
-    }
+      } else failure ??= invalidState('Native attempt cleanup remains unresolved');
+    } finally { if (attempt !== undefined) attempt.credentials = undefined; }
     if (failure !== undefined) throw failure;
   }
 
@@ -372,7 +410,8 @@ export class NativeSurface implements NativeWebSurface {
         this.workerRestartable = !this.workerCleanupUnconfirmed && this.client === undefined && this.attempt === undefined && this.retiringAttempt === undefined && this.connecting === undefined;
         if (this.disposing === owned) this.disposing = undefined;
       };
-      void withConnectionBudget({ signal: new AbortController().signal, timeoutMs: RETIREMENT_TIMEOUT_MS }, 'retiring native worker', remaining => this.closeWorker(remaining)).then(() => {
+      const deadline = cleanupDeadline(context);
+      void this.closeWorker(deadline.context).finally(deadline.dispose).then(() => {
         disposed(); resolve();
       }, cause => {
         disposed(); reject(this.retirementFailure ?? cause);
@@ -383,26 +422,29 @@ export class NativeSurface implements NativeWebSurface {
   }
   private async closeClient(context: EngineCleanupContext, client = this.client): Promise<void> {
     try {
-      await raceAbort(() => client?.close(this.operation(context.signal, context.timeoutMs)) ?? Promise.resolve(), context.signal, 'closing native client');
-      if (context.signal.aborted) throw new EngineError('CANCELLED', 'Native client cleanup exhausted its budget', { retryable: false });
+      await client?.close(this.operation(context.signal, context.timeoutMs));
       if (this.client === client) { this.client = undefined; this.engine = undefined; this.openedBefore = false; }
     }
     catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
   }
-  private async closeWorker(remaining: () => ConnectionBudget): Promise<void> {
-    const cleanup = remaining();
+  private async closeWorker(cleanup: EngineCleanupContext): Promise<void> {
     let failure: unknown;
-    for (const work of [() => this.retireAttempt(), () => this.closeClient(remaining()), async () => {
-      try {
-        await this.leases?.dispose(cleanup);
-      } catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
-    }]) {
-      try { await work(); } catch (cause) {
-        failure ??= cause;
-        if (!cleanup.signal.aborted) this.retirementFailure ??= cause;
-      }
+    const receipt = <T>(work: Promise<T>): Promise<T> => {
+      void work.catch(cause => { failure ??= cause; this.retirementFailure ??= cause; });
+      return work;
+    };
+    const attempt = receipt(this.retireAttempt(cleanup));
+    try { await raceAbort(() => attempt, cleanup.signal, 'waiting for native attempt cleanup'); }
+    catch (cause) { if (!cleanup.signal.aborted) failure ??= cause; }
+    // A hanging retained recorder/artifact owner must not keep a billed worker alive.
+    const closing = receipt(this.closeClient(cleanup));
+    try { await raceAbort(() => closing, cleanup.signal, 'waiting for native worker close'); }
+    catch (cause) { if (!cleanup.signal.aborted) failure ??= cause; }
+    const releasing = receipt((this.leases?.dispose(cleanup) ?? Promise.resolve()).catch(cause => { this.workerCleanupUnconfirmed = true; throw cause; }));
+    for (const work of [attempt, closing, releasing]) {
+      try { await work; } catch (cause) { failure ??= cause; this.retirementFailure ??= cause; }
     }
-    if (failure !== undefined) throw failure;
+    if (failure !== undefined) throw this.retirementFailure ?? failure;
   }
 
   private async connect(operation: OperationContext): Promise<void> {
@@ -452,7 +494,9 @@ export class NativeSurface implements NativeWebSurface {
   }
   private bindChannel(attempt: Attempt): void {
     attempt.channel?.dispose();
-    attempt.channel = new BrowserChannel(this.requireClient(), { identityScope: () => { this.assertAttempt(attempt); return attempt.scope; }, operation: () => this.operation(attempt.context.signal) });
+    // Event handles outlive body cancellation. Only this exact attempt's
+    // retirement may cancel their release; a failed release still fails cleanup.
+    attempt.channel = new BrowserChannel(this.requireClient(), { identityScope: () => { this.assertAttempt(attempt); return attempt.scope; }, operation: () => this.operation(attempt.retirement.signal) });
     for (const [name, callbacks] of this.listeners) for (const listener of callbacks) listener.unsubscribe = attempt.channel.subscribe(name, listener.callback);
   }
   private async onEvent(event: NativeEvent): Promise<void> {
@@ -613,6 +657,18 @@ export class NativeSurface implements NativeWebSurface {
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
     const attempt = this.requireAttempt();
+    if (name === 'download.unsubscribe') {
+      // Terminal cleanup must not recover or create a replacement business scope.
+      // Keep callback checks, the original budget, and wire-request retirement,
+      // but dispatch only through the captured channel under its owning attempt.
+      this.assertCallback(); this.latch.throwPending();
+      const channel = attempt.channel;
+      if (channel === undefined) throw invalidState('The native browser scope is not ready');
+      const result = await withinAttemptRequest({ ...operation, signal: attempt.retirement.signal }, attempt,
+        current => channel.command(name, args, current));
+      this.assertAttempt(attempt);
+      return result;
+    }
     const correlationOwner = name === 'fixture.correlate' ? this.referenceOwner() : undefined;
     const correlation = correlationOwner === undefined ? undefined : this.references.correlation(correlationOwner, args);
     if (correlation !== undefined) args = correlation.args as BrowserCommandMap[K]['args'];
@@ -872,8 +928,8 @@ export class NativeSurface implements NativeWebSurface {
           if (this.attempt !== attempt || operation.signal.aborted) {
             attempt.lateRecordings.add(recording);
             try {
-              await this.stopLateProviderRecording(attempt, recording, AbortSignal.timeout(LATE_RECORDING_STOP_MS));
-            } catch (cause) { latch.latch(cause instanceof Error ? cause : invalidState('Late provider recording cleanup failed')); }
+              await this.stopLateProviderRecording(attempt, recording, attempt.cleanupSignal ?? AbortSignal.timeout(LATE_RECORDING_STOP_MS));
+            } catch (cause) { attempt.lateRecordingFailure ??= cause; latch.latch(cause instanceof Error ? cause : invalidState('Late provider recording cleanup failed')); }
             throw new EngineError('CANCELLED', 'Browser recording started after its operation retired', { retryable: false });
           }
           attempt.recording = recording;
@@ -897,6 +953,10 @@ export class NativeSurface implements NativeWebSurface {
     if (pending !== undefined) return pending;
     const work = stopProviderRecording(recording.recording, { artifactsDir: attempt.context.artifactsDir, provider: recording.provider, leaseId: recording.leaseId, signal }).then(() => {
       attempt.lateRecordings.delete(recording);
+    }, cause => {
+      attempt.lateRecordingFailure ??= cause;
+      attempt.observeLateRecordingFailure?.(cause);
+      throw cause;
     }).finally(() => { attempt.lateRecordingStops.delete(recording); });
     attempt.lateRecordingStops.set(recording, work);
     return work;
@@ -1089,6 +1149,31 @@ async function withinAttemptRequest<T>(operation: OperationContext, attempt: Att
       origin: operation.origin,
     });
   } finally { attempt.wireRequests.delete(settled); settle(); }
+}
+
+interface CleanupDeadline {
+  readonly context: EngineCleanupContext;
+  readonly remaining: () => ConnectionBudget;
+  readonly dispose: () => void;
+}
+
+/** One caller deadline for effects; retained settlement cannot renew this authority. */
+function cleanupDeadline(context: EngineCleanupContext): CleanupDeadline {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([context.signal, controller.signal]);
+  const endsAt = performance.now() + context.timeoutMs;
+  const expire = () => controller.abort(new EngineError('OPERATION_TIMEOUT', 'Native cleanup exhausted its caller budget', { retryable: false }));
+  const timer = setTimeout(expire, Math.max(0, context.timeoutMs));
+  if (context.timeoutMs <= 0) expire();
+  return {
+    context: { signal, get timeoutMs() { return Math.max(0, endsAt - performance.now()); } },
+    remaining: () => {
+      if (performance.now() >= endsAt && !signal.aborted) expire();
+      if (signal.aborted) throw connectionAbort(signal, 'Native cleanup');
+      return { signal, timeoutMs: Math.max(0, endsAt - performance.now()) };
+    },
+    dispose: () => clearTimeout(timer),
+  };
 }
 
 /** End-hook waiters may leave; only the owned promise can prove cleanup or fail reuse. */

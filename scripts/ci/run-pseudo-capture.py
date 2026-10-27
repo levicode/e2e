@@ -57,6 +57,38 @@ def project_pseudo_case(line):
             reason = "capture-" + fixed
     return {"kind": case[0], "closed": case[1], "secure": case[2], "reason": reason}
 
+PSEUDO_STAGES = set("launch lease viewport setup snapshot provenance animation-enable animation-set-rate frame-enumeration enrollment journal-binding capture pixel-checks source-restoration animation-restoration owner-cleanup".split())
+PSEUDO_CDP_FAILURES = set("owner-view-required owner-changed admission-refused admission-revoked channel-closed transport-closed response-deadline error-ack send-failed other".split())
+PSEUDO_CHECK_FAILURES = set("setup snapshot-strings no-origin pseudo-types missing-requested-kind frame-inventory secure-paint-accepted password-mask-missing png-invalid password-pixel public-paint-pixel source-restoration animation-restoration".split())
+PSEUDO_CAPTURE_FAILURES = set("cancelled superseded deadline stale-scope incomplete-frames unsafe-geometry uninspectable-content masking-unproven browser-failure bounds-exceeded cleanup-failed".split())
+PSEUDO_PROTOCOL_FAILURES = ERRORS | {"invalid-locator", "fill-unsupported-target", "no-editable-focus"}
+
+def safe_pseudo_failure(value):
+    if value is None or value in ("enumeration", "script-exception"):
+        return True
+    if not isinstance(value, dict) or len(value) != 1:
+        return False
+    key, fact = next(iter(value.items()))
+    allowed = {"cdp": PSEUDO_CDP_FAILURES, "check": PSEUDO_CHECK_FAILURES, "protocol": PSEUDO_PROTOCOL_FAILURES, "provenance": PSEUDO_CAPTURE_FAILURES}
+    if key in allowed:
+        return isinstance(fact, str) and fact in allowed[key]
+    if key == "join":
+        return isinstance(fact, dict) and set(fact) == {"cancelled", "panicked"} and all(type(x) is bool for x in fact.values())
+    if key == "capture":
+        return isinstance(fact, dict) and set(fact) == {"reason", "cleanup_integrity_lost"} and isinstance(fact["reason"], str) and fact["reason"] in PSEUDO_CAPTURE_FAILURES and type(fact["cleanup_integrity_lost"]) is bool
+    return False
+
+def safe_pseudo_row(value):
+    if not isinstance(value, dict) or set(value) != {"kind", "closed", "secure", "stage", "outcome", "failure"}:
+        return None
+    if type(value["closed"]) is not bool or type(value["secure"]) is not bool or not isinstance(value["kind"], str):
+        return None
+    if (value["kind"], value["closed"], value["secure"]) not in PSEUDO_CASES:
+        return None
+    if not isinstance(value["stage"], str) or value["stage"] not in PSEUDO_STAGES or value["outcome"] not in ("entered", "passed", "failed"):
+        return None
+    return value if safe_pseudo_failure(value["failure"]) else None
+
 class Refused(Exception):
     pass
 
@@ -95,7 +127,7 @@ def safe_diagnostic(value):
     return value
 
 def project_output(path):
-    result = {"pseudoCases": [], "panicSites": [], "activation": [], "phases": [], "counts": [], "rejectedDiagnosticRows": 0, "oversizeLines": 0,
+    result = {"pseudoStages": [], "pseudoRejectedRows": 0, "pseudoDroppedRows": 0, "pseudoRowLimit": 108, "pseudoCases": [], "panicSites": [], "activation": [], "phases": [], "counts": [], "rejectedDiagnosticRows": 0, "oversizeLines": 0,
               "webSocket": {"closeReported": False, "errorReported": False, "closeReports": 0, "errorReports": 0, "observations": [], "observationsTruncated": False}}
     with path.open("r", encoding="utf-8", errors="replace") as source:
         while True:
@@ -107,6 +139,18 @@ def project_output(path):
                 while line and not line.endswith("\n"):
                     line = source.readline(16385)
                 continue
+            marker = "PSEUDO_CAPTURE_DIAGNOSTIC "
+            if line.startswith(marker):
+                try:
+                    row = safe_pseudo_row(json.loads(line[len(marker):]))
+                except (ValueError, TypeError):
+                    row = None
+                if row is None:
+                    result["pseudoRejectedRows"] += 1
+                elif len(result["pseudoStages"]) >= 108:
+                    result["pseudoDroppedRows"] += 1
+                else:
+                    result["pseudoStages"].append(row)
             case = project_pseudo_case(line)
             if case is not None and len(result["pseudoCases"]) < 6:
                 result["pseudoCases"].append(case)

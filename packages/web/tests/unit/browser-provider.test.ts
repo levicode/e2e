@@ -987,3 +987,35 @@ describe('recording', () => {
     }
   });
 });
+
+it('publishes pending lease custody before a provider synchronously re-enters cleanup', async () => {
+  let leases!: LeasedBrowsers;
+  let retirement!: Promise<void>;
+  let finishRelease!: () => void;
+  const releaseReceipt = new Promise<void>(resolve => { finishRelease = resolve; });
+  const cleanupSignal = AbortSignal.abort();
+  const release = vi.fn(async (_lease: BrowserLease, context: BrowserReleaseContext) => {
+    expect(context.signal).toBe(cleanupSignal);
+    await releaseReceipt;
+  });
+  const impl: BrowserProvider = {
+    name: 'reentrant-acquire', scope: 'attempt',
+    acquire: async () => {
+      retirement = leases.endAttempt({ signal: cleanupSignal, timeoutMs: 0 });
+      return { id: 'late-owned', cdpEndpoint: 'ws://synthetic.test/browser' };
+    }, release,
+  };
+  const { env } = await prepared(impl, 1);
+  leases = new LeasedBrowsers(impl); leases.init(initInfo(0, env));
+  const starting = leases.startAttempt(attempt('reentrant')).catch((cause: unknown) => cause);
+  try {
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(leases.endAttempt(cleanup())).toBe(retirement);
+    expect(() => leases.init(initInfo(0, env))).toThrow(/cleanup remains unresolved/);
+    finishRelease();
+    await retirement;
+    expect(await starting).toMatchObject({ code: 'CANCELLED' });
+    expect(() => leases.init(initInfo(0, env))).not.toThrow();
+    expect(release).toHaveBeenCalledTimes(1);
+  } finally { finishRelease(); await starting; }
+});

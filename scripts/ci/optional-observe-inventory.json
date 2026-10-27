@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "count": 107,
+  "count": 118,
   "selectors": [
     "native::cdp::client::tests::i10_t01_readonly_disposal_handoff_retains_exact_groups_until_matching_ack",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::i10_t01_metadata_release_ack_is_not_the_eighty_ms_tree_deadline",
@@ -110,7 +110,18 @@
     "native::client_geometry::readonly_disposal_tests::strict_snapshot_semantic_bounds_debt_never_discharges_strict_polygon_object",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::trace_semantic_bounds_returns_before_exact_readonly_release_ack_without_action_refs",
     "native::client_settlement_trace::upload_diagnostic_tests::upload_preflight_is_closed_bounded_and_does_not_serialize_probe_text",
-    "native::client_protocol::tests::selector_errors_have_a_distinct_closed_wire_code"
+    "native::client_protocol::tests::selector_errors_have_a_distinct_closed_wire_code",
+    "native::client_geometry::tests::readonly_box_negative_identity_is_not_cleanup_loss",
+    "native::client_geometry::tests::readonly_box_backend_and_cleanup_failures_stay_dirty",
+    "native::client_geometry::tests::strict_box_negative_identity_keeps_its_existing_fence",
+    "native::client_geometry::readonly_disposal_tests::semantic_box_detached_proof_refuses_cleanly_and_next_read_can_succeed",
+    "native::client_capture::pseudo_tests::pseudo_diagnostics_never_retain_untrusted_cdp_text",
+    "native::client_actions::tests::upload_label_controls::upload_label_uses_only_its_captured_control_and_releases_both_handles",
+    "native::client_actions::tests::upload_label_controls::upload_label_refusal_and_lost_authority_never_dispatch_or_retry",
+    "native::client_actions::tests::upload_label_controls::upload_control_release_failure_preserves_dispatched_effects",
+    "native::client_actions::tests::upload_label_controls::upload_label_mapping_cannot_bypass_opaque_scope_or_revision_guards",
+    "native::client_actions::tests::upload_paths_refuse_escapes_and_preserve_nested_directory_paths",
+    "native::client_actions::tests::cancelled_upload_wait_retains_writer_and_cleanup_drains_error_directory"
   ],
   "originalPrefixCount": 78,
   "addedSelectors": [
@@ -146,5 +157,11 @@
   ],
   "additionalIgnored": [
     "native::client_capture::pseudo_tests::chromium_pseudo_capture_preserves_public_pixels_and_refuses_secure_generated_paint"
+  ],
+  "additionsAfter107": [
+    "native::client_geometry::tests::readonly_box_negative_identity_is_not_cleanup_loss",
+    "native::client_geometry::tests::readonly_box_backend_and_cleanup_failures_stay_dirty",
+    "native::client_geometry::tests::strict_box_negative_identity_keeps_its_existing_fence",
+    "native::client_geometry::readonly_disposal_tests::semantic_box_detached_proof_refuses_cleanly_and_next_read_can_succeed"
   ]
 }

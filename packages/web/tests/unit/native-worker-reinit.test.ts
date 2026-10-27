@@ -179,3 +179,13 @@ it('does not grant fresh init after an unconfirmed provider release', async () =
   expect(acquire).toHaveBeenCalledTimes(1);
   expect(release).toHaveBeenCalledTimes(1);
 });
+
+it.each(['endAttempt', 'dispose'] as const)('keeps ordinary scope cleanup inside the caller budget (%s)', async hook => {
+  const surface = new NativeSurface({}); await surface.init(initInfo()); await surface.startAttempt(attempt('budget'));
+  try {
+    await surface[hook]({ signal: new AbortController().signal, timeoutMs: 100 });
+    const ending = peers[0]!.frames.find(frame => frame['command'] === 'scope.end');
+    expect(ending).toBeDefined();
+    expect(ending!['timeoutMs']).toBeLessThanOrEqual(100);
+  } finally { await surface.dispose(cleanup()).catch(() => undefined); }
+});
