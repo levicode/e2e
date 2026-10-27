@@ -1,34 +1,26 @@
 {
-  "artifactId": 12740180151,
-  "artifactName": "ci-native-runtime-Unified observation and lifecycle finite validation-40514646938-1",
-  "artifactSize": 13870419,
-  "artifactDigest": "sha256:18c6d4d6fb8db79c0706a94026b40d9a371694ac6cbce6b92d0bf0cbc278c224",
-  "manifestSha256": "84c37643ad6222da46ce4d9cc32a5125f70d16260f427265d835fe9d5658eaad",
+  "artifactId": 12747935447,
+  "artifactName": "ci-native-runtime-Native context replacement and public names finite validation-40532721646-1",
+  "artifactSize": 13891736,
+  "artifactDigest": "sha256:39938eaf72fd79ebecb6a442fa3889773f50a87f7ba56ba7e41a2ae22cce0048",
+  "manifestSha256": "15efc9d647b6a1c8c7a3af1292865d6807cf967818ed4263e26c798860baf5ff",
   "expected": {
     "source": {
-      "commit": "23b8f7ced7966507814f2f8dd40975ca59fec51c",
-      "tree": "afd0a5b8f7a28b53756bef67b83ac848b840be5b"
+      "commit": "3bb60b3344528f3e29915b3cb5e77e3e810d740e",
+      "tree": "21122f2d23d5248f585cde488a254eb788d036e0"
     },
     "repository": "levicode/e2e",
-    "runId": "40514646938",
+    "runId": "40532721646",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "fc18696aa5e27390d6e8ce63d0673cc672bb274f"
+    "nativeCommit": "7efa360664285c14c3aa04d11c4f7d470d0cb10a"
   },
   "nativeSource": {
-    "commit": "fc18696aa5e27390d6e8ce63d0673cc672bb274f",
-    "tree": "05657f5012f3e5af76168c843bc1bde5d04d49eb"
+    "commit": "7efa360664285c14c3aa04d11c4f7d470d0cb10a",
+    "tree": "743c2ec499f9b26a793e19c77515810972db43d7"
   },
-  "binarySha256": "a1c8e6415023964079a1c5875bcd90ca97b901f2878c3ef9438689058eee4d7b",
-  "harnessNative": "2ba6a58f785850c2197f84b073711bb4f80488cb",
-  "testOnlySourceProof": {
-    "productionNative": "fc18696aa5e27390d6e8ce63d0673cc672bb274f",
-    "harnessNative": "2ba6a58f785850c2197f84b073711bb4f80488cb",
-    "onlyChangedPath": "cli/src/native/client_observe_initial_inventory_tests.rs",
-    "diffSha256": "e9c5de98a926e9b2c4dc4fff40167de5b0bde89f3b655494c2ce9c75b005908b",
-    "productionSourceIdentical": true,
-    "cfgTestAncestor": "client_observation_dispatch.rs:6181 -> client_trace_initial_inventory_tests.rs:1002",
-    "limitation": "different commit identities; not final same-SHA all-configuration acceptance"
-  }
+  "binarySha256": "2f7fb87afce92861d965f1122f7b09a63e6e2c778a9f4546a7907866cd1275a8",
+  "harnessNative": "7efa360664285c14c3aa04d11c4f7d470d0cb10a",
+  "scope": "Exact ordinary 7efa runtime reuse; same native source, different Node source; no final acceptance claim."
 }
