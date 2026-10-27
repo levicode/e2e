@@ -1,13 +1,13 @@
-name: Native peer retirement G2 locked dependency recovery
+name: Native G2 borrowed Chrome setup recovery
 'on':
   push:
     branches:
-    - implement/native-peer-retirement-g2-lock-recovery-ci
+    - implement/native-g2-borrowed-chrome-recovery-ci
   workflow_dispatch: {}
 permissions:
   contents: read
 concurrency:
-  group: native-peer-retirement-g2-lock-recovery-${{ github.ref }}
+  group: native-g2-borrowed-chrome-recovery-${{ github.ref }}
   cancel-in-progress: false
 env:
   E2E_TELEMETRY_DISABLED: '1'
@@ -76,6 +76,52 @@ jobs:
 
         pnpm --filter @e2e-dev/web run build'
       id: build
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat evidence/borrowed-chrome.path)"
+
+        ldd "$chrome" > evidence/borrowed-chrome-ldd.txt
+
+        ! grep -q ''not found'' evidence/borrowed-chrome-ldd.txt
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > evidence/borrowed-chrome-preflight.html
+        2> evidence/borrowed-chrome-preflight.log
+
+        '
     - name: Typecheck and run 109 finite interop units
       run: 'set -euo pipefail
 
@@ -99,7 +145,8 @@ jobs:
         '
     - name: Run exactly four real owned and borrowed retirement cases
       if: ${{ always() && steps.verify.outcome == 'success' && steps.chrome.outcome
-        == 'success' && steps.build.outcome == 'success' }}
+        == 'success' && steps.build.outcome == 'success' && steps.borrowed_chrome.outcome
+        == 'success' }}
       run: "set -euo pipefail\ncp \"$RUNNER_TEMP/ci-native-runtime/manifest.json\"\
         \ evidence/native-runtime.manifest.json\nsha256sum \"$E2E_AGENT_BROWSER_EXECUTABLE\"\
         \ > evidence/native-executable.sha256\npnpm --filter @e2e-dev/web exec vitest\
