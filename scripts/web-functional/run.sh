@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
-Native 5bb088e4c54ece52ff4a68a8a2c43e777c37f407; E2E 82f6ffa9cb2340a0ea9cbd093d08dafad5de6f36.
+Native 0f545c307a157e107ac8d1260167fa3e70e39cdb; E2E ad9cf7e0e03e758d1331914419a6f81a532373d3.
 Normal native nonignored suite plus focused tests and all44 required browser/encoder contracts.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
 Formal source-removal is remeasured after conditional test-root migration; prior 31 failures are not silently waived; no main merge or package/release here.
@@ -50,20 +50,22 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = 82f6ffa9cb2340a0ea9cbd093d08dafad5de6f36
-  test "$(git rev-parse HEAD^{tree})" = a88ed1d234a6cd993797ad3e70276e71c2c66c59
+  test "$(git rev-parse HEAD)" = ad9cf7e0e03e758d1331914419a6f81a532373d3
+  test "$(git rev-parse HEAD^{tree})" = faebe37a0ff5399c604a3b1efaa1e4d6f30ca35b
   test -z "$(git status --porcelain)"
   python3 - <<'PY_NATIVE_PIN'
 import json, pathlib
 pin = json.loads(pathlib.Path('.github/native-candidate.json').read_text())
 assert pin['schemaVersion'] == 1 and pin['repository'] == 'levicode/agent-browser'
-assert pin['commit'] == '5bb088e4c54ece52ff4a68a8a2c43e777c37f407'
+assert pin['commit'] == '0f545c307a157e107ac8d1260167fa3e70e39cdb'
 PY_NATIVE_PIN
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
   chmod +x "$PROD" "$FAULT"
   pnpm install --frozen-lockfile
   pnpm run build
+  pnpm --filter @e2e-dev/web exec tsc --noEmit
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-disconnected-recovery.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/disconnect-contract.vitest.json" 2>&1 | tee "$out/disconnect-contract.log"
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-surface.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-surface.vitest.json" 2>&1 | tee "$out/native-surface.log"
   pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts tests/unit/routes-case-diagnostic.test.ts tests/unit/actions.test.ts tests/unit/native-action-error-boundaries.test.ts tests/unit/native-action-diagnostics.test.ts tests/unit/native-observe-frame-policy-capability.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"

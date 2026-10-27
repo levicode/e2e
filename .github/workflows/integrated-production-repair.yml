@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        ref: 0f545c307a157e107ac8d1260167fa3e70e39cdb
         path: native
         persist-credentials: false
     - name: Build exact production and separate fault ELF (no tests or gate waiver)
@@ -33,9 +33,9 @@ jobs:
 
         cd native/cli
 
-        test "$(git rev-parse HEAD)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        test "$(git rev-parse HEAD)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
 
-        test "$(git rev-parse HEAD^{tree})" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
+        test "$(git rev-parse HEAD^{tree})" = 3db554fb7897c6becc6b42d970d448fa44600902
 
         test -z "$(git status --porcelain)"
 
@@ -60,9 +60,9 @@ jobs:
         sha256sum production acceptance-faults > SHA256SUMS
 
 
-        printf "%s\n" 5bb088e4c54ece52ff4a68a8a2c43e777c37f407 > native-source.sha
+        printf "%s\n" 0f545c307a157e107ac8d1260167fa3e70e39cdb > native-source.sha
 
-        printf "%s\n" d1b879ef87d2adb3efcdd3d7ca541e359fe0211e > native-source.tree
+        printf "%s\n" 3db554fb7897c6becc6b42d970d448fa44600902 > native-source.tree
 
         printf "%s\n" "$GITHUB_RUN_ID" > producer-run.id
 
@@ -95,7 +95,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        ref: 0f545c307a157e107ac8d1260167fa3e70e39cdb
         path: native
         persist-credentials: false
     - name: Compile all original default Cargo test targets once
@@ -109,9 +109,9 @@ jobs:
 
         cd native/cli
 
-        test "$(git rev-parse HEAD)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        test "$(git rev-parse HEAD)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
 
-        test "$(git rev-parse HEAD^{tree})" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
+        test "$(git rev-parse HEAD^{tree})" = 3db554fb7897c6becc6b42d970d448fa44600902
 
         test -z "$(git status --porcelain)"
 
@@ -121,8 +121,7 @@ jobs:
 
         export CARGO_TARGET_DIR="$RUNNER_TEMP/native-regressions-target"
 
-        cargo test --locked --profile ci --timings --no-run --message-format=json > "$GITHUB_WORKSPACE/evidence/harness.jsonl"
-        2> "$GITHUB_WORKSPACE/evidence/harness-build.log"
+        cargo test --locked --profile ci --timings --no-run --message-format=json > "$GITHUB_WORKSPACE/evidence/harness.jsonl" 2> "$GITHUB_WORKSPACE/evidence/harness-build.log"
 
         python3 "$GITHUB_WORKSPACE/recipe/scripts/web-functional/pack-default-harnesses.py"
 
@@ -168,9 +167,9 @@ jobs:
     - &id004
       name: Restore exact compiler paths/source/assets and select unit harness
       run: python3 recipe/scripts/web-functional/run-default-harnesses.py --restore-only
-    - name: Run 121 exact original and new native prerequisites
-      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
-        failed=0\nindex=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
+    - name: Run 123 exact original and new native prerequisites
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\nfailed=0\n\
+        index=0\nfor name in 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_late_success_ack_retires_without_second_dismiss'\
         \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_missing_ack_never_becomes_successful_retirement'\
         \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_error_ack_is_not_successful_retirement'\
         \ 'native::client_network::dialog_retirement_regression_tests::selected_beforeunload_wrong_session_ack_preserves_integrity_failure'\
@@ -185,14 +184,12 @@ jobs:
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_recovery_rejects_wrong_scope_before_candidate_io'\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::p06_framed_input_eof_cancelled_recovery_cannot_be_reissued'\
         \ 'native::client_operation_state::tests::late_finish_cannot_erase_fixed_unknown_before_expiry_monitor_runs' 'native::client_operation_state::tests::completed_producer_is_not_retroactively_expired_by_duplicate_finish'\
-        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions'\
-        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction'\
+        \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_scope_end_preserves_host_and_settles_exact_sessions' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_child_scope_end_is_child_first_without_host_destruction'\
         \ 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_cleanup_error_acks_remain_hard_failures' 'native::client_browser::borrowed_cleanup_tests::managed_borrowed_missing_detach_ack_retains_debt_and_cannot_reuse'\
         \ 'native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt' 'native::client_targets::tests::terminal_eof_seal_never_clears_real_target_poison_or_grants_admission'\
         \ 'native::client_operation_state::tests::terminal_commit_rechecks_journal_keys_and_target_poison' 'native::client_settlement_trace::terminal_cleanup_tests::terminal_cleanup_checkpoints_have_closed_payloads'\
-        \ 'native::client_observation_dispatch::tests::semantic_trace_retains_first_inventory_failure_without_enabling_capture'\
-        \ 'native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch' 'native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt'\
-        \ 'native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
+        \ 'native::client_observation_dispatch::tests::semantic_trace_retains_first_inventory_failure_without_enabling_capture' 'native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch'\
+        \ 'native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt' 'native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
         \ 'native::client_actions::tests::retained_action_errors::ordinary_div_fill_refuses_before_mutation_and_releases_exact_owned_handle'\
         \ 'native::client_actions::tests::retained_action_errors::disabled_readonly_and_unsupported_fields_refuse_before_fill_mutation'\
         \ 'native::client_actions::tests::retained_action_errors::valid_fields_and_inherited_contenteditable_keep_original_fill_path'\
@@ -200,86 +197,79 @@ jobs:
         \ 'native::client_observation::frame_policy::tests::original_typescript_url_and_hostname_truth_table' 'native::client_observation::frame_policy::tests::original_typescript_hostname_truth_table'\
         \ 'native::client_observation::frame_policy::tests::exact_budget_three_excludes_data_without_truncating_and_closes_descendants'\
         \ 'native::client_observation::frame_policy::tests::exact_depth_four_five_and_site_before_depth' 'native::client_observation::frame_policy::tests::original_document_then_child_dfs_budget_order'\
-        \ 'native::client_observation::frame_policy::tests::hidden_before_budget_and_missing_owner_is_not_a_policy_exemption'\
-        \ 'native::client_observation::semantic_frame_proof::tests::semantic_proof_rejects_other_owner_stale_url_policy_and_capture_revision'\
+        \ 'native::client_observation::frame_policy::tests::hidden_before_budget_and_missing_owner_is_not_a_policy_exemption' 'native::client_observation::semantic_frame_proof::tests::semantic_proof_rejects_other_owner_stale_url_policy_and_capture_revision'\
         \ 'native::client_observation::semantic_frame_proof::tests::semantic_proof_replay_rejects_forged_hidden_budget_closure_and_emitted_omission'\
         \ 'native::client_observation::semantic_frame_proof::tests::missing_native_url_never_inherits_the_real_empty_url_exception'\
         \ 'native::client_observation::semantic_frame_proof::tests::frame_policy_is_not_an_observe_wire_override' 'native::client_observation_dispatch::tests::semantic_options_are_frozen_scope_policy_not_per_observe_input'\
-        \ 'native::client_browser::tests::configured_observation_site_is_frozen_without_normalizing_or_allow_all_default'\
-        \ 'native::client_browser::tests::candidate_advertises_the_complete_wired_public_contract' 'native::client_geometry::tests::semantic_exclusion_preserves_full_native_ownership_without_spatial_reads'\
-        \ 'native::client_observation::tests::successful_snapshot_publishes_once_and_stable_node_keeps_id' 'native::client_observation::tests::late_document_failure_keeps_previous_generation_and_consumes_ids'\
-        \ 'native::client_observation::equivalence_tests::original_observation_capture_deadline_preserves_per_capture_and_case_bounds'\
+        \ 'native::client_browser::tests::configured_observation_site_is_frozen_without_normalizing_or_allow_all_default' 'native::client_browser::tests::candidate_advertises_the_complete_wired_public_contract'\
+        \ 'native::client_geometry::tests::semantic_exclusion_preserves_full_native_ownership_without_spatial_reads' 'native::client_observation::tests::successful_snapshot_publishes_once_and_stable_node_keeps_id'\
+        \ 'native::client_observation::tests::late_document_failure_keeps_previous_generation_and_consumes_ids' 'native::client_observation::equivalence_tests::original_observation_capture_deadline_preserves_per_capture_and_case_bounds'\
         \ 'native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation' 'native::client_actions::tests::readonly_pseudo_action_never_resolves_or_retargets_origin'\
         \ 'native::client_actions::tests::preparation_effect_settlement_acked_not_actionable_is_completed_and_reusable' 'native::client_actions::tests::preparation_effect_settlement_acked_interception_is_completed_and_reusable'\
         \ 'native::client_actions::tests::preparation_effect_settlement_unacked_input_release_remains_unknown' 'native::client_actions::tests::preparation_effect_settlement_unacked_first_scroll_remains_unknown'\
         \ 'native::client_actions::tests::retirement_node_swipes::node400x300_blocked_preaim_down_then_fast_left_waits_for_each_render'\
         \ 'native::client_actions::tests::retirement_node_swipes::node400x300_clear_centre_moves200_150_before_down150' 'native::client_actions::tests::retirement_node_swipes::node400x300_pointer80_70_preserves_position_across_directions'\
         \ 'native::client_actions::tests::retirement_node_swipes::node400x300_unknown_default_zero_still_aims_at_centre' 'native::client_actions::tests::retirement_node_swipes::node400x300_known_zero_is_distinct_from_unknown_zero'\
-        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_pointer_on_right_edge_still_aims_at_centre'\
-        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_covered_pointer_does_not_bypass_centre_targeting'\
-        \ 'native::client_actions::tests::retirement_node_swipes::node100x100_overflow_child_keeps_hovered_pointer120_50'\
-        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_iframe_uses_original_centre_targeting' 'native::client_actions::tests::retirement_node_swipes::node400x300_explicit_hover_keeps_centre_mode_then_swipe_reuses_it'\
-        \ 'native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_paces_three_moves_over_48_ms'\
-        \ 'native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_cancel_after_first_move_releases_once'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_pointer_on_right_edge_still_aims_at_centre' 'native::client_actions::tests::retirement_node_swipes::node400x300_covered_pointer_does_not_bypass_centre_targeting'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node100x100_overflow_child_keeps_hovered_pointer120_50' 'native::client_actions::tests::retirement_node_swipes::node400x300_iframe_uses_original_centre_targeting'\
+        \ 'native::client_actions::tests::retirement_node_swipes::node400x300_explicit_hover_keeps_centre_mode_then_swipe_reuses_it'\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_paces_three_moves_over_48_ms' 'native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_cancel_after_first_move_releases_once'\
         \ 'native::client_debt::tests::terminal_read_only_settled_ack_requires_operation_proof_and_exact_bindings' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::fixed_read_ack_before_remote_eof_keeps_unknown_but_closes_settled_owner'\
-        \ 'native::client_protected_read::tests::ordinary_read_policy_failure_uses_actual_dispatch_selector_and_clean_restore'\
-        \ 'native::client_observation::tests::public_button_name_proof_projects_exact_and_observed_compatibility' 'native::client_observation::tests::public_button_name_proof_preserves_priority_security_and_unavailable'\
-        \ 'native::client_observation::tests::public_button_name_proof_rejects_invalid_source_and_oversized_facts' 'native::client_observation::tests::ordinary_header_neighbor_proof_corrects_ax_without_changing_explicit_scope'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_exact_popup_detach_during_write_continues_live_pages_without_replay'\
+        \ 'native::client_protected_read::tests::ordinary_read_policy_failure_uses_actual_dispatch_selector_and_clean_restore' 'native::client_observation::tests::public_button_name_proof_projects_exact_and_observed_compatibility'\
+        \ 'native::client_observation::tests::public_button_name_proof_preserves_priority_security_and_unavailable' 'native::client_observation::tests::public_button_name_proof_rejects_invalid_source_and_oversized_facts'\
+        \ 'native::client_observation::tests::ordinary_header_neighbor_proof_corrects_ax_without_changing_explicit_scope' 'native::client_enrollment::tests::media_detach_tests::media_exact_popup_detach_during_write_continues_live_pages_without_replay'\
         \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_exact_popup_detach_retires_real_command_debt_and_continues'\
         \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_detach_with_mismatched_operation_key_remains_failure'\
         \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_detach_cannot_clear_another_sessions_unknown_input_debt'\
         \ 'native::client_enrollment::tests::media_detach_tests::media_tracked_missing_or_foreign_journal_cannot_dispatch_or_succeed'\
         \ 'native::client_enrollment::tests::media_detach_tests::media_exact_detach_does_not_wait_for_queued_enrollment_configuration'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_live_popup_failure_remains_failure_and_is_not_replayed'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_target_destroyed_without_direct_detach_does_not_excuse_failure'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_conflicting_detach_target_id_does_not_excuse_failure'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_active_root_detach_never_becomes_popup_success' 'native::client_enrollment::tests::media_detach_tests::media_original_detach_receipt_does_not_excuse_same_text_replacement'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_cancelled_operation_is_not_rescued_by_exact_popup_detach'\
-        \ 'native::client_enrollment::tests::media_detach_tests::media_expired_original_deadline_cannot_be_renewed_by_owner_path'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_live_popup_failure_remains_failure_and_is_not_replayed' 'native::client_enrollment::tests::media_detach_tests::media_target_destroyed_without_direct_detach_does_not_excuse_failure'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_conflicting_detach_target_id_does_not_excuse_failure' 'native::client_enrollment::tests::media_detach_tests::media_active_root_detach_never_becomes_popup_success'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_original_detach_receipt_does_not_excuse_same_text_replacement'\
+        \ 'native::client_enrollment::tests::media_detach_tests::media_cancelled_operation_is_not_rescued_by_exact_popup_detach' 'native::client_enrollment::tests::media_detach_tests::media_expired_original_deadline_cannot_be_renewed_by_owner_path'\
         \ 'native::client_targets::tests::media_detach_receipt_is_bound_to_registry_tenure_and_direct_ready_page' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::media_merge_tests::actual_queued_media_merges_partial_updates_and_new_attachment_inherits_both'\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::media_merge_tests::actual_queued_media_does_not_dispatch_after_predecessor_configuration_failure'\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::media_merge_tests::actual_queued_media_cancel_does_not_merge_or_clear_predecessor_debt'\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::media_merge_tests::actual_queued_media_deadline_does_not_merge_or_clear_predecessor_debt'\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::media_merge_tests::actual_media_refuses_unresolved_navigation_without_waiting_or_dispatching'\
-        \ 'native::client_operation_state::tests::media_wait_classifies_live_completion_gap_without_weakening_input_guard'\
-        \ 'native::client_operation_state::tests::media_wait_never_waits_for_an_unmarked_or_foreign_mutation' 'native::client_operation_state::tests::media_wait_never_hides_dirty_journal_behind_live_media_in_hashmap_order'\
-        \ 'native::client_operation_state::tests::media_dispatch_kind_requires_exact_registered_nonmutating_journal' 'native::client_operation_state::tests::media_wait_refuses_known_retirement_integrity_and_own_mutation'\
-        \ 'native::client_tasks::tests::media_wait_uses_retained_notifications_and_original_cancellation_deadline' 'native::client_restart::tests::persistent_closed_application_reopens_one_blank_without_closing_host_tabs'\
-        \ 'native::client_restart::tests::persistent_detach_without_target_closure_never_reopens' 'native::client_restart::tests::persistent_reopen_requires_exact_owner_ui_and_noncallback_operation'\
-        \ 'native::client_restart::tests::persistent_reopen_lost_create_ack_is_unknown_and_never_replayed' 'native::client_restart::tests::persistent_reopen_never_revives_same_text_detached_root_tenure'\
-        \ 'native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::persistent_closed_page_dispatch_is_negotiated_and_refresh_precedes_results'\
+        \ 'native::client_operation_state::tests::media_wait_classifies_live_completion_gap_without_weakening_input_guard' 'native::client_operation_state::tests::media_wait_never_waits_for_an_unmarked_or_foreign_mutation'\
+        \ 'native::client_operation_state::tests::media_wait_never_hides_dirty_journal_behind_live_media_in_hashmap_order' 'native::client_operation_state::tests::media_dispatch_kind_requires_exact_registered_nonmutating_journal'\
+        \ 'native::client_operation_state::tests::media_wait_refuses_known_retirement_integrity_and_own_mutation' 'native::client_tasks::tests::media_wait_uses_retained_notifications_and_original_cancellation_deadline'\
+        \ 'native::client_restart::tests::persistent_closed_application_reopens_one_blank_without_closing_host_tabs' 'native::client_restart::tests::persistent_detach_without_target_closure_never_reopens'\
+        \ 'native::client_restart::tests::persistent_reopen_requires_exact_owner_ui_and_noncallback_operation' 'native::client_restart::tests::persistent_reopen_lost_create_ack_is_unknown_and_never_replayed'\
+        \ 'native::client_restart::tests::persistent_reopen_never_revives_same_text_detached_root_tenure' 'native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::persistent_closed_page_dispatch_is_negotiated_and_refresh_precedes_results'\
         \ 'native::client_blobs::tests::page_capture_retirement_revokes_only_exact_pixels_not_saved_artifacts' 'native::client_observation_dispatch::tests::page_retirement_fences_publication_and_revokes_old_pixel_handles'\
         \ 'native::screenshot::tests::protected_screenshot_receipt_requires_exact_reader_ack' 'native::client_browser::state_lifecycle_tests::restart_transport_tests::retired_startup_joins_late_target_before_next_attempt_identity'\
         \ 'native::client_debt::recording_start_status_tests::recording_refusal_requires_exact_error_ack_not_success_or_terminal_status'\
         \ 'native::client_terminal_artifacts::tests::terminal_batch_moves_quota_survives_store_close_and_releases_once' 'native::client_terminal_artifacts::tests::terminal_batch_rejects_foreign_identity_token_handle_and_unknown_fields'\
-        \ 'native::client_terminal_artifacts::tests::terminal_batch_read_bounds_and_released_handle_never_recreate_bytes'\
-        \ 'native::client_terminal_artifacts::tests::frozen_quota_rejects_mixed_authority_retired_and_closed_stores' 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_duplicate_id_under_writer_backpressure_never_steals_original_receipt'\
+        \ 'native::client_terminal_artifacts::tests::terminal_batch_read_bounds_and_released_handle_never_recreate_bytes' 'native::client_terminal_artifacts::tests::frozen_quota_rejects_mixed_authority_retired_and_closed_stores'\
+        \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_duplicate_id_under_writer_backpressure_never_steals_original_receipt'\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_foreign_generation_reused_sequence_callback_and_schema_are_not_admitted'\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_traffic_never_renews_original_ten_second_cutoff'\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_commands_never_enter_ordinary_executor_dispatch'\
         \ 'native::client_browser::state_lifecycle_tests::terminal_recording_tests::poisoned_terminal_recording_custody_never_proves_closed'\
-        \ 'native::client_restart::tests::reopened_result_proof_preserves_payload_and_exact_publication_fence'; do\n  index=$((index\
-        \ + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep -Fx \"$name: test\"\
-        \ \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One exclusive file per\
-        \ test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd)'\
-        \ \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"status\":\"prepared\"\
-        ,\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\n\
-        \  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
-        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
-        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\n  # The ten\
-        \ new normal tests must actually execute, not silently succeed as ignored.\n  if ! python3 - \"$name\" \"evidence/test-$index.log\"\
-        \ <<'PY_VIDEO_NORMAL'\nimport pathlib,re,sys\nrequired=['native::client_debt::recording_start_status_tests::recording_refusal_requires_exact_error_ack_not_success_or_terminal_status',\
+        \ 'native::client_restart::tests::reopened_result_proof_preserves_payload_and_exact_publication_fence' 'native::client_actions::tests::recording_start_preserves_only_exact_broker_deadline_cancellation'\
+        \ 'native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_callback_retirement_notice_requires_exact_closed_identity_and_order';\
+        \ do\n  index=$((index + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep -Fx \"$name:\
+        \ test\" \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One exclusive file per test\
+        \ process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600); os.close(fd)' \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\
+        \n  printf '%s\\n' '{\"schemaVersion\":1,\"status\":\"prepared\",\"validation\":\"raw-not-validated\",\"releaseEligible\":false}'\
+        \ > \"evidence/test-$index.cleanup.status.json\"\n  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\
+        \ \"$harness\" --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n \
+        \ printf '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\n  # The ten new\
+        \ normal tests must actually execute, not silently succeed as ignored.\n  if ! python3 - \"$name\" \"evidence/test-$index.log\"\
+        \ <<'PY_VIDEO_NORMAL'\nimport pathlib,re,sys\nrequired=['native::client_actions::tests::recording_start_preserves_only_exact_broker_deadline_cancellation',\
+        \ 'native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_callback_retirement_notice_requires_exact_closed_identity_and_order']+['native::client_debt::recording_start_status_tests::recording_refusal_requires_exact_error_ack_not_success_or_terminal_status',\
         \ 'native::client_terminal_artifacts::tests::terminal_batch_moves_quota_survives_store_close_and_releases_once', 'native::client_terminal_artifacts::tests::terminal_batch_rejects_foreign_identity_token_handle_and_unknown_fields',\
-        \ 'native::client_terminal_artifacts::tests::terminal_batch_read_bounds_and_released_handle_never_recreate_bytes',\
-        \ 'native::client_terminal_artifacts::tests::frozen_quota_rejects_mixed_authority_retired_and_closed_stores', 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_duplicate_id_under_writer_backpressure_never_steals_original_receipt',\
+        \ 'native::client_terminal_artifacts::tests::terminal_batch_read_bounds_and_released_handle_never_recreate_bytes', 'native::client_terminal_artifacts::tests::frozen_quota_rejects_mixed_authority_retired_and_closed_stores',\
+        \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_duplicate_id_under_writer_backpressure_never_steals_original_receipt',\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_foreign_generation_reused_sequence_callback_and_schema_are_not_admitted',\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_traffic_never_renews_original_ten_second_cutoff',\
         \ 'native::client_transport::tests::terminal_artifact_tests::terminal_artifact_commands_never_enter_ordinary_executor_dispatch',\
         \ 'native::client_browser::state_lifecycle_tests::terminal_recording_tests::poisoned_terminal_recording_custody_never_proves_closed']\n\
-        if sys.argv[1] in required:\n text=pathlib.Path(sys.argv[2]).read_text()\n assert re.findall(r'test result: (ok|FAILED)\\\
-        . (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text)==[('ok','1','0','0')], 'new normal video test did not execute\
-        \ exactly once'\nPY_VIDEO_NORMAL\n  then failed=1; fi\ndone\nexit \"$failed\"\n"
+        if sys.argv[1] in required:\n text=pathlib.Path(sys.argv[2]).read_text()\n assert re.findall(r'test result: (ok|FAILED)\\. (\\\
+        d+) passed; (\\d+) failed; (\\d+) ignored;',text)==[('ok','1','0','0')], 'new normal video test did not execute exactly once'\n\
+        PY_VIDEO_NORMAL\n  then failed=1; fi\ndone\nexit \"$failed\"\n"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: always()
       with:
@@ -334,7 +324,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: 82f6ffa9cb2340a0ea9cbd093d08dafad5de6f36
+        ref: ad9cf7e0e03e758d1331914419a6f81a532373d3
         path: source
         persist-credentials: false
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -354,9 +344,9 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        test "$(cat images/native-source.sha)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
 
-        test "$(cat images/native-source.tree)" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
+        test "$(cat images/native-source.tree)" = 3db554fb7897c6becc6b42d970d448fa44600902
 
         test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
 
@@ -368,11 +358,11 @@ jobs:
     - name: Seed public apt archives from verified prior run (not test evidence)
       env:
         GH_TOKEN: ${{ github.token }}
-      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
-        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
-        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
-        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
-        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\" | curl --fail\
+        \ --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\n\
+        python3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
     - name: Probe orchestration regressions (not native runtime proof)
       working-directory: source
       run: node --test scripts/acceptance/probe-native.test.ts
@@ -420,7 +410,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: 82f6ffa9cb2340a0ea9cbd093d08dafad5de6f36
+        ref: ad9cf7e0e03e758d1331914419a6f81a532373d3
         path: source
         persist-credentials: false
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -440,9 +430,9 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        test "$(cat images/native-source.sha)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
 
-        test "$(cat images/native-source.tree)" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
+        test "$(cat images/native-source.tree)" = 3db554fb7897c6becc6b42d970d448fa44600902
 
         test "$(cat images/producer-run.id)" = "$GITHUB_RUN_ID"
 
@@ -454,11 +444,11 @@ jobs:
     - name: Seed public apt archives from verified prior run (not test evidence)
       env:
         GH_TOKEN: ${{ github.token }}
-      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
-        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
-        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
-        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
-        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\" | curl --fail\
+        \ --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\n\
+        python3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
     - name: Probe orchestration regressions (not native runtime proof)
       working-directory: source
       run: node --test scripts/acceptance/probe-native.test.ts
@@ -482,8 +472,8 @@ jobs:
     - *id003
     - *id004
     - name: Run unchanged all44 plus separate13 fake-CDP real-encoder contracts
-      run: "set -euo pipefail\ncat > \"$RUNNER_TEMP/run-native-contracts.py\" <<'PY_CONTRACTS'\n\"\"\"Exact44 existing contracts\
-        \ plus 13 separate encoder contracts; no blanket execution.\"\"\"\nimport hashlib,json,os,pathlib,re,shutil,subprocess,sys,time\n\
+      run: "set -euo pipefail\ncat > \"$RUNNER_TEMP/run-native-contracts.py\" <<'PY_CONTRACTS'\n\"\"\"Exact44 existing contracts plus\
+        \ 13 separate encoder contracts; no blanket execution.\"\"\"\nimport hashlib,json,os,pathlib,re,shutil,subprocess,sys,time\n\
         harness=pathlib.Path(sys.argv[1]).resolve(); meta=json.loads(pathlib.Path(sys.argv[2]).read_text());out=pathlib.Path(sys.argv[3]).resolve();out.mkdir(parents=True,exist_ok=True)\n\
         inventory=json.loads(pathlib.Path(sys.argv[4]).read_text());required=[x['name'] for x in inventory['names']];additional=inventory['additionalContracts'];browser_names=required+additional;encoder_contracts=inventory['encoderContracts'];encoder_names=[x['name']\
         \ for x in encoder_contracts];names=browser_names+encoder_names\nassert len(required)==37 and len(browser_names)==len(set(browser_names))==44\n\
@@ -492,8 +482,8 @@ jobs:
         \ len(encoder_only)==1\nrecording_two='native::client_browser::recording_attempt_tests::chromium_two_attempt_recording_late_old_completion_cannot_mutate_new_artifact'\n\
         # These fixtures own fresh processes. Unexpected ambient attachment is a setup failure.\nfor key in ['AGENT_BROWSER_CDP','AGENT_BROWSER_AUTO_CONNECT','AGENT_BROWSER_PROVIDER','AGENT_BROWSER_PROFILE']:\n\
         \ if os.environ.get(key):raise SystemExit('Unexpected ambient browser attachment/profile: '+key)\nchrome=pathlib.Path(meta['executablePath']).resolve();digest=hashlib.sha256(chrome.read_bytes()).hexdigest();assert\
-        \ digest==meta['sha256'];version=subprocess.check_output([str(chrome),'--version'],text=True).strip();assert '156.'\
-        \ in version\nencoder_paths={k:pathlib.Path(shutil.which(k)).resolve() for k in ['ffmpeg','ffprobe']}; encoder_hashes={k:hashlib.sha256(v.read_bytes()).hexdigest()\
+        \ digest==meta['sha256'];version=subprocess.check_output([str(chrome),'--version'],text=True).strip();assert '156.' in version\n\
+        encoder_paths={k:pathlib.Path(shutil.which(k)).resolve() for k in ['ffmpeg','ffprobe']}; encoder_hashes={k:hashlib.sha256(v.read_bytes()).hexdigest()\
         \ for k,v in encoder_paths.items()}; versions={k:{'path':str(encoder_paths[k]),'sha256':encoder_hashes[k],'version':subprocess.check_output([k,'-version'],text=True).splitlines()[0]}\
         \ for k in encoder_paths};(out/'encoder-tools.json').write_text(json.dumps(versions,indent=2)+'\\n')\nlisting=subprocess.run([str(harness),'--ignored','--list'],capture_output=True,text=True,timeout=30);(out/'native-ignored-inventory.log').write_text(listing.stdout+listing.stderr);assert\
         \ listing.returncode==0\nfound=[x[:-6] for x in listing.stdout.splitlines() if x.endswith(': test')];assert len(found)==len(set(found))\n\
@@ -505,275 +495,258 @@ jobs:
         \ expected exactly one test');continue\n cleanup=stem.with_suffix('.cleanup.jsonl');fd=os.open(cleanup,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)\n\
         \ with stem.with_suffix('.log').open('w') as log:\n  proc=subprocess.Popen([str(harness),'--exact',name,'--ignored','--test-threads=1','--nocapture'],cwd=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'native/cli',stdout=log,stderr=subprocess.STDOUT,env={**os.environ,'AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE':str(cleanup),'RUST_MIN_STACK':'16777216'})\n\
         \  launched=time.monotonic()\n  while proc.poll() is None:\n   if time.monotonic()-launched>=180:\n    timed_out=True;proc.terminate()\n\
-        \    try:proc.wait(timeout=1)\n    except subprocess.TimeoutExpired:proc.kill();proc.wait()\n    break\n   table={}\n\
-        \   for entry in pathlib.Path('/proc').iterdir():\n    if not entry.name.isdigit():continue\n    try:table[int(entry.name)]=int((entry/'stat').read_text().rsplit(')',1)[1].split()[1])\n\
+        \    try:proc.wait(timeout=1)\n    except subprocess.TimeoutExpired:proc.kill();proc.wait()\n    break\n   table={}\n   for\
+        \ entry in pathlib.Path('/proc').iterdir():\n    if not entry.name.isdigit():continue\n    try:table[int(entry.name)]=int((entry/'stat').read_text().rsplit(')',1)[1].split()[1])\n\
         \    except (OSError,ValueError):pass\n   descendants={proc.pid}\n   while True:\n    old=len(descendants);descendants.update(pid\
         \ for pid,parent in table.items() if parent in descendants)\n    if old==len(descendants):break\n   for pid in descendants-{proc.pid}:\n\
         \    try:\n     exe=(pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True)\n     if exe==chrome:seen[pid]={'pid':pid,'executablePath':str(exe),'sha256':digest,'version':version}\n\
         \     for tool,path in encoder_paths.items():\n      if exe==path:seen_encoders[tool]={'pid':pid,'executablePath':str(exe),'sha256':encoder_hashes[tool],'version':versions[tool]['version']}\n\
-        \    except OSError:pass\n   time.sleep(.01)\n  code=proc.wait()\n remaining=[]\n for pid in seen:\n  try:\n   if\
-        \ (pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True)==chrome:remaining.append(pid)\n  except OSError:pass\n\
-        \ counts=re.findall(r'test result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',stem.with_suffix('.log').read_text())\n\
-        \ unchanged=hashlib.sha256(chrome.read_bytes()).hexdigest()==digest\n receipt={'name':name,'kind':'encoder-contract'\
-        \ if name in encoder_names else 'original-required' if name in required else 'additional-required','attempt':1,'exitCode':code,'timedOut':timed_out,'outerTimeoutSeconds':180,'counts':counts,'observedDescendantEncoderBinaries':seen_encoders,'encoderBinariesUnchangedAfter':all(hashlib.sha256(v.read_bytes()).hexdigest()==encoder_hashes[k]\
+        \    except OSError:pass\n   time.sleep(.01)\n  code=proc.wait()\n remaining=[]\n for pid in seen:\n  try:\n   if (pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True)==chrome:remaining.append(pid)\n\
+        \  except OSError:pass\n counts=re.findall(r'test result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',stem.with_suffix('.log').read_text())\n\
+        \ unchanged=hashlib.sha256(chrome.read_bytes()).hexdigest()==digest\n receipt={'name':name,'kind':'encoder-contract' if name\
+        \ in encoder_names else 'original-required' if name in required else 'additional-required','attempt':1,'exitCode':code,'timedOut':timed_out,'outerTimeoutSeconds':180,'counts':counts,'observedDescendantEncoderBinaries':seen_encoders,'encoderBinariesUnchangedAfter':all(hashlib.sha256(v.read_bytes()).hexdigest()==encoder_hashes[k]\
         \ for k,v in encoder_paths.items()),'observedDescendantBrowserBinaries':list(seen.values()),'remainingBrowserPids':remaining,'browserIdentityRequired':name\
         \ not in encoder_only and name not in encoder_names,'binaryUnchangedAfter':unchanged,'durationSeconds':time.monotonic()-started}\n\
-        \ stem.with_suffix('.result.json').write_text(json.dumps(receipt,indent=2)+'\\n');results.append(receipt)\n if code\
-        \ or timed_out or counts!=[('1','0','0')] or remaining or not unchanged or (name not in encoder_only and name not\
-        \ in encoder_names and not seen) or (name in encoder_only and set(seen_encoders)!=set(encoder_paths)) or (name==recording_two\
-        \ and 'ffmpeg' not in seen_encoders) or (name in encoder_names and not encoder_requirements[name]<=set(seen_encoders))\
-        \ or not receipt['encoderBinariesUnchangedAfter']:failures.append(name+': failed test or evidence')\n (out/'progress.json').write_text(json.dumps({'results':results,'failures':failures,'releaseEligible':False},indent=2)+'\\\
+        \ stem.with_suffix('.result.json').write_text(json.dumps(receipt,indent=2)+'\\n');results.append(receipt)\n if code or timed_out\
+        \ or counts!=[('1','0','0')] or remaining or not unchanged or (name not in encoder_only and name not in encoder_names and not\
+        \ seen) or (name in encoder_only and set(seen_encoders)!=set(encoder_paths)) or (name==recording_two and 'ffmpeg' not in seen_encoders)\
+        \ or (name in encoder_names and not encoder_requirements[name]<=set(seen_encoders)) or not receipt['encoderBinariesUnchangedAfter']:failures.append(name+':\
+        \ failed test or evidence')\n (out/'progress.json').write_text(json.dumps({'results':results,'failures':failures,'releaseEligible':False},indent=2)+'\\\
         n')\n(out/'contracts.result.json').write_text(json.dumps({'required':required,'additional':additional,'excludedDiagnostics':inventory['diagnostics'],'results':[r\
-        \ for r in results if r['name'] in browser_names],'failures':[f for f in failures if not any(f.startswith(n+':') for\
-        \ n in encoder_names)],'releaseEligible':False},indent=2)+'\\n')\n(out/'encoder-contracts.result.json').write_text(json.dumps({'category':'fake-cdp-real-encoder-contract','required':encoder_contracts,'results':[r\
-        \ for r in results if r['name'] in encoder_names],'failures':[f for f in failures if any(f.startswith(n+':') for n\
-        \ in encoder_names)],'browserIdentityRequired':False,'releaseEligible':False},indent=2)+'\\n')\nsys.exit(1 if failures\
-        \ else 0)\nPY_CONTRACTS\ncat > \"$RUNNER_TEMP/exact-contracts.json\" <<'JSON_CONTRACTS'\n{\n  \"source\": \"5bb088e4c54ece52ff4a68a8a2c43e777c37f407\"\
-        ,\n  \"names\": [\n    {\n      \"index\": 1,\n      \"name\": \"native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup\"\
+        \ for r in results if r['name'] in browser_names],'failures':[f for f in failures if not any(f.startswith(n+':') for n in encoder_names)],'releaseEligible':False},indent=2)+'\\\
+        n')\n(out/'encoder-contracts.result.json').write_text(json.dumps({'category':'fake-cdp-real-encoder-contract','required':encoder_contracts,'results':[r\
+        \ for r in results if r['name'] in encoder_names],'failures':[f for f in failures if any(f.startswith(n+':') for n in encoder_names)],'browserIdentityRequired':False,'releaseEligible':False},indent=2)+'\\\
+        n')\nsys.exit(1 if failures else 0)\nPY_CONTRACTS\ncat > \"$RUNNER_TEMP/exact-contracts.json\" <<'JSON_CONTRACTS'\n{\n  \"source\"\
+        : \"0f545c307a157e107ac8d1260167fa3e70e39cdb\",\n  \"names\": [\n    {\n      \"index\": 1,\n      \"name\": \"native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup\"\
         ,\n      \"path\": \"cli/src/native/client_browser.rs\",\n      \"line\": 6020,\n      \"excerpt\": \"next-exact-ci/formal37-review/01-chromium_owned_scope_isolation_and_cleanup.rs\"\
         ,\n      \"lines\": 132,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
         \ None)\"\n      ]\n    },\n    {\n      \"index\": 2,\n      \"name\": \"native::client_observation::tests::chromium_native_observation_query_exact_and_secure_contract\"\
         ,\n      \"path\": \"cli/src/native/client_observation.rs\",\n      \"line\": 8085,\n      \"excerpt\": \"next-exact-ci/formal37-review/02-chromium_native_observation_query_exact_and_secure_contract.rs\"\
         ,\n      \"lines\": 121,\n      \"launchMarkers\": [\n        \"mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\
-        \"expression\\\":r#\\\"document.body.innerHTML='<main><label for=\\\"account\\\">Account</label><input id=\\\"account\\\
-        \" value=\\\"synthetic-user\\\"><input id=\\\"secret\\\" type=\\\"password\\\" value=\\\"synthetic-password\\\"><ul><li>Alpha\
-        \ <button>Save</button></li><li>Beta <button>Save</button></li></ul><div id=\\\"shadow\\\"></div></main>'; const root=document.querySelector('#shadow').attachShadow({mode:'closed'});\
-        \ root.innerHTML='<button>Shadow save</button>'; true\\\"#,\\\"returnByValue\\\":true})),Some(session)).await.map_err(|_|\
-        \ \\\"native observation stage: fixture_cdp_1\\\".to_string())?;\",\n        \"let observation=observe(&mgr.client,&frames,&mut\
-        \ refs,\\\"fixture\\\",1,&ObservationOptions::default(),&lease).await.map_err(|_| \\\"native observation stage: observe_1\\\
-        \".to_string())?;\",\n        \"let result=query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&options,&lease).await.map_err(|_|\
-        \ \\\"native observation stage: query_1\\\".to_string())?;\",\n        \"mgr.client.send_command(\\\"Runtime.evaluate\\\
-        \",Some(json!({\\\"expression\\\":\\\"document.querySelectorAll('li button')[1].outerHTML='<button>Save</button>';\
-        \ true\\\",\\\"returnByValue\\\":true})),Some(session)).await.map_err(|_| \\\"native observation stage: fixture_cdp_2\\\
-        \".to_string())?;\",\n        \"let replacement=query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&options,&lease).await.map_err(|_|\
-        \ \\\"native observation stage: query_2\\\".to_string())?;\",\n        \"if query(&mgr.client,&frames,&mut refs,\\\
-        \"fixture\\\",1,&options,&lease).await.map_err(|_| \\\"native observation stage: query_3\\\".to_string())?.nodes.len()!=1{return\
-        \ Err(\\\"Closed shadow query failed\\\".into());}\",\n        \"let result=query(&mgr.client,&frames,&mut refs,\\\
-        \"fixture\\\",1,&options,&lease).await.map_err(|_| \\\"native observation stage: query_4\\\".to_string())?;\",\n \
-        \       \"mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\"expression\\\":r#\\\"new Promise(resolve=>{const\
-        \ f=document.createElement('iframe');f.dataset.frame='demo';f.onload=resolve;f.srcdoc='<button id=\\\"inner\\\">Frame\
-        \ action</button>';document.body.appendChild(f);})\\\"#,\\\"awaitPromise\\\":true,\\\"returnByValue\\\":true})),Some(session)).await.map_err(|_|\
-        \ \\\"native observation stage: fixture_cdp_3\\\".to_string())?;\",\n        \"let result=query(&mgr.client,&frames,&mut\
-        \ refs,\\\"fixture\\\",1,&framed,&lease).await.map_err(|_| \\\"native observation stage: query_5\\\".to_string())?;\"\
-        ,\n        \"let framed_observation=observe(&mgr.client,&frames,&mut refs,\\\"fixture\\\",2,&ObservationOptions::default(),&lease).await.map_err(|_|\
-        \ \\\"native observation stage: observe_2\\\".to_string())?;\",\n        \"let result=query(&mgr.client,&frames,&mut\
-        \ refs,\\\"fixture\\\",2,&adopt,&lease).await.map_err(|_| \\\"native observation stage: query_6\\\".to_string())?;\"\
-        ,\n        \"mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\"expression\\\":\\\"document.querySelector('iframe').contentDocument.body.appendChild(document.querySelector('li\
-        \ button')); true\\\",\\\"returnByValue\\\":true})),Some(session)).await.map_err(|_| \\\"native observation stage:\
-        \ fixture_cdp_4\\\".to_string())?;\"\n      ]\n    },\n    {\n      \"index\": 3,\n      \"name\": \"native::client_observation::tests::chromium_native_same_process_frame_coordinate_convention\"\
+        \"expression\\\":r#\\\"document.body.innerHTML='<main><label for=\\\"account\\\">Account</label><input id=\\\"account\\\" value=\\\
+        \"synthetic-user\\\"><input id=\\\"secret\\\" type=\\\"password\\\" value=\\\"synthetic-password\\\"><ul><li>Alpha <button>Save</button></li><li>Beta\
+        \ <button>Save</button></li></ul><div id=\\\"shadow\\\"></div></main>'; const root=document.querySelector('#shadow').attachShadow({mode:'closed'});\
+        \ root.innerHTML='<button>Shadow save</button>'; true\\\"#,\\\"returnByValue\\\":true})),Some(session)).await.map_err(|_| \\\
+        \"native observation stage: fixture_cdp_1\\\".to_string())?;\",\n        \"let observation=observe(&mgr.client,&frames,&mut\
+        \ refs,\\\"fixture\\\",1,&ObservationOptions::default(),&lease).await.map_err(|_| \\\"native observation stage: observe_1\\\"\
+        .to_string())?;\",\n        \"let result=query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&options,&lease).await.map_err(|_|\
+        \ \\\"native observation stage: query_1\\\".to_string())?;\",\n        \"mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\
+        \"expression\\\":\\\"document.querySelectorAll('li button')[1].outerHTML='<button>Save</button>'; true\\\",\\\"returnByValue\\\
+        \":true})),Some(session)).await.map_err(|_| \\\"native observation stage: fixture_cdp_2\\\".to_string())?;\",\n        \"let\
+        \ replacement=query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&options,&lease).await.map_err(|_| \\\"native observation\
+        \ stage: query_2\\\".to_string())?;\",\n        \"if query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&options,&lease).await.map_err(|_|\
+        \ \\\"native observation stage: query_3\\\".to_string())?.nodes.len()!=1{return Err(\\\"Closed shadow query failed\\\".into());}\"\
+        ,\n        \"let result=query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&options,&lease).await.map_err(|_| \\\"native\
+        \ observation stage: query_4\\\".to_string())?;\",\n        \"mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\
+        \"expression\\\":r#\\\"new Promise(resolve=>{const f=document.createElement('iframe');f.dataset.frame='demo';f.onload=resolve;f.srcdoc='<button\
+        \ id=\\\"inner\\\">Frame action</button>';document.body.appendChild(f);})\\\"#,\\\"awaitPromise\\\":true,\\\"returnByValue\\\
+        \":true})),Some(session)).await.map_err(|_| \\\"native observation stage: fixture_cdp_3\\\".to_string())?;\",\n        \"let\
+        \ result=query(&mgr.client,&frames,&mut refs,\\\"fixture\\\",1,&framed,&lease).await.map_err(|_| \\\"native observation stage:\
+        \ query_5\\\".to_string())?;\",\n        \"let framed_observation=observe(&mgr.client,&frames,&mut refs,\\\"fixture\\\",2,&ObservationOptions::default(),&lease).await.map_err(|_|\
+        \ \\\"native observation stage: observe_2\\\".to_string())?;\",\n        \"let result=query(&mgr.client,&frames,&mut refs,\\\
+        \"fixture\\\",2,&adopt,&lease).await.map_err(|_| \\\"native observation stage: query_6\\\".to_string())?;\",\n        \"mgr.client.send_command(\\\
+        \"Runtime.evaluate\\\",Some(json!({\\\"expression\\\":\\\"document.querySelector('iframe').contentDocument.body.appendChild(document.querySelector('li\
+        \ button')); true\\\",\\\"returnByValue\\\":true})),Some(session)).await.map_err(|_| \\\"native observation stage: fixture_cdp_4\\\
+        \".to_string())?;\"\n      ]\n    },\n    {\n      \"index\": 3,\n      \"name\": \"native::client_observation::tests::chromium_native_same_process_frame_coordinate_convention\"\
         ,\n      \"path\": \"cli/src/native/client_observation.rs\",\n      \"line\": 8208,\n      \"excerpt\": \"next-exact-ci/formal37-review/03-chromium_native_same_process_frame_coordinate_convention.rs\"\
-        ,\n      \"lines\": 48,\n      \"launchMarkers\": [\n        \"if setup.get(\\\"exceptionDetails\\\").is_some() {\
-        \ return Err(\\\"Coordinate fixture failed\\\".to_string()); }\",\n        \"let object = resolved[\\\"result\\\"\
-        ][\\\"objectId\\\"].as_str().ok_or(\\\"No fixture node\\\")?;\"\n      ]\n    },\n    {\n      \"index\": 4,\n   \
-        \   \"name\": \"native::client_observation::equivalence_tests::chromium_twenty_controls_budget_and_frame_truncation_contract\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 585,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/04-chromium_twenty_controls_budget_and_frame_truncation_contract.rs\",\n      \"\
-        lines\": 48,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\
-        ,\n        \"let registry = read_node_names_fixture(&browser,\"\n      ]\n    },\n    {\n      \"index\": 5,\n   \
-        \   \"name\": \"native::client_observation::equivalence_tests::chromium_embedded_control_and_password_public_labels_contract\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 815,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/05-chromium_embedded_control_and_password_public_labels_contract.rs\",\n      \"\
-        lines\": 32,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\
-        \n      ]\n    },\n    {\n      \"index\": 6,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_observation_metadata_gc_and_exact_ref_actionability\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 849,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/06-chromium_observation_metadata_gc_and_exact_ref_actionability.rs\",\n      \"\
-        lines\": 32,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\
-        \n      ]\n    },\n    {\n      \"index\": 7,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 343,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/07-chromium_closed_shadow_unique_focus_and_selection_contract.rs\",\n      \"lines\"\
-        : 122,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\
-        ,\n        \"// These fixture-only references control focus; native acquisition\",\n        \"let fixture = format!(r#\\\
-        \"(() => {{\",\n        \"evaluate_on(&browser.client, session, &fixture).await?;\",\n        \"assert_eq!(selected,\
-        \ json!({\\\"focused\\\":true,\\\"contains\\\":true,\\\"text\\\":\\\"approved\\\"}), \\\"Native closed-root range\
-        \ fixture must establish containment, not replace selection getters\\\");\"\n      ]\n    },\n    {\n      \"index\"\
-        : 8,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_query_churn_bounds_durable_metadata_without_evicting_authority\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 943,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/08-chromium_query_churn_bounds_durable_metadata_without_evicting_authority.rs\"\
-        ,\n      \"lines\": 47,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(),\
-        \ None)\"\n      ]\n    },\n    {\n      \"index\": 9,\n      \"name\": \"native::client_browser::reference_lifetime_tests::chromium_located_reference_retirement_across_owned_attempts\"\
-        ,\n      \"path\": \"cli/src/native/client_browser_reference_tests.rs\",\n      \"line\": 174,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/09-chromium_located_reference_retirement_across_owned_attempts.rs\",\n      \"lines\"\
-        : 72,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
+        ,\n      \"lines\": 48,\n      \"launchMarkers\": [\n        \"if setup.get(\\\"exceptionDetails\\\").is_some() { return Err(\\\
+        \"Coordinate fixture failed\\\".to_string()); }\",\n        \"let object = resolved[\\\"result\\\"][\\\"objectId\\\"].as_str().ok_or(\\\
+        \"No fixture node\\\")?;\"\n      ]\n    },\n    {\n      \"index\": 4,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_twenty_controls_budget_and_frame_truncation_contract\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 585,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/04-chromium_twenty_controls_budget_and_frame_truncation_contract.rs\",\n      \"lines\": 48,\n\
+        \      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\",\n        \"let\
+        \ registry = read_node_names_fixture(&browser,\"\n      ]\n    },\n    {\n      \"index\": 5,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_embedded_control_and_password_public_labels_contract\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 815,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/05-chromium_embedded_control_and_password_public_labels_contract.rs\",\n      \"lines\": 32,\n\
+        \      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\n      ]\n    },\n\
+        \    {\n      \"index\": 6,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_observation_metadata_gc_and_exact_ref_actionability\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 849,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/06-chromium_observation_metadata_gc_and_exact_ref_actionability.rs\",\n      \"lines\": 32,\n\
+        \      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\n      ]\n    },\n\
+        \    {\n      \"index\": 7,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 343,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/07-chromium_closed_shadow_unique_focus_and_selection_contract.rs\",\n      \"lines\": 122,\n \
+        \     \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\",\n        \"// These\
+        \ fixture-only references control focus; native acquisition\",\n        \"let fixture = format!(r#\\\"(() => {{\",\n       \
+        \ \"evaluate_on(&browser.client, session, &fixture).await?;\",\n        \"assert_eq!(selected, json!({\\\"focused\\\":true,\\\
+        \"contains\\\":true,\\\"text\\\":\\\"approved\\\"}), \\\"Native closed-root range fixture must establish containment, not replace\
+        \ selection getters\\\");\"\n      ]\n    },\n    {\n      \"index\": 8,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_query_churn_bounds_durable_metadata_without_evicting_authority\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 943,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/08-chromium_query_churn_bounds_durable_metadata_without_evicting_authority.rs\",\n      \"lines\"\
+        : 47,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\n      ]\n\
+        \    },\n    {\n      \"index\": 9,\n      \"name\": \"native::client_browser::reference_lifetime_tests::chromium_located_reference_retirement_across_owned_attempts\"\
+        ,\n      \"path\": \"cli/src/native/client_browser_reference_tests.rs\",\n      \"line\": 174,\n      \"excerpt\": \"next-exact-ci/formal37-review/09-chromium_located_reference_retirement_across_owned_attempts.rs\"\
+        ,\n      \"lines\": 72,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
         \ None)\",\n        \"let opened=command(&browser,&mut ops,\\\"scope.open\\\",fixture_scope_open(\\\"connect\\\",Some(host.get_cdp_url()))).await?;\"\
-        ,\n        \"let reopened=command(&browser,&mut ops,\\\"scope.open\\\",fixture_scope_open(\\\"reuse\\\",None)).await?;\"\
-        ,\n        \"let stale=ops.execute_written(&browser,browser.event_sink.get().ok_or(\\\"fixture event sink missing\\\
-        \")?,\\\"browser.perform\\\",json!({\\\"identityScope\\\":scope,\\\"ref\\\":{\\\"id\\\":old_id,\\\"revision\\\":current[index].1[\\\
-        \"revision\\\"]},\\\"action\\\":{\\\"kind\\\":\\\"tap\\\"}}),30).await.map_err(|e|format!(\\\"stale action admission/settlement:\
-        \ {e:?}\\\"))?;\"\n      ]\n    },\n    {\n      \"index\": 10,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_observation_retirement_races_are_stale_not_deadline\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 883,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/10-chromium_observation_retirement_races_are_stale_not_deadline.rs\",\n      \"\
-        lines\": 17,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\
-        \n      ]\n    },\n    {\n      \"index\": 11,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_exact_read_retirement_races_are_stale_not_deadline\"\
-        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 903,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/11-chromium_exact_read_retirement_races_are_stale_not_deadline.rs\",\n      \"lines\"\
-        : 20,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\n\
-        \      ]\n    },\n    {\n      \"index\": 12,\n      \"name\": \"native::client_protected_read::tests::chromium_animation_stabilization_preserves_visibility_and_native_reads\"\
+        ,\n        \"let reopened=command(&browser,&mut ops,\\\"scope.open\\\",fixture_scope_open(\\\"reuse\\\",None)).await?;\",\n\
+        \        \"let stale=ops.execute_written(&browser,browser.event_sink.get().ok_or(\\\"fixture event sink missing\\\")?,\\\"browser.perform\\\
+        \",json!({\\\"identityScope\\\":scope,\\\"ref\\\":{\\\"id\\\":old_id,\\\"revision\\\":current[index].1[\\\"revision\\\"]},\\\
+        \"action\\\":{\\\"kind\\\":\\\"tap\\\"}}),30).await.map_err(|e|format!(\\\"stale action admission/settlement: {e:?}\\\"))?;\"\
+        \n      ]\n    },\n    {\n      \"index\": 10,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_observation_retirement_races_are_stale_not_deadline\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 883,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/10-chromium_observation_retirement_races_are_stale_not_deadline.rs\",\n      \"lines\": 17,\n\
+        \      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\n      ]\n    },\n\
+        \    {\n      \"index\": 11,\n      \"name\": \"native::client_observation::equivalence_tests::chromium_exact_read_retirement_races_are_stale_not_deadline\"\
+        ,\n      \"path\": \"cli/src/native/client_observation_equivalence_tests.rs\",\n      \"line\": 903,\n      \"excerpt\": \"\
+        next-exact-ci/formal37-review/11-chromium_exact_read_retirement_races_are_stale_not_deadline.rs\",\n      \"lines\": 20,\n \
+        \     \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(), None)\"\n      ]\n    },\n\
+        \    {\n      \"index\": 12,\n      \"name\": \"native::client_protected_read::tests::chromium_animation_stabilization_preserves_visibility_and_native_reads\"\
         ,\n      \"path\": \"cli/src/native/client_protected_read.rs\",\n      \"line\": 1408,\n      \"excerpt\": \"next-exact-ci/formal37-review/12-chromium_animation_stabilization_preserves_visibility_and_native_reads.rs\"\
-        ,\n      \"lines\": 127,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(),\
-        \ None)\"\n      ]\n    },\n    {\n      \"index\": 13,\n      \"name\": \"native::client_page::tests::e2e_client_page_input_context_and_evaluate\"\
+        ,\n      \"lines\": 127,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(), None)\"\
+        \n      ]\n    },\n    {\n      \"index\": 13,\n      \"name\": \"native::client_page::tests::e2e_client_page_input_context_and_evaluate\"\
         ,\n      \"path\": \"cli/src/native/client_page.rs\",\n      \"line\": 4125,\n      \"excerpt\": \"next-exact-ci/formal37-review/13-e2e_client_page_input_context_and_evaluate.rs\"\
-        ,\n      \"lines\": 144,\n      \"launchMarkers\": [\n        \"let mut browser = OwnedBrowser::launch(options, None)\"\
-        ,\n        \"state.execute(&page,&[],&op,\\\"context.cookies.set\\\",&json!({\\\"cookies\\\":[{\\\"name\\\":\\\"owned\\\
-        \",\\\"value\\\":\\\"synthetic\\\",\\\"domain\\\":\\\"fixture.invalid\\\",\\\"httpOnly\\\":true,\\\"expires\\\":-1}]})).await.unwrap();\"\
-        ,\n        \"page.client.send_command(\\\"Storage.setCookies\\\",Some(json!({\\\"browserContextId\\\":other_id,\\\"\
-        cookies\\\":[{\\\"name\\\":\\\"unrelated\\\",\\\"value\\\":\\\"must-not-leak\\\",\\\"domain\\\":\\\"fixture.invalid\\\
-        \",\\\"path\\\":\\\"/\\\"}]})),None).await.unwrap();\"\n      ]\n    },\n    {\n      \"index\": 14,\n      \"name\"\
-        : \"native::client_actions::tests::chromium_exact_actions_fill_select_check_document_and_stale_ref\",\n      \"path\"\
-        : \"cli/src/native/client_actions.rs\",\n      \"line\": 11094,\n      \"excerpt\": \"next-exact-ci/formal37-review/14-chromium_exact_actions_fill_select_check_document_and_stale_ref.rs\"\
+        ,\n      \"lines\": 144,\n      \"launchMarkers\": [\n        \"let mut browser = OwnedBrowser::launch(options, None)\",\n \
+        \       \"state.execute(&page,&[],&op,\\\"context.cookies.set\\\",&json!({\\\"cookies\\\":[{\\\"name\\\":\\\"owned\\\",\\\"\
+        value\\\":\\\"synthetic\\\",\\\"domain\\\":\\\"fixture.invalid\\\",\\\"httpOnly\\\":true,\\\"expires\\\":-1}]})).await.unwrap();\"\
+        ,\n        \"page.client.send_command(\\\"Storage.setCookies\\\",Some(json!({\\\"browserContextId\\\":other_id,\\\"cookies\\\
+        \":[{\\\"name\\\":\\\"unrelated\\\",\\\"value\\\":\\\"must-not-leak\\\",\\\"domain\\\":\\\"fixture.invalid\\\",\\\"path\\\"\
+        :\\\"/\\\"}]})),None).await.unwrap();\"\n      ]\n    },\n    {\n      \"index\": 14,\n      \"name\": \"native::client_actions::tests::chromium_exact_actions_fill_select_check_document_and_stale_ref\"\
+        ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 11094,\n      \"excerpt\": \"next-exact-ci/formal37-review/14-chromium_exact_actions_fill_select_check_document_and_stale_ref.rs\"\
         ,\n      \"lines\": 97,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(),\
-        \ None)\",\n        \"let page = BrowserExecutionLease { client: browser.client.clone(), page_session_id: session.clone(),\
-        \ target_id: browser.active_target_id()?.into(), identity_scope: \\\"fixture-actions\\\".into(), permit: gate.enter(false).unwrap(),\
-        \ targets: ClientTargets::new(\\\"fixture-context\\\".into(), \\\"fixture-actions\\\".into()) };\",\n        \"let\
-        \ state = ClientPageState::new(page.identity_scope.clone(), \\\"fixture-context\\\".into());\",\n        \"let geometry\
-        \ = action_fixture_geometry(&page,&operation).await?;\"\n      ]\n    },\n    {\n      \"index\": 15,\n      \"name\"\
-        : \"native::client_actions::tests::chromium_fixture_query_then_exact_check_without_observation\",\n      \"path\"\
-        : \"cli/src/native/client_actions.rs\",\n      \"line\": 10851,\n      \"excerpt\": \"next-exact-ci/formal37-review/15-chromium_fixture_query_then_exact_check_without_observation.rs\"\
+        \ None)\",\n        \"let page = BrowserExecutionLease { client: browser.client.clone(), page_session_id: session.clone(), target_id:\
+        \ browser.active_target_id()?.into(), identity_scope: \\\"fixture-actions\\\".into(), permit: gate.enter(false).unwrap(), targets:\
+        \ ClientTargets::new(\\\"fixture-context\\\".into(), \\\"fixture-actions\\\".into()) };\",\n        \"let state = ClientPageState::new(page.identity_scope.clone(),\
+        \ \\\"fixture-context\\\".into());\",\n        \"let geometry = action_fixture_geometry(&page,&operation).await?;\"\n      ]\n\
+        \    },\n    {\n      \"index\": 15,\n      \"name\": \"native::client_actions::tests::chromium_fixture_query_then_exact_check_without_observation\"\
+        ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 10851,\n      \"excerpt\": \"next-exact-ci/formal37-review/15-chromium_fixture_query_then_exact_check_without_observation.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": [\n        \"async fn chromium_fixture_query_then_exact_check_without_observation()\
-        \ {\",\n        \"chromium_checked_action_acquisition(\\\"fixture\\\").await;\"\n      ]\n    },\n    {\n      \"\
-        index\": 16,\n      \"name\": \"native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot\"\
-        ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 10841,\n      \"excerpt\": \"next-exact-ci/formal37-review/16-chromium_protected_observe_then_exact_check_uses_committed_snapshot.rs\"\
+        \ {\",\n        \"chromium_checked_action_acquisition(\\\"fixture\\\").await;\"\n      ]\n    },\n    {\n      \"index\": 16,\n\
+        \      \"name\": \"native::client_actions::tests::chromium_protected_observe_then_exact_check_uses_committed_snapshot\",\n \
+        \     \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 10841,\n      \"excerpt\": \"next-exact-ci/formal37-review/16-chromium_protected_observe_then_exact_check_uses_committed_snapshot.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": []\n    },\n    {\n      \"index\": 17,\n      \"name\": \"native::client_actions::tests::chromium_protected_pixels_then_exact_check_uses_committed_snapshot\"\
         ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 10846,\n      \"excerpt\": \"next-exact-ci/formal37-review/17-chromium_protected_pixels_then_exact_check_uses_committed_snapshot.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": []\n    },\n    {\n      \"index\": 18,\n      \"name\": \"native::client_actions::tests::chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session\"\
         ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 10722,\n      \"excerpt\": \"next-exact-ci/formal37-review/18-chromium_replacement_acknowledged_prefix_cancel_preserves_selection_and_session.rs\"\
-        ,\n      \"lines\": 117,\n      \"launchMarkers\": [\n        \"fixture_scope_open(\\\"launch\\\", None), 30).await?;\"\
-        ,\n        \"fixture_configuration(&scope, None), 30).await?;\",\n        \"fixture_routes(&scope), 30).await?;\"\n\
-        \      ]\n    },\n    {\n      \"index\": 19,\n      \"name\": \"native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page\"\
+        ,\n      \"lines\": 117,\n      \"launchMarkers\": [\n        \"fixture_scope_open(\\\"launch\\\", None), 30).await?;\",\n \
+        \       \"fixture_configuration(&scope, None), 30).await?;\",\n        \"fixture_routes(&scope), 30).await?;\"\n      ]\n  \
+        \  },\n    {\n      \"index\": 19,\n      \"name\": \"native::client_capture::tests::chromium_source_masks_cover_dynamic_fields_without_activating_background_page\"\
         ,\n      \"path\": \"cli/src/native/client_capture.rs\",\n      \"line\": 1218,\n      \"excerpt\": \"next-exact-ci/formal37-review/19-chromium_source_masks_cover_dynamic_fields_without_activating_background_page.rs\"\
-        ,\n      \"lines\": 97,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(),\
-        \ None)\",\n        \"if ready_budget == 0 { return Err(\\\"Background fixture readiness budget expired\\\".into());\
-        \ }\",\n        \".await.map_err(|_|\\\"Background fixture readiness deadline\\\")??;\",\n        \"let initially_ready=ready[\\\
-        \"initiallyReady\\\"].as_bool().ok_or(\\\"Invalid background fixture readiness proof\\\")?;\",\n        \"let ready_now=ready[\\\
-        \"ready\\\"].as_bool().ok_or(\\\"Invalid background fixture readiness proof\\\")?;\",\n        \"let listeners_removed=ready[\\\
-        \"listenersRemoved\\\"].as_bool().ok_or(\\\"Invalid background fixture readiness proof\\\")?;\",\n        \"page.targets.acknowledge_enrollment().map_err(|e|format!(\\\
+        ,\n      \"lines\": 97,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(), None)\"\
+        ,\n        \"if ready_budget == 0 { return Err(\\\"Background fixture readiness budget expired\\\".into()); }\",\n        \"\
+        .await.map_err(|_|\\\"Background fixture readiness deadline\\\")??;\",\n        \"let initially_ready=ready[\\\"initiallyReady\\\
+        \"].as_bool().ok_or(\\\"Invalid background fixture readiness proof\\\")?;\",\n        \"let ready_now=ready[\\\"ready\\\"].as_bool().ok_or(\\\
+        \"Invalid background fixture readiness proof\\\")?;\",\n        \"let listeners_removed=ready[\\\"listenersRemoved\\\"].as_bool().ok_or(\\\
+        \"Invalid background fixture readiness proof\\\")?;\",\n        \"page.targets.acknowledge_enrollment().map_err(|e|format!(\\\
         \"Primitive fixture inventory: {e:?}\\\"))?;\"\n      ]\n    },\n    {\n      \"index\": 20,\n      \"name\": \"native::client_actions::tests::chromium_iframe_query_then_exact_check_without_observation\"\
         ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 10856,\n      \"excerpt\": \"next-exact-ci/formal37-review/20-chromium_iframe_query_then_exact_check_without_observation.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": [\n        \"async fn chromium_fixture_query_then_exact_check_without_observation()\
-        \ {\",\n        \"chromium_checked_action_acquisition(\\\"fixture\\\").await;\"\n      ]\n    },\n    {\n      \"\
-        index\": 21,\n      \"name\": \"native::client_actions::tests::chromium_nested_frame_action_projects_input_and_checks_exact_ancestor_occlusion\"\
+        \ {\",\n        \"chromium_checked_action_acquisition(\\\"fixture\\\").await;\"\n      ]\n    },\n    {\n      \"index\": 21,\n\
+        \      \"name\": \"native::client_actions::tests::chromium_nested_frame_action_projects_input_and_checks_exact_ancestor_occlusion\"\
         ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 11193,\n      \"excerpt\": \"next-exact-ci/formal37-review/21-chromium_nested_frame_action_projects_input_and_checks_exact_ancestor_occlusion.rs\"\
         ,\n      \"lines\": 47,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(),\
         \ None)\",\n        \"let page=BrowserExecutionLease{client:browser.client.clone(),page_session_id:session.clone(),target_id:browser.active_target_id()?.into(),identity_scope:\\\
-        \"nested-actions\\\".into(),permit:gate.enter(false).unwrap(),targets:ClientTargets::new(\\\"fixture\\\".into(),\\\
-        \"nested-actions\\\".into())};\",\n        \"let world=page.client.send_command(\\\"Page.createIsolatedWorld\\\",Some(json!({\\\
-        \"frameId\\\":frame.binding.frame,\\\"worldName\\\":\\\"native-action-fixture\\\"})),Some(&frame.binding.session)).await?;\"\
-        ,\n        \"let state=ClientPageState::new(page.identity_scope.clone(),\\\"fixture\\\".into());let blobs=BlobStore::new(BlobLimits::default()).unwrap();\"\
-        \n      ]\n    },\n    {\n      \"index\": 22,\n      \"name\": \"native::client_actions::tests::chromium_recording_attempt_segments_first_frame_size_and_scope_rotation\"\
+        \"nested-actions\\\".into(),permit:gate.enter(false).unwrap(),targets:ClientTargets::new(\\\"fixture\\\".into(),\\\"nested-actions\\\
+        \".into())};\",\n        \"let world=page.client.send_command(\\\"Page.createIsolatedWorld\\\",Some(json!({\\\"frameId\\\":frame.binding.frame,\\\
+        \"worldName\\\":\\\"native-action-fixture\\\"})),Some(&frame.binding.session)).await?;\",\n        \"let state=ClientPageState::new(page.identity_scope.clone(),\\\
+        \"fixture\\\".into());let blobs=BlobStore::new(BlobLimits::default()).unwrap();\"\n      ]\n    },\n    {\n      \"index\":\
+        \ 22,\n      \"name\": \"native::client_actions::tests::chromium_recording_attempt_segments_first_frame_size_and_scope_rotation\"\
         ,\n      \"path\": \"cli/src/native/client_actions.rs\",\n      \"line\": 11258,\n      \"excerpt\": \"next-exact-ci/formal37-review/22-chromium_recording_attempt_segments_first_frame_size_and_scope_rotation.rs\"\
-        ,\n      \"lines\": 87,\n      \"launchMarkers\": [\n        \"enroll_recording_fixture(&page).await;\",\n       \
-        \ \"let mut first = BrowserManager::launch(Default::default(), None)\",\n        \"let mut second = BrowserManager::launch(Default::default(),\
-        \ None)\",\n        \"let first_geometry=action_fixture_geometry(&first_page,&operation).await?;\",\n        \"let\
-        \ second_geometry=action_fixture_geometry(&second_page,&operation).await?;\"\n      ]\n    },\n    {\n      \"index\"\
-        : 23,\n      \"name\": \"native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script\",\n\
-        \      \"path\": \"cli/src/native/client_enrollment.rs\",\n      \"line\": 16173,\n      \"excerpt\": \"next-exact-ci/formal37-review/23-e2e_enrollment_two_tenants_and_popup_first_script.rs\"\
+        ,\n      \"lines\": 87,\n      \"launchMarkers\": [\n        \"enroll_recording_fixture(&page).await;\",\n        \"let mut\
+        \ first = BrowserManager::launch(Default::default(), None)\",\n        \"let mut second = BrowserManager::launch(Default::default(),\
+        \ None)\",\n        \"let first_geometry=action_fixture_geometry(&first_page,&operation).await?;\",\n        \"let second_geometry=action_fixture_geometry(&second_page,&operation).await?;\"\
+        \n      ]\n    },\n    {\n      \"index\": 23,\n      \"name\": \"native::client_enrollment::tests::e2e_enrollment_two_tenants_and_popup_first_script\"\
+        ,\n      \"path\": \"cli/src/native/client_enrollment.rs\",\n      \"line\": 16173,\n      \"excerpt\": \"next-exact-ci/formal37-review/23-e2e_enrollment_two_tenants_and_popup_first_script.rs\"\
         ,\n      \"lines\": 7,\n      \"launchMarkers\": []\n    },\n    {\n      \"index\": 24,\n      \"name\": \"native::client_enrollment::tests::e2e_managed_blank_initialization_failure_prevents_navigation_request\"\
         ,\n      \"path\": \"cli/src/native/client_enrollment.rs\",\n      \"line\": 16484,\n      \"excerpt\": \"next-exact-ci/formal37-review/24-e2e_managed_blank_initialization_failure_prevents_navigation_request.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": []\n    },\n    {\n      \"index\": 25,\n      \"name\": \"native::client_enrollment::tests::e2e_popup_initial_request_is_contained_when_configuration_fails\"\
         ,\n      \"path\": \"cli/src/native/client_enrollment.rs\",\n      \"line\": 16489,\n      \"excerpt\": \"next-exact-ci/formal37-review/25-e2e_popup_initial_request_is_contained_when_configuration_fails.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": []\n    },\n    {\n      \"index\": 26,\n      \"name\": \"native::client_enrollment::tests::e2e_borrowed_capture_observed_origins_and_native_bootstrap_lifetime\"\
         ,\n      \"path\": \"cli/src/native/client_enrollment.rs\",\n      \"line\": 15249,\n      \"excerpt\": \"next-exact-ci/formal37-review/26-e2e_borrowed_capture_observed_origins_and_native_bootstrap_lifetime.rs\"\
-        ,\n      \"lines\": 217,\n      \"launchMarkers\": [\n        \"let listener = tokio::net::TcpListener::bind(\\\"\
-        127.0.0.1:0\\\").await.unwrap();\",\n        \"\\\"initial loaded profile must not become observed history\\\"\"\n\
-        \      ]\n    },\n    {\n      \"index\": 27,\n      \"name\": \"native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page\"\
+        ,\n      \"lines\": 217,\n      \"launchMarkers\": [\n        \"let listener = tokio::net::TcpListener::bind(\\\"127.0.0.1:0\\\
+        \").await.unwrap();\",\n        \"\\\"initial loaded profile must not become observed history\\\"\"\n      ]\n    },\n    {\n\
+        \      \"index\": 27,\n      \"name\": \"native::client_enrollment::tests::e2e_borrowed_host_survives_detach_and_keeps_unrelated_page\"\
         ,\n      \"path\": \"cli/src/native/client_enrollment.rs\",\n      \"line\": 15469,\n      \"excerpt\": \"next-exact-ci/formal37-review/27-e2e_borrowed_host_survives_detach_and_keeps_unrelated_page.rs\"\
         ,\n      \"lines\": 167,\n      \"launchMarkers\": []\n    },\n    {\n      \"index\": 28,\n      \"name\": \"native::client_state::tests::chromium_duplicate_state_records_fail_instead_of_overwriting\"\
         ,\n      \"path\": \"cli/src/native/client_state.rs\",\n      \"line\": 1716,\n      \"excerpt\": \"next-exact-ci/formal37-review/28-chromium_duplicate_state_records_fail_instead_of_overwriting.rs\"\
-        ,\n      \"lines\": 134,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(),\
-        \ None)\",\n        \"// launch() owns the context and initial blank only; it does not\",\n        \"// Target.attachToTarget\
-        \ loop in the storage primitive or fixture.\",\n        \"id: \\\"synthetic-state-fixture\\\".into(),\",\n       \
-        \ \"let origins = vec![\\\"https://fixture.test\\\".to_owned()];\",\n        \"// through owner.close(): this fixture\
-        \ owns enrollment separately.\"\n      ]\n    },\n    {\n      \"index\": 29,\n      \"name\": \"native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query\"\
-        ,\n      \"path\": \"cli/src/native/client_browser_state_tests.rs\",\n      \"line\": 578,\n      \"excerpt\": \"\
-        next-exact-ci/formal37-review/29-chromium_public_state_capture_after_navigation_and_query.rs\",\n      \"lines\":\
-        \ 86,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
-        \ None)\",\n        \"let listener = tokio::net::TcpListener::bind(\\\"127.0.0.1:0\\\").await.unwrap();\",\n     \
-        \   \"let mut fixture = FramedFixture::new(broker, browser);\",\n        \"fixture.ready().await?;\",\n        \"\
-        let opened = fixture.command(\\\"scope.open\\\",\",\n        \"fixture_scope_open(\\\"connect\\\",Some(host.get_cdp_url())),30).await?;\"\
-        ,\n        \"fixture.scope = Some(scope.clone());\",\n        \"fixture.command(\\\"scope.configure\\\", fixture_configuration(&scope,Some(\\\
-        \"127.0.0.1\\\")),30).await?;\",\n        \"fixture.command(\\\"network.routes.replace\\\",\",\n        \"fixture_routes(&scope),30).await?;\"\
-        ,\n        \"fixture.registry = 1;\",\n        \"fixture.command(\\\"page.activate\\\", json!({\\\"identityScope\\\
-        \":scope}),30).await?;\"\n      ]\n    },\n    {\n      \"index\": 30,\n      \"name\": \"native::client_capture::tests::chromium_static_mask_preserves_public_pixels_and_restores_state\"\
+        ,\n      \"lines\": 134,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(), None)\"\
+        ,\n        \"// launch() owns the context and initial blank only; it does not\",\n        \"// Target.attachToTarget loop in\
+        \ the storage primitive or fixture.\",\n        \"id: \\\"synthetic-state-fixture\\\".into(),\",\n        \"let origins = vec![\\\
+        \"https://fixture.test\\\".to_owned()];\",\n        \"// through owner.close(): this fixture owns enrollment separately.\"\n\
+        \      ]\n    },\n    {\n      \"index\": 29,\n      \"name\": \"native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query\"\
+        ,\n      \"path\": \"cli/src/native/client_browser_state_tests.rs\",\n      \"line\": 578,\n      \"excerpt\": \"next-exact-ci/formal37-review/29-chromium_public_state_capture_after_navigation_and_query.rs\"\
+        ,\n      \"lines\": 86,\n      \"launchMarkers\": [\n        \"let mut host = super::super::browser::BrowserManager::launch(Default::default(),\
+        \ None)\",\n        \"let listener = tokio::net::TcpListener::bind(\\\"127.0.0.1:0\\\").await.unwrap();\",\n        \"let mut\
+        \ fixture = FramedFixture::new(broker, browser);\",\n        \"fixture.ready().await?;\",\n        \"let opened = fixture.command(\\\
+        \"scope.open\\\",\",\n        \"fixture_scope_open(\\\"connect\\\",Some(host.get_cdp_url())),30).await?;\",\n        \"fixture.scope\
+        \ = Some(scope.clone());\",\n        \"fixture.command(\\\"scope.configure\\\", fixture_configuration(&scope,Some(\\\"127.0.0.1\\\
+        \")),30).await?;\",\n        \"fixture.command(\\\"network.routes.replace\\\",\",\n        \"fixture_routes(&scope),30).await?;\"\
+        ,\n        \"fixture.registry = 1;\",\n        \"fixture.command(\\\"page.activate\\\", json!({\\\"identityScope\\\":scope}),30).await?;\"\
+        \n      ]\n    },\n    {\n      \"index\": 30,\n      \"name\": \"native::client_capture::tests::chromium_static_mask_preserves_public_pixels_and_restores_state\"\
         ,\n      \"path\": \"cli/src/native/client_capture.rs\",\n      \"line\": 1317,\n      \"excerpt\": \"next-exact-ci/formal37-review/30-chromium_static_mask_preserves_public_pixels_and_restores_state.rs\"\
-        ,\n      \"lines\": 3,\n      \"launchMarkers\": [\n        \"static_mask_fixture(false).await;\"\n      ]\n    },\n\
-        \    {\n      \"index\": 31,\n      \"name\": \"native::client_capture::tests::chromium_shared_geometry_masks_transformed_frame_passwords\"\
+        ,\n      \"lines\": 3,\n      \"launchMarkers\": [\n        \"static_mask_fixture(false).await;\"\n      ]\n    },\n    {\n\
+        \      \"index\": 31,\n      \"name\": \"native::client_capture::tests::chromium_shared_geometry_masks_transformed_frame_passwords\"\
         ,\n      \"path\": \"cli/src/native/client_capture.rs\",\n      \"line\": 1322,\n      \"excerpt\": \"next-exact-ci/formal37-review/31-chromium_shared_geometry_masks_transformed_frame_passwords.rs\"\
         ,\n      \"lines\": 3,\n      \"launchMarkers\": [\n        \"static_mask_fixture(false).await;\",\n        \"static_mask_fixture(true).await;\"\
         \n      ]\n    },\n    {\n      \"index\": 32,\n      \"name\": \"native::client_capture::equivalence_tests::chromium_capture_retirement_races_publish_no_pixels_and_keep_typed_reason\"\
-        ,\n      \"path\": \"cli/src/native/client_capture_equivalence_tests.rs\",\n      \"line\": 78,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/32-chromium_capture_retirement_races_publish_no_pixels_and_keep_typed_reason.rs\"\
-        ,\n      \"lines\": 46,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(),\
-        \ None)\"\n      ]\n    },\n    {\n      \"index\": 33,\n      \"name\": \"native::client_geometry::tests::chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale\"\
+        ,\n      \"path\": \"cli/src/native/client_capture_equivalence_tests.rs\",\n      \"line\": 78,\n      \"excerpt\": \"next-exact-ci/formal37-review/32-chromium_capture_retirement_races_publish_no_pixels_and_keep_typed_reason.rs\"\
+        ,\n      \"lines\": 46,\n      \"launchMarkers\": [\n        \"let mut owner = OwnedBrowser::launch(Default::default(), None)\"\
+        \n      ]\n    },\n    {\n      \"index\": 33,\n      \"name\": \"native::client_geometry::tests::chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale\"\
         ,\n      \"path\": \"cli/src/native/client_geometry.rs\",\n      \"line\": 2617,\n      \"excerpt\": \"next-exact-ci/formal37-review/33-chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale.rs\"\
-        ,\n      \"lines\": 68,\n      \"launchMarkers\": [\n        \"if frames.len()!=3{return Err(\\\"Nested fixture did\
-        \ not produce three frames\\\".into());}\",\n        \"let object=mgr.client.send_command(\\\"Runtime.evaluate\\\"\
-        ,Some(json!({\\\"expression\\\":\\\"document.querySelector('#outer').contentDocument.querySelector('#inner').contentDocument.querySelector('#secret')\\\
-        \",\\\"returnByValue\\\":false,\\\"objectGroup\\\":\\\"geometry-fixture\\\"})),Some(session)).await?;\",\n       \
-        \ \"mgr.client.send_command(\\\"Runtime.releaseObjectGroup\\\",Some(json!({\\\"objectGroup\\\":\\\"geometry-fixture\\\
-        \"})),Some(session)).await?;\",\n        \"let object=fragmented[\\\"result\\\"][\\\"objectId\\\"].as_str().ok_or(\\\
-        \"Missing inline fixture\\\")?;\"\n      ]\n    },\n    {\n      \"index\": 34,\n      \"name\": \"native::client_geometry::tests::chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots\"\
+        ,\n      \"lines\": 68,\n      \"launchMarkers\": [\n        \"if frames.len()!=3{return Err(\\\"Nested fixture did not produce\
+        \ three frames\\\".into());}\",\n        \"let object=mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\"expression\\\
+        \":\\\"document.querySelector('#outer').contentDocument.querySelector('#inner').contentDocument.querySelector('#secret')\\\"\
+        ,\\\"returnByValue\\\":false,\\\"objectGroup\\\":\\\"geometry-fixture\\\"})),Some(session)).await?;\",\n        \"mgr.client.send_command(\\\
+        \"Runtime.releaseObjectGroup\\\",Some(json!({\\\"objectGroup\\\":\\\"geometry-fixture\\\"})),Some(session)).await?;\",\n   \
+        \     \"let object=fragmented[\\\"result\\\"][\\\"objectId\\\"].as_str().ok_or(\\\"Missing inline fixture\\\")?;\"\n      ]\n\
+        \    },\n    {\n      \"index\": 34,\n      \"name\": \"native::client_geometry::tests::chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots\"\
         ,\n      \"path\": \"cli/src/native/client_geometry.rs\",\n      \"line\": 2687,\n      \"excerpt\": \"next-exact-ci/formal37-review/34-chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots.rs\"\
         ,\n      \"lines\": 83,\n      \"launchMarkers\": [\n        \"let listener = tokio::net::TcpListener::bind(\\\"127.0.0.1:0\\\
-        \").await.unwrap();\",\n        \"let main_url = format!(\\\"http://127.0.0.1:{port}/main\\\");\",\n        \"let\
-        \ leaf_url = format!(\\\"http://127.0.0.1:{port}/leaf\\\");\",\n        \"let attached=attached[\\\"sessionId\\\"\
-        ].as_str().ok_or(\\\"Missing owned fixture session\\\")?.to_owned();\",\n        \"let target=mgr.client.send_command(\\\
-        \"Runtime.evaluate\\\",Some(json!({\\\"expression\\\":\\\"document.querySelector('#secret')\\\",\\\"returnByValue\\\
-        \":false,\\\"objectGroup\\\":\\\"oopif-fixture\\\"})),Some(&leaf_session)).await?;\",\n        \"mgr.client.send_command(\\\
-        \"Runtime.releaseObjectGroup\\\",Some(json!({\\\"objectGroup\\\":\\\"oopif-fixture\\\"})),Some(&leaf_session)).await?;\"\
-        \n      ]\n    },\n    {\n      \"index\": 35,\n      \"name\": \"native::recording::tests::recording_sparse_frames_preserve_timestamps\"\
-        ,\n      \"path\": \"cli/src/native/recording.rs\",\n      \"line\": 2708,\n      \"excerpt\": \"next-exact-ci/formal37-review/35-recording_sparse_frames_preserve_timestamps.rs\"\
-        ,\n      \"lines\": 94,\n      \"launchMarkers\": [\n        \"let dir = tempfile::tempdir().unwrap();\"\n      ]\n\
-        \    },\n    {\n      \"index\": 36,\n      \"name\": \"native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released\"\
-        ,\n      \"path\": \"cli/src/native/client_capture_supersession_tests.rs\",\n      \"line\": 686,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/36-chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released.rs\"\
+        \").await.unwrap();\",\n        \"let main_url = format!(\\\"http://127.0.0.1:{port}/main\\\");\",\n        \"let leaf_url =\
+        \ format!(\\\"http://127.0.0.1:{port}/leaf\\\");\",\n        \"let attached=attached[\\\"sessionId\\\"].as_str().ok_or(\\\"\
+        Missing owned fixture session\\\")?.to_owned();\",\n        \"let target=mgr.client.send_command(\\\"Runtime.evaluate\\\",Some(json!({\\\
+        \"expression\\\":\\\"document.querySelector('#secret')\\\",\\\"returnByValue\\\":false,\\\"objectGroup\\\":\\\"oopif-fixture\\\
+        \"})),Some(&leaf_session)).await?;\",\n        \"mgr.client.send_command(\\\"Runtime.releaseObjectGroup\\\",Some(json!({\\\"\
+        objectGroup\\\":\\\"oopif-fixture\\\"})),Some(&leaf_session)).await?;\"\n      ]\n    },\n    {\n      \"index\": 35,\n    \
+        \  \"name\": \"native::recording::tests::recording_sparse_frames_preserve_timestamps\",\n      \"path\": \"cli/src/native/recording.rs\"\
+        ,\n      \"line\": 2708,\n      \"excerpt\": \"next-exact-ci/formal37-review/35-recording_sparse_frames_preserve_timestamps.rs\"\
+        ,\n      \"lines\": 94,\n      \"launchMarkers\": [\n        \"let dir = tempfile::tempdir().unwrap();\"\n      ]\n    },\n\
+        \    {\n      \"index\": 36,\n      \"name\": \"native::client_observation_dispatch::supersession_tests::chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released\"\
+        ,\n      \"path\": \"cli/src/native/client_capture_supersession_tests.rs\",\n      \"line\": 686,\n      \"excerpt\": \"next-exact-ci/formal37-review/36-chromium_newer_capture_finishes_before_old_metadata_hold_is_manually_released.rs\"\
         ,\n      \"lines\": 65,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(),\
         \ None)\"\n      ]\n    },\n    {\n      \"index\": 37,\n      \"name\": \"native::client_observation_dispatch::supersession_tests::chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport\"\
-        ,\n      \"path\": \"cli/src/native/client_capture_supersession_tests.rs\",\n      \"line\": 754,\n      \"excerpt\"\
-        : \"next-exact-ci/formal37-review/37-chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport.rs\"\
+        ,\n      \"path\": \"cli/src/native/client_capture_supersession_tests.rs\",\n      \"line\": 754,\n      \"excerpt\": \"next-exact-ci/formal37-review/37-chromium_cancelled_newer_admission_preserves_committed_observed_located_and_viewport.rs\"\
         ,\n      \"lines\": 68,\n      \"launchMarkers\": [\n        \"let mut browser = BrowserManager::launch(Default::default(),\
-        \ None)\"\n      ]\n    }\n  ],\n  \"diagnosticsExcluded\": true,\n  \"blanketIgnored\": false,\n  \"additionalContracts\"\
-        : [\n    \"native::client_observation::equivalence_tests::chromium_observation_frame_dfs_budget_eight_contract\",\n\
-        \    \"native::client_observation::equivalence_tests::chromium_original_child_frame_budget_three_contract\",\n   \
-        \ \"native::client_observation::equivalence_tests::chromium_original_offsite_data_frame_budget_three_contract\",\n\
-        \    \"native::client_observation::equivalence_tests::chromium_original_onsite_frame_depth_four_five_contract\",\n\
-        \    \"native::client_observation::equivalence_tests::chromium_svg_title_idref_public_names_contract\",\n    \"native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab\"\
+        \ None)\"\n      ]\n    }\n  ],\n  \"diagnosticsExcluded\": true,\n  \"blanketIgnored\": false,\n  \"additionalContracts\":\
+        \ [\n    \"native::client_observation::equivalence_tests::chromium_observation_frame_dfs_budget_eight_contract\",\n    \"native::client_observation::equivalence_tests::chromium_original_child_frame_budget_three_contract\"\
+        ,\n    \"native::client_observation::equivalence_tests::chromium_original_offsite_data_frame_budget_three_contract\",\n    \"\
+        native::client_observation::equivalence_tests::chromium_original_onsite_frame_depth_four_five_contract\",\n    \"native::client_observation::equivalence_tests::chromium_svg_title_idref_public_names_contract\"\
+        ,\n    \"native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab\"\
         ,\n    \"native::client_browser::recording_attempt_tests::chromium_two_attempt_recording_late_old_completion_cannot_mutate_new_artifact\"\
         \n  ],\n  \"diagnostics\": [\n    \"native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment\"\
-        ,\n    \"native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable\"\
-        ,\n    \"native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline\"\
-        \n  ],\n  \"outerTestTimeoutSeconds\": 180,\n  \"inventoryTimeoutSeconds\": 30,\n  \"executionCounts\": {\n    \"\
-        originalRequired\": 37,\n    \"additionalRequired\": 7,\n    \"total\": 44,\n    \"chromiumRequired\": 43,\n    \"\
-        encoderOnly\": 1,\n    \"separateEncoderContracts\": 13,\n    \"managedFraming\": 10,\n    \"legacyComponent\": 3,\n\
-        \    \"newNormalVideo\": 10\n  },\n  \"encoderOnly\": [\n    \"native::recording::tests::recording_sparse_frames_preserve_timestamps\"\
-        \n  ],\n  \"status\": \"source-only proposed execution inventory; no new CI\",\n  \"encoderContracts\": [\n    {\n\
-        \      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_missing_cleanup_acks_remain_unknown\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_encoder_failure_remains_unknown\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cancel_and_deadline_remain_unknown\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_owner_change_and_missing_start_ack_remain_unknown\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_exports_only_finalized_recording_without_reopening_scope\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_without_capability_never_exports_frozen_recording\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_with_unclean_recording_never_exports_finished_bytes\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota\"\
-        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n      \
-        \  \"ffmpeg\"\n      ]\n    },\n    {\n      \"name\": \"native::client_actions::tests::recording_wire_contracts::recording_delayed_initial_frame_precedes_ready_and_silent_stop_is_bounded\"\
-        ,\n      \"kind\": \"LegacyRecordOnly-component\",\n      \"browserIdentityRequired\": false,\n      \"requires\"\
-        : [\n        \"ffmpeg\",\n        \"ffprobe\"\n      ]\n    },\n    {\n      \"name\": \"native::client_actions::tests::recording_wire_contracts::recording_page_opened_remeasures_second_viewport_and_stops_each_capture_once\"\
-        ,\n      \"kind\": \"LegacyRecordOnly-component\",\n      \"browserIdentityRequired\": false,\n      \"requires\"\
-        : [\n        \"ffmpeg\",\n        \"ffprobe\"\n      ]\n    },\n    {\n      \"name\": \"native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment\"\
-        ,\n      \"kind\": \"LegacyRecordOnly-component\",\n      \"browserIdentityRequired\": false,\n      \"requires\"\
-        : [\n        \"ffmpeg\"\n      ]\n    }\n  ]\n}\nJSON_CONTRACTS\npython3 \"$RUNNER_TEMP/run-native-contracts.py\"\
-        \ \"$(cat evidence/harness.path)\" evidence/chromium-executable.json evidence \"$RUNNER_TEMP/exact-contracts.json\"\
-        \n"
+        ,\n    \"native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable\",\n  \
+        \  \"native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline\"\n  ],\n  \"\
+        outerTestTimeoutSeconds\": 180,\n  \"inventoryTimeoutSeconds\": 30,\n  \"executionCounts\": {\n    \"originalRequired\": 37,\n\
+        \    \"additionalRequired\": 7,\n    \"total\": 44,\n    \"chromiumRequired\": 43,\n    \"encoderOnly\": 1,\n    \"separateEncoderContracts\"\
+        : 13,\n    \"managedFraming\": 10,\n    \"legacyComponent\": 3,\n    \"newNormalVideo\": 10\n  },\n  \"encoderOnly\": [\n  \
+        \  \"native::recording::tests::recording_sparse_frames_preserve_timestamps\"\n  ],\n  \"status\": \"source-only proposed execution\
+        \ inventory; no new CI\",\n  \"encoderContracts\": [\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_missing_cleanup_acks_remain_unknown\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_encoder_failure_remains_unknown\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cancel_and_deadline_remain_unknown\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_owner_change_and_missing_start_ack_remain_unknown\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_exports_only_finalized_recording_without_reopening_scope\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_without_capability_never_exports_frozen_recording\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_with_unclean_recording_never_exports_finished_bytes\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota\"\
+        ,\n      \"kind\": \"managed-framing\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n        \"ffmpeg\"\
+        \n      ]\n    },\n    {\n      \"name\": \"native::client_actions::tests::recording_wire_contracts::recording_delayed_initial_frame_precedes_ready_and_silent_stop_is_bounded\"\
+        ,\n      \"kind\": \"LegacyRecordOnly-component\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n     \
+        \   \"ffmpeg\",\n        \"ffprobe\"\n      ]\n    },\n    {\n      \"name\": \"native::client_actions::tests::recording_wire_contracts::recording_page_opened_remeasures_second_viewport_and_stops_each_capture_once\"\
+        ,\n      \"kind\": \"LegacyRecordOnly-component\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n     \
+        \   \"ffmpeg\",\n        \"ffprobe\"\n      ]\n    },\n    {\n      \"name\": \"native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment\"\
+        ,\n      \"kind\": \"LegacyRecordOnly-component\",\n      \"browserIdentityRequired\": false,\n      \"requires\": [\n     \
+        \   \"ffmpeg\"\n      ]\n    }\n  ]\n}\nJSON_CONTRACTS\npython3 \"$RUNNER_TEMP/run-native-contracts.py\" \"$(cat evidence/harness.path)\"\
+        \ evidence/chromium-executable.json evidence \"$RUNNER_TEMP/exact-contracts.json\"\n"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: always()
       with:
@@ -793,28 +766,27 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        ref: 0f545c307a157e107ac8d1260167fa3e70e39cdb
         path: native
         persist-credentials: false
     - name: Compile acceptance-faults exact test harness only
       shell: bash
-      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407\n\
-        test \"$(git rev-parse HEAD^{tree})\" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e\ntest -z \"$(git status --porcelain)\"\
-        \nrustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = 0f545c307a157e107ac8d1260167fa3e70e39cdb\n\
+        test \"$(git rev-parse HEAD^{tree})\" = 3db554fb7897c6becc6b42d970d448fa44600902\ntest -z \"$(git status --porcelain)\"\nrustup\
+        \ toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
         export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --timings --no-default-features\
         \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\"\
-        \ 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import\
-        \ Path\nout = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out\
-        \ / 'harness.jsonl').read_text().splitlines():\n    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
-        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason') == 'compiler-artifact'\n\
-        \        and record.get('target', {}).get('name') == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
-        \ [])\n        and record.get('profile', {}).get('test') is True\n        and record.get('features') == ['acceptance-faults']\n\
-        \        and record.get('executable')):\n        paths.add(record['executable'])\nif build_finished != [True]:\n \
-        \   raise SystemExit('Missing or unsuccessful final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected\
-        \ exactly one test executable, got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise\
-        \ SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\n\
-        mkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp\
-        \ \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\n\
+        out = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name') == 'agent-browser'\n\
+        \        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile', {}).get('test') is True\n\
+        \        and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n        paths.add(record['executable'])\n\
+        if build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful final compiler build receipt')\nif len(paths) !=\
+        \ 1:\n    raise SystemExit(f'Expected exactly one test executable, got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n\
+        \    raise SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\n\
+        mkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\"\
+        \ \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
         \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\n(cd \"$GITHUB_WORKSPACE/native-harness\"\
         ; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
         \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\
@@ -854,7 +826,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
-        ref: 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        ref: 0f545c307a157e107ac8d1260167fa3e70e39cdb
         path: native
         persist-credentials: false
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -868,17 +840,17 @@ jobs:
 
         cd native
 
-        test "$(git rev-parse HEAD)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        test "$(git rev-parse HEAD)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
 
-        test "$(git rev-parse HEAD^{tree})" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
+        test "$(git rev-parse HEAD^{tree})" = 3db554fb7897c6becc6b42d970d448fa44600902
 
         test -z "$(git status --porcelain)"
 
         cd ../native-harness
 
-        test "$(cat native-source.sha)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
+        test "$(cat native-source.sha)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
 
-        test "$(cat native-source.tree)" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
+        test "$(cat native-source.tree)" = 3db554fb7897c6becc6b42d970d448fa44600902
 
         test "$(cat features.txt)" = acceptance-faults
 
@@ -902,60 +874,53 @@ jobs:
     - name: Require exact feature delta45 and execute all45 plus preparation8; no formal compile receipt claim
       run: "set -euo pipefail\npython3 - <<'PY_FEATURE'\nimport hashlib,json,os,pathlib,re,signal,subprocess,sys\nROOT=pathlib.Path(os.environ['GITHUB_WORKSPACE']);OUT=ROOT/'evidence'\n\
         def sha(p): return hashlib.file_digest(open(p,'rb'),'sha256').hexdigest()\ndef write(name,value): (OUT/name).write_text(json.dumps(value,indent=2)+'\\\
-        n')\nnormal=pathlib.Path((OUT/'harness.path').read_text().strip());feature=ROOT/'native-harness/agent-browser-tests'\n\
-        normal_hash=sha(normal);feature_hash=sha(feature)\ninv={'PREPARATION_SETTLEMENT_TESTS': ['native::client_actions::tests::preparation_effect_settlement_acked_interception_is_completed_and_reusable',\
+        n')\nnormal=pathlib.Path((OUT/'harness.path').read_text().strip());feature=ROOT/'native-harness/agent-browser-tests'\nnormal_hash=sha(normal);feature_hash=sha(feature)\n\
+        inv={'PREPARATION_SETTLEMENT_TESTS': ['native::client_actions::tests::preparation_effect_settlement_acked_interception_is_completed_and_reusable',\
         \ 'native::client_actions::tests::preparation_effect_settlement_acked_not_actionable_is_completed_and_reusable', 'native::client_actions::tests::preparation_effect_settlement_unacked_first_scroll_remains_unknown',\
-        \ 'native::client_actions::tests::preparation_effect_settlement_unacked_later_scroll_invalidates_earlier_prefix',\
-        \ 'native::client_actions::tests::preparation_effect_settlement_unacked_input_release_remains_unknown', 'native::client_actions::tests::preparation_effect_settlement_dirty_handle_cleanup_quarantines',\
-        \ 'native::client_actions::tests::preparation_effect_settlement_unacked_geometry_control_remains_unknown', 'native::client_actions::tests::preparation_effect_settlement_lost_original_authority_remains_unknown'],\
-        \ 'REQUIRED_NATIVE_FEATURE_TESTS': ['native::client_observation_dispatch::tests::semantic_only_timeout_never_mutates_lifecycle_and_fallback_stabilizes_separately',\
-        \ 'native::client_observation_dispatch::tests::actual_semantic_timeout_requires_admission_before_fallback_capture',\
-        \ 'native::client_observation_dispatch::tests::fallback_capture_refusal_releases_admitted_producer_after_restore',\
-        \ 'native::client_observation_dispatch::tests::fallback_dirty_restore_releases_admitted_producer_without_publishing',\
-        \ 'native::client_observation_dispatch::tests::fallback_initial_coverage_unproven_preserves_semantic_deadline_after_restore',\
+        \ 'native::client_actions::tests::preparation_effect_settlement_unacked_later_scroll_invalidates_earlier_prefix', 'native::client_actions::tests::preparation_effect_settlement_unacked_input_release_remains_unknown',\
+        \ 'native::client_actions::tests::preparation_effect_settlement_dirty_handle_cleanup_quarantines', 'native::client_actions::tests::preparation_effect_settlement_unacked_geometry_control_remains_unknown',\
+        \ 'native::client_actions::tests::preparation_effect_settlement_lost_original_authority_remains_unknown'], 'REQUIRED_NATIVE_FEATURE_TESTS':\
+        \ ['native::client_observation_dispatch::tests::semantic_only_timeout_never_mutates_lifecycle_and_fallback_stabilizes_separately',\
+        \ 'native::client_observation_dispatch::tests::actual_semantic_timeout_requires_admission_before_fallback_capture', 'native::client_observation_dispatch::tests::fallback_capture_refusal_releases_admitted_producer_after_restore',\
+        \ 'native::client_observation_dispatch::tests::fallback_dirty_restore_releases_admitted_producer_without_publishing', 'native::client_observation_dispatch::tests::fallback_initial_coverage_unproven_preserves_semantic_deadline_after_restore',\
         \ 'native::client_observation_dispatch::tests::fallback_post_capture_policy_failure_survives_clean_restore', 'native::client_observation_dispatch::tests::semantic_policy_and_cancellation_never_admit_fallback',\
-        \ 'native::client_observation_dispatch::tests::fallback_inflight_capture_cancel_waits_for_restoration_without_publishing',\
-        \ 'native::client_observation_dispatch::tests::fallback_dirty_restore_dominates_coverage_policy_and_cancellation',\
-        \ 'native::client_observation_dispatch::tests::fallback_coverage_restore_rechecks_cancellation_and_scope_authority',\
-        \ 'native::client_observation_dispatch::tests::fallback_coverage_observed_cleanup_flag_prevents_usable_deadline',\
-        \ 'native::client_observation_dispatch::tests::fallback_failure_preserves_committed_refs_without_reviving_lost_authority',\
-        \ 'native::client_transport::tests::acceptance_phase_retained_frame_counts_survive_cancelled_future', 'native::client_transport::tests::acceptance_phase_retained_frame_eof_io_and_oversize_preserve_errors',\
-        \ 'native::client_test_faults::tests::release_is_scope_bound_and_does_not_replace_the_reader', 'native::client_test_faults::tests::original_deadline_expires_hold_and_late_release_cannot_revive_it',\
-        \ 'native::client_test_faults::tests::unarmed_checkpoint_never_changes_normal_reader_limits', 'native::client_test_faults::tests::arms_are_bounded_and_retirement_never_retargets',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_schema_contains_only_closed_facts', 'native::client_settlement_trace::tests::acceptance_phase_shared_file_record_bound_is_global_and_marked_once',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_byte_bound_is_global_and_never_truncates_a_record', 'native::client_settlement_trace::tests::acceptance_phase_refuses_unowned_paths_or_incomplete_existing_records',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_refuses_symlink_and_fifo_targets_without_opening_them',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_contention_drops_without_waiting_and_marks_next_record',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_file_lock_and_write_failures_only_drop_capture', 'native::client_settlement_trace::tests::acceptance_phase_scalar_counters_preserve_short_zero_and_error_results',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_saturates_safe_integer_counters_and_facts', 'native::client_settlement_trace::tests::acceptance_phase_proxy_and_frame_shapes_are_closed_and_payload_free',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_largest_summary_and_detail_fit_record_bound', 'native::client_settlement_trace::tests::acceptance_phase_decoded_message_and_io_error_never_serialize_secrets',\
-        \ 'native::client_settlement_trace::tests::acceptance_phase_write_failure_stops_without_repair_or_retry', 'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_clean_late_ack_keeps_complete_tree_without_pixels',\
+        \ 'native::client_observation_dispatch::tests::fallback_inflight_capture_cancel_waits_for_restoration_without_publishing', 'native::client_observation_dispatch::tests::fallback_dirty_restore_dominates_coverage_policy_and_cancellation',\
+        \ 'native::client_observation_dispatch::tests::fallback_coverage_restore_rechecks_cancellation_and_scope_authority', 'native::client_observation_dispatch::tests::fallback_coverage_observed_cleanup_flag_prevents_usable_deadline',\
+        \ 'native::client_observation_dispatch::tests::fallback_failure_preserves_committed_refs_without_reviving_lost_authority', 'native::client_transport::tests::acceptance_phase_retained_frame_counts_survive_cancelled_future',\
+        \ 'native::client_transport::tests::acceptance_phase_retained_frame_eof_io_and_oversize_preserve_errors', 'native::client_test_faults::tests::release_is_scope_bound_and_does_not_replace_the_reader',\
+        \ 'native::client_test_faults::tests::original_deadline_expires_hold_and_late_release_cannot_revive_it', 'native::client_test_faults::tests::unarmed_checkpoint_never_changes_normal_reader_limits',\
+        \ 'native::client_test_faults::tests::arms_are_bounded_and_retirement_never_retargets', 'native::client_settlement_trace::tests::acceptance_phase_schema_contains_only_closed_facts',\
+        \ 'native::client_settlement_trace::tests::acceptance_phase_shared_file_record_bound_is_global_and_marked_once', 'native::client_settlement_trace::tests::acceptance_phase_byte_bound_is_global_and_never_truncates_a_record',\
+        \ 'native::client_settlement_trace::tests::acceptance_phase_refuses_unowned_paths_or_incomplete_existing_records', 'native::client_settlement_trace::tests::acceptance_phase_refuses_symlink_and_fifo_targets_without_opening_them',\
+        \ 'native::client_settlement_trace::tests::acceptance_phase_contention_drops_without_waiting_and_marks_next_record', 'native::client_settlement_trace::tests::acceptance_phase_file_lock_and_write_failures_only_drop_capture',\
+        \ 'native::client_settlement_trace::tests::acceptance_phase_scalar_counters_preserve_short_zero_and_error_results', 'native::client_settlement_trace::tests::acceptance_phase_saturates_safe_integer_counters_and_facts',\
+        \ 'native::client_settlement_trace::tests::acceptance_phase_proxy_and_frame_shapes_are_closed_and_payload_free', 'native::client_settlement_trace::tests::acceptance_phase_largest_summary_and_detail_fit_record_bound',\
+        \ 'native::client_settlement_trace::tests::acceptance_phase_decoded_message_and_io_error_never_serialize_secrets', 'native::client_settlement_trace::tests::acceptance_phase_write_failure_stops_without_repair_or_retry',\
+        \ 'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_clean_late_ack_keeps_complete_tree_without_pixels',\
         \ 'native::client_observation_dispatch::supersession_tests::optional_mask_retirement_tests::optional_screenshot_eighty_ms_missing_ack_publishes_nothing_and_preserves_custody',\
-        \ 'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_immediate_positive',\
-        \ 'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_native_deadline_records_then_checks_contract',\
+        \ 'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_immediate_positive', 'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_native_deadline_records_then_checks_contract',\
         \ 'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_pointer_trace_client_cancel_ack_records_then_checks_contract',\
         \ 'native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::observe_peer_ax_schema_and_omitted_flags_match_real_protocol',\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_terminal_failure_rejects_correlated_or_reusable_shapes',\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_raw_ack_then_restore_past_transport_grace_preserves_owner',\
         \ 'native::client_browser::state_lifecycle_tests::restart_transport_tests::trace_retirement_tests::trace_unacknowledged_raw_capture_cannot_regain_owner',\
         \ 'native::client_settlement_trace::tests::service_worker_admission_is_closed_process_local_and_bounded', 'native::client_settlement_trace::tests::service_worker_admission_never_exceeds_thirty_two_observations',\
-        \ 'native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures',\
-        \ 'native::client_observation_dispatch::tests::fallback_capture_error_ack_restores_exact_owner_and_preserves_prior_refs',\
-        \ 'native::client_observation_dispatch::tests::fallback_withheld_raw_ack_retains_masks_and_rejects_late_revival']}\n\
-        def run(binary,args,seconds,stem,cleanup=False):\n env={k:v for k,v in os.environ.items() if k not in ('GH_TOKEN','GITHUB_TOKEN')};\
-        \ env.update({'RUST_MIN_STACK':'16777216','CARGO_MANIFEST_DIR':str(ROOT/'native/cli')})\n if cleanup:\n  path=OUT/(stem+'.cleanup.jsonl');fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(fd);env['AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE']=str(path)\n\
+        \ 'native::client_settlement_trace::tests::service_worker_observer_preserves_success_failure_and_pending_futures', 'native::client_observation_dispatch::tests::fallback_capture_error_ack_restores_exact_owner_and_preserves_prior_refs',\
+        \ 'native::client_observation_dispatch::tests::fallback_withheld_raw_ack_retains_masks_and_rejects_late_revival']}\ndef run(binary,args,seconds,stem,cleanup=False):\n\
+        \ env={k:v for k,v in os.environ.items() if k not in ('GH_TOKEN','GITHUB_TOKEN')}; env.update({'RUST_MIN_STACK':'16777216','CARGO_MANIFEST_DIR':str(ROOT/'native/cli')})\n\
+        \ if cleanup:\n  path=OUT/(stem+'.cleanup.jsonl');fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(fd);env['AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE']=str(path)\n\
         \ p=subprocess.Popen([str(binary),*args],cwd=ROOT/'native/cli',env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)\n\
         \ timed=False\n try: data,_=p.communicate(timeout=seconds)\n except subprocess.TimeoutExpired:\n  timed=True;os.killpg(p.pid,signal.SIGKILL);data,_=p.communicate()\n\
         \ finally:\n  try: os.killpg(p.pid,signal.SIGKILL)\n  except ProcessLookupError: pass\n (OUT/(stem+'.log')).write_bytes(data);write(stem+'.process.json',{'exitCode':p.returncode,'timedOut':timed,'timeoutSeconds':seconds,'formalProcessReceipt':False})\n\
         \ return p.returncode,data.decode(errors='replace'),timed\ndef listing(binary,stem):\n code,text,timed=run(binary,['--list','--format=terse'],30,stem);assert\
-        \ code==0 and not timed\n names=re.findall(r'^([^\\n]+): test$',text,re.M);assert len(names)==len(set(names));return\
-        \ set(names)\na=listing(normal,'default-list');b=listing(feature,'feature-list');delta=b-a;required=set(inv['REQUIRED_NATIVE_FEATURE_TESTS']);prep=inv['PREPARATION_SETTLEMENT_TESTS']\n\
+        \ code==0 and not timed\n names=re.findall(r'^([^\\n]+): test$',text,re.M);assert len(names)==len(set(names));return set(names)\n\
+        a=listing(normal,'default-list');b=listing(feature,'feature-list');delta=b-a;required=set(inv['REQUIRED_NATIVE_FEATURE_TESTS']);prep=inv['PREPARATION_SETTLEMENT_TESTS']\n\
         write('inventory-delta.json',{'defaultCount':len(a),'featureCount':len(b),'added':sorted(delta),'removed':sorted(a-b),'required':sorted(required),'verified':delta==required\
-        \ and not a-b})\nassert delta==required and not a-b and len(required)==45==len(inv['REQUIRED_NATIVE_FEATURE_TESTS'])\
-        \ and set(prep)<=a\nfailed=False;results=[]\nfor mode,binary,names,timeout in [('feature',feature,inv['REQUIRED_NATIVE_FEATURE_TESTS'],180),('preparation',normal,prep,30)]:\n\
+        \ and not a-b})\nassert delta==required and not a-b and len(required)==45==len(inv['REQUIRED_NATIVE_FEATURE_TESTS']) and set(prep)<=a\n\
+        failed=False;results=[]\nfor mode,binary,names,timeout in [('feature',feature,inv['REQUIRED_NATIVE_FEATURE_TESTS'],180),('preparation',normal,prep,30)]:\n\
         \ for i,name in enumerate(names,1):\n  stem=f'{mode}-{i:02d}';code,text,timed=run(binary,[name,'--exact','--test-threads=1','--format=pretty','--color=never'],timeout,stem,True)\n\
-        \  counts=re.findall(r'test result: .*? (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text)\n  passed=code==0 and\
-        \ not timed and counts==[('1','0','0')];failed|=not passed\n  results.append({'name':name,'mode':mode,'exitCode':code,'timedOut':timed,'counts':counts,'passed':passed});write('results.json',{'results':results,'formalAcceptance':False,'rawCleanupNotValidated':True})\n\
+        \  counts=re.findall(r'test result: .*? (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text)\n  passed=code==0 and not timed\
+        \ and counts==[('1','0','0')];failed|=not passed\n  results.append({'name':name,'mode':mode,'exitCode':code,'timedOut':timed,'counts':counts,'passed':passed});write('results.json',{'results':results,'formalAcceptance':False,'rawCleanupNotValidated':True})\n\
         assert sha(normal)==normal_hash and sha(feature)==feature_hash\nsys.exit(1 if failed else 0)\nPY_FEATURE\n"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: always()
