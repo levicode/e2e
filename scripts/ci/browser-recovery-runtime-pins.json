@@ -1,0 +1,34 @@
+{
+  "artifactId": 12740180151,
+  "artifactName": "ci-native-runtime-Unified observation and lifecycle finite validation-40514646938-1",
+  "artifactSize": 13870419,
+  "artifactDigest": "sha256:18c6d4d6fb8db79c0706a94026b40d9a371694ac6cbce6b92d0bf0cbc278c224",
+  "manifestSha256": "84c37643ad6222da46ce4d9cc32a5125f70d16260f427265d835fe9d5658eaad",
+  "expected": {
+    "source": {
+      "commit": "23b8f7ced7966507814f2f8dd40975ca59fec51c",
+      "tree": "afd0a5b8f7a28b53756bef67b83ac848b840be5b"
+    },
+    "repository": "levicode/e2e",
+    "runId": "40514646938",
+    "runAttempt": "1",
+    "platform": "linux",
+    "architecture": "x64",
+    "nativeCommit": "fc18696aa5e27390d6e8ce63d0673cc672bb274f"
+  },
+  "nativeSource": {
+    "commit": "fc18696aa5e27390d6e8ce63d0673cc672bb274f",
+    "tree": "05657f5012f3e5af76168c843bc1bde5d04d49eb"
+  },
+  "binarySha256": "a1c8e6415023964079a1c5875bcd90ca97b901f2878c3ef9438689058eee4d7b",
+  "harnessNative": "2ba6a58f785850c2197f84b073711bb4f80488cb",
+  "testOnlySourceProof": {
+    "productionNative": "fc18696aa5e27390d6e8ce63d0673cc672bb274f",
+    "harnessNative": "2ba6a58f785850c2197f84b073711bb4f80488cb",
+    "onlyChangedPath": "cli/src/native/client_observe_initial_inventory_tests.rs",
+    "diffSha256": "e9c5de98a926e9b2c4dc4fff40167de5b0bde89f3b655494c2ce9c75b005908b",
+    "productionSourceIdentical": true,
+    "cfgTestAncestor": "client_observation_dispatch.rs:6181 -> client_trace_initial_inventory_tests.rs:1002",
+    "limitation": "different commit identities; not final same-SHA all-configuration acceptance"
+  }
+}

@@ -1,0 +1,436 @@
+name: Exact feature browser diagnostics recovery
+'on':
+  push:
+    branches:
+    - implement/unified-browser-harness-recovery-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: unified-browser-harness-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 2ba6a58f785850c2197f84b073711bb4f80488cb
+  NATIVE_SOURCE_TREE: 64e6ae4ba52f322dba9a5c347ace797c8ef20039
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  original43-feature-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+        fetch-depth: 2
+    - run: pnpm install --frozen-lockfile
+    - name: Restore pinned ordinary production from run405146 (not current compilation)
+      timeout-minutes: 3
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-browser-recovery-runtime.py
+    - name: Prove only cfg(test) fixture differs from ordinary production source
+      run: 'set -euo pipefail
+
+        python3 - <<''PY_PROOF''
+
+        import json,subprocess,hashlib,pathlib
+
+        p=json.load(open(''scripts/ci/browser-recovery-runtime-pins.json'')); e=p[''testOnlySourceProof'']
+
+        def git(*args):return subprocess.check_output([''git'',''-C'',''native'',*args])
+
+        assert git(''rev-parse'',''HEAD'').decode().strip()==e[''harnessNative'']
+
+        assert git(''rev-parse'',''HEAD^'').decode().strip()==e[''productionNative'']
+
+        assert git(''diff'',''--name-only'',''HEAD^'',''HEAD'').decode().splitlines()==[e[''onlyChangedPath'']]
+
+        assert hashlib.sha256(git(''diff'',''--full-index'',''HEAD^'',''HEAD'')).hexdigest()==e[''diffSha256'']
+
+        s=git(''show'',''HEAD:cli/src/native/client_observation_dispatch.rs'').decode();assert
+        ''#[cfg(test)]\n#[path = "client_trace_initial_inventory_tests.rs"]'' in s
+
+        s=git(''show'',''HEAD:cli/src/native/client_trace_initial_inventory_tests.rs'').decode();assert
+        ''#[path = "client_observe_initial_inventory_tests.rs"]'' in s
+
+        pathlib.Path(''evidence/test-only-source-equivalence.json'').write_text(json.dumps(e,indent=2))
+
+        PY_PROOF
+
+        '
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      run: node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Verify pinned repaired harness artifact identity before download
+      timeout-minutes: 2
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        python3 - <<''PY_API''
+
+        import json,os,urllib.request,pathlib
+
+        p=json.load(open(''scripts/ci/browser-recovery-harness-pins.json''))
+
+        u=''https://api.github.com/repos/levicode/e2e/actions/artifacts/''+str(p[''artifactId''])
+
+        with urllib.request.urlopen(urllib.request.Request(u,headers={''Authorization'':''Bearer
+        ''+os.environ[''GH_TOKEN''],''Accept'':''application/vnd.github+json''}),timeout=60)
+        as r:a=json.load(r)
+
+        assert a[''id'']==p[''artifactId''] and a[''name'']==p[''artifactName''] and
+        a[''size_in_bytes'']==p[''artifactSize''] and a[''digest'']==p[''artifactDigest'']
+        and not a[''expired'']
+
+        assert str(a[''workflow_run''][''id''])==p[''runId''] and a[''workflow_run''][''head_sha'']==p[''headSha'']
+
+        pathlib.Path(''evidence/harness-artifact-metadata.json'').write_text(json.dumps(a,indent=2))
+
+        PY_API
+
+        '
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: '12739179422'
+        path: native-harness
+        merge-multiple: true
+        run-id: '40515709946'
+        github-token: ${{ github.token }}
+      timeout-minutes: 3
+    - name: Verify exact repaired harness provenance and installed Chrome
+      env:
+        EXPECTED_HARNESS_SHA: 7b4f61e02e770c33f30b694e070632bd1519f1e30213c4a23f542797d6c1278a
+      run: 'set -euo pipefail
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "40515709946"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers"
+        evidence/chromium-executable.json
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/production-runtime.manifest.json
+
+
+        cp scripts/ci/browser-recovery-harness-pins.json evidence/
+
+        '
+    - name: Original43 in feature mode, not formal default acceptance
+      run: python3 scripts/ci/run-optional-reopen43.py native-harness/agent-browser-tests
+        evidence/chromium-executable.json evidence/activation43
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: paired-reopen43-feature-diagnostic
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  pseudo-capture-feature:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+        fetch-depth: 2
+    - run: pnpm install --frozen-lockfile
+    - name: Restore pinned ordinary production from run405146 (not current compilation)
+      timeout-minutes: 3
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-browser-recovery-runtime.py
+    - name: Prove only cfg(test) fixture differs from ordinary production source
+      run: 'set -euo pipefail
+
+        python3 - <<''PY_PROOF''
+
+        import json,subprocess,hashlib,pathlib
+
+        p=json.load(open(''scripts/ci/browser-recovery-runtime-pins.json'')); e=p[''testOnlySourceProof'']
+
+        def git(*args):return subprocess.check_output([''git'',''-C'',''native'',*args])
+
+        assert git(''rev-parse'',''HEAD'').decode().strip()==e[''harnessNative'']
+
+        assert git(''rev-parse'',''HEAD^'').decode().strip()==e[''productionNative'']
+
+        assert git(''diff'',''--name-only'',''HEAD^'',''HEAD'').decode().splitlines()==[e[''onlyChangedPath'']]
+
+        assert hashlib.sha256(git(''diff'',''--full-index'',''HEAD^'',''HEAD'')).hexdigest()==e[''diffSha256'']
+
+        s=git(''show'',''HEAD:cli/src/native/client_observation_dispatch.rs'').decode();assert
+        ''#[cfg(test)]\n#[path = "client_trace_initial_inventory_tests.rs"]'' in s
+
+        s=git(''show'',''HEAD:cli/src/native/client_trace_initial_inventory_tests.rs'').decode();assert
+        ''#[path = "client_observe_initial_inventory_tests.rs"]'' in s
+
+        pathlib.Path(''evidence/test-only-source-equivalence.json'').write_text(json.dumps(e,indent=2))
+
+        PY_PROOF
+
+        '
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      run: node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Verify pinned repaired harness artifact identity before download
+      timeout-minutes: 2
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        python3 - <<''PY_API''
+
+        import json,os,urllib.request,pathlib
+
+        p=json.load(open(''scripts/ci/browser-recovery-harness-pins.json''))
+
+        u=''https://api.github.com/repos/levicode/e2e/actions/artifacts/''+str(p[''artifactId''])
+
+        with urllib.request.urlopen(urllib.request.Request(u,headers={''Authorization'':''Bearer
+        ''+os.environ[''GH_TOKEN''],''Accept'':''application/vnd.github+json''}),timeout=60)
+        as r:a=json.load(r)
+
+        assert a[''id'']==p[''artifactId''] and a[''name'']==p[''artifactName''] and
+        a[''size_in_bytes'']==p[''artifactSize''] and a[''digest'']==p[''artifactDigest'']
+        and not a[''expired'']
+
+        assert str(a[''workflow_run''][''id''])==p[''runId''] and a[''workflow_run''][''head_sha'']==p[''headSha'']
+
+        pathlib.Path(''evidence/harness-artifact-metadata.json'').write_text(json.dumps(a,indent=2))
+
+        PY_API
+
+        '
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: '12739179422'
+        path: native-harness
+        merge-multiple: true
+        run-id: '40515709946'
+        github-token: ${{ github.token }}
+      timeout-minutes: 3
+    - name: Verify exact repaired harness provenance and installed Chrome
+      env:
+        EXPECTED_HARNESS_SHA: 7b4f61e02e770c33f30b694e070632bd1519f1e30213c4a23f542797d6c1278a
+      run: 'set -euo pipefail
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "40515709946"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers"
+        evidence/chromium-executable.json
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/production-runtime.manifest.json
+
+
+        cp scripts/ci/browser-recovery-harness-pins.json evidence/
+
+        '
+    - name: Pseudo capture real Chromium six-scenario test in feature mode
+      run: python3 scripts/ci/run-pseudo-capture.py native-harness/agent-browser-tests
+        evidence/chromium-executable.json evidence/pseudo-capture
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: pseudo-capture-feature-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  optional-mask-fixed-fifty:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: '12739179422'
+        path: native-harness
+        merge-multiple: true
+        run-id: '40515709946'
+        github-token: ${{ github.token }}
+    - name: Verify repaired harness and create evidence directory before fixed stress
+      env:
+        EXPECTED_HARNESS_SHA: 7b4f61e02e770c33f30b694e070632bd1519f1e30213c4a23f542797d6c1278a
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "40515709946"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Fixed fifty iterations per original optional mask deadline case
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        timeout --signal=TERM --kill-after=5s 730 python3 scripts/ci/optional-mask-fixed-stress.py
+        native-harness/agent-browser-tests evidence/timing scripts/ci/optional-mask-fixed-stress-selectors.json
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: unified-optional-mask-fixed-fifty-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7

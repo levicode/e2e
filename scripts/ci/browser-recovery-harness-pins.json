@@ -1,0 +1,10 @@
+{
+  "artifactId": 12739179422,
+  "artifactName": "paired-optional-feature-harness",
+  "artifactSize": 37106945,
+  "artifactDigest": "sha256:4576782c400fe1ae0e46f60b791e6940a0e8b62e605f2bad234f5dbf4f8a45ca",
+  "runId": "40515709946",
+  "headSha": "321c38673c7e47a14d01660daa4327b86a2e3762",
+  "nativeSource": "2ba6a58f785850c2197f84b073711bb4f80488cb",
+  "harnessSha256": "7b4f61e02e770c33f30b694e070632bd1519f1e30213c4a23f542797d6c1278a"
+}
