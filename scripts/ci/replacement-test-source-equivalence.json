@@ -1,0 +1,10 @@
+{
+  "commit": "6027f3d615d57afdaa88426c5c5e6572d7253f98",
+  "tree": "80484f1dcd0aec99a8dba34c34ce9ab57503f91a",
+  "parent": "7efa360664285c14c3aa04d11c4f7d470d0cb10a",
+  "readback10Blobs": true,
+  "testOnly": true,
+  "ordinaryRuntimeSource": "7efa360664285c14c3aa04d11c4f7d470d0cb10a",
+  "ordinaryBinaryRebuilt": false,
+  "scope": "Only cfg(test) snapshots, new tests/includes and exact capability expectation updates; not identical source SHA."
+}

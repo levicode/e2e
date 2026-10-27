@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "expected": 20,
+  "expected": 21,
   "managed": [
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope",
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown",
@@ -220,6 +220,15 @@
       ],
       "browserIdentityRequired": false,
       "classification": "managed-peer-retirement"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::interop_marker_three_create_refusal_joins_recording_and_terminal_close",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed-replacement-marker3"
     }
   ],
   "peerRetirement": [
