@@ -81,7 +81,7 @@ interface Attempt {
   recoveryObservationRequired: boolean;
   recovering?: Promise<void> | undefined;
   /** The recovery owner fails this attempt, not only its current waiters. */
-  recoveryFailure?: { readonly error: unknown; readonly provisional?: true };
+  recoveryFailure?: { readonly error: unknown; readonly provisional?: true; readonly publication?: true };
   channel?: BrowserChannel;
   counter: number;
   videoCounter: number;
@@ -414,7 +414,7 @@ export class NativeSurface implements NativeWebSurface {
       // The captured work records failed publication before its receipt settles.
       // Normal retirement cancellation still needs terminal Close, not a second
       // callback transition, but is not a failed cleanup receipt.
-      if (attempt?.recoveryFailure !== undefined && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
+      if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
       if (connecting !== undefined) {
         await raceAbort(() => connecting.work.catch(() => undefined), cleanup.signal, 'retiring native connection');
         remaining();
@@ -444,7 +444,7 @@ export class NativeSurface implements NativeWebSurface {
           await raceAbort(() => retiring, cleanup.signal, 'retiring unread native video handles');
         }
       }
-      if (failure === undefined && attempt?.recoveryFailure === undefined && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
+      if (failure === undefined && attempt?.recoveryFailure?.publication !== true && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
         const callbackEpoch = client!.callbackCheckpoint();
         if (attempt.rawBinding?.kind === 'isolated') {
           const budget = remaining();
@@ -485,7 +485,7 @@ export class NativeSurface implements NativeWebSurface {
       if (attempt?.rawClosing !== undefined) try { await attempt.rawClosing; } catch (cause) { failed(cause); }
       if (scopeEnd !== undefined) try { await scopeEnd; } catch (cause) { failed(cause, true); }
       if (attempt !== undefined) await Promise.allSettled(attempt.wireRequests);
-      if (attempt?.recoveryFailure !== undefined && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
+      if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
       if (connecting !== undefined) {
         await connecting.work.catch(() => undefined);
         if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure);
@@ -558,20 +558,34 @@ export class NativeSurface implements NativeWebSurface {
     const attempt = this.attempt ?? this.retiringAttempt;
     const rawOpening = attempt?.rawOpening;
     let failure: unknown;
+    const failed = (cause: unknown) => {
+      failure ??= cause;
+      // Register the actual receipt when it arrives, before joining later
+      // opening/rollback work. Those later failures cannot reorder first error.
+      if (this.client === client && (attempt === undefined || this.attempt === attempt || this.retiringAttempt === attempt)) this.retirementFailure ??= cause;
+    };
     let nativeClosed = false;
     try { await client?.close(this.operation(context.signal, context.timeoutMs)); nativeClosed = true; }
-    catch (cause) { failure = cause; }
-    if (rawOpening !== undefined) await rawOpening.catch(() => undefined);
-    if (this.client === client) {
+    catch (cause) { failed(cause); }
+    const closePublishedRaw = async () => {
+      if (this.client !== client) return;
       const raw = this.playwrightClient;
-      if (raw !== undefined) {
-        try {
-          const closing = this.playwrightClosing ??= raw.close();
-          await closing;
-          if (this.playwrightClient === raw) this.playwrightClient = undefined;
-          if (this.playwrightClosing === closing) this.playwrightClosing = undefined;
-        } catch (cause) { failure ??= cause; }
-      }
+      if (raw === undefined) return;
+      try {
+        const closing = this.playwrightClosing ??= raw.close();
+        await closing;
+        if (this.playwrightClient === raw) this.playwrightClient = undefined;
+        if (this.playwrightClosing === closing) this.playwrightClosing = undefined;
+      } catch (cause) { failed(cause); }
+    };
+    // An already-published client owns any context/identity work still opening.
+    // Disconnect it BEFORE joining that work: its receipt may require detach.
+    // Fresh acquisition can instead publish a client late, so retain the actual
+    // opening receipt and then close any newly-published exact client as well.
+    await closePublishedRaw();
+    if (rawOpening !== undefined) await rawOpening.catch(() => undefined);
+    await closePublishedRaw();
+    if (this.client === client) {
       // An earlier close rejection remains the attempt's first failure. It is
       // not an excuse to drop this receipt or deadlock disconnect behind it.
       if (attempt?.rawClosing !== undefined) await attempt.rawClosing.catch(() => undefined);
@@ -699,6 +713,7 @@ export class NativeSurface implements NativeWebSurface {
       // the same attempt, routes and media; only old page evidence retires.
       if (attempt.epoch === Number.MAX_SAFE_INTEGER) throw this.invalidate();
       const binding = attempt.rawBinding;
+      if (process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') console.error('REOPEN_BINDING_DIAGNOSTIC', JSON.stringify({ hasBinding: binding !== undefined, persistentBinding: binding?.kind === 'persistent', contextMatches: binding?.contextId === recovery.context, pendingPublication: attempt.rawReopened !== undefined }));
       if (binding?.kind !== 'persistent' || binding.contextId !== recovery.context || attempt.rawReopened !== undefined) throw this.invalidate();
       attempt.recovery = { browser: previous.browser, context: previous.context, page: recovery.page };
       attempt.epoch += 1;
@@ -1104,8 +1119,12 @@ export class NativeSurface implements NativeWebSurface {
   private recordPublicationFailure(attempt: Attempt, error: unknown): void {
     attempt.pageReady = false;
     const provisional = isLocalBudgetDeparture(error) || isClosedFrameCancellation(error);
-    if (attempt.recoveryFailure === undefined || (attempt.recoveryFailure.provisional === true && !provisional)) {
-      attempt.recoveryFailure = { error, ...(provisional ? { provisional: true as const } : {}) };
+    if (attempt.recoveryFailure === undefined || attempt.recoveryFailure.publication !== true || (attempt.recoveryFailure.provisional === true && !provisional)) {
+      // A local publication waiter cannot replace an earlier business error
+      // returned to recovery followers. Only an actual publication receipt may.
+      const retained = attempt.recoveryFailure;
+      const ownedError = provisional && retained !== undefined && retained.publication !== true ? retained.error : error;
+      attempt.recoveryFailure = { error: ownedError, publication: true, ...(provisional ? { provisional: true as const } : {}) };
     }
     // Never permanently latch a waiter timeout or synthetic closed-frame cancel.
     // Its retained actual work can still succeed or supply the first real error.
@@ -1143,7 +1162,15 @@ export class NativeSurface implements NativeWebSurface {
                 const previous = attempt.rawBinding;
                 if (previous !== undefined) {
                   attempt.pageReady = false;
-                  const expected = await engine.command('scope.interop.identify', { identityScope: result.identityScope }, active);
+                  // The ACK may rotate scope identity before the public Page
+                  // is ready. This one metadata view uses the SAME native client
+                  // and only the captured ACK scope; ordinary admission keeps
+                  // the old published scope until the complete binding commits.
+                  const epoch = attempt.epoch;
+                  const metadata = new EngineChannel(client, scope => () => scope === result.identityScope
+                    && this.client === client && (this.attempt === attempt || this.retiringAttempt === attempt)
+                    && attempt.scope === admitted.scope && attempt.epoch === epoch);
+                  const expected = await metadata.command('scope.interop.identify', { identityScope: result.identityScope }, active);
                   checkPublication(active);
                   if (expected.persistent !== (previous.kind === 'persistent')) throw invalidState('Restart changed the native context ownership mode');
                   const rebound = await bindExistingPlaywrightPage(previous, expected, active);

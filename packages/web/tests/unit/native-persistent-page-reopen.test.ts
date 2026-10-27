@@ -21,7 +21,7 @@ const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal 
 const context = (): EngineAttemptContext => ({ attemptId: 'a1', artifactsDir: tmpdir(), signal: new AbortController().signal, resolveSecret: async () => { throw new Error('No secrets in identity fixture'); }, appLog: () => undefined, navigation: () => undefined, environment: () => undefined });
 const identity = (page: string) => ({ browser: 'browser-1', context: 'context-1', page });
 const refresh = (): Record<string, JsonValue> => ({ version: 1, identityScope: 'scope-1', previousPageIdentity: 'page-1', recoveryIdentity: identity('page-2') });
-async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined) {
+async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined, reconnectEndpoint: (signal: AbortSignal) => string | Promise<string> = () => 'ws://synthetic.test/reconnect') {
   resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/open', browserIdentity: 'browser-1', allocateScopeIdentity: () => 'scope-1', allocateContextIdentity: () => ({ contextId: 'context-1', targetId: 'page-1' }) });
   vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementation(async (settings, budget, onEvent) => {
@@ -42,7 +42,7 @@ async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<Pe
     }), { close: () => resources.closeNative() });
     return peer.connect(budget, onEvent);
   });
-  const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/open', reconnectEndpoint: () => 'ws://synthetic.test/reconnect' } });
+  const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/open', reconnectEndpoint } });
   await engine.init!({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
   await engine.startAttempt!(context());
   return engine;
@@ -222,13 +222,13 @@ it('publishes the distinct live Playwright Page after the persistent target reop
 });
 
 /** Actual binding-helper session work, not a stubbed binder or invented Page. */
-async function pendingReopenedIdentity() {
+async function pendingReopenedIdentity(reconnectEndpoint?: (signal: AbortSignal) => string | Promise<string>) {
   let navigations = 0;
   const engine = await fixture(frame => {
     if (frame.command !== 'page.navigate' || ++navigations === 1) return undefined;
     resources.replaceNativePage('scope-1', 'page-1', 'page-2');
     return (async () => { await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
-  });
+  }, reconnectEndpoint);
   await engine.session!.open!('https://synthetic.test/first', operation());
   const live = surfaceOf(engine)!; const raw = live.context(); const original = raw.newCDPSession.bind(raw);
   const entered = deferred<void>(); const release = deferred<void>(); let detachError: EngineError | undefined; let detached = 0;
@@ -456,5 +456,49 @@ it.each(['page.navigate', 'recording.start'] as const)('%s original usable busin
       expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
       expect(resources.snapshot().playwrightClients).toBe(0);
     } finally { release.resolve(undefined); await mutation; await engine.dispose!(cleanup()).catch(() => {}); vi.restoreAllMocks(); }
+  }
+});
+
+
+it.each(['timeout', 'cancel'] as const)('preserves the recovery owner before provisional reopen %s and joins the actual detach receipt', async departure => {
+  for (const mode of ['success', 'CANCELLED', 'ENGINE_FAILURE'] as const) {
+    const ownerError = new EngineError('ENGINE_FAILURE', 'original reconnect endpoint owner failure', { retryable: false });
+    const reconnectEndpoint = vi.fn(() => { throw ownerError; });
+    const state = await pendingReopenedIdentity(reconnectEndpoint);
+    const receipt = mode === 'success' ? undefined : new EngineError(mode, 'late actual detach after independent recovery owner failure', { retryable: false });
+    if (receipt !== undefined) state.rejectDetach(receipt);
+    const controller = new AbortController();
+    const mutation = state.engine.session!.open!('https://synthetic.test/reopened', { ...operation(), timeoutMs: departure === 'timeout' ? 50 : 1_000, signal: controller.signal }).catch(error => error);
+    try {
+      await state.entered.promise;
+      await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
+      const browser = nativeBrowser(state.engine, operation);
+      await expect(browser.title()).rejects.toBe(ownerError);
+      expect(reconnectEndpoint).toHaveBeenCalledTimes(1);
+      expect(peer!.requests.some(frame => frame.command === 'scope.reconnect')).toBe(false);
+      if (departure === 'cancel') controller.abort();
+      const caller = await mutation;
+      expect(caller).toMatchObject({ code: departure === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED', retryable: false });
+      // The publication waiter has left, but cannot rewrite the recovery owner's
+      // public error or make the still-owned replacement Page safe for scope.end.
+      await expect(browser.title()).rejects.toBe(ownerError);
+      expect(reconnectEndpoint).toHaveBeenCalledTimes(1);
+      expect(() => state.live.page()).toThrow();
+      expect(state.detached()).toBe(0);
+      const retirement = state.engine.endAttempt!(cleanup()).catch(error => error);
+      state.release.resolve(undefined);
+      expect(await retirement).toBe(receipt);
+      expect(await state.engine.endAttempt!(cleanup()).catch(error => error)).toBe(receipt);
+      expect(await state.engine.dispose!(cleanup()).catch(error => error)).toBe(receipt);
+      expect(await mutation).toBe(caller);
+      expect(state.detached()).toBe(1);
+      expect(peer!.requests.filter(frame => frame.command === 'page.navigate')).toHaveLength(2);
+      expect(peer!.requests.some(frame => frame.command === 'scope.end')).toBe(false);
+      expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      expect(resources.snapshot().playwrightClients).toBe(0);
+    } finally {
+      state.release.resolve(undefined); await mutation; await state.engine.dispose!(cleanup()).catch(() => {});
+      vi.restoreAllMocks();
+    }
   }
 });

@@ -79,6 +79,7 @@ export class EngineChannel {
     }
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition, interop);
+    if ((name === 'browser.query' || name === 'fixture.query') && !result.ok && process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') console.error('QUERY_RESULT_DIAGNOSTIC', JSON.stringify({ command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState }));
     if ((name === 'scope.interop.retire' || name === 'scope.end' || name === 'scope.reset' || name === 'state.restore') && !result.ok && process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] === '1') process.stderr.write(`SCOPE_RETIREMENT_DIAGNOSTIC ${JSON.stringify({ command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
     if (!result.ok && result.effects === 'unknown') throw resultError(result, undefined, undefined, undefined, actionContext);

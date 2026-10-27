@@ -580,3 +580,101 @@ it('disposing an unanswered explicit decision rejects its waiter without a nativ
   expect(close).not.toHaveBeenCalled();
   expect(() => peer.requestDecision('dialog.opened', {}, { token: 'after-dispose', timeoutMs: 1000 })).toThrow('fresh token');
 });
+
+it('detaching an exact CDP session emits one close without retiring its context or browser', async () => {
+  const { client, browser, binding } = await replacementFixture();
+  const session = await binding.context.newCDPSession(binding.page);
+  const closed = vi.fn(); const removed = vi.fn();
+  try {
+    expect(session.on('close', closed)).toBe(session);
+    session.on('close', removed); expect(session.off('close', removed)).toBe(session);
+    await session.send('Target.getTargetInfo'); await session.detach();
+    expect(closed).toHaveBeenCalledExactlyOnceWith(session); expect(removed).not.toHaveBeenCalled();
+    await expect(session.detach()).rejects.toThrow('CDP session was closed');
+    await expect(session.send('Target.getTargetInfo')).rejects.toThrow('CDP session was closed');
+    expect(browser.isConnected()).toBe(true); expect(binding.page.isClosed()).toBe(false);
+    expect(browser.contexts()).toEqual([binding.context]);
+    await browser.close(); expect(closed).toHaveBeenCalledOnce();
+  } finally { await client.close(operation()); await browser.close(); }
+});
+
+it('native target replacement closes only old-target sessions, not the same context or browser session', async () => {
+  const { resources, client, browser, binding, opened } = await replacementFixture();
+  const old = await binding.context.newCDPSession(binding.page);
+  const browserSession = await browser.newBrowserCDPSession();
+  const oldClosed = vi.fn(); const browserClosed = vi.fn();
+  old.on('close', oldClosed); browserSession.on('close', browserClosed);
+  try {
+    resources.replaceNativePage(opened.identityScope, binding.targetId, 'session-replacement-target');
+    expect(oldClosed).toHaveBeenCalledExactlyOnceWith(old); expect(browserClosed).not.toHaveBeenCalled();
+    expect(browser.contexts()).toEqual([binding.context]);
+    expect(resources.snapshot()).toMatchObject({ nativeContexts: 1, playwrightContexts: 1, contextCloseEvents: 0 });
+    await expect(old.detach()).rejects.toThrow('CDP session was closed');
+    const next = await binding.context.newCDPSession(binding.context.pages()[0]!);
+    const nextClosed = vi.fn(); next.on('close', nextClosed);
+    await expect(next.send('Target.getTargetInfo')).resolves.toMatchObject({ targetInfo: { targetId: 'session-replacement-target', browserContextId: binding.contextId } });
+    expect(nextClosed).not.toHaveBeenCalled(); await next.detach();
+    expect(nextClosed).toHaveBeenCalledExactlyOnceWith(next); expect(oldClosed).toHaveBeenCalledOnce();
+    await browserSession.detach(); expect(browserClosed).toHaveBeenCalledExactlyOnceWith(browserSession);
+  } finally { await client.close(operation()); await browser.close(); }
+});
+
+it('native context destruction closes its sessions without fabricating PW wrapper retirement', async () => {
+  const { resources, client, browser, binding } = await replacementFixture();
+  const session = await binding.context.newCDPSession(binding.page);
+  const browserSession = await browser.newBrowserCDPSession();
+  const closed = vi.fn(); const browserClosed = vi.fn();
+  session.on('close', closed); browserSession.on('close', browserClosed);
+  try {
+    resources.destroyNativeContext(binding.contextId);
+    expect(closed).toHaveBeenCalledExactlyOnceWith(session); expect(browserClosed).not.toHaveBeenCalled();
+    expect(browser.contexts()).toEqual([binding.context]);
+    expect(resources.snapshot()).toMatchObject({ nativeContexts: 0, playwrightContexts: 1, contextCloseEvents: 0 });
+    await expect(binding.context.close()).rejects.toThrow('destroyed native context');
+    await expect(session.detach()).rejects.toThrow('CDP session was closed');
+    await expect(browserSession.send('Target.getBrowserContexts')).resolves.toMatchObject({ browserContextIds: [] });
+    await browser.close();
+    expect(closed).toHaveBeenCalledOnce(); expect(browserClosed).toHaveBeenCalledExactlyOnceWith(browserSession);
+  } finally { await client.close(operation()); await browser.close(); }
+});
+
+it('PW disconnect closes only that persistent client\'s sessions and preserves its sibling client and borrowed context', async () => {
+  const { resources, client, engine } = await fixture();
+  const opened = await engine.command('scope.open', { ...creation, source: 'connect', context: 'persistent', endpoint: resources.endpoint }, operation());
+  const ids = await engine.command('scope.interop.identify', { identityScope: opened.identityScope }, operation());
+  const first = await connectPlaywrightClient(resources.endpoint, operation());
+  const second = await connectPlaywrightClient(resources.endpoint, operation());
+  const firstBinding = await bindPersistentPlaywrightContext(first, ids, operation());
+  const secondBinding = await bindPersistentPlaywrightContext(second, ids, operation());
+  const firstSession = await firstBinding.context.newCDPSession(firstBinding.page);
+  const secondSession = await secondBinding.context.newCDPSession(secondBinding.page);
+  const firstClosed = vi.fn(); const secondClosed = vi.fn();
+  firstSession.on('close', firstClosed); secondSession.on('close', secondClosed);
+  try {
+    await first.close();
+    expect(firstClosed).toHaveBeenCalledExactlyOnceWith(firstSession); expect(secondClosed).not.toHaveBeenCalled();
+    await expect(firstSession.detach()).rejects.toThrow('CDP session was closed');
+    await expect(secondSession.send('Target.getTargetInfo')).resolves.toMatchObject({ targetInfo: { targetId: ids.targetId } });
+    expect(secondBinding.page.isClosed()).toBe(false); expect(resources.snapshot()).toMatchObject({ nativeContexts: 1, playwrightClients: 1, playwrightContexts: 1 });
+    await second.close(); expect(secondClosed).toHaveBeenCalledExactlyOnceWith(secondSession);
+    expect(resources.snapshot()).toMatchObject({ nativeContexts: 1, playwrightClients: 0, playwrightContexts: 0 });
+  } finally { await client.close(operation()); await first.close(); await second.close(); }
+});
+
+it.each(['launch', 'connect'] as const)('native Close limits browser-session closure to its %s process ownership', async source => {
+  const { client, browser, binding } = await replacementFixture(source);
+  const targetSession = await binding.context.newCDPSession(binding.page);
+  const browserSession = await browser.newBrowserCDPSession();
+  const targetClosed = vi.fn(); const browserClosed = vi.fn();
+  targetSession.on('close', targetClosed); browserSession.on('close', browserClosed);
+  try {
+    await client.close(operation());
+    expect(targetClosed).toHaveBeenCalledExactlyOnceWith(targetSession);
+    expect(browserClosed).toHaveBeenCalledTimes(source === 'launch' ? 1 : 0);
+    if (source === 'connect') await expect(browserSession.send('Target.getBrowserContexts')).resolves.toMatchObject({ browserContextIds: [] });
+    else await expect(browserSession.detach()).rejects.toThrow('CDP session was closed');
+    expect(browser.isConnected()).toBe(true); expect(browser.contexts()).toEqual([binding.context]);
+    await browser.close();
+    expect(targetClosed).toHaveBeenCalledOnce(); expect(browserClosed).toHaveBeenCalledExactlyOnceWith(browserSession);
+  } finally { await browser.close(); }
+});

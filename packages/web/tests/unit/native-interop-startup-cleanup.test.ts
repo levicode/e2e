@@ -4,6 +4,8 @@ import { PassThrough, Writable } from 'node:stream';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, type EngineAttemptContext, type EngineInitInfo, type OperationContext } from 'e2e/engine';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
+import { isLocalBudgetDeparture } from '../../src/operation-budget.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectionWaitDeparture } from '../../src/operation-budget.ts';
 import { NativeClient } from '../../src/native/client.ts';
@@ -39,7 +41,7 @@ function fixture() {
   let client: NativeClient;
   let holdIdentify = false; let finishIdentifyError: (() => void) | undefined;
   let holdRestart = false; let finishRestartUnknown: (() => void) | undefined; let finishRestartSuccess: (() => void) | undefined;
-  let acceptAdopt = false;
+  let acceptAdopt = false; let restartedScope = 'own-scope'; let finishIdentify: ((unknown: boolean) => void) | undefined;
   let holdContextClose = false;
   let rejectRetire = false;
   const contextCloseJoin = deferred<void>();
@@ -87,13 +89,15 @@ function fixture() {
           else pending.set(command, reject);
         } else if (command === 'scope.restart') {
           calls.push('restart');
-          const success = () => reply({ ok: true, effects: 'completed', data: { identityScope: 'own-scope', recoveryIdentity: { browser: 'browser-owner', context: 'own-context', page: 'replacement-page' } } });
+          const success = () => reply({ ok: true, effects: 'completed', data: { identityScope: restartedScope, recoveryIdentity: { browser: 'browser-owner', context: 'own-context', page: 'replacement-page' } } });
           if (holdRestart) {
             finishRestartUnknown = () => reply({ ok: false, error: { code: 'deadline-exceeded' }, effects: 'unknown', scopeState: 'quarantined' });
             finishRestartSuccess = success;
           } else success();
         } else if (command === 'scope.interop.identify') {
-          calls.push('identify'); if (holdIdentify) { finishIdentifyError = () => reject('deadline-exceeded'); } else reply({ ok: true, effects: 'completed', data: { contextId: 'own-context', targetId: 'replacement-page', persistent: false } });
+          expect((frame['args'] as Frame)['identityScope']).toBe(restartedScope); calls.push('identify');
+          const finish = (unknown: boolean) => reply(unknown ? { ok: false, error: { code: 'deadline-exceeded' }, effects: 'unknown', scopeState: 'quarantined' } : { ok: true, effects: 'completed', data: { contextId: 'own-context', targetId: 'replacement-page', persistent: false } });
+          if (holdIdentify) { finishIdentifyError = () => reject('deadline-exceeded'); finishIdentify = finish; } else finish(false);
         } else if (command === 'recording.finalized.collect') {
           // This framed peer has no encoder output. A terminal read is refused
           // with its real quarantined shape, never an ordinary usable null ACK.
@@ -111,6 +115,8 @@ function fixture() {
   });
   return {
     calls, frames, nativeJoin, rawJoin, created, creationReturn, rawContextClose, contextCloseJoin,
+    changeRestartScope: () => { restartedScope = 'restarted-scope'; },
+    finishIdentify: (unknown: boolean) => finishIdentify!(unknown),
     replacement, client: () => client,
     holdIdentify: () => { holdIdentify = true; },
     finishIdentifyError: () => { if (!finishIdentifyError) throw new Error('identify not dispatched'); finishIdentifyError(); },
@@ -500,4 +506,66 @@ it('a late real native timeout receipt is not confused with the provisional wait
   expect(await result).toBe(caller);
   expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
   expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+});
+
+it('binds a changed-scope restart ACK without authorizing a different metadata owner', async () => {
+  peer.acceptAdopt(); peer.changeRestartScope(); await start();
+  await surface.restart(restartOperation());
+  expect(peer.calls).toContain('identify'); expect(bindExistingPlaywrightPage).toHaveBeenCalledTimes(1);
+  expect(surface.requirePage()).toBe(peer.replacement.page);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.interop.identify').map(frame => (frame['args'] as Frame)['identityScope'])).toEqual(['restarted-scope']);
+});
+
+it.each((['end', 'dispose'] as const).flatMap(method => [false, true].map(unknown => ({ method, unknown }))))('retains exact changed-scope metadata through $method with late Unknown=$unknown', async ({ method, unknown }) => {
+  peer.acceptAdopt(); peer.changeRestartScope(); peer.holdIdentify(); await start();
+  const restarting = surface.restart(restartOperation()); void restarting.catch(() => {});
+  await expect.poll(() => peer.calls.includes('identify')).toBe(true);
+  const ended = method === 'end' ? surface.endAttempt(cleanup()) : surface.dispose(cleanup()); void ended.catch(() => {});
+  await expect(restarting).rejects.toMatchObject({ code: 'CANCELLED' });
+  peer.finishIdentify(unknown);
+  await expect.poll(() => peer.calls.includes('native-settle')).toBe(true);
+  expect(bindExistingPlaywrightPage).not.toHaveBeenCalled();
+  expect(peer.frames.some(frame => frame['command'] === 'scope.end' || frame['command'] === 'scope.interop.retire')).toBe(false);
+  peer.nativeJoin.resolve(); await expect.poll(() => peer.calls.includes('pw-close')).toBe(true); peer.rawJoin.resolve();
+  if (unknown) await expect(ended).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+  else await ended;
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(peer.resources()).toEqual({ prepared: false, contexts: 0, connected: false });
+});
+
+
+it.each(['success', 'OPERATION_TIMEOUT', 'Unknown'] as const)('REVIEW changed-scope actual metadata %s survives original waiter departure', async receipt => {
+  peer.acceptAdopt(); peer.changeRestartScope(); await start(); peer.holdIdentify();
+  const result = surface.restart(restartOperation(35)).catch(error => error);
+  await expect.poll(() => peer.calls.includes('identify')).toBe(true);
+  const caller = await result; expect(caller.code).toBe('OPERATION_TIMEOUT'); expect(isLocalBudgetDeparture(caller)).toBe(true);
+  const attempt = Reflect.get(surface, 'attempt') as { scope: string; pageReady: boolean; recoveryFailure: { error: unknown; provisional?: true } };
+  expect(attempt.scope).toBe('own-scope'); expect(attempt.pageReady).toBe(false);
+  if (receipt === 'OPERATION_TIMEOUT') peer.finishIdentifyError(); else peer.finishIdentify(receipt === 'Unknown');
+  await tick(); const actual = attempt.recoveryFailure.error;
+  if (receipt !== 'success') {
+    expect(actual).toMatchObject({ code: receipt === 'Unknown' ? 'ACTION_MAY_HAVE_COMMITTED' : 'OPERATION_TIMEOUT', retryable: false });
+    expect(actual).not.toBe(caller); expect(isLocalBudgetDeparture(actual)).toBe(false);
+  }
+  expect(bindExistingPlaywrightPage).not.toHaveBeenCalled(); peer.nativeJoin.resolve(); peer.rawJoin.resolve();
+  const cleaned = await surface.endAttempt(cleanup()).catch(error => error); expect(cleaned).toBe(receipt === 'success' ? undefined : actual);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.interop.identify')).toHaveLength(1);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.restart')).toHaveLength(1);
+  expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  expect(await result).toBe(caller);
+});
+
+it('REVIEW temporary metadata view refuses a foreign scope before wire dispatch', async () => {
+  peer.acceptAdopt(); peer.changeRestartScope(); await start();
+  const original = EngineChannel.prototype.command;
+  vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(async function (this: EngineChannel, ...args) {
+    if (args[0] === 'scope.interop.identify') {
+      await expect(Reflect.apply(original, this, ['scope.interop.identify', { identityScope: 'foreign-scope' }, args[2]])).rejects.toMatchObject({ code: 'CANCELLED' });
+      expect(peer.frames.filter(frame => frame['command'] === 'scope.interop.identify')).toHaveLength(0);
+    }
+    return Reflect.apply(original, this, args);
+  });
+  await surface.restart(restartOperation()); expect(surface.requirePage()).toBe(peer.replacement.page);
+  expect(peer.frames.filter(frame => frame['command'] === 'scope.interop.identify').map(frame => (frame['args'] as Frame)['identityScope'])).toEqual(['restarted-scope']);
 });

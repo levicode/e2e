@@ -711,6 +711,10 @@ export class NativeClient {
 
   private fail(message: string, code: 'ENGINE_FAILURE' | 'CANCELLED' | 'OPERATION_TIMEOUT' | 'UNSUPPORTED_CAPABILITY' = 'ENGINE_FAILURE'): EngineError {
     this.channel.acceptanceTrace?.observe('ClientFail', { reason: code === 'OPERATION_TIMEOUT' ? 'deadline' : code === 'CANCELLED' ? 'cancelled' : code === 'UNSUPPORTED_CAPABILITY' ? 'unsupported-capability' : 'engine-failure' });
+    if (this.failure === undefined && process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') {
+      const callers = new Error().stack?.split('\n').slice(1, 6).map(line => ({ function: /at ([A-Za-z_$][A-Za-z0-9_$.]*)[ (]/.exec(line)?.[1] ?? 'anonymous', position: /:(\d+):(\d+)\)?$/.exec(line)?.slice(1).map(Number) }));
+      console.error('NATIVE_FIRST_FAILURE_DIAGNOSTIC', JSON.stringify({ code, capabilityContract: message === 'The native browser response violated its capability contract', eventHandler: message === 'The native browser event handler failed', protocol: message.startsWith('The native browser protocol became invalid ('), terminal: this.terminal, closing: this.closing !== undefined, closed: this.closed, callers }));
+    }
     this.failure ??= new EngineError(code, message, { retryable: false });
     this.stagedEvents.length = 0; this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(false);
     for (const pending of this.pending.values()) { pending.clear(); pending.reject(this.failure); }

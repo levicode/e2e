@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { afterEach, expect, it, vi } from 'vitest';
 import { EngineError, type OperationContext } from 'e2e/engine';
+import * as bindingModule from '../../src/native/playwright-binding.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { isClosedFrameCancellation, NativeClient } from '../../src/native/client.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
@@ -16,6 +17,7 @@ const cleanup = () => ({ signal: new AbortController().signal, timeoutMs: 1000 }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 type Resource = { cid: string; tid: string; alive: boolean; pageAlive: boolean; wrapperClosed: boolean; context: BrowserContext; page: Page; closes: number; scripts: number };
 class Fixture {
+  surface: NativeSurface | undefined;
   readonly log: string[] = [];
   readonly frames: Record<string, any>[] = [];
   readonly resources: Resource[] = [];
@@ -103,7 +105,7 @@ class Fixture {
   async setup() {
     vi.spyOn(chromium, 'connectOverCDP').mockImplementation(async endpoint => { expect(endpoint).toBe('ws://strict.invalid/owned'); return this.browser; });
     vi.mocked(connectNativeProcess).mockImplementation(async (settings, operation, onEvent) => { this.capabilities = settings.capabilities; return NativeClient.connect({ readable: this.output, writable: this.input, dispose: () => { this.log.push('transport-dispose'); this.input.destroy(); this.output.destroy(); }, settle: async () => { this.log.push('native-join'); if (this.nativeJoinRelease) await this.nativeJoinRelease.promise; if (this.nativeJoinError) throw this.nativeJoinError; } }, settings.capabilities, operation, onEvent); });
-    const surface = new NativeSurface({ initScripts: ['globalThis.fixtureMarker = 1'] });
+    const surface = this.surface = new NativeSurface({ initScripts: ['globalThis.fixtureMarker = 1'] });
     await surface.init({ runId: 'replacement', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: op().signal, log: () => {} });
     await surface.startAttempt({ attemptId: 'one', artifactsDir: tmpdir(), signal: op().signal, resolveSecret: async () => { throw new Error('no secrets'); }, appLog: () => {}, navigation: () => {}, environment: () => {} }); return surface;
   }
@@ -374,4 +376,101 @@ it.each((['reset', 'restore'] as const).flatMap(mode => (['success', 'failure'] 
     if (mode === 'restore') expect(fixture.uploadAtTerminalClose).toBe('state-upload');
     expect(fixture.upload).toBeUndefined(); expect(fixture.connected).toBe(false);
   } finally { outcome.resolve(); release.resolve(); fixture.nativeJoinRelease.resolve(); await mutation; await surface.dispose(cleanup()).catch(() => {}); }
+});
+
+
+it.each(['reset', 'restore'] as const)('REVIEW actual new %s context may require PW disconnect before its creation return settles', async mode => {
+  const fixture = new Fixture(); const surface = await fixture.setup();
+  const entered = deferred<void>(); const release = deferred<void>(); const disconnected = deferred<void>();
+  const create = bindingModule.createPlaywrightContext;
+  vi.spyOn(bindingModule, 'createPlaywrightContext').mockImplementation(async (...args) => {
+    const binding = await create(...args); entered.resolve(); await release.promise; return binding;
+  });
+  const close = fixture.browser.close.bind(fixture.browser);
+  vi.spyOn(fixture.browser, 'close').mockImplementation(async () => { await close(); disconnected.resolve(); release.resolve(); });
+  const mutation = (mode === 'reset' ? surface.reset(op()) : surface.restoreState({ format: 'playwright-storage-state', version: 1, data: { cookies: [], origins: [] } }, op())).catch(error => error);
+  try {
+    await entered.promise; expect(fixture.resources).toHaveLength(2);
+    await surface.endAttempt({ ...cleanup(), timeoutMs: 30 });
+    expect(fixture.frames.filter(frame => frame.type === 'close')).toHaveLength(1);
+    const order = await Promise.race([disconnected.promise.then(() => 'disconnected'), new Promise<string>(resolve => setTimeout(() => resolve('deadlocked-before-disconnect'), 200))]);
+    expect(order).toBe('disconnected');
+    expect((await mutation).code).toBe('CANCELLED'); await surface.dispose(cleanup());
+    expect(fixture.connected).toBe(false); expect(fixture.resources.every(resource => !resource.alive && resource.wrapperClosed)).toBe(true);
+    expect(fixture.frames.some(frame => frame.command === 'scope.end' || frame.command === 'scope.interop.retire' || frame.command === 'page.activate')).toBe(false);
+    expect(fixture.log.indexOf('native-close')).toBeLessThan(fixture.log.indexOf('pw-disconnect'));
+  } finally { release.resolve(); await mutation; await surface.dispose(cleanup()).catch(() => {}); }
+});
+
+it.each(['success', 'CANCELLED', 'ENGINE_FAILURE'] as const)('REVIEW late initial raw acquisition remains owned after native Close: %s', async receipt => {
+  const fixture = new Fixture(); const entered = deferred<void>(); const release = deferred<void>();
+  const actual = receipt === 'success' ? undefined : new EngineError(receipt, 'actual late acquired browser close', { retryable: false });
+  let closeCount = 0;
+  const close = fixture.browser.close.bind(fixture.browser);
+  vi.spyOn(fixture.browser, 'close').mockImplementation(async () => { closeCount++; await close(); if (actual) throw actual; });
+  const connect = bindingModule.connectPlaywrightClient;
+  vi.spyOn(bindingModule, 'connectPlaywrightClient').mockImplementation(async (...args) => {
+    const browser = await connect(...args); entered.resolve(); await release.promise; return browser;
+  });
+  const starting = fixture.setup().catch(error => error);
+  try {
+    await entered.promise; const surface = fixture.surface!;
+    await surface.endAttempt({ ...cleanup(), timeoutMs: 30 });
+    expect(fixture.frames.filter(frame => frame.type === 'close')).toHaveLength(1); expect(closeCount).toBe(0);
+    release.resolve(); const started = await starting; expect(started.code).toBe('CANCELLED');
+    const retired = await surface.dispose(cleanup()).catch(error => error); expect(retired).toBe(actual);
+    expect(closeCount).toBe(1); expect(fixture.connected).toBe(false); expect(fixture.resources).toHaveLength(0);
+    expect(fixture.frames.filter(frame => frame.type === 'close')).toHaveLength(1);
+  } finally { release.resolve(); await starting; await fixture.surface?.dispose(cleanup()).catch(() => {}); }
+});
+
+it.each(['CANCELLED', 'ENGINE_FAILURE'] as const)('REVIEW first actual raw-disconnect %s must not lose to later context-close failure', async firstCode => {
+  const fixture = new Fixture(); const surface = await fixture.setup();
+  const entered = deferred<void>(); const release = deferred<void>(); const rawFailed = deferred<void>();
+  const first = new EngineError(firstCode, 'first actual raw disconnect receipt', { retryable: false });
+  const later = new EngineError(firstCode === 'CANCELLED' ? 'ENGINE_FAILURE' : 'CANCELLED', 'later actual opening rollback close receipt', { retryable: false });
+  const newContext = fixture.browser.newContext.bind(fixture.browser);
+  vi.spyOn(fixture.browser, 'newContext').mockImplementation(async options => {
+    const context = await newContext(options); const newPage = context.newPage.bind(context);
+    vi.spyOn(context, 'newPage').mockImplementation(async () => { const page = await newPage(); entered.resolve(); await release.promise; return page; });
+    vi.spyOn(context, 'close').mockImplementation(async () => { throw later; });
+    return context;
+  });
+  const close = fixture.browser.close.bind(fixture.browser);
+  vi.spyOn(fixture.browser, 'close').mockImplementation(async () => { await close(); rawFailed.resolve(); throw first; });
+  const mutation = surface.reset(op()).catch(error => error);
+  try {
+    await entered.promise; await surface.endAttempt({ ...cleanup(), timeoutMs: 30 });
+    await rawFailed.promise; await new Promise(resolve => setImmediate(resolve));
+    release.resolve(); expect((await mutation).code).toBe('CANCELLED');
+    const retired = await surface.dispose(cleanup()).catch(error => error);
+    expect(retired).toBe(first); expect(retired).not.toBe(later);
+    expect(fixture.frames.filter(frame => frame.type === 'close')).toHaveLength(1);
+  } finally { release.resolve(); await mutation; await surface.dispose(cleanup()).catch(() => {}); }
+});
+
+it.each(['CANCELLED', 'ENGINE_FAILURE'] as const)('REVIEW native Close failure arrives before late initial context rollback %s', async lateCode => {
+  const fixture = new Fixture(); fixture.refuseTerminalClose = true;
+  const entered = deferred<void>(); const release = deferred<void>();
+  const later = new EngineError(lateCode, 'late initial context rollback rejection', { retryable: false });
+  let first: unknown; const nativeClose = NativeClient.prototype.close;
+  vi.spyOn(NativeClient.prototype, 'close').mockImplementation(function (this: NativeClient, operation) {
+    const work = nativeClose.call(this, operation); void work.catch(error => { first = error; }); return work;
+  });
+  const newContext = fixture.browser.newContext.bind(fixture.browser);
+  vi.spyOn(fixture.browser, 'newContext').mockImplementation(async options => {
+    const context = await newContext(options); const newPage = context.newPage.bind(context);
+    vi.spyOn(context, 'newPage').mockImplementation(async () => { const page = await newPage(); entered.resolve(); await release.promise; return page; });
+    vi.spyOn(context, 'close').mockImplementation(async () => { throw later; }); return context;
+  });
+  const starting = fixture.setup().catch(error => error);
+  try {
+    await entered.promise; const surface = fixture.surface!; await surface.endAttempt({ ...cleanup(), timeoutMs: 30 });
+    await expect.poll(() => first).toBeDefined(); expect(first).not.toBe(later);
+    release.resolve(); await starting;
+    expect(await surface.dispose(cleanup()).catch(error => error)).toBe(first);
+    expect(fixture.frames.filter(frame => frame.type === 'close')).toHaveLength(1);
+    expect(Reflect.get(surface, 'client')).toBeDefined(); expect(fixture.log).not.toContain('native-join');
+    expect(fixture.connected).toBe(false);
+  } finally { release.resolve(); await starting; await fixture.surface?.dispose(cleanup()).catch(() => {}); }
 });

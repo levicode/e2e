@@ -8,7 +8,7 @@
  * explicit retirement/allocation/adoption phases below.
  */
 import { EventEmitter } from 'node:events';
-import type { Browser, BrowserContext, Page } from 'playwright-core';
+import type { Browser, BrowserContext, CDPSession, Page } from 'playwright-core';
 import { vi } from 'vitest';
 import type { PeerOutcome, PeerRequest } from './native-protocol-peer.ts';
 
@@ -18,6 +18,7 @@ type NativeContext = { manager: Manager; nativeAdopted: boolean; contextId: stri
 type Wrapper = { resource: NativeContext; context: BrowserContext; page: Page; closed: boolean; events: EventEmitter };
 type Client = { manager: Manager; connected: boolean; wrappers: Wrapper[]; browser: Browser };
 type Scope = { identityScope: string; resource: NativeContext; retiring: boolean };
+type Session = { client: Client; resource: NativeContext | undefined; targetId: string | undefined; closed: boolean; events: EventEmitter; session: CDPSession };
 type Replacement = { scope: Scope; operationSeq: number; owner: Client; phase: 'retire' | 'create'; allocation?: NativeContext };
 function fail(detail: string): never { throw new Error(`Synthetic interop resource contract: ${detail}`); }
 function exact(args: PeerRequest['args'], keys: string[]): void {
@@ -53,6 +54,7 @@ export class NativeInteropResources {
   private replacement: Replacement | undefined;
   private readonly contexts: NativeContext[] = [];
   private readonly clients: Client[] = [];
+  private readonly sessions: Session[] = [];
   private readonly refusals = new Map<InteropCommand, string[]>();
 
   /** A refusal applies to exactly this stage, never an alias for old scope.open. */
@@ -93,6 +95,7 @@ export class NativeInteropResources {
     identity(newTargetId);
     if (this.targetIds.has(newTargetId)) fail('target identity was already allocated');
     this.events.push(`native-page-destroyed:${oldTargetId}`);
+    for (const session of this.sessions) if (session.resource === resource && session.targetId === oldTargetId) this.closeSession(session);
     resource.targetId = newTargetId; this.targetIds.add(newTargetId); scope.identityScope = nextScope;
     this.events.push(`native-page-created:${newTargetId}`);
     for (const client of this.clients) for (const wrapper of client.wrappers) {
@@ -222,6 +225,7 @@ export class NativeInteropResources {
     for (const context of this.contexts) {
       if (context.alive && !context.persistent && context.manager === this.manager && (context.manager.ownsProcess || context.nativeAdopted)) this.destroyNativeContext(context.contextId);
     }
+    if (this.manager?.ownsProcess === true) for (const session of this.sessions) if (session.client.manager === this.manager) this.closeSession(session);
     this.scope = undefined; this.prepared = undefined; this.replacement = undefined; this.manager = undefined;
   }
   /** Native reset/restore destroys the resource, NOT the PW registry entry.
@@ -230,6 +234,7 @@ export class NativeInteropResources {
     const resource = this.contexts.find(context => context.contextId === contextId && context.alive);
     if (resource === undefined) fail('cannot destroy an unknown native context');
     resource.alive = false; resource.pageAlive = false; this.events.push(`native-context-destroyed:${contextId}`);
+    for (const session of this.sessions) if (session.resource === resource) this.closeSession(session);
   }
   /** Explicit fake for chromium.connectOverCDP. Never opens a socket. */
   async connectPlaywright(endpoint: unknown): Promise<Browser> {
@@ -255,7 +260,7 @@ export class NativeInteropResources {
       }),
       newBrowserCDPSession: async () => {
         connected();
-        return this.session(command => {
+        return this.session(client, undefined, command => {
           if (command !== 'Target.getBrowserContexts') fail(`unexpected browser CDP command ${command}`);
           return { browserContextIds: this.contexts.filter(context => context.alive && !context.persistent).map(context => context.contextId), defaultBrowserContextId: this.contexts.find(context => context.alive && context.persistent)?.contextId };
         });
@@ -263,6 +268,7 @@ export class NativeInteropResources {
       close: async () => {
         if (!client.connected) return;
         client.connected = false; this.events.push('pw-disconnect');
+        for (const session of this.sessions) if (session.client === client) this.closeSession(session);
         for (const wrapper of client.wrappers) {
           if (wrapper.resource.alive && !wrapper.resource.persistent) this.destroyNativeContext(wrapper.resource.contextId);
           this.closeWrapper(wrapper);
@@ -307,12 +313,27 @@ export class NativeInteropResources {
     const scope = this.scope!;
     return { data: { identityScope: scope.identityScope, recoveryIdentity: { browser: this.options.browserIdentity ?? 'unit-browser', context: scope.resource.contextId, page: scope.resource.targetId } } };
   }
-  private session(send: (command: string) => unknown) {
-    let detached = false;
-    return {
-      send: async (command: string) => { if (detached) fail('CDP session was detached'); return send(command); },
-      detach: async () => { detached = true; },
-    };
+  /** Sessions are exact client/target objects, independent of PW wrappers.
+   * Closing a native target emits its sessions' close receipt without faking a
+   * context.close event. Browser sessions remain until their client/process ends. */
+  private session(client: Client, resource: NativeContext | undefined, send: (command: string) => unknown): CDPSession {
+    const state = { client, resource, targetId: resource?.targetId, closed: false, events: new EventEmitter(), session: undefined as unknown as CDPSession };
+    const live = () => { if (state.closed) fail('CDP session was closed'); };
+    const session = {
+      send: async (command: string) => { live(); return send(command); },
+      detach: async () => { live(); this.closeSession(state); },
+      on: (event: string, listener: (closed: CDPSession) => void) => { if (event !== 'close') fail(`unexpected CDP session event ${event}`); state.events.on(event, listener); return session; },
+      off: (event: string, listener: (closed: CDPSession) => void) => { if (event !== 'close') fail(`unexpected CDP session event ${event}`); state.events.off(event, listener); return session; },
+    } as unknown as CDPSession;
+    state.session = session; this.sessions.push(state);
+    return session;
+  }
+  private closeSession(state: Session): void {
+    if (state.closed) return;
+    state.closed = true;
+    this.events.push(`cdp-session-closed:${state.targetId ?? 'browser'}`);
+    // Playwright 1.64.1 emits the exact public CDPSession as the event argument.
+    state.events.emit('close', state.session);
   }
   private closeWrapper(wrapper: Wrapper): void {
     if (wrapper.closed) return;
@@ -328,7 +349,7 @@ export class NativeInteropResources {
       addInitScript: vi.fn(async (_source: unknown, _arg?: unknown) => { live(); if (this.replacement?.allocation === resource && !resource.nativeAdopted) fail('user script precedes replacement adoption'); this.events.push(`pw-init-script:${resource.contextId}`); }),
       newCDPSession: async (page: Page) => {
         live(); if (page !== wrapper.page || !resource.pageAlive) fail('CDP session does not name the exact page');
-        return this.session(command => {
+        return this.session(client, resource, command => {
           live(); if (command !== 'Target.getTargetInfo') fail(`unexpected page CDP command ${command}`);
           return { targetInfo: { type: 'page', targetId: resource.targetId, browserContextId: resource.contextId } };
         });

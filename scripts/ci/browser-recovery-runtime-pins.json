@@ -1,26 +1,26 @@
 {
-  "artifactId": 12747935447,
-  "artifactName": "ci-native-runtime-Native context replacement and public names finite validation-40532721646-1",
-  "artifactSize": 13891736,
-  "artifactDigest": "sha256:39938eaf72fd79ebecb6a442fa3889773f50a87f7ba56ba7e41a2ae22cce0048",
-  "manifestSha256": "15efc9d647b6a1c8c7a3af1292865d6807cf967818ed4263e26c798860baf5ff",
+  "artifactId": 12752118010,
+  "artifactName": "ci-native-runtime-Native interop allocation uncertainty finite validation-40544356482-1",
+  "artifactSize": 13891549,
+  "artifactDigest": "sha256:156ec759d404c0788c3b639681f91761fa2591ba1dbb745b46a9aa0f8aa40ad3",
+  "manifestSha256": "d66fca0a645408cbd840fba5f927a410ccab4146f3ab9074382b8dd5c20e618f",
   "expected": {
     "source": {
-      "commit": "3bb60b3344528f3e29915b3cb5e77e3e810d740e",
-      "tree": "21122f2d23d5248f585cde488a254eb788d036e0"
+      "commit": "0460f6bdc043195e72fa697a318691869461f5ee",
+      "tree": "a74ef1b4c5799bd4c0a125a727746feab3d08595"
     },
     "repository": "levicode/e2e",
-    "runId": "40532721646",
+    "runId": "40544356482",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "7efa360664285c14c3aa04d11c4f7d470d0cb10a"
+    "nativeCommit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf"
   },
   "nativeSource": {
-    "commit": "7efa360664285c14c3aa04d11c4f7d470d0cb10a",
-    "tree": "743c2ec499f9b26a793e19c77515810972db43d7"
+    "commit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
+    "tree": "f7a53c5498970b5e05dffc95e53a080d5324af36"
   },
-  "binarySha256": "2f7fb87afce92861d965f1122f7b09a63e6e2c778a9f4546a7907866cd1275a8",
-  "harnessNative": "7efa360664285c14c3aa04d11c4f7d470d0cb10a",
-  "scope": "Exact ordinary 7efa runtime reuse; same native source, different Node source; no final acceptance claim."
+  "binarySha256": "f25e1f6469d2afd962344c1afd0fd299aee7faff799e4646aa8b807d78fc0d5c",
+  "harnessNative": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
+  "scope": "Exact 74ec ordinary production reuse from 405443; new Node source, finite diagnostic lanes, not full acceptance."
 }
