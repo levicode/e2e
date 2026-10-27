@@ -55,7 +55,11 @@ it('requires a coordinated decoder update: the legacy decoder rejects every new 
     expect(() => legacyServerMessage({ ...message, error: { code: error['code'] } })).toThrow(NativeFrameError);
     expect(() => legacyServerMessage({ ...message, error: { ...error, code: 'invalid-arguments' } })).toThrow(NativeFrameError);
   }
-  for (const code of vectors.errorCodes) expect(() => legacyServerMessage({ type: 'error', error: { code }, scopeState: 'quarantined' })).not.toThrow();
+  for (const code of vectors.errorCodes) {
+    const decode = () => legacyServerMessage({ type: 'error', error: { code }, scopeState: 'quarantined' });
+    if (code === 'fill-unsupported-target' || code === 'no-editable-focus') expect(decode).toThrow(NativeFrameError);
+    else expect(decode).not.toThrow();
+  }
 });
 
 it('accepts bounded terminal frame facts and rejects every paired invalid vector', () => {

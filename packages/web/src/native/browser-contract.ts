@@ -44,7 +44,8 @@ export interface BrowserCommandMap {
   'network.body.release': { args: { handle: string }; result: null };
   /** Native still emits/latches an unhandled dialog when this registration is absent. */
   'dialog.register': { args: { enabled: boolean }; result: null };
-  'download.subscribe': { args: Record<string, never>; result: { subscriptionId: string } };
+  /** The channel adds its exact admission owner; this field is not taken from the wire. */
+  'download.subscribe': { args: Record<string, never>; result: { subscriptionId: string; identityScope: string } };
   'download.unsubscribe': { args: { subscriptionId: string }; result: null };
   'download.metadata': { args: { handle: string }; result: { identityScope: string; source: 'local' } | { identityScope: string; source: 'provider'; basename: string } };
   'download.read': { args: { handle: string; offset: number; maxBytes: number }; result: NativeBodyChunk };

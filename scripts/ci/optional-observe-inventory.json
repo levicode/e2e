@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "count": 44,
+  "count": 78,
   "selectors": [
     "native::cdp::client::tests::i10_t01_readonly_disposal_handoff_retains_exact_groups_until_matching_ack",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::i10_t01_metadata_release_ack_is_not_the_eighty_ms_tree_deadline",
@@ -47,8 +47,40 @@
     "native::element::tests::semantic_fallback_keeps_only_inert_identity_until_fresh_exact_observation",
     "native::element::tests::semantic_fallback_does_not_merge_replaced_or_foreign_native_identity",
     "native::element::tests::semantic_fallback_retains_existing_durable_capacity_and_origin_byte_charges",
-    "native::client_actions::tests::semantic_fallback_refs_refuse_before_fresh_evidence_then_keep_exact_issuance"
-  ],
-  "requiresActualCompiledListValidation": true,
-  "additionalRegressionReason": "Existing retained security inventory covers M1 group naming/custody; exact feature-mode execution, not default-mode acceptance"
+    "native::client_actions::tests::semantic_fallback_refs_refuse_before_fresh_evidence_then_keep_exact_issuance",
+    "native::cdp::client::tests::readonly_disposal_capacity_refusal_keeps_exact_acquired_group_custody",
+    "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::readonly_semantic_geometry_held_ack_publishes_complete_observe_within_eighty_ms",
+    "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::readonly_frame_owner_held_ack_publishes_both_documents_within_eighty_ms",
+    "native::client_geometry::readonly_disposal_tests::semantic_box_held_group_ack_preserves_eighty_ms_and_exact_later_group",
+    "native::client_geometry::readonly_disposal_tests::semantic_frame_owner_held_group_ack_does_not_consume_eighty_ms",
+    "native::client_geometry::readonly_disposal_tests::refused_semantic_geometry_keeps_primary_failure_and_all_group_custody",
+    "native::client_geometry::readonly_disposal_tests::wrong_session_readonly_group_ack_never_discharges_semantic_box_custody",
+    "native::client_geometry::readonly_disposal_tests::strict_action_and_pixel_geometry_still_wait_for_exact_object_release",
+    "native::client_geometry::readonly_disposal_tests::refused_frame_owner_proof_keeps_group_custody_without_publishing_frames",
+    "native::client_geometry::readonly_disposal_tests::old_readonly_group_release_after_new_same_text_acquisition_keeps_new_group_live",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_owns_and_releases_late_handle_without_continuation",
+    "native::client_observation_dispatch::supersession_tests::frame_owner_deadline_tests::frame_owner_deadline_retains_unacknowledged_release_debt_until_exact_late_ack",
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::p06_framed_locator_tap_control_releases_exact_object",
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::p06_framed_locator_release_eof_must_offer_recovery_without_replay",
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::point_debt_tests::locator_eof_tests::locator_readonly_group_requires_exact_owner_sequence_and_canonical_instance",
+    "native::client_enrollment::tests::iframe_detach_while_attachment_is_queued_preserves_original_host",
+    "native::client_enrollment::tests::queued_iframe_retirement_rejects_changed_identity_bounds_and_shared_owner",
+    "native::client_enrollment::tests::queued_iframe_retirement_requires_exact_native_direct_detach",
+    "native::client_enrollment::tests::queued_foreign_or_unknown_context_iframe_never_acquires_owned_retirement",
+    "native::client_targets::tests::queued_iframe_retirement_cannot_bypass_auxiliary_cleanup_owner",
+    "native::client_enrollment::tests::queued_iframe_pending_lifetime_excludes_aba_and_requeue_does_not_inherit_detach",
+    "native::client_observation::tests::implicit_table_rows_keep_public_container_roles_without_rebinding",
+    "native::client_observation_dispatch::tests::optional_pixel_witness_is_opt_in_and_keeps_pre_capture_refusal_before_cleanup",
+    "native::client_settlement_trace::protected_capture_diagnostic_tests::protected_capture_refusal_keeps_original_phase_reason_and_bounded_payload",
+    "native::client_settlement_trace::protected_capture_diagnostic_tests::optional_pixel_native_result_uses_only_three_boolean_result_facts",
+    "native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle",
+    "native::client_actions::tests::retained_action_errors::ordinary_div_fill_refuses_before_mutation_and_releases_exact_owned_handle",
+    "native::client_actions::tests::retained_action_errors::disabled_readonly_and_unsupported_fields_refuse_before_fill_mutation",
+    "native::client_actions::tests::retained_action_errors::valid_fields_and_inherited_contenteditable_keep_original_fill_path",
+    "native::client_actions::tests::retained_action_errors::readonly_race_after_fill_probe_keeps_mutation_unknown_without_input",
+    "native::client_actions::tests::clean_keyboard_reasons_never_hide_mutation_cleanup_or_authority_loss",
+    "native::client_actions::tests::focused_document_is_released_before_editable_leaf_and_keyboard_dispatch",
+    "native::client_actions::tests::focused_document_does_not_hide_missing_leaf_stale_cleanup_or_cancel",
+    "native::client_protocol::tests::error_serialization_preserves_every_legacy_shape_and_closed_scalar"
+  ]
 }

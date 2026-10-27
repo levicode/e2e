@@ -40,6 +40,19 @@ describe('typed native browser channel', () => {
     await fixture.close();
   });
 
+  it('carries the exact admitted download subscription owner across later scope replacement', async () => {
+    const fixture = await opened();
+    const pending = fixture.channel.command('download.subscribe', {}, operation());
+    // The native payload is not authority for the result's local owner.
+    fixture.result({ subscriptionId: 'reused-id', identityScope: 'forged-new-scope' });
+    const subscription = await pending;
+    fixture.reset();
+    expect(subscription).toEqual({ subscriptionId: 'reused-id', identityScope: 'scope-1' });
+    await expect(fixture.channel.command('download.unsubscribe', { subscriptionId: subscription.subscriptionId }, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(fixture.requests.filter(request => request['command'] === 'download.unsubscribe')).toHaveLength(0);
+    await fixture.close();
+  });
+
   it('invalidates the session on a malformed successful command result', async () => {
     const fixture = await opened();
     const pending = fixture.channel.command('page.title', {}, operation());
@@ -83,6 +96,43 @@ describe('typed native browser channel', () => {
     fixture.result(null);
     await dispatch;
     expect(fixture.requests.filter(request => request['command'] === 'network.body.release')).toHaveLength(1);
+    await fixture.close();
+  });
+
+  it('keeps a download handle until every matching waiter has copied its bytes', async () => {
+    const fixture = await opened();
+    let finish!: () => void;
+    let copied = false;
+    fixture.channel.subscribe('download.started', async () => {
+      await new Promise<void>(resolve => { finish = resolve; });
+      copied = true;
+    });
+    const dispatch = fixture.channel.dispatch({ type: 'event', generation: 1, sequence: 1, event: 'download.started',
+      payload: { identityScope: 'scope-1', activePage: true, handle: 'download-1', suggestedFilename: 'report.csv' } });
+    await Promise.resolve();
+    expect(fixture.requests).toHaveLength(1);
+    finish();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(copied).toBe(true);
+    expect(fixture.requests.at(-1)!['command']).toBe('download.release');
+    fixture.result(null);
+    await dispatch;
+    expect(fixture.requests.filter(request => request['command'] === 'download.release')).toHaveLength(1);
+    await fixture.close();
+  });
+
+  it('releases a late download handle even after its waiter has unsubscribed', async () => {
+    const fixture = await opened();
+    let called = false;
+    const off = fixture.channel.subscribe('download.started', () => { called = true; });
+    off();
+    const dispatch = fixture.channel.dispatch({ type: 'event', generation: 1, sequence: 1, event: 'download.started',
+      payload: { identityScope: 'scope-1', activePage: true, handle: 'late-download', suggestedFilename: 'report.csv' } });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(called).toBe(false);
+    expect(fixture.requests.at(-1)!['command']).toBe('download.release');
+    fixture.result(null);
+    await dispatch;
     await fixture.close();
   });
 

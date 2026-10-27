@@ -18,6 +18,7 @@ import { retainUnresolvedProcess } from '../../src/native/process-cleanup.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
+import type { BrowserCommandMap } from '../../src/native/browser-contract.ts';
 import { web } from '../../src/index.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { createEngineSession } from '../../../e2e/dist/engine/session.js';
@@ -1479,6 +1480,47 @@ describe('native surface ownership and fixed policy binding', () => {
     await sendEvent('app.navigation', { identityScope: currentScope, kind: 'popup-navigation', url: '/help' });
     expect(navigation).toHaveBeenCalledWith('the new tab navigated to /help');
     await surface.dispose(cleanup());
+  });
+
+  it('does not unsubscribe a replacement scope when an old subscription result reaches the waiter late', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    const oldScope = currentScope;
+    const native = surface.fixtureSurface();
+    const command = native.command.bind(native);
+    let returned!: () => void;
+    const subscribed = new Promise<void>(resolve => { returned = resolve; });
+    let resume!: () => void;
+    const released = new Promise<void>(resolve => { resume = resolve; });
+    native.command = async <K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], current: OperationContext): Promise<BrowserCommandMap[K]['result']> => {
+      const result = await command(name, args, current);
+      if (name === 'download.subscribe') { returned(); await released; }
+      return result;
+    };
+    const fixtureContext = {
+      operation, signal, attachArtifact: vi.fn(),
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext;
+    const trigger = vi.fn(async () => { throw new Error('retired trigger must not execute'); });
+    const browser = createBrowserFixture(native, fixtureContext);
+    const waiting = browser.waitForDownload(trigger).catch(cause => cause);
+    try {
+      await subscribed;
+      await surface.reset(operation());
+      expect(currentScope).not.toBe(oldScope);
+      const replacement = await surface.command('download.subscribe', {}, operation());
+      expect(replacement).toEqual({ subscriptionId: 'synthetic-subscription', identityScope: currentScope });
+      resume();
+      const outcome = await waiting;
+      await surface.latch.settle(cleanup());
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe')).toEqual([]);
+      expect(outcome).toMatchObject({ code: 'INVALID_STATE' });
+      expect(trigger).not.toHaveBeenCalled();
+      await surface.command('download.unsubscribe', { subscriptionId: replacement.subscriptionId }, operation());
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe').map(frame => frame['args'])).toEqual([
+        { identityScope: currentScope, subscriptionId: 'synthetic-subscription' },
+      ]);
+    } finally { resume(); await surface.dispose(cleanup()); }
   });
 
   it('arms a download waiter only after subscription recovery and cleans the recovered scope', async () => {

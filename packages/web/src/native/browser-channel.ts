@@ -38,7 +38,7 @@ export class BrowserChannel {
     if (!result.ok && result.effects === 'unknown') throw resultError(result);
     this.assertScope();
     if (!result.ok) throw resultError(result);
-    try { return decodeBrowserResult(name, result.data, correlation); }
+    try { return decodeBrowserResult(name, result.data, correlation ?? { identityScope: this.scope }); }
     catch { throw this.client.invalidate(); }
   }
 
@@ -152,6 +152,16 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
   if (!result.ok && reason === 'unsupported-capability' && result.effects === 'not-dispatched' && result.scopeState === 'usable' && queryDiagnostic === 'display-value-composition') {
     return new EngineError('UNSUPPORTED_CAPABILITY', 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine', { retryable: false });
   }
+  // Only these closed, clean, pre-input refusals preserve keyboard semantics.
+  // Never infer fill support from generic actionability or uncertain effects.
+  if (!result.ok && result.effects === 'not-dispatched' && result.scopeState === 'usable') {
+    if (reason === 'fill-unsupported-target' && actionContext?.kind === 'fill') {
+      return new EngineError('NOT_ACTIONABLE', `The target is not an input, textarea, or contenteditable element${suffix}`, { retryable: false });
+    }
+    if (reason === 'no-editable-focus') {
+      return new EngineError('NOT_ACTIONABLE', 'nothing that takes keystrokes has focus: the typed text would reach no field. Tap the field first, or type into a listed input by id.', { retryable: false });
+    }
+  }
   if (reason === 'intercepted-pointer') {
     const message = actionContext === undefined ? 'Another element intercepts pointer events'
       : `${actionContext.kind} did not become actionable: another element intercepts pointer events`;
@@ -170,6 +180,7 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
   if (bodyFailure !== undefined) return new EngineError('ENGINE_FAILURE', bodyFailure, { retryable: false });
   const codes: Readonly<Record<string, EngineErrorCode>> = {
     'stale-reference': 'NODE_STALE', 'not-actionable': 'NOT_ACTIONABLE',
+    'fill-unsupported-target': 'NOT_ACTIONABLE', 'no-editable-focus': 'NOT_ACTIONABLE',
     'deadline-exceeded': 'OPERATION_TIMEOUT', cancelled: 'CANCELLED',
     'unsupported-capability': 'UNSUPPORTED_CAPABILITY', 'unsupported-command': 'UNSUPPORTED_CAPABILITY',
     'stale-scope': 'INVALID_STATE', 'stale-generation': 'INVALID_STATE', 'scope-unavailable': 'INVALID_STATE',

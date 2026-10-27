@@ -407,6 +407,14 @@ An undeclared verb is absent from the toolset.
   lands on a node the tree lists. Elsewhere `type_at` and `press_at` fall
   back to `keyboard`.
 
+A refused `fill` on a custom non-input widget may use the agent's existing
+keyboard fallback only when the engine proves no mutation was dispatched.
+The native engine preserves this distinction with the closed
+`fill-unsupported-target` reason; disabled or readonly fields, unsupported
+input types, stale targets, cleanup failures, and uncertain outcomes do not
+permit that fallback. Focused typing with no field or custom key receiver
+reports `NOT_ACTIONABLE` and asks the caller to focus a field first.
+
 #### Test APIs
 
 The test-facing APIs each engine member backs. A `screen` or `Locator`

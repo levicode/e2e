@@ -50,3 +50,46 @@ test('marks only the exact clean native timeout and never downgrades uncertain i
   expect(isNativeNotDispatched(resultError({ ...wire, effects: 'completed' }))).toBe(false);
   expect(isNativeNotDispatched(resultError({ ...wire, scopeState: 'quarantined' }))).toBe(false);
 });
+
+test('only an exact clean unsupported fill permits the existing keyboard fallback', () => {
+  const wire = result('fill-unsupported-target', 'not-dispatched');
+  const context = { kind: 'fill', sensitive: false } as const;
+  expect(serverMessage({ ...wire })).toEqual(wire);
+  const failure = resultError(wire, undefined, undefined, undefined, context);
+  expect(failure).toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+  expect(failure.message).toMatch(/not an? <?(input|textarea)|not editable/i);
+  expect(isNativeNotDispatched(failure)).toBe(true);
+  for (const code of ['not-actionable', 'policy-denied', 'stale-reference', 'browser-failure']) {
+    expect(resultError(result(code, 'not-dispatched'), undefined, undefined, undefined, context).message)
+      .not.toMatch(/not an? <?(input|textarea)|not editable/i);
+  }
+  for (const effects of ['completed', 'unknown'] as const) {
+    expect(resultError({ ...wire, effects }, undefined, undefined, undefined, context).message)
+      .not.toMatch(/not an? <?(input|textarea)|not editable/i);
+  }
+  expect(resultError({ ...wire, scopeState: 'quarantined' }, undefined, undefined, undefined, context).message)
+    .not.toMatch(/not an? <?(input|textarea)|not editable/i);
+});
+
+test('focused typing exposes its static no receiver refusal without renderer text', () => {
+  const wire = result('no-editable-focus', 'not-dispatched');
+  expect(serverMessage({ ...wire })).toEqual(wire);
+  expect(resultError(wire)).toMatchObject({
+    code: 'NOT_ACTIONABLE', retryable: false,
+    message: 'nothing that takes keystrokes has focus: the typed text would reach no field. Tap the field first, or type into a listed input by id.',
+  });
+  expect(resultError(result('no-editable-focus', 'unknown'))).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+});
+
+
+test('retains NOT_ACTIONABLE for clear and non-clean typed refusals without granting fill fallback', () => {
+  for (const code of ['fill-unsupported-target', 'no-editable-focus']) {
+    for (const effects of ['not-dispatched', 'completed'] as const) {
+      for (const scopeState of ['usable', 'quarantined'] as const) {
+        const failure = resultError({ ...result(code, effects), scopeState }, undefined, undefined, undefined, { kind: 'clear', sensitive: false });
+        expect(failure).toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+        expect(failure.message).not.toMatch(/not an? <?(input|textarea)|not editable/i);
+      }
+    }
+  }
+});

@@ -587,42 +587,108 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
       };
     },
     async waitForDownload(trigger, options) {
-      let scope: string | undefined;
-      const operation = context.operation(options?.timeout);
+      const requested = options?.timeout;
+      if (requested !== undefined && (!Number.isFinite(requested) || requested <= 0)) throw new TestError('INVALID_ARGUMENT', 'browser.waitForDownload timeout must be positive and finite');
+      const operation = context.operation(requested);
+      const timeoutMs = requested ?? operation.timeoutMs;
       const deadline = new Deadline(operation.timeoutMs);
+      const lifetime = new AbortController();
+      const signal = AbortSignal.any([operation.signal, lifetime.signal]);
+      let scope: string | undefined;
       let saved: Promise<{ path: string; absolutePath: string; suggestedFilename: string }> | undefined;
+      const latch = surface.latch;
       let subscriptionId: string | undefined;
       let cancelWaiter = (): void => undefined;
+      let retiring: Promise<void> | undefined;
       let failed = false;
-      try {
-        ({ subscriptionId } = await command('download.subscribe', {}, operation));
-        // Subscription admission recovers first; bind the waiter and cleanup to that scope.
-        scope = surface.identityScope;
-        const waiter = waitNativeEvent(surface, 'download.started', event => event.activePage, { ...operation, timeoutMs: deadline.remaining() }, download => {
+      let published = false;
+      let started = false;
+      let waitMs = operation.timeoutMs;
+      let triggerMs: number | undefined;
+      const timeout = (): TestError => new TestError('ACTION_FAILED', triggerMs === undefined
+        ? `browser.waitForDownload exceeded its timeout of ${timeoutMs}ms`
+        : started ? `download did not complete within ${operation.timeoutMs}ms`
+          : `no download started within ${waitMs}ms; the trigger resolved after ${triggerMs}ms`);
+      const checkpoint = (): void => {
+        if (signal.aborted) throw new EngineError('CANCELLED', 'download cancelled', { retryable: false });
+        if (deadline.expired()) throw timeout();
+      };
+      const unsubscribe = (primaryFailed: boolean): Promise<void> => {
+        if (retiring !== undefined) return retiring;
+        if (subscriptionId === undefined || scope === undefined) return Promise.resolve();
+        const id = subscriptionId;
+        subscriptionId = undefined;
+        retiring = cleanupResource(surface, primaryFailed, () => surface.command('download.unsubscribe', { subscriptionId: id }, context.operation()), scope);
+        latch.track('download unsubscribe', retiring);
+        return retiring;
+      };
+      const subscribe = async (): Promise<void> => {
+        // Recovery may replace the scope before dispatch. The result carries that
+        // exact admission owner, not whichever scope is current after this await.
+        ({ subscriptionId, identityScope: scope } = await command('download.subscribe', {}, { ...operation, signal }));
+        if (signal.aborted) {
+          // Admission may settle after cancellation. Retire it without starting test code.
+          await unsubscribe(true);
+          checkpoint();
+        }
+        assertSurfaceScope(surface, scope);
+      };
+      const capture = async () => {
+        const admitted = subscribe();
+        latch.track('download subscription', admitted);
+        await admitted;
+        checkpoint();
+        waitMs = deadline.remaining();
+        const waiter = waitNativeEvent(surface, 'download.started', event => event.activePage, { ...operation, signal, timeoutMs: waitMs }, download => {
+          started = true;
+          // Native retires the handle when this callback settles. Preserve bytes here,
+          // but only the waiting fixture continuation may publish its artifact.
           saved = (async () => {
+            checkpoint();
             const { relative, absolute } = surface.artifactPath('downloads', download.suggestedFilename, '');
             const file = await openFile(absolute, 'wx');
             try {
               try {
-                await readNativeChunks(surface, 'download.read', download.handle, { ...operation, timeoutMs: deadline.remaining() }, async bytes => { await file.writeFile(bytes); }, download.identityScope);
+                checkpoint();
+                await readNativeChunks(surface, 'download.read', download.handle, { ...operation, signal, timeoutMs: deadline.remaining() }, async bytes => { checkpoint(); await file.writeFile(bytes); }, download.identityScope);
               } finally { await file.close(); }
+              checkpoint();
               assertSurfaceScope(surface, download.identityScope);
-              context.attachArtifact('download', relative);
               return { path: relative, absolutePath: absolute, suggestedFilename: download.suggestedFilename };
             } catch (cause) { await unlink(absolute).catch(() => undefined); throw cause; }
           })();
           return saved.then(() => undefined, () => undefined);
         });
         cancelWaiter = waiter.cancel;
+        const triggerStart = Date.now();
         await trigger();
-        await waiter.promise;
-        return await saved!;
-      } catch (cause) { failed = true; throw cause; } finally {
-        cancelWaiter();
-        if (subscriptionId !== undefined && scope !== undefined) {
-          const id = subscriptionId;
-          await cleanupResource(surface, failed, () => surface.command('download.unsubscribe', { subscriptionId: id }, context.operation()), scope);
+        triggerMs = Date.now() - triggerStart;
+        try { await waiter.promise; }
+        catch (cause) {
+          if (!signal.aborted && cause instanceof TestError && cause.code === 'ACTION_FAILED') throw timeout();
+          throw cause;
         }
+        const file = await saved!;
+        await unsubscribe(false);
+        return file;
+      };
+      try {
+        const file = await raceAbort(() => withTimeout(capture(), deadline.remaining(), timeout), operation.signal, 'download');
+        checkpoint();
+        assertSurfaceScope(surface, scope!);
+        context.attachArtifact('download', file.path);
+        published = true;
+        return file;
+      } catch (cause) { failed = true; throw cause; } finally {
+        lifetime.abort();
+        cancelWaiter();
+        if (!published && saved !== undefined) {
+          const discard = saved.then(file => unlink(file.absolutePath).catch(() => undefined), () => undefined);
+          latch.track('download file cleanup', discard);
+        }
+        // Primary failure is already decided. Attempt cleanup joins retirement,
+        // without giving this public operation a second timeout budget.
+        void unsubscribe(failed);
       }
     },
     keyboard: {
@@ -666,7 +732,8 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
     setViewport: action,
     emulateMedia: { ...action, label: (media) => mediaLabel(media) },
     onDialog: action,
-    waitForDownload: { ...action, timeout: (_trigger, options) => options?.timeout },
+    // The waiter owns its total deadline and trigger diagnostic, including cleanup ordering.
+    waitForDownload: { ...action, timeout: false },
     keyboard: { down: { ...action, label: (key) => key }, up: { ...action, label: (key) => key }, press: { ...action, label: (key) => key }, type: { ...action, label: (text) => `${text.length} chars` } },
     mouse: { move: action, wheel: action, down: action, up: action },
   });

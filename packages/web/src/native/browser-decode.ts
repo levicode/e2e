@@ -172,20 +172,23 @@ const decoders = {
   'network.body.read': chunk,
   'network.body.release': empty,
   'dialog.register': empty,
-  'download.subscribe': subscription,
   'download.metadata': (value: unknown) => { const item = record(value); const identityScope = scope(item['identityScope']); if (item['source'] === 'local') return { identityScope, source: 'local' as const }; if (item['source'] !== 'provider') return invalid(); const basename = string(item['basename']); if (!/^[A-Za-z0-9_-]+$/.test(basename)) return invalid(); return { identityScope, source: 'provider' as const, basename }; },
   'download.unsubscribe': empty,
   'download.read': chunk,
   'download.release': empty,
-} satisfies { [K in Exclude<keyof BrowserCommandMap, 'fixture.correlate'>]: (value: unknown) => BrowserCommandMap[K]['result'] };
+} satisfies { [K in Exclude<keyof BrowserCommandMap, 'fixture.correlate' | 'download.subscribe'>]: (value: unknown) => BrowserCommandMap[K]['result'] };
 
 /** Decode first; the cast only restores the mapped command/result correlation. */
-export function decodeBrowserResult<K extends keyof BrowserCommandMap>(command: K, value: unknown, correlation?: { args: CorrelationArgs; identityScope: string }): BrowserCommandMap[K]['result'] {
+export function decodeBrowserResult<K extends keyof BrowserCommandMap>(command: K, value: unknown, owner?: { identityScope: string; args?: CorrelationArgs }): BrowserCommandMap[K]['result'] {
   if (command === 'fixture.correlate') {
-    if (correlation === undefined) return invalid();
-    return correlationResult(value, correlation.args, correlation.identityScope) as BrowserCommandMap[K]['result'];
+    if (owner?.args === undefined) return invalid();
+    return correlationResult(value, owner.args, owner.identityScope) as BrowserCommandMap[K]['result'];
   }
-  return decoders[command as Exclude<K, 'fixture.correlate'>](value) as BrowserCommandMap[K]['result'];
+  if (command === 'download.subscribe') {
+    if (owner === undefined) return invalid();
+    return { ...subscription(value), identityScope: owner.identityScope } as BrowserCommandMap[K]['result'];
+  }
+  return decoders[command as Exclude<K, 'fixture.correlate' | 'download.subscribe'>](value) as BrowserCommandMap[K]['result'];
 }
 
 /** Read an exact nonnegative counter without accepting coercion or unsafe integers. */

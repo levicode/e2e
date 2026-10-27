@@ -893,7 +893,9 @@ const file = await browser.waitForDownload(() =>
 ```
 
 - It registers the file as a `download` artifact and returns its relative
-  `path`, the runner-side `absolutePath`, and `suggestedFilename`.
+  `path`, the runner-side `absolutePath`, and `suggestedFilename`. The artifact
+  belongs to the `browser.waitForDownload` step, not a nested trigger step.
+  The trigger must succeed before the artifact is registered.
 - Use `absolutePath` with file APIs to inspect the contents, including on a
   hosted browser.
 - On a hosted browser the file comes back through the provider's
