@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "count": 247,
+  "count": 256,
   "selectors": [
     "native::cdp::client::tests::i10_t01_readonly_disposal_handoff_retains_exact_groups_until_matching_ack",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::i10_t01_metadata_release_ack_is_not_the_eighty_ms_tree_deadline",
@@ -250,7 +250,16 @@
     "native::client_network::bridge_tests::three_provider_downloads_do_not_reserve_unowned_native_bytes",
     "native::client_network::bridge_tests::provider_download_metadata_still_obeys_the_resource_entry_limit",
     "native::client_network::bridge_tests::provider_download_oversize_still_cancels_and_refuses_metadata",
-    "native::client_network::bridge_tests::local_downloads_keep_the_existing_native_byte_reservation_bound"
+    "native::client_network::bridge_tests::local_downloads_keep_the_existing_native_byte_reservation_bound",
+    "native::client_observation::tests::historical_content_names_do_not_become_role_matching_names",
+    "native::client_observation::tests::historical_content_names_preserve_explicit_role_names_and_read_confirmation",
+    "native::client_observation::tests::historical_content_names_are_cleared_by_security_and_keep_proven_empty_distinct",
+    "native::client_observation::tests::historical_content_names_reject_invalid_proofs_and_bound_observation_only",
+    "native::client_observation::tests::ax_omitted_listitem_content_facts_decline_without_weakening_validation",
+    "native::client_observation::tests::suppressed_listitem_content_facts_reach_author_graph_compaction",
+    "native::client_session::exact_retention_tests::private_replacement_decisions_are_exact_typed_and_sequential",
+    "native::client_session::exact_retention_tests::private_replacement_decisions_cannot_acquire_scope_or_unstarted_authority",
+    "native::client_session::exact_retention_tests::private_created_metadata_is_bounded_and_cannot_smuggle_commands"
   ],
   "groups": {
     "original174": {
