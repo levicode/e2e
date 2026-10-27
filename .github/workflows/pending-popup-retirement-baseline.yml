@@ -1,0 +1,72 @@
+name: Pending popup retirement baseline three exact tests
+'on':
+  push:
+    branches:
+    - ci/pending-popup-retirement-baseline
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: pending-popup-baseline-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  NATIVE_SOURCE_SHA: 071e5f42a5dfb6e0c2da77192be3fa4d214eb245
+  NATIVE_SOURCE_TREE: 8f4791391b6aebe24057c670decdcbd22c598cbd
+jobs:
+  baseline-three:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+        fetch-depth: 2
+    - name: Compile feature harness only
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        cd native/cli
+
+        test "$(git rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test -z "$(git status --porcelain)"
+
+        git diff --name-only HEAD^ HEAD > "$GITHUB_WORKSPACE/evidence/changed-files.txt"
+
+        test "$(cat "$GITHUB_WORKSPACE/evidence/changed-files.txt")" = cli/src/native/client_enrollment.rs
+
+        git diff HEAD^ HEAD > "$GITHUB_WORKSPACE/evidence/test-only.patch"
+
+        rustup toolchain install 1.99.1 --profile minimal
+
+        rustc +1.99.1 -Vv > "$GITHUB_WORKSPACE/evidence/rustc-version.txt"
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/native-regressions-target"
+
+        cargo +1.99.1 test --locked --profile ci --no-default-features --features
+        acceptance-faults --bin agent-browser -j1 --no-run --message-format=json >
+        "$GITHUB_WORKSPACE/evidence/harness.jsonl" 2> "$GITHUB_WORKSPACE/evidence/harness-build.log"
+
+        '
+    - name: Run three exact baseline tests without skips
+      run: python3 scripts/ci/pending-popup-baseline.py
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: pending-popup-baseline-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
