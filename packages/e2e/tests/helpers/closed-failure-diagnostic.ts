@@ -1,20 +1,20 @@
 /** Test-only bounded failure facts; never print page text, locator arguments, or stacks. */
 interface ErrorLike {
-  readonly code?: string;
-  readonly phase?: string;
-  readonly message?: string;
-  readonly stack?: string;
+  readonly code?: string | undefined;
+  readonly phase?: string | undefined;
+  readonly message?: string | undefined;
+  readonly stack?: string | undefined;
 }
 interface AttemptLike {
-  readonly error?: ErrorLike;
-  readonly cleanup?: string;
+  readonly error?: ErrorLike | undefined;
+  readonly cleanup?: string | undefined;
   readonly secondaryErrors: readonly ErrorLike[];
   readonly steps: readonly {
     readonly index: number;
-    readonly source?: { readonly line: number };
+    readonly source?: { readonly line: number } | undefined;
     readonly status: string;
     readonly durationMs: number;
-    readonly error?: ErrorLike;
+    readonly error?: ErrorLike | undefined;
   }[];
 }
 

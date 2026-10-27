@@ -19,8 +19,9 @@ describe('closed integration failure diagnostics', () => {
   it('bounds collections and never copies unknown code, phase, cleanup, or message strings', () => {
     const raw = 'untrusted-data';
     const error = { code: raw, phase: raw, message: raw, stack: raw };
-    const row = { error, cleanup: raw, secondaryErrors: Array(20).fill(error), steps: Array(20).fill({ index: 1, status: 'failed', durationMs: 1, error }) };
-    const result = closedFailureDiagnostic(Array(20).fill(row), Array(20).fill(error));
+    const step = { index: 1, status: 'failed', durationMs: 1, error };
+    const row = { error, cleanup: raw, secondaryErrors: Array.from({ length: 20 }, () => error), steps: Array.from({ length: 20 }, () => step) };
+    const result = closedFailureDiagnostic(Array.from({ length: 20 }, () => row), Array.from({ length: 20 }, () => error));
     expect(result).not.toContain(raw);
     const facts = JSON.parse(result);
     expect(facts.attempts).toHaveLength(8);
