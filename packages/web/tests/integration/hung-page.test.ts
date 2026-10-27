@@ -20,6 +20,7 @@ import type { Locator } from 'e2e';
 import type { EngineFixtureContext, EngineHandle, LocatorExpression, NodeRef, OperationContext } from 'e2e/engine';
 import { web, type BrowserExpectation } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { nativeBrowser } from '../helpers/native-browser.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { isNativeNotDispatched } from '../../src/native/browser-channel.ts';
 import { beginSyntheticCase, type SyntheticCaseId, type SyntheticEvidence, type SyntheticOutcome, type SyntheticPhase } from '../helpers/synthetic-evidence.ts';
@@ -97,7 +98,7 @@ const BUSY_PAGE = `<!doctype html><title>Busy</title>
 <button>Next</button>`;
 
 const COVERED_PAGE = `<!doctype html><title>Covered</title>
-<button>Pay</button>
+<button data-taps="0" onclick="this.dataset.taps = String(Number(this.dataset.taps) + 1)">Pay</button>
 <div id="overlay" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3)"></div>`;
 
 function operation(): OperationContext {
@@ -289,7 +290,24 @@ describe('operations on a hung page', () => {
     await start();
     await engine.session!.open!(`${origin}/covered`, operation());
     const [target] = await engine.locate!(button('Pay'), operation());
-    const tap = await bounded(() => engine.perform!(target!.ref as NodeRef, { kind: 'tap' }, operation()));
-    expect(tap.error).toMatchObject({ code: 'NOT_ACTIONABLE', message: expect.stringContaining('intercepts pointer events') });
+    // A semantic refusal is not a deadline expiry. The legacy >=700ms bound
+    // came from Playwright's private 250ms timeout lead. Native preparation
+    // reserves cleanup plus the measured next-attempt cost, not a fixed lead.
+    // Its real ACK/owner/window and below-floor controls remain native contracts;
+    // this public case must preserve the actual reason, boundedness and no tap.
+    const pending = Symbol('pending');
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const outcome = await Promise.race([
+        engine.perform!(target!.ref as NodeRef, { kind: 'tap' }, operation()).then(() => undefined, (error: unknown) => error),
+        new Promise<typeof pending>((resolve) => { timer = setTimeout(() => resolve(pending), BUDGET_MS + SLACK_MS); }),
+      ]);
+      if (outcome === pending) throw new Error(`still pending ${BUDGET_MS + SLACK_MS}ms into a ${BUDGET_MS}ms budget`);
+      // Assert the real reason before any subsequent read/cleanup can obscure it.
+      expect(outcome).toMatchObject({ code: 'NOT_ACTIONABLE', message: expect.stringContaining('intercepts pointer events') });
+    } finally { clearTimeout(timer); }
+    // A separate public read proves no successful click side effect and that
+    // the original scope remains usable; it does not renew the tap's budget.
+    await expect(nativeBrowser(engine, operation).evaluate(() => document.querySelector('button')?.getAttribute('data-taps') ?? null)).resolves.toBe('0');
   });
 });
