@@ -37,8 +37,8 @@ test('orders in dark mode', async ({ app, browser, screen }) => {
 If native startup fails, the adapter waits for its owned proxy to terminate
 under a fresh bounded cleanup budget, even if startup was cancelled. If proxy
 termination cannot be confirmed, the original startup failure remains primary
-and the connection retains a cleanup failure; a worker-owned provider lease is
-not released through that unresolved connection. There is no automatic restart
+and the connection retains a cleanup failure. The worker still attempts to
+release its exact provider lease; release does not prove native cleanup. There is no automatic restart
 or action replay. Proxy termination alone is not proof of browser/context
 cleanup, which remains the native lifecycle contract's responsibility.
 
@@ -1281,13 +1281,16 @@ native scope, connection, and lease cleanup. Cancelling or exhausting an
 Concurrent callers join the same work. The next attempt waits under its own
 signal and cannot open a scope or acquire a lease until cleanup succeeds.
 An owner deadline or cleanup failure permanently blocks reuse, even if an old
-operation later succeeds. Provider leases remain held when native or recording
-cleanup is unconfirmed; cleanup never replays a business action.
+operation later succeeds. Cleanup attempts to release each exact provider lease
+even when native, recording, or local artifact cleanup fails, without replacing
+the original cleanup error. Lease release uses the same cleanup signal, not a
+fresh budget; unresolved native and artifact custody still blocks UI reuse.
+Cleanup never replays a business action.
 
 A later explicit cleanup call may make another bounded attempt to reap retained
 resources, sharing that work with concurrent cleanup callers. Successful reaping
-can release the exact lease once, but every later cleanup call still reports the
-original failure and the worker stays unusable. There is no automatic retry loop.
+never retries an already attempted lease release, and every later cleanup call
+still reports the original failure and the worker stays unusable. There is no automatic retry loop.
 An already-started mandatory native close retains its separate, existing
 15-second upper bound; a late close acknowledgement cannot undo the adapter's
 owner deadline or restore reuse.

@@ -275,12 +275,15 @@ export class NativeSurface implements NativeWebSurface {
     return owned;
   }
   private async closeAttempt(remaining: () => ConnectionBudget): Promise<void> {
+    const cleanup = remaining();
     const attempt = this.attempt ?? this.retiringAttempt;
     const client = this.client; const engine = this.engine; const connecting = this.connecting;
     attempt?.retirement.abort();
     this.references.retire();
     const finalizedCleanup = attempt?.finalizedVideo?.retire();
     let finalizedCleanupProven = finalizedCleanup === undefined;
+    let resourcesRetired = false;
+    let failure: unknown = this.retirementFailure;
     this.attempt = undefined; this.retiringAttempt = attempt; this.listeners.clear(); attempt?.channel?.dispose();
     try {
       // Cancellation ACK is not settlement. Join only these captured ordinary
@@ -296,7 +299,7 @@ export class NativeSurface implements NativeWebSurface {
         remaining();
         if (connecting.cleanupFailure !== undefined) throw connecting.cleanupFailure;
       }
-      // Do not release the exact lease while its asynchronous recorder may still arrive.
+      // Give an asynchronous recorder the cleanup budget to arrive and stop.
       if (attempt !== undefined && attempt.recordingStarts.size > 0) {
         await raceAbort(() => Promise.allSettled(attempt.recordingStarts), remaining().signal, 'retiring provider recording starts');
         remaining();
@@ -311,7 +314,6 @@ export class NativeSurface implements NativeWebSurface {
         await raceAbort(() => this.stopProviderVideo(attempt, budget.signal), budget.signal, 'retiring provider recording');
         remaining();
       }
-      let failure: unknown = this.retirementFailure;
       try {
         if (failure !== undefined || client?.isTerminal() || client?.recoveryScope() !== undefined) {
           await this.closeClient(remaining(), client);
@@ -327,7 +329,7 @@ export class NativeSurface implements NativeWebSurface {
       }
       // Native close starts without waiting for local artifact IO. The local
       // file owner must nevertheless settle within this same cleanup budget
-      // before the exact attempt/provider lease can be released.
+      // before its local custody can be retired.
       if (finalizedCleanup !== undefined) {
         try {
           await raceAbort(() => finalizedCleanup, remaining().signal, 'retiring finalized video files');
@@ -336,19 +338,26 @@ export class NativeSurface implements NativeWebSurface {
       }
       // The same deadline governs every step. Late success cannot clear failed ownership.
       remaining();
-      if (finalizedCleanupProven && (this.client === undefined || !this.workerCleanupUnconfirmed)) {
-        try {
-          const budget = remaining();
-          await raceAbort(() => this.leases?.endAttempt(budget) ?? Promise.resolve(), budget.signal, 'releasing native attempt lease');
-          remaining();
-          attempt?.downloads.clear();
-          if (attempt !== undefined) delete attempt.observationHighWater;
-          this.retiringAttempt = undefined;
-        } catch (cause) { this.workerCleanupUnconfirmed = true; failure ??= cause; }
+      resourcesRetired = finalizedCleanupProven && (this.client === undefined || !this.workerCleanupUnconfirmed);
+    } catch (cause) { failure ??= cause; }
+    finally {
+      // Retain the primary failure before lease finalization can exhaust the budget.
+      if (!cleanup.signal.aborted) this.retirementFailure ??= failure;
+      // Revoking the billed lease does not establish native or artifact cleanup.
+      // Invoke release even after this same budget expired; never grant a new one.
+      let released = false;
+      try { await this.leases?.endAttempt(cleanup); released = true; }
+      catch (cause) { this.workerCleanupUnconfirmed = true; failure ??= cause; }
+      if (resourcesRetired && released) {
+        attempt?.downloads.clear();
+        if (attempt !== undefined) delete attempt.observationHighWater;
+        this.retiringAttempt = undefined;
       }
-      if (failure !== undefined) throw failure;
-    } finally { if (attempt !== undefined) attempt.credentials = undefined; }
+      if (attempt !== undefined) attempt.credentials = undefined;
+    }
+    if (failure !== undefined) throw failure;
   }
+
   dispose(context: EngineCleanupContext): Promise<void> {
     this.workerRetirement.abort();
     if (this.disposing === undefined) {
@@ -362,7 +371,7 @@ export class NativeSurface implements NativeWebSurface {
         resolve();
       }, cause => {
         if (this.disposing === owned) this.disposing = undefined;
-        reject(cause);
+        reject(this.retirementFailure ?? cause);
       });
     }
     const owned = this.disposing;
@@ -377,16 +386,17 @@ export class NativeSurface implements NativeWebSurface {
     catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
   }
   private async closeWorker(remaining: () => ConnectionBudget): Promise<void> {
+    const cleanup = remaining();
     let failure: unknown;
     for (const work of [() => this.retireAttempt(), () => this.closeClient(remaining()), async () => {
-      if (this.client !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('Native connection or provider recording cleanup is unresolved; its lease remains owned');
       try {
-        const budget = remaining();
-        await raceAbort(() => this.leases?.dispose(budget) ?? Promise.resolve(), budget.signal, 'releasing native worker lease');
-        remaining();
+        await this.leases?.dispose(cleanup);
       } catch (cause) { this.workerCleanupUnconfirmed = true; throw cause; }
     }]) {
-      try { await work(); } catch (cause) { failure ??= cause; }
+      try { await work(); } catch (cause) {
+        failure ??= cause;
+        if (!cleanup.signal.aborted) this.retirementFailure ??= cause;
+      }
     }
     if (failure !== undefined) throw failure;
   }

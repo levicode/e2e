@@ -87,7 +87,7 @@ describe('provider recording lifecycle', () => {
     expect(stopped).toEqual(['clip', 'clip']);
   });
 
-  it('retains failed late cleanup alongside the newer recording and never releases its lease early', async () => {
+  it('retains failed late cleanup alongside the newer recording after independent lease release', async () => {
     const stopped: string[] = []; let land!: (started: ProviderRecording) => void;
     const starts = [() => new Promise<ProviderRecording>(resolve => { land = resolve; }), async () => recording('second', stopped)];
     const record = vi.fn(async () => starts.shift()!()); const released = vi.fn(async () => {});
@@ -100,7 +100,7 @@ describe('provider recording lifecycle', () => {
     await expect(engine.settleAttempt!(cleanup())).rejects.toMatchObject({ message: expect.stringContaining('cloud') });
     const failure = await engine.endAttempt!(cleanup()).catch((cause: unknown) => cause);
     expect(failure).toMatchObject({ message: expect.stringContaining('cloud') });
-    expect(stopped).toEqual(['first', 'first']); expect(released).not.toHaveBeenCalled();
+    expect(stopped).toEqual(['first', 'first']); expect(released).toHaveBeenCalledTimes(1);
     await expect(engine.endAttempt!(cleanup())).rejects.toBe(failure);
     expect(stopped).toEqual(['first', 'first', 'first', 'second']); expect(released).toHaveBeenCalledTimes(1);
     expect(await first).toMatchObject({ code: 'CANCELLED' });

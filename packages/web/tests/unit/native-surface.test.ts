@@ -949,7 +949,7 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { command.mockRestore(); await surface.dispose(cleanup()); }
   });
 
-  it.each([false, true])('retains a failed-start provider lease only for private unresolved cleanup evidence (%s)', async unresolved => {
+  it.each([false, true])('releases a failed-start provider lease without discarding unresolved cleanup evidence (%s)', async unresolved => {
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic-attempt', scope: 'attempt', acquire: async () => ({ id: 'lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release } });
     const failure = new EngineError('ENGINE_FAILURE', 'Synthetic startup failure', { retryable: false });
@@ -960,7 +960,7 @@ describe('native surface ownership and fixed policy binding', () => {
     if (unresolved) {
       await expect(surface.startAttempt(context('must-not-start'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       await expect(surface.dispose(cleanup())).rejects.toBe(failure);
-      expect(release).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
     } else {
       await expect(surface.dispose(cleanup())).resolves.toBeUndefined();
       expect(release).toHaveBeenCalledTimes(1);
@@ -2247,6 +2247,82 @@ function retirementState(surface: NativeSurface) {
   };
 }
 
+describe('provider release is independent from failed native cleanup', () => {
+  it.each(['recording', 'native-close'] as const)('releases the exact attempt lease after %s failure without granting UI reuse', async failing => {
+    const lease = { id: 'independent-lease', cdpEndpoint: 'ws://synthetic.test/browser' };
+    const primary = new Error('primary cleanup failure');
+    const release = vi.fn(async () => {});
+    const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => lease, release,
+      record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: async () => { throw primary; } }),
+    } });
+    await start(surface);
+    if (failing === 'recording') await surface.startVideo(operation());
+    const close = failing === 'native-close' ? vi.spyOn(NativeClient.prototype, 'close').mockRejectedValue(primary) : undefined;
+    try {
+      const failure = await surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+      if (failing === 'recording') expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+      else expect(failure).toBe(primary);
+      expect(release).toHaveBeenCalledExactlyOnceWith(lease, expect.objectContaining({ runId: 'run', targetName: 'web' }));
+      expect(retirementState(surface).retiringAttempt).toBeDefined();
+      await expect(surface.startAttempt(context('must-not-reuse'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
+    } finally { close?.mockRestore(); await surface.dispose(cleanup()).catch(() => undefined); }
+  });
+
+  it('preserves the primary recorder failure when exact lease release also fails', async () => {
+    const primary = new Error('primary recorder stop failed');
+    const secondary = new Error('secondary lease release failed');
+    const release = vi.fn(async () => { throw secondary; });
+    const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'both-fail', cdpEndpoint: 'ws://synthetic.test/browser' }), release,
+      record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: async () => { throw primary; } }),
+    } });
+    await start(surface); await surface.startVideo(operation());
+    const failure = await surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+    expect(release).toHaveBeenCalledTimes(1);
+    await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the primary recorder failure when release exhausts the same cleanup budget', async () => {
+    const primary = new Error('primary recorder stop failed before release timeout');
+    const release = vi.fn(async () => new Promise<void>(() => {}));
+    const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'release-timeout', cdpEndpoint: 'ws://synthetic.test/browser' }), release,
+      record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: async () => { throw primary; } }),
+    } });
+    await start(surface); await surface.startVideo(operation());
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      const ending = surface.endAttempt({ signal, timeoutMs: 20_000 }).catch((cause: unknown) => cause);
+      await vi.advanceTimersByTimeAsync(15_000);
+      const failure = await ending;
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: primary });
+      await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('releases a worker-owned replacement independently of an unconfirmed native close', async () => {
+    let acquisitions = 0;
+    const acquire = vi.fn(async () => ({ id: `worker-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }));
+    const release = vi.fn(async () => {});
+    const surface = new NativeSurface({ browser: { name: 'synthetic', acquire, release } });
+    await start(surface);
+    await sendEvent('scope.disconnected', { identityScope: currentScope, reason: 'browser-connection-closed' });
+    await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement'));
+    expect(acquire).toHaveBeenCalledTimes(2);
+    const primary = new Error('worker native close unconfirmed');
+    const close = vi.spyOn(NativeClient.prototype, 'close').mockRejectedValue(primary);
+    try {
+      await expect(surface.dispose(cleanup())).rejects.toBe(primary);
+      expect(release).toHaveBeenCalledExactlyOnceWith(await acquire.mock.results[1]!.value, expect.objectContaining({ runId: 'run' }));
+      await expect(surface.startAttempt(context('must-not-reuse'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    } finally { close.mockRestore(); await surface.dispose(cleanup()).catch(() => undefined); }
+  });
+});
+
 describe('bounded native attempt cleanup ownership', () => {
   it.each(['already-aborted', 'mid-wait-abort', 'wait-timeout'] as const)('finishes one owned cleanup after %s without granting early business authority', async mode => {
     const surface = new NativeSurface({}); await start(surface);
@@ -2302,9 +2378,9 @@ describe('bounded native attempt cleanup ownership', () => {
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   });
 
-  it('spends one owner deadline across recorder and native cleanup, retaining the lease after late success', async () => {
+  it('spends one owner deadline across recorder and native cleanup, releasing the lease when that deadline expires', async () => {
     let finishRecording!: () => void;
-    const release = vi.fn(async () => {});
+    const release = vi.fn(async (_lease: unknown, _context: { signal: AbortSignal }) => {});
     const stopped = vi.fn(() => new Promise<{ url: string; mediaType: string }>(resolve => { finishRecording = () => resolve({ url: 'https://synthetic.test/video', mediaType: 'video/mp4' }); }));
     const acquire = vi.fn(async () => ({ id: 'owned-lease', cdpEndpoint: 'ws://synthetic.test/browser' }));
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire, release, record: async () => ({ startedAt: '2026-10-21T00:00:00.000Z', stop: stopped }) } });
@@ -2325,7 +2401,8 @@ describe('bounded native attempt cleanup ownership', () => {
       const failure = await owner;
       expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
       expect(retirementState(surface).retiringAttempt).toBe(retired);
-      expect(release).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(release.mock.calls[0]![1].signal.aborted).toBe(true);
       releaseScopeEnd!(); acknowledgeCancel?.(); await vi.advanceTimersByTimeAsync(0);
       await expect(surface.startAttempt(context('after-late-native-success'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       await expect(surface.endAttempt(cleanup())).rejects.toBe(failure);
@@ -2354,12 +2431,12 @@ describe('bounded native attempt cleanup ownership', () => {
       await vi.advanceTimersByTimeAsync(6000);
       const failure = await owner;
       expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
-      expect(release).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
       releaseClose!(); await nativeClose; await vi.advanceTimersByTimeAsync(0);
       expect(retirementState(surface).client).toBe(client);
       expect(retirementState(surface).retiringAttempt).toBeDefined();
       expect(retirementState(surface).retirementFailure).toBe(failure);
-      expect(release).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
       await expect(surface.startAttempt(context('not-after-late-close'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       await expect(surface.dispose(cleanup())).rejects.toBe(failure);
       expect(close.mock.results.slice(1).every(result => result.value === nativeClose)).toBe(true);
@@ -2368,7 +2445,7 @@ describe('bounded native attempt cleanup ownership', () => {
     } finally { close.mockRestore(); vi.useRealTimers(); }
   });
 
-  it('retains failed late recorder cleanup across explicit bounded reaping without releasing the lease', async () => {
+  it('retains failed late recorder cleanup across reaping after independently releasing the lease', async () => {
     let finish!: (recording: ProviderRecording) => void;
     const failure = new Error('Synthetic late recorder cleanup failure');
     const stopped = vi.fn(async () => { throw failure; });
@@ -2387,11 +2464,11 @@ describe('bounded native attempt cleanup ownership', () => {
     await expect(surface.dispose(cleanup())).rejects.toBe(cleanupFailure);
     await expect(surface.startAttempt(context('not-after-recorder-failure'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     expect(stopped).toHaveBeenCalledTimes(4);
-    expect(release).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
     expect(frames.filter(frame => frame['command'] === 'scope.open')).toHaveLength(1);
   });
 
-  it('does not treat an unconfirmed close as proof that the attempt lease can be released', async () => {
+  it('releases the lease after an unconfirmed close without treating release as native cleanup proof', async () => {
     const release = vi.fn(async () => {});
     const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire: async () => ({ id: 'uncertain-close-lease', cdpEndpoint: 'ws://synthetic.test/browser' }), release } });
     await start(surface);
@@ -2400,7 +2477,7 @@ describe('bounded native attempt cleanup ownership', () => {
     try {
       await expect(surface.endAttempt(cleanup())).rejects.toBe(failure);
       await expect(surface.startAttempt(context('no-replacement-lease'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
-      expect(release).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
       expect(retirementState(surface).retiringAttempt).toBeDefined();
     } finally { close.mockRestore(); await expect(surface.dispose(cleanup())).rejects.toBe(failure); }
     expect(release).toHaveBeenCalledTimes(1);
@@ -2421,7 +2498,7 @@ describe('bounded native attempt cleanup ownership', () => {
     const disposing = surface.dispose(cleanup()).catch((cause: unknown) => cause);
     expect(retirementState(surface).endingAttempt).toBe(owner);
     expect(stopped).toHaveBeenCalledTimes(2);
-    expect(release).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
     await expect(surface.startAttempt(context('no-business-during-reap'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     finish();
     for (const result of await Promise.all([reaping, duplicate, disposing])) expect(result).toBe(failure);

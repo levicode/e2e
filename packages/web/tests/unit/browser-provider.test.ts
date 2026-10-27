@@ -969,10 +969,10 @@ describe('recording', () => {
       };
       await expect(worker.stopVideo(operation())).rejects.toMatchObject(invalidArtifact);
       // Legacy ProviderVideo.abandon swallowed this secondary error. Native cleanup
-      // retains ownership without stopped proof; an invalid artifact alone says nothing about liveness.
+      // retains artifact ownership without stopped proof, but still releases the billed lease.
       const failure = await worker.dispose(cleanup()).catch((cause: unknown) => cause);
       expect(failure).toMatchObject(invalidArtifact);
-      expect(cloud.released).toEqual([]);
+      expect(cloud.released.map(lease => lease.id)).toEqual(['lease-0']);
       await expect(worker.startAttempt(attempt('unproven-cleanup'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       // The same provider stop is repeatable and can return a validated artifact on retry.
       options.report = 'replay.mp4';
