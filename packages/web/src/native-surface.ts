@@ -714,7 +714,9 @@ export class NativeSurface implements NativeWebSurface {
       if (attempt.epoch === Number.MAX_SAFE_INTEGER) throw this.invalidate();
       const binding = attempt.rawBinding;
       if (process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') console.error('REOPEN_BINDING_DIAGNOSTIC', JSON.stringify({ hasBinding: binding !== undefined, persistentBinding: binding?.kind === 'persistent', contextMatches: binding?.contextId === recovery.context, pendingPublication: attempt.rawReopened !== undefined }));
-      if (binding?.kind !== 'persistent' || binding.contextId !== recovery.context || attempt.rawReopened !== undefined) throw this.invalidate();
+      // Recovery identities are opaque native fingerprints, not raw CDP IDs.
+      // Validate their chain above; exact CID/TID binding is a later owned read.
+      if (binding?.kind !== 'persistent' || attempt.rawReopened !== undefined) throw this.invalidate();
       attempt.recovery = { browser: previous.browser, context: previous.context, page: recovery.page };
       attempt.epoch += 1;
       attempt.rawReopened = { binding, recovery: attempt.recovery, scope: attempt.scope, epoch: attempt.epoch };
@@ -1104,7 +1106,10 @@ export class NativeSurface implements NativeWebSurface {
         return withinAttemptRequest(current, attempt, async active => {
           try {
             check(active);
-            const binding = await bindExistingPlaywrightPage(reopened.binding, { contextId: reopened.recovery.context, targetId: reopened.recovery.page }, active);
+            const expected = await this.requireEngine().command('scope.interop.identify', { identityScope: reopened.scope }, active);
+            check(active);
+            if (!expected.persistent || expected.contextId !== reopened.binding.contextId) throw invalidState('Persistent page metadata changed its exact context');
+            const binding = await bindExistingPlaywrightPage(reopened.binding, expected, active);
             check(active);
             if (attempt.rawViewport !== undefined && attempt.rawViewport !== null) { await binding.page.setViewportSize(attempt.rawViewport); check(active); }
             await binding.page.emulateMedia(attempt.rawMedia ?? {}); check(active);

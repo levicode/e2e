@@ -6,12 +6,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
-import type { EngineCleanupContext, EngineFixtureContext, OperationContext } from 'e2e/engine';
+import type { EngineCleanupContext, EngineFixtureContext, Expectable, OperationContext } from 'e2e/engine';
 import { chromium, type Browser as PlaywrightBrowser } from 'playwright-core';
 import { launchRemoteChrome, closeRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { web, surfaceOf, type Browser } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
-import { expectationBrand } from '../../../e2e/src/internal/brands.ts';
 
 /** Test-only bounds: Vitest's watchdog alone does not cancel owned work. */
 async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -81,7 +80,18 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
           return timeoutMs === undefined ? current : { ...current, timeoutMs: Math.min(current.timeoutMs, timeoutMs) };
         },
         fixture: (_name, target) => target,
-        expectable: (target, factory) => Object.assign(target, { [expectationBrand]: factory() }),
+        expectable<T extends object, E extends object>(target: T, factory: () => E): T & Expectable<E> {
+          let expectation: E | undefined;
+          // Reproduce the harness's lazy, cached realm-global expectation slot
+          // before narrowing its opaque public type; importing the source brand
+          // would create a different unique-symbol type from the built package.
+          Object.defineProperty(target, Symbol.for('e2e.expectation.v1'), {
+            enumerable: false,
+            configurable: true,
+            get: () => { expectation ??= factory(); return expectation; },
+          });
+          return target as T & Expectable<E>;
+        },
         attachArtifact: (...artifact) => { attachedArtifacts.push(artifact); },
         attachViewport: viewport => { attachedViewports.push(viewport); },
         locator: () => { throw new Error('This gate does not mint harness locators'); },

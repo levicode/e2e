@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EngineError, type EngineAttemptContext, type JsonValue } from 'e2e/engine';
 import { web, surfaceOf } from '../../src/index.ts';
+import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { chromium } from 'playwright-core';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
@@ -16,22 +17,24 @@ vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async (
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 let peer: NativeProtocolPeer | undefined;
 let resources: NativeInteropResources;
+let identifyOverride: (() => PeerOutcome | Promise<PeerOutcome>) | undefined;
 const operation = () => ({ timeoutMs: 1_000, signal: new AbortController().signal, runId: 'run', attemptId: 'a1', origin: 'test' as const });
 const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal });
 const context = (): EngineAttemptContext => ({ attemptId: 'a1', artifactsDir: tmpdir(), signal: new AbortController().signal, resolveSecret: async () => { throw new Error('No secrets in identity fixture'); }, appLog: () => undefined, navigation: () => undefined, environment: () => undefined });
-const identity = (page: string) => ({ browser: 'browser-1', context: 'context-1', page });
+const identity = (page: string) => ({ browser: 'opaque-browser-1', context: 'opaque-context-1', page });
 const refresh = (): Record<string, JsonValue> => ({ version: 1, identityScope: 'scope-1', previousPageIdentity: 'page-1', recoveryIdentity: identity('page-2') });
 async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined, reconnectEndpoint: (signal: AbortSignal) => string | Promise<string> = () => 'ws://synthetic.test/reconnect') {
-  resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/open', browserIdentity: 'browser-1', allocateScopeIdentity: () => 'scope-1', allocateContextIdentity: () => ({ contextId: 'context-1', targetId: 'page-1' }) });
+  resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/open', browserIdentity: 'opaque-browser-1', allocateScopeIdentity: () => 'scope-1', allocateContextIdentity: () => ({ contextId: 'cdp-context-1', targetId: 'cdp-page-1' }) });
   vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementation(async (settings, budget, onEvent) => {
     expect(settings.capabilities).toContain(PERSISTENT_PAGE_REOPEN_CAPABILITY);
-    peer = new NativeProtocolPeer(settings.capabilities, request => resources.respond(request, async frame => {
-      const response = await custom?.(frame);
-      if (response !== undefined) return response;
+    peer = new NativeProtocolPeer(settings.capabilities, async request => {
+      const response = await resources.respond(request, async frame => {
+      const domainResponse = await custom?.(frame);
+      if (domainResponse !== undefined) return domainResponse;
       if (frame.command === 'scope.reconnect') {
         const current = resources.currentIdentity()!;
-        expect(frame.args).toMatchObject({ expectedBrowserIdentity: current.recoveryIdentity.browser, expectedContextIdentity: current.contextId, expectedPageIdentity: current.targetId });
+        expect(frame.args).toMatchObject({ expectedBrowserIdentity: identity('').browser, expectedContextIdentity: identity('').context, expectedPageIdentity: current.targetId.slice(4) });
         return { data: resources.reconnectScope('scope-1', 'scope-reconnected') };
       }
       if (frame.command === 'page.title') return { data: { title: 'current title' } };
@@ -39,7 +42,14 @@ async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<Pe
       if (frame.command === 'session.environment') return { data: { identityScope: 'scope-1', browser: 'Chromium/156.0' } };
       if (['scope.configure', 'network.routes.replace', 'page.navigate'].includes(frame.command)) return { data: null };
       throw new Error(`Unexpected identity fixture command ${frame.command}`);
-    }), { close: () => resources.closeNative() });
+      });
+      if (request.command === 'scope.interop.identify' && identifyOverride !== undefined) return identifyOverride();
+      if ((request.command === 'scope.open' || request.command === 'scope.reconnect') && 'data' in response) {
+        const current = resources.currentIdentity()!;
+        return { ...response, data: { ...(response.data as Record<string, JsonValue>), recoveryIdentity: identity(current.targetId.slice(4)) } };
+      }
+      return response;
+    }, { close: () => resources.closeNative() });
     return peer.connect(budget, onEvent);
   });
   const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/open', reconnectEndpoint } });
@@ -47,7 +57,7 @@ async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<Pe
   await engine.startAttempt!(context());
   return engine;
 }
-beforeEach(() => { vi.mocked(connectNativeProcess).mockReset(); peer = undefined; });
+beforeEach(() => { vi.mocked(connectNativeProcess).mockReset(); peer = undefined; identifyOverride = undefined; });
 afterEach(() => { peer?.dispose(); vi.restoreAllMocks(); });
 it('refreshes the exact page identity on adjacent event/result frames and reconnects to the reopened page', async () => {
   let delivery: Promise<void> | undefined;
@@ -55,7 +65,7 @@ it('refreshes the exact page identity on adjacent event/result frames and reconn
     if (frame.command === 'page.navigate') {
       // Do not wait for event consumption before queuing the result: exercise
       // the real client's ordering when both frames are adjacent in its stream.
-      resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+      resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
       delivery = peer!.event('scope.page-reopened', refresh());
       return { data: null };
     }
@@ -67,7 +77,7 @@ it('refreshes the exact page identity on adjacent event/result frames and reconn
     await expect(browser.title()).resolves.toBe('current title');
     await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
     await expect(browser.title()).resolves.toBe('current title');
-    expect(peer!.requests.find(frame => frame.command === 'scope.reconnect')?.args).toEqual({ identityScope: 'scope-1', endpoint: 'ws://synthetic.test/reconnect', expectedBrowserIdentity: 'browser-1', expectedContextIdentity: 'context-1', expectedPageIdentity: 'page-2' });
+    expect(peer!.requests.find(frame => frame.command === 'scope.reconnect')?.args).toEqual({ identityScope: 'scope-1', endpoint: 'ws://synthetic.test/reconnect', expectedBrowserIdentity: 'opaque-browser-1', expectedContextIdentity: 'opaque-context-1', expectedPageIdentity: 'page-2' });
     expect(peer!.frames.find(frame => frame['type'] === 'hello')?.['requiredCapabilities']).toContain(PERSISTENT_PAGE_REOPEN_CAPABILITY);
     await delivery;
   } finally { await engine.dispose!(cleanup()); }
@@ -113,7 +123,7 @@ it.each([
 ])('accepts %s page identity without rewriting it', async (_label, page) => {
   const engine = await fixture();
   try {
-    resources.replaceNativePage('scope-1', 'page-1', page);
+    resources.replaceNativePage('scope-1', 'cdp-page-1', `cdp-${page}`);
     await peer!.event('scope.page-reopened', { ...refresh(), recoveryIdentity: identity(page) });
     await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
     await expect(nativeBrowser(engine, operation).title()).resolves.toBe('current title');
@@ -123,7 +133,7 @@ it.each([
 it('rejects duplicate refresh instead of interpreting it as another page transition', async () => {
   const engine = await fixture();
   try {
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     await peer!.event('scope.page-reopened', refresh());
     await peer!.event('scope.page-reopened', refresh());
     await expect(nativeBrowser(engine, operation).title()).rejects.toBeInstanceOf(Error);
@@ -148,7 +158,7 @@ it('rejects delayed old-page pixels after reopen and still publishes a fresh sam
       if (frame.args['handle'] === 'old-image') { readStarted.resolve(); return oldReply.promise; }
       return { data: { base64: fresh.toString('base64'), nextOffset: fresh.length, eof: true } };
     }
-    if (frame.command === 'page.navigate') return (async () => { resources.replaceNativePage('scope-1', 'page-1', 'page-2'); await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
+    if (frame.command === 'page.navigate') return (async () => { resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2'); await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
     return undefined;
   });
   try {
@@ -177,7 +187,7 @@ it('rejects a delayed old-page semantic result without invalidating the complete
   const engine = await fixture(frame => {
     if (frame.command === 'browser.observe') { if (++observations === 1) { captured.resolve(); return reply.promise; } return { data: snapshot('2') }; }
     if (frame.command === 'browser.perform') return { data: null };
-    if (frame.command === 'page.navigate') return (async () => { resources.replaceNativePage('scope-1', 'page-1', 'page-2'); await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
+    if (frame.command === 'page.navigate') return (async () => { resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2'); await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
     return undefined;
   });
   try {
@@ -200,7 +210,7 @@ it('publishes the distinct live Playwright Page after the persistent target reop
   let navigations = 0;
   const engine = await fixture(frame => {
     if (frame.command !== 'page.navigate' || ++navigations === 1) return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     return (async () => { await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
   });
   try {
@@ -222,26 +232,28 @@ it('publishes the distinct live Playwright Page after the persistent target reop
 });
 
 /** Actual binding-helper session work, not a stubbed binder or invented Page. */
-async function pendingReopenedIdentity(reconnectEndpoint?: (signal: AbortSignal) => string | Promise<string>) {
+async function pendingReopenedIdentity(reconnectEndpoint?: (signal: AbortSignal) => string | Promise<string>, holdPhase: 'query' | 'detach' = 'query') {
   let navigations = 0;
   const engine = await fixture(frame => {
     if (frame.command !== 'page.navigate' || ++navigations === 1) return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     return (async () => { await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
   }, reconnectEndpoint);
   await engine.session!.open!('https://synthetic.test/first', operation());
   const live = surfaceOf(engine)!; const raw = live.context(); const original = raw.newCDPSession.bind(raw);
-  const entered = deferred<void>(); const release = deferred<void>(); let detachError: EngineError | undefined; let detached = 0;
+  const entered = deferred<void>(); const release = deferred<void>(); let detachError: EngineError | undefined; let detached = 0; let sessionCloseEvents = 0;
   vi.spyOn(raw, 'newCDPSession').mockImplementation(async page => {
     const session = await original(page);
+    const closed = () => { sessionCloseEvents++; session.off('close', closed); };
+    session.on('close', closed);
     return new Proxy(session, { get(target, key, receiver) {
       const value = Reflect.get(target, key, receiver);
-      if (key === 'send') return async (...args: unknown[]) => { const result = await Reflect.apply(value, target, args); entered.resolve(undefined); await release.promise; return result; };
-      if (key === 'detach') return async () => { detached++; await Reflect.apply(value, target, []); if (detachError) throw detachError; };
+      if (key === 'send') return async (...args: unknown[]) => { const result = await Reflect.apply(value, target, args); if (holdPhase === 'query') { entered.resolve(undefined); await release.promise; } return result; };
+      if (key === 'detach') return async () => { detached++; await Reflect.apply(value, target, []); if (holdPhase === 'detach') { entered.resolve(undefined); await release.promise; } if (detachError) throw detachError; };
       return typeof value === 'function' ? value.bind(target) : value;
     } });
   });
-  return { engine, live, entered, release, detached: () => detached, rejectDetach: (error: EngineError) => { detachError = error; } };
+  return { engine, live, entered, release, detached: () => detached, sessionCloseEvents: () => sessionCloseEvents, rejectDetach: (error: EngineError) => { detachError = error; } };
 }
 it.each(['endAttempt', 'dispose'] as const)('retains pending actual reopen identity across adequate-budget concurrent %s without inventing cleanup failure', async method => {
   const state = await pendingReopenedIdentity();
@@ -290,7 +302,7 @@ it.each(['page.navigate', 'recording.start'] as const)('publishes a created Page
   const engine = await fixture(async frame => {
     if (frame.command === 'page.activate') return { data: { activated: true } };
     if (frame.command !== command) return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     await peer!.event('scope.page-reopened', refresh());
     return { error: 'unsupported-command', effects: 'completed', scopeState: 'usable' };
   });
@@ -308,7 +320,7 @@ it('restores page readiness when recording.start itself reopens the persistent P
   const engine = await fixture(async frame => {
     if (frame.command === 'page.activate') return { data: { activated: true } };
     if (frame.command !== 'recording.start') return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     await peer!.event('scope.page-reopened', refresh()); return { data: null };
   });
   try {
@@ -320,7 +332,7 @@ it('restores page readiness when recording.start itself reopens the persistent P
 it('does not borrow a later read budget to finish an expired failed-navigation publication', async () => {
   const engine = await fixture(async frame => {
     if (frame.command !== 'page.navigate') return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     await peer!.event('scope.page-reopened', refresh());
     await new Promise(resolve => setTimeout(resolve, 50));
     return { error: 'unsupported-command', effects: 'completed', scopeState: 'usable' };
@@ -346,7 +358,7 @@ it('preserves a real binding failure separately from the original clean navigati
   const receipt = new EngineError('ENGINE_FAILURE', 'actual binding detach failed', { retryable: false });
   const engine = await fixture(async frame => {
     if (frame.command !== 'page.navigate') return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     await peer!.event('scope.page-reopened', refresh());
     return { error: 'unsupported-command', effects: 'completed', scopeState: 'usable' };
   });
@@ -372,7 +384,7 @@ it.each((['page.navigate', 'recording.start'] as const).flatMap(command =>
     if (frame.command === 'page.activate') return { data: { activated: true } };
     if (frame.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
     if (frame.command !== command) return undefined;
-    resources.replaceNativePage('scope-1', 'page-1', 'page-2');
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
     await peer!.event('scope.page-reopened', refresh()); eventSent.resolve(undefined); return reply.promise;
   });
   const mutation = (command === 'page.navigate' ? engine.session!.open!('https://synthetic.test/reopened', operation()) : engine.artifacts!.startVideo!(operation())).catch(error => error);
@@ -398,7 +410,7 @@ it.each((['page.navigate', 'recording.start'] as const).flatMap(command =>
 
 
 it.each(['success', 'CANCELLED', 'ENGINE_FAILURE'] as const)('caller deadline and cleanup departure keep late real %s receipt distinct', async mode => {
-  const state = await pendingReopenedIdentity();
+  const state = await pendingReopenedIdentity(undefined, 'detach');
   const receipt = mode === 'success' ? undefined : new EngineError(mode, 'independent late actual detach receipt after cleanup departure', { retryable: false });
   if (receipt) state.rejectDetach(receipt);
   const mutation = state.engine.session!.open!('https://synthetic.test/reopened', { ...operation(), timeoutMs: 45 }).catch(error => error);
@@ -406,9 +418,10 @@ it.each(['success', 'CANCELLED', 'ENGINE_FAILURE'] as const)('caller deadline an
     await state.entered.promise;
     const caller = await mutation; expect(caller).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
     expect(() => state.live.page()).toThrow();
-    // Leave cleanup's caller while the same actual CDP identity session remains owned.
+    // The actual detach is already dispatched; hold its receipt past both waiters.
+    // A later session-close event cannot erase a rejection from that dispatched call.
     await state.engine.endAttempt!({ ...cleanup(), timeoutMs: 15 });
-    expect(state.detached()).toBe(0);
+    expect(state.detached()).toBe(1); expect(state.sessionCloseEvents()).toBe(1);
     await expect.poll(() => peer!.frames.filter(frame => frame['type'] === 'close').length).toBe(1);
     state.release.resolve(undefined);
     const retired = await state.engine.endAttempt!(cleanup()).catch(error => error); expect(retired).toBe(receipt);
@@ -429,7 +442,7 @@ it.each(['page.navigate', 'recording.start'] as const)('%s original usable busin
     const engine = await fixture(async frame => {
       if (frame.command === 'page.activate') return { data: { activated: true } };
       if (frame.command !== command) return undefined;
-      resources.replaceNativePage('scope-1', 'page-1', 'page-2'); await peer!.event('scope.page-reopened', refresh());
+      resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2'); await peer!.event('scope.page-reopened', refresh());
       return { error: 'unsupported-command', effects: 'completed', scopeState: 'usable' };
     });
     const live = surfaceOf(engine)!; const raw = live.context(); const original = raw.newCDPSession.bind(raw);
@@ -459,12 +472,58 @@ it.each(['page.navigate', 'recording.start'] as const)('%s original usable busin
   }
 });
 
+async function opaqueReopenFixture() {
+  let navigations = 0;
+  return fixture(frame => {
+    if (frame.command !== 'page.navigate' || ++navigations === 1) return undefined;
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
+    return (async () => { await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
+  });
+}
+it.each(['foreign-context', 'wrong-mode', 'refused', 'unknown'] as const)('does not publish opaque recovery metadata with %s actual identity proof', async mode => {
+  const engine = await opaqueReopenFixture();
+  try {
+    await engine.session!.open!('https://synthetic.test/first', operation());
+    const live = surfaceOf(engine)!; const old = live.page();
+    identifyOverride = () => mode === 'refused' ? { error: 'deadline-exceeded', effects: 'not-dispatched', scopeState: 'usable' }
+      : mode === 'unknown' ? { error: 'deadline-exceeded', effects: 'unknown', scopeState: 'quarantined' }
+      : { data: { contextId: mode === 'foreign-context' ? 'foreign-cdp-context' : 'cdp-context-1', targetId: 'cdp-page-2', persistent: mode !== 'wrong-mode' } };
+    const cause = await engine.session!.open!('https://synthetic.test/reopened', operation()).catch(error => error);
+    expect(cause).toMatchObject({ code: mode === 'unknown' ? 'ACTION_MAY_HAVE_COMMITTED' : mode === 'refused' ? 'OPERATION_TIMEOUT' : 'INVALID_STATE', retryable: false });
+    expect(old.isClosed()).toBe(true); expect(() => live.page()).toThrow();
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(2);
+    await expect(engine.session!.open!('https://synthetic.test/no-new-budget', operation())).rejects.toBeInstanceOf(Error);
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(2);
+    await expect(engine.dispose!(cleanup())).rejects.toBe(cause);
+  } finally { await engine.dispose!(cleanup()).catch(() => {}); }
+});
+it.each(['success', 'refused', 'unknown'] as const)('retains late real opaque metadata %s after the original publication waiter deadline', async mode => {
+  const engine = await opaqueReopenFixture(); const held = deferred<PeerOutcome>(); const entered = deferred<void>();
+  try {
+    await engine.session!.open!('https://synthetic.test/first', operation());
+    identifyOverride = () => { entered.resolve(undefined); return held.promise; };
+    const opening = engine.session!.open!('https://synthetic.test/reopened', { ...operation(), timeoutMs: 40 }).catch(error => error);
+    await entered.promise; const departed = await opening;
+    expect(departed).toMatchObject({ code: 'OPERATION_TIMEOUT' }); expect(isLocalBudgetDeparture(departed)).toBe(true);
+    held.resolve(mode === 'success' ? { data: { contextId: 'cdp-context-1', targetId: 'cdp-page-2', persistent: true } }
+      : { error: 'deadline-exceeded', effects: mode === 'unknown' ? 'unknown' : 'not-dispatched', scopeState: mode === 'unknown' ? 'quarantined' : 'usable' });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(() => surfaceOf(engine)!.page()).toThrow();
+    if (mode === 'success') await engine.dispose!(cleanup());
+    else {
+      const actual = await engine.dispose!(cleanup()).catch(error => error);
+      expect(actual).toMatchObject({ code: mode === 'unknown' ? 'ACTION_MAY_HAVE_COMMITTED' : 'OPERATION_TIMEOUT' });
+      expect(actual).not.toBe(departed); expect(isLocalBudgetDeparture(actual)).toBe(false);
+    }
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(2);
+  } finally { held.resolve({ error: 'cancelled', effects: 'not-dispatched', scopeState: 'usable' }); await engine.dispose!(cleanup()).catch(() => {}); }
+});
 
 it.each(['timeout', 'cancel'] as const)('preserves the recovery owner before provisional reopen %s and joins the actual detach receipt', async departure => {
   for (const mode of ['success', 'CANCELLED', 'ENGINE_FAILURE'] as const) {
     const ownerError = new EngineError('ENGINE_FAILURE', 'original reconnect endpoint owner failure', { retryable: false });
     const reconnectEndpoint = vi.fn(() => { throw ownerError; });
-    const state = await pendingReopenedIdentity(reconnectEndpoint);
+    const state = await pendingReopenedIdentity(reconnectEndpoint, 'detach');
     const receipt = mode === 'success' ? undefined : new EngineError(mode, 'late actual detach after independent recovery owner failure', { retryable: false });
     if (receipt !== undefined) state.rejectDetach(receipt);
     const controller = new AbortController();
@@ -473,7 +532,10 @@ it.each(['timeout', 'cancel'] as const)('preserves the recovery owner before pro
       await state.entered.promise;
       await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
       const browser = nativeBrowser(state.engine, operation);
-      await expect(browser.title()).rejects.toBe(ownerError);
+      const firstOwnerFailure = await browser.title().catch(error => error);
+      expect(firstOwnerFailure).toMatchObject({ name: 'E2EError', category: 'infrastructure', code: 'ENGINE_FAILURE', retryable: false });
+      expect(firstOwnerFailure.cause).toBe(ownerError);
+      // The existing public translator wraps EngineError; its exact cause stays owned.
       expect(reconnectEndpoint).toHaveBeenCalledTimes(1);
       expect(peer!.requests.some(frame => frame.command === 'scope.reconnect')).toBe(false);
       if (departure === 'cancel') controller.abort();
@@ -481,10 +543,12 @@ it.each(['timeout', 'cancel'] as const)('preserves the recovery owner before pro
       expect(caller).toMatchObject({ code: departure === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED', retryable: false });
       // The publication waiter has left, but cannot rewrite the recovery owner's
       // public error or make the still-owned replacement Page safe for scope.end.
-      await expect(browser.title()).rejects.toBe(ownerError);
+      const retainedOwnerFailure = await browser.title().catch(error => error);
+      expect(retainedOwnerFailure).toMatchObject({ name: 'E2EError', category: 'infrastructure', code: 'ENGINE_FAILURE', retryable: false });
+      expect(retainedOwnerFailure.cause).toBe(ownerError);
       expect(reconnectEndpoint).toHaveBeenCalledTimes(1);
       expect(() => state.live.page()).toThrow();
-      expect(state.detached()).toBe(0);
+      expect(state.detached()).toBe(1); expect(state.sessionCloseEvents()).toBe(1);
       const retirement = state.engine.endAttempt!(cleanup()).catch(error => error);
       state.release.resolve(undefined);
       expect(await retirement).toBe(receipt);
@@ -501,4 +565,57 @@ it.each(['timeout', 'cancel'] as const)('preserves the recovery owner before pro
       vi.restoreAllMocks();
     }
   }
+});
+
+
+it.each((['endAttempt', 'dispose'] as const).flatMap(method => (['success', 'CANCELLED', 'ENGINE_FAILURE', 'Unknown'] as const).map(outcome => ({ method, outcome }))))('REVIEW retained opaque metadata $outcome after actual $method departure', async ({ method, outcome }) => {
+  const engine = await opaqueReopenFixture(); const held = deferred<PeerOutcome>(); const entered = deferred<void>();
+  let actual: unknown;
+  try {
+    await engine.session!.open!('https://synthetic.test/first', operation());
+    const original = EngineChannel.prototype.command;
+    vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, ...args) {
+      const work = Reflect.apply(original, this, args);
+      if (args[0] === 'scope.interop.identify') void work.catch((error: unknown) => { actual = error; });
+      return work;
+    });
+    identifyOverride = () => { entered.resolve(undefined); return held.promise; };
+    const opening = engine.session!.open!('https://synthetic.test/reopened', operation()).catch(error => error);
+    await entered.promise; const retirement = engine[method]!(cleanup()).catch(error => error);
+    const caller = await opening; expect(caller.code).toBe('CANCELLED'); expect(isLocalBudgetDeparture(caller)).toBe(true);
+    held.resolve(outcome === 'success' ? { data: { contextId: 'cdp-context-1', targetId: 'cdp-page-2', persistent: true } }
+      : { error: outcome === 'CANCELLED' ? 'cancelled' : 'cleanup-failed', effects: outcome === 'Unknown' ? 'unknown' : 'not-dispatched', scopeState: outcome === 'Unknown' ? 'quarantined' : 'usable' });
+    const retired = await retirement;
+    if (outcome === 'success') { expect(actual).toBeUndefined(); expect(retired).toBeUndefined(); }
+    else {
+      expect(actual).toMatchObject({ code: outcome === 'Unknown' ? 'ACTION_MAY_HAVE_COMMITTED' : outcome, retryable: false });
+      expect(isLocalBudgetDeparture(actual)).toBe(false); expect(retired).toBe(actual); expect(actual).not.toBe(caller);
+    }
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(2);
+    expect(peer!.requests.filter(request => request.command === 'page.navigate')).toHaveLength(2);
+    expect(peer!.requests.some(request => request.command === 'scope.end')).toBe(false);
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(resources.snapshot().playwrightClients).toBe(0);
+  } finally { held.resolve({ error: 'cancelled', effects: 'not-dispatched', scopeState: 'usable' }); await engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+it('REVIEW original native Unknown never gains opaque metadata or fresh publication permission', async () => {
+  let navigations = 0;
+  const engine = await fixture(async frame => {
+    if (frame.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
+    if (frame.command !== 'page.navigate' || ++navigations === 1) return undefined;
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2'); await peer!.event('scope.page-reopened', refresh());
+    return { error: 'cancelled', effects: 'unknown', scopeState: 'quarantined' };
+  });
+  try {
+    await engine.session!.open!('https://synthetic.test/first', operation());
+    const forbidden = vi.fn((): PeerOutcome => { throw new Error('metadata must not dispatch after original Unknown'); }); identifyOverride = forbidden;
+    const caller = await engine.session!.open!('https://synthetic.test/reopened', operation()).catch(error => error);
+    expect(caller).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false }); expect(isLocalBudgetDeparture(caller)).toBe(false);
+    expect(forbidden).not.toHaveBeenCalled(); expect(() => surfaceOf(engine)!.page()).toThrow();
+    expect(await engine.dispose!(cleanup()).catch(error => error)).toBe(caller);
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(1);
+    expect(peer!.requests.filter(request => request.command === 'page.navigate')).toHaveLength(2);
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  } finally { await engine.dispose!(cleanup()).catch(() => {}); }
 });
