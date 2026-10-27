@@ -11,7 +11,8 @@ function documentFixture(mode: 'deferred' | 'sync-load' | 'write-throw' | 'close
   const failure = new Error('Synthetic document replacement failure');
   const html = '<iframe srcdoc="<p>Framed</p>"></iframe>';
   const load = () => {
-    for (const listener of [...listeners]) {
+    const currentListeners = Array.from(listeners);
+    for (const listener of currentListeners) {
       listeners.delete(listener);
       listener();
     }

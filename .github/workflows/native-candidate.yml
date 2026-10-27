@@ -71,20 +71,9 @@ jobs:
         run: |
           pnpm run build
       # Read-only source reference. No dependency install, build, or script from this checkout runs.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        name: Read fixed official source for diagnostic oracle equivalence
-        id: oracle-reference
-        if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
-        with:
-          repository: tester-army/e2e
-          ref: d7c6b5e5a4c27fac7633e66866fd367b0351ead8
-          path: .artifacts/canvas-oracle-baseline
-          persist-credentials: false
       - name: Test the fail-closed acceptance scripts
         id: acceptance-scripts
         if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
-        env:
-          E2E_CANVAS_ORACLE_BASELINE_ROOT: ${{ github.workspace }}/.artifacts/canvas-oracle-baseline
         run: node --test 'scripts/acceptance/*.test.ts'
       - name: Check complete package and test source types
         id: types

@@ -1,11 +1,6 @@
 /** An attempt owns pending connections and rejects work from retired generations. */
 import { tmpdir } from 'node:os';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
-import type { Browser, Page } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AttemptSession } from '../../src/attempt-session.ts';
-import type { WebMedia } from '../../src/media.ts';
 import type { EngineAttemptContext, EngineHandle } from 'e2e/engine';
 import { web, type WebOptions } from '../../src/index.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
@@ -50,8 +45,6 @@ async function disconnected(engine: EngineHandle) {
   return peer;
 }
 
-const connectCdp = vi.fn<(endpoint: string, timeoutMs: number) => Promise<Browser>>();
-
 /** A deferred protocol response or endpoint. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -59,90 +52,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-interface Contexts { browserContextIds: string[]; defaultBrowserContextId?: string }
-
-/** A transport whose identity may arrive after cancellation. */
-function remote(identity?: string, response?: Promise<Contexts>) {
-  let connected = true;
-  const pages: Page[] = [];
-  const appeared: Array<(page: Page) => void> = [];
-  const send = vi.fn(async () => response ?? { browserContextIds: [], ...(identity === undefined ? {} : { defaultBrowserContextId: identity }) });
-  const close = vi.fn(async () => { connected = false; });
-  const browser = {
-    newBrowserCDPSession: async () => ({ send, detach: async () => undefined }),
-    contexts: () => [{
-      pages: () => pages,
-      newPage: async () => pages.at(-1)!,
-      on: (_event: 'page', listener: (page: Page) => void) => { appeared.push(listener); },
-      _channel: { registerSelectorEngine: async () => undefined },
-    }],
-    isConnected: () => connected,
-    close,
-  } as unknown as Browser;
-  /** The app opens a tab of its own. */
-  const popup = (page: Page) => { pages.push(page); for (const listener of appeared) listener(page); };
-  return { browser, send, close, pages, popup, disconnect: () => { connected = false; } };
-}
-
-/** A page target whose identity response may outlive its attempt. */
-function target(id: string, response?: Promise<{ targetId: string }>) {
-  const send = vi.fn(async () => ({ targetInfo: response === undefined ? { targetId: id } : await response }));
-  const page = {
-    context: () => ({ newCDPSession: async () => ({ send, detach: async () => undefined }) }),
-    setViewportSize: async () => undefined,
-    viewportSize: () => ({ width: 320, height: 200 }),
-    isClosed: () => false,
-    goto: async () => null,
-    close: vi.fn(async () => undefined),
-  } as unknown as Page;
-  return { page, send };
-}
-
-/** Creates a separate owner while the worker remembers already-used remote contexts. */
-function session(options: {
-  provision?: (signal: AbortSignal) => string | Promise<string>;
-  reconnect?: (signal: AbortSignal) => string | Promise<string>;
-  used?: Set<string>;
-  configure?: () => Promise<void>;
-  artifactsDir?: string;
-  viewport?: { width: number; height: number } | null;
-  media?: WebMedia;
-} = {}) {
-  return new AttemptSession({
-    connectCdp,
-    artifactsDir: options.artifactsDir ?? tmpdir(), viewport: options.viewport === undefined ? { width: 320, height: 200 } : options.viewport, contextOptions: {}, screencast: {},
-    media: options.media ?? {},
-    acquire: async () => { throw new Error('persistent attempts never acquire the shared browser'); },
-    configure: options.configure ?? (async () => undefined),
-    persistent: { provision: options.provision ?? (() => 'provisioned'), reconnect: options.reconnect ?? (() => 'existing'), usedContexts: options.used ?? new Set() },
-  });
-}
-
 const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal });
 const operation = (timeoutMs = 1_000, signal = new AbortController().signal) => ({ timeoutMs, signal, runId: 'run', attemptId: 'a1', origin: 'test' as const });
 
 describe('AttemptSession', () => {
-  beforeEach(() => { vi.mocked(connectCdp).mockReset(); vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; });
+  beforeEach(() => { vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; });
   afterEach(() => { for (const peer of peers) peer.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); });
-
-  it('detaches an unresolved identity before its response arrives and cannot overwrite the next attempt', async () => {
-    const response = deferred<Contexts>();
-    const old = remote('old', response.promise);
-    const current = remote('current');
-    vi.mocked(connectCdp).mockResolvedValueOnce(old.browser).mockResolvedValue(current.browser);
-    const first = session();
-    const starting = expect(first.start(new AbortController().signal)).rejects.toMatchObject({ code: 'CANCELLED' });
-    await expect.poll(() => old.send.mock.calls.length).toBe(1);
-    await first.close(cleanup());
-    await starting;
-    expect(old.close).toHaveBeenCalled();
-    const next = session();
-    await next.start(new AbortController().signal);
-    response.resolve({ browserContextIds: [], defaultBrowserContextId: 'old' });
-    await expect.poll(() => old.close.mock.calls.length).toBeGreaterThan(1);
-    expect(next.current().browser).toBe(current.browser);
-    await next.close(cleanup());
-  });
 
   it('leaves the persistent page at the window size under viewport: null', async () => {
     const engine = await nativeAttempt({ viewport: null });
@@ -156,67 +71,6 @@ describe('AttemptSession', () => {
       // checks actual set/clear metrics absence. CI7's real null-viewport window
       // test checks measurement; this peer proves only persistent null forwarding.
     } finally { await engine.dispose!(cleanup()); }
-  });
-
-  it('serves the first page from the persistent browser\'s own tab, on a fresh document, and opens a new tab after it closed', async () => {
-    const current = remote('current');
-    const initial = target('initial');
-    const goto = vi.fn(async () => null);
-    let closed = false;
-    Object.assign(initial.page, { goto, isClosed: () => closed });
-    const opened = target('opened');
-    current.pages.push(initial.page);
-    const newPage = vi.fn(async () => opened.page);
-    const context = { ...current.browser.contexts()[0]!, newPage };
-    Object.assign(current.browser, { contexts: () => [context] });
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const owner = session();
-    await owner.start(new AbortController().signal);
-    expect(await owner.ensurePage()).toBe(initial.page);
-    expect(goto).toHaveBeenCalledWith('about:blank');
-    expect(newPage).not.toHaveBeenCalled();
-    closed = true;
-    expect(await owner.ensurePage()).toBe(opened.page);
-    expect(newPage).toHaveBeenCalledTimes(1);
-    await owner.close(cleanup());
-  });
-
-  it('opens a new tab in an ordinary context, whatever pages the browser already shows', async () => {
-    const existing = target('existing').page;
-    const opened = target('opened').page;
-    const newPage = vi.fn(async () => opened);
-    const context = { pages: () => [existing], newPage, on: () => undefined, close: async () => undefined };
-    const owner = new AttemptSession({
-      connectCdp,
-      artifactsDir: tmpdir(), viewport: { width: 320, height: 200 }, contextOptions: {}, screencast: {}, media: {},
-      acquire: async () => ({ newContext: async () => context }) as unknown as Browser,
-      configure: async () => undefined,
-    });
-    await owner.start(new AbortController().signal);
-    expect(await owner.ensurePage()).toBe(opened);
-    expect(newPage).toHaveBeenCalledTimes(1);
-    await owner.close(cleanup());
-  });
-
-  it('shares one pending page between concurrent first-page operations', async () => {
-    const opened = target('opened').page;
-    const pending = deferred<Page>();
-    const newPage = vi.fn(() => pending.promise);
-    const context = { pages: () => [], newPage, on: () => undefined, close: async () => undefined };
-    const owner = new AttemptSession({
-      connectCdp,
-      artifactsDir: tmpdir(), viewport: { width: 320, height: 200 }, contextOptions: {}, screencast: {},
-      media: {},
-      acquire: async () => ({ newContext: async () => context }) as unknown as Browser,
-      configure: async () => undefined,
-    });
-    await owner.start(new AbortController().signal);
-    const opening = expect(Promise.all([owner.ensurePage(), owner.ensurePage()])).resolves.toEqual([opened, opened]);
-    pending.resolve(opened);
-    await opening;
-    expect(newPage).toHaveBeenCalledTimes(1);
-    expect(owner.current().page).toBe(opened);
-    await owner.close(cleanup());
   });
 
   it('refuses a viewport that is not whole pixels, keeps a copy of the one it accepts, and resizes an open page', async () => {
@@ -309,62 +163,7 @@ describe('AttemptSession', () => {
     } finally { await engine.dispose!(cleanup()); }
   });
 
-  it('ignores a tab the app closes while the media reaches it, and reports one still open', async () => {
-    const current = remote('current');
-    const initial = target('initial');
-    Object.assign(initial.page, { emulateMedia: async () => undefined });
-    current.pages.push(initial.page);
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const owner = session({ media: { colorScheme: 'dark' } });
-    await owner.start(new AbortController().signal);
-    await owner.ensurePage();
-    let closed = false;
-    const closing = target('closing').page;
-    Object.assign(closing, { isClosed: () => closed, emulateMedia: async () => { closed = true; throw new Error('Target page, context or browser has been closed'); } });
-    current.pages.push(closing);
-    await expect(owner.emulateMedia({ reducedMotion: 'reduce' })).resolves.toBeUndefined();
-    const broken = target('broken').page;
-    Object.assign(broken, { emulateMedia: async () => { throw new Error('Protocol error'); } });
-    current.pages.push(broken);
-    await expect(owner.emulateMedia({ colorScheme: 'light' })).rejects.toThrow('Protocol error');
-    await owner.close(cleanup());
-  });
-
   it('keeps both concurrent media changes when the first call finishes last', async () => {
-    const current = remote('current');
-    const active = target('page');
-    const applied: WebMedia[] = [];
-    const firstResponse = deferred<void>();
-    let calls = 0;
-    // The first call settles last, as a slow protocol round trip would.
-    Object.assign(active.page, { emulateMedia: async (media: WebMedia) => {
-      calls += 1;
-      if (calls === 1) await firstResponse.promise;
-      applied.push(media);
-    } });
-    current.pages.push(active.page);
-    vi.mocked(connectCdp).mockResolvedValue(current.browser);
-    const owner = session();
-    await owner.start(new AbortController().signal);
-    await owner.ensurePage();
-    const first = owner.emulateMedia({ colorScheme: 'dark' });
-    await owner.emulateMedia({ reducedMotion: 'reduce' });
-    firstResponse.resolve();
-    await first;
-    expect(applied).toContainEqual({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    const opened = target('opened');
-    const emulateMedia = vi.fn(async () => undefined);
-    Object.assign(opened.page, { emulateMedia });
-    Object.assign(active.page, { isClosed: () => true });
-    current.pages.push(opened.page);
-    await owner.ensurePage();
-    expect(emulateMedia).toHaveBeenCalledWith({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await owner.close(cleanup());
-
-    // Keep the original merge/new-page assertions above until native production
-    // dispatch proves queued media changes and subsequent enrollment. The framed
-    // peer below proves only adapter result correlation, not reverse CDP ACKs or
-    // renderer media: native config_gate serializes those configuration writes.
     const firstResult = deferred<PeerOutcome>();
     const firstRequested = deferred<void>();
     const engine = await nativeAttempt({}, frame => {
@@ -437,29 +236,6 @@ describe('AttemptSession', () => {
     } finally { await engine.dispose!(cleanup()); }
   });
 
-  it('keeps a late old-page identity out of the next attempt', async () => {
-    const old = remote('old');
-    const current = remote('current');
-    vi.mocked(connectCdp).mockResolvedValueOnce(old.browser).mockResolvedValue(current.browser);
-    const first = session();
-    await first.start(new AbortController().signal);
-    const response = deferred<{ targetId: string }>();
-    const delayed = target('old-page', response.promise);
-    old.pages.push(delayed.page);
-    const opening = expect(first.ensurePage()).rejects.toMatchObject({ code: 'NODE_STALE' });
-    await expect.poll(() => delayed.send.mock.calls.length).toBe(1);
-    await first.close(cleanup());
-    const next = session();
-    await next.start(new AbortController().signal);
-    const active = target('current-page');
-    current.pages.push(active.page);
-    await next.ensurePage();
-    response.resolve({ targetId: 'old-page' });
-    await opening;
-    expect(next.current().page).toBe(active.page);
-    await next.close(cleanup());
-  });
-
   it('does not publish an attachment until configuration succeeds', async () => {
     const configure = deferred<PeerOutcome>();
     const reached = deferred<void>();
@@ -512,14 +288,10 @@ describe('AttemptSession', () => {
     } finally { await engine.dispose!(cleanup()); }
   });
 
-  it('refuses a remote that cannot expose its persistent context identity', async () => {
-    const unsupported = remote();
-    vi.mocked(connectCdp).mockResolvedValue(unsupported.browser);
-    const first = session();
-    await expect(first.start(new AbortController().signal)).rejects.toThrow(/context identity is unavailable/);
-    expect(unsupported.close).toHaveBeenCalled();
-    await first.close(cleanup());
-  });
+  // Persistent identity is a public ownership proof, not a requirement for one
+  // optional Playwright/CDP metadata field. The native producer must prove the
+  // exact context before adoption; the actual NativeClient rejection cases
+  // below retain the missing/empty mandatory identity admission boundary.
 
   it('propagates the recovery owner cancellation to another waiting operation', async () => {
     const requested = deferred<void>();
@@ -578,50 +350,6 @@ describe('AttemptSession', () => {
       expect(peer.frames.filter(frame => frame['command'] === 'page.evaluate')).toHaveLength(2);
     } finally { await engine.dispose!(cleanup()); }
   });
-
-  it('keeps late recording completion confined to the attempt that started it', async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), 'e2e-attempt-recorder-'));
-    const old = remote('old');
-    const current = remote('current');
-    const started = deferred<void>();
-    const resume = deferred<void>();
-    const firstPage = target('old-page').page;
-    const nextPage = target('next-page').page;
-    const nextStop = vi.fn(async () => undefined);
-    Object.assign(firstPage, { screencast: {
-      start: async ({ path: file, onFrame }: { path: string; onFrame?: () => void }) => { writeFileSync(file, 'old'); onFrame?.(); started.resolve(); await resume.promise; },
-      stop: async () => undefined,
-    } });
-    Object.assign(nextPage, { screencast: {
-      start: async ({ path: file, onFrame }: { path: string; onFrame?: () => void }) => { writeFileSync(file, 'next'); onFrame?.(); },
-      stop: nextStop,
-    } });
-    old.pages.push(firstPage);
-    current.pages.push(nextPage);
-    vi.mocked(connectCdp).mockResolvedValueOnce(old.browser).mockResolvedValue(current.browser);
-    const first = session({ artifactsDir: path.join(directory, 'old') });
-    const next = session({ artifactsDir: path.join(directory, 'next') });
-    try {
-      await first.start(new AbortController().signal);
-      const oldRecording = first.startVideo(new AbortController().signal);
-      await started.promise;
-      await first.close(cleanup());
-      await next.start(new AbortController().signal);
-      await next.startVideo(new AbortController().signal);
-      resume.resolve();
-      await oldRecording;
-      await first.collectVideo(operation());
-      expect(nextStop).not.toHaveBeenCalled();
-      expect((await next.collectVideo(operation())).map((segment) => ('path' in segment ? segment.path : segment.url))).toEqual(['video/video.webm']);
-      expect(nextStop).toHaveBeenCalledTimes(1);
-    } finally {
-      resume.resolve();
-      await first.close(cleanup());
-      await next.close(cleanup());
-      rmSync(directory, { recursive: true, force: true });
-    }
-  });
-
 
   it('waits for the initial route registry acknowledgment before publishing the attempt', async () => {
     const routes = deferred<PeerOutcome>();

@@ -52,12 +52,14 @@ describe('closed concentrated synthetic evidence schemas', () => {
     // Partial or contradictory declarations remain representable, but cannot pass the source-aware collector.
     expect(validSyntheticFact({ ...item, checkedComparisons: 1, complete: false }, 'P16')).toBe(true);
   });
-  it('assigns canvas facts only to the isolated P42O companion, not the original P42 assertion', () => {
-    const item: SyntheticFact = { kind: 'canvas-oracle', targetOrdinal: 0, nativeIncluded: true, baselineIncluded: true, roleMatchesExpected: true, nativeRoleEqualsBaseline: true, namePresence: false, valuePresence: false, truncated: false, unavailable: false };
-    expect(validSyntheticFact(item, 'P42O')).toBe(true);
-    expect(validSyntheticFact(item, 'P42')).toBe(false);
-    for (const invalid of [{ ...item, targetOrdinal: 4 }, { ...item, baselineIncluded: null }, { ...item, rawNode: 'private' }]) expect(validSyntheticFact(invalid, 'P42O')).toBe(false);
-    expect(validSyntheticFact({ ...item, unavailable: true }, 'P42O')).toBe(true);
+  it('keeps P42 native snapshot facts closed, bounded and case-owned', () => {
+    const item: SyntheticFact = { kind: 'native-embedded-surface', targetOrdinal: 0, count: 1, roleMatchesExpected: true };
+    expect(validSyntheticFact(item, 'P42')).toBe(true);
+    expect(validSyntheticFact(item, 'P41')).toBe(false);
+    for (const invalid of [{ ...item, targetOrdinal: 4 }, { ...item, count: -1 }, { ...item, count: 65536 },
+      { ...item, count: 0.5 }, { ...item, count: 0 }, { ...item, roleMatchesExpected: null }, { ...item, rawNode: 'private' }]) expect(validSyntheticFact(invalid, 'P42')).toBe(false);
+    // A real missing/wrong-role observation stays diagnostic evidence, never an invented success.
+    expect(validSyntheticFact({ ...item, count: 0, roleMatchesExpected: false }, 'P42')).toBe(true);
   });
   it('owns closed Promise-stage facts only in P41 without implying a successful registration', () => {
     for (const branch of ['plain', 'headers-blocked'] as const) {

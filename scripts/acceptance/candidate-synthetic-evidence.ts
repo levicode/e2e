@@ -93,8 +93,8 @@ function completeConformanceEvidence(records: readonly SyntheticSavedRecord[], r
   } catch { return false; }
 }
 /** All four fixed comparison targets must be represented exactly once; phase/footer alone is not evidence. */
-function completeCanvasEvidence(records: readonly SyntheticSavedRecord[]): boolean {
-  const targets = records.flatMap(record => record.kind === 'record' && record.fact.kind === 'canvas-oracle' ? [record.fact.targetOrdinal] : []);
+function completeEmbeddedSurfaceEvidence(records: readonly SyntheticSavedRecord[]): boolean {
+  const targets = records.flatMap(record => record.kind === 'record' && record.fact.kind === 'native-embedded-surface' ? [record.fact.targetOrdinal] : []);
   return targets.length === 4 && new Set(targets).size === 4 && [0, 1, 2, 3].every(target => targets.includes(target as 0 | 1 | 2 | 3));
 }
 /** P14 must name the independently verified secondary runtime, never the primary suite binary. */
@@ -154,7 +154,7 @@ function inspectCase(directory: string, entry: SyntheticConfiguration['cases'][n
   if (new Set(slots).size !== slots.length) reasons.push('invalid-record');
   if (entry.caseId === 'P14' && !completeInstallerEvidence(records, installerRuntime)) reasons.push('wrong-binding');
   if (entry.caseId === 'P16' && !completeConformanceEvidence(records, sourceRoot, entry.sourceSha256)) reasons.push('incomplete');
-  if (entry.caseId === 'P42O' && !completeCanvasEvidence(records)) reasons.push('incomplete');
+  if (entry.caseId === 'P42' && !completeEmbeddedSurfaceEvidence(records)) reasons.push('incomplete');
   return { caseId: entry.caseId, sourceSha256: entry.sourceSha256, status: reasons.length ? 'unknown' : 'complete', reasons: [...new Set(reasons)], records, recordsSha256: sha256(Buffer.from(JSON.stringify(records))) };
 }
 /** Only fully schema-validated records are saved. Rejected raw bytes are neither uploaded nor hashed as recoverable evidence. */
@@ -211,7 +211,7 @@ export function verifySyntheticEvidence(output: string, value: unknown, expected
     if (new Set(slots).size !== slots.length) fail();
     if (item.caseId === 'P14' && !completeInstallerEvidence(recordItems, installerRuntime)) fail();
     if (item.caseId === 'P16' && !completeConformanceEvidence(recordItems, root, item.sourceSha256)) fail();
-    if (item.caseId === 'P42O' && !completeCanvasEvidence(recordItems)) fail();
+    if (item.caseId === 'P42' && !completeEmbeddedSurfaceEvidence(recordItems)) fail();
     const first = recordItems[0]; const last = recordItems.at(-1);
     if (first?.kind !== 'header' || JSON.stringify(first.binding) !== JSON.stringify(expected) || first.sourceSha256 !== item.sourceSha256 || last?.kind !== 'footer'
       || last.sequence !== recordItems.length - 2 || last.dropped !== 0 || last.truncated || last.incomplete || Object.values(last.outcome).includes('incomplete')

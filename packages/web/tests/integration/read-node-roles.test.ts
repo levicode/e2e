@@ -6,9 +6,7 @@ import type { SemanticNode } from 'e2e/engine';
 import { projectionDiagnostics } from '../helpers/projection-diagnostics.ts';
 import { nativeDocument } from '../helpers/native-browser.ts';
 import { startNativeOracle, type NativeOracle } from '../helpers/native-oracle.ts';
-import { beginSyntheticCase, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
-import { recordCanvasOracle } from '../helpers/canvas-oracle.ts';
-import { pairCanvasNative, type CanvasNativePair } from '../helpers/canvas-oracle-provenance.ts';
+import { beginSyntheticCase, nativeEmbeddedSurfaceFacts, type SyntheticOutcome } from '../helpers/synthetic-evidence.ts';
 
 // The source hash binds every diagnostic ordinal below to its exact fixture mapping.
 const projection = projectionDiagnostics(readFileSync(new URL(import.meta.url), 'utf8'));
@@ -488,21 +486,19 @@ describe('contenteditable editing hosts', () => {
     expect(nodes.get('section')).toMatchObject({ name: 'Notes', value: '' });
   });
 
-  // One immutable source-bound fixture pairs the original native snapshot with the optional P42O companion.
+  // The fixed public fixture and assertions retain the historical diagnostic correction; no old reader runs.
   const embeddedSurfaceHtml = `
       <canvas contenteditable tabindex="0" width="120" height="60" data-testid="canvas"></canvas>
       <svg contenteditable width="20" height="20" data-testid="svg"></svg>
       <iframe contenteditable srcdoc="<p>Framed</p>" data-testid="frame"></iframe>
       <div contenteditable data-testid="host"><canvas width="20" height="20"></canvas><p>Caption</p></div>
     `;
-  let embeddedNativePair: CanvasNativePair | undefined;
 
   it('never makes a drawn or embedded surface a textbox, whatever its contenteditable says', async () => {
     const evidence = beginSyntheticCase('P42');
     const outcome: SyntheticOutcome = { setup: 'failed', body: 'not-started', cleanup: 'not-started' };
     let bodyPhase: 'initial-observe' | 'assertion' = 'initial-observe';
     try {
-      embeddedNativePair = undefined;
       evidence.record({ kind: 'phase', section: 'setup', phase: 'navigate', state: 'enter' });
       await nativeDocument(fixture!.browser, embeddedSurfaceHtml);
       await fixture!.oracle.frames()[1]?.waitForLoadState('domcontentloaded');
@@ -512,16 +508,14 @@ describe('contenteditable editing hosts', () => {
       evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'enter' });
       const { tree } = await capture();
       evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'passed' });
-      // In-memory closed facts only; no additional reads and no oracle await before the original assertion.
-      if (evidence.available) {
-        try { embeddedNativePair = pairCanvasNative(new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), embeddedSurfaceHtml); }
-        catch { evidence.invalidate(); }
-      }
+      // Facts and assertions consume this exact snapshot; there is no second native or baseline read.
+      const facts = nativeEmbeddedSurfaceFacts(flatten(tree));
+      for (const fact of facts) evidence.record(fact);
       bodyPhase = 'assertion';
       evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: 'enter' });
       const roles = Object.fromEntries(flatten(tree).filter((node) => node.testId !== undefined).map((node) => [node.testId, node.role]));
-      // The pinned d7 reader keeps testId nodes even without semantics. CI18 P42O
-      // confirms this canvas is present; contenteditable must not invent a textbox role.
+      // Historical comparison established canvas inclusion; its role must still not become textbox.
+      expect(facts.map(fact => fact.count)).toStrictEqual([1, 1, 1, 1]);
       expect(roles, nodeProjection('embedded-surfaces',
         new Map(flatten(tree).filter(node => node.testId !== undefined).map(node => [node.testId!, node])), [
           { testId: 'canvas', included: true, role: undefined },
@@ -534,14 +528,6 @@ describe('contenteditable editing hosts', () => {
       if (outcome.body !== 'not-started') evidence.record({ kind: 'phase', section: 'body', phase: bodyPhase, state: outcome.body === 'passed' ? 'passed' : 'failed' });
       evidence.finish(outcome);
     }
-  });
-
-  it('P42O: records an isolated source-equivalent embedded-surface oracle', async () => {
-    const evidence = beginSyntheticCase('P42O');
-    let outcome: SyntheticOutcome = { setup: 'not-started', body: 'not-started', cleanup: 'not-started' };
-    try { outcome = await recordCanvasOracle(evidence, embeddedNativePair, fixture?.oracle, embeddedSurfaceHtml); }
-    catch { evidence.invalidate(); }
-    finally { embeddedNativePair = undefined; evidence.finish(outcome); }
   });
 
   it('drops a name taken from a block placeholder once the editor has content, and keeps one from the host', async () => {

@@ -50,36 +50,35 @@ function conformanceFacts(root: string): SyntheticFact[] {
   facts.push({ kind: 'conformance-counts', total: emitted, emitted, omitted: 0, truncated: false });
   return facts;
 }
-function canvasFacts(): SyntheticFact[] {
-  return ([0, 1, 2, 3] as const).map(targetOrdinal => ({ kind: 'canvas-oracle', targetOrdinal, nativeIncluded: true, baselineIncluded: true, roleMatchesExpected: true, nativeRoleEqualsBaseline: true, namePresence: false, valuePresence: false, truncated: false, unavailable: false }));
+function embeddedSurfaceFacts(): SyntheticFact[] {
+  return ([0, 1, 2, 3] as const).map(targetOrdinal => ({ kind: 'native-embedded-surface', targetOrdinal, count: 1, roleMatchesExpected: true }));
 }
-function completeAll(capture: ReturnType<typeof prepareSyntheticCapture>, p16 = conformanceFacts(capture.sourceRoot), canvas = canvasFacts()): void {
+function completeAll(capture: ReturnType<typeof prepareSyntheticCapture>, p16 = conformanceFacts(capture.sourceRoot), embedded = embeddedSurfaceFacts()): void {
   for (const entry of capture.configuration.cases) {
     const evidence = beginSyntheticCase(entry.caseId, capture.env); assert.equal(evidence.available, true);
     evidence.record(phaseFact);
     if (entry.caseId === 'P14') evidence.record({ kind: 'installer-runtime', ...installerRuntime });
     if (entry.caseId === 'P16') for (const row of p16) evidence.record(row);
-    if (entry.caseId === 'P42O') for (const row of canvas) evidence.record(row);
+    if (entry.caseId === 'P42') for (const row of embedded) evidence.record(row);
     evidence.finish(outcome);
   }
 }
-test('static case groups have exact source dependencies and a 1720 KiB total hard cap', () => {
+test('static case groups have exact source dependencies and a 1704 KiB total hard cap', () => {
   const entries = Object.entries(SYNTHETIC_CASE_MANIFEST);
   assert.equal(entries.filter(([, item]) => item.group === 'public').length, 46);
   assert.equal(entries.filter(([, item]) => item.group === 'callback').length, 3);
   assert.equal(entries.filter(([, item]) => item.group === 'setup').length, 1);
-  assert.equal(entries.filter(([, item]) => item.group === 'oracle').length, 4);
-  assert.equal(SYNTHETIC_TOTAL_BYTES, 1720 * 1024);
+  assert.equal(entries.filter(([, item]) => item.group === 'oracle').length, 3);
+  assert.equal(SYNTHETIC_TOTAL_BYTES, 1704 * 1024);
   assert.deepEqual(SYNTHETIC_CASE_MANIFEST['nested-setup'].covers, ['P36', 'P37', 'P38', 'P39', 'P40']);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P16.maxRecords, 256);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P16.sources.length, 6);
   assert.equal(SYNTHETIC_CASE_MANIFEST.P42.sources.length, 2);
-  assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.sources.length, 31);
-  assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.maxRecords, 32);
-  assert.equal(SYNTHETIC_CASE_MANIFEST.P42O.maxBytes, 16 * 1024);
+  assert.equal(SYNTHETIC_CASE_MANIFEST.P42.maxRecords, 64);
+  assert.equal(SYNTHETIC_CASE_MANIFEST.P42.maxBytes, 32 * 1024);
   assert.equal(entries.some(([id]) => id.startsWith('N')), false);
 });
-test('integrated repository prepares both suites and all 54 source-bound IDs without missing sources', t => {
+test('integrated repository prepares both suites and all 53 source-bound IDs without missing sources', t => {
   const ids: string[] = [];
   for (const suite of ['web-browser', 'public-callbacks'] as const) {
     // Availability check only: these placeholders do not assert an executed candidate or native binary.
@@ -88,24 +87,12 @@ test('integrated repository prepares both suites and all 54 source-bound IDs wit
     ids.push(...capture.configuration.cases.map(entry => entry.caseId));
     assert.ok(capture.configuration.cases.every(entry => /^[a-f0-9]{64}$/.test(entry.sourceSha256)));
   }
-  assert.equal(ids.length, 54);
+  assert.equal(ids.length, 53);
   assert.deepEqual(new Set(ids), new Set(Object.keys(SYNTHETIC_CASE_MANIFEST)));
 });
-test('P42O hard-coded sources exactly bind its reviewed 27-file oracle closure without importing page code', () => {
-  const declared = SYNTHETIC_CASE_MANIFEST.P42O.sources;
-  const manifest = JSON.parse(readFileSync(join(sourceRoot, 'packages/web/tests/helpers/canvas-oracle-manifest.json'), 'utf8')) as { schemaVersion: number; sources: { path: string }[] };
-  assert.equal(manifest.schemaVersion, 1);
-  const closure = manifest.sources.map(source => source.path);
-  assert.equal(closure.length, 27); assert.equal(new Set(closure).size, 27);
-  assert.deepEqual(declared, [
-    'packages/web/tests/integration/read-node-roles.test.ts',
-    'packages/web/tests/helpers/canvas-oracle.ts',
-    'packages/web/tests/helpers/canvas-oracle-provenance.ts',
-    'packages/web/tests/helpers/canvas-oracle-manifest.json',
-    ...closure,
-  ]);
-  assert.equal(new Set(declared).size, 31);
-  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P42.sources, ['packages/web/tests/integration/read-node-roles.test.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts']);
+test('P42 binds its real native fixture and scalar projection without any runnable legacy oracle', () => {
+  assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P42.sources, ['packages/web/tests/integration/read-node-roles.test.ts', 'packages/web/tests/helpers/synthetic-evidence.ts']);
+  assert.equal(Object.hasOwn(SYNTHETIC_CASE_MANIFEST, 'P42O'), false);
 });
 test('fresh private capture retains passing and failing body/cleanup independently', t => {
   const { capture, saved } = fixture(t);
@@ -440,44 +427,69 @@ test('P16 refuses a correctly re-bound but different corpus instead of using ano
   assert.equal(saved.cases.find(item => item.caseId === 'P16')?.status, 'unknown');
 });
 
-for (const mutation of ['missing-all', 'missing-one', 'duplicate-target', 'extra-target', 'unavailable', 'truncated'] as const) {
-  test(`P42O collector and verifier refuse ${mutation} without changing original P42 evidence`, t => {
+for (const mutation of ['missing-all', 'missing-one', 'duplicate-target', 'extra-target', 'bad-ordinal', 'raw-field', 'invalid-count'] as const) {
+  test(`P42 collector and verifier refuse ${mutation} without fabricated snapshot completeness`, t => {
     const { root, output, capture, manifest } = fixture(t);
-    let rows = canvasFacts();
+    let rows = embeddedSurfaceFacts();
     if (mutation === 'missing-all') rows = [];
     if (mutation === 'missing-one') rows.pop();
     if (mutation === 'duplicate-target') rows[3] = { ...rows[0]! };
     if (mutation === 'extra-target') rows.push({ ...rows[0]! });
-    if (mutation === 'unavailable' || mutation === 'truncated') rows[0] = { ...rows[0]!, [mutation]: true } as SyntheticFact;
+    if (mutation === 'bad-ordinal') rows[0] = { ...rows[0]!, targetOrdinal: 4 } as unknown as SyntheticFact;
+    if (mutation === 'raw-field') rows[0] = { ...rows[0]!, raw: 'never retain this' } as unknown as SyntheticFact;
+    if (mutation === 'invalid-count') rows[0] = { ...rows[0]!, count: -1 } as SyntheticFact;
     completeAll(capture, undefined, rows);
-    const result = manifest(); const original = result.value.cases.find(item => item.caseId === 'P42')!;
-    const oracle = result.value.cases.find(item => item.caseId === 'P42O')!;
-    assert.equal(original.status, 'complete'); assert.equal(oracle.status, 'unknown');
-    assert.ok(oracle.reasons.includes('incomplete'));
-    // A forged green status and recomputed artifact hash cannot bypass the target set requirement.
-    oracle.status = 'complete'; oracle.reasons = []; result.value.status = 'complete';
+    const result = manifest(); const original = result.value.cases.find(item => item.caseId === 'P41')!;
+    const embedded = result.value.cases.find(item => item.caseId === 'P42')!;
+    assert.equal(original.status, 'complete'); assert.equal(embedded.status, 'unknown');
+    assert.ok(embedded.reasons.some(reason => ['incomplete', 'invalid-record', 'dropped'].includes(reason)));
+    // A forged green status and recomputed artifact hash cannot bypass real target-set evidence.
+    embedded.status = 'complete'; embedded.reasons = []; result.value.status = 'complete';
     const bytes = Buffer.from(JSON.stringify(result.value)); writeFileSync(join(output, result.receipt.file!), bytes);
     assert.throws(() => verifySyntheticEvidence(output, { ...result.receipt, status: 'complete', sha256: sha256(bytes), bytes: bytes.length }, capture.configuration.binding, root, capture.configuration.installerRuntime));
+    // Independently forge a fully finalized, otherwise valid artifact: the verifier must not trust
+    // writer rejection, red status, dropped counters or the outer digest to catch the same mutation.
+    const good = fixture(t); completeAll(good.capture);
+    const finalized = good.manifest();
+    const item = finalized.value.cases.find(row => row.caseId === 'P42')!;
+    const indexes = item.records.flatMap((record, index) => record.kind === 'record' && record.fact.kind === 'native-embedded-surface' ? [index] : []);
+    const first = item.records[indexes[0]!]!;
+    if (first.kind !== 'record') throw new Error('Expected native snapshot fact');
+    if (mutation === 'missing-all') item.records = item.records.filter(record => record.kind !== 'record' || record.fact.kind !== 'native-embedded-surface');
+    if (mutation === 'missing-one') item.records.splice(indexes[3]!, 1);
+    if (mutation === 'duplicate-target') item.records[indexes[3]!] = structuredClone(first);
+    if (mutation === 'extra-target') item.records.splice(item.records.length - 1, 0, structuredClone(first));
+    if (mutation === 'bad-ordinal') (first.fact as unknown as Record<string, unknown>)['targetOrdinal'] = 4;
+    if (mutation === 'raw-field') (first.fact as unknown as Record<string, unknown>)['raw'] = 'never retain this';
+    if (mutation === 'invalid-count') (first.fact as unknown as Record<string, unknown>)['count'] = -1;
+    let sequence = 0;
+    for (const record of item.records) {
+      if (record.kind === 'record') record.sequence = sequence++;
+      if (record.kind === 'footer') record.sequence = sequence;
+    }
+    (item as typeof item & { recordsSha256: string }).recordsSha256 = sha256(Buffer.from(JSON.stringify(item.records)));
+    const forged = Buffer.from(JSON.stringify(finalized.value)); writeFileSync(join(good.output, finalized.receipt.file!), forged);
+    assert.throws(() => verifySyntheticEvidence(good.output, { ...finalized.receipt, sha256: sha256(forged), bytes: forged.length }, good.capture.configuration.binding, good.root, good.capture.configuration.installerRuntime));
   });
 }
 
-test('P42O has its own exclusive file and 32-row/16-KiB budget', t => {
+test('P42 retains its existing exclusive file and 64-row/32-KiB budget', t => {
   const { capture, saved } = fixture(t);
-  const original = beginSyntheticCase('P42', capture.env); original.record(phaseFact); original.finish(outcome);
-  const oracle = beginSyntheticCase('P42O', capture.env);
-  for (let index = 0; index < 40; index++) oracle.record(phaseFact);
-  oracle.finish(outcome);
-  assert.equal(saved('P42').length, 3);
-  assert.equal(saved('P42O').length, 32);
-  const last = saved('P42O').at(-1); assert.ok(last?.kind === 'footer');
+  const other = beginSyntheticCase('P41', capture.env); other.record(phaseFact); other.finish(outcome);
+  const embedded = beginSyntheticCase('P42', capture.env);
+  for (let index = 0; index < 72; index++) embedded.record(phaseFact);
+  embedded.finish(outcome);
+  assert.equal(saved('P41').length, 3);
+  assert.equal(saved('P42').length, 64);
+  const last = saved('P42').at(-1); assert.ok(last?.kind === 'footer');
   assert.equal(last.dropped, 10); assert.equal(last.truncated, true);
-  assert.ok(readFileSync(join(capture.directory, 'P42O.jsonl')).length <= 16 * 1024);
+  assert.ok(readFileSync(join(capture.directory, 'P42.jsonl')).length <= 32 * 1024);
 });
 
-for (const source of ['packages/web/tests/helpers/canvas-oracle.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts', 'packages/web/tests/helpers/canvas-oracle-manifest.json', 'packages/web/src/runtime-support.ts', 'packages/e2e/src/engine/field-values.ts']) {
-  test(`P42O source binding fails closed when ${source} is missing`, t => {
+for (const source of SYNTHETIC_CASE_MANIFEST.P42.sources) {
+  test(`P42 source binding fails closed when ${source} is missing`, t => {
     const { root } = fixture(t); rmSync(join(root, source));
-    assert.throws(() => prepareSyntheticCapture(root, 'web-browser', { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {}));
+    assert.throws(() => prepareSyntheticCapture(root, 'web-browser', { sourceRevision: 'a'.repeat(40), testSourceDigest: 'b'.repeat(64), binarySha256: 'c'.repeat(64) }, {}, installerRuntime));
     assert.equal(collectSyntheticEvidence(join(root, 'output'), undefined).reason, 'setup-failed');
   });
 }
@@ -499,7 +511,7 @@ test('P14 missing duplicate foreign-proof and foreign-runtime facts cannot be co
       const evidence = beginSyntheticCase(entry.caseId, capture.env); evidence.record(phaseFact);
       if (entry.caseId === 'P14') for (const fact of facts) evidence.record({ kind: 'installer-runtime', ...fact });
       if (entry.caseId === 'P16') for (const fact of conformanceFacts(capture.sourceRoot)) evidence.record(fact);
-      if (entry.caseId === 'P42O') for (const fact of canvasFacts()) evidence.record(fact);
+      if (entry.caseId === 'P42') for (const fact of embeddedSurfaceFacts()) evidence.record(fact);
       evidence.finish(outcome);
     }
     const result = manifest(); assert.equal(result.receipt.status, 'unknown');
@@ -557,13 +569,20 @@ test('callback refusal reasons retain only exact known guards and never invoke m
   assert.equal('reason' in callbackFailureFact(3, getter) && (callbackFailureFact(3, getter) as { reason: string }).reason, 'other');
 });
 
-test('P01 observes optional trace failures with closed command names and a bound observer source', () => {
+test('P01 observes optional trace failures with closed command names and a bound observer source', t => {
   assert.deepEqual(SYNTHETIC_CASE_MANIFEST.P01.sources, [
+    'packages/web/tests/helpers/trace-contract-evidence.ts',
     'packages/web/tests/integration/app-log.test.ts',
     'packages/web/tests/helpers/synthetic-native-outcomes.ts',
     'packages/web/tests/helpers/synthetic-evidence.ts',
   ]);
-  const source = readFileSync(join(sourceRoot, SYNTHETIC_CASE_MANIFEST.P01.sources[0]), 'utf8');
+  const source = readFileSync(join(sourceRoot, SYNTHETIC_CASE_MANIFEST.P01.sources[1]), 'utf8');
+  assert.match(source, /trace-contract-evidence\.ts/);
+  assert.match(source, /traceContractEvidence\(context\.task\.meta\)/);
+  assert.match(source, /new SyntheticRecoveryEvidence\(diagnostic\.evidence\)/);
+  const contract = readFileSync(join(sourceRoot, SYNTHETIC_CASE_MANIFEST.P01.sources[0]), 'utf8');
+  assert.match(contract, /from '\.\/synthetic-evidence\.ts'/);
+  assert.match(contract, /validSyntheticFact\(fact, 'P01'\)/);
   assert.match(source, /return await evidence\.observer\.run\(async \(\) =>/);
   assert.match(source, /observeSyntheticConnection\(connect\(\.\.\.args\)\)/);
   for (const command of ['capture.screenshot', 'blob.read', 'blob.release'] as const) {
@@ -572,6 +591,16 @@ test('P01 observes optional trace failures with closed command names and a bound
     assert.equal(validSyntheticFact({ ...fact, payload: 'not permitted' }, 'P01'), false);
   }
   assert.equal(validSyntheticFact({ kind: 'request-rejected-without-result', phase: 'capture', command: 'arbitrary-private-command' }, 'P01'), false);
+  const { root, output, capture } = fixture(t); completeAll(capture);
+  const receipt = collectSyntheticEvidence(output, capture); assert.equal(receipt.status, 'complete');
+  verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+  for (const path of SYNTHETIC_CASE_MANIFEST.P01.sources) {
+    const file = join(root, path); const original = readFileSync(file);
+    writeFileSync(file, 'changed source in the P01 observer/trace contract');
+    assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime));
+    writeFileSync(file, original);
+    verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime);
+  }
 });
 
 test('P27 source closure binds the real native fixture graph and its captured correlation helpers', () => {
@@ -613,11 +642,11 @@ for (const helper of ['packages/web/tests/helpers/synthetic-native-outcomes.ts',
   test(`only actual native observer cases bind the evidence helper: ${helper}`, t => {
     const bound = (Object.entries(SYNTHETIC_CASE_MANIFEST) as [SyntheticCaseId, { sources: readonly string[] }][])
       .filter(([, spec]) => spec.sources.includes(helper)).map(([caseId]) => caseId);
-    assert.deepEqual(new Set(bound), new Set(helper.endsWith('/synthetic-evidence.ts') ? [...nativeObserverCases, 'C03'] : nativeObserverCases));
+    assert.deepEqual(new Set(bound), new Set(helper.endsWith('/synthetic-evidence.ts') ? [...nativeObserverCases, 'C03', 'P42'] : nativeObserverCases));
     for (const caseId of nativeObserverCases) {
       const spec = SYNTHETIC_CASE_MANIFEST[caseId];
       assert.equal(new Set(spec.sources).size, spec.sources.length);
-      assert.match(readFileSync(join(sourceRoot, spec.sources[0]), 'utf8'), /synthetic-native-outcomes\.ts/);
+      assert.match(readFileSync(join(sourceRoot, spec.sources[caseId === 'P01' ? 1 : 0]), 'utf8'), /synthetic-native-outcomes\.ts/);
     }
     const { root, output, capture } = fixture(t);
     completeAll(capture);
@@ -627,7 +656,7 @@ for (const helper of ['packages/web/tests/helpers/synthetic-native-outcomes.ts',
     const file = join(root, helper); const original = readFileSync(file);
     writeFileSync(file, 'changed evidence helper');
     for (const entry of capture.configuration.cases) {
-      assert.equal(syntheticCaseSourceDigest(root, entry.caseId) !== entry.sourceSha256, (nativeObserverCases.includes(entry.caseId) || (entry.caseId === 'C03' && helper.endsWith('/synthetic-evidence.ts'))), entry.caseId);
+      assert.equal(syntheticCaseSourceDigest(root, entry.caseId) !== entry.sourceSha256, (nativeObserverCases.includes(entry.caseId) || ((entry.caseId === 'C03' || entry.caseId === 'P42') && helper.endsWith('/synthetic-evidence.ts'))), entry.caseId);
     }
     assert.throws(() => verifySyntheticEvidence(output, receipt, capture.configuration.binding, root, capture.configuration.installerRuntime));
     writeFileSync(file, original);

@@ -49,7 +49,7 @@ export const SYNTHETIC_CASE_MANIFEST = {
   P39: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P40: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/nested-frames.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   P41: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/protected-app.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
-  P42: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/read-node-roles.test.ts', 'packages/web/tests/helpers/canvas-oracle-provenance.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
+  P42: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/read-node-roles.test.ts', 'packages/web/tests/helpers/synthetic-evidence.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   P43: { suite: 'web-browser', group: 'public', sources: ["packages/web/tests/integration/route-announcer.test.ts", "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], maxRecords: 64, maxBytes: 32 * 1024 },
   C01: { suite: 'public-callbacks', group: 'callback', sources: ["packages/e2e/tests/integration/web-native-primitives-contract.test.ts", 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   C02: { suite: 'public-callbacks', group: 'callback', sources: ["packages/e2e/tests/integration/web-native-primitives-contract.test.ts", 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
@@ -57,40 +57,6 @@ export const SYNTHETIC_CASE_MANIFEST = {
   P05PW: { suite: 'web-browser', group: 'oracle', sources: ['packages/web/tests/integration/events-synthetic-controls.test.ts', 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   C01N: { suite: 'web-browser', group: 'oracle', sources: ['packages/web/tests/integration/events-synthetic-controls.test.ts', 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   C01PW: { suite: 'web-browser', group: 'oracle', sources: ['packages/web/tests/integration/events-synthetic-controls.test.ts', 'packages/web/tests/helpers/public-primitive-fixture.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
-  // Explicit source closure, never a dynamic producer-granted path list or an import of the page oracle.
-  P42O: { suite: 'web-browser', group: 'oracle', sources: [
-    'packages/web/tests/integration/read-node-roles.test.ts',
-    'packages/web/tests/helpers/canvas-oracle.ts',
-    'packages/web/tests/helpers/canvas-oracle-provenance.ts',
-    'packages/web/tests/helpers/canvas-oracle-manifest.json',
-    'packages/e2e/src/config/secrets.ts',
-    'packages/e2e/src/engine/contract.ts',
-    'packages/e2e/src/engine/field-values.ts',
-    'packages/e2e/src/engine/index.ts',
-    'packages/e2e/src/engine/manifest.ts',
-    'packages/e2e/src/engine/recording.ts',
-    'packages/e2e/src/engine/resolve.ts',
-    'packages/e2e/src/engine/timing.ts',
-    'packages/e2e/src/internal/brands.ts',
-    'packages/e2e/src/internal/errors.ts',
-    'packages/e2e/src/internal/json-value.ts',
-    'packages/e2e/src/internal/objects.ts',
-    'packages/e2e/src/internal/options.ts',
-    'packages/e2e/src/internal/realm-slot.ts',
-    'packages/e2e/src/internal/regexp.ts',
-    'packages/e2e/src/internal/source.ts',
-    'packages/e2e/src/internal/suggest.ts',
-    'packages/e2e/src/internal/text.ts',
-    'packages/e2e/src/internal/time.ts',
-    'packages/e2e/src/internal/urls.ts',
-    'packages/e2e/src/secrets.ts',
-    'packages/web/src/capture-scope.ts',
-    'packages/web/src/in-page/read-semantics.ts',
-    'packages/web/src/observation.ts',
-    'packages/web/src/read-node.ts',
-    'packages/web/src/runtime-support.ts',
-    'packages/web/src/support.ts',
-  ], maxRecords: 32, maxBytes: 16 * 1024 },
   'nested-setup': { suite: 'web-browser', group: 'setup', sources: ['packages/web/tests/integration/nested-frames.test.ts', "packages/web/tests/helpers/synthetic-native-outcomes.ts", "packages/web/tests/helpers/synthetic-evidence.ts"], covers: ['P36', 'P37', 'P38', 'P39', 'P40'], maxRecords: 64, maxBytes: 32 * 1024 },
   P44: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/cdp-recovery.test.ts', 'packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
   P45: { suite: 'web-browser', group: 'public', sources: ['packages/web/tests/integration/media.test.ts', 'packages/web/tests/helpers/synthetic-native-outcomes.ts', 'packages/web/tests/helpers/synthetic-evidence.ts'], maxRecords: 64, maxBytes: 32 * 1024 },
@@ -170,7 +136,7 @@ export type SyntheticFact =
   | { kind: 'conformance-counts'; total: number; emitted: number; omitted: number; truncated: boolean }
   | { kind: 'conformance-coverage'; tableOrdinal: 0 | 1; expectedCases: number; expectedTargets: number; expectedComparisons: number; completedCases: number; completedTargets: number; checkedComparisons: number; uniqueComparisons: number; mismatchComparisons: number; complete: boolean }
   | { kind: 'drag-acquisition'; sourcePresent: boolean; targetPresent: boolean; sourceUnique: boolean; targetUnique: boolean; sourceCount: number; targetCount: number }
-  | { kind: 'canvas-oracle'; targetOrdinal: 0 | 1 | 2 | 3; nativeIncluded: boolean; baselineIncluded: boolean; roleMatchesExpected: boolean; nativeRoleEqualsBaseline: boolean; namePresence: boolean; valuePresence: boolean; truncated: boolean; unavailable: boolean }
+  | { kind: 'native-embedded-surface'; targetOrdinal: 0 | 1 | 2 | 3; count: number; roleMatchesExpected: boolean }
   | { kind: 'popup-readiness'; phase: 'open-return' | 'ready-sample' | 'post-failure'; sampleOrdinal: number; present: boolean | null; closed: boolean | null; pathMatches: boolean | null; complete: boolean | null; activationActive: boolean | null; activationEver: boolean | null; predicate: boolean | null; readState: 'ok' | 'failed' | 'not-read' }
   | { kind: 'script-boot'; phase: 'main' | 'frame' | 'popup' | 'reset'; fixtureLifecycleOrdinal: 0 | 1 | 2 | 3; scriptOrdinal: 0 | 1 | 2 | 3; executionCount: number | null; exactOrder: boolean | null }
   | { kind: 'service-worker'; branch: 'plain' | 'headers-blocked'; phase: 'boot' | 'navigate' | 'register-count' | 'shutdown-end' | 'shutdown-dispose'; state: 'enter' | 'passed' | 'failed'; headersConfigured: boolean; registeredCount: number | null }
@@ -295,8 +261,9 @@ export function validSyntheticFact(value: unknown, caseId: SyntheticCaseId): val
       && counts(value, ['expectedCases', 'expectedTargets', 'expectedComparisons', 'completedCases', 'completedTargets', 'checkedComparisons', 'uniqueComparisons', 'mismatchComparisons']);
     case 'drag-acquisition': return caseId === 'P26' && syntheticKeys(value, ['kind', 'sourcePresent', 'targetPresent', 'sourceUnique', 'targetUnique', 'sourceCount', 'targetCount'])
       && booleans(value, ['sourcePresent', 'targetPresent', 'sourceUnique', 'targetUnique']) && counts(value, ['sourceCount', 'targetCount']);
-    case 'canvas-oracle': return caseId === 'P42O' && syntheticKeys(value, ['kind', 'targetOrdinal', 'nativeIncluded', 'baselineIncluded', 'roleMatchesExpected', 'nativeRoleEqualsBaseline', 'namePresence', 'valuePresence', 'truncated', 'unavailable'])
-      && member([0, 1, 2, 3], value['targetOrdinal']) && booleans(value, ['nativeIncluded', 'baselineIncluded', 'roleMatchesExpected', 'nativeRoleEqualsBaseline', 'namePresence', 'valuePresence', 'truncated', 'unavailable']);
+    case 'native-embedded-surface': return caseId === 'P42' && syntheticKeys(value, ['kind', 'targetOrdinal', 'count', 'roleMatchesExpected'])
+      && member([0, 1, 2, 3], value['targetOrdinal']) && syntheticCount(value['count']) && typeof value['roleMatchesExpected'] === 'boolean'
+      && (!value['roleMatchesExpected'] || value['count'] === 1);
     case 'popup-readiness': return member(['P05', 'P05PW'], caseId) && syntheticKeys(value, ['kind', 'phase', 'sampleOrdinal', 'present', 'closed', 'pathMatches', 'complete', 'activationActive', 'activationEver', 'predicate', 'readState'])
       && member(['open-return', 'ready-sample', 'post-failure'], value['phase']) && syntheticCount(value['sampleOrdinal'], 15)
       && ['present', 'closed', 'pathMatches', 'complete', 'activationActive', 'activationEver', 'predicate'].every(key => value[key] === null || typeof value[key] === 'boolean') && member(['ok', 'failed', 'not-read'], value['readState']);
@@ -357,6 +324,16 @@ export function readSyntheticFile(file: string, maxBytes: number): Buffer {
     return bytes.subarray(0, size);
   } finally { closeSync(fd); }
 }
+/** Project only the already-observed P42 fixture: no reader, native call, reference or author text escapes. */
+export function nativeEmbeddedSurfaceFacts(nodes: readonly Readonly<{ testId?: string; role?: string }>[]): Extract<SyntheticFact, { kind: 'native-embedded-surface' }>[] {
+  const targets = [['canvas', undefined], ['svg', 'image'], ['frame', 'iframe'], ['host', 'textbox']] as const;
+  return targets.map(([testId, role], targetOrdinal) => {
+    const matches = nodes.filter(node => node.testId === testId);
+    return { kind: 'native-embedded-surface', targetOrdinal: targetOrdinal as 0 | 1 | 2 | 3,
+      count: matches.length, roleMatchesExpected: matches.length === 1 && matches[0]!.role === role };
+  });
+}
+
 /** Closed own codes and exact fixed guard-message enums only; no arbitrary text is retained or getter invoked. */
 export function callbackFailureFact(stageOrdinal: number, error: unknown): Extract<SyntheticFact, { kind: 'callback-failure' }> {
   const own = (value: unknown, key: string): unknown => {
@@ -406,12 +383,13 @@ export function serviceWorkerPromiseFact(branch: 'plain' | 'headers-blocked', en
 export function syntheticFactSlot(fact: SyntheticFact): string | undefined {
   if (fact.kind === 'native-result') return fact.slot;
   if (fact.kind === 'selected-operation') return `${fact.kind}:${fact.ordinal}`;
+  if (fact.kind === 'native-embedded-surface') return `${fact.kind}:${fact.targetOrdinal}`;
   if (fact.kind === 'test-failure') return `${fact.kind}:${fact.section}`;
   if (fact.kind === 'request-rejected-without-result' || fact.kind === 'cleanup-native' || fact.kind === 'download-boundaries') return fact.kind;
   return undefined;
 }
 export function incompleteSyntheticFact(fact: SyntheticFact): boolean {
-  return ('truncated' in fact && fact.truncated) || ('unavailable' in fact && fact.unavailable)
+  return ('truncated' in fact && fact.truncated) || ('unavailable' in fact && Boolean(fact.unavailable))
     || (fact.kind === 'selected-operation' && (fact.adapter === 'pending' || fact.assertion === 'pending' || fact.requestPending > 0))
     || (fact.kind === 'cleanup-native' && fact.requestPending > 0);
 }

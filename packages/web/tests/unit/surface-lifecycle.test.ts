@@ -1,9 +1,8 @@
 /** Attempt transitions isolate callbacks and retain finalized artifacts after setup failure. */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
-import type { Browser } from 'playwright-core';
 import { secrets } from 'e2e';
 import { EngineError, type EngineFixtureContext, type OperationContext } from 'e2e/engine';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -11,8 +10,7 @@ import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeClient } from '../../src/native/client.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
-import { PlaywrightSurface } from '../../src/surface.ts';
-import { scriptedConnection } from '../helpers/scripted-connection.ts';
+import { FinalizedRecordingPeer, artifactOperation } from '../helpers/native-finalized-recording-peer.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -22,51 +20,12 @@ vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() })
 const operation = (): OperationContext => ({ timeoutMs: 1_000, signal: new AbortController().signal, runId: 'run', attemptId: 'a1', origin: 'test' });
 const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal });
 let artifactsDir: string;
-const legacySurfaces = new Set<PlaywrightSurface>();
 
 beforeEach(() => {
   artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-surface-lifecycle-'));
 });
 
-/** Keep unresolved legacy obligations independent of the already-native cases. */
-async function legacyLifecycle() {
-  const focus = vi.fn(async () => true);
-  const press = vi.fn(async (_key: string) => undefined);
-  const type = vi.fn(async (_text: string) => undefined);
-  const page = {
-    isClosed: () => false,
-    close: async () => undefined,
-    goto: async () => undefined,
-    viewportSize: () => ({ width: 1280, height: 720 }),
-    frames: () => [{ evaluate: focus }],
-    keyboard: { press, type },
-    screencast: {
-      start: async ({ path: file, onFrame }: { path: string; onFrame?: () => void }) => { writeFileSync(file, 'recording'); onFrame?.(); },
-      stop: async () => undefined,
-    },
-  };
-  const browser = {
-    isConnected: () => true,
-    newContext: vi.fn(async () => ({
-      addInitScript: async () => undefined,
-      pages: () => [],
-      setDefaultTimeout: () => undefined,
-      on: () => undefined,
-      route: async () => undefined,
-      close: async () => undefined,
-      newPage: async () => page,
-    })),
-  } as unknown as Browser;
-  const surface = new PlaywrightSurface({}, scriptedConnection(async () => browser));
-  legacySurfaces.add(surface);
-  await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
-  await surface.startAttempt({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
-  return { surface, browser, focus, press, type };
-}
-
-afterEach(async () => {
-  await Promise.all([...legacySurfaces].map(surface => surface.dispose(cleanup())));
-  legacySurfaces.clear();
+afterEach(() => {
   rmSync(artifactsDir, { recursive: true, force: true });
 });
 
@@ -144,40 +103,40 @@ it('keeps a late route failure on the attempt that registered it', async () => {
   } finally { release(); await native.dispose(cleanup()); }
 });
 
-// Retained obligations 22/26: native reset-recording and focus-reset proof
-// still need their own complete assertion transfers.
-it('collects saved video segments after ordinary context replacement fails', async () => {
-  const { surface, browser } = await legacyLifecycle();
-  await surface.startVideo(operation());
-  vi.mocked(browser.newContext).mockRejectedValueOnce(new Error('replacement failed'));
-  await expect(surface.reset(operation())).rejects.toThrow(/replacement failed/);
-  const videos = await surface.stopVideo(operation());
-  expect(videos).toHaveLength(1);
-  expect(videos[0]).toMatchObject({ path: 'video/video.webm' });
-  expect(readFileSync(path.join(artifactsDir, 'video/video.webm'), 'utf8')).toBe('recording');
-  await expect(surface.open('https://example.test/', operation())).rejects.toThrow(/replacement failed/);
+// Moved from native-finalized-recording-surface.test.ts. The managed native
+// terminal-recording producer proves real frozen encoder bytes; this case proves
+// public failed-reset collection without reopening ordinary command authority.
+it('returns the failed replacement immediately then collects its saved local video exactly once without reopening input', async () => {
+  let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+  const peer = new FinalizedRecordingPeer(async request => { if (request.command === 'recording.finalized.read') await held; return undefined; });
+  vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, event) => peer.connect(config.capabilities, event, context));
+  const surface = new NativeSurface({});
+  try {
+    const prepared = await surface.prepare({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, slots: 1, signal: artifactOperation().signal, log: () => {} });
+    await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: prepared?.env ?? {}, headed: false, workerSlot: 0, signal: artifactOperation().signal, log: () => {} });
+    await surface.startAttempt({ attemptId: 'attempt', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    await surface.startVideo(artifactOperation());
+    await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+    await vi.waitFor(() => expect(peer.requests.some(request => request.command === 'recording.finalized.read')).toBe(true));
+    const count = peer.requests.length;
+    await expect(surface.open('https://example.test/', artifactOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(peer.requests).toHaveLength(count); release();
+    const segments = await surface.stopVideo(artifactOperation());
+    expect(segments).toEqual([{ path: 'video/video.webm', startedAt: '2026-10-26T00:00:00.000Z' }]);
+    expect(readFileSync(path.join(artifactsDir, 'video/video.webm'))).toEqual(peer.bytes);
+    await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
+    expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+    expect(peer.requests.filter(request => request.command === 'recording.start')).toHaveLength(1);
+    expect(peer.requests.filter(request => request.command === 'scope.reset')).toHaveLength(1);
+    await expect(surface.open('https://example.test/', artifactOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  } finally { release(); await surface.dispose(cleanup()); }
 });
 
-it('rejects a focus read from a context replaced before typing dispatches', async () => {
-  const { surface, focus, press, type } = await legacyLifecycle();
-  await surface.open('https://example.test/', operation());
-  let release!: () => void;
-  let entered!: () => void;
-  const paused = new Promise<void>((resolve) => { release = resolve; });
-  const reached = new Promise<void>((resolve) => { entered = resolve; });
-  focus.mockImplementationOnce(async () => { entered(); await paused; return true; });
-  const pending = surface.typeText('replacement', { replace: true }, operation());
-  const rejected = expect(pending).rejects.toMatchObject({ code: 'NODE_STALE' });
-  try {
-    await reached;
-    await surface.reset(operation());
-  } finally {
-    release();
-  }
-  await rejected;
-  expect(press).not.toHaveBeenCalled();
-  expect(type).not.toHaveBeenCalled();
-});
+// Focus replacement is covered below through actual NativeSurface/NativeClient
+// result classification, paired with the native CDP producer
+// typing_sequence_fences_focus_select_delete_and_scope_reset: a retired focus
+// owner dispatches no Input and returns StaleScope/NotDispatched. The peer below
+// proves adapter mapping, not a renderer or context-cleanup receipt.
 
 it.each([
   { reason: 'stale-scope', effects: 'not-dispatched', aborted: false, expected: 'NODE_STALE' },

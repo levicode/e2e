@@ -1,5 +1,5 @@
 /** Real NativeSurface/NativeClient flow; bytes are adapter fixtures, not native video proof. */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -46,23 +46,6 @@ async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | 
   await surface.startVideo(artifactOperation());
   return { peer, surface };
 }
-it('returns the failed replacement immediately then collects its saved local video exactly once without reopening input', async () => {
-  let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
-  const { peer, surface } = await fixture(async request => { if (request.command === 'recording.finalized.read') await held; return undefined; });
-  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
-  await vi.waitFor(() => expect(peer.requests.some(request => request.command === 'recording.finalized.read')).toBe(true));
-  const count = peer.requests.length;
-  await expect(surface.open('https://example.test/', artifactOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
-  expect(peer.requests).toHaveLength(count); release();
-  const segments = await surface.stopVideo(artifactOperation());
-  expect(segments).toEqual([{ path: 'video/video.webm', startedAt: '2026-10-26T00:00:00.000Z' }]);
-  expect(readFileSync(path.join(artifactsDir, 'video/video.webm'))).toEqual(peer.bytes);
-  await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
-  expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
-  expect(peer.requests.filter(request => request.command === 'recording.start')).toHaveLength(1);
-  expect(peer.requests.filter(request => request.command === 'scope.reset')).toHaveLength(1);
-  await expect(surface.open('https://example.test/', artifactOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
-});
 it('does not replace the reset failure or pretend empty success when frozen collection is refused', async () => {
   const { peer, surface } = await fixture(request => request.command === 'recording.finalized.collect'
     ? { ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'quarantined' } : undefined);

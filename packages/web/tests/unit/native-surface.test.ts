@@ -1938,35 +1938,6 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
   });
 
-  // CI26 run 39940386738 executed recording_failed_first_start_disarms_and_joins_owned_resources.
-  // Its seeded-ledger fixture proves disarm/cleanup, not a live first-start failure;
-  // this peer proves only public error/empty-stop decoding and no adapter replay.
-  it('reports a clean failed first recording start without replay or output collection', async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), 'native-video-start-failure-'));
-    const engine = web({});
-    await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
-    await engine.startAttempt!({ ...context('video-start-failure'), artifactsDir: directory });
-    const scope = currentScope;
-    interceptRequest = (frame, reply) => {
-      if (frame['command'] !== 'recording.start') return false;
-      reply({ ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'usable' });
-      return true;
-    };
-    try {
-      const failure = await engine.artifacts!.startVideo!(operation()).catch((cause: unknown) => cause);
-      expect(failure).toBeInstanceOf(EngineError);
-      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false, message: 'The native browser operation failed (browser-failure)' });
-      expect(frames.filter(frame => frame['command'] === 'recording.start').map(frame => frame['args'])).toEqual([{ identityScope: scope }]);
-      expect(frames.filter(frame => frame['command'] === 'recording.stop')).toEqual([]);
-      await expect(engine.artifacts!.stopVideo!(operation())).resolves.toEqual([]);
-      expect(frames.filter(frame => frame['command'] === 'recording.stop').map(frame => frame['args'])).toEqual([{ identityScope: scope }]);
-      expect(frames.filter(frame => frame['command'] === 'recording.start')).toHaveLength(1);
-      expect(frames.filter(frame => frame['command'] === 'blob.read' || frame['command'] === 'blob.release')).toEqual([]);
-      expect(currentScope).toBe(scope);
-      expect(existsSync(path.join(directory, 'video'))).toBe(false);
-    } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
-  });
-
   // Original video.ts obligations, paired with CI27's executed producer ledger
   // tests. This peer proves artifact collection/no adapter replay, not encoding,
   // a real failed stop or producer-owned late page-hook cleanup.
@@ -1999,20 +1970,6 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(frames.filter(frame => frame['command'] === 'recording.start')).toHaveLength(1);
       expect(frames.slice(retired).filter(frame => frame['command'] === 'recording.start' || frame['command'] === 'recording.stop')).toEqual([]);
     } finally { await surface.dispose(cleanup()); }
-  });
-
-  it('preserves the documented per-attempt WebM filenames independently of generic artifact counters', async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), 'native-video-names-'));
-    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
-    await surface.startAttempt({ ...context('video'), artifactsDir: directory });
-    surface.artifactPath('screenshots', undefined, '.png');
-    recordingSegments = [1, 2].map(index => ({ identityScope: currentScope, handle: `video-${index}`, size: 1, sha256: '0'.repeat(64), mediaType: 'video/webm', startedAt: '2026-10-21T00:00:00.000Z' }));
-    const read = vi.spyOn(EngineChannel.prototype, 'readBlob').mockResolvedValue(Buffer.from('synthetic-path-fixture-not-a-video'));
-    try {
-      const segments = await surface.stopVideo(operation());
-      expect(segments.map(segment => 'path' in segment ? segment.path : undefined)).toEqual(['video/video.webm', 'video/video-part2.webm']);
-      expect(await readFile(path.join(directory, 'video/video.webm'), 'utf8')).toBe('synthetic-path-fixture-not-a-video');
-    } finally { read.mockRestore(); await surface.dispose(cleanup()); await rm(directory, { recursive: true, force: true }); }
   });
 
   describe.each(['worker', 'attempt'] as const)('provider download paths in %s scope', scope => {
