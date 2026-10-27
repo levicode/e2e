@@ -41,9 +41,14 @@ const ORIGINS = [
   ['connection-ended-unsettled', 'The native browser connection ended before scope settlement'],
   ['cancel-unsettled', 'The native browser cancellation did not settle'],
   ['operation-unsettled', 'The native browser operation ended without a settled outcome'],
+  ['action-outcome-unknown', 'The native browser action outcome is unknown'],
+  ['scope-no-longer-reusable', 'The native browser scope is no longer reusable'],
+  ['event-handler-failed', 'The native browser event handler failed'],
+  ['recovery-only', 'Only explicit exact-scope recovery is available'],
+  ['transfer-retired', 'The native transfer belongs to a retired browser scope'],
   ['capability-contract', 'The native browser response violated its capability contract'],
 ] as const;
-const COMPLETED_APIS = new Set(['app.open', 'app.restart', 'app.clearState', 'app.back', 'browser.goto', 'browser.route', 'browser.setViewportSize']);
+const COMPLETED_APIS = new Set(['app.open', 'app.restart', 'app.clearState', 'app.back', 'browser.goto', 'browser.route', 'browser.setViewportSize', 'browser.setViewport', 'browser.evaluate', 'locator.tap']);
 
 function finiteNumber(value: unknown): number | 'unknown' {
   return typeof value === 'number' && Number.isFinite(value) ? value : 'unknown';
@@ -55,6 +60,15 @@ function lastCompletedStep(attempt: AttemptLike) {
   return { index: finiteNumber(step.index), api: step.api !== undefined && COMPLETED_APIS.has(step.api) ? step.api : 'other', line: step.source?.line === undefined ? undefined : finiteNumber(step.source.line), durationMs: finiteNumber(step.durationMs) };
 }
 
+const ERROR_KINDS = ['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError'] as const;
+const ENGINE_FRAMES = ['NativeSurface.transition', 'NativeSurface.restart', 'NativeSurface.reset', 'NativeClient.request', 'NativeClient.receive', 'NativeClient.retireCallbacks', 'EngineChannel.command', 'BrowserChannel.command'] as const;
+function closedStackSource(stack: string | undefined) {
+  if (stack === undefined) return undefined;
+  // Return a fixed symbol only, never a path, line text, or caller argument.
+  const frames = stack.split('\n').slice(1, 9);
+  return ENGINE_FRAMES.find(name => frames.some(line => line.startsWith(`    at ${name} (`)));
+}
+
 function errorFacts(error: ErrorLike | undefined) {
   if (error === undefined) return undefined;
   return {
@@ -63,6 +77,8 @@ function errorFacts(error: ErrorLike | undefined) {
     origin: ORIGINS.find(([, message]) => error.message === message || error.stack?.startsWith(`EngineError: ${message}\n`))?.[0],
     nativeReason: REASONS.find(reason => error.message === `The native browser operation failed (${reason})`
       || error.stack?.startsWith(`EngineError: The native browser operation failed (${reason})\n`)),
+    errorKind: ERROR_KINDS.find(kind => error.stack?.startsWith(`${kind}: `)),
+    source: closedStackSource(error.stack),
     lifecycle: LIFECYCLE.find(stage => error.message?.includes(stage)),
   };
 }
@@ -80,6 +96,7 @@ export function closedFailureDiagnostic(
       lastCompletedStep: lastCompletedStep(attempt),
       failedSteps: attempt.steps.filter(step => step.status === 'failed' || step.error !== undefined).slice(0, 8).map(step => ({
         index: finiteNumber(step.index),
+        api: step.api !== undefined && COMPLETED_APIS.has(step.api) ? step.api : undefined,
         line: step.source?.line === undefined ? undefined : finiteNumber(step.source.line),
         durationMs: finiteNumber(step.durationMs),
         error: errorFacts(step.error),

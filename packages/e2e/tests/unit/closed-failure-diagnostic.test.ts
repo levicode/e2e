@@ -68,7 +68,7 @@ describe('closed numeric diagnostic facts', () => {
       cleanup: 'complete', secondaryErrors: [], steps: [{ ...step, status: 'passed' }, { ...step, status: 'failed' }],
     }]));
     expect(facts.attempts[0].lastCompletedStep).toEqual({ index: 'unknown', api: 'app.open', line: 'unknown', durationMs: 'unknown' });
-    expect(facts.attempts[0].failedSteps).toEqual([{ index: 'unknown', line: 'unknown', durationMs: 'unknown' }]);
+    expect(facts.attempts[0].failedSteps).toEqual([{ index: 'unknown', api: 'app.open', line: 'unknown', durationMs: 'unknown' }]);
   });
 
   it('preserves finite numbers and the absence of optional source lines', () => {
@@ -81,4 +81,18 @@ describe('closed numeric diagnostic facts', () => {
     expect(facts.attempts[0].lastCompletedStep).toEqual({ index: 0, api: 'app.open', durationMs: 1.25 });
     expect(facts.attempts[0].failedSteps).toEqual([{ index: 1, line: 42, durationMs: 0 }]);
   });
+});
+
+
+it('projects transition location and exception kind without leaking stack paths or values', () => {
+  const secret = 'synthetic-private-token';
+  const error = { code: 'ACTION_FAILED', stack: `TypeError: ${secret}\n    at NativeSurface.transition (/private/${secret}:12:3)` };
+  const facts = JSON.parse(closedFailureDiagnostic([{ error, cleanup: 'failed', secondaryErrors: [], steps: [
+    { index: 2, api: 'browser.evaluate', status: 'passed', durationMs: 1 },
+    { index: 3, api: 'app.restart', status: 'failed', durationMs: 2, error },
+  ] }]));
+  expect(facts.attempts[0].error).toEqual({ code: 'ACTION_FAILED', phase: 'other', errorKind: 'TypeError', source: 'NativeSurface.transition' });
+  expect(facts.attempts[0].lastCompletedStep.api).toBe('browser.evaluate');
+  expect(facts.attempts[0].failedSteps[0].api).toBe('app.restart');
+  expect(JSON.stringify(facts)).not.toContain(secret);
 });
