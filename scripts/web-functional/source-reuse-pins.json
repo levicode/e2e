@@ -3,13 +3,18 @@
   "producerRecipe": "dff9b4d8d135bbd23f5985d0918a1113983a9a9d",
   "nativeSource": "0f545c307a157e107ac8d1260167fa3e70e39cdb",
   "nativeTree": "3db554fb7897c6becc6b42d970d448fa44600902",
-  "e2eSource": "c226f98570dae9ed69a3f5cf42ef6aa29c4053a2",
-  "e2eTree": "f16cedb3831089f6aa534f75f6fbf6be3fed6076",
+  "e2eSource": "ad9cf7e0e03e758d1331914419a6f81a532373d3",
+  "e2eTree": "faebe37a0ff5399c604a3b1efaa1e4d6f30ca35b",
   "artifacts": {
     "images": {
       "id": 12703339358,
       "name": "integrated-native-images",
       "sha256": "176924c8d9c277dfe044da9eb25ca790b3add576faddd76c0bb95224922dd1e1"
+    },
+    "default": {
+      "id": 12703619225,
+      "name": "all-default-native-harnesses",
+      "sha256": "92710d06e851aad2a3da1d2a65a4e89580bb47183ec5d96fe03f81bdd12758f5"
     }
   }
 }

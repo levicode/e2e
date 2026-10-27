@@ -10,11 +10,10 @@ export PROOF="$out/negotiation.json" FAULT_PROOF="$out/fault-negotiation.json"
 cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
-Post-retirement candidate validation, not formal aggregate or merge eligibility.
-Exact E2E c226f98570dae9ed69a3f5cf42ef6aa29c4053a2, native 0f545c307a157e107ac8d1260167fa3e70e39cdb.
-Reuses verified production/fault bytes from run40434656328; does not import test passes or compilation receipts.
-All Web unit discovery, fresh locked build/typecheck, unchanged source-removal gate, full Web integration and semantic-fault lane.
-Original product budgets/assertions remain; required native activation and focused fill failures remain unresolved separately.
+Single exact43 diagnostic with original default harness and native0f images from run40434656328.
+No rebuild, no product/test budget changes, no imported passes, not formal compilation/acceptance.
+AGENT_BROWSER_DEBUG raw text stays runner-local; only closed projected WebSocket indicators and existing bounded activation facts are uploaded.
+Original failed44/43 receipts remain unchanged; this observes whether reader Close/Error precedes activation failure.
 SCOPE
 if [[ "$mode" == setup ]]; then
   # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
@@ -50,21 +49,21 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = c226f98570dae9ed69a3f5cf42ef6aa29c4053a2
-  test "$(git rev-parse HEAD^{tree})" = f16cedb3831089f6aa534f75f6fbf6be3fed6076
+  test "$(git rev-parse HEAD)" = ad9cf7e0e03e758d1331914419a6f81a532373d3
+  test "$(git rev-parse HEAD^{tree})" = faebe37a0ff5399c604a3b1efaa1e4d6f30ca35b
   test -z "$(git status --porcelain)"
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
   chmod +x "$PROD" "$FAULT"
   pnpm install --frozen-lockfile
   pnpm run build
-  pnpm --filter @e2e-dev/web exec vitest run --project unit --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/all-web-unit.vitest.json" 2>&1 | tee "$out/all-web-unit.log"
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-document.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/native-document.vitest.json" 2>&1 | tee "$out/native-document.log"
+  pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-terminal-close-observer.test.ts tests/unit/synthetic-native-outcomes.test.ts tests/unit/trace-contract-evidence.test.ts tests/unit/lifecycle-attempt-diagnostic.test.ts tests/unit/case-cleanup-capture.test.ts tests/unit/routes-case-diagnostic.test.ts tests/unit/actions.test.ts tests/unit/native-action-error-boundaries.test.ts tests/unit/native-action-diagnostics.test.ts tests/unit/native-observe-frame-policy-capability.test.ts --maxWorkers=1 --bail=0 --reporter=verbose --reporter=json --outputFile="$out/terminal-observer.vitest.json" 2>&1 | tee "$out/terminal-observer.log"
   set +e
   node scripts/acceptance/candidate-source.ts "$out"
   source_status=$?
   set -e
   printf '%s\n' "$source_status" > "$out/source-removal.exit"
-  test "$source_status" -eq 0
   "$PROD" install --with-deps
   pnpm --filter @e2e-dev/web exec playwright-core install chromium
   if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
