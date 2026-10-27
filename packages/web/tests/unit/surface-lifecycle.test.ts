@@ -305,7 +305,10 @@ it.each(['ack-first', 'result-first'] as const)('stops remaining typing after ca
       expect(finished).toBe(false);
       expect(published).not.toHaveBeenCalled();
       expect(screen).not.toHaveBeenCalled();
-      await expect(fixture.native.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      let inspected = false;
+        const inspection = fixture.native.command('page.title', {}, operation()).finally(() => { inspected = true; });
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(inspected).toBe(false);
       expect(fixture.frames.slice(start).map(frame => frame['type'])).toEqual(['request', 'cancel']);
       if (order === 'ack-first') settle(); else acknowledge();
       await rejected;
@@ -317,7 +320,7 @@ it.each(['ack-first', 'result-first'] as const)('stops remaining typing after ca
       // undispatched cancellation, the adapter must send no press/type follow-up.
       const cancelIndex = fixture.frames.indexOf(cancel);
       expect(fixture.frames.slice(cancelIndex + 1).filter(frame => frame['type'] === 'request' && String(frame['command']).startsWith('browser.keyboard.'))).toEqual([]);
-      await expect(fixture.native.command('page.title', {}, operation())).resolves.toEqual({ title: 'clean' });
+      await expect(inspection).resolves.toEqual({ title: 'clean' });
       expect(fixture.frames.slice(start).filter(frame => frame['type'] === 'request').map(frame => [frame['command'], frame['args']])).toEqual([
         ['browser.keyboard.type', { identityScope: 'scope-1', text: 'replacement', replace: true }],
         ['page.title', { identityScope: 'scope-1' }],

@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "expected": 19,
+  "expected": 20,
   "managed": [
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope",
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown",
@@ -47,7 +47,8 @@
     "native::client_actions::tests::recording_wire_contracts::recording_missing_second_file_returns_first_real_segment_without_another_stop",
     "native::client_actions::tests::recording_wire_contracts::recording_freeze_preserves_finished_segment_without_stopping_active_second",
     "native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment",
-    "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof"
+    "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_peer_phase_one_still_contains_exact_context_on_terminal_shutdown"
   ],
   "realChromeEvidence": false,
   "requiresActualFfmpeg": true,
@@ -211,6 +212,14 @@
       ],
       "browserIdentityRequired": false,
       "classification": "encoder-negative"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_peer_phase_one_still_contains_exact_context_on_terminal_shutdown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed-peer-retirement"
     }
   ]
 }

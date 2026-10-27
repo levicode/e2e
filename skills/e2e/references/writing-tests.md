@@ -506,6 +506,9 @@ the app opens itself (`target="_blank"`, `window.open`) is not followed:
 - `waitForDownload(() => trigger, { timeout? })`: returns
   `{ path, absolutePath, suggestedFilename }`; `absolutePath` names the saved
   runner-side file for reading its contents, including with a hosted browser.
+  Cancelled downloads keep cleanup with their original owner. A successful
+  context reset or storage-state restoration may retire that owner; cleanup
+  never retries the release against the replacement.
 - `keyboard.press(key)`, `keyboard.type(text)`, `keyboard.down(key)`,
   `keyboard.up(key)`, `mouse.*`: unfocused input. Only `down(key)` holds a
   key or modifier until `up(key)`. `press(key)` presses and releases within
