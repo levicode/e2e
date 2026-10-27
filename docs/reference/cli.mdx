@@ -798,6 +798,10 @@ Signals escalate.
    every app command the run started. A process attached through
    `reuseExisting` is left alone.
 
+The web engine keeps its native transport outside the terminal’s foreground
+process group so an interrupt can finish browser cleanup before the transport
+exits. A crashed transport or unconfirmed cleanup still reports an engine error.
+
 A worker whose runner disappears disposes its engine and exits within the
 cleanup budget.
 

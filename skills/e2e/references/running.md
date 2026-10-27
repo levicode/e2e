@@ -200,6 +200,10 @@ had started; the second forces engine teardown and still writes the
 report, plus `junit.xml` and `summary.md` when those reporters are on; the
 third kills the app process groups and exits 130 at once.
 
+For the web engine, foreground signals remain runner-owned: the native
+transport stays alive to settle browser cleanup. A transport crash or
+failed cleanup still reports an engine error.
+
 ## Continuous integration
 
 CI mode is on when `CI` is set (not `0` or `false`): `retries` 1,

@@ -26,7 +26,10 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
   let child: ChildProcessWithoutNullStreams;
   try {
     child = spawn(options.executable, ['--session', `e2e-${randomUUID()}`, 'session', 'connect', '--json'], {
-    cwd: options.cwd, env: { ...options.env }, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: options.cwd, env: { ...options.env }, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+      // The runner owns foreground interrupts. Keep the proxy alive for its
+      // acknowledged cleanup; pipes and the child handle retain ownership.
+      detached: process.platform !== 'win32',
     });
   } catch {
     throw new EngineError('ENGINE_FAILURE', 'The native browser process could not start', { retryable: false });
