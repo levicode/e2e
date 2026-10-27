@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { readFileSync, appendFileSync, chmodSync, copyFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { verifyArtifact } from './native-runtime.ts';
+const pins = JSON.parse(readFileSync('scripts/ci/g2-runtime-pins.json', 'utf8'));
+const directory = resolve(process.argv[2]!);
+const executable = verifyArtifact(directory, pins.manifestSha256, pins.expected);
+const manifest = JSON.parse(readFileSync(`${directory}/manifest.json`, 'utf8'));
+assert.deepEqual(manifest.nativeSource, pins.nativeSource);
+assert.equal(manifest.binarySha256, pins.binarySha256);
+assert.equal(JSON.parse(readFileSync('.github/native-candidate.json', 'utf8')).commit, pins.nativeSource.commit);
+assert.ok(process.env.GITHUB_ENV && !/[\r\n]/.test(executable));
+chmodSync(executable, 0o755);
+appendFileSync(process.env.GITHUB_ENV, `E2E_AGENT_BROWSER_EXECUTABLE=${executable}\n`);
+copyFileSync(`${directory}/manifest.json`, 'evidence/native-runtime.manifest.json');

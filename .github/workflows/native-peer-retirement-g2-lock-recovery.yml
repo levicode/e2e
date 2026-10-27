@@ -1,0 +1,136 @@
+name: Native peer retirement G2 locked dependency recovery
+'on':
+  push:
+    branches:
+    - implement/native-peer-retirement-g2-lock-recovery-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: native-peer-retirement-g2-lock-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 4292ef0710fa0517bbe38aac762ebc88f0123d91
+  NATIVE_SOURCE_TREE: 5d28268b90ee0c8497f100ba4582d7b99c25cf32
+jobs:
+  reuse-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Restore exact G2 production runtime
+      timeout-minutes: 3
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-g2-runtime.py
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      run: node scripts/ci/verify-g2-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+      id: verify
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Typecheck and run 109 finite interop units
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec tsc --noEmit -p tsconfig.interop-check.json
+
+        pnpm --filter @e2e-dev/web exec node -e ''const assert=require("node:assert/strict");assert.equal(require("playwright-core/package.json").version,"1.64.1")''
+
+        pnpm --filter @e2e-dev/web exec vitest run --config vitest.interop-unit.config.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/interop-units.json"
+        2>&1 | tee evidence/interop-units.log
+
+        python3 - <<''PY_UNITS''
+
+        import json
+
+        r=json.load(open(''evidence/interop-units.json''));assert r[''numTotalTests'']==r[''numPassedTests'']==109
+        and r[''numFailedTests'']==r[''numPendingTests'']==0
+
+        PY_UNITS
+
+        '
+    - name: Run exactly four real owned and borrowed retirement cases
+      if: ${{ always() && steps.verify.outcome == 'success' && steps.chrome.outcome
+        == 'success' && steps.build.outcome == 'success' }}
+      run: "set -euo pipefail\ncp \"$RUNNER_TEMP/ci-native-runtime/manifest.json\"\
+        \ evidence/native-runtime.manifest.json\nsha256sum \"$E2E_AGENT_BROWSER_EXECUTABLE\"\
+        \ > evidence/native-executable.sha256\npnpm --filter @e2e-dev/web exec vitest\
+        \ list --config vitest.interop-reuse.config.ts --no-staticParse --json=\"\
+        $GITHUB_WORKSPACE/evidence/reuse-collection.json\"\npython3 - <<'PY_COLLECT'\n\
+        import json\nr=json.load(open('evidence/reuse-collection.json'));assert len(r)==4\n\
+        assert sorted(x['file'].rsplit('/',1)[-1] for x in r)==['surface-of-native-retirement-close.test.ts']*2+['surface-of-native-reuse.test.ts']*2\n\
+        PY_COLLECT\nexport E2E_INTEROP_EVIDENCE_DIR=\"$GITHUB_WORKSPACE/evidence/reuse\"\
+        \nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN\nset +e\npnpm --filter\
+        \ @e2e-dev/web exec vitest run --config vitest.interop-reuse.config.ts --reporter=verbose\
+        \ --reporter=json --outputFile.json=\"$GITHUB_WORKSPACE/evidence/reuse-results.json\"\
+        \ 2>&1 | tee evidence/reuse.log\nstatus=${PIPESTATUS[0]}\nset -e\nprintf '%s\\\
+        n' \"$status\" > evidence/reuse.exit\npython3 - <<'PY_RESULTS'\nimport json,pathlib\n\
+        r=json.load(open('evidence/reuse-results.json'));a=[x for t in r['testResults']\
+        \ for x in t['assertionResults']]\ncounts={k:r[k] for k in ['numTotalTests','numPassedTests','numFailedTests','numPendingTests']};json.dump(counts,open('evidence/reuse-counts.json','w'),indent=2)\n\
+        assert len(a)==r['numTotalTests']==4 and r['numPendingTests']==0\nfiles=['reuse-surface-owned.json','reuse-surface-borrowed.json','peer-terminal-before-dispose.json','peer-terminal-after-dispose.json']\n\
+        p=pathlib.Path('evidence/reuse');assert {x.name for x in p.glob('*.json')}==set(files)\n\
+        receipts={f:json.load(open(p/f)) for f in files};json.dump(receipts,open('evidence/reuse-receipts.json','w'),indent=2)\n\
+        assert r['numPassedTests']==4 and r['numFailedTests']==0\nassert all(x['runtime']=='passed'\
+        \ and x['cleanup']=='passed' for x in receipts.values())\nfor ownership in\
+        \ ['owned','borrowed']:\n x=receipts['reuse-surface-'+ownership+'.json'];assert\
+        \ all(x[k] is True for k in ['samePid','differentContexts','samePlaywrightBrowser','oldContextRemoved','serverClosed'])\n\
+        \ assert x['oldCloseEvents']==x['secondCloseEvents']==1\n assert x['endpointResolutions']==(1\
+        \ if ownership=='borrowed' else 0)\n if ownership=='borrowed':assert x['borrowedHostPreserved']\
+        \ is True and x['testHostReaped'] is True\nfor phase in ['before-dispose','after-dispose']:\n\
+        \ x=receipts['peer-terminal-'+phase+'.json'];assert x['phase']==phase and\
+        \ x['closeEvents']==1\nPY_RESULTS\ntest \"$status\" -eq 0\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: peer-retirement-lock-recovery-real4-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
