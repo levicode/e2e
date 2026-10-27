@@ -11,6 +11,7 @@ import { chromium, type Browser as PlaywrightBrowser } from 'playwright-core';
 import { launchRemoteChrome, closeRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { web, surfaceOf, type Browser } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { expectationBrand } from '../../../e2e/src/internal/brands.ts';
 
 /** Test-only bounds: Vitest's watchdog alone does not cancel owned work. */
 async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -43,10 +44,10 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
   let endpointResolutions = 0;
   let contextCloseEvents = 0;
   const operation = (): OperationContext => ({ signal: lifetime.signal, timeoutMs: Math.max(1, deadline - performance.now()), runId: 'interop-reopen', attemptId, origin: 'test' });
-  const engine = web({ ...(ownership === 'borrowed' ? { connect: { cdpEndpoint: () => { endpointResolutions++; if (remote === undefined) throw new Error('host not ready'); return remote.endpoint; }, reconnectEndpoint: () => { endpointResolutions++; if (remote === undefined) throw new Error('host not ready'); return remote.endpoint; } } } : {}), headers: { 'x-fixture-header': 'original-raw-route-witness' }, initScripts: ["globalThis.configuredCount = (globalThis.configuredCount ?? 0) + 1;"] });
+  const engine = web({ ...(ownership === 'borrowed' ? { connect: { cdpEndpoint: () => { endpointResolutions++; if (remote === undefined) throw new Error('host not ready'); return remote.endpoint; }, reconnectEndpoint: () => { endpointResolutions++; if (remote === undefined) throw new Error('host not ready'); return remote.endpoint; } } } : {}), initScripts: ["globalThis.configuredCount = (globalThis.configuredCount ?? 0) + 1;"] });
   let rawBrowser: PlaywrightBrowser | null | undefined;
   let browserPid: number | undefined;
-  let rawRoutes = 0;
+  let rawRoutes = 0; let publicRoutes = 0;
   let cleanupPassed = false;
   const evidence: Record<string, unknown> = { schemaVersion: 1, name: `surface-of-native-reopen-${ownership}`, runtime: 'not-run', cleanup: 'not-run' };
   let failure: unknown;
@@ -68,13 +69,41 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
       context.on('close', () => { contextCloseEvents++; });
       expect(context.pages()).toHaveLength(1); expect(() => live.page()).toThrow(expect.objectContaining({ code: 'INVALID_STATE' }));
       await context.addInitScript('globalThis.rawCount = (globalThis.rawCount ?? 0) + 1;');
+      const attachedViewports: Parameters<EngineFixtureContext['attachViewport']>[0][] = [];
+      const attachedArtifacts: Parameters<EngineFixtureContext['attachArtifact']>[] = [];
+      const fixtureContext: EngineFixtureContext = {
+        targetName: 'web',
+        app: { site: '127.0.0.1', resolveUrl: relative => new URL(relative, url).href },
+        timeouts: { test: 40000, action: 40000, assertion: 40000 },
+        get signal() { return lifetime.signal; },
+        operation: timeoutMs => {
+          const current = operation();
+          return timeoutMs === undefined ? current : { ...current, timeoutMs: Math.min(current.timeoutMs, timeoutMs) };
+        },
+        fixture: (_name, target) => target,
+        expectable: (target, factory) => Object.assign(target, { [expectationBrand]: factory() }),
+        attachArtifact: (...artifact) => { attachedArtifacts.push(artifact); },
+        attachViewport: viewport => { attachedViewports.push(viewport); },
+        locator: () => { throw new Error('This gate does not mint harness locators'); },
+        screen: () => { throw new Error('This gate does not mint harness screens'); },
+      };
+      const fixture = engine.fixtures!['browser']!(fixtureContext) as Browser;
+      // Persistent contexts reject creation-time web({ headers }). Use the
+      // existing public per-request route API, registered before the raw PW
+      // route so that the latter's fallback still reaches this header owner.
+      await fixture.route('**/headers', async route => {
+        publicRoutes++;
+        await route.continue({ headers: { ...route.request.headers, 'x-fixture-header': 'original-raw-route-witness' } });
+      });
       await context.route('**/headers', async route => { rawRoutes++; await route.fallback(); });
       await engine.session!.open!(url, operation());
       const oldPage = live.page(); expect(oldPage.context()).toBe(context);
       await context.addCookies([{ name: 'persistent-value', value: 'kept', url }]);
       await oldPage.evaluate(() => localStorage.setItem('persistent-value', 'kept'));
-      const fixture = engine.fixtures!['browser']!({ operation, app: { resolveUrl: (relative: string) => new URL(relative, url).href }, expectable: (target: object) => target, fixture: (_name: string, target: object) => target, attachArtifact: () => undefined } as unknown as EngineFixtureContext) as Browser;
-      await fixture.setViewport({ width: 801, height: 603 }); await fixture.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+      await fixture.setViewport({ width: 801, height: 603 });
+      expect(attachedViewports).toEqual([{ width: 801, height: 603, scale: 1 }]);
+      expect(attachedArtifacts).toEqual([]);
+      await fixture.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
       const initial = await context.newCDPSession(oldPage); let contextId: string; let firstTargetId: string;
       try { const info = (await initial.send('Target.getTargetInfo')).targetInfo; contextId = info.browserContextId!; firstTargetId = info.targetId; }
       finally { await initial.detach(); }
@@ -105,7 +134,8 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
       } finally { await sameProcess.detach(); }
       expect(remote!.proc.pid).toBe(browserPid); expect(endpointResolutions).toBe(1);
       expect({ requests, rawRoutes }).toEqual({ requests: 2, rawRoutes: 2 }); expect(receivedHeader).toBe('original-raw-route-witness');
-      Object.assign(evidence, { browserPid, samePid: true, sameContextId: true, samePlaywrightContext: true, samePlaywrightBrowser: true, exactNewTarget: true, oldCloseEvents, oneOwnPage: true, endpointResolutions, viewportMediaPreserved: true, persistentStoragePreserved: true, scriptCountPerDocument: 1, rawRoutes: 2, protectedHeader: true });
+      expect(publicRoutes).toBe(2);
+      Object.assign(evidence, { browserPid, samePid: true, sameContextId: true, samePlaywrightContext: true, samePlaywrightBrowser: true, exactNewTarget: true, oldCloseEvents, oneOwnPage: true, endpointResolutions, viewportMediaPreserved: true, persistentStoragePreserved: true, scriptCountPerDocument: 1, rawRoutes: 2, publicRoutes: 2, publicRouteHeader: true });
     })();
     await bounded(work, 40000, 'persistent exact Page reopen witness');
     evidence['runtime'] = 'passed';

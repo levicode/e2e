@@ -136,10 +136,12 @@ it.each([
     evidence['detach'] = detachResult;
     evidence['scheduleCompleted'] = true;
     expect(restartResult.status).toBe('rejected');
-    expect(actualSessionCloseEvents).toBe(1); expect(detachCalls).toBe(1); expect(contextCloseEvents).toBe(1);
+    expect(actualSessionCloseEvents).toBe(1); expect(detachCalls).toBe(0); expect(contextCloseEvents).toBe(1);
     expect(nativeCloseReceipts).toBe(1); expect(nativeCloseFailures).toBe(0);
     expect(endpointResolutions).toBe(ownership === 'borrowed' ? 1 : 0);
-    // Desired contract, not an assumption: real retirement must not invent a
+    // This exact session emitted close before the held query was delivered, so
+    // no redundant detach may be dispatched. Native Close/proxy receipts above
+    // remain separately required. Real retirement must not invent a
     // failed cleanup when the exact identity session was already closed.
     expect(final.status).toBe('fulfilled');
     evidence['runtime'] = 'passed';

@@ -45,6 +45,11 @@ async function identity(page: Page, operation: OperationContext, candidate = fal
     throw cause;
   });
   if (session === undefined) return undefined;
+  // Only this exact acquired session's public close event proves its detach
+  // authority already retired. Page/browser closure alone is insufficient.
+  let sessionClosed = false;
+  const closed = () => { sessionClosed = true; };
+  if (candidate) session.on('close', closed);
   try {
     check(operation);
     const result = await session.send('Target.getTargetInfo').catch(cause => {
@@ -57,9 +62,11 @@ async function identity(page: Page, operation: OperationContext, candidate = fal
     if (targetInfo.type !== 'page' || targetInfo.subtype !== undefined || !targetInfo.targetId || !targetInfo.browserContextId) invalid('the Page has no exact context/target identity');
     return { contextId: targetInfo.browserContextId, targetId: targetInfo.targetId };
   } finally {
-    // Actual cleanup rejection must survive cancellation and Page closure.
-    // Never run a local deadline check in a catch around this receipt.
-    await session.detach();
+    try {
+      // Do not issue a second release after the exact session closed. Once
+      // detach is dispatched, its actual rejection survives any later close.
+      if (!sessionClosed) await session.detach();
+    } finally { if (candidate) session.off('close', closed); }
   }
 }
 /** One actual PW context and one reserved own blank Page. User scripts are not

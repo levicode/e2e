@@ -21,6 +21,17 @@ async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): P
 }
 const outcome = (work: Promise<unknown>) => work.then(() => ({ status: 'fulfilled' as const }), cause => ({ status: 'rejected' as const, cause }));
 const errorRecord = (cause: unknown) => ({ name: cause instanceof Error ? cause.name : typeof cause, code: cause !== null && typeof cause === 'object' && 'code' in cause ? cause.code : undefined });
+// Closed diagnostic vocabulary only: no exception text, endpoint or payload.
+function closeFailure(cause: unknown): string {
+  if (!(cause instanceof Error)) return 'non-error';
+  for (const code of ['cleanup-failed', 'scope-unavailable', 'stale-scope', 'cancelled', 'browser-failure']) {
+    if (cause.message === `The native browser protocol became invalid (native-refusal:${code})`) return `native-refusal:${code}`;
+  }
+  if (cause.message === 'The native browser response violated its capability contract') return 'capability-contract';
+  if (cause.message === 'The native browser connection ended before scope settlement') return 'eof-before-settlement';
+  if (cause.message === 'The native browser proxy did not finish acknowledged cleanup') return 'proxy-settlement';
+  return 'unclassified';
+}
 it.each((['reset', 'restore'] as const).flatMap(action => (['before-old-close', 'after-old-close', 'after-new-create'] as const).map(phase => ({ action, phase }))))('retains exact $action custody when cancelled $phase', async ({ action, phase }) => {
   const artifactsDir = mkdtempSync(path.join(tmpdir(), 'interop-replacement-retirement-'));
   const lifetime = new AbortController(); const expiry = setTimeout(() => lifetime.abort(), 45000);
@@ -32,13 +43,14 @@ it.each((['reset', 'restore'] as const).flatMap(action => (['before-old-close', 
   let foreign: BrowserContext | undefined; let foreignId: string | undefined; let oldId: string | undefined; let candidateId: string | undefined;
   let originalPid: number | undefined; let endpointResolutions = 0; let oldCloseEvents = 0; let candidateCloseEvents = 0;
   let actualCloseReceipts = 0; let actualCloseFailures = 0;
+  const actualCloseErrors: Record<string, unknown>[] = [];
   let oldCloseAttempts = 0; let oldPublicClose: Record<string, unknown> | undefined;
   let candidate: BrowserContext | undefined; let saved: EngineState | undefined;
   const nativeOutcomes: { command: string; effects: string; scopeState: string; ok: boolean }[] = [];
   const closes = new Set<Promise<void>>(); const originalClose = NativeClient.prototype.close;
   const closeObserver = vi.spyOn(NativeClient.prototype, 'close').mockImplementation(function (this: NativeClient, budget) {
     const work = originalClose.call(this, budget);
-    if (!closes.has(work)) { closes.add(work); void work.then(() => { actualCloseReceipts++; nativeClosed.resolve(); }, () => { actualCloseFailures++; }); }
+    if (!closes.has(work)) { closes.add(work); void work.then(() => { actualCloseReceipts++; nativeClosed.resolve(); }, cause => { actualCloseFailures++; actualCloseErrors.push({ ...errorRecord(cause), failure: closeFailure(cause) }); }); }
     return work;
   });
   const originalRequest = NativeClient.prototype.request;
@@ -149,7 +161,7 @@ it.each((['reset', 'restore'] as const).flatMap(action => (['before-old-close', 
     catch (cause) { failure ??= cause; cleanupPassed = false; evidence['cleanup'] = 'failed'; }
     try { if (body !== undefined) await bounded(body.catch(() => {}), 1000, 'retired test-body settlement'); }
     catch (cause) { failure ??= cause; cleanupPassed = false; evidence['cleanup'] = 'failed'; }
-    Object.assign(evidence, { oldCloseAttempts, oldPublicClose });
+    Object.assign(evidence, { oldCloseAttempts, oldPublicClose, oldCloseEvents, candidateCloseEvents, actualCloseReceipts, actualCloseFailures, actualCloseErrors, nativeOutcomes, rawConnected: raw?.isConnected(), endpointResolutions });
     const directory = process.env['E2E_INTEROP_EVIDENCE_DIR']; if (directory !== undefined) { mkdirSync(directory, { recursive: true }); writeFileSync(path.join(directory, `replacement-retirement-${action}-${phase}.json`), JSON.stringify(evidence, null, 2)); }
     if (cleanupPassed) rmSync(artifactsDir, { recursive: true, force: true });
   }

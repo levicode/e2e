@@ -570,6 +570,7 @@ describe('web platform integration', () => {
     const result = resultByTitle(outcome, title);
     expect(result.status).toBe('failed');
     const attempt = result.attempts[0]!;
+    if (process.env['E2E_PLATFORM_HANDLER_DIAGNOSTIC'] === '1') console.error('PLATFORM_HANDLER_RECEIPT', JSON.stringify({ kind: _kind, error: attempt.error, cleanup: attempt.cleanup, steps: attempt.steps.map(step => ({ api: step.api, status: step.status, error: step.error })), runErrors: outcome.report.run.errors }));
     expect(attempt.error).toMatchObject({ code: 'ASSERTION_FAILED', phase: 'body' });
     expect(attempt.cleanup).toBe('complete');
     expect(outcome.report.run.errors.map((error) => error.code)).toEqual([]);

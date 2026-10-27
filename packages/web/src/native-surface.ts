@@ -1182,6 +1182,10 @@ export class NativeSurface implements NativeWebSurface {
     let replacement: PlaywrightBinding | undefined;
     let retired = false; let handoffStarted = false; let publishedScope: string | undefined; let nativeCompleted = false;
     const decisions = new Set<Promise<void>>();
+    const traceBinding = (stage: string, value = replacement) => {
+      if (process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] !== '1' || value === undefined) return;
+      console.error('INTEROP_BINDING_RECEIPT', JSON.stringify({ stage, contextId: value.contextId, targetId: value.targetId, pageClosed: value.page.isClosed(), browserConnected: value.browser.isConnected(), contextListed: value.browser.contexts().includes(value.context), pageListed: value.context.pages().includes(value.page) }));
+    };
     const failed = (error: unknown) => this.recordPublicationFailure(attempt, error);
     const check = (active: OperationContext) => {
       if (attempt.retirement.signal.aborted) throw connectionCancellation('Context replacement retired with its attempt');
@@ -1202,7 +1206,13 @@ export class NativeSurface implements NativeWebSurface {
               responseStarted = true; await respond({ kind: 'interop-retired' });
             } else {
               if (!retired || replacement !== undefined) throw invalidState('Replacement creation preceded exact old-context retirement');
-              const creating = createPlaywrightContext(previous.browser, options, active).then(value => { replacement = value; });
+              const creating = createPlaywrightContext(previous.browser, options, active).then(value => {
+                replacement = value; traceBinding('candidate-created', value);
+                if (process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') {
+                  value.page.once('close', () => traceBinding('candidate-page-closed', value));
+                  value.context.once('close', () => traceBinding('candidate-context-closed', value));
+                }
+              });
               attempt.rawOpening = creating; void creating.catch(() => {});
               await creating; check(active);
               responseStarted = true; await respond({ kind: 'interop-created', contextId: replacement!.contextId, targetId: replacement!.targetId });
@@ -1232,7 +1242,7 @@ export class NativeSurface implements NativeWebSurface {
         // State-upload transfer completes at the actual native replacement ACK,
         // not after unrelated PW configuration/activation. A later failure must
         // not issue blob.release against the now-retired old context.
-        nativeCompleted = true;
+        nativeCompleted = true; traceBinding('native-replacement-ack');
         await withPublicationBudget(mutation, 'configuring the replacement Playwright context', remaining => {
           const current: OperationContext = { ...mutation, signal: remaining().signal, get timeoutMs() { return remaining().timeoutMs; } };
           return withinAttemptRequest(current, attempt, async active => {
@@ -1241,7 +1251,9 @@ export class NativeSurface implements NativeWebSurface {
               const binding = replacement;
               if (!retired || binding === undefined || result.activatePage === undefined) throw invalidState('Native replacement did not complete its exact Playwright handoff');
               if (options.viewport !== null) { await binding.page.setViewportSize(options.viewport); check(active); }
+              traceBinding('before-media', binding);
               await binding.page.emulateMedia(options.media); check(active);
+              traceBinding('after-media', binding);
               // Exactly one registration, after native harness network protection.
               for (const source of creation.initScripts) { await binding.context.addInitScript(source); check(active); }
               attempt.rawBinding = binding; attempt.scope = result.identityScope; attempt.epoch++;

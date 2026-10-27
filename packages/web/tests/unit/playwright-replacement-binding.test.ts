@@ -14,13 +14,13 @@ const operation = (signal = new AbortController().signal, timeoutMs = 1000): Ope
 function fixture() {
   const contextEvents = new EventEmitter(); const browserEvents = new EventEmitter();
   const pages: Page[] = []; const ids = new Map<Page, string>(); const closed = new Set<Page>();
-  const sessions: string[] = []; let identityGate: Promise<void> | undefined; let detachGate: Promise<void> | undefined;
+  const sessions: string[] = []; const sessionEvents: EventEmitter[] = []; let identityGate: Promise<void> | undefined; let detachGate: Promise<void> | undefined;
   const detaching = deferred<void>(); const reading = deferred<void>(); const identityFailures = new Map<string, unknown>();
   const context = Object.assign(contextEvents, {
     pages: () => [...pages],
     newCDPSession: async (page: Page) => {
-      const id = ids.get(page)!; sessions.push(`open:${id}`);
-      return { send: async () => { reading.resolve(); await identityGate; if (identityFailures.has(id)) throw identityFailures.get(id); return { targetInfo: { type: 'page', targetId: id, browserContextId: 'context' } }; }, detach: async () => { sessions.push(`detach:${id}`); detaching.resolve(); await detachGate; } };
+      const id = ids.get(page)!; sessions.push(`open:${id}`); const events = new EventEmitter(); sessionEvents.push(events); let detached = false; events.on('close', () => { detached = true; });
+      return Object.assign(events, { send: async () => { reading.resolve(); await identityGate; if (identityFailures.has(id)) throw identityFailures.get(id); return { targetInfo: { type: 'page', targetId: id, browserContextId: 'context' } }; }, detach: async () => { sessions.push(`detach:${id}`); detaching.resolve(); if (detached) throw new Error('exact session already closed'); await detachGate; events.emit('close'); } });
     },
   }) as unknown as BrowserContext;
   const browser = Object.assign(browserEvents, { isConnected: () => true }) as unknown as Browser;
@@ -35,7 +35,7 @@ function fixture() {
   const assertNoListeners = () => {
     expect(contextEvents.listenerCount('page')).toBe(0); expect(contextEvents.listenerCount('close')).toBe(0); expect(browserEvents.listenerCount('disconnected')).toBe(0);
   };
-  return { binding, page, closed, sessions, contextEvents, assertNoListeners, detaching: detaching.promise, reading: reading.promise,
+  return { binding, page, closed, sessions, sessionEvents, contextEvents, assertNoListeners, detaching: detaching.promise, reading: reading.promise,
     holdIdentity: (gate: Promise<void>) => { identityGate = gate; }, holdDetach: (gate: Promise<void>) => { detachGate = gate; },
     failIdentity: (id: string, cause: unknown) => { identityFailures.set(id, cause); } };
 }
@@ -100,4 +100,24 @@ it('skips a positively retired candidate query only after its session detach has
   await f.reading; f.closed.add(popup); lookup.resolve();
   expect((await binding).page).toBe(exact);
   expect(f.sessions).toEqual(['open:popup', 'detach:popup', 'open:exact', 'detach:exact']); f.assertNoListeners();
+});
+
+it('uses the exact session close receipt without issuing a redundant detach during retirement', async () => {
+  const f = fixture(); const cancel = new AbortController(); const gate = deferred<void>();
+  f.page('exact'); f.holdIdentity(gate.promise);
+  const binding = bindExistingPlaywrightPage(f.binding, expected, operation(cancel.signal));
+  await f.reading; cancel.abort(); f.sessionEvents[0]!.emit('close'); gate.resolve();
+  await expect(binding).rejects.toMatchObject({ code: 'CANCELLED' });
+  expect(f.sessions).toEqual(['open:exact']);
+  expect(f.sessionEvents[0]!.listenerCount('close')).toBe(1); f.assertNoListeners();
+});
+it.each(['CANCELLED', 'ENGINE_FAILURE'] as const)('preserves dispatched detach %s even after that exact session closes', async code => {
+  const f = fixture(); const cancel = new AbortController(); const detach = deferred<void>();
+  f.page('exact'); f.holdDetach(detach.promise);
+  const binding = bindExistingPlaywrightPage(f.binding, expected, operation(cancel.signal));
+  await f.detaching; cancel.abort(); f.sessionEvents[0]!.emit('close');
+  const failure = new EngineError(code, 'actual dispatched detach failed', { retryable: false });
+  detach.reject(failure); await expect(binding).rejects.toBe(failure);
+  expect(f.sessions).toEqual(['open:exact', 'detach:exact']);
+  expect(f.sessionEvents[0]!.listenerCount('close')).toBe(1); f.assertNoListeners();
 });

@@ -11,6 +11,7 @@ import { chromium, type Browser as PlaywrightBrowser } from 'playwright-core';
 import { launchRemoteChrome, closeRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { web, surfaceOf, type Browser } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { expectationBrand } from '../../../e2e/src/internal/brands.ts';
 
 /** Test-only bounds: Vitest's watchdog alone does not cancel owned work. */
 async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -111,13 +112,28 @@ it.each(['owned', 'borrowed'] as const)('restarts one %s Chromium into the exact
       } finally { await session.detach(); }
       await context.addCookies([{ name: 'same-attempt', value: 'kept', url }]);
       await page.evaluate(() => localStorage.setItem('restart-value', 'kept'));
-      const fixture = engine.fixtures!['browser']!({
-        operation,
-        app: { resolveUrl: (relative: string) => new URL(relative, url).href },
-        expectable: (target: object) => target, fixture: (_name: string, target: object) => target,
-        attachArtifact: () => undefined,
-      } as unknown as EngineFixtureContext) as Browser;
+      const attachedViewports: Parameters<EngineFixtureContext['attachViewport']>[0][] = [];
+      const attachedArtifacts: Parameters<EngineFixtureContext['attachArtifact']>[] = [];
+      const fixtureContext: EngineFixtureContext = {
+        targetName: 'web',
+        app: { site: '127.0.0.1', resolveUrl: relative => new URL(relative, url).href },
+        timeouts: { test: 40000, action: 40000, assertion: 40000 },
+        get signal() { return lifetime.signal; },
+        operation: timeoutMs => {
+          const current = operation();
+          return timeoutMs === undefined ? current : { ...current, timeoutMs: Math.min(current.timeoutMs, timeoutMs) };
+        },
+        fixture: (_name, target) => target,
+        expectable: (target, factory) => Object.assign(target, { [expectationBrand]: factory() }),
+        attachArtifact: (...artifact) => { attachedArtifacts.push(artifact); },
+        attachViewport: viewport => { attachedViewports.push(viewport); },
+        locator: () => { throw new Error('This gate does not mint harness locators'); },
+        screen: () => { throw new Error('This gate does not mint harness screens'); },
+      };
+      const fixture = engine.fixtures!['browser']!(fixtureContext) as Browser;
       await fixture.setViewport({ width: 801, height: 603 });
+      expect(attachedViewports).toEqual([{ width: 801, height: 603, scale: 1 }]);
+      expect(attachedArtifacts).toEqual([]);
       await fixture.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
       const popup = await context.newPage();
       expect(live.page()).toBe(page);
@@ -189,12 +205,13 @@ it.each(['owned', 'borrowed'] as const)('restarts one %s Chromium into the exact
         evidence['borrowedHostPreserved'] = true;
       }
       if (ownership === 'owned' && browserPid !== undefined) {
-        const deadline = Date.now() + 5000;
-        let alive = true;
-        while (alive && Date.now() < deadline) {
+        const exitDeadline = Date.now() + 5000;
+        let alive = true; let processProbeError: unknown;
+        while (alive && Date.now() < exitDeadline) {
           try { process.kill(browserPid, 0); await new Promise(resolve => setTimeout(resolve, 20)); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; alive = false; }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') { processProbeError = error; break; } alive = false; }
         }
+        expect(processProbeError).toBeUndefined();
         expect(alive).toBe(false);
       }
       if (work !== undefined) await bounded(work.catch(() => undefined), 1000, 'retired witness settlement');

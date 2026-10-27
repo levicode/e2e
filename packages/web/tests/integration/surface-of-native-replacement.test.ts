@@ -11,6 +11,7 @@ import { chromium, type Browser as PlaywrightBrowser, type BrowserContext, type 
 import { launchRemoteChrome, closeRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { web, surfaceOf, type Browser } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { expectationBrand } from '../../../e2e/src/internal/brands.ts';
 
 /** Test-only bounds: Vitest's watchdog alone does not cancel owned work. */
 async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -96,13 +97,28 @@ it.each(['owned', 'borrowed'] as const)('resets and restores one %s Chromium wit
       await initial.addCookies([{ name: 'restore-value', value: 'kept', url }]);
       await originalPage.evaluate(() => localStorage.setItem('restore-value', 'kept'));
       const saved = await engine.state!.capture(operation());
-      const fixture = engine.fixtures!['browser']!({
-        operation,
-        app: { resolveUrl: (relative: string) => new URL(relative, url).href },
-        expectable: (target: object) => target, fixture: (_name: string, target: object) => target,
-        attachArtifact: () => undefined,
-      } as unknown as EngineFixtureContext) as Browser;
+      const attachedViewports: Parameters<EngineFixtureContext['attachViewport']>[0][] = [];
+      const attachedArtifacts: Parameters<EngineFixtureContext['attachArtifact']>[] = [];
+      const fixtureContext: EngineFixtureContext = {
+        targetName: 'web',
+        app: { site: '127.0.0.1', resolveUrl: relative => new URL(relative, url).href },
+        timeouts: { test: 40000, action: 40000, assertion: 40000 },
+        get signal() { return lifetime.signal; },
+        operation: timeoutMs => {
+          const current = operation();
+          return timeoutMs === undefined ? current : { ...current, timeoutMs: Math.min(current.timeoutMs, timeoutMs) };
+        },
+        fixture: (_name, target) => target,
+        expectable: (target, factory) => Object.assign(target, { [expectationBrand]: factory() }),
+        attachArtifact: (...artifact) => { attachedArtifacts.push(artifact); },
+        attachViewport: viewport => { attachedViewports.push(viewport); },
+        locator: () => { throw new Error('This gate does not mint harness locators'); },
+        screen: () => { throw new Error('This gate does not mint harness screens'); },
+      };
+      const fixture = engine.fixtures!['browser']!(fixtureContext) as Browser;
       await fixture.setViewport({ width: 801, height: 603 });
+      expect(attachedViewports).toEqual([{ width: 801, height: 603, scale: 1 }]);
+      expect(attachedArtifacts).toEqual([]);
       await fixture.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
       const browserIdentity = await rawBrowser!.newBrowserCDPSession();
       const contextIds: string[] = [];
