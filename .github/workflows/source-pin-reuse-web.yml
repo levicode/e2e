@@ -1,4 +1,4 @@
-name: Web exact source-pin recovery (verified existing binaries)
+name: Validate disconnect readiness correction on exact verified native bytes
 'on':
   push:
     branches:
@@ -32,7 +32,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/e2e
-        ref: 539242d72edcc1880ca68844b98ea4d1cc986734
+        ref: 403c22742a44cb1092c09315c5c0e818fa93e8a8
         path: source
         persist-credentials: false
     - name: Assert source SHA, tree and ordinary CI native pin before setup
@@ -68,11 +68,11 @@ jobs:
 
         (cd images; sha256sum -c SHA256SUMS)
 
-        test "$(cat images/native-source.sha)" = 9b742b5dcf785d1e05be582080e3a89696245ee3
+        test "$(cat images/native-source.sha)" = 5bb088e4c54ece52ff4a68a8a2c43e777c37f407
 
-        test "$(cat images/native-source.tree)" = c36e1b9bc438c6245c6861781e2502ab143d00b8
+        test "$(cat images/native-source.tree)" = d1b879ef87d2adb3efcdd3d7ca541e359fe0211e
 
-        test "$(cat images/producer-run.id)" = 40418477337
+        test "$(cat images/producer-run.id)" = 40429243507
 
         cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
 
@@ -82,11 +82,11 @@ jobs:
     - name: Seed public apt archives from verified prior run (not test evidence)
       env:
         GH_TOKEN: ${{ github.token }}
-      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
-        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
-        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
-        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
-        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\" | curl --fail\
+        \ --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json' \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip\
+        \ -o \"$zip\"\nprintf '%s  %s\\n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\n\
+        python3 recipe/scripts/web-functional/seed-apt-cache.py \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\
+        \nrm -- \"$zip\"\n"
     - name: Probe orchestration regressions (not native runtime proof)
       working-directory: source
       run: node --test scripts/acceptance/probe-native.test.ts
@@ -106,6 +106,12 @@ jobs:
         sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
 
         '
+    - name: Typecheck exact fresh workspace and exercise framed disconnect contracts
+      working-directory: source
+      run: 'pnpm --filter @e2e-dev/web exec tsc --noEmit
+
+        pnpm --filter @e2e-dev/web exec vitest run --project unit tests/unit/native-disconnected-recovery.test.ts --maxWorkers=1 --bail=0
+        --reporter=verbose --reporter=json --outputFile="$GITHUB_WORKSPACE/evidence/disconnect-contract.vitest.json"'
     - name: Run full original Web integration suite with per-case and routes diagnostics
       if: ${{ success() && steps.setup.outcome == 'success' }}
       run: bash recipe/scripts/web-functional/run.sh web
