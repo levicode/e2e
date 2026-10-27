@@ -1,0 +1,201 @@
+name: Original 125 consumers exact-source setup retry
+'on':
+  push:
+    branches:
+    - implement/original125-setup-retry-ci
+permissions:
+  contents: read
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 2b9e0a00ee6466e55c52dacdba1d4f1bece2e2aa
+  NATIVE_SOURCE_TREE: 5d92121a84c82082e5c826737ffeb19e92ea4857
+jobs:
+  original125-exact-product-retry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/recipe-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/recipe-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: a725793cbc19f34dad85a4cae53e991b62017b70
+        path: source
+        persist-credentials: false
+    - name: Require exact original producer E2E tree, not successor product bytes
+      run: 'set -euo pipefail
+
+        test "$(git -C source rev-parse HEAD)" = a725793cbc19f34dad85a4cae53e991b62017b70
+
+        test "$(git -C source rev-parse HEAD^{tree})" = b3d223124aeb23dc1dff6c76d484bc6835ddf0ce
+
+        test -z "$(git -C source status --porcelain)"
+
+        git -C source rev-parse HEAD > evidence/e2e-source.sha
+
+        git -C source rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        ln -s "$GITHUB_WORKSPACE/evidence" source/evidence
+
+        '
+    - name: Reject held upper-layer fixture migration
+      run: 'set -euo pipefail
+
+        printf ''%s  %s\n'' ''d085ea56f7bcc05c52b11766ace80e3c8c5c9fa468a33950a763fd617fc79eb4'' ''packages/e2e/tests/helpers/fake-loop-model.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''62050ddd13c46035c4414e5fa51e3ffe18171b2ceaf4db244413d8a819cbfbb0'' ''packages/e2e/tests/helpers/trace-cache.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''c2f5d7b461254fb7fd0d2e3fb2007fcd658d511f472773af66eeba51c85716bb'' ''packages/e2e/tests/integration/agent-act-pixel-tools.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''270c94821fb3977503f41a261ba7ac429b5fa6231e2dd1f7a1fd2f41a5b65b13'' ''packages/e2e/tests/integration/agent-act-verbs.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''717b663c338ddffb1419f38fc921d295aea379469a47ca7c4e2ae9e0cda31f8b'' ''packages/e2e/tests/integration/agent-act.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''da327cb285108b2f9207db4a8310a463be59ffe391f5271d2d971cc5465dca3a'' ''packages/e2e/tests/integration/agent-ai-trace.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''a410f60a6cba9325280f4e6eedd9b85b3ce65e2378778fb4dcc5fa45206168fe'' ''packages/e2e/tests/integration/agent-policy.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''433230f1d60c0f51c764ab4a52c1203cf0bdc5f534e437c9044680ac50641c48'' ''packages/e2e/tests/integration/agent-trace-cache.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''40d8f9f8ec197119f56d8bf548e692dd7fa575afeee2f336e5234cf60558b51e'' ''packages/e2e/tests/integration/agent.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''bc8d4b38f6aa9e7e5f9c28be37610558c2015abee1a39aa6771b00a1aa09e3df'' ''packages/e2e/tests/integration/mcp-server.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''fcf046d4690910188d13ca3815458cba67188f1df8f19eba287da4abc504ff26'' ''packages/e2e/tests/integration/mcp-test-lines.test.ts''
+        | sha256sum --check
+
+        printf ''%s  %s\n'' ''8049c4ccebb14d6f007255957ef2a1ea45a7693a7f877400e854fb9f8f0d78d4'' ''packages/e2e/tests/integration/plain-string-secrets.test.ts''
+        | sha256sum --check
+
+        test ! -e packages/e2e/tests/unit/fake-loop-node-id.test.ts
+
+        '
+      working-directory: source
+    - run: pnpm install --frozen-lockfile
+      working-directory: source
+    - name: Download and hash exact producer artifact (bounded infrastructure)
+      timeout-minutes: 3
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-interrupt-runtime.py
+    - name: Verify explicit producer manifest, compiler and native bytes
+      timeout-minutes: 1
+      run: node scripts/ci/verify-interrupt-runtime.ts "$RUNNER_TEMP/interrupt-native-runtime"
+    - name: Install native Chrome and OS dependencies (10 minute infrastructure bound)
+      timeout-minutes: 10
+      run: 'set -euo pipefail
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps 2>&1 | tee evidence/native-install.log'
+    - name: Locate and hash the installed native Chrome
+      timeout-minutes: 1
+      run: "python3 - <<'PY_CHROME'\nimport pathlib,os,hashlib,json,subprocess\nroot=pathlib.Path.home()/'.agent-browser/browsers'\n\
+        paths=[p for d in root.glob('chrome-*') for p in [d/'chrome',d/'chrome-linux64/chrome'] if p.is_file()]\n\
+        assert len(paths)==1, 'Expected exactly one freshly installed native Chrome'\np=paths[0].resolve();h=hashlib.sha256()\n\
+        with p.open('rb') as f:\n for b in iter(lambda:f.read(1048576),b''):h.update(b)\nversion=subprocess.check_output([str(p),'--version'],text=True,timeout=5).strip()\n\
+        pathlib.Path('evidence/chrome.json').write_text(json.dumps({'path':str(p),'version':version,'sha256':h.hexdigest(),'ownedDisposableOnly':True},indent=2)+'\\\
+        n')\nwith open(os.environ['GITHUB_ENV'],'a') as f:f.write('CHROME_BIN='+str(p)+'\\n')\nPY_CHROME\n"
+    - name: Require recording tool dependencies
+      timeout-minutes: 5
+      run: 'set -euo pipefail
+
+        if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then sudo apt-get update; sudo apt-get
+        install -y ffmpeg; fi
+
+        ffmpeg -version > evidence/ffmpeg.version
+
+        ffprobe -version > evidence/ffprobe.version'
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+      working-directory: source
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+      working-directory: source
+    - name: Unchanged public reference consumers on the same native runtime
+      run: 'set -euo pipefail
+
+        cp "$RUNNER_TEMP/interrupt-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/agent-act-pixel-tools.test.ts tests/integration/agent-act-verbs.test.ts
+        tests/integration/agent-act.test.ts tests/integration/agent-ai-trace.test.ts tests/integration/agent-policy.test.ts
+        tests/integration/agent-trace-cache.test.ts tests/integration/agent.test.ts tests/integration/mcp-server.test.ts
+        tests/integration/mcp-test-lines.test.ts tests/integration/plain-string-secrets.test.ts tests/integration/canonical-reference-roundtrip.test.ts
+        --bail=0 --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/core-consumers.json"
+        2>&1 | tee evidence/core-consumers.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/core-consumers.exit
+
+        python3 - <<''PY_COUNTS''
+
+        import json
+
+        from pathlib import Path
+
+        p=json.loads(Path(''evidence/core-consumers.json'').read_text())
+
+        a=[a for t in p[''testResults''] for a in t[''assertionResults'']]
+
+        counts={''total'':len(a),''passed'':sum(x[''status'']==''passed'' for x in a),''failed'':sum(x[''status'']==''failed''
+        for x in a),''pending'':sum(x[''status''] not in (''passed'',''failed'') for x in a)}
+
+        Path(''evidence/core-consumers-counts.json'').write_text(json.dumps(counts,indent=2)+''\n'')
+
+        assert counts[''total'']==125 and counts[''pending'']==0 and counts[''passed'']+counts[''failed'']==125,counts
+
+        PY_COUNTS
+
+        exit "$status"
+
+        '
+      working-directory: source
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: original125-setup-retry-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_TEST_ACTION_DIAGNOSTICS: '1'
