@@ -12,8 +12,8 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 30d838129d5d1592ea2588cf5ae4f718ec98a848
-  NATIVE_SOURCE_TREE: a50e936837a445df8e820a2fe9c6dc8bfaaa613e
+  NATIVE_SOURCE_SHA: 5c21a469f5d6d63fe754d469ff8ac3adc2210fec
+  NATIVE_SOURCE_TREE: a8e53cd756013e833950588969e588414eef8e4a
   NEXT_TELEMETRY_DISABLED: '1'
 jobs:
   native-runtime:
@@ -1964,3 +1964,73 @@ jobs:
         path: evidence/
         if-no-files-found: error
         retention-days: 7
+  optional-mask-fixed-fifty:
+    needs:
+    - native-producer-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: ${{ needs.native-producer-tests.outputs.artifact-id }}
+        path: native-harness
+        merge-multiple: true
+    - name: Verify exact same-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: ${{ needs.native-producer-tests.outputs.harness-sha
+          }}
+      run: 'set -euo pipefail
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Fixed fifty iterations per original optional mask deadline case
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        timeout --signal=TERM --kill-after=5s 730 python3 scripts/ci/optional-mask-fixed-stress.py
+        native-harness/agent-browser-tests evidence/timing scripts/ci/optional-mask-fixed-stress-selectors.json
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: unified-optional-mask-fixed-fifty-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    if: ${{ always() && needs.native-producer-tests.outputs.compiled == 'success'
+      }}

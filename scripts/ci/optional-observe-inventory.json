@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "count": 240,
+  "count": 243,
   "selectors": [
     "native::cdp::client::tests::i10_t01_readonly_disposal_handoff_retains_exact_groups_until_matching_ack",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::i10_t01_metadata_release_ack_is_not_the_eighty_ms_tree_deadline",
@@ -243,7 +243,10 @@
     "native::client_observation_dispatch::trace_initial_inventory_tests::trace_initial_inventory_settlement_requires_exact_current_owner",
     "native::client_observation_dispatch::tests::fallback_dirty_restore_dominates_coverage_policy_and_cancellation",
     "native::client_observation_dispatch::tests::semantic_only_timeout_never_mutates_lifecycle_and_fallback_stabilizes_separately",
-    "native::client_observation_dispatch::tests::semantic_failure_before_optional_pixels_never_creates_restore_debt"
+    "native::client_observation_dispatch::tests::semantic_failure_before_optional_pixels_never_creates_restore_debt",
+    "native::client_observation_dispatch::tests::optional_observe_headroom_covers_two_timer_roundings_and_publication",
+    "native::client_observation_dispatch::tests::optional_observe_headroom_preserves_owner_cancellation_and_expired_deadline",
+    "native::client_observation_dispatch::supersession_tests::short_optional_headroom_publishes_without_producer_or_cdp_work"
   ],
   "groups": {
     "original174": {

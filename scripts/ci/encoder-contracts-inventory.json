@@ -221,5 +221,8 @@
       "browserIdentityRequired": false,
       "classification": "managed-peer-retirement"
     }
+  ],
+  "peerRetirement": [
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_peer_phase_one_still_contains_exact_context_on_terminal_shutdown"
   ]
 }
