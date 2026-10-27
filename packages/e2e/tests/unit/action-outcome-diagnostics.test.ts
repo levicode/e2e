@@ -32,3 +32,18 @@ it('projects the original delayed diff case with closed action names and bounded
   expect(rows).toMatchObject([{ case: 'delayed-action-diff', attempts: [{ steps: [{ api: 'expect.toBeVisible', durationMs: 5000, error: { code: 'ASSERTION_FAILED' }, events: [{ name: 'dragTo', durationMs: 701 }, { name: 'setInputFiles' }], turns: [{ reason: ['screen-diff'] }] }] }] }]);
   expect(JSON.stringify(rows)).not.toContain('SECRET-REVISION');
 });
+
+it('retains the first cache population run as closed phases without exposing report text', () => {
+  const report = { results: [{ test: { title: 'cached step increments twice' }, status: 'failed', attempts: [{ status: 'failed', steps: [
+    { kind: 'app', api: 'app.open', status: 'passed', durationMs: 12 },
+    { kind: 'agent', api: 'agent.act', status: 'failed', durationMs: 34, error: { code: 'NODE_STALE', message: 'SECRET private page and cache path' }, cache: { mode: 'missed', detail: 'SECRET' } },
+  ] }] }] };
+  const before = JSON.stringify(report);
+  const rows = actionOutcomeDiagnostics(report);
+  expect(rows).toMatchObject([{ case: 'trace-cache-increment-run', status: 'failed', attempts: [{ steps: [
+    { api: 'app.open', status: 'passed', durationMs: 12 },
+    { api: 'agent.act', status: 'failed', durationMs: 34, error: { code: 'NODE_STALE', reason: ['unknown'] } },
+  ] }] }]);
+  expect(JSON.stringify(rows)).not.toMatch(/SECRET|private|cache path/);
+  expect(JSON.stringify(report)).toBe(before);
+});

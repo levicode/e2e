@@ -50,8 +50,19 @@ export class BrowserChannel {
   private async dispatchCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
     this.assertScope();
     const correlation = name === 'fixture.correlate' ? { args: snapshotCorrelationArgs(args), identityScope: this.scope } : undefined;
+    let settling = this.client.cancelledSettlement(this.scope);
+    if (settling !== undefined) {
+      const endsAt = performance.now() + operation.timeoutMs;
+      do {
+        await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() }, 'native operation readiness', () => settling!);
+        this.assertScope();
+        settling = this.client.cancelledSettlement(this.scope);
+      } while (settling !== undefined);
+      operation = { ...operation, timeoutMs: endsAt - performance.now() };
+    }
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
     const result = await this.client.request(name, { ...(correlation?.args ?? args), identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
+    if (name === 'download.release' && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
     // Validated uncertainty survives scope retirement; it never authorizes publication.
     if (!result.ok && result.effects === 'unknown') throw resultError(result);
     this.assertScope();
@@ -116,7 +127,8 @@ export class BrowserChannel {
     // must neither release into nor invalidate the replacement scope.
     if (this.retired || !notRevoked()) return;
     try { await this.command(name, { handle }, this.context.operation()); }
-    catch {
+    catch (cause) {
+      if (name === 'download.release' && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'adapter-failure', code: cause instanceof EngineError || cause instanceof TestError ? cause.code : 'unclassified' })}\n`);
       // A release admitted while live may settle after disposal or scope replacement.
       // Its post-await scope check must not invalidate the shared replacement client.
       if (this.retired || !notRevoked() || this.context.identityScope() !== this.scope) return;

@@ -1,5 +1,6 @@
 /** Observation-only projection for the original action parity consumers. Never emit arbitrary report strings. */
 const CASES: Readonly<Record<string, string>> = {
+  'cached step increments twice': 'trace-cache-increment-run',
   'uploads a project file': 'upload',
   'default agent reads the second view': 'delayed-action-diff',
   'drags the card onto the done column': 'drag',
@@ -10,7 +11,7 @@ const CASES: Readonly<Record<string, string>> = {
 const STATUSES = ['passed', 'failed', 'flaky', 'timed-out', 'interrupted', 'skipped', 'blocked', 'cancelled', 'complete', 'forced'];
 const KINDS = ['agent', 'locator', 'assertion', 'screen', 'app', 'session', 'resource', 'poll', 'observation', 'model', 'policy', 'engine', 'schema', 'navigation'];
 const TOOLS = ['dragTo', 'setInputFiles', 'screenshot', 'hover', 'hover_at', 'tap', 'tap_at', 'drag', 'upload', 'type', 'type_at', 'typeText', 'press', 'check', 'scroll', 'scroll_to', 'complete_step', 'observe', 'relocate', 'page'];
-const APIS = ['agent.act', 'expect.toBeVisible', 'expect.toHaveText', 'expect.toBeChecked', 'browser.goto', 'screen.navigate'];
+const APIS = ['app.open', 'agent.act', 'expect.toBeVisible', 'expect.toHaveText', 'expect.toBeChecked', 'browser.goto', 'screen.navigate'];
 const CODES = ['ASSERTION_FAILED', 'LOCATOR_NOT_FOUND', 'LOCATOR_AMBIGUOUS', 'ACTION_FAILED', 'NOT_ACTIONABLE', 'ACTION_MAY_HAVE_COMMITTED', 'NODE_STALE', 'OPERATION_TIMEOUT', 'ENGINE_FAILURE', 'POLICY_DENIED', 'INVALID_STATE', 'CANCELLED', 'EXPECT_FAILED', 'AGENT_FAILED', 'AGENT_TIMEOUT', 'STEP_TIMEOUT', 'TEST_TIMEOUT', 'PIXEL_TAINTED', 'INVALID_ARGUMENT'];
 const NATIVE_REASONS = ['fill-unsupported-target', 'no-editable-focus', 'not-actionable', 'stale-reference', 'deadline-exceeded', 'browser-failure', 'cleanup-failed', 'stale-scope', 'scope-unavailable', 'invalid-arguments', 'policy-denied', 'intercepted-pointer'];
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};

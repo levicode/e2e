@@ -1,5 +1,6 @@
 /** Typed engine hooks share the Browser fixture's one native client. */
 import { createHash } from 'node:crypto';
+import { withConnectionBudget } from '../operation-budget.ts';
 import { EngineError, TestError, LOCATOR_ACTION_KINDS, type JsonValue, type OperationContext } from 'e2e/engine';
 import type { BrowserCommandMap } from './browser-contract.ts';
 import { resultError, type NativeActionErrorContext } from './browser-channel.ts';
@@ -64,6 +65,18 @@ export class EngineChannel {
       ? queryDiagnostic((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
     const frames = name === 'browser.query' || name === 'fixture.query' || name === 'fixture.read-fields'
       ? frameQuerySnapshot((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
+    // Readiness is not recovery or a retry. Join only cancelled work already
+    // owned by this scope, without bounding the dispatched result/Unknown proof.
+    let settling = scope === undefined || this.client.recoveryScope() !== undefined ? undefined : this.client.cancelledSettlement(scope);
+    if (settling !== undefined) {
+      const endsAt = performance.now() + operation.timeoutMs;
+      do {
+        await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() }, 'native operation readiness', () => settling!);
+        this.assertOwner(owns);
+        settling = this.client.cancelledSettlement(scope!);
+      } while (settling !== undefined);
+      operation = { ...operation, timeoutMs: endsAt - performance.now() };
+    }
     // The closed command map contains only structured JSON values.
     const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition);
     // Validated uncertainty survives owner retirement; it never authorizes publication.

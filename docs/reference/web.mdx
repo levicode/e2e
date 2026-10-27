@@ -914,7 +914,11 @@ const file = await browser.waitForDownload(() =>
   the owning attempt rather than the cancelled test body, without extending
   the public wait. A cancelled native read must settle before its subscription
   and handle are released; cleanup does not recover or create another scope.
-  A real cleanup failure still fails attempt cleanup.
+  The next top-level browser operation also waits for those cancellation
+  receipts within its own original budget, as does attempt teardown. This
+  does not wait for unrelated live operations or retry the cancelled action.
+  Callback child requests cannot wait on their cancelled parent; decision
+  replies remain independent. A real cleanup failure still fails attempt cleanup.
 
 | Throws | When |
 | --- | --- |

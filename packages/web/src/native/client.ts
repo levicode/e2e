@@ -182,6 +182,9 @@ export class NativeClient {
   /** Captures only existing exact-scope cancellation proofs, never live work or a new request. */
   cancelledSettlement(identityScope: string): Promise<void> | undefined {
     this.assertUsable();
+    // A decision callback may be required to settle its cancelled parent. Its
+    // child requests must fail admission instead of waiting on that parent.
+    if (this.callback.getStore() !== undefined) return undefined;
     const draining = [...this.pending.values()].filter(pending => pending.draining && pending.identityScope === identityScope);
     return draining.length === 0 ? undefined : Promise.all(draining.map(pending => pending.settlement)).then(() => undefined);
   }

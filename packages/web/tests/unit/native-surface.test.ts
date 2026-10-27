@@ -1660,6 +1660,67 @@ describe('native surface ownership and fixed policy binding', () => {
     }
   });
 
+  it.each([
+    ['reset', 'ack-first'], ['reset', 'result-first'],
+    ['restart', 'ack-first'], ['title', 'result-first'],
+    ['endAttempt', 'ack-first'], ['endAttempt', 'result-first'],
+  ] as const)('admits %s after a public download timeout only after both receipts (%s)', async (next, order) => {
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const directory = await mkdtemp(path.join(tmpdir(), 'download-next-admission-'));
+    await surface.startAttempt({ ...context('download-next'), artifactsDir: directory });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const scope = surface.identityScope;
+    const held = holdRequests('download.metadata');
+    const attached = vi.fn();
+    const fixture = createBrowserFixture(surface.fixtureSurface(), {
+      operation: (timeoutMs = 1000) => ({ ...operation(), timeoutMs }), signal, attachArtifact: attached,
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext);
+    const waiting = fixture.waitForDownload(async () => {
+      await sendEvent('download.started', { identityScope: scope, activePage: true, handle: 'held-native-download', suggestedFilename: 'held.bin' });
+    }, { timeout: 100 }).catch(cause => cause);
+    const metadata = await held.next('download.metadata');
+    let acknowledged = false;
+    const finishCancel = () => { if (!acknowledged && acknowledgeCancel !== undefined) { acknowledged = true; acknowledgeCancel(); } };
+    let replied = false;
+    const finishMetadata = () => { if (!replied) { replied = true; metadata.fail('cancelled'); } };
+    let finished = false; let following: Promise<unknown> | undefined;
+    const command = next === 'title' ? 'page.title' : next === 'endAttempt' ? 'scope.end' : `scope.${next}`;
+    const before = frames.filter(frame => frame['command'] === command).length;
+    try {
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await waiting).toMatchObject({ code: 'ACTION_FAILED', message: 'download did not complete within 100ms' });
+      following = (next === 'title' ? surface.command('page.title', {}, operation())
+        : next === 'endAttempt' ? surface.endAttempt(cleanup()) : surface[next](operation()))
+        .then(value => { finished = true; return value; }, cause => { finished = true; return cause; });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(finished ? await following : 'pending').toBe('pending');
+      expect(frames.filter(frame => frame['command'] === command)).toHaveLength(before);
+      (order === 'ack-first' ? finishCancel : finishMetadata)();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(finished ? await following : 'pending').toBe('pending');
+      expect(frames.filter(frame => frame['command'] === command)).toHaveLength(before);
+      (order === 'ack-first' ? finishMetadata : finishCancel)();
+      expect(await following).toEqual(next === 'title' ? { title: 'Synthetic page' } : undefined);
+      expect(frames.filter(frame => frame['command'] === command)).toHaveLength(before + 1);
+      expect(frames.findLast(frame => frame['command'] === command)!['args']).toMatchObject({ identityScope: scope });
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      expect(frames.filter(frame => frame['command'] === 'scope.reconnect')).toEqual([]);
+      expect(attached).not.toHaveBeenCalled();
+      expect(await readdir(path.join(directory, 'downloads'))).toEqual([]);
+      if (next !== 'endAttempt') {
+        await expect(surface.latch.settle(cleanup())).resolves.toBeUndefined();
+        expect(frames.filter(frame => frame['command'] === 'download.unsubscribe').every(frame => (frame['args'] as { identityScope: string }).identityScope === scope)).toBe(true);
+        await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      }
+    } finally {
+      finishCancel(); finishMetadata(); await waiting; await following;
+      await surface.dispose(cleanup()).catch(() => undefined);
+      vi.useRealTimers(); await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('cleans the captured download scope without initiating recovery for a cancelled caller', async () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface);
@@ -2348,6 +2409,11 @@ describe('native initial action trace publication', () => {
       if (mode === 'same-scope restart') { preserveRestartScope = true; await surface.restart(operation()); }
       if (mode === 'cancelled') controller.abort();
       if (mode === 'failed-trace') request.fail('cleanup-failed', 'unknown'); else request.succeed(observation('7'));
+      if (mode === 'cancelled') {
+        const trace = frames.findLast(frame => frame['command'] === 'browser.trace')!;
+        expect(frames.filter(frame => frame['type'] === 'cancel')).toMatchObject([{ operationSeq: trace['operationSeq'] }]);
+        acknowledgeCancel!();
+      }
       await action;
       if (mode === 'first') {
         expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ref: { id: 'root', revision: 't1' }, role: 'document', name: 'snapshot 7' }, viewport: { width: 100, height: 80 } }));

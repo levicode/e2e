@@ -400,12 +400,15 @@ describe('native session client', () => {
     const ack = { type: 'control-result', id: cancel['id'], generation: 1, accepted: order === 'ack-first', ...(order === 'ack-first' ? {} : { error: { code: 'invalid-arguments' } }), scopeState: 'usable' };
     const result = fixture.result(original, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'completed', scopeState: 'usable' });
     fixture.send(order === 'ack-first' ? ack : result); await Promise.resolve();
-    await expect(browser.command('page.title', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    let inspected = false;
+    const inspection = browser.command('page.title', {}, context()).finally(() => { inspected = true; });
+    await Promise.resolve();
+    expect(inspected).toBe(false);
     expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
     fixture.send(order === 'ack-first' ? result : ack); await rejected;
+    await new Promise(resolve => setImmediate(resolve));
     expect(published).not.toHaveBeenCalled();
     expect(fixture.dispose).not.toHaveBeenCalled();
-    const inspection = browser.command('page.title', {}, context());
     fixture.send(fixture.result(fixture.requests.at(-1)!, { data: { title: 'Fresh inspection, not rollback' } }));
     await expect(inspection).resolves.toEqual({ title: 'Fresh inspection, not rollback' });
     expect(fixture.requests.filter(frame => frame['type'] === 'request').map(frame => frame['command'])).toEqual(['browser.keyboard.type', 'page.title']);
