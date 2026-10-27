@@ -11,7 +11,7 @@ cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
 INTEGRATED VALIDATION; not full formal acceptance, no imported passes.
-Native b4845341a7420957ee262db349660e0a4ae65117; E2E fd8c9d08ea846be97dd4f475611240372ce8acc9.
+Native 5bb088e4c54ece52ff4a68a8a2c43e777c37f407; E2E 82f6ffa9cb2340a0ea9cbd093d08dafad5de6f36.
 Normal native nonignored suite plus focused tests and all44 required browser/encoder contracts.
 Whole original Web integration suite, original 2 workers, all six restored cases included without budget changes.
 Formal source-removal is remeasured after conditional test-root migration; prior 31 failures are not silently waived; no main merge or package/release here.
@@ -50,14 +50,14 @@ PY_VERIFY_CACHE
   printf 'Dir::Cache::archives "%s";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$cache" | sudo tee "$cache_config" >/dev/null
   trap 'sudo rm -f -- "$cache_config"' EXIT
   sudo install -d -o _apt -g root -m 0700 "$cache/partial"
-  test "$(git rev-parse HEAD)" = fd8c9d08ea846be97dd4f475611240372ce8acc9
-  test "$(git rev-parse HEAD^{tree})" = 5792e984fda82614b16062ca071a3aa5d29feb16
+  test "$(git rev-parse HEAD)" = 82f6ffa9cb2340a0ea9cbd093d08dafad5de6f36
+  test "$(git rev-parse HEAD^{tree})" = a88ed1d234a6cd993797ad3e70276e71c2c66c59
   test -z "$(git status --porcelain)"
   python3 - <<'PY_NATIVE_PIN'
 import json, pathlib
 pin = json.loads(pathlib.Path('.github/native-candidate.json').read_text())
 assert pin['schemaVersion'] == 1 and pin['repository'] == 'levicode/agent-browser'
-assert pin['commit'] == 'b4845341a7420957ee262db349660e0a4ae65117'
+assert pin['commit'] == '5bb088e4c54ece52ff4a68a8a2c43e777c37f407'
 PY_NATIVE_PIN
   (cd "$GITHUB_WORKSPACE/images"; sha256sum --check SHA256SUMS)
   cp "$GITHUB_WORKSPACE/images/SHA256SUMS" "$out/native-images.sha256"
