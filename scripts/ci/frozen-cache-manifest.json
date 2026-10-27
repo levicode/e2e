@@ -1,0 +1,324 @@
+{
+  "baseline": "e557432eb8e535e5862d9ede7eb40c1d92da0948",
+  "unchangedSources": {
+    "apps/web-benchmark/app": "ac407148cad0b717c260116abf2257cf58579a11",
+    "apps/web-benchmark/tests-agent": "b7b5153b85bcc116193b232eca8391a1868bbfe5",
+    "apps/web-benchmark/fixtures": "374c8401a412faba52e8979516816d3f79811978",
+    "apps/web-benchmark/e2e.agent.config.ts": "2af0f3d0b014836363ed745647f12a1d392c6bd2",
+    "apps/web-benchmark/e2e.config.ts": "f1053cfc4e9822c32d91d29bae0beb8336831118"
+  },
+  "entries": [
+    {
+      "file": "1d59459d7a881c6b4678da3686969d22fe1258a8be44e53d70929ed7d91def84.json",
+      "sha256": "c59fa33ce8542216547787f896c80a2ea184917244e94e14f3ef6512c6596687",
+      "gitBlob": "5227c66f64de528253058a37d9bf1686f5b7440e",
+      "bytes": 3257,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20otp-auto-advance",
+      "actions": 6,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "1f2ad4f61f8c80341b1a181b5f505c12fb2e7562c4c888ec21d4d3edf90d3a50.json",
+      "sha256": "48d197c0869c00a6b65c2fe9512795e0077a90bf4520c49daf84a7f277f04bb0",
+      "gitBlob": "a080e2ee66f77fae677ff31c30fbcdf65a77a4d4",
+      "bytes": 2023,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::check%20sets%20the%20checkbox%20and%20the%20radio",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "325c3192f76978208e795a9a2afbd9f7a89cd4bcb63640b8fc09c4742e995fe8.json",
+      "sha256": "8d2e4164fce5da30cd52103c18918b2762abb35ff9b590a3a190e1335488b6e4",
+      "gitBlob": "e32857d5f2094069c9b7f2327485bf4ff71e760f",
+      "bytes": 2944,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20gift-card-purchase",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "3aa75b32cb016b70702dbf3853d17fb70dcd7fca5274a024199db5d58a671d00.json",
+      "sha256": "b648652f8c01f0e8574b71b1ecce71feed1d919e01653fe679f7a7ff7b2f90e6",
+      "gitBlob": "1c272ce17779632afddcebaf080c1750c660ec68",
+      "bytes": 2077,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20overlay-trap",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "414d83190b19ded32b8cdf7449ed9ea3cd15323fec81434e6da539abd1c90423.json",
+      "sha256": "cca97aaf14d94ad4845acbb95c86441c1b7d5904a63cd45a3e4ac148b6017cc9",
+      "gitBlob": "59bd56e6821364f3e2a86f4f2a38540b5d88b80a",
+      "bytes": 1857,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::a%20long%20press%20and%20a%20double%20click%20are%20chosen%20over%20a%20plain%20tap",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "4c6e069d9f354e6876a2fbe8a2edf3efc95013dca6fd5b64682b742cbd8bde77.json",
+      "sha256": "fdf0e039096363b410aa2569c60ad885b246afe29fc60c1c9fec8d0ba320e406",
+      "gitBlob": "42ad0064efee87b68df7c8cfcaecc78670dd4a07",
+      "bytes": 1262,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::scroll_to%20brings%20the%20footnote%20into%20view",
+      "actions": 1,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "5577eea54bd7879a1e6a701aa9b793ac228ac95d033923df09b6e9732e99bd21.json",
+      "sha256": "ad17ac9ba1ae74145ef0ea0f874ae15e03639ce30327d4d0c767857918ffccf7",
+      "gitBlob": "3a3b3cefa7d3e65a8aee989696fbcec03b4ff313",
+      "bytes": 1744,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::check%20picks%20a%20radio%20the%20pick%20replaces%20with%20its%20summary",
+      "actions": 1,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "5e8767c8a91f29efad8ef0db0f28a2dcc434bef3a18e95faa2e3cb5b166a982e.json",
+      "sha256": "386a1800220f1396399b1784148bc704eb524ec1af39ec9296669a688725790e",
+      "gitBlob": "b36eda2fc1f244c5902ab484a37df906d04dd2cf",
+      "bytes": 1989,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::upload%20attaches%20the%20named%20project%20files",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "618740e5f3cb8877ae510cb93db7a22ad557d812994431961c0c9f63c71e9941.json",
+      "sha256": "652c98f8232566890beecc4cfa390d36387e7e85da3c1a13973f5109bfc76b12",
+      "gitBlob": "9128b77b5a63270f2a78b79f262921aced4eb2a7",
+      "bytes": 1867,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20filters%20the%20list%20and%20the%20URL%20carries%20the%20filter",
+      "actions": 1,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "7e416edb8b37f403cd14184fa4f662f78b1a861bd0bac454aed7785cd0e0932b.json",
+      "sha256": "2fbef9a3e1fb6f12a2e5ae13effe778aadff3ea8e604fc013bba5d35fb90fe3d",
+      "gitBlob": "5499066ea3ae7e21cd8a6fbad0baab0be5063e4a",
+      "bytes": 1833,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20iframe-form",
+      "actions": 2,
+      "gap": {
+        "index": 0,
+        "derived": "whole-node"
+      },
+      "outputAnchor": false
+    },
+    {
+      "file": "7f3b94974695552bedb8a1a61ab4c722d62d286815b40c94ec0b9ce3120d26e5.json",
+      "sha256": "f84e09f1868c908a26863d75be02ff1eb388745e21e4afcf3ebcbb2b2be08636",
+      "gitBlob": "e68f03b84ee4386cc95e3d477480c298836b0fc7",
+      "bytes": 2968,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20playbook-cleanup",
+      "actions": 4,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "817b52b90ccbfe4f0729b05f3880fc31a1d1ef82427b4c51a03b64e6762268ab.json",
+      "sha256": "7fe00fb423eda08bb0574aebf2a431e4df87dee362f146579ecb9dc849274d05",
+      "gitBlob": "4846cc7aed1130aa5e3e7be130e01cbd78b139aa",
+      "bytes": 1563,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20shadow-dom-form",
+      "actions": 2,
+      "gap": {
+        "index": 0,
+        "derived": "minted-token"
+      },
+      "outputAnchor": false
+    },
+    {
+      "file": "877837d0e2e667a1fd7572198f4d21118ce02703794a701f6fe93744d9e395ea.json",
+      "sha256": "bb1df4fbcdc803801a58dceddf51e66f50a748313f2993dbc56440456f507d0e",
+      "gitBlob": "5c2a8771ca834064b3e5e29b6b7179d603d7beb1",
+      "bytes": 1545,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20drag-and-drop",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "8824c0ed0453a4cff1a8e95fedfdc3a84f8ac1e50ac5bdc4936ef96d54a5e088.json",
+      "sha256": "064812dbfb25ad41f562b5fa133241269fcdf3fc0c44650560edc136d3ef6db4",
+      "gitBlob": "158ebb0a497d905dc8fad4c7d0f9bc905b355079",
+      "bytes": 1596,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20async-states",
+      "actions": 3,
+      "gap": {
+        "index": 1,
+        "derived": "minted-token"
+      },
+      "outputAnchor": false
+    },
+    {
+      "file": "8fd84a0f9335c6c96be5d82a9cda46146389f138c2fd46037ffbf64f4ef6e2eb.json",
+      "sha256": "4cd6f1cf22244c642b21ea53c440e36a139e169accee473291a30f3b5f93ba9f",
+      "gitBlob": "57ccdd92314141d5672ab1a88b173a0b46daf6b5",
+      "bytes": 9207,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20rich-text-editor",
+      "actions": 39,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "9f03ade8aca3d33c07e2bfb7dfe9cb373a9f919055868e769346c10d0c69282d.json",
+      "sha256": "0cee39e507bf21e589da0712e22b233eda717b6dd6c8506b31a6bd560e408b10",
+      "gitBlob": "1d04f3b32b00249733908566877f27293ad2156f",
+      "bytes": 2108,
+      "testId": "tests-agent/unique-cache.e2e.ts::act%20adds%20an%20address%20with%20a%20run-unique%20label",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "a0db42fa84bc24935c7dcb6fbfa0fec45b392cd144d988f2cda64f97cb7a5b3f.json",
+      "sha256": "a96aac00199c6d7dde556e0f2ebe812ad1db56e889197ce7e5f6b9f3ac443587",
+      "gitBlob": "ef9f9eadec2a21e9ad732b38879e9d333c564cb7",
+      "bytes": 1736,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20hover-menu",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "ab82f44f8dd2d4e8af4f76d0ac9d147e010ba0949f734270332fa8c889789108.json",
+      "sha256": "e9545968ce8729e219d708e831515be9083cf8b7042e982a2205634f046d9700",
+      "gitBlob": "b50a64a2d634fce20c3df7eca9c83d31b0fb81b9",
+      "bytes": 2117,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20virtualized-table",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "be7d298262310938ce138756a44f67f5f87010d6eca26d02996608769c664c54.json",
+      "sha256": "9e363a6fde3d35a2732c39df6996a4b94c9c73fbd5a4333c5f6d118a338b9368",
+      "gitBlob": "f028db332e27c61b738cf79825ffb86f908a2239",
+      "bytes": 2541,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20date-picker",
+      "actions": 6,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "c93dae1578622d1d299212edb5b458e987185f9e83792d2cabc2a35dc2674fb8.json",
+      "sha256": "e7d6ebd3201ca260c5afc04089c65450c345a4b9c1c1116202766f4985693fd1",
+      "gitBlob": "31fae0c5b6c74b49a7c588d631b682041859acb3",
+      "bytes": 1739,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20promo-storefront",
+      "actions": 1,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "d074cdb59fb33fe1fa582d2693674613b638080f050432967bd46ade6515eb26.json",
+      "sha256": "69954b1c2efca5edf6b83788d98dc77afd6f63b6f756ed46fafb78801f592298",
+      "gitBlob": "a476121a9b96a15cf9c59e5999535e6716c9d1cb",
+      "bytes": 1837,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20kanban-board",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "d2a64638fa64821ffadb8a50d092e13ee89722c9ce06b9ae34628d827a9f37df.json",
+      "sha256": "19e737d6f7c86f2a5e601f7890a00a611ea2164f537c70f57ccc90583d311c7d",
+      "gitBlob": "f2b38f32de61ac2df18423787ee7e0ff057f52f4",
+      "bytes": 1478,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::back%20returns%20from%20the%20details%20view%20to%20the%20inventory",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "d737be304170b7372163dd61fce8015ac180c44cdc899ac5da795854e17ae3b8.json",
+      "sha256": "aff53c371f5431e4a4c4589cd1b55d7cda6735a710d8e97e4a4efda2c7247d21",
+      "gitBlob": "3bc799d7cb3f4b9b739bcf3dd3b4181ec937027c",
+      "bytes": 2257,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20context-menu-trap",
+      "actions": 5,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "d9508413b3c3bd9567d0277a312312d32c4a1770d65e8e789d3ba0298717e662.json",
+      "sha256": "f8ff1e97eefa814b422dc09a56420bbb1ef5667831b2db0d669428706dfe0c16",
+      "gitBlob": "e9db5ac8cb230db01b1bcdb4c649c0a819b86ed1",
+      "bytes": 2457,
+      "testId": "tests-agent/login-form.e2e.ts::act%20signs%20in%20with%20the%20benchmark%20account",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "ddc615c1f8fec05c095c44dcac3614808c52a55c24f3ebf41c6e507d1abe140e.json",
+      "sha256": "66761d856913f0edd1d43da4949d4000b25d2bc830bbc86123d3da4591d35985",
+      "gitBlob": "35fda136963f2ed0f0ddd8a569b384997298fe91",
+      "bytes": 1752,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20infinite-scroll",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "e4472e79abcc4566856591a2baba5ae0e474e37f95fc2cd9cd2fd336f2d9da80.json",
+      "sha256": "cceb8d4effe9e8391ef2c4ae81c880368c2c87b05e364845070f02bf79deefc2",
+      "gitBlob": "5c4b632a7be2e2894b362cfd9cf9fbf5c1e11e7a",
+      "bytes": 2097,
+      "testId": "tests-agent/control-inventory.e2e.ts::control%20inventory::a%20right-click%20opens%20the%20file%20menu%20and%20Rename%20renames%20the%20file",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": true
+    },
+    {
+      "file": "ed226f92f03c6086530e8eb4128d4f2a1c1403692d110633a0ef607f14be1e6d.json",
+      "sha256": "a8ae956b2380d6920535e2aa0bf37ec13c1097633f0fb06ad71522af392bdeba",
+      "gitBlob": "f8d4953cf977001d6e609acb1b0c70126c303e7d",
+      "bytes": 1742,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20debounced-search",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "f2ab7c5f57dbb07bf0abece6fd5d4671e48b75b67a8ef4e05dc589b9f83df6dd.json",
+      "sha256": "cc756f432c72a3638064bb2958470c87739d571849fb5e6539d134b70f1407e4",
+      "gitBlob": "620707c1a5b0c9b5a93c3dd0e2134ae414693d52",
+      "bytes": 1389,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20sticky-chrome",
+      "actions": 2,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "f599e53124d76b9bbd58ae24ccd7408f2240133c0949652f6dc9b7393ecf005a.json",
+      "sha256": "ae05bcb51f3f1d9b27ec99d846ab8f9f46eed1dddb2c59ae7d705c0128df469c",
+      "gitBlob": "4f97138de291a3202ac3f15e91793c87775974cd",
+      "bytes": 2102,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20stale-dom",
+      "actions": 3,
+      "gap": null,
+      "outputAnchor": false
+    },
+    {
+      "file": "ffde19be790b0f2460b19584719c6ca010c93452c2882cc99f1de70825790ccb.json",
+      "sha256": "3ce27b3429c6f916970df7524bc9fc1700fd1f1a83b74952825676624de64f0b",
+      "gitBlob": "32ad60ebaf9b1f015145a50f5a305629b477b659",
+      "bytes": 2071,
+      "testId": "tests-agent/scenarios.e2e.ts::act%20completes%20lying-labels",
+      "actions": 3,
+      "gap": {
+        "index": 1,
+        "derived": "minted-token"
+      },
+      "outputAnchor": false
+    }
+  ]
+}

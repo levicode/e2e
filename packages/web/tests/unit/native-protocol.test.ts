@@ -57,7 +57,7 @@ it('requires a coordinated decoder update: the legacy decoder rejects every new 
   }
   for (const code of vectors.errorCodes) {
     const decode = () => legacyServerMessage({ type: 'error', error: { code }, scopeState: 'quarantined' });
-    if (code === 'fill-unsupported-target' || code === 'no-editable-focus') expect(decode).toThrow(NativeFrameError);
+    if (code === 'fill-unsupported-target' || code === 'no-editable-focus' || code === 'tap-target-replaced-before-press') expect(decode).toThrow(NativeFrameError);
     else expect(decode).not.toThrow();
   }
 });

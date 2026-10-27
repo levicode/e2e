@@ -91,6 +91,12 @@ beforeEach(() => {
       else {
         const command = frame['command']; let data: unknown = null;
         if (interceptRequest?.(frame, result => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: true, ...(result['ok'] === false ? {} : { data: null }), effects: 'completed', scopeState: 'usable', ...result }))) { done(); return; }
+        if (command === 'recording.finalized.collect') {
+          // This peer has no terminal encoder output. Refuse the read-only lane
+          // accurately instead of manufacturing an ordinary usable success.
+          send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false,
+            error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'quarantined' }); done(); return;
+        }
         if (command === 'browser.observe' && holdObservation) {
           settleObservation = () => send({ type: 'result', id: frame['id'], generation: 1, operationSeq: frame['operationSeq'], ok: false, error: { code: 'deadline-exceeded' }, effects: 'not-dispatched', scopeState: 'usable' });
           observationHeld?.(); done(); return;
@@ -114,8 +120,8 @@ beforeEach(() => {
         else if (command === 'download.metadata') data = { identityScope: currentScope, source: 'provider', basename: downloadBasename };
         else if (command === 'blob.release') data = { released: true };
         else if (command === 'recording.stop') {
-          data = recordingMissing === undefined ? { identityScope: currentScope, segments: recordingSegments } : { identityScope: currentScope, missingSegment: recordingMissing };
-          if (recordingMissing === undefined) recordingSegments = [];
+          data = { identityScope: currentScope, segments: recordingSegments, ...(recordingMissing === undefined ? {} : { missingSegment: recordingMissing }) };
+          recordingSegments = [];
           recordingMissing = undefined;
         }
         else if (command === 'blob.read') data = { base64: recordingBytes.toString('base64'), nextOffset: recordingBytes.length, eof: true };
@@ -2113,7 +2119,7 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
   });
 
-  it.each([1, 2])('reports finalized missing segment %i once without losing retained earlier output on retry', async ordinal => {
+  it.each([1, 2])('reports finalized missing segment %i without repeating stop or inventing an empty recording', async ordinal => {
     const directory = await mkdtemp(path.join(tmpdir(), 'native-video-retry-'));
     const engine = web({});
     await engine.init!({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, workerSlot: 0, signal, log: () => {} });
@@ -2127,11 +2133,15 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: expect.stringContaining(missing) });
       expect((failure as EngineError).message).toContain('screencast stop failed');
       expect(existsSync(path.join(directory, missing))).toBe(false);
-      expect(frames.filter(frame => frame['command'] === 'blob.read')).toHaveLength(0);
-      const kept = await engine.artifacts!.stopVideo!(operation());
-      expect(kept).toEqual(ordinal === 1 ? [] : [{ path: 'video/video.webm', startedAt: '2026-10-21T00:00:01.000Z' }]);
-      if (ordinal === 2) expect(await readFile(path.join(directory, 'video/video.webm'))).toEqual(recordingBytes);
-      expect(await engine.artifacts!.stopVideo!(operation())).toEqual([]);
+      expect(frames.filter(frame => frame['command'] === 'blob.read')).toHaveLength(ordinal === 1 ? 0 : 1);
+      if (ordinal === 1) {
+        await expect(engine.artifacts!.stopVideo!(operation())).rejects.toBe(failure);
+      } else {
+        expect(await engine.artifacts!.stopVideo!(operation())).toEqual([{ path: 'video/video.webm', startedAt: '2026-10-21T00:00:01.000Z' }]);
+        expect(await readFile(path.join(directory, 'video/video.webm'))).toEqual(recordingBytes);
+        expect(await engine.artifacts!.stopVideo!(operation())).toEqual([]);
+      }
+      expect(frames.filter(frame => frame['command'] === 'recording.stop')).toHaveLength(1);
       expect(frames.filter(frame => frame['command'] === 'blob.release')).toHaveLength(ordinal === 1 ? 0 : 1);
     } finally { try { await engine.endAttempt!(cleanup()); } finally { await engine.dispose!(cleanup()); await rm(directory, { recursive: true, force: true }); } }
   });
@@ -2304,15 +2314,22 @@ describe('native surface ownership and fixed policy binding', () => {
     expect(acquire).toHaveBeenCalledTimes(1); await expect(surface.dispose(cleanup())).rejects.toBeDefined();
   });
 
-  it('releases untouched video handles after a segment failure without replacing its cause', async () => {
-    const surface = new NativeSurface({}); await start(surface);
-    recordingSegments = [1, 2, 3].map(index => ({ identityScope: currentScope, handle: `video-${index}`, size: 1, sha256: '0'.repeat(64), mediaType: 'video/webm', startedAt: '2026-10-21T00:00:00.000Z' }));
+  it('collects untouched video handles after a segment failure without replacing its cause or repeating stop', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'native-partial-video-'));
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    await surface.startAttempt({ ...context('partial-video'), artifactsDir: directory });
+    recordingSegments = [1, 2, 3].map(index => ({ identityScope: currentScope, handle: `video-${index}`, size: recordingBytes.length,
+      sha256: createHash('sha256').update(recordingBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-10-21T00:00:00.000Z' }));
     const primary = new Error('Synthetic video transfer failure');
     const read = vi.spyOn(EngineChannel.prototype, 'readBlob').mockRejectedValueOnce(primary);
     try {
       await expect(surface.stopVideo(operation())).rejects.toBe(primary);
       expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => frame['args'])).toEqual([{ handle: 'video-2', identityScope: currentScope }, { handle: 'video-3', identityScope: currentScope }]);
-    } finally { read.mockRestore(); await surface.dispose(cleanup()); }
+      expect(read).toHaveBeenCalledTimes(3);
+      const saved = await surface.stopVideo(operation()); expect(saved).toHaveLength(2);
+      for (const file of saved) expect(await readFile(path.join(directory, 'path' in file ? file.path : 'unexpected-link'))).toEqual(recordingBytes);
+      expect(frames.filter(frame => frame['command'] === 'recording.stop')).toHaveLength(1);
+    } finally { read.mockRestore(); await surface.dispose(cleanup()); await rm(directory, { recursive: true, force: true }); }
   });
 
 });

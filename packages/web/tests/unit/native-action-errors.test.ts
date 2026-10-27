@@ -93,3 +93,25 @@ test('retains NOT_ACTIONABLE for clear and non-clean typed refusals without gran
     }
   }
 });
+
+test('only the certified completed plain tap can relocate after hover without replaying a press', () => {
+  const wire = result('tap-target-replaced-before-press', 'completed');
+  const context = { kind: 'tap', sensitive: false } as const;
+  expect(serverMessage({ ...wire })).toEqual(wire);
+  const failure = resultError(wire, undefined, undefined, undefined, context);
+  expect(failure).toMatchObject({ code: 'NODE_STALE', retryable: true });
+  expect(failure.message).toContain('before its button press');
+  expect(isNativeNotDispatched(failure)).toBe(false); // the hover did commit
+  for (const effects of ['not-dispatched', 'unknown'] as const) {
+    const refused = resultError({ ...wire, effects }, undefined, undefined, undefined, context);
+    expect(refused.code).not.toBe('NODE_STALE');
+    expect(refused.retryable).toBe(false);
+  }
+  for (const scopeState of ['quarantined', 'closed'] as const) {
+    expect(resultError({ ...wire, scopeState }, undefined, undefined, undefined, context)).toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+  }
+  for (const kind of ['fill', 'clear', 'doubleTap', 'secondaryTap', 'hover', 'check', 'dragTo'] as const) {
+    expect(resultError(wire, undefined, undefined, undefined, { kind, sensitive: false })).toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+  }
+  expect(resultError(wire)).toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+});

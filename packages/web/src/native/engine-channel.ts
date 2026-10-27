@@ -17,8 +17,16 @@ function captureActionErrorContext(action: EngineCommandMap['browser.perform']['
 }
 
 interface BlobReadObserver {
+  readonly accepted?: () => void;
   readonly complete: (bytes: Buffer) => void;
   readonly fail: (cause: unknown) => void;
+}
+
+/** Explicit custody for a received immutable batch until reads or exact-owner cleanup take it. */
+export interface BlobBatchCustody {
+  readonly pendingHandles: readonly string[];
+  read(blob: NativeBlob, operation: OperationContext, observer: BlobReadObserver): Promise<Buffer>;
+  retire(operation: OperationContext): Promise<void>;
 }
 
 const unavailableBlobReads = new WeakSet<EngineError | TestError>();
@@ -93,6 +101,44 @@ export class EngineChannel {
     catch { throw this.client.invalidate(); }
   }
 
+  /** Capture all handles before the first read; never acquire a replacement scope for cleanup. */
+  retainBlobBatch(blobs: readonly NativeBlob[], expectedScope: string): BlobBatchCustody {
+    const captured = this.captureScope(expectedScope); const notRevoked = this.client.recoveryRevocationGuard();
+    const owns = () => captured() && notRevoked(); this.assertOwner(owns);
+    const pending = new Map<string, NativeBlob>();
+    for (const blob of blobs) {
+      if (blob.identityScope !== expectedScope || pending.has(blob.handle)) throw this.client.invalidate();
+      pending.set(blob.handle, blob);
+    }
+    let retirement: Promise<void> | undefined;
+    return {
+      get pendingHandles() { return [...pending.keys()]; },
+      read: (blob, operation, observer) => {
+        this.assertOwner(owns);
+        if (retirement !== undefined || pending.get(blob.handle) !== blob) throw new EngineError('INVALID_STATE', 'Native blob batch ownership has retired', { retryable: false });
+        return this.readBlob(blob, expectedScope, operation, owns, { ...observer,
+          accepted: () => { pending.delete(blob.handle); observer.accepted?.(); },
+        });
+      },
+      retire: operation => retirement ??= (async () => {
+        const endsAt = performance.now() + operation.timeoutMs;
+        for (const handle of pending.keys()) {
+          // A changed scope/client is not authority to release into its replacement.
+          // The enclosing attempt retains this batch until native retirement is proven.
+          if (!owns()) return;
+          if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native blob batch cleanup was cancelled', { retryable: false });
+          const timeoutMs = endsAt - performance.now();
+          if (timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native blob batch cleanup exceeded its original budget', { retryable: false });
+          const result = await this.client.request('blob.release', { identityScope: expectedScope, handle }, { ...operation, timeoutMs });
+          this.assertOwner(owns);
+          if (!result.ok) throw resultError(result);
+          try { decodeBrowserResult('blob.release', result.data); } catch { throw this.client.invalidate(); }
+          pending.delete(handle);
+        }
+      })(),
+    };
+  }
+
   /** Verify exact bytes before notifying optional waiters; the returned promise also owns handle retirement. */
   async readBlob(blob: NativeBlob, expectedScope: string, operation: OperationContext, pageOwner?: () => boolean, observer?: BlobReadObserver): Promise<Buffer> {
     const capturedScope = this.captureScope(expectedScope);
@@ -109,6 +155,8 @@ export class EngineChannel {
     };
     let failed = false;
     try {
+      // From this point, the existing read/finally owner must retire the handle.
+      observer?.accepted?.();
       const chunks: Buffer[] = [];
       const hash = createHash('sha256');
       let offset = 0;

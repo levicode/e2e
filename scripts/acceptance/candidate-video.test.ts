@@ -5,24 +5,25 @@ import { readFileSync } from 'node:fs';
 import { verifyNativeInventory, verifyVideoInventory } from './candidate-native.ts';
 import { CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS } from './candidate-manifest.ts';
 import { PREPARATION_SETTLEMENT_TESTS, REQUIRED_NATIVE_FEATURE_TESTS } from './candidate-native-matrix-manifest.ts';
-import { MANAGED_ENCODER_CONTRACTS, LEGACY_COMPONENT_ENCODER_CONTRACTS, REQUIRED_ENCODER_CONTRACTS, REQUIRED_VIDEO_NORMAL_TESTS } from './candidate-video-manifest.ts';
+import { MANAGED_ENCODER_CONTRACTS, LEGACY_COMPONENT_ENCODER_CONTRACTS, ENCODER_NEGATIVE_CONTRACTS, REQUIRED_ENCODER_CONTRACTS, REQUIRED_VIDEO_NORMAL_TESTS } from './candidate-video-manifest.ts';
 import { verifyEncoderProducerGate } from './candidate-producer.ts';
 import { CANDIDATE_GATES } from './candidate-receipt.ts';
 import { nativeTestEvidence } from './native-evidence.ts';
 const listing = (names: readonly string[]) => names.map(name => `${name}: test`).join('\n');
 const ignored = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
 const defaults = [...ignored, ...REQUIRED_VIDEO_NORMAL_TESTS];
-test('video23 preserves 44 browser/encoder, 45 feature and 8 preparation inventories', () => {
+test('failed-video delivery keeps all existing browser, feature and preparation gates plus the required real encoder cases', () => {
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44);
   assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 45);
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8);
-  assert.equal(MANAGED_ENCODER_CONTRACTS.length, 10);
-  assert.equal(LEGACY_COMPONENT_ENCODER_CONTRACTS.length, 3);
-  assert.equal(REQUIRED_VIDEO_NORMAL_TESTS.length, 10);
-  assert.equal(new Set([...REQUIRED_ENCODER_CONTRACTS, ...REQUIRED_VIDEO_NORMAL_TESTS]).size, 23);
+  assert.equal(MANAGED_ENCODER_CONTRACTS.length, 13);
+  assert.equal(LEGACY_COMPONENT_ENCODER_CONTRACTS.length, 5);
+  assert.equal(ENCODER_NEGATIVE_CONTRACTS.length, 1);
+  assert.equal(REQUIRED_VIDEO_NORMAL_TESTS.length, 12);
+  assert.equal(new Set([...REQUIRED_ENCODER_CONTRACTS, ...REQUIRED_VIDEO_NORMAL_TESTS]).size, 31);
   for (const name of REQUIRED_ENCODER_CONTRACTS) assert.ok(!CANDIDATE_NATIVE_CONTRACTS.includes(name as never));
 });
-test('all 13 encoder contracts are required separately, never diagnostic exemptions', () => {
+test('all 19 encoder contracts are required separately, never diagnostic exemptions', () => {
   assert.deepEqual(verifyNativeInventory(listing(ignored)), ignored);
   for (const name of REQUIRED_ENCODER_CONTRACTS) {
     assert.throws(() => verifyNativeInventory(listing(ignored.filter(item => item !== name))), /Missing required/);
@@ -31,7 +32,7 @@ test('all 13 encoder contracts are required separately, never diagnostic exempti
   assert.throws(() => verifyNativeInventory(listing([...ignored, 'native::client_unknown::test'])), /Unclassified/);
   assert.throws(() => verifyNativeInventory(listing([...ignored, REQUIRED_ENCODER_CONTRACTS[0]])), /Duplicate/);
 });
-test('each of ten normal tests must be discovered and nonignored', () => {
+test('each of twelve normal tests must be discovered and nonignored', () => {
   verifyVideoInventory(listing(defaults), listing(ignored));
   for (const name of REQUIRED_VIDEO_NORMAL_TESTS) {
     assert.throws(() => verifyVideoInventory(listing(defaults.filter(item => item !== name)), listing(ignored)), /Missing or ignored/);

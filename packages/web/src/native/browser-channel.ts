@@ -159,6 +159,13 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
     return new EngineError('ACTION_MAY_HAVE_COMMITTED', `${message}${suffix}`, { retryable: false });
   }
   const reason = result.error?.code;
+  // The native receipt certifies only an acknowledged hover/scroll prefix and
+  // zero button presses. Completed is not rollback; relocation must use the
+  // core's fresh observation/descriptor path, never replay the old exact ref.
+  if (!result.ok && reason === 'tap-target-replaced-before-press'
+    && result.effects === 'completed' && result.scopeState === 'usable' && actionContext?.kind === 'tap') {
+    return new EngineError('NODE_STALE', 'The exact tap target was replaced after hover and before its button press', { retryable: true });
+  }
   if (!result.ok && result.effects === 'not-dispatched' && result.scopeState === 'usable' && frameDiagnostic !== undefined
     && result.error?.frameSelection?.index === frameDiagnostic.index && result.error.frameSelection.count === frameDiagnostic.count) {
     if (reason === 'frame-not-found') return new EngineError('FRAME_NOT_FOUND', `no frame matches ${frameDiagnostic.selector}`, { retryable: true });
@@ -200,6 +207,7 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
   const codes: Readonly<Record<string, EngineErrorCode>> = {
     'stale-reference': 'NODE_STALE', 'not-actionable': 'NOT_ACTIONABLE',
     'fill-unsupported-target': 'NOT_ACTIONABLE', 'no-editable-focus': 'NOT_ACTIONABLE',
+    'tap-target-replaced-before-press': 'NOT_ACTIONABLE',
     'deadline-exceeded': 'OPERATION_TIMEOUT', cancelled: 'CANCELLED',
     'unsupported-capability': 'UNSUPPORTED_CAPABILITY', 'unsupported-command': 'UNSUPPORTED_CAPABILITY',
     'stale-scope': 'INVALID_STATE', 'stale-generation': 'INVALID_STATE', 'scope-unavailable': 'INVALID_STATE',

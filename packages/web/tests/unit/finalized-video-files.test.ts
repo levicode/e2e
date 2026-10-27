@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, type OperationContext } from 'e2e/engine';
+import { PartialVideoTransferError } from '../../src/native/finalized-recording.ts';
 import { FinalizedVideoFiles, type FinalizedVideoBytes } from '../../src/native/finalized-video-files.ts';
 
 const interception = vi.hoisted(() => ({ write: undefined as undefined | (() => Promise<void>), publish: undefined as undefined | (() => Promise<void>), partialFailure: false, closeFailures: 0 }));
@@ -375,4 +376,36 @@ describe('same-attempt finalized video file delivery', () => {
     await expect(f.files.claim(operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
   });
 
+});
+
+
+it('retains verified partial transfer bytes, reports the original failure once and never redownloads', async () => {
+  const f = await fixture(); const error = new EngineError('ENGINE_FAILURE', 'Second segment read failed', { retryable: false });
+  f.files.prepare(Promise.reject(new PartialVideoTransferError(error, [{ ...first, ordinal: 1 }, { ...second, ordinal: 3 }])), performance.now() + 2000);
+  await expect(f.files.claim(operation())).rejects.toBe(error);
+  await expect(f.files.claim(operation())).resolves.toEqual([
+    { path: 'video/video.webm', startedAt: first.startedAt }, { path: 'video/video-part2.webm', startedAt: second.startedAt },
+  ]);
+  expect(await readFile(path.join(f.directory, 'video/video.webm'))).toEqual(first.bytes);
+  await expect(f.files.claim(operation())).resolves.toEqual([]);
+});
+
+it('keeps only the pre-deadline verified snapshot when a later transfer never settles', async () => {
+  const f = await fixture(); const transfer = deferred<readonly FinalizedVideoBytes[]>();
+  f.files.prepare(transfer.promise, performance.now() + 15, () => ({ segments: [first] }));
+  await expect(f.files.claim(operation())).rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+  await expect(f.files.claim(operation())).resolves.toEqual([{ path: 'video/video.webm', startedAt: first.startedAt }]);
+  transfer.resolve([first, second]); await new Promise(resolve => setImmediate(resolve));
+  expect(f.allocated()).toBe(1);
+  expect((await readdir(path.join(f.directory, 'video'))).filter(name => name.endsWith('.webm'))).toEqual(['video.webm']);
+});
+
+it('snapshots the original collection failure with verified bytes before a later deadline wins the wait', async () => {
+  const f = await fixture(); const transfer = deferred<readonly FinalizedVideoBytes[]>();
+  const firstFailure = new EngineError('ENGINE_FAILURE', 'An earlier segment could not be read', { retryable: false });
+  f.files.prepare(transfer.promise, performance.now() + 15, () => ({ segments: [first], failure: { value: firstFailure } }));
+  await expect(f.files.claim(operation())).rejects.toBe(firstFailure);
+  await expect(f.files.claim(operation())).resolves.toEqual([{ path: 'video/video.webm', startedAt: first.startedAt }]);
+  transfer.reject(new EngineError('OPERATION_TIMEOUT', 'Later transfer deadline', { retryable: false }));
+  await expect(f.files.claim(operation())).resolves.toEqual([]);
 });

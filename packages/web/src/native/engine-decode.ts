@@ -92,10 +92,13 @@ const decoders = {
   'recording.start': empty,
   'recording.stop': (value: unknown) => { const item = record(value);
     const missing = Object.hasOwn(item, 'missingSegment');
-    const keys = missing ? ['identityScope', 'missingSegment'] : ['identityScope', 'segments'];
-    if (Object.keys(item).length !== 2 || Object.keys(item).some(key => !keys.includes(key))) invalid();
-    if (missing) { const ordinal = count(item['missingSegment']); if (ordinal === 0) invalid(); return { ...scoped(item), missingSegment: ordinal }; }
-    return { ...scoped(item), segments: list(item['segments']).map(entry => { const segment = record(entry); const startedAt = text(segment['startedAt']); if (!Number.isFinite(Date.parse(startedAt)) || segment['mediaType'] !== 'video/webm') invalid(); return { ...blob(segment), mediaType: 'video/webm' as const, startedAt }; }) }; },
+    const hasSegments = Object.hasOwn(item, 'segments');
+    const keys = ['identityScope', ...(hasSegments ? ['segments'] : []), ...(missing ? ['missingSegment'] : [])];
+    if ((!missing && !hasSegments) || Object.keys(item).length !== keys.length || Object.keys(item).some(key => !keys.includes(key))) invalid();
+    const missingSegment = missing ? count(item['missingSegment']) : undefined;
+    if (missingSegment === 0) invalid();
+    if (!hasSegments) return { ...scoped(item), missingSegment: missingSegment! };
+    return { ...scoped(item), ...(missingSegment === undefined ? {} : { missingSegment }), segments: list(item['segments']).map(entry => { const segment = record(entry); const startedAt = text(segment['startedAt']); if (!Number.isFinite(Date.parse(startedAt)) || segment['mediaType'] !== 'video/webm') invalid(); return { ...blob(segment), mediaType: 'video/webm' as const, startedAt }; }) }; },
   'session.environment': (value: unknown) => { const item = record(value); return { ...scoped(item), browser: text(item['browser']), ...(item['userAgent'] === undefined ? {} : { userAgent: text(item['userAgent']) }) }; },
   'blob.read': (value: unknown) => { const item = record(value); const base64 = text(item['base64']); if (Buffer.from(base64, 'base64').toString('base64') !== base64) invalid(); return { base64, nextOffset: count(item['nextOffset']), eof: bool(item['eof']) }; },
 } satisfies { [K in keyof EngineCommandMap]: (value: unknown) => EngineCommandMap[K]['result'] };

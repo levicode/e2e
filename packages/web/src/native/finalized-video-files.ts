@@ -2,6 +2,7 @@
 import { open, mkdir, mkdtemp, lstat, link, unlink, rmdir, type FileHandle } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
+import { PartialVideoTransferError, type FinalizedVideoSnapshot } from './finalized-recording.ts';
 import { EngineError, type OperationContext, type VideoSegment } from 'e2e/engine';
 
 export interface FinalizedVideoBytes { readonly bytes: Uint8Array; readonly startedAt: string }
@@ -34,6 +35,7 @@ export class FinalizedVideoFiles {
   private readonly localRetirement = new AbortController();
   private transferFailed = false;
   private transferFailure: unknown;
+  private partialTransferFailure: { value: unknown } | undefined;
   private firstWriteFailed = false;
   private firstWriteFailure: unknown;
   private stagingDirectory: { path: string; dev: bigint | undefined; ino: bigint | undefined } | undefined;
@@ -47,14 +49,20 @@ export class FinalizedVideoFiles {
   }
 
   /** Start once, using the original automatic-cleanup deadline, not a new lease. */
-  prepare(download: Promise<readonly FinalizedVideoBytes[]>, endsAt: number): void {
+  prepare(download: Promise<readonly FinalizedVideoBytes[]>, endsAt: number, snapshot: () => FinalizedVideoSnapshot = () => ({ segments: [] })): void {
     if (this.prepared) throw invalid('Finalized video collection was already prepared');
     this.prepared = true;
     const budget = { signal: this.owner.retirement, endsAt };
     const work = async () => {
       let segments: readonly FinalizedVideoBytes[];
       try { segments = await this.wait(download, budget); }
-      catch (error) { this.transferFailed = true; this.transferFailure = error; return; }
+      catch (error) {
+        const retained = snapshot();
+        segments = error instanceof PartialVideoTransferError && performance.now() < endsAt ? error.segments : retained.segments;
+        const failure = retained.failure ?? { value: error instanceof PartialVideoTransferError ? error.failure : error };
+        if (segments.length === 0) { this.transferFailed = true; this.transferFailure = failure.value; return; }
+        this.partialTransferFailure = failure;
+      }
       try {
         // Transfer was accepted within its original deadline. Preserve these
         // bytes even if only the subsequent local persistence budget expires.
@@ -69,6 +77,9 @@ export class FinalizedVideoFiles {
             size: segment.bytes.byteLength, staging: undefined, bytes: Buffer.from(segment.bytes), identity: undefined, handle: undefined, writeComplete: false, written: false };
         });
       } catch (error) { this.transferFailed = true; this.transferFailure = error; return; }
+      // The original transfer clock never renews. A later claim may persist
+      // bytes already verified before that clock expired, without another read.
+      if (this.partialTransferFailure !== undefined && performance.now() >= endsAt) return;
       try { await this.persist(budget); }
       catch (error) { this.firstWriteFailed = true; this.firstWriteFailure = error; }
     };
@@ -108,6 +119,10 @@ export class FinalizedVideoFiles {
       if (settled) return;
       if (!this.prepared) throw invalid('Finalized video collection was not prepared');
       if (this.transferFailed) throw this.transferFailure;
+      if (this.partialTransferFailure !== undefined) {
+        const { value } = this.partialTransferFailure; this.partialTransferFailure = undefined;
+        throw value;
+      }
       if (this.firstWriteFailed) {
         this.firstWriteFailed = false;
         throw this.firstWriteFailure;
@@ -129,6 +144,8 @@ export class FinalizedVideoFiles {
     return result;
   }
 
+  hasDelivered(): boolean { return this.delivered; }
+
   /** Revoke synchronously; retain and expose the one actual filesystem cleanup. */
   retire(): Promise<void> {
     this.retired = true;
@@ -148,6 +165,7 @@ export class FinalizedVideoFiles {
         // the rejected cleanup receipt, but never keeps downloaded byte caches.
         for (const entry of this.entries) entry.bytes = undefined;
         this.transferFailure = undefined;
+        this.partialTransferFailure = undefined;
         this.firstWriteFailure = undefined;
       }
     });

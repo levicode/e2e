@@ -4,6 +4,17 @@ import { EngineError, type JsonValue } from 'e2e/engine';
 
 export interface FinalizedRecordingIdentity { readonly identityScope: string; readonly failedOperationSeq: number }
 export interface FinalizedVideoBytes { readonly bytes: Buffer; readonly startedAt: string; readonly ordinal: number }
+/** One captured transfer owner snapshots bytes and the first failure together. */
+export interface FinalizedVideoSnapshot {
+  readonly segments: readonly { readonly bytes: Uint8Array; readonly startedAt: string }[];
+  readonly failure?: { readonly value: unknown };
+}
+/** A failed batch still owns every segment independently verified before/after the fault. */
+export class PartialVideoTransferError extends EngineError {
+  constructor(readonly failure: unknown, readonly segments: readonly FinalizedVideoBytes[]) {
+    super('ENGINE_FAILURE', 'Some finalized video segments could not be collected', { retryable: false });
+  }
+}
 export type FinalizedRecordingCommand = 'recording.finalized.collect' | 'recording.finalized.read' | 'recording.finalized.release';
 type Exchange = (command: FinalizedRecordingCommand, args: Readonly<Record<string, JsonValue>>) => Promise<unknown>;
 interface Segment { readonly handle: string; readonly size: number; readonly sha256: string; readonly startedAt: string; readonly ordinal: number }
@@ -52,30 +63,39 @@ export function finalizedRecordingManifest(value: unknown, expected: FinalizedRe
 }
 
 /** No retries or producer work. The caller supplies one unrenewed cleanup clock. */
-export async function collectFinalizedRecording(owner: FinalizedRecordingIdentity, exchange: Exchange): Promise<readonly FinalizedVideoBytes[]> {
+export async function collectFinalizedRecording(owner: FinalizedRecordingIdentity, exchange: Exchange, verified?: (segment: FinalizedVideoBytes) => void, failed?: (cause: unknown) => void): Promise<readonly FinalizedVideoBytes[]> {
   const batch = finalizedRecordingManifest(await exchange('recording.finalized.collect', { ...owner }), owner);
   const output: FinalizedVideoBytes[] = [];
+  let failure: { value: unknown } | undefined;
   for (const segment of batch.segments) {
-    const base = { ...owner, token: batch.token, handle: segment.handle };
-    const chunks: Buffer[] = []; const hash = createHash('sha256'); let offset = 0;
-    for (;;) {
-      const chunk = record(await exchange('recording.finalized.read', { ...base, offset, maxBytes: CHUNK_BYTES }));
-      keys(chunk, ['base64', 'nextOffset', 'eof']);
-      if (typeof chunk['base64'] !== 'string' || chunk['base64'].length > 4 * Math.ceil(CHUNK_BYTES / 3) || typeof chunk['eof'] !== 'boolean') invalid();
-      const bytes = Buffer.from(chunk['base64'] as string, 'base64');
-      if (bytes.toString('base64') !== chunk['base64'] || bytes.length > CHUNK_BYTES || bytes.length === 0
-        || chunk['nextOffset'] !== offset + bytes.length || offset + bytes.length > segment.size) invalid();
-      chunks.push(bytes); hash.update(bytes); offset += bytes.length;
-      if (chunk['eof']) {
-        if (offset !== segment.size || hash.digest('hex') !== segment.sha256) invalid();
-        break;
+    try {
+      const base = { ...owner, token: batch.token, handle: segment.handle };
+      const chunks: Buffer[] = []; const hash = createHash('sha256'); let offset = 0;
+      for (;;) {
+        const chunk = record(await exchange('recording.finalized.read', { ...base, offset, maxBytes: CHUNK_BYTES }));
+        keys(chunk, ['base64', 'nextOffset', 'eof']);
+        if (typeof chunk['base64'] !== 'string' || chunk['base64'].length > 4 * Math.ceil(CHUNK_BYTES / 3) || typeof chunk['eof'] !== 'boolean') invalid();
+        const bytes = Buffer.from(chunk['base64'] as string, 'base64');
+        if (bytes.toString('base64') !== chunk['base64'] || bytes.length > CHUNK_BYTES || bytes.length === 0
+          || chunk['nextOffset'] !== offset + bytes.length || offset + bytes.length > segment.size) invalid();
+        chunks.push(bytes); hash.update(bytes); offset += bytes.length;
+        if (chunk['eof']) {
+          if (offset !== segment.size || hash.digest('hex') !== segment.sha256) invalid();
+          break;
+        }
+        if (offset === segment.size) invalid();
       }
-      if (offset === segment.size) invalid();
-    }
-    const released = record(await exchange('recording.finalized.release', base));
-    keys(released, ['released']);
-    if (released['released'] !== true) invalid();
-    output.push({ bytes: Buffer.concat(chunks, segment.size), startedAt: segment.startedAt, ordinal: segment.ordinal });
+      // Verified local bytes survive even if releasing the remote handle fails.
+      const completed = { bytes: Buffer.concat(chunks, segment.size), startedAt: segment.startedAt, ordinal: segment.ordinal };
+      output.push(completed); verified?.(completed);
+      const released = record(await exchange('recording.finalized.release', base));
+      keys(released, ['released']);
+      if (released['released'] !== true) invalid();
+    } catch (cause) { if (failure === undefined) { failure = { value: cause }; failed?.(cause); } }
+  }
+  if (failure !== undefined) {
+    if (output.length === 0) throw failure.value;
+    throw new PartialVideoTransferError(failure.value, output);
   }
   return output;
 }

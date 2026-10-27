@@ -22,9 +22,10 @@ import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
-import { EngineChannel, isUnavailableBlobRead } from './native/engine-channel.ts';
+import { EngineChannel, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
 import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-aliases.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
+import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
 import type { EngineCommandMap, NativeImage, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
 import type { NativeClient } from './native/client.ts';
 import { connectNativeProcess } from './native/process.ts';
@@ -70,7 +71,9 @@ interface Attempt {
   channel?: BrowserChannel;
   counter: number;
   videoCounter: number;
-  finalizedVideo?: FinalizedVideoFiles;
+  finalizedVideo?: FinalizedVideoFiles | undefined;
+  nativeVideoStop?: Promise<void> | undefined;
+  readonly videoBlobBatches: Set<BlobBatchCustody>;
   readonly downloads: Map<string, Promise<Uint8Array | undefined>>;
 }
 
@@ -180,7 +183,7 @@ export class NativeSurface implements NativeWebSurface {
       await raceAbort(() => retirement, context.signal, 'waiting for native attempt retirement');
     }
     if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, ready: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
+    const attempt: Attempt = { epoch: 0, ready: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
     const operation = this.operation(startupSignal);
@@ -295,6 +298,7 @@ export class NativeSurface implements NativeWebSurface {
     const finalizedCleanup = attempt?.finalizedVideo?.retire();
     const recordingStarts = [...(attempt?.recordingStarts ?? [])];
     const recordingStops = new Set<Promise<unknown>>();
+    const videoRetirements = new Set<Promise<void>>();
     if (attempt?.recordingStop !== undefined) recordingStops.add(attempt.recordingStop);
     let scopeEnd: Promise<unknown> | undefined;
     let scopeEnded = false;
@@ -354,6 +358,14 @@ export class NativeSurface implements NativeWebSurface {
         await raceAbort(() => stopping, cleanup.signal, 'retiring provider recording');
         remaining();
       }
+      if (client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined) {
+        for (const batch of attempt.videoBlobBatches) {
+          const budget = remaining();
+          const retiring = receipt(batch.retire(this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId)), true);
+          videoRetirements.add(retiring);
+          await raceAbort(() => retiring, cleanup.signal, 'retiring unread native video handles');
+        }
+      }
       if (failure === undefined && client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined && attempt.scope !== '' && engine !== undefined) {
         const callbackEpoch = client!.callbackCheckpoint(); const budget = remaining();
         scopeEnd = engine.command('scope.end', { identityScope: attempt.scope }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId), callbackEpoch);
@@ -386,6 +398,9 @@ export class NativeSurface implements NativeWebSurface {
       }
       await Promise.allSettled(recordingStarts);
       for (const stopping of recordingStops) try { await stopping; } catch (cause) { failed(cause); }
+      for (const retiring of videoRetirements) try { await retiring; } catch (cause) { failed(cause, true); }
+      // Only confirmed original native retirement consumes unresolved remote custody.
+      if (nativeRetired) attempt?.videoBlobBatches.clear();
       if (attempt?.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure);
       if (finalizedCleanup !== undefined) {
         try { await finalizedCleanup; finalizedCleanupProven = true; }
@@ -393,7 +408,7 @@ export class NativeSurface implements NativeWebSurface {
       }
       try { await releasing; released = true; }
       catch (cause) { this.workerCleanupUnconfirmed = true; failed(cause); }
-      const recordingsRetired = attempt === undefined || (attempt.recording === undefined && attempt.recordingStarts.size === 0 && attempt.lateRecordings.size === 0);
+      const recordingsRetired = attempt === undefined || (attempt.recording === undefined && attempt.recordingStarts.size === 0 && attempt.lateRecordings.size === 0 && attempt.videoBlobBatches.size === 0);
       if (nativeRetired && finalizedCleanupProven && recordingsRetired && released && connecting?.cleanupFailure === undefined) {
         attempt?.downloads.clear();
         if (attempt !== undefined) delete attempt.observationHighWater;
@@ -440,7 +455,8 @@ export class NativeSurface implements NativeWebSurface {
     const attempt = this.attempt ?? this.retiringAttempt;
     return attempt === undefined || (!attempt.ready && attempt.scope === '' && attempt.channel === undefined && attempt.wireRequests.size === 0
       && attempt.recording === undefined && attempt.recordingStop === undefined && attempt.recordingStarts.size === 0
-      && attempt.lateRecordings.size === 0 && attempt.lateRecordingStops.size === 0 && attempt.finalizedVideo === undefined && attempt.downloads.size === 0);
+      && attempt.lateRecordings.size === 0 && attempt.lateRecordingStops.size === 0 && attempt.finalizedVideo === undefined
+      && attempt.nativeVideoStop === undefined && attempt.videoBlobBatches.size === 0 && attempt.downloads.size === 0);
   }
   private async closeClient(context: EngineCleanupContext, client = this.client): Promise<void> {
     try {
@@ -490,14 +506,14 @@ export class NativeSurface implements NativeWebSurface {
         // Retire only cached presentation. Routes, recordings, downloads, and the exact owner survive.
         if (this.client === client && this.attempt !== undefined) { delete this.attempt.observationHighWater; this.references.retire(); }
       });
-      client.onFinalizedRecording((owner, download, endsAt) => {
+      client.onFinalizedRecording((owner, download, endsAt, snapshot) => {
         const ownerAttempt = this.attempt;
         if (this.client !== client || ownerAttempt === undefined || ownerAttempt.scope !== owner.identityScope || ownerAttempt.finalizedVideo !== undefined || ownerAttempt.retirement.signal.aborted) return;
         const files = new FinalizedVideoFiles({ artifactsDir: ownerAttempt.context.artifactsDir, allocatePart: () => ++ownerAttempt.videoCounter,
           owns: () => this.client === client && this.attempt === ownerAttempt && ownerAttempt.scope === owner.identityScope,
           retirement: ownerAttempt.retirement.signal });
         ownerAttempt.finalizedVideo = files;
-        files.prepare(download, endsAt);
+        files.prepare(download, endsAt, snapshot);
       });
       this.engine = new EngineChannel(client, scope => {
         const owner = this.attempt ?? this.retiringAttempt;
@@ -968,6 +984,13 @@ export class NativeSurface implements NativeWebSurface {
       finally { if (operation.signal.aborted && attempt.recordingStart === work && attempt.recordingStartSignal === operation.signal) { attempt.recordingStart = undefined; attempt.recordingStartSignal = undefined; } }
       return;
     }
+    if (attempt.finalizedVideo !== undefined) {
+      this.requireClient().negotiation(); // Terminal collection never grants recording restart.
+      if (!attempt.finalizedVideo.hasDelivered()) throw invalidState('Collect the stopped recording before starting another one');
+      await attempt.finalizedVideo.retire(); this.assertScope(attempt, admitted.scope); this.assertBudget(operation);
+      attempt.finalizedVideo = undefined;
+    }
+    if (attempt.nativeVideoStop !== undefined) throw invalidState('The current recording is still stopping');
     await this.engineCommand('recording.start', { identityScope: attempt.scope, ...this.options.screencast }, operation);
   }
   /** Retains one exact late stop, including after a cleanup waiter times out. */
@@ -996,48 +1019,66 @@ export class NativeSurface implements NativeWebSurface {
   async stopVideo(operation: OperationContext): Promise<readonly VideoSegment[]> {
     // This attempt's frozen result is not an ordinary browser admission. In
     // particular it cannot trigger recovery, stop a recorder, or reopen input.
-    if (this.attempt?.finalizedVideo !== undefined) {
+    if (this.attempt?.finalizedVideo !== undefined || this.attempt?.nativeVideoStop !== undefined) {
       this.assertCallback(); const attempt = this.requireAttempt(); this.assertAttempt(attempt); this.latch.throwPending(); this.assertBudget(operation);
-      return attempt.finalizedVideo!.claim(operation);
+      const endsAt = performance.now() + operation.timeoutMs;
+      const stopping = attempt.nativeVideoStop;
+      if (stopping !== undefined) await withConnectionBudget(operation, 'joining native recording stop', () => stopping);
+      this.assertAttempt(attempt);
+      return attempt.finalizedVideo!.claim({ ...operation, timeoutMs: endsAt - performance.now() });
     }
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt();
     if (attempt.finalizedVideo !== undefined) return attempt.finalizedVideo.claim(operation);
     if (attempt.recordingStart !== undefined) await raceAbort(() => attempt.recordingStart!, operation.signal, 'starting provider video');
     if (this.leases?.recorder(attempt.context.attemptId) !== undefined) return raceAbort(() => this.stopProviderVideo(attempt, operation.signal), operation.signal, 'stopping provider recording');
-    const scope = attempt.scope; const engine = this.requireEngine();
-    const result = await this.engineCommand('recording.stop', { identityScope: attempt.scope }, operation);
-    if (result.identityScope !== attempt.scope) throw this.invalidate();
-    if ('missingSegment' in result) {
-      const filename = result.missingSegment === 1 ? 'video.webm' : `video-part${result.missingSegment}.webm`;
-      throw new EngineError('ENGINE_FAILURE', `screencast stop failed: video/${filename} was not produced`, { retryable: false });
+    if (attempt.nativeVideoStop === undefined) {
+      const stopping = this.prepareNativeVideo(attempt, operation);
+      attempt.nativeVideoStop = stopping;
+      void stopping.finally(() => { if (attempt.nativeVideoStop === stopping) attempt.nativeVideoStop = undefined; }).catch(() => {});
     }
-    const segments: VideoSegment[] = [];
-    const channel = attempt.channel!;
-    let next = 0;
-    try {
-      for (; next < result.segments.length; next++) {
-        const segment = result.segments[next]!;
-        const bytes = await engine.readBlob(segment, scope, operation);
-        this.assertScope(attempt, scope); this.assertBudget(operation);
-        const part = ++attempt.videoCounter;
-        const relative = `video/${part === 1 ? 'video' : `video-part${part}`}.webm`;
-        const target = { relative, absolute: path.join(attempt.context.artifactsDir, relative) };
-        mkdirSync(path.dirname(target.absolute), { recursive: true });
-        await writeFile(target.absolute, bytes, { flag: 'wx' }); this.assertScope(attempt, scope); this.assertBudget(operation); segments.push({ path: target.relative, startedAt: segment.startedAt });
+    const stopping = attempt.nativeVideoStop;
+    await withConnectionBudget(operation, 'stopping native recording', () => stopping);
+    this.assertAttempt(attempt); this.assertBudget(operation);
+    return attempt.finalizedVideo!.claim(operation);
+  }
+
+  /** Stop once; transfer/persistence faults retain independently verified segments. */
+  private async prepareNativeVideo(attempt: Attempt, operation: OperationContext): Promise<void> {
+    const scope = attempt.scope; const engine = this.requireEngine(); const client = this.requireClient();
+    const endsAt = performance.now() + operation.timeoutMs;
+    const result = await this.engineCommand('recording.stop', { identityScope: scope }, operation);
+    this.assertScope(attempt, scope);
+    if (result.identityScope !== scope) throw this.invalidate();
+    const batch = engine.retainBlobBatch('segments' in result ? result.segments : [], scope);
+    attempt.videoBlobBatches.add(batch);
+    const files = new FinalizedVideoFiles({ artifactsDir: attempt.context.artifactsDir, allocatePart: () => ++attempt.videoCounter,
+      owns: () => this.attempt === attempt && this.client === client, retirement: attempt.retirement.signal });
+    attempt.finalizedVideo = files;
+    const output: FinalizedVideoBytes[] = [];
+    const missing = result.missingSegment;
+    let failure: { value: unknown } | undefined = missing === undefined ? undefined : { value: new EngineError('ENGINE_FAILURE',
+      `screencast stop failed: video/${missing === 1 ? 'video.webm' : `video-part${missing}.webm`} was not produced`, { retryable: false }) };
+    const download = withinAttemptRequest({ ...operation, get timeoutMs() { return endsAt - performance.now(); } }, attempt, async current => {
+      if ('segments' in result) for (const [index, segment] of result.segments.entries()) {
+        try {
+          this.assertScope(attempt, scope); this.assertBudget(current);
+          await batch.read(segment, current, {
+            // A release failure must not erase already digest-verified bytes.
+            complete: bytes => { if (performance.now() < endsAt) output.push({ bytes, startedAt: segment.startedAt, ordinal: index + 1 }); },
+            fail: () => {},
+          });
+        } catch (cause) { failure ??= { value: cause }; }
       }
-    } catch (cause) {
-      // readBlob owns the segment it started. Untouched output handles still
-      // belong to this collector unless lifecycle retirement already revoked them.
-      if (this.attempt === attempt && attempt.scope === scope) {
-        for (const segment of result.segments.slice(next + 1)) {
-          try { await channel.command('blob.release', { handle: segment.handle }, this.operation(AbortSignal.timeout(1000), 1000, attempt.context.attemptId)); }
-          catch { if (this.attempt === attempt && attempt.scope === scope) channel.invalidate(); }
-        }
+      if (failure !== undefined) {
+        if (output.length === 0) throw failure.value;
+        throw new PartialVideoTransferError(failure.value, output);
       }
-      throw cause;
-    }
-    return segments;
+      return output;
+    }).finally(() => {
+      if (batch.pendingHandles.length === 0) attempt.videoBlobBatches.delete(batch);
+    });
+    files.prepare(download, endsAt, () => ({ segments: output, ...(failure === undefined ? {} : { failure }) }));
   }
   async performAt(point: ViewportPoint, action: PointerAction, operation: OperationContext): Promise<void> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;

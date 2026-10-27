@@ -111,3 +111,24 @@ it.each(['generation', 'sequence', 'id'])('rejects an artifact response with for
   await expect(f.transfer()).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
   expect(f.peer.requests.some(request => request.command === 'recording.finalized.read')).toBe(false);
 });
+
+it('continues independent immutable handles after a second-segment read refusal and retains earlier verified bytes', async () => {
+  const f = await fixture(request => {
+    if (request.command === 'recording.finalized.collect') {
+      const manifest = f.peer.manifest(); const original = (manifest['segments'] as Record<string, unknown>[])[0]!;
+      return { ok: true, effects: 'completed', scopeState: 'quarantined', data: { ...manifest,
+        segments: [1, 2, 3].map(ordinal => ({ ...original, handle: `safe-${ordinal}`, ordinal })) } };
+    }
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-2')
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    return undefined;
+  });
+  await expect(f.engine.command('scope.reset', { identityScope: f.peer.scope }, artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  const failure = await f.transfer().catch((cause: unknown) => cause);
+  expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', segments: [
+    { bytes: f.peer.bytes, ordinal: 1 }, { bytes: f.peer.bytes, ordinal: 3 },
+  ] });
+  expect(f.peer.requests.filter(request => request.command === 'recording.finalized.read').map(request => request.args['handle'])).toEqual(['safe-1', 'safe-2', 'safe-3']);
+  expect(f.peer.requests.filter(request => request.command === 'recording.finalized.release').map(request => request.args['handle'])).toEqual(['safe-1', 'safe-3']);
+  expect(f.peer.requests.some(request => request.command === 'recording.stop')).toBe(false);
+});

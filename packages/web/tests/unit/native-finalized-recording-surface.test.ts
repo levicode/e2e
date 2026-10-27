@@ -24,6 +24,7 @@ vi.mock('node:fs/promises', async original => {
 let artifactsDir: string; const surfaces: NativeSurface[] = [];
 beforeEach(() => { vi.clearAllMocks(); fileFault.refuse = false; fileFault.held = undefined; fileFault.reached = 0; artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-finalized-public-')); });
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.allSettled(surfaces.splice(0).map(surface => surface.dispose({ signal: new AbortController().signal, timeoutMs: 1000 })));
   rmSync(artifactsDir, { recursive: true, force: true });
 });
@@ -101,4 +102,79 @@ it('releases the provider lease without clearing the failed staging owner or gra
   await expect(surface.startAttempt({ attemptId: 'next', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace })).rejects.toMatchObject({ code: 'INVALID_STATE' });
   expect(release).toHaveBeenCalledTimes(1);
   expect(acquire).toHaveBeenCalledTimes(2);
+});
+
+it.each(['action', 'capture', 'connection'] as const)('collects immutable video after terminal %s failure without admitting mutation or opening a replacement', async kind => {
+  const command = kind === 'action' ? 'browser.pointer' : kind === 'capture' ? 'capture.screenshot' : 'page.title';
+  const { readFile } = await import('node:fs/promises');
+  const { peer, surface } = await fixture(request => {
+    if (request.command !== command) return undefined;
+    peer.failedSequence = request.operationSeq;
+    return { ok: false, error: { code: 'browser-failure' }, effects: kind === 'connection' ? 'not-dispatched' : 'unknown', scopeState: 'quarantined' };
+  });
+  const failing = kind === 'action' ? surface.performAt({ x: 1, y: 1 }, { kind: 'tap' }, artifactOperation())
+    : kind === 'capture' ? surface.screenshot(undefined, artifactOperation()) : surface.command('page.title', {}, artifactOperation());
+  await expect(failing).rejects.toMatchObject({ code: kind === 'connection' ? 'ENGINE_FAILURE' : 'ACTION_MAY_HAVE_COMMITTED' });
+  const saved = await surface.stopVideo(artifactOperation());
+  expect(saved).toEqual([{ path: 'video/video.webm', startedAt: '2026-10-26T00:00:00.000Z' }]);
+  expect(await readFile(path.join(artifactsDir, 'path' in saved[0]! ? saved[0]!.path : 'unexpected-link'))).toEqual(peer.bytes);
+  const count = peer.requests.length;
+  await expect(surface.startVideo(artifactOperation())).rejects.toThrow();
+  await expect(surface.performAt({ x: 1, y: 1 }, { kind: 'tap' }, artifactOperation())).rejects.toThrow();
+  await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
+  expect(peer.requests).toHaveLength(count);
+  expect(peer.requests.filter(request => request.command === 'scope.open')).toHaveLength(1);
+  expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+  expect(peer.requests.filter(request => request.command === command)).toHaveLength(1);
+});
+
+it('returns all independently verified terminal segments after reporting a middle-segment failure once', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { peer, surface } = await fixture(request => {
+    if (request.command === 'recording.finalized.collect') {
+      const manifest = peer.manifest(); const original = (manifest['segments'] as Record<string, unknown>[])[0]!;
+      return { ok: true, effects: 'completed', scopeState: 'quarantined', data: { ...manifest,
+        segments: [1, 2, 3].map(ordinal => ({ ...original, handle: `safe-${ordinal}`, ordinal, startedAt: `2026-10-26T00:00:0${ordinal}.000Z` })) } };
+    }
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-2')
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    return undefined;
+  });
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await expect(surface.stopVideo(artifactOperation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  const saved = await surface.stopVideo(artifactOperation());
+  expect(saved).toEqual([
+    { path: 'video/video.webm', startedAt: '2026-10-26T00:00:01.000Z' },
+    { path: 'video/video-part2.webm', startedAt: '2026-10-26T00:00:03.000Z' },
+  ]);
+  for (const file of saved) expect(await readFile(path.join(artifactsDir, 'path' in file ? file.path : 'unexpected-link'))).toEqual(peer.bytes);
+  expect(peer.requests.filter(request => request.command === 'recording.finalized.collect')).toHaveLength(1);
+  expect(peer.requests.filter(request => request.command === 'recording.finalized.read')).toHaveLength(3);
+  expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+  await expect(surface.startVideo(artifactOperation())).rejects.toThrow();
+  await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
+});
+
+
+it('terminal collection preserves first read-refusal after later deadline instead of replacing it', async () => {
+  const { peer, surface } = await fixture(async request => {
+    if (request.command === 'recording.finalized.collect') {
+      const manifest = peer.manifest(); const original = (manifest['segments'] as Record<string, unknown>[])[0]!;
+      return { ok: true, effects: 'completed', scopeState: 'quarantined', data: { ...manifest,
+        segments: [1, 2, 3].map(ordinal => ({ ...original, handle: `safe-${ordinal}`, ordinal })) } };
+    }
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-2')
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-3') await new Promise(() => {});
+    return undefined;
+  });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await vi.waitFor(() => expect(peer.requests.filter(request => request.command === 'recording.finalized.read')).toHaveLength(3));
+  await vi.advanceTimersByTimeAsync(15001);
+  const first = await surface.stopVideo(artifactOperation()).catch(error => error);
+  vi.useRealTimers();
+  const saved = await surface.stopVideo(artifactOperation());
+  expect(first).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native finalized recording could not be collected' });
+  expect(saved).toHaveLength(1);
 });

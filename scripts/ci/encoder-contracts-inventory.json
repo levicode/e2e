@@ -1,0 +1,216 @@
+{
+  "features": [
+    "acceptance-faults"
+  ],
+  "expected": 19,
+  "managed": [
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_missing_cleanup_acks_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_encoder_failure_remains_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cancel_and_deadline_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_owner_change_and_missing_start_ack_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_exports_only_finalized_recording_without_reopening_scope",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_without_capability_never_exports_frozen_recording",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_with_stop_error_exports_verified_bytes_without_reopening",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_stop_exports_verified_bytes_without_repeating_stop_or_new_session",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_navigation_exports_real_previous_segment_without_reopening_scope",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_cdp_connection_exports_real_previous_segment_without_reconnect",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota"
+  ],
+  "legacyComponents": [
+    "native::client_actions::tests::recording_wire_contracts::recording_delayed_initial_frame_precedes_ready_and_silent_stop_is_bounded",
+    "native::client_actions::tests::recording_wire_contracts::recording_page_opened_remeasures_second_viewport_and_stops_each_capture_once",
+    "native::client_actions::tests::recording_wire_contracts::recording_missing_second_file_returns_first_real_segment_without_another_stop",
+    "native::client_actions::tests::recording_wire_contracts::recording_freeze_preserves_finished_segment_without_stopping_active_second",
+    "native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment"
+  ],
+  "negative": [
+    "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof"
+  ],
+  "selectors": [
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_missing_cleanup_acks_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_encoder_failure_remains_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cancel_and_deadline_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_owner_change_and_missing_start_ack_remain_unknown",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_exports_only_finalized_recording_without_reopening_scope",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_without_capability_never_exports_frozen_recording",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_with_stop_error_exports_verified_bytes_without_reopening",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_stop_exports_verified_bytes_without_repeating_stop_or_new_session",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_navigation_exports_real_previous_segment_without_reopening_scope",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_cdp_connection_exports_real_previous_segment_without_reconnect",
+    "native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota",
+    "native::client_actions::tests::recording_wire_contracts::recording_delayed_initial_frame_precedes_ready_and_silent_stop_is_bounded",
+    "native::client_actions::tests::recording_wire_contracts::recording_page_opened_remeasures_second_viewport_and_stops_each_capture_once",
+    "native::client_actions::tests::recording_wire_contracts::recording_missing_second_file_returns_first_real_segment_without_another_stop",
+    "native::client_actions::tests::recording_wire_contracts::recording_freeze_preserves_finished_segment_without_stopping_active_second",
+    "native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment",
+    "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof"
+  ],
+  "realChromeEvidence": false,
+  "requiresActualFfmpeg": true,
+  "contracts": [
+    {
+      "name": "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cleanup_errors_remain_unknown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_missing_cleanup_acks_remain_unknown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_encoder_failure_remains_unknown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cancel_and_deadline_remain_unknown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_owner_change_and_missing_start_ack_remain_unknown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_exports_only_finalized_recording_without_reopening_scope",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_without_capability_never_exports_frozen_recording",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_replacement_with_stop_error_exports_verified_bytes_without_reopening",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_stop_exports_verified_bytes_without_repeating_stop_or_new_session",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_navigation_exports_real_previous_segment_without_reopening_scope",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_cdp_connection_exports_real_previous_segment_without_reconnect",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "managed"
+    },
+    {
+      "name": "native::client_actions::tests::recording_wire_contracts::recording_delayed_initial_frame_precedes_ready_and_silent_stop_is_bounded",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "legacy-component"
+    },
+    {
+      "name": "native::client_actions::tests::recording_wire_contracts::recording_page_opened_remeasures_second_viewport_and_stops_each_capture_once",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "legacy-component"
+    },
+    {
+      "name": "native::client_actions::tests::recording_wire_contracts::recording_missing_second_file_returns_first_real_segment_without_another_stop",
+      "requires": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "legacy-component"
+    },
+    {
+      "name": "native::client_actions::tests::recording_wire_contracts::recording_freeze_preserves_finished_segment_without_stopping_active_second",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "legacy-component"
+    },
+    {
+      "name": "native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "legacy-component"
+    },
+    {
+      "name": "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false,
+      "classification": "encoder-negative"
+    }
+  ]
+}
