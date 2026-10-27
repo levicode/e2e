@@ -36,7 +36,10 @@ it.each(['raw-pw', 'public-engine'] as const)('records default-context cookie cu
   const server = createServer((_request, response) => { response.writeHead(200, { 'content-type': 'text/html' }); response.end('<!doctype html><h1>Cookie custody probe</h1>'); });
   let remote: RemoteChrome | undefined; let host: Browser | undefined; let client: Browser | undefined; let context: BrowserContext | undefined;
   let endpointCalls = 0;
-  const engine = mode === 'public-engine' ? web({ connect: { cdpEndpoint: () => { endpointCalls++; if (remote === undefined) throw new Error('host not ready'); return remote.endpoint; } } }) : undefined;
+  const endpoint = () => { endpointCalls++; if (remote === undefined) throw new Error('host not ready'); return remote.endpoint; };
+  // Match the failing persistent gate: reconnectEndpoint selects the retained
+  // default-context contract. cdpEndpoint alone creates an isolated context.
+  const engine = mode === 'public-engine' ? web({ connect: { cdpEndpoint: endpoint, reconnectEndpoint: endpoint } }) : undefined;
   const trace: Record<string, unknown> = { schemaVersion: 1, label, mode, playwright: pw.version, diagnosticOnly: true, originalGatesUnchanged: true, snapshots: [] };
   const snapshots: Record<string, unknown>[] = [];
   trace['snapshots'] = snapshots;
@@ -76,7 +79,19 @@ it.each(['raw-pw', 'public-engine'] as const)('records default-context cookie cu
     }
     expect(context.pages()).toEqual([oldPage]);
     const identity = await context.newCDPSession(oldPage);
-    try { trace['firstIdentity'] = (await identity.send('Target.getTargetInfo')).targetInfo; } finally { await identity.detach(); }
+    let firstContextId: string;
+    try {
+      const target = (await identity.send('Target.getTargetInfo')).targetInfo;
+      if (typeof target.browserContextId !== 'string' || target.browserContextId.length === 0) throw new Error('Missing real default context identity');
+      trace['firstIdentity'] = target; firstContextId = target.browserContextId;
+    } finally { await identity.detach(); }
+    const inventorySession = await host.newBrowserCDPSession();
+    try {
+      const inventory = await inventorySession.send('Target.getBrowserContexts');
+      expect(inventory.browserContextIds).toEqual([]);
+      expect(inventory.defaultBrowserContextId).toBe(firstContextId);
+      trace['independentObserverUsesExactDefaultContext'] = true;
+    } finally { await inventorySession.detach(); }
     // Session cookie exactly matches the failing gate; expiry cookie is an
     // ADDITIONAL diagnostic control, never a replacement for its assertion.
     await context.addCookies([
@@ -96,7 +111,11 @@ it.each(['raw-pw', 'public-engine'] as const)('records default-context cookie cu
     await snapshot('after-reopen');
     trace['localStorageAfterReopen'] = await next.evaluate(() => localStorage.getItem('probe-local'));
     const afterIdentity = await context.newCDPSession(next);
-    try { trace['nextIdentity'] = (await afterIdentity.send('Target.getTargetInfo')).targetInfo; } finally { await afterIdentity.detach(); }
+    try {
+      const target = (await afterIdentity.send('Target.getTargetInfo')).targetInfo;
+      expect(target.browserContextId).toBe(firstContextId);
+      trace['nextIdentity'] = target;
+    } finally { await afterIdentity.detach(); }
     if (engine !== undefined) await bounded(engine.dispose!({ timeoutMs: 30000, signal: new AbortController().signal }), 30000, 'engine disconnect');
     else await bounded(client.close(), 30000, 'raw client disconnect');
     initAttempted = false;
