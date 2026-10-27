@@ -1,0 +1,139 @@
+name: Exact complete feature suite artifact recovery
+'on':
+  push:
+    branches:
+    - implement/unified-full-suite-artifact-recovery-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: unified-full-suite-artifact-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 2ba6a58f785850c2197f84b073711bb4f80488cb
+  NATIVE_SOURCE_TREE: 64e6ae4ba52f322dba9a5c347ace797c8ef20039
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  complete-nonignored-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: '12739179422'
+        path: native-harness
+        merge-multiple: true
+        run-id: '40515709946'
+        github-token: ${{ github.token }}
+    - name: Verify exact same-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: 7b4f61e02e770c33f30b694e070632bd1519f1e30213c4a23f542797d6c1278a
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "40515709946"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Run complete original nonignored feature harness without filters
+      run: 'set -euo pipefail
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list
+
+        python3 - <<''PY_INVENTORY''
+
+        import pathlib,json
+
+        p=pathlib.Path(''evidence'')
+
+        def names(f):return [x[:-6] for x in (p/f).read_text().splitlines() if x.endswith('':
+        test'')]
+
+        a=names(''all-tests.list'');i=names(''ignored-tests.list'');assert a and len(a)==len(set(a))
+        and len(i)==len(set(i)) and set(i)<=set(a)
+
+        json.dump({''total'':len(a),''ignored'':len(i),''nonignored'':len(a)-len(i),''features'':[''acceptance-faults''],''standardDefaultFeatureAcceptance'':False},open(p/''inventory.json'',''w''),indent=2)
+
+        PY_INVENTORY
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests
+        > evidence/full-suite.log 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        python3 - <<''PY_RESULTS''
+
+        import pathlib,json,re
+
+        p=pathlib.Path(''evidence'');s=(p/''full-suite.log'').read_text();i=json.load(open(p/''inventory.json''));m=re.findall(r''test
+        result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured;
+        (\d+) filtered out'',s)
+
+        result={''exit'':int((p/''full-suite.exit'').read_text()),''inventory'':i,''summaries'':m,''failedTests'':re.findall(r''^test
+        (.+) \.\.\. FAILED$'',s,re.M),''notDefaultFeatureAcceptance'':True}
+
+        (p/''result.json'').write_text(json.dumps(result,indent=2)+''\n'');assert
+        len(m)==1,m
+
+        _,passed,failed,ignored,measured,filtered=m[0];assert int(passed)+int(failed)==i[''nonignored''];assert
+        int(ignored)==i[''ignored''] and int(measured)==int(filtered)==0;assert int(passed)+int(failed)+int(ignored)==i[''total'']
+
+        assert result[''exit'']==0 and int(failed)==0,result
+
+        PY_RESULTS
+
+        test "$status" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: unified-complete-nonignored-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
