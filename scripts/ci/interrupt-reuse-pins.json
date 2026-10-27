@@ -1,24 +1,24 @@
 {
-  "artifactId": 12720128772,
-  "artifactName": "ci-native-runtime-Selector freshness, safe pixels and action parity (focused)-40475173425-1",
-  "artifactSize": 13604645,
-  "artifactDigest": "sha256:71750705213c77096e4675d0b520407c66dd767de7e5071861211b774f5a38ad",
-  "manifestSha256": "a871a4a2212a4997dab9402a1e887d6b6123d862ee7d6990cafb4a0739d460ec",
+  "artifactId": 12725376403,
+  "artifactName": "ci-native-runtime-Native fresh Playwright binding (finite validation)-40485537942-1",
+  "artifactSize": 13751306,
+  "artifactDigest": "sha256:399ba786c5cac6e1734914a7e12c8178115795d3b10cbdd8d5f590904b5f402a",
+  "manifestSha256": "00b4b4cc35979c9b2a331c6dd38de1e41ac594012c15771cc460d6eead40df62",
   "expected": {
     "source": {
-      "commit": "0f50f62e58e5e5988a73205279475127b40a769e",
-      "tree": "dfabfca8d3627f47f2a2c5ae9b8590f05dc6e768"
+      "commit": "fa3e66b5e3e9782c0da3822f594ebed7d328c671",
+      "tree": "5b9403672863a1cde9837aa2d0a366002b24d9f7"
     },
     "repository": "levicode/e2e",
-    "runId": "40475173425",
+    "runId": "40485537942",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "1176ce1545c49b67979ec5cf4240c7ead28b8f24"
+    "nativeCommit": "9903179b3357f862ed703fc9d9e41fa975ccb0f6"
   },
   "nativeSource": {
-    "commit": "1176ce1545c49b67979ec5cf4240c7ead28b8f24",
-    "tree": "6670b61c857f7daf11056e849d56850706f8a09b"
+    "commit": "9903179b3357f862ed703fc9d9e41fa975ccb0f6",
+    "tree": "3f5f6a8663d19990c523ee5a15383c9d54b379c2"
   },
-  "binarySha256": "d6a2fee245a1ef2def7915c59f26df72ab54e8e13de90dc2145da5a9c8742739"
+  "binarySha256": "3aa9f8825c294200c0e7b828ffb84e41da5d03c14f5e572ab80cb6a241b3f7f9"
 }
