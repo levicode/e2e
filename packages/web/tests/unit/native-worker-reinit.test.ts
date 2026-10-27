@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import type { EngineInitInfo, OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import { NativeClient } from '../../src/native/client.ts';
 import { NativeProtocolPeer } from '../helpers/native-protocol-peer.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -131,11 +132,50 @@ it('does not let a retired script read overwrite the newly initialized worker sc
   } finally { oldSource.resolve('retired-worker-source'); read.mockReset(); await surface.dispose(cleanup()); }
 });
 
+it('initializes a fresh worker after disposal confirms cleanup but still reports the earlier scope failure', async () => {
+  const surface = new NativeSurface({}); await surface.init(initInfo()); await surface.startAttempt(attempt('failed-scope'));
+  const oldFixture = surface.fixtureSurface();
+  unknownScopeEnd = true;
+  const failure = await surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+  expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  await expect(surface.startAttempt(attempt('no-implicit-reuse'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+  await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+  await expect(surface.init(initInfo())).resolves.toBeUndefined();
+  unknownScopeEnd = false;
+  try {
+    await surface.startAttempt(attempt('fresh-worker'));
+    await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'worker-2' });
+    expect(peers).toHaveLength(2);
+    expect(() => oldFixture.identityScope).toThrow();
+    expect(peers.map(peer => peer.requests.find(request => request.command === 'scope.open')?.args['source'])).toEqual(['launch', 'launch']);
+    expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  } finally { await surface.dispose(cleanup()); }
+});
+
 it('does not turn an unconfirmed native close into re-init permission through a second dispose', async () => {
   const surface = new NativeSurface({}); await surface.init(initInfo()); await surface.startAttempt(attempt('unknown'));
   unknownScopeEnd = true;
-  await expect(surface.dispose(cleanup())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
-  await surface.dispose(cleanup()).catch(() => {});
-  await expect(surface.init(initInfo())).rejects.toBeDefined();
-  expect(peers).toHaveLength(1);
+  const close = vi.spyOn(NativeClient.prototype, 'close').mockRejectedValue(new Error('native close has no confirmation'));
+  try {
+    await expect(surface.dispose(cleanup())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    await surface.dispose(cleanup()).catch(() => {});
+    await expect(surface.init(initInfo())).rejects.toBeDefined();
+    expect(peers).toHaveLength(1);
+  } finally { close.mockRestore(); await surface.dispose(cleanup()).catch(() => {}); }
+});
+
+it('does not grant fresh init after an unconfirmed provider release', async () => {
+  const acquire = vi.fn(async () => ({ id: 'lease', cdpEndpoint: 'ws://synthetic.test/browser' }));
+  const release = vi.fn(async () => { throw new Error('provider release outcome unknown'); });
+  const surface = new NativeSurface({ browser: { name: 'synthetic', scope: 'attempt', acquire, release } });
+  const prepared = await surface.prepare({ ...initInfo(), slots: 1 });
+  const info = { ...initInfo(), env: prepared?.env ?? {} };
+  await surface.init(info); await surface.startAttempt(attempt('lease'));
+  const failure = await surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+  await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+  await expect(surface.init(info)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  expect(acquire).toHaveBeenCalledTimes(1);
+  expect(release).toHaveBeenCalledTimes(1);
 });

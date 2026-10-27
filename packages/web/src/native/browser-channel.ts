@@ -148,6 +148,7 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
   }
   // Only a settled clean refusal carries public policy semantics. A policy
   // label cannot hide completed effects or make a dirty scope reusable.
+  if (reason === 'invalid-locator' && result.effects === 'not-dispatched' && result.scopeState === 'usable') return new TestError('INVALID_LOCATOR', 'The web selector is invalid. Check selector syntax and capture placement: a selector that captures with * (*css=article >> text=Hello) is not supported before the last part; use filter({ has }) instead', { retryable: false });
   if (reason === 'policy-denied' && result.effects === 'not-dispatched' && result.scopeState === 'usable') return new TestError('POLICY_DENIED', 'The native browser operation was denied by policy', { retryable: false });
   if (!result.ok && reason === 'unsupported-capability' && result.effects === 'not-dispatched' && result.scopeState === 'usable' && queryDiagnostic === 'display-value-composition') {
     return new EngineError('UNSUPPORTED_CAPABILITY', 'displayValue queries cannot scope child queries, serve as a has-filter, or form a union in this engine', { retryable: false });

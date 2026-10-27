@@ -25,3 +25,10 @@ describe('closed action outcome diagnostics', () => {
     expect(JSON.stringify(outcome)).toBe(before);
   });
 });
+
+
+it('projects the original delayed diff case with closed action names and bounded timings', () => {
+  const rows = actionOutcomeDiagnostics({ results: [{ test: { title: 'default agent reads the second view' }, status: 'failed', attempts: [{ steps: [{ api: 'expect.toBeVisible', status: 'failed', durationMs: 5000.2, error: { code: 'ASSERTION_FAILED' }, events: [{ name: 'dragTo', durationMs: 701.4 }, { name: 'setInputFiles', durationMs: Infinity }], turns: [{ calls: [], outcome: 'Screen changes since revision SECRET-REVISION' }] }] }] }] });
+  expect(rows).toMatchObject([{ case: 'delayed-action-diff', attempts: [{ steps: [{ api: 'expect.toBeVisible', durationMs: 5000, error: { code: 'ASSERTION_FAILED' }, events: [{ name: 'dragTo', durationMs: 701 }, { name: 'setInputFiles' }], turns: [{ reason: ['screen-diff'] }] }] }] }]);
+  expect(JSON.stringify(rows)).not.toContain('SECRET-REVISION');
+});

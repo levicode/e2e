@@ -86,7 +86,7 @@ it('joins actual local staging retirement before releasing the same provider lea
   expect(release).not.toHaveBeenCalled(); releaseFile(); await ending; await disposing;
   expect(release).toHaveBeenCalledOnce(); expect(release.mock.calls[0]![0].id).toBe('lease-2');
 });
-it('retains the provider lease and blocks a new attempt when actual staging cleanup fails', async () => {
+it('releases the provider lease without clearing the failed staging owner or granting a new attempt', async () => {
   fileFault.refuse = true; const release = vi.fn(async (_lease: { id: string }) => {}); let acquisitions = 0;
   const acquire = vi.fn(async () => ({ id: `lease-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }));
   const { surface } = await fixture(undefined, { browser: { name: 'finalized-provider', scope: 'worker',
@@ -94,9 +94,11 @@ it('retains the provider lease and blocks a new attempt when actual staging clea
   expect(acquire).toHaveBeenCalledTimes(2);
   await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
   await vi.waitFor(() => expect(fileFault.reached).toBeGreaterThanOrEqual(1));
-  await expect(surface.endAttempt({ signal: artifactOperation().signal, timeoutMs: 1000 })).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
-  await expect(surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 })).rejects.toThrow();
-  expect(release).not.toHaveBeenCalled();
+  const failure = await surface.endAttempt({ signal: artifactOperation().signal, timeoutMs: 1000 }).catch((cause: unknown) => cause);
+  expect(failure).toMatchObject({ code: 'ENGINE_FAILURE' });
+  await expect(surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 })).rejects.toBe(failure);
+  expect(release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'lease-2' }), expect.any(Object));
   await expect(surface.startAttempt({ attemptId: 'next', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace })).rejects.toMatchObject({ code: 'INVALID_STATE' });
-  expect(release).not.toHaveBeenCalled();
+  expect(release).toHaveBeenCalledTimes(1);
+  expect(acquire).toHaveBeenCalledTimes(2);
 });

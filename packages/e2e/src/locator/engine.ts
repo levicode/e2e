@@ -309,6 +309,27 @@ export class LocatorEngine {
     }
   }
 
+  /** Reference-free assertion sampling when the engine declares field reads.
+   * Other engines and protected consumers retain their existing read contract.
+   */
+  async tryReadFields(
+    expression: LocatorExpression,
+    fields: readonly EngineReadField[],
+    deadline: Deadline,
+    missingFrame: MissingFrame = 'wait',
+  ): Promise<{ node: Pick<SemanticNode, EngineReadField> | null; count: number }> {
+    if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return this.tryRead(expression, deadline, missingFrame);
+    const values = await this.fieldValues(expression, fields, deadline, missingFrame);
+    return { node: assertSingle(values, expression), count: values.length };
+  }
+
+  /** Count current semantic matches without acquiring opaque references. */
+  async countNow(expression: LocatorExpression, deadline: Deadline): Promise<number> {
+    if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return (await this.resolveNow(expression, deadline)).length;
+    // A field read always returns one row per match, even without a test ID.
+    return (await this.fieldValues(expression, ['testId'], deadline, 'empty')).length;
+  }
+
   async readFieldsNow(expression: LocatorExpression, fields: readonly EngineReadField[]): Promise<Pick<SemanticNode, EngineReadField> | null> {
     if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return this.readNow(expression);
     return assertSingle(await this.fieldValues(expression, fields, this.deadline(this.options.actionTimeout), 'empty'), expression);

@@ -149,6 +149,7 @@ export class NativeSurface implements NativeWebSurface {
     if (this.workerRetirement.signal.aborted) {
       if (!this.workerRestartable) throw invalidState('Native worker cleanup has not been confirmed');
       this.workerRetirement = new AbortController(); this.workerRestartable = false;
+      this.retirementFailure = undefined;
       this.openedBefore = false; this.workerSourceLost = false; this.workerEndpoint = undefined;
     }
     // An older initialization keeps its retired authority across every await.
@@ -365,13 +366,16 @@ export class NativeSurface implements NativeWebSurface {
       const owned = new Promise<void>((fulfilled, rejected) => { resolve = fulfilled; reject = rejected; });
       this.disposing = owned;
       void owned.catch(() => {});
+      const disposed = () => {
+        // A reported old failure is not unresolved custody. Only explicit init
+        // may create a fresh tenure after every owner is confirmed disposed.
+        this.workerRestartable = !this.workerCleanupUnconfirmed && this.client === undefined && this.attempt === undefined && this.retiringAttempt === undefined && this.connecting === undefined;
+        if (this.disposing === owned) this.disposing = undefined;
+      };
       void withConnectionBudget({ signal: new AbortController().signal, timeoutMs: RETIREMENT_TIMEOUT_MS }, 'retiring native worker', remaining => this.closeWorker(remaining)).then(() => {
-        this.workerRestartable = !this.workerCleanupUnconfirmed;
-        if (this.disposing === owned) this.disposing = undefined;
-        resolve();
+        disposed(); resolve();
       }, cause => {
-        if (this.disposing === owned) this.disposing = undefined;
-        reject(this.retirementFailure ?? cause);
+        disposed(); reject(this.retirementFailure ?? cause);
       });
     }
     const owned = this.disposing;

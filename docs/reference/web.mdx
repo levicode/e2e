@@ -562,6 +562,10 @@ const conditions = browser.locator(
 
 - The selector is CSS by default, XPath with `xpath=` or a leading `//`, and
   takes `>>` chains, so the example scopes CSS to one row.
+- A chain position applies to the ordered matches of the preceding parts.
+  `nth=0` selects the first match, `nth=-1` the last, and an index outside
+  the matches selects nothing. Quotes and escapes keep a literal `>>`
+  inside a selector body.
 - Use `filter({ has })` for an element that contains another.
 
 | Throws | When |
@@ -1280,7 +1284,7 @@ native scope, connection, and lease cleanup. Cancelling or exhausting an
 `endAttempt` caller's budget resolves that caller's wait, not the cleanup itself.
 Concurrent callers join the same work. The next attempt waits under its own
 signal and cannot open a scope or acquire a lease until cleanup succeeds.
-An owner deadline or cleanup failure permanently blocks reuse, even if an old
+An owner deadline or cleanup failure blocks attempt reuse, even if an old
 operation later succeeds. Cleanup attempts to release each exact provider lease
 even when native, recording, or local artifact cleanup fails, without replacing
 the original cleanup error. Lease release uses the same cleanup signal, not a
@@ -1290,7 +1294,11 @@ Cleanup never replays a business action.
 A later explicit cleanup call may make another bounded attempt to reap retained
 resources, sharing that work with concurrent cleanup callers. Successful reaping
 never retries an already attempted lease release, and every later cleanup call
-still reports the original failure and the worker stays unusable. There is no automatic retry loop.
+still reports the original failure. There is no automatic retry loop. Once
+`dispose` confirms that no native, recording, artifact, or lease cleanup remains
+unresolved, explicit `init` may create a fresh worker on the same engine handle.
+It creates a new native worker, never revives the retired scope, and leaves old
+fixtures invalid.
 An already-started mandatory native close retains its separate, existing
 15-second upper bound; a late close acknowledgement cannot undo the adapter's
 owner deadline or restore reuse.
