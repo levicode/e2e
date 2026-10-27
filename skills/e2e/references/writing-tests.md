@@ -508,7 +508,8 @@ the app opens itself (`target="_blank"`, `window.open`) is not followed:
   runner-side file for reading its contents, including with a hosted browser.
   Cancelled downloads keep cleanup with their original owner. A successful
   context reset or storage-state restoration may retire that owner; cleanup
-  never retries the release against the replacement.
+  never retries the release against the replacement. A later actual cleanup
+  failure still belongs to that attempt; reset does not erase it.
 - `keyboard.press(key)`, `keyboard.type(text)`, `keyboard.down(key)`,
   `keyboard.up(key)`, `mouse.*`: unfocused input. Only `down(key)` holds a
   key or modifier until `up(key)`. `press(key)` presses and releases within

@@ -23,7 +23,7 @@ import { connectionAbort, connectionCancellation, connectionDeadline, connection
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
-import { BrowserChannel, isNativeNotDispatched, isNativeUsableFailure } from './native/browser-channel.ts';
+import { BrowserChannel, isNativeNotDispatched, isNativeResourceCleanupFailure, isNativeUsableFailure } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
 import { EngineChannel, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
 import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-aliases.ts';
@@ -37,11 +37,12 @@ import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
 import { resolveNativeExecutable } from './native/runtime.ts';
 
 import { isNativeProcessCleanupUnresolved } from './native/process-cleanup.ts';
-import { PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './native/capabilities.ts';
+import { PAGE_IDENTITY_FENCE_CAPABILITY, PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './native/capabilities.ts';
 const SECURE_FIELD_SELECTOR = 'input[type="password" i]';
 const LIFECYCLE_TIMEOUT_MS = 3_600_000;
 const LATE_RECORDING_STOP_MS = 10_000;
 interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEventMap]) => void | Promise<void>; unsubscribe?: (() => void) | undefined }
+interface ResourceCallbackOwner { attempt: Attempt; epoch: number; notRevoked: () => boolean; cleanupFailure?: Error }
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
 interface Attempt {
   epoch: number;
@@ -61,6 +62,7 @@ interface Attempt {
   readonly retirement: AbortController;
   cleanupSignal?: AbortSignal;
   lateRecordingFailure?: unknown;
+  resourceCleanupFailure?: unknown;
   observeLateRecordingFailure?: (cause: unknown) => void;
   readonly wireRequests: Set<Promise<void>>;
   scope: string;
@@ -116,7 +118,7 @@ export class NativeSurface implements NativeWebSurface {
   private playwrightClosing: Promise<void> | undefined;
   private workerSourceLost = false;
   private openedBefore = false;
-  private readonly callbackOwner = new AsyncLocalStorage<{ attempt: Attempt; epoch: number; notRevoked: () => boolean }>();
+  private readonly callbackOwner = new AsyncLocalStorage<ResourceCallbackOwner>();
   private registryHighWater = 0;
   private registryCurrent = 0;
   private readonly usedContexts = new Set<string>();
@@ -370,7 +372,7 @@ export class NativeSurface implements NativeWebSurface {
     let scopeEnd: Promise<unknown> | undefined;
     let peerRetirement: Promise<unknown> | undefined;
     let scopeEnded = false;
-    let failure: unknown = this.retirementFailure;
+    let failure: unknown = this.retirementFailure ?? attempt?.resourceCleanupFailure;
     const failed = (cause: unknown, departed = false) => {
       // A departed waiter is not a failed exact-owner cleanup receipt.
       if (departed && (isLocalBudgetDeparture(cause) || isClosedFrameCancellation(cause))) return;
@@ -485,6 +487,7 @@ export class NativeSurface implements NativeWebSurface {
       if (attempt?.rawClosing !== undefined) try { await attempt.rawClosing; } catch (cause) { failed(cause); }
       if (scopeEnd !== undefined) try { await scopeEnd; } catch (cause) { failed(cause, true); }
       if (attempt !== undefined) await Promise.allSettled(attempt.wireRequests);
+      if (attempt?.resourceCleanupFailure !== undefined) failed(attempt.resourceCleanupFailure);
       if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
       if (connecting !== undefined) {
         await connecting.work.catch(() => undefined);
@@ -625,7 +628,7 @@ export class NativeSurface implements NativeWebSurface {
     const pending: PendingConnection = { work: Promise.resolve() };
     this.connecting = pending;
     pending.work = (async () => {
-      const client = await connectNativeProcess({ executable: this.executable!, cwd: info.projectRoot, env: info.env, capabilities: REQUIRED_CAPABILITIES }, operation, event => tenure === this.clientTenure ? this.onEvent(event) : undefined);
+      const client = await connectNativeProcess({ executable: this.executable!, cwd: info.projectRoot, env: info.env, capabilities: this.persistent ? [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY] : REQUIRED_CAPABILITIES }, operation, event => tenure === this.clientTenure ? this.onEvent(event) : undefined);
       if (tenure !== this.clientTenure || operation.signal.aborted || (attempt !== undefined && this.attempt !== attempt)) {
         try { await client.close(this.operation(AbortSignal.timeout(1000), 1000)); }
         catch (cause) { pending.cleanupFailure = cause; throw cause; }
@@ -665,7 +668,27 @@ export class NativeSurface implements NativeWebSurface {
     attempt.channel?.dispose();
     // Event handles outlive body cancellation. Only this exact attempt's
     // retirement may cancel their release; a failed release still fails cleanup.
-    attempt.channel = new BrowserChannel(this.requireClient(), { identityScope: () => { this.assertAttempt(attempt); return attempt.scope; }, operation: () => this.operation(attempt.retirement.signal) });
+    const latch = this.latch;
+    attempt.channel = new BrowserChannel(this.requireClient(), {
+      identityScope: () => { this.assertAttempt(attempt); return attempt.scope; },
+      operation: () => this.operation(attempt.retirement.signal),
+      trackResourceCleanup: (work, callbackFailed) => {
+        const currentCallback = this.callbackOwner.getStore();
+        const callback = callbackFailed && currentCallback?.attempt === attempt ? currentCallback : undefined;
+        // Join actual resource receipts, never a user callback or a departed
+        // waiter. A later attempt must not inherit this owner's failure.
+        const settled = work.catch(cause => {
+          if (!isNativeResourceCleanupFailure(cause)) return;
+          attempt.resourceCleanupFailure ??= cause;
+          // Preserve an earlier callback error at the event latch. Its actual
+          // cleanup failure remains sticky even if publication retires that callback.
+          if (callback === undefined) latch.latch(cause); else callback.cleanupFailure ??= cause;
+          if (this.attempt === attempt || this.retiringAttempt === attempt) this.retirementFailure ??= cause;
+        }).then(() => undefined);
+        attempt.wireRequests.add(settled);
+        void settled.then(() => attempt.wireRequests.delete(settled));
+      },
+    });
     for (const [name, callbacks] of this.listeners) for (const listener of callbacks) listener.unsubscribe = attempt.channel.subscribe(name, listener.callback);
   }
   private async onEvent(event: NativeEvent): Promise<void> {
@@ -681,9 +704,13 @@ export class NativeSurface implements NativeWebSurface {
     const latch = this.latch;
     const epoch = attempt.epoch;
     const notRevoked = this.requireClient().callbackRevocationGuard();
-    const work = this.callbackOwner.run({ attempt, epoch, notRevoked }, () => this.dispatchEvent(attempt, event, latch));
+    const owner: ResourceCallbackOwner = { attempt, epoch, notRevoked };
+    const work = this.callbackOwner.run(owner, () => this.dispatchEvent(attempt, event, latch));
     latch.track('native event', work);
-    try { await work; } catch (cause) { if (notRevoked() && (this.attempt !== attempt || attempt.epoch === epoch)) latch.latch(cause instanceof Error ? cause : invalidState('Native event processing failed')); }
+    try { await work; } catch (cause) {
+      if (notRevoked() && (this.attempt !== attempt || attempt.epoch === epoch)) latch.latch(cause instanceof Error ? cause : invalidState('Native event processing failed'));
+      else if (owner.cleanupFailure !== undefined) latch.latch(owner.cleanupFailure);
+    }
     finally { if (event.event === 'download.started' && event.payload !== null && typeof event.payload === 'object' && 'handle' in event.payload && typeof event.payload.handle === 'string') attempt.downloads.delete(event.payload.handle); }
   }
 
@@ -865,6 +892,20 @@ export class NativeSurface implements NativeWebSurface {
     const client = this.requireClient(); const publication = client.publicationCheckpoint();
     const channel = attempt.channel; const pageEpoch = attempt.epoch;
     const result = await withinAttemptRequest(operation, attempt, async current => {
+      if (name === 'page.navigate' && this.persistent) {
+        // Match ensurePage→goto: the create-only result releases its native
+        // event barrier before application navigation needs route decisions.
+        await this.creatingPage(attempt, current, () => this.requireEngine().command('page.activate', { identityScope: admitted.scope }, current));
+        if (attempt.retirement.signal.aborted) throw connectionCancellation('Persistent activation retired before navigation');
+        this.assertScope(attempt, admitted.scope); assertPublicationBudget(current);
+        const binding = attempt.rawBinding;
+        if (binding?.kind !== 'persistent') throw this.invalidate();
+        // Raw CDP identity comes from the acknowledged native identify/binding,
+        // not the opaque recovery chain. Native rechecks this captured Page and
+        // must not ensure a replacement if it closes before dispatch.
+        args = { ...args, expectedPage: { contextId: binding.contextId, targetId: binding.targetId } } as BrowserCommandMap[K]['args'];
+        attempt.pageReady = true;
+      }
       const work = () => channel.command(name, args, current, name === 'page.navigate' ? () => {
         if (attempt.retirement.signal.aborted) throw connectionCancellation('Page navigation publication retired with its attempt');
       } : undefined);

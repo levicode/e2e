@@ -5,12 +5,13 @@ import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs, valid
 import type { NativeClient } from './client.ts';
 import type { NativeEvent, NativeResult } from './protocol.ts';
 import type { FrameQueryDiagnostic, QueryDiagnostic } from './query-diagnostic.ts';
-import { withConnectionBudget } from '../operation-budget.ts';
+import { isLocalBudgetDeparture, withConnectionBudget } from '../operation-budget.ts';
 
 /** The lifecycle surface supplies current attempt identity and bounded cleanup context. */
 export interface BrowserChannelContext {
   identityScope(): string;
   operation(): OperationContext;
+  trackResourceCleanup?(work: Promise<void>, callbackFailed?: boolean): void;
 }
 
 type EventCallback = (event: BrowserEventMap[keyof BrowserEventMap]) => void | Promise<void>;
@@ -32,27 +33,36 @@ export class BrowserChannel {
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, beforePagePublication?: () => void): Promise<BrowserCommandMap[K]['result']> {
     if (name === 'download.unsubscribe' || name === 'download.release') {
-      this.assertScope();
-      // A cancelled read still owns its native request until result and cancel ACK.
-      // Join only those proofs under this cleanup's existing budget, not recovery.
-      return withConnectionBudget(operation, 'download resource cleanup', async remaining => {
+      return this.cleanupCommand(name, args, operation);
+    }
+    return this.dispatchCommand(name, args, operation, beforePagePublication);
+  }
+
+  private cleanupCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, retain?: (work: Promise<BrowserCommandMap[K]['result']>) => void, callbackFailed = false): Promise<BrowserCommandMap[K]['result']> {
+    this.assertScope();
+    // The caller keeps its original deadline; an event owner also retains the
+    // actual work so waiter departure cannot erase a later cleanup receipt.
+    return withConnectionBudget(operation, 'browser resource cleanup', remaining => {
+      const work = (async () => {
         for (;;) {
           const settling = this.client.cancelledSettlement(this.scope);
           if (settling === undefined) break;
           await settling;
         }
-        return this.dispatchCommand(name, args, { ...operation, ...remaining() });
-      });
-    }
-    return this.dispatchCommand(name, args, operation, beforePagePublication);
+        return this.dispatchCommand(name, args, { ...operation, ...remaining() }, undefined, true);
+      })();
+      this.context.trackResourceCleanup?.(work.then(() => undefined), callbackFailed);
+      retain?.(work);
+      return work;
+    });
   }
 
-  private async dispatchCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, beforePagePublication?: () => void): Promise<BrowserCommandMap[K]['result']> {
+  private async dispatchCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, beforePagePublication?: () => void, retainedCleanup = false): Promise<BrowserCommandMap[K]['result']> {
     this.assertScope();
+    const endsAt = performance.now() + operation.timeoutMs;
     const correlation = name === 'fixture.correlate' ? { args: snapshotCorrelationArgs(args), identityScope: this.scope } : undefined;
     let settling = this.client.cancelledSettlement(this.scope);
     if (settling !== undefined) {
-      const endsAt = performance.now() + operation.timeoutMs;
       do {
         await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() }, 'native operation readiness', () => settling!);
         this.assertScope();
@@ -62,13 +72,28 @@ export class BrowserChannel {
     }
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
     const result = await this.client.request(name, { ...(correlation?.args ?? args), identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
-    if (name === 'download.release' && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
-    if ((name === 'download.release' || name === 'download.unsubscribe') && !result.ok
-      && result.error?.code === 'scope-unavailable' && result.effects === 'not-dispatched' && result.scopeState === 'usable') {
-      // Native scope replacement closes admission before publishing its owner. Its
-      // receipt must retire this exact channel before it can own this cleanup.
-      const retirement = this.client.scopeReplacementRetirement(this.scope);
-      if (retirement !== undefined && await retirement && this.retired) return decodeBrowserResult(name, null);
+    if ((name === 'download.release' || name === 'network.body.release') && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
+    if (!result.ok && (name === 'download.release' || name === 'download.unsubscribe' || name === 'network.body.release')) {
+      const failure = resultError(result);
+      if ((result.error?.code === 'scope-unavailable' || result.error?.code === 'stale-scope') && result.effects === 'not-dispatched' && result.scopeState === 'usable') {
+        // Retain the real refusal until exact publication supersedes it. A
+        // local proof-wait timeout is not a replacement for this receipt.
+        const retirement = this.client.scopeReplacementRetirement(this.scope);
+        if (retirement !== undefined) {
+          const work = retirement.then(retired => {
+            if (retired && this.retired) return decodeBrowserResult(name, null);
+            resourceCleanupFailures.add(failure);
+            throw failure;
+          });
+          if (retainedCleanup) return work;
+          // A direct network-body cleanup keeps its public deadline after the
+          // real refusal, without racing away an in-flight native result.
+          this.context.trackResourceCleanup?.(work.then(() => undefined));
+          return withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() }, 'retiring browser resources', () => work);
+        }
+      }
+      resourceCleanupFailures.add(failure);
+      throw failure;
     }
     // A page-creating continuation owns its captured attempt across this exact
     // result. Preserve real failure evidence before local publication checks;
@@ -141,20 +166,43 @@ export class BrowserChannel {
     // Lifecycle retirement owns outstanding native leases; a late JS callback
     // must neither release into nor invalidate the replacement scope.
     if (this.retired || !notRevoked()) return;
-    try { await this.command(name, { handle }, this.context.operation()); }
-    catch (cause) {
-      if (name === 'download.release' && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'adapter-failure', code: cause instanceof EngineError || cause instanceof TestError ? cause.code : 'unclassified' })}\n`);
+    let actual: Promise<null> | undefined;
+    try { await this.cleanupCommand(name, { handle }, this.context.operation(), work => { actual = work; }, failed); }
+    catch (error) {
+      let cause = error;
+      if (isLocalBudgetDeparture(cause) && actual !== undefined) {
+        const retirement = this.client.scopeReplacementRetirement(this.scope);
+        if (retirement !== undefined) {
+          try { await actual; return; }
+          catch (receipt) {
+            // No command may be retried here. Only an undispatched local wait
+            // can transfer to this exact replacement's final retirement proof.
+            if (isLocalBudgetDeparture(receipt) && await retirement && this.retired) return;
+            cause = receipt;
+          }
+        }
+      }
+      if (process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'adapter-failure', command: name, localDeparture: isLocalBudgetDeparture(cause), code: cause instanceof EngineError || cause instanceof TestError ? cause.code : 'unclassified' })}\n`);
       // A release admitted while live may settle after disposal or scope replacement.
       // Its post-await scope check must not invalidate the shared replacement client.
-      if (this.retired || !notRevoked() || this.context.identityScope() !== this.scope) return;
+      if (this.retired || !notRevoked() || this.context.identityScope() !== this.scope) {
+        if (!failed && isNativeResourceCleanupFailure(cause)) throw cause;
+        return;
+      }
       const failure = this.client.invalidate();
-      if (!failed) throw failure;
+      if (!failed) throw isNativeResourceCleanupFailure(cause) ? cause : failure;
     }
   }
 
   private assertScope(): void {
     if (this.retired || this.context.identityScope() !== this.scope) throw new EngineError('INVALID_STATE', 'The native browser scope has retired', { retryable: false });
   }
+}
+
+/** Only errors created from an actual closed resource-cleanup result acquire this identity. */
+const resourceCleanupFailures = new WeakSet<EngineError | TestError>();
+export function isNativeResourceCleanupFailure(cause: unknown): cause is EngineError | TestError {
+  return (cause instanceof EngineError || cause instanceof TestError) && resourceCleanupFailures.has(cause);
 }
 
 /** Request-local scalar facts only; never retain a fill value or renderer text. */

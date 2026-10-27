@@ -20,7 +20,7 @@ export interface BrowserCommandMap {
   'blob.write': { args: { handle: string; offset: number; base64: string }; result: { nextOffset: number } };
   'blob.seal': { args: { handle: string }; result: { handle: string; size: number; sha256: string } };
   'blob.release': { args: { handle: string }; result: { released: true } };
-  'page.navigate': { args: { url: string; waitUntil: 'load' | 'domcontentloaded' | 'networkidle' }; result: null };
+  'page.navigate': { args: { url: string; waitUntil: 'load' | 'domcontentloaded' | 'networkidle'; expectedPage?: { readonly contextId: string; readonly targetId: string } }; result: null };
   'page.reload': { args: Record<string, never>; result: null };
   'page.back': { args: Record<string, never>; result: null };
   'page.forward': { args: Record<string, never>; result: null };

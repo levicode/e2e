@@ -1,4 +1,4 @@
-"""Exact 20 encoder contracts; same reviewed process sampler, no Chrome claim."""
+"""Exact 21 encoder contracts; same reviewed process sampler, no Chrome claim."""
 import hashlib,json,os,pathlib,re,shutil,signal,subprocess,sys,time
 def process_identity(pid):
  try:
@@ -34,7 +34,7 @@ def stop_owned_group(proc,owner):
 
 harness=pathlib.Path(sys.argv[1]).resolve();out=pathlib.Path(sys.argv[2]).resolve();out.mkdir(parents=True,exist_ok=True)
 inventory=json.loads(pathlib.Path(sys.argv[3]).read_text());encoder_contracts=inventory['contracts'];encoder_names=[x['name'] for x in encoder_contracts];names=encoder_names;browser_names=[];required=[];additional=[];encoder_only=set();recording_two=''
-assert len(names)==len(set(names))==20
+assert len(names)==len(set(names))==21
 encoder_requirements={x['name']:set(x['requires']) for x in encoder_contracts};assert all(x['browserIdentityRequired'] is False for x in encoder_contracts)
 child_env={k:v for k,v in os.environ.items() if k not in {'GH_TOKEN','GITHUB_TOKEN','ACTIONS_RUNTIME_TOKEN'}}
 # These fixtures own fresh processes. Unexpected ambient attachment is a setup failure.

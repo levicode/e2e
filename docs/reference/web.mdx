@@ -917,11 +917,13 @@ const file = await browser.waitForDownload(() =>
   receipts within its own original budget, as does attempt teardown. This
   does not wait for unrelated live operations or retry the cancelled action.
   Callback child requests cannot wait on their cancelled parent; decision
-  replies remain independent. A real cleanup failure still fails attempt cleanup.
-  If context reset or storage-state restoration has already closed native
-  admission, download cleanup can instead finish with that successful
+  replies remain independent. An actual resource-cleanup failure still fails its
+  owning attempt, even after scope replacement or the public waiter's timeout.
+  If context reset or storage-state restoration has closed native admission
+  or retired the native scope, download cleanup can finish with that successful
   replacement and retirement of its exact old owner. It does not retry the
   release, extend the cleanup budget, or treat a pending replacement as success.
+  Captured response bodies follow the same cleanup ownership rules.
 
 | Throws | When |
 | --- | --- |

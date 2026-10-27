@@ -7,6 +7,9 @@ export const DISCONNECTED_RECOVERY_CAPABILITY = 'scope.reconnect-quarantined/1';
 /** Create-only persistent page reopen with exact owner identity refresh. */
 export const PERSISTENT_PAGE_REOPEN_CAPABILITY = 'browser.persistent-page-reopen/1';
 
+/** Exact acknowledged raw Page constraint; never permission to create or retarget. */
+export const PAGE_IDENTITY_FENCE_CAPABILITY = 'browser.page-identity-fence/1';
+
 /** Read only completed attempt recordings after terminal context replacement failure. */
 export const TERMINAL_RECORDING_CAPABILITY = 'terminal.recording-artifacts/1';
 

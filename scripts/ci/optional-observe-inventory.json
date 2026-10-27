@@ -2,7 +2,7 @@
   "features": [
     "acceptance-faults"
   ],
-  "count": 256,
+  "count": 266,
   "selectors": [
     "native::cdp::client::tests::i10_t01_readonly_disposal_handoff_retains_exact_groups_until_matching_ack",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::i10_t01_metadata_release_ack_is_not_the_eighty_ms_tree_deadline",
@@ -259,7 +259,17 @@
     "native::client_observation::tests::suppressed_listitem_content_facts_reach_author_graph_compaction",
     "native::client_session::interop_replacement_decision_tests::private_replacement_decisions_are_exact_typed_and_sequential",
     "native::client_session::interop_replacement_decision_tests::private_replacement_decisions_cannot_acquire_scope_or_unstarted_authority",
-    "native::client_session::interop_replacement_decision_tests::private_created_metadata_is_bounded_and_cannot_smuggle_commands"
+    "native::client_session::interop_replacement_decision_tests::private_created_metadata_is_bounded_and_cannot_smuggle_commands",
+    "native::client_session::interop_replacement_decision_tests::private_replacement_tokens_are_one_use_and_expire_on_original_budget",
+    "native::client_session::interop_replacement_decision_tests::private_replacement_authority_rejects_foreign_leases_and_callback_owners",
+    "native::client_transport::tests::interop_replacement_emission_tests::private_replacement_emission_does_not_revive_stale_or_staged_sinks",
+    "native::client_browser::interop_adoption::tests::replacement_tests::replacement_inventory_rejects_foreign_context_without_attach_or_disposal",
+    "native::client_browser::interop_adoption::tests::replacement_tests::replacement_inventory_requires_original_phase_two_without_clearing_owner",
+    "native::client_browser::interop_adoption::tests::replacement_tests::replacement_cancellation_before_and_after_validation_retains_exact_custody",
+    "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::navigation_page_fence_rejects_malformed_foreign_and_other_owner_before_dispatch",
+    "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::navigation_page_fence_closed_after_activation_never_silently_retargets",
+    "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::navigation_page_fence_rechecks_real_target_after_captured_lease_wait",
+    "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::navigation_page_fence_does_not_relabel_close_after_dispatch_as_not_dispatched"
   ],
   "groups": {
     "original174": {

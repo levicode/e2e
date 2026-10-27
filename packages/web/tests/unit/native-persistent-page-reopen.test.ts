@@ -4,13 +4,14 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EngineError, type EngineAttemptContext, type JsonValue } from 'e2e/engine';
 import { web, surfaceOf } from '../../src/index.ts';
+import { NativeClient } from '../../src/native/client.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { chromium } from 'playwright-core';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 import { isNativeUsableFailure } from '../../src/native/browser-channel.ts';
 import { isLocalBudgetDeparture } from '../../src/operation-budget.ts';
-import { PERSISTENT_PAGE_REOPEN_CAPABILITY } from '../../src/native/capabilities.ts';
+import { PAGE_IDENTITY_FENCE_CAPABILITY, PERSISTENT_PAGE_REOPEN_CAPABILITY } from '../../src/native/capabilities.ts';
 import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -23,12 +24,13 @@ const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal 
 const context = (): EngineAttemptContext => ({ attemptId: 'a1', artifactsDir: tmpdir(), signal: new AbortController().signal, resolveSecret: async () => { throw new Error('No secrets in identity fixture'); }, appLog: () => undefined, navigation: () => undefined, environment: () => undefined });
 const identity = (page: string) => ({ browser: 'opaque-browser-1', context: 'opaque-context-1', page });
 const refresh = (): Record<string, JsonValue> => ({ version: 1, identityScope: 'scope-1', previousPageIdentity: 'page-1', recoveryIdentity: identity('page-2') });
-async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined, reconnectEndpoint: (signal: AbortSignal) => string | Promise<string> = () => 'ws://synthetic.test/reconnect') {
+async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined, reconnectEndpoint: (signal: AbortSignal) => string | Promise<string> = () => 'ws://synthetic.test/reconnect', omitFence = false) {
   resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/open', browserIdentity: 'opaque-browser-1', allocateScopeIdentity: () => 'scope-1', allocateContextIdentity: () => ({ contextId: 'cdp-context-1', targetId: 'cdp-page-1' }) });
   vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementation(async (settings, budget, onEvent) => {
     expect(settings.capabilities).toContain(PERSISTENT_PAGE_REOPEN_CAPABILITY);
-    peer = new NativeProtocolPeer(settings.capabilities, async request => {
+    expect(settings.capabilities).toContain(PAGE_IDENTITY_FENCE_CAPABILITY);
+    peer = new NativeProtocolPeer(omitFence ? settings.capabilities.filter(capability => capability !== PAGE_IDENTITY_FENCE_CAPABILITY) : settings.capabilities, async request => {
       const response = await resources.respond(request, async frame => {
       const domainResponse = await custom?.(frame);
       if (domainResponse !== undefined) return domainResponse;
@@ -37,6 +39,7 @@ async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<Pe
         expect(frame.args).toMatchObject({ expectedBrowserIdentity: identity('').browser, expectedContextIdentity: identity('').context, expectedPageIdentity: current.targetId.slice(4) });
         return { data: resources.reconnectScope('scope-1', 'scope-reconnected') };
       }
+      if (frame.command === 'page.activate') return { data: { activated: true } };
       if (frame.command === 'page.title') return { data: { title: 'current title' } };
       if (frame.command === 'blob.release') return { data: { released: true } };
       if (frame.command === 'session.environment') return { data: { identityScope: 'scope-1', browser: 'Chromium/156.0' } };
@@ -50,6 +53,11 @@ async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<Pe
       }
       return response;
     }, { close: () => resources.closeNative() });
+    if (omitFence) {
+      const original = NativeClient.connect;
+      const connect = vi.spyOn(NativeClient, 'connect').mockImplementation((channel, _required, current, event) => original.call(NativeClient, channel, settings.capabilities, current, event));
+      try { return await peer.connect(budget, onEvent); } finally { connect.mockRestore(); }
+    }
     return peer.connect(budget, onEvent);
   });
   const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/open', reconnectEndpoint } });
@@ -618,4 +626,134 @@ it('REVIEW original native Unknown never gains opaque metadata or fresh publicat
     expect(peer!.requests.filter(request => request.command === 'page.navigate')).toHaveLength(2);
     expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
   } finally { await engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+
+it('activates and publishes a persistent reopen before the application navigation needs its route decisions', async () => {
+  let reopen = false; const sequence: string[] = [];
+  const engine = await fixture(async frame => {
+    if (frame.command === 'page.activate') {
+      sequence.push('activate');
+      if (reopen) {
+        resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
+        await peer!.event('scope.page-reopened', refresh());
+        reopen = false;
+      }
+      return { data: { activated: true } };
+    }
+    if (frame.command === 'page.navigate') {
+      sequence.push('navigate');
+      // Script the existing native ensure→navigate dependency: an unflushed
+      // replacement's network callback cannot settle that same navigation.
+      if (reopen) return { error: 'deadline-exceeded', effects: 'unknown', scopeState: 'quarantined' };
+      if (resources.currentIdentity()!.targetId === 'cdp-page-2') expect(surfaceOf(engine)!.page().isClosed()).toBe(false);
+      return { data: null };
+    }
+    return undefined;
+  });
+  try {
+    // Initial activate does not yet make the Page public until navigation.
+    await engine.session!.open!('https://synthetic.test/first', operation());
+    const old = surfaceOf(engine)!.page(); sequence.length = 0; reopen = true;
+    await engine.session!.open!('https://synthetic.test/reopened', operation());
+    expect(sequence).toEqual(['activate', 'navigate']);
+    expect(surfaceOf(engine)!.page()).not.toBe(old);
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(2);
+  } finally { await engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+it('keeps the actual activation Unknown after its original deadline instead of dispatching navigation', async () => {
+  const entered = deferred<void>(); const held = deferred<PeerOutcome>(); let activations = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'page.activate' || ++activations === 1) return undefined;
+    entered.resolve(undefined); return held.promise;
+  });
+  await engine.session!.open!('https://synthetic.test/first', operation());
+  const opening = engine.session!.open!('https://synthetic.test/reopened', { ...operation(), timeoutMs: 35 }).catch(error => error);
+  let settled = false; void opening.then(() => { settled = true; });
+  try {
+    await entered.promise; await new Promise(resolve => setTimeout(resolve, 65)); expect(settled).toBe(false);
+    held.resolve({ error: 'cancelled', effects: 'unknown', scopeState: 'quarantined' });
+    expect(await opening).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+    expect(peer!.requests.filter(request => request.command === 'page.navigate')).toHaveLength(1);
+    expect(activations).toBe(2);
+  } finally { held.resolve({ error: 'cancelled', effects: 'unknown', scopeState: 'quarantined' }); await opening; await engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+it('fences navigation to the published raw Page when an external actor replaces it after activation', async () => {
+  let race = false; let published: ReturnType<NonNullable<ReturnType<typeof surfaceOf>>['page']> | undefined;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'page.navigate' || !race) return undefined;
+    // Script only the resource change; the native framed test separately
+    // proves closeTarget/targetDetached cannot call ensure on the fenced path.
+    published = surfaceOf(engine)!.page();
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'foreign-cdp-page');
+    expect(published.isClosed()).toBe(true);
+    expect(frame.args['expectedPage']).toEqual({ contextId: 'cdp-context-1', targetId: 'cdp-page-1' });
+    return { error: 'stale-scope', effects: 'not-dispatched', scopeState: 'usable' };
+  });
+  try {
+    await engine.session!.open!('https://synthetic.test/first', operation()); race = true;
+    const error = await engine.session!.open!('https://synthetic.test/raced', operation()).catch(cause => cause);
+    expect(error).toMatchObject({ code: 'INVALID_STATE' });
+    expect(isNativeUsableFailure(error)).toBe(true);
+    expect(surfaceOf(engine)!.page()).toBe(published);
+    expect(peer!.requests.filter(request => request.command === 'page.activate')).toHaveLength(2);
+    expect(peer!.requests.filter(request => request.command === 'page.navigate')).toHaveLength(2);
+    expect(peer!.requests.filter(request => request.command === 'scope.interop.identify')).toHaveLength(1);
+    await expect(engine.endAttempt!(cleanup())).resolves.toBeUndefined();
+  } finally { await engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+
+it('refuses a persistent peer missing the exact-page capability before browser allocation', async () => {
+  await expect(fixture(undefined, undefined, true)).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+  expect(peer!.requests).toEqual([]);
+  expect(resources.snapshot().playwrightClients).toBe(0);
+  expect(chromium.connectOverCDP).not.toHaveBeenCalled();
+});
+
+it('does not lend navigation a new deadline after a successful late activation receipt', async () => {
+  const entered = deferred<void>(); const held = deferred<PeerOutcome>(); let activations = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'page.activate' || ++activations === 1) return undefined;
+    entered.resolve(undefined); return held.promise;
+  });
+  await engine.session!.open!('https://synthetic.test/first', operation());
+  const opening = engine.session!.open!('https://synthetic.test/late', { ...operation(), timeoutMs: 25 }).catch(error => error);
+  try {
+    await entered.promise; await new Promise(resolve => setTimeout(resolve, 45));
+    held.resolve({ data: { activated: true } });
+    const error = await opening;
+    expect(error).toMatchObject({ code: 'OPERATION_TIMEOUT' }); expect(isLocalBudgetDeparture(error)).toBe(true);
+    expect(peer!.requests.filter(frame => frame.command === 'page.navigate')).toHaveLength(1);
+    await expect(engine.endAttempt!(cleanup())).resolves.toBeUndefined();
+  } finally { held.resolve({ data: { activated: true } }); await opening; await engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+it.each((['endAttempt', 'dispose'] as const).flatMap(method => (['success', 'clean-failure', 'Unknown'] as const).map(outcome => ({ method, outcome }))))('activation receipt across $method preserves $outcome without navigation or a second owner', async ({ method, outcome }) => {
+  const entered = deferred<void>(); const held = deferred<PeerOutcome>(); let activations = 0;
+  const engine = await fixture(async frame => {
+    if (frame.command !== 'page.activate' || ++activations === 1) return undefined;
+    resources.replaceNativePage('scope-1', 'cdp-page-1', 'cdp-page-2');
+    await peer!.event('scope.page-reopened', refresh()); entered.resolve(undefined); return held.promise;
+  });
+  await engine.session!.open!('https://synthetic.test/first', operation());
+  const opening = engine.session!.open!('https://synthetic.test/retired', operation()).catch(error => error);
+  try {
+    await entered.promise;
+    const retiring = engine[method]!(cleanup()).then(() => undefined, error => error);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    held.resolve(outcome === 'success' ? { data: { activated: true } } : outcome === 'clean-failure'
+      ? { error: 'unsupported-capability', effects: 'not-dispatched', scopeState: 'usable' }
+      : { error: 'cancelled', effects: 'unknown', scopeState: 'quarantined' });
+    const error = await opening; const cleanupError = await retiring;
+    expect(error).toMatchObject({ code: outcome === 'Unknown' ? 'ACTION_MAY_HAVE_COMMITTED' : outcome === 'clean-failure' ? 'UNSUPPORTED_CAPABILITY' : 'CANCELLED' });
+    if (outcome === 'success') expect(isLocalBudgetDeparture(error)).toBe(true);
+    if (outcome === 'Unknown') expect(cleanupError).toBe(error); else expect(cleanupError).toBeUndefined();
+    expect(peer!.requests.filter(frame => frame.command === 'page.navigate')).toHaveLength(1);
+    expect(peer!.requests.filter(frame => frame.command === 'scope.interop.identify')).toHaveLength(1);
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(resources.snapshot().playwrightClients).toBe(0);
+  } finally { held.resolve({ error: 'cancelled', effects: 'unknown', scopeState: 'quarantined' }); await opening; await engine.dispose!(cleanup()).catch(() => {}); }
 });

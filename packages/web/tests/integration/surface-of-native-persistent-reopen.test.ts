@@ -5,12 +5,14 @@ import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { EngineCleanupContext, EngineFixtureContext, Expectable, OperationContext } from 'e2e/engine';
 import { chromium, type Browser as PlaywrightBrowser } from 'playwright-core';
 import { launchRemoteChrome, closeRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { web, surfaceOf, type Browser } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+import { NativeClient } from '../../src/native/client.ts';
+import type { NativeResult } from '../../src/native/protocol.ts';
 
 /** Test-only bounds: Vitest's watchdog alone does not cancel owned work. */
 async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -22,7 +24,7 @@ async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): P
   } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 
-it.each(['borrowed'])('publishes the exact live Page after its %s persistent target closes', async (ownership) => {
+it.each([{ ownership: 'borrowed', race: false }, { ownership: 'borrowed', race: true }])('publishes or refuses the exact persistent Page (race=$race)', async ({ ownership, race }) => {
   let requests = 0;
   let receivedHeader: string | string[] | undefined;
   const server = createServer((request, response) => {
@@ -48,9 +50,13 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
   let browserPid: number | undefined;
   let rawRoutes = 0; let publicRoutes = 0;
   let cleanupPassed = false;
-  const evidence: Record<string, unknown> = { schemaVersion: 1, name: `surface-of-native-reopen-${ownership}`, runtime: 'not-run', cleanup: 'not-run' };
+  const evidence: Record<string, unknown> = { schemaVersion: 1, name: `surface-of-native-reopen-${ownership}${race ? "-fenced-race" : ""}`, runtime: 'not-run', cleanup: 'not-run' };
   let failure: unknown;
   let work: Promise<void> | undefined;
+  let restoreRequest: (() => void) | undefined;
+  let restoreClose: (() => void) | undefined;
+  let expectedRetirementError: unknown;
+  let nativeCloseReceipts = 0; let nativeCloseFailures = 0;
   try {
     work = (async () => {
       if (ownership === 'borrowed') {
@@ -125,6 +131,61 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
       } finally { await processIdentity.detach(); }
       let oldCloseEvents = 0; oldPage.on('close', () => { oldCloseEvents++; });
       await oldPage.close(); expect(oldCloseEvents).toBe(1); expect(oldPage.isClosed()).toBe(true);
+      if (race) {
+        let createdPages = 0; let racedCloseEvents = 0; let intercepted = 0;
+        let actual: NativeResult | undefined;
+        let capturedFence: unknown; let capturedTarget: string | undefined;
+        context.on('page', () => { createdPages++; });
+        const originalClose = NativeClient.prototype.close;
+        const closeSpy = vi.spyOn(NativeClient.prototype, 'close').mockImplementation(async function (this: NativeClient, ...args) {
+          try { await Reflect.apply(originalClose, this, args); nativeCloseReceipts++; }
+          catch (cause) { nativeCloseFailures++; throw cause; }
+        });
+        restoreClose = () => closeSpy.mockRestore();
+        const originalRequest = NativeClient.prototype.request;
+        const spy = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(async function (this: NativeClient, ...args) {
+          if (args[0] !== 'page.navigate') return Reflect.apply(originalRequest, this, args);
+          intercepted++;
+          const acknowledged = live.page();
+          expect(acknowledged).not.toBe(oldPage); expect(acknowledged.isClosed()).toBe(false);
+          const identity = await context.newCDPSession(acknowledged);
+          try {
+            const target = (await identity.send('Target.getTargetInfo')).targetInfo;
+            capturedFence = args[1]['expectedPage']; capturedTarget = target.targetId;
+          } finally { await identity.detach(); }
+          acknowledged.on('close', () => { racedCloseEvents++; });
+          // The actual Page.close receipt completes after activation/publication
+          // and before native navigation admission. No synthetic closed flag.
+          await acknowledged.close(); expect(racedCloseEvents).toBe(1);
+          actual = await Reflect.apply(originalRequest, this, args);
+          return actual;
+        });
+        restoreRequest = () => spy.mockRestore();
+        const error: unknown = await engine.session!.open!(url, operation()).then(() => undefined, cause => cause);
+        restoreRequest(); restoreRequest = undefined;
+        expect(error).toBeInstanceOf(Error); expect(actual?.ok).toBe(false);
+        expect(capturedTarget).toBeDefined(); expect(capturedFence).toEqual({ contextId, targetId: capturedTarget });
+        // Exact target loss may be observed before dispatch or after a fixed
+        // session send. Preserve that real result rather than relabel Unknown.
+        expect(['not-dispatched', 'unknown']).toContain(actual?.effects);
+        expect(intercepted).toBe(1); expect(createdPages).toBe(1); expect(racedCloseEvents).toBe(1);
+        expect(context.pages()).toEqual([]); expect(live.context()).toBe(context);
+        expect(context.browser()).toBe(rawBrowser); expect(rawBrowser!.isConnected()).toBe(true);
+        expect(endpointResolutions).toBe(1); expect(contextCloseEvents).toBe(0);
+        const processAfterRace = await rawBrowser!.newBrowserCDPSession();
+        try {
+          const processes = (await processAfterRace.send('SystemInfo.getProcessInfo')).processInfo.filter(process => process.type === 'browser');
+          expect(processes).toHaveLength(1); expect(processes[0]!.id).toBe(browserPid); expect(remote!.proc.pid).toBe(browserPid);
+          const inventory = await processAfterRace.send('Target.getBrowserContexts');
+          expect(inventory.browserContextIds).toEqual([]); expect(inventory.defaultBrowserContextId).toBe(contextId);
+        } finally { await processAfterRace.detach(); }
+        expect({ requests, rawRoutes, publicRoutes }).toEqual({ requests: 1, rawRoutes: 1, publicRoutes: 1 });
+        Object.assign(evidence, { browserPid, activationPublishedBeforeClose: true, samePid: true, sameContextId: true, actualPageCloseEvents: racedCloseEvents, createdPages, navigateRequests: intercepted, nativeEffects: actual?.effects, nativeScopeState: actual?.scopeState, nativeError: actual?.error?.code, noSilentEnsure: true, endpointResolutions });
+        // Unknown remains the original business failure and is also the retained
+        // first-real error. Final resource checks below still require real Close.
+        if (actual?.effects === 'unknown') expectedRetirementError = error;
+        return;
+      }
       await engine.session!.open!(url, operation());
       const next = live.page(); expect(next).not.toBe(oldPage); expect(next.isClosed()).toBe(false);
       expect(live.context()).toBe(context); expect(next.context()).toBe(context); expect(context.browser()).toBe(rawBrowser);
@@ -151,9 +212,12 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
     evidence['runtime'] = 'passed';
   } catch (cause) { failure = cause; evidence['runtime'] = 'failed'; }
   finally {
-    clearTimeout(expiry); lifetime.abort();
+    restoreRequest?.(); clearTimeout(expiry); lifetime.abort();
     try {
-      await bounded(engine.dispose!(cleanup()), 30000, 'native/PW retirement');
+      const retired = await bounded(engine.dispose!(cleanup()).then(() => undefined, cause => cause), 30000, 'native/PW retirement');
+      if (expectedRetirementError !== undefined) expect(retired).toBe(expectedRetirementError);
+      else expect(retired).toBeUndefined();
+      if (race) { expect(nativeCloseReceipts).toBe(1); expect(nativeCloseFailures).toBe(0); }
       if (rawBrowser !== undefined && rawBrowser !== null) expect(rawBrowser.isConnected()).toBe(false);
       if (evidence['runtime'] === 'passed') expect(contextCloseEvents).toBe(1);
       evidence['contextCloseEvents'] = contextCloseEvents;
@@ -196,8 +260,10 @@ it.each(['borrowed'])('publishes the exact live Page after its %s persistent tar
     } catch (cause) { failure ??= cause; evidence['serverClosed'] = false; }
     // Never discard failure evidence or the owned artifact directory because a
     // cleanup step threw. Native/PW retirement failure is not test success.
+    restoreClose?.();
+    if (race) Object.assign(evidence, { nativeCloseReceipts, nativeCloseFailures, preservedUnknown: expectedRetirementError !== undefined });
     const directory = process.env['E2E_INTEROP_EVIDENCE_DIR'];
-    if (directory !== undefined) { mkdirSync(directory, { recursive: true }); writeFileSync(path.join(directory, `persistent-reopen-${ownership}.json`), JSON.stringify(evidence, null, 2)); }
+    if (directory !== undefined) { mkdirSync(directory, { recursive: true }); writeFileSync(path.join(directory, `persistent-reopen-${ownership}${race ? "-fenced-race" : ""}.json`), JSON.stringify(evidence, null, 2)); }
     if (cleanupPassed && evidence['serverClosed'] === true) rmSync(artifactsDir, { recursive: true, force: true });
   }
   if (failure !== undefined) throw failure;

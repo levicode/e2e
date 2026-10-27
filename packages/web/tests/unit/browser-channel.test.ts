@@ -273,10 +273,11 @@ describe('typed native browser channel', () => {
   it.each([
     ['success', 'dispose'], ['failure', 'dispose'],
     ['success', 'scope-change'], ['failure', 'scope-change'],
-  ] as const)('does not invalidate a replacement when an in-flight release settles with %s after %s', async (outcome, retirement) => {
+  ] as const)('retains %s from an in-flight release after %s without invalidating the replacement', async (outcome, retirement) => {
     const fixture = await opened();
     const dispatch = fixture.channel.dispatch(responseEvent());
-    const settled = expect(dispatch).resolves.toBeUndefined();
+    const settled = outcome === 'success' ? expect(dispatch).resolves.toBeUndefined()
+      : expect(dispatch).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser operation failed (browser-failure)' });
     await new Promise(resolve => setImmediate(resolve));
     expect(fixture.requests.at(-1)?.['command']).toBe('network.body.release');
     if (retirement === 'dispose') fixture.channel.dispose();
