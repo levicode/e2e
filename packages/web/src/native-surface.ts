@@ -16,7 +16,7 @@ import {
 import { ConfiguredInitScripts } from './init-scripts.ts';
 import { LeasedBrowsers, type LeaseRecording } from './provider.ts';
 import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app.ts';
-import { connectionAbort, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
+import { connectionAbort, connectionDeadline, connectionWaitDeparture, isLocalBudgetDeparture, withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
@@ -27,7 +27,7 @@ import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
 import type { EngineCommandMap, NativeImage, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
-import type { NativeClient } from './native/client.ts';
+import { isClosedFrameCancellation, type NativeClient } from './native/client.ts';
 import { connectNativeProcess } from './native/process.ts';
 import type { NativeEvent } from './native/protocol.ts';
 import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
@@ -305,7 +305,9 @@ export class NativeSurface implements NativeWebSurface {
     let failure: unknown = this.retirementFailure;
     const failed = (cause: unknown, departed = false) => {
       // A departed waiter is not a failed exact-owner cleanup receipt.
-      if (departed && cleanup.signal.aborted && cause instanceof EngineError && (cause.code === 'CANCELLED' || cause.code === 'OPERATION_TIMEOUT')) return;
+      if (departed && (isLocalBudgetDeparture(cause) || isClosedFrameCancellation(cause))) return;
+      // Synthetic closed-frame cancellation is not settlement: the mandatory
+      // close/transport/provider receipts below must still prove retirement.
       failure ??= cause;
       this.retirementFailure ??= cause;
     };
@@ -373,14 +375,14 @@ export class NativeSurface implements NativeWebSurface {
         await raceAbort(() => scopeEnd!, cleanup.signal, 'ending native scope');
         scopeEnded = true; client!.retireCallbacks(callbackEpoch, 'scope-ended');
       }
-    } catch (cause) { failed(cause, true); }
+    } catch (cause) { failed(cleanup.signal.aborted ? connectionWaitDeparture(cleanup.signal, 'Native cleanup') : cause, true); }
 
     // NativeClient.close retains its existing independent terminal-safety budget.
     // Give it only the caller's remaining wait before independent lease release.
     const needsClose = client !== undefined && ((attempt !== undefined && !scopeEnded) || this.persistent || this.workerSourceLost || failure !== undefined || cleanup.signal.aborted);
     const closing = receipt(needsClose ? this.closeClient(cleanup, client) : Promise.resolve());
     try { await raceAbort(() => closing, cleanup.signal, 'waiting for native close'); }
-    catch (cause) { failed(cause, true); }
+    catch (cause) { failed(cleanup.signal.aborted ? connectionWaitDeparture(cleanup.signal, 'waiting for native close') : cause, true); }
     // Release billing with the original signal, even if expired. Its actual
     // receipt remains owned; a later cleanup caller cannot reissue release.
     const releasing = receipt(this.leases?.endAttempt(cleanup) ?? Promise.resolve());
@@ -1226,7 +1228,7 @@ function cleanupDeadline(context: EngineCleanupContext): CleanupDeadline {
   const controller = new AbortController();
   const signal = AbortSignal.any([context.signal, controller.signal]);
   const endsAt = performance.now() + context.timeoutMs;
-  const expire = () => controller.abort(new EngineError('OPERATION_TIMEOUT', 'Native cleanup exhausted its caller budget', { retryable: false }));
+  const expire = () => controller.abort(connectionDeadline('Native cleanup exhausted its caller budget'));
   const timer = setTimeout(expire, Math.max(0, context.timeoutMs));
   if (context.timeoutMs <= 0) expire();
   return {

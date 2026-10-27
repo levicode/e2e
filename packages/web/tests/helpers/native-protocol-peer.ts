@@ -1,7 +1,7 @@
 /** In-memory framed peer for native adapter unit tests. It does not implement a browser. */
 import { PassThrough, Writable } from 'node:stream';
 import { withTimeout, type JsonValue, type OperationContext } from 'e2e/engine';
-import { NativeClient } from '../../src/native/client.ts';
+import { NativeClient, type NativeChannel } from '../../src/native/client.ts';
 import type { Effects, NativeEvent, ScopeState } from '../../src/native/protocol.ts';
 
 export interface PeerRequest {
@@ -46,8 +46,8 @@ export class NativeProtocolPeer {
     } });
   }
 
-  connect(operation: OperationContext, onEvent: (event: NativeEvent) => void | Promise<void>): Promise<NativeClient> {
-    return NativeClient.connect({ readable: this.output, writable: this.input, dispose: () => this.dispose() }, this.capabilities, operation, async event => {
+  connect(operation: OperationContext, onEvent: (event: NativeEvent) => void | Promise<void>, settle?: NativeChannel['settle']): Promise<NativeClient> {
+    return NativeClient.connect({ readable: this.output, writable: this.input, dispose: () => this.dispose(), ...(settle === undefined ? {} : { settle }) }, this.capabilities, operation, async event => {
       try { await onEvent(event); } finally { this.handled.get(event.sequence)?.(); this.handled.delete(event.sequence); }
     });
   }

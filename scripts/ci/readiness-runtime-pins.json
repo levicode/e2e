@@ -1,0 +1,24 @@
+{
+  "artifactId": 12732469305,
+  "artifactName": "ci-native-runtime-Readiness and observation first-cause validation-40501733044-1",
+  "artifactSize": 13681263,
+  "artifactDigest": "sha256:5143f379648dcd5405e0951682c2f28d2d5dc860aed25810aa187524b4342519",
+  "manifestSha256": "53564bd0a50f4b1be97a72fdeb79a23cfc05bb97f59a222071a48d813d276ae2",
+  "expected": {
+    "source": {
+      "commit": "a7f0a133a82438d7fad42f21dc833157abe75418",
+      "tree": "48859f14f4d95418464b0aa968324fdbed522e2d"
+    },
+    "repository": "levicode/e2e",
+    "runId": "40501733044",
+    "runAttempt": "1",
+    "platform": "linux",
+    "architecture": "x64",
+    "nativeCommit": "dc85674a636875c5b4c53fb381903fdd8ae2cf3b"
+  },
+  "nativeSource": {
+    "commit": "dc85674a636875c5b4c53fb381903fdd8ae2cf3b",
+    "tree": "c3e81deb2c4646ae75625e906cbda398bb0a3bb5"
+  },
+  "binarySha256": "b9224e3ff488a08bbeb435ea94c2fcc6901c461fbef9d1634a01d217da40ad2d"
+}

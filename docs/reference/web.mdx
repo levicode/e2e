@@ -919,6 +919,10 @@ const file = await browser.waitForDownload(() =>
   does not wait for unrelated live operations or retry the cancelled action.
   Callback child requests cannot wait on their cancelled parent; decision
   replies remain independent. A real cleanup failure still fails attempt cleanup.
+  If context reset or storage-state restoration has already closed native
+  admission, download cleanup can instead finish with that successful
+  replacement and retirement of its exact old owner. It does not retry the
+  release, extend the cleanup budget, or treat a pending replacement as success.
 
 | Throws | When |
 | --- | --- |

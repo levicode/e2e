@@ -3,10 +3,18 @@ import { collectFinalizedRecording, type FinalizedRecordingIdentity, type Finali
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import { EngineError, type JsonValue, type OperationContext } from 'e2e/engine';
+import { connectionCancellation, connectionDeadline } from '../operation-budget.ts';
 import { rejectedDecision } from './decision-outcome.ts';
 import { NativeFrameError, NativeFrames } from './frames.ts';
 import { acceptanceIo, type AcceptanceTrace, type AcceptanceReason } from './acceptance-trace.ts';
 import { MAX_FRAME_BYTES, MAX_TIMEOUT_MS, NATIVE_PROTOCOL, serverMessage, type NativeEvent, type NativeReady, type NativeResult, type ServerMessage } from './protocol.ts';
+
+// Only a validated closed frame can mint this local cancellation. It is not
+// an actual failed operation receipt, nor proof of transport/lease settlement.
+const closedFrameCancellations = new WeakSet<EngineError>();
+export function isClosedFrameCancellation(cause: unknown): boolean {
+  return cause instanceof EngineError && closedFrameCancellations.has(cause);
+}
 
 /** The native CLI proxy owns the actual daemon connection and browser lifecycle. */
 export interface NativeChannel {
@@ -35,6 +43,14 @@ interface Pending {
   quarantined?: boolean;
 }
 
+interface CallbackTransition {
+  readonly epoch: number;
+  readonly scope: string | undefined;
+  readonly command: string;
+  readonly retired: Promise<boolean>;
+  complete(retired: boolean): void;
+}
+
 type ReceiveFailureKind = 'event-order' | 'response-correlation' | 'response-kind' | 'callback-proof' | 'capacity' | 'native-refusal';
 /** Local closed classification only. Native refusal codes have already passed serverMessage validation. */
 class ReceiveFailure extends Error {
@@ -48,7 +64,7 @@ export class NativeClient {
   private callbackEpoch = 0;
   private publicationEpoch = 0;
   private retirementHandler: (() => void) | undefined;
-  private transitionEpoch: number | undefined;
+  private transition: CallbackTransition | undefined;
   private publishingEpoch: number | undefined;
   private publishingCommand: string | undefined;
   private readonly stagedEvents: { event: NativeEvent; bytes: number; arrived: number }[] = [];
@@ -175,8 +191,23 @@ export class NativeClient {
     }
     this.callbackEpoch++;
     if (this.publishingEpoch !== undefined && this.publishingEpoch !== epoch) throw this.invalidate();
-    this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
+    const replacementPublished = this.publishingEpoch === epoch && (this.publishingCommand === 'scope.reset' || this.publishingCommand === 'state.restore');
+    this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(replacementPublished);
     for (const staged of this.stagedEvents.splice(0)) this.dispatchEvent(staged.event, staged.bytes, staged.arrived);
+  }
+
+  /** Only successful whole-scope replacement can retire old download resources. */
+  scopeReplacementRetirement(scope: string): Promise<boolean> | undefined {
+    const transition = this.transition;
+    if (this.callback.getStore() !== undefined || (transition?.command !== 'scope.reset' && transition?.command !== 'state.restore') || transition.scope !== scope) return undefined;
+    return transition.retired;
+  }
+
+  /** End the existing publication barrier without creating new lifecycle authority. */
+  private completeTransition(retired: boolean): void {
+    const transition = this.transition;
+    this.transition = undefined;
+    transition?.complete(retired);
   }
 
   /** Captures only existing exact-scope cancellation proofs, never live work or a new request. */
@@ -208,8 +239,10 @@ export class NativeClient {
       context = { ...context, timeoutMs: Math.min(context.timeoutMs, callback.expiresAt - performance.now()) };
     }
     if (callbackTransition !== undefined) {
-      if (callbackTransition !== this.callbackEpoch || this.transitionEpoch !== undefined) throw this.invalidate();
-      this.transitionEpoch = callbackTransition;
+      if (callbackTransition !== this.callbackEpoch || this.transition !== undefined) throw this.invalidate();
+      let complete!: (retired: boolean) => void;
+      const retired = new Promise<boolean>(resolve => { complete = resolve; });
+      this.transition = { epoch: callbackTransition, scope: typeof args['identityScope'] === 'string' ? args['identityScope'] : undefined, command, retired, complete };
     }
     const sequence = ++this.operationSeq;
     if (recovery !== undefined) recovery.claimed = true;
@@ -217,7 +250,7 @@ export class NativeClient {
     try {
       message = await this.exchange('request', { type: 'request', generation: this.ready!.generation, operationSeq: sequence, timeoutMs: this.timeout(context), command, args, ...(callback === undefined ? {} : { callbackToken: callback.token }) }, context, sequence, callbackTransition);
     } catch (cause) {
-      if (callbackTransition !== undefined && this.publishingEpoch === undefined && this.transitionEpoch === callbackTransition) this.transitionEpoch = undefined;
+      if (callbackTransition !== undefined && this.publishingEpoch === undefined && this.transition?.epoch === callbackTransition) this.completeTransition(false);
       throw cause;
     }
     if (message.type !== 'result') throw this.fail('The native browser returned an unexpected operation response');
@@ -281,7 +314,7 @@ export class NativeClient {
       if (callback.timer !== undefined) clearTimeout(callback.timer);
     }
     this.stagedEvents.length = 0;
-    this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
+    this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(false);
     // The one cleanup exchange bounds remaining correlation bookkeeping.
     for (const pending of this.pending.values()) if (pending.kind !== 'close') pending.clear();
     const cleanup: OperationContext = { runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 };
@@ -326,8 +359,9 @@ export class NativeClient {
   }
 
   private timeout(context: OperationContext): number {
-    if (context.signal.aborted) throw new EngineError('CANCELLED', 'The native browser operation was cancelled before dispatch', { retryable: false });
-    if (!Number.isFinite(context.timeoutMs) || context.timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'The native browser operation budget expired before dispatch', { retryable: false });
+    if (context.signal.aborted) throw connectionCancellation('The native browser operation was cancelled before dispatch');
+    if (!Number.isFinite(context.timeoutMs)) throw new EngineError('OPERATION_TIMEOUT', 'The native browser operation budget expired before dispatch', { retryable: false });
+    if (context.timeoutMs <= 0) throw connectionDeadline('The native browser operation budget expired before dispatch');
     return Math.min(Math.ceil(context.timeoutMs), this.ready?.limits.maxTimeoutMs ?? MAX_TIMEOUT_MS, MAX_TIMEOUT_MS);
   }
 
@@ -489,7 +523,7 @@ export class NativeClient {
         if (callback.timer !== undefined) clearTimeout(callback.timer);
       }
       for (const staged of this.stagedEvents.splice(0)) { this.activeEvents--; this.eventBytes -= staged.bytes; }
-      this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
+      this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(false);
     }
     if (message.type === 'result' && pending.command === 'scope.reconnect' && this.recovery?.claimed && message.ok) {
       if (message.scopeState !== 'usable' || message.effects !== 'completed') throw new ReceiveFailure('response-kind');
@@ -498,13 +532,18 @@ export class NativeClient {
     if (message.type === 'result' && message.retention !== undefined) this.retireOperation(pending);
     if (!pending.draining) { this.pending.delete(message.id); pending.clear(); }
     if (message.type === 'closed') {
-      this.closed = true;
-      for (const other of this.pending.values()) { other.clear(); other.reject(new EngineError('CANCELLED', 'The native browser scope closed', { retryable: false })); }
+      this.closed = true; this.completeTransition(false);
+      for (const other of this.pending.values()) {
+        other.clear();
+        const cancelled = new EngineError('CANCELLED', 'The native browser scope closed', { retryable: false });
+        closedFrameCancellations.add(cancelled);
+        other.reject(cancelled);
+      }
       this.pending.clear();
     }
     if (pending.callbackTransition !== undefined && message.type === 'result') {
       if (message.ok) { this.publishingEpoch = pending.callbackTransition; this.publishingCommand = pending.command; }
-      else this.transitionEpoch = undefined;
+      else this.completeTransition(false);
     }
     pending.resolve(message);
     if (message.type === 'result') this.channel.acceptanceTrace?.observe('ResultValidated', { operationSeq: message.operationSeq, generation: message.generation });
@@ -594,7 +633,7 @@ export class NativeClient {
   private fail(message: string, code: 'ENGINE_FAILURE' | 'CANCELLED' | 'OPERATION_TIMEOUT' | 'UNSUPPORTED_CAPABILITY' = 'ENGINE_FAILURE'): EngineError {
     this.channel.acceptanceTrace?.observe('ClientFail', { reason: code === 'OPERATION_TIMEOUT' ? 'deadline' : code === 'CANCELLED' ? 'cancelled' : code === 'UNSUPPORTED_CAPABILITY' ? 'unsupported-capability' : 'engine-failure' });
     this.failure ??= new EngineError(code, message, { retryable: false });
-    this.stagedEvents.length = 0; this.publishingEpoch = undefined; this.publishingCommand = undefined; this.transitionEpoch = undefined;
+    this.stagedEvents.length = 0; this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(false);
     for (const pending of this.pending.values()) { pending.clear(); pending.reject(this.failure); }
     this.pending.clear();
     this.dispose();

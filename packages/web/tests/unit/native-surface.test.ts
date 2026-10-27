@@ -1721,6 +1721,66 @@ describe('native surface ownership and fixed policy binding', () => {
     }
   });
 
+  it.each(['download.release', 'download.unsubscribe'] as const)('does not poison reset publication when old %s is refused during the transition', async (resource) => {
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const directory = await mkdtemp(path.join(tmpdir(), 'download-reset-publication-'));
+    await surface.startAttempt({ ...context('download-reset'), artifactsDir: directory });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const scope = surface.identityScope;
+    let enterRead!: () => void; const reading = new Promise<void>(resolve => { enterRead = resolve; });
+    let finishRead!: () => void;
+    let enterReset!: () => void; const resetting = new Promise<void>(resolve => { enterReset = resolve; });
+    let finishReset!: () => void;
+    let refused = false; let rejectResource: (() => void) | undefined;
+    let resetAdmitted = false;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'download.metadata') {
+        finishRead = () => reply({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+        enterRead(); return true;
+      }
+      if (frame['command'] === resource) {
+        rejectResource = () => { refused = true; reply({ ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'usable' }); };
+        if (resetAdmitted) rejectResource();
+        return true;
+      }
+      if (frame['command'] === 'scope.reset') {
+        resetAdmitted = true; rejectResource?.(); enterReset();
+        finishReset = () => { currentScope = 'reset-published'; reply({ data: { identityScope: currentScope } }); };
+        return true;
+      }
+      return false;
+    };
+    const attached = vi.fn();
+    const fixture = createBrowserFixture(surface.fixtureSurface(), {
+      operation: (timeoutMs = 1000) => ({ ...operation(), timeoutMs }), signal, attachArtifact: attached,
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext);
+    const waiting = fixture.waitForDownload(() => sendEvent('download.started', { identityScope: scope, activePage: true, handle: 'old-download', suggestedFilename: 'held.bin' }), { timeout: 100 }).catch(cause => cause);
+    await reading; await vi.advanceTimersByTimeAsync(100);
+    expect(await waiting).toMatchObject({ code: 'ACTION_FAILED' });
+    let finished = false;
+    const following = surface.reset(operation()).then(() => { finished = true; }, cause => { finished = true; return cause; });
+    acknowledgeCancel!(); finishRead();
+    try {
+      await resetting; await new Promise(resolve => setImmediate(resolve));
+      expect(refused).toBe(true);
+      expect(finished ? await following : 'pending').toBe('pending');
+      finishReset(); await expect(following).resolves.toBeUndefined();
+      await expect(surface.latch.settle(cleanup())).resolves.toBeUndefined();
+      expect(attached).not.toHaveBeenCalled();
+      expect(await readdir(path.join(directory, 'downloads'))).toEqual([]);
+      expect(frames.filter(frame => frame['command'] === resource).map(frame => frame['args'])).toEqual([
+        { identityScope: scope, ...(resource === 'download.release' ? { handle: 'old-download' } : { subscriptionId: 'synthetic-subscription' }) },
+      ]);
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+    } finally {
+      finishReset?.(); await following;
+      await surface.dispose(cleanup()).catch(() => undefined); vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('cleans the captured download scope without initiating recovery for a cancelled caller', async () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface);

@@ -316,14 +316,17 @@ describe('native fallback adapter ownership', () => {
         await new Promise<void>(resolve => setImmediate(resolve));
         expect(finished).toBe(false);
         expect(published).not.toHaveBeenCalled();
-        await expect(fixture.surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+        let inspected = false;
+        const inspection = fixture.surface.command('page.title', {}, operation()).finally(() => { inspected = true; });
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(inspected).toBe(false);
         expect(fixture.frames.slice(start).map(frame => frame['type'])).toEqual(['request', 'cancel']);
         if (order === 'ack-first') settle(); else acknowledge();
         await rejected;
         await expect(pending).rejects.toBeInstanceOf(EngineError);
         expect(published).not.toHaveBeenCalled();
         expect(fixture.dispose).not.toHaveBeenCalled();
-        await expect(fixture.surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'still usable' });
+        await expect(inspection).resolves.toEqual({ title: 'still usable' });
         expect(fixture.frames.slice(start).filter(frame => frame['type'] === 'request').map(frame => frame['command'])).toEqual(['browser.observe', 'page.title']);
       } finally {
         if (!ackSent) acknowledge();

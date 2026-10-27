@@ -1,7 +1,7 @@
 /** An attempt owns pending connections and rejects work from retired generations. */
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EngineAttemptContext, EngineHandle } from 'e2e/engine';
+import { EngineError, type EngineAttemptContext, type EngineHandle } from 'e2e/engine';
 import { web, type WebOptions } from '../../src/index.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeProtocolPeer, type PeerRequest, type PeerOutcome } from '../helpers/native-protocol-peer.ts';
@@ -12,7 +12,7 @@ vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() })
 const peers: NativeProtocolPeer[] = [];
 
 /** Real public adapter/client; the peer supplies protocol responses, never browser behavior. */
-async function nativeAttempt(options: WebOptions = {}, respond?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome> | undefined) {
+async function nativeAttempt(options: WebOptions = {}, respond?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome> | undefined, settle?: () => Promise<void>) {
   vi.mocked(connectNativeProcess).mockImplementation(async (settings, operation, onEvent) => {
     const index = peers.length + 1;
     let scope = `attempt-${index}`;
@@ -27,7 +27,7 @@ async function nativeAttempt(options: WebOptions = {}, respond?: (frame: PeerReq
       throw new Error(`Unexpected attempt peer command ${frame.command}`);
     });
     peers.push(peer);
-    return peer.connect(operation, onEvent);
+    return peer.connect(operation, onEvent, settle);
   });
   const engine = web({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: () => 'ws://synthetic.test/reconnect' }, ...options });
   await engine.init!({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
@@ -56,6 +56,48 @@ const cleanup = () => ({ timeoutMs: 1_000, signal: new AbortController().signal 
 const operation = (timeoutMs = 1_000, signal = new AbortController().signal) => ({ timeoutMs, signal, runId: 'run', attemptId: 'a1', origin: 'test' as const });
 
 describe('AttemptSession', () => {
+  it('retains a genuine native timeout receipt even when terminal close succeeds', async () => {
+    const engine = await nativeAttempt({}, frame => frame.command === 'scope.end'
+      ? { error: 'deadline-exceeded', effects: 'not-dispatched', scopeState: 'usable' } : undefined);
+    await engine.startAttempt!(nativeContext());
+    const failure = await engine.endAttempt!(cleanup()).catch(cause => cause);
+    expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    expect(peers[0]!.requests.filter(frame => frame.command === 'scope.end')).toHaveLength(1);
+    expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(engine.dispose!(cleanup())).rejects.toBe(failure);
+  });
+
+  it('does not turn an earlier local readiness deadline into an exact cleanup failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const result = deferred<PeerOutcome>(); const reached = deferred<void>();
+    let hold = true;
+    const engine = await nativeAttempt({}, frame => {
+      if (frame.command !== 'scope.configure' || !hold) return undefined;
+      hold = false; reached.resolve(); return result.promise;
+    });
+    const starting = engine.startAttempt!(nativeContext()).catch(cause => cause);
+    await reached.promise;
+    const scheduler = globalThis.setTimeout;
+    // Explicitly exercise local readiness expiration before its parent signal.
+    // This is a controlled timer order, not a browser timing claim.
+    const scheduled = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+      const localBudget = String(callback).includes('controller.abort(timeout())');
+      return scheduler(callback, localBudget && delay !== undefined ? Math.max(0, delay - 1) : delay, ...args);
+    }) as typeof setTimeout);
+    const ending = engine.endAttempt!(cleanup()).catch(cause => cause);
+    try {
+      await vi.advanceTimersByTimeAsync(999);
+      const failure = await ending;
+      expect(failure).toBeUndefined();
+      expect(await starting).toMatchObject({ code: 'CANCELLED' });
+      expect(peers[0]!.requests.filter(frame => frame.command === 'scope.end')).toEqual([]);
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      result.resolve({ data: null });
+      await expect(engine.dispose!(cleanup())).resolves.toBeUndefined();
+    } finally { scheduled.mockRestore(); result.resolve({ data: null }); await engine.dispose!(cleanup()).catch(() => undefined); }
+  });
+
   beforeEach(() => { vi.mocked(connectNativeProcess).mockReset(); peers.length = 0; });
   afterEach(() => { for (const peer of peers) peer.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -395,6 +437,8 @@ describe('AttemptSession', () => {
   });
 
   it.each(['scope.configure', 'network.routes.replace'])('keeps late %s success from reviving an owner after failed retirement', async command => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    let failure: unknown;
     const result = deferred<PeerOutcome>();
     const reached = deferred<void>();
     let hold = true;
@@ -402,15 +446,27 @@ describe('AttemptSession', () => {
       if (frame.command !== command || !hold) return undefined;
       hold = false;
       reached.resolve(); return result.promise;
+    }, async () => {
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      throw new EngineError('ENGINE_FAILURE', 'Synthetic acknowledged proxy cleanup failed', { retryable: false });
     });
     const starting = expect(engine.startAttempt!(nativeContext())).rejects.toMatchObject({ code: 'CANCELLED' });
     try {
       await reached.promise;
-      // A still-draining request refuses scope.end; explicit close nevertheless retires it.
-      await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      // Readiness must not fabricate a failure from a draining request. The
+      // exact proxy-settlement receipt, after closed, fails independently.
+      const ending = engine.endAttempt!(cleanup()).catch(cause => cause);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(peers[0]!.requests.filter(frame => frame.command === 'scope.end')).toEqual([]);
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      const callerResult: unknown = await ending;
+      failure = await engine.dispose!(cleanup()).catch(cause => cause);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'Synthetic acknowledged proxy cleanup failed' });
+      if (callerResult !== undefined) expect(callerResult).toBe(failure);
       await starting;
       expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
-      // Closed retires the peer, but must not erase the earlier scope.end failure.
+      // Closed cannot erase a failed exact proxy-settlement receipt.
       await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       result.resolve({ data: null });
       await new Promise(resolve => setImmediate(resolve));
@@ -418,7 +474,7 @@ describe('AttemptSession', () => {
       await expect(engine.startAttempt!(nativeContext('a3'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
       expect(peers[0]!.requests.filter(frame => frame.command === 'page.title')).toEqual([]);
       expect(peers).toHaveLength(1);
-    } finally { result.resolve({ data: null }); await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' }); }
+    } finally { result.resolve({ data: null }); await expect(engine.dispose!(cleanup())).rejects.toBe(failure); }
   });
 
   it('does not publish configuration after an unhandled setup callback failure', async () => {
@@ -580,12 +636,17 @@ describe('AttemptSession', () => {
   });
 
   it('keeps late reconnect completion from reviving an owner after failed retirement', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    let cleanupFailure: unknown;
     const reconnect = deferred<PeerOutcome>();
     const requested = deferred<void>();
     let hold = true;
     const engine = await nativeAttempt({}, frame => {
       if (frame.command !== 'scope.reconnect' || !hold) return undefined;
       requested.resolve(); return reconnect.promise;
+    }, async () => {
+      expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      throw new EngineError('ENGINE_FAILURE', 'Synthetic acknowledged proxy cleanup failed', { retryable: false });
     });
     const old = await disconnected(engine);
     const caller = new AbortController();
@@ -598,8 +659,15 @@ describe('AttemptSession', () => {
       await expect(engine.observe!(operation(30))).rejects.toBe(failure);
       expect(old.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'browser.observe')).toEqual([]);
-      // A draining request is not successful scope cleanup; close still retires this client.
-      await expect(engine.endAttempt!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      const ending = engine.endAttempt!(cleanup()).catch(cause => cause);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(old.requests.filter(frame => frame.command === 'scope.end')).toEqual([]);
+      expect(old.frames.filter(frame => frame['type'] === 'close')).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      const callerResult: unknown = await ending;
+      cleanupFailure = await engine.dispose!(cleanup()).catch(cause => cause);
+      expect(cleanupFailure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'Synthetic acknowledged proxy cleanup failed' });
+      if (callerResult !== undefined) expect(callerResult).toBe(cleanupFailure);
       expect(old.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
       hold = false;
       await expect(engine.startAttempt!(nativeContext('a2'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
@@ -610,7 +678,7 @@ describe('AttemptSession', () => {
       expect(peers).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'page.title' || frame.command === 'browser.observe')).toEqual([]);
-    } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await expect(engine.dispose!(cleanup())).rejects.toMatchObject({ code: 'INVALID_STATE' }); }
+    } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await expect(engine.dispose!(cleanup())).rejects.toBe(cleanupFailure); }
   });
 
   it('snapshots a public viewport before waiting for recovery', async () => {

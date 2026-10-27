@@ -349,12 +349,17 @@ describe('native action error public contracts', () => {
       expect(peer.requests.map(request => [request.command, request.args])).toEqual([['browser.perform', args]]);
       expect(peer.frames.find(frame => frame['type'] === 'request')?.['timeoutMs']).toBe(7);
       expect(peer.frames.filter(frame => frame['type'] === 'cancel')).toMatchObject([{ operationSeq: peer.requests[0]!.operationSeq }]);
-      await expect(channel.command('browser.perform', args, operation)).rejects.toMatchObject({ code: 'INVALID_STATE', retryable: false });
+      let followingFinished = false;
+      const following = channel.command('browser.perform', args, operation).catch((cause: unknown) => cause).finally(() => { followingFinished = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(followingFinished).toBe(false);
+      expect(peer.requests).toHaveLength(1);
       settle({ error: 'deadline-exceeded', effects: 'unknown', scopeState: 'quarantined' });
       const failure: unknown = await pending;
       expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
       expect(isNativeNotDispatched(failure)).toBe(false);
       expect((failure as Error).cause).toBeUndefined();
+      expect(await following).toMatchObject({ code: 'INVALID_STATE', retryable: false });
       await expect(channel.command('browser.perform', args, operation)).rejects.toMatchObject({ code: 'INVALID_STATE', retryable: false });
       expect(peer.requests).toHaveLength(1);
     } finally {
