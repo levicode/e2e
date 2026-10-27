@@ -3,14 +3,20 @@ import hashlib,json,os,pathlib,re,shutil,signal,subprocess,sys,time
 def process_identity(pid):
  try:
   stat=(pathlib.Path('/proc')/str(pid)/'stat').read_text().rsplit(')',1)[1].split()
-  return {'pid':pid,'startTime':int(stat[19]),'processGroup':int(stat[2]),'session':int(stat[3]),'executablePath':str((pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True))}
+  result={'pid':pid,'startTime':int(stat[19]),'processGroup':int(stat[2]),'session':int(stat[3]),'state':stat[0]}
+  try:result['executablePath']=str((pathlib.Path('/proc')/str(pid)/'exe').resolve(strict=True))
+  except OSError:result['executablePath']=None
+  return result
  except (OSError,ValueError,IndexError):return None
 
 def same_process(identity):
  current=process_identity(identity['pid'])
- return current is not None and all(current[k]==identity[k] for k in ['startTime','executablePath','processGroup','session'])
+ return current is not None and all(current[k]==identity[k] for k in ['startTime','processGroup','session']) and (current['state']=='Z' or current['executablePath']==identity['executablePath'])
 
 def owned_members(owner):
+ current_owner=process_identity(owner['pid'])
+ if current_owner is not None and current_owner['startTime']!=owner['startTime']:
+  raise RuntimeError('Owned process-group leader identity was reused; refusing cleanup')
  return [v for p in pathlib.Path('/proc').iterdir() if p.name.isdigit() for v in [process_identity(int(p.name))] if v and v['processGroup']==owner['pid'] and v['session']==owner['pid'] and v['startTime']>=owner['startTime']]
 
 def stop_owned_group(proc,owner):
@@ -79,7 +85,7 @@ for index,name in enumerate(names,1):
  except BaseException:
   if proc is not None and owner is not None:stop_owned_group(proc,owner)
   raise
- remaining_encoders=[v for v in all_encoder_processes.values() if same_process(v)]
+ remaining_encoders=[{**v,'observedRemainingState':process_identity(v['pid'])} for v in all_encoder_processes.values() if same_process(v)]
  remaining_owned=owned_members(owner)
  after_cleanup=stop_owned_group(proc,owner) if remaining_owned else []
  remaining=[]
