@@ -1,0 +1,120 @@
+name: Independent dual Fetch measurement (not compatibility acceptance)
+'on':
+  push:
+    branches:
+    - implement/dual-fetch-measurement-ci
+permissions:
+  contents: read
+concurrency:
+  group: dual-fetch-measurement-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  dual-fetch-measurement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact source and validate unchanged dependency lock
+      run: 'set -euo pipefail
+
+        test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        printf ''%s  %s\n'' ''b257c5b4da5fde6b90d3f2cc780015120e7a6d45f83515ac0467dec8f34e42ed''
+        ''scripts/ci/dual-fetch-probe.mjs'' | sha256sum --check
+
+        printf ''%s  %s\n'' ''d6b05d817acd7559334031656b507a2d04de758b001604adbed662adfbad6314''
+        ''pnpm-lock.yaml'' | sha256sum --check
+
+        printf ''%s  %s\n'' ''76a1fec61e39c99fa6fc5489ca9ea9b2a8c31ef8ef5a860302fa6c796f9a9b8a''
+        ''packages/web/package.json'' | sha256sum --check
+
+        printf ''%s  %s\n'' ''a80dc76c5d74b9d3284719da38baf8259f938eb6e30e65eb88ad871678f7ca01''
+        ''package.json'' | sha256sum --check
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Install lockfile-bound Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+    - name: Measure two Fetch orders without asserting compatibility
+      run: 'set -euo pipefail
+
+        export PW_PACKAGE="$(realpath packages/web/node_modules/playwright-core)"
+
+        export CHROME_BIN="$(cd packages/web && node --input-type=module -e ''import
+        { chromium } from "playwright-core"; console.log(chromium.executablePath())'')"
+
+        test -x "$CHROME_BIN"
+
+        node --check scripts/ci/dual-fetch-probe.mjs
+
+        node scripts/ci/dual-fetch-probe.mjs --self-test > evidence/helper-self-test.json
+
+        "$CHROME_BIN" --version > evidence/chromium.version
+
+        sha256sum "$CHROME_BIN" > evidence/chromium.sha256
+
+        sha256sum "$PW_PACKAGE/package.json" "$PW_PACKAGE/lib/coreBundle.js" > evidence/playwright-source.sha256
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        set +e
+
+        node scripts/ci/dual-fetch-probe.mjs > evidence/dual-fetch.result.json 2>
+        evidence/dual-fetch.stderr.log
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/dual-fetch.exit
+
+        node --input-type=module - <<''JS''
+
+        import assert from ''node:assert/strict''; import fs from ''node:fs'';
+
+        const r=JSON.parse(fs.readFileSync(''evidence/dual-fetch.result.json'',''utf8''));
+
+        assert.equal(r.failure,undefined); assert.equal(r.playwright,''1.64.1'');
+        assert.equal(r.chromiumLaunches,1);
+
+        assert.deepEqual(r.cases.map(x=>x.name),[''native-attached-first'',''playwright-attached-first'']);
+
+        for(const c of r.cases){assert.equal(typeof c.navigationCompleted,''boolean'');assert.equal(typeof
+        c.originalWitnessSatisfied,''boolean'');assert.equal(c.cleanupErrors?.length
+        ?? 0,0);}
+
+        for(const k of [''ownedChromiumExited'',''cdpSocketsClosed'',''playwrightDisconnected'',''pendingConnectionsSettled'',''serverClosed'',''profileRemoved''])
+        assert.equal(r.cleanup[k],true);
+
+        assert.deepEqual(r.cleanup.errors,[]);
+
+        JS
+
+        test "$status" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: dual-fetch-measurement-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
