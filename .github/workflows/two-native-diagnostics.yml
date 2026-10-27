@@ -1,0 +1,230 @@
+name: Two exact native diagnostics with a single default unit harness compile
+'on':
+  push:
+    branches:
+    - implement/two-native-diagnostics-ci
+permissions:
+  contents: read
+concurrency:
+  group: two-native-diagnostics-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 321c877292977ea4f19e2f5d76fb67087793b527
+        path: native
+        persist-credentials: false
+    - name: Compile only default agent-browser unit harness (diagnostic, not full Cargo suite)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = 321c877292977ea4f19e2f5d76fb67087793b527\n\
+        test \"$(git rev-parse HEAD^{tree})\" = 4552b82d0bbb446d74d1db3f15adf0661cbf3d50\ntest -z \"$(git status --porcelain)\"\
+        \nrustup toolchain install 1.99.1 --profile minimal\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo test --locked --profile ci --timings --bin\
+        \ agent-browser -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE'])\
+        \ / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile',\
+        \ {}).get('test') is True\n        and record.get('features') == ['default']\n        and record.get('executable')):\n\
+        \        paths.add(record['executable'])\nif build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected exactly one test executable,\
+        \ got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise SystemExit('Compiler-selected\
+        \ harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\
+        \nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' default\
+        \ > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n"
+    - name: Preserve available compiler timing report even when compilation fails
+      if: always()
+      run: 'mkdir -p evidence/cargo-timings
+
+        if [ -d "$RUNNER_TEMP/native-regressions-target/cargo-timings" ]; then cp -a "$RUNNER_TEMP/native-regressions-target/cargo-timings/."
+        evidence/cargo-timings/; fi
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: two-diagnostic-default-harness
+        path: native-harness/
+        if-no-files-found: error
+        retention-days: 2
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: two-diagnostic-compile-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+  diagnostics:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      E2E_APT_CACHE_ROLE: produce
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.workflow_sha }}
+        path: recipe
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: ad9cf7e0e03e758d1331914419a6f81a532373d3
+        path: source
+        persist-credentials: false
+    - name: Assert source SHA, tree and ordinary CI native pin before setup
+      run: 'python3 - <<''PY_PINS''
+
+        import json,pathlib,subprocess
+
+        p=json.loads(pathlib.Path(''recipe/scripts/web-functional/source-reuse-pins.json'').read_text())
+
+        def git(arg):return subprocess.check_output([''git'',''-C'',''source'',''rev-parse'',arg],text=True).strip()
+
+        assert git(''HEAD'')==p[''e2eSource''] and git(''HEAD^{tree}'')==p[''e2eTree'']
+
+        c=json.loads(pathlib.Path(''source/.github/native-candidate.json'').read_text())
+
+        assert c[''commit'']==p[''nativeSource'']
+
+        PY_PINS'
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        package_json_file: source/package.json
+    - name: Verify and download exact prior-run images artifact
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 recipe/scripts/web-functional/reuse-source-artifacts.py images
+    - name: Verify prior-run source identity and image hashes (not new build evidence)
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        (cd images; sha256sum -c SHA256SUMS)
+
+        test "$(cat images/native-source.sha)" = 0f545c307a157e107ac8d1260167fa3e70e39cdb
+
+        test "$(cat images/native-source.tree)" = 3db554fb7897c6becc6b42d970d448fa44600902
+
+        test "$(cat images/producer-run.id)" = 40434656328
+
+        cp images/{SHA256SUMS,native-source.sha,native-source.tree,producer-run.id} evidence/
+
+        chmod +x images/production images/acceptance-faults
+
+        '
+    - name: Seed public apt archives from verified prior run (not test evidence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: "set -euo pipefail\nzip=\"$RUNNER_TEMP/prior-apt-cache.zip\"\nprintf 'Authorization: Bearer %s\\n' \"$GH_TOKEN\"\
+        \ | curl --fail --silent --show-error --location --retry 2 --max-time 180 \\\n  -H @- -H 'Accept: application/vnd.github+json'\
+        \ \\\n  https://api.github.com/repos/levicode/e2e/actions/artifacts/12642071476/zip -o \"$zip\"\nprintf '%s  %s\\\
+        n' 5fb71d9a4daec5e01eda74a473c7024b0be529b823e42a0c2192174af66579d4 \"$zip\" | sha256sum -c -\npython3 recipe/scripts/web-functional/seed-apt-cache.py\
+        \ \"$zip\" \"$GITHUB_WORKSPACE/apt-cache\" \"$GITHUB_WORKSPACE/evidence\"\nrm -- \"$zip\"\n"
+    - name: Probe orchestration regressions (not native runtime proof)
+      working-directory: source
+      run: node --test scripts/acceptance/probe-native.test.ts
+    - name: Install existing browser/codec prerequisites and probe exact binaries
+      run: bash recipe/scripts/web-functional/run.sh setup
+      id: setup
+    - name: Record actual Playwright CDP host identity separately from native Chrome
+      working-directory: source/packages/web
+      run: 'set -euo pipefail
+
+        host=$(node --input-type=module -e "import {chromium} from ''playwright-core''; console.log(chromium.executablePath())")
+
+        printf ''%s\n'' "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.path"
+
+        "$host" --version > "$GITHUB_WORKSPACE/evidence/cdp-host.version"
+
+        sha256sum "$host" > "$GITHUB_WORKSPACE/evidence/cdp-host.sha256"
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: 321c877292977ea4f19e2f5d76fb67087793b527
+        path: native
+        persist-credentials: false
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: two-diagnostic-default-harness
+        path: native-harness
+    - name: Verify exact new test harness provenance independently of reused 0f runtime images
+      run: 'set -euo pipefail
+
+        (cd native-harness; sha256sum -c SHA256SUMS)
+
+        test "$(cat native-harness/native-source.sha)" = 321c877292977ea4f19e2f5d76fb67087793b527
+
+        test "$(cat native-harness/native-source.tree)" = 4552b82d0bbb446d74d1db3f15adf0661cbf3d50
+
+        test "$(cat native-harness/features.txt)" = default
+
+        test "$(cat native-harness/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        test "$(git -C native rev-parse HEAD)" = 321c877292977ea4f19e2f5d76fb67087793b527
+
+        test "$(git -C native rev-parse HEAD^{tree})" = 4552b82d0bbb446d74d1db3f15adf0661cbf3d50
+
+        chmod +x native-harness/agent-browser-tests
+
+        mkdir -p evidence/compiler-harness
+
+        cp native-harness/{SHA256SUMS,native-source.sha,native-source.tree,features.txt,producer-run.id} evidence/compiler-harness/
+
+        realpath native-harness/agent-browser-tests > evidence/harness.path
+
+        '
+      id: harness
+    - name: Execute original exact43 with new bounded target and cleanup diagnostics
+      if: ${{ success() && steps.harness.outcome == 'success' }}
+      run: python3 recipe/scripts/web-functional/run-one-activation.py "$(cat evidence/harness.path)" evidence/chromium-executable.json
+        evidence/activation43 recipe/scripts/web-functional/one-activation.json
+    - name: Execute original exact29 with Node phase diagnostics
+      if: ${{ always() && steps.harness.outcome == 'success' && steps.setup.outcome == 'success' }}
+      run: "set -euo pipefail\nharness=\"$(cat evidence/harness.path)\"\nsha256sum \"$harness\" > evidence/harness.sha256\n\
+        failed=0\nindex=28\nfor name in 'native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle';\
+        \ do\n  index=$((index + 1))\n  \"$harness\" --exact \"$name\" --list > \"evidence/test-$index.inventory\"\n  grep\
+        \ -Fx \"$name: test\" \"evidence/test-$index.inventory\"\n  # Raw metadata, not a cleanup or acceptance receipt. One\
+        \ exclusive file per test process.\n  python3 -c 'import os,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);\
+        \ os.close(fd)' \"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\"\n  printf '%s\\n' '{\"schemaVersion\":1,\"\
+        status\":\"prepared\",\"validation\":\"raw-not-validated\",\"releaseEligible\":false}' > \"evidence/test-$index.cleanup.status.json\"\
+        \n  set +e\n  AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE=\"$GITHUB_WORKSPACE/evidence/test-$index.cleanup.jsonl\" \"$harness\"\
+        \ --exact \"$name\" --test-threads=1 --nocapture > \"evidence/test-$index.log\" 2>&1\n  status=$?\n  set -e\n  printf\
+        \ '%s\\n' \"$status\" > \"evidence/test-$index.exit\"\n  if [ \"$status\" -ne 0 ]; then failed=1; fi\n  # The ten\
+        \ new normal tests must actually execute, not silently succeed as ignored.\n  if ! python3 - \"$name\" \"evidence/test-$index.log\"\
+        \ <<'PY_VIDEO_NORMAL'\nimport pathlib,re,sys\nrequired=['native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle']\n\
+        if sys.argv[1] in required:\n text=pathlib.Path(sys.argv[2]).read_text()\n assert re.findall(r'test result: (ok|FAILED)\\\
+        . (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text)==[('ok','1','0','0')], 'new normal video test did not execute\
+        \ exactly once'\nPY_VIDEO_NORMAL\n  then failed=1; fi\ndone\nexit \"$failed\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: two-exact-diagnostic-evidence
+        path: evidence/
+        if-no-files-found: warn
+        retention-days: 7
+    needs: compile

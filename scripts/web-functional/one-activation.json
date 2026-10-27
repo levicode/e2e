@@ -1,0 +1,12 @@
+{
+  "source": "321c877292977ea4f19e2f5d76fb67087793b527",
+  "names": [
+    {
+      "name": "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab"
+    }
+  ],
+  "additionalContracts": [],
+  "encoderContracts": [],
+  "encoderOnly": [],
+  "diagnostics": []
+}

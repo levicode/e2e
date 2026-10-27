@@ -10,10 +10,9 @@ export PROOF="$out/negotiation.json" FAULT_PROOF="$out/fault-negotiation.json"
 cd "$root"
 # This is not a full-candidate receipt. Known untested semantics remain visible.
 cat > "$out/scope.txt" <<'SCOPE'
-Single exact43 diagnostic with original default harness and native0f images from run40434656328.
-No rebuild, no product/test budget changes, no imported passes, not formal compilation/acceptance.
-AGENT_BROWSER_DEBUG raw text stays runner-local; only closed projected WebSocket indicators and existing bounded activation facts are uploaded.
-Original failed44/43 receipts remain unchanged; this observes whether reader Close/Error precedes activation failure.
+Two exact diagnostics only: new test-only native321c unit harness, original 43 and 29 assertions/budgets.
+Production/fault CLI images are explicitly reused from native0f run404346 for unchanged setup only, not attributed to the new harness source.
+No full native/default/feature/formal acceptance claim. No product source changes. Existing failures remain visible.
 SCOPE
 if [[ "$mode" == setup ]]; then
   # Public .deb cache: producer may seed pinned prior bytes, then apt validates current requirements.
