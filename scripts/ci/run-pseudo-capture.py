@@ -19,6 +19,44 @@ ERRORS = set("invalid-frame unsupported-protocol unsupported-capability stale-ge
 PHASES = set("ready initial-title-complete original-target-closed reopen-result-complete replacement-title-complete".split())
 DIAGNOSTIC_KEYS = {"sequence", "stage", "method", "outcome", "protocolError", "matches", "limitReached"}
 
+PSEUDO_CASES = {("before", False, False), ("before", True, False), ("before", False, True), ("after", False, True), ("before", True, True), ("after", True, True)}
+PSEUDO_REASONS = {
+    "Pseudo fixture setup failed": "setup",
+    "Missing snapshot strings": "snapshot-strings",
+    "Pseudo fixture provenance failed": "provenance",
+    "Pseudo fixture has no native origin": "no-origin",
+    "Missing pseudo types": "pseudo-types",
+    "Browser did not generate the requested pseudo kind": "missing-requested-kind",
+    "Pseudo frame enumeration failed": "frame-enumeration",
+    "Unexpected pseudo frame inventory": "frame-inventory",
+    "Pseudo enrollment failed": "enrollment",
+    "Pseudo capture task failed": "capture-task",
+    "Generated protected paint did not fail closed": "secure-paint-refusal",
+    "Password mask missing with public pseudos": "password-mask-missing",
+    "Pseudo PNG invalid": "png-invalid",
+    "Public pseudo fixture password was not masked": "password-pixel",
+    "Capture removed public generated paint or background": "public-paint-pixel",
+    "Pseudo capture changed source state or left masks": "source-restoration",
+    "Pseudo capture did not restore animation playback": "animation-restoration",
+}
+CAPTURE_REASONS = {"Cancelled", "Superseded", "Deadline", "StaleScope", "IncompleteFrames", "UnsafeGeometry", "UninspectableContent", "MaskingUnproven", "BrowserFailure", "BoundsExceeded", "CleanupFailed"}
+
+def project_pseudo_case(line):
+    match = re.fullmatch(r'Pseudo fixture (before|after)/(true|false)/(true|false): (.{1,4096})\n?', line.rstrip("\n"))
+    if not match:
+        return None
+    case = (match.group(1), match.group(2) == "true", match.group(3) == "true")
+    if case not in PSEUDO_CASES:
+        return None
+    reason = "unknown"
+    for fixed, label in PSEUDO_REASONS.items():
+        if match.group(4) == 'Err("' + fixed + '")':
+            reason = label
+    for fixed in CAPTURE_REASONS:
+        if match.group(4) == 'Err("Public pseudo protected capture failed: ' + fixed + '")':
+            reason = "capture-" + fixed
+    return {"kind": case[0], "closed": case[1], "secure": case[2], "reason": reason}
+
 class Refused(Exception):
     pass
 
@@ -57,7 +95,7 @@ def safe_diagnostic(value):
     return value
 
 def project_output(path):
-    result = {"panicSites": [], "activation": [], "phases": [], "counts": [], "rejectedDiagnosticRows": 0, "oversizeLines": 0,
+    result = {"pseudoCases": [], "panicSites": [], "activation": [], "phases": [], "counts": [], "rejectedDiagnosticRows": 0, "oversizeLines": 0,
               "webSocket": {"closeReported": False, "errorReported": False, "closeReports": 0, "errorReports": 0, "observations": [], "observationsTruncated": False}}
     with path.open("r", encoding="utf-8", errors="replace") as source:
         while True:
@@ -69,6 +107,9 @@ def project_output(path):
                 while line and not line.endswith("\n"):
                     line = source.readline(16385)
                 continue
+            case = project_pseudo_case(line)
+            if case is not None and len(result["pseudoCases"]) < 6:
+                result["pseudoCases"].append(case)
             # Preserve only repository source locations, never panic message/value.
             match = re.fullmatch(r"thread '[^\r\n]{1,512}' (?:\(\d{1,12}\) )?panicked at (src/native/[a-z_]{1,100}\.rs):([0-9]{1,7}):([0-9]{1,5}):\n?", line)
             if match and len(result["panicSites"]) < 8:
