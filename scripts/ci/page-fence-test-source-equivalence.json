@@ -1,0 +1,11 @@
+{
+  "baselineNative": "ff4c3a0db75261f2b083b583a740c3290e5b4a1c",
+  "candidateNative": "8fa81095bbbfdec84e3a72ac961ae32e51293daf",
+  "baselineTree": "8961a69b41b38d47c7e77fc025958e04eba201bf",
+  "candidateTree": "b345361ecc8c3b3973ae73bb4f86b48e62081e4d",
+  "changedFile": "cli/src/native/client_browser_page_fence_tests.rs",
+  "scope": "exact two leading inner doc comments converted to regular comments; no test assertion or production changed",
+  "originalCompileRun": 40557778606,
+  "originalArtifact": 12757189763,
+  "originalArtifactSha256": "2db9f12f82d31450582d3f87ebd0ba5f600c83ef3dc377087c3e1378f417ebcf"
+}

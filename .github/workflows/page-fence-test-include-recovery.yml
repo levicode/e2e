@@ -1,0 +1,314 @@
+name: Page fence test include compile recovery
+'on':
+  push:
+    branches:
+    - implement/page-fence-test-include-recovery-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: page-fence-test-include-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 8fa81095bbbfdec84e3a72ac961ae32e51293daf
+  NATIVE_SOURCE_TREE: b345361ecc8c3b3973ae73bb4f86b48e62081e4d
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  native-producer-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+        fetch-depth: 2
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Compile acceptance-faults exact test harness only
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\npython3 - <<'PY_EQ'\nimport subprocess\n\
+        base='ff4c3a0db75261f2b083b583a740c3290e5b4a1c'\np='cli/src/native/client_browser_page_fence_tests.rs'\n\
+        def git(*args):return subprocess.check_output(['git','-C','native',*args]).decode()\n\
+        assert git('diff','--name-only',base,'HEAD').splitlines()==[p]\nold=git('show',base+':'+p);new=git('show','HEAD:'+p)\n\
+        assert old.count('//!')==2 and new==old.replace('//!','//')\nprint('Exact\
+        \ two-comment test-only source equivalence verified; production unchanged')\n\
+        PY_EQ\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\"\
+        \ntest \"$(git rev-parse HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\"\ntest -z\
+        \ \"$(git status --porcelain)\"\nrustup toolchain install 1.99.1 --profile\
+        \ minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset\
+        \ RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo\
+        \ +1.99.1 test --locked --profile ci --timings --no-default-features --features\
+        \ acceptance-faults --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout\
+        \ = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished\
+        \ = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n  \
+        \  record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
+        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason')\
+        \ == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
+        \ [])\n        and record.get('profile', {}).get('test') is True\n       \
+        \ and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n\
+        \        paths.add(record['executable'])\nif build_finished != [True]:\n \
+        \   raise SystemExit('Missing or unsuccessful final compiler build receipt')\n\
+        if len(paths) != 1:\n    raise SystemExit(f'Expected exactly one test executable,\
+        \ got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n\
+        \    raise SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness\
+        \ + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"\
+        $(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests\
+        \ > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\\
+        n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      id: harness_artifact
+      with:
+        name: paired-optional-feature-harness
+        path: native-harness/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Run exact optional observation producer inventory
+      run: python3 scripts/ci/run-optional-observe-tests.py "$(cat evidence/harness.path)"
+        scripts/ci/optional-observe-inventory.json evidence/native-focused
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: optional-observe-native-focused-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    outputs:
+      compiled: ${{ steps.compile.outcome }}
+      harness-sha: ${{ steps.compile.outputs.harness-sha }}
+      artifact-id: ${{ steps.harness_artifact.outputs.artifact-id }}
+  complete-nonignored-native:
+    needs:
+    - native-producer-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+        fetch-depth: 2
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: ${{ needs.native-producer-tests.outputs.artifact-id }}
+        path: native-harness
+        merge-multiple: true
+    - name: Verify exact same-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: ${{ needs.native-producer-tests.outputs.harness-sha
+          }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Run complete original nonignored feature harness without filters
+      run: 'set -euo pipefail
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list
+
+        python3 - <<''PY_INVENTORY''
+
+        import pathlib,json
+
+        p=pathlib.Path(''evidence'')
+
+        def names(f):return [x[:-6] for x in (p/f).read_text().splitlines() if x.endswith('':
+        test'')]
+
+        a=names(''all-tests.list'');i=names(''ignored-tests.list'');assert a and len(a)==len(set(a))
+        and len(i)==len(set(i)) and set(i)<=set(a)
+
+        json.dump({''total'':len(a),''ignored'':len(i),''nonignored'':len(a)-len(i),''features'':[''acceptance-faults''],''standardDefaultFeatureAcceptance'':False},open(p/''inventory.json'',''w''),indent=2)
+
+        PY_INVENTORY
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests
+        > evidence/full-suite.log 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        python3 - <<''PY_RESULTS''
+
+        import pathlib,json,re
+
+        p=pathlib.Path(''evidence'');s=(p/''full-suite.log'').read_text();i=json.load(open(p/''inventory.json''));m=re.findall(r''test
+        result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured;
+        (\d+) filtered out'',s)
+
+        result={''exit'':int((p/''full-suite.exit'').read_text()),''inventory'':i,''summaries'':m,''failedTests'':re.findall(r''^test
+        (.+) \.\.\. FAILED$'',s,re.M),''notDefaultFeatureAcceptance'':True}
+
+        (p/''result.json'').write_text(json.dumps(result,indent=2)+''\n'');assert
+        len(m)==1,m
+
+        _,passed,failed,ignored,measured,filtered=m[0];assert int(passed)+int(failed)==i[''nonignored''];assert
+        int(ignored)==i[''ignored''] and int(measured)==int(filtered)==0;assert int(passed)+int(failed)+int(ignored)==i[''total'']
+
+        assert result[''exit'']==0 and int(failed)==0,result
+
+        PY_RESULTS
+
+        test "$status" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: unified-complete-nonignored-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    if: ${{ always() && needs.native-producer-tests.outputs.compiled == 'success'
+      }}
+  encoder19:
+    needs:
+    - native-producer-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+        fetch-depth: 2
+    - name: Validate installed encoder with actual encode and decode
+      timeout-minutes: 15
+      run: "set -euo pipefail\nmkdir -p evidence\ndate -u +%FT%TZ > evidence/encoder-install.started\n\
+        cat /etc/os-release > evidence/encoder-host.txt\nprobe() {\n command -v ffmpeg\
+        \ >/dev/null && command -v ffprobe >/dev/null || return 1\n timeout 20 ffmpeg\
+        \ -v error -f lavfi -i color=c=black:s=64x64:d=0.2 -c:v libvpx -y \"$RUNNER_TEMP/encoder-preflight.webm\"\
+        \ || return 1\n timeout 10 ffprobe -v error -show_entries stream=codec_name,width,height\
+        \ -of json \"$RUNNER_TEMP/encoder-preflight.webm\" > evidence/encoder-preflight.json\
+        \ || return 1\n timeout 20 ffmpeg -v error -i \"$RUNNER_TEMP/encoder-preflight.webm\"\
+        \ -frames:v 1 -f null - || return 1\n}\nif ! probe > evidence/encoder-first-probe.log\
+        \ 2>&1; then\n timeout 120 sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20\
+        \ -o Acquire::https::Timeout=20 update 2>&1 | tee evidence/encoder-apt-update.log\n\
+        \ timeout 30 apt-get --simulate install ffmpeg > evidence/encoder-default-plan.log\n\
+        \ timeout 30 apt-get --simulate --no-install-recommends install ffmpeg > evidence/encoder-minimal-plan.log\n\
+        \ python3 - <<'PY_PLANS'\nimport pathlib,json\np=pathlib.Path('evidence')\n\
+        def names(f):return sorted({x.split()[1] for x in (p/f).read_text().splitlines()\
+        \ if x.startswith('Inst ')})\na=names('encoder-default-plan.log');b=names('encoder-minimal-plan.log');assert\
+        \ set(b)<=set(a)\njson.dump({'defaultCount':len(a),'noRecommendsCount':len(b),'retained':b,'removedRecommendedOnly':sorted(set(a)-set(b))},open(p/'encoder-package-plan.json','w'),indent=2)\n\
+        PY_PLANS\n timeout 600 sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20\
+        \ -o Acquire::https::Timeout=20 --no-install-recommends install -y ffmpeg\
+        \ 2>&1 | tee evidence/encoder-apt-install.log\n probe > evidence/encoder-final-probe.log\
+        \ 2>&1\nfi\nffmpeg -version > evidence/ffmpeg-version.txt\nffprobe -version\
+        \ > evidence/ffprobe-version.txt\nsha256sum \"$(readlink -f \"$(command -v\
+        \ ffmpeg)\")\" \"$(readlink -f \"$(command -v ffprobe)\")\" > evidence/encoder-binaries.sha256\n\
+        date -u +%FT%TZ > evidence/encoder-install.finished\ndpkg-query -W -f='${Package}\
+        \ ${Version}\\n' > evidence/installed-packages.txt\n"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: ${{ needs.native-producer-tests.outputs.artifact-id }}
+        path: native-harness
+        merge-multiple: true
+    - name: Verify exact same-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: ${{ needs.native-producer-tests.outputs.harness-sha
+          }}
+      run: 'set -euo pipefail
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Run exactly 21 real encoder contracts, not Chrome evidence
+      run: python3 scripts/ci/run-encoder-contracts.py native-harness/agent-browser-tests
+        evidence/encoder21 scripts/ci/encoder-contracts-inventory.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: failed-video-encoder19-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    if: ${{ always() && needs.native-producer-tests.outputs.compiled == 'success'
+      }}
