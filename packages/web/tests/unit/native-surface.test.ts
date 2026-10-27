@@ -21,6 +21,7 @@ import { NativeSurface } from '../../src/native-surface.ts';
 import { web } from '../../src/index.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
 import { createEngineSession } from '../../../e2e/dist/engine/session.js';
+import { ScreenPresenter } from '../../../e2e/dist/agent/screen-update.js';
 import { prepareObservation, projectTree } from '../../../e2e/dist/agent/observation.js';
 import { HOSTILE_NAMES } from '../helpers/artifact-names.ts';
 
@@ -689,7 +690,7 @@ describe('native observation presentation ordering', () => {
       if (mode === 'pending' || mode === 'cancelled' || mode === 'recovered') {
         const fresh = surface.observe(operation());
         (await peer.next('browser.observe')).succeed(observation('2'));
-        await expect(fresh).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 2', ref: { id: 'root', revision: 'r1' } }, viewportRef: { id: 'n2', revision: '1' } });
+        await expect(fresh).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 2', ref: { id: 'root', revision: 'r1' } }, viewportRef: { id: 'n3', revision: '1' } });
       }
       if (mode === 'dirty-release') { resolveEndpoint('ws://synthetic.test/browser'); await expect(recovery).resolves.toBeInstanceOf(EngineError); }
     } finally {
@@ -716,7 +717,7 @@ describe('native observation presentation ordering', () => {
       expect(transfer.args['handle']).toBe('older-image');
       const newer = surface.observe(operation());
       (await peer.next('browser.observe')).succeed(observation(newRevision));
-      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: 'n2', revision: '1' } });
+      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: 'n3', revision: '1' } });
       if (boundary === 'blob.read') finishBlob(transfer); else transfer.succeed({ released: true });
       await expect(older).resolves.toMatchObject({ code: 'NODE_STALE', retryable: true });
       expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => frame['args'])).toEqual([{ identityScope: currentScope, handle: 'older-image' }]);
@@ -832,7 +833,7 @@ describe('native observation presentation ordering', () => {
       const action = surface.perform(current.root.ref, { kind: 'tap' }, operation());
       (await peer.next('browser.trace')).succeed(observation('2'));
       await action;
-      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: 't2' } } }));
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: expect.stringMatching(/^t[0-9]+$/) } } }));
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as Record<string, unknown>)['ref'])).toEqual([{ id: '@e3', revision: '2' }]);
     } finally { await surface.dispose(cleanup()); }
   });
@@ -1691,7 +1692,7 @@ describe('native surface ownership and fixed policy binding', () => {
       const second = surface.perform(snapshot.root.ref, { kind: 'tap' }, operation());
       (await peer.next('browser.trace')).succeed(observation('2'));
       await expect(second).resolves.toBeUndefined();
-      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: 't2' } } }));
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: expect.stringMatching(/^t[0-9]+$/) } } }));
       expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(1);
       expect(frames.filter(frame => frame['command'] === 'browser.trace')).toHaveLength(2);
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([{ id: '@e1', revision: '1' }, { id: '@e1', revision: '1' }]);
@@ -2454,12 +2455,12 @@ describe('native Web public reference compatibility', () => {
     try {
       const raw = await session.observe(operation());
       const observed = prepareObservation(raw, { redact: text => text, redactCut: text => text, maxBytes: 4096 });
-      expect(observed.text).toContain('#n2 button "Source"');
-      expect(observed.text).toContain('#n3 button "Target"');
+      expect(observed.text).toContain('#n116 button "Source"');
+      expect(observed.text).toContain('#n180 button "Target"');
       expect(observed.text).not.toContain('@e');
       if (observed.kind !== 'semantic') throw new Error('semantic tree required');
-      expect(projectTree(observed.tree).children?.map(child => child.id)).toEqual(['n2', 'n3']);
-      await session.perform({ id: 'n2', revision: raw.revision }, { kind: 'dragTo', target: { id: 'n3', revision: raw.revision } }, operation());
+      expect(projectTree(observed.tree).children?.map(child => child.id)).toEqual(['n116', 'n180']);
+      await session.perform({ id: 'n116', revision: raw.revision }, { kind: 'dragTo', target: { id: 'n180', revision: raw.revision } }, operation());
       await session.swipe('down', undefined, operation());
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => frame['args'])).toEqual([
         { identityScope: currentScope, ref: { id: '@e58', revision: '19' }, action: { kind: 'dragTo', target: { id: '@e90', revision: '19' } } },
@@ -2567,25 +2568,43 @@ describe('native Web public reference compatibility', () => {
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it('does not bind an old public ID to a newer capture with identical native text', async () => {
+  it('preserves stable live-element IDs through core revisions and refuses absent or replaced identities', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const engine = defineEngine({ name: 'web-generations', version: '1', spiVersion: 1, referenceRevisions: 'engine',
       observe: surface.observe.bind(surface), locate: surface.locate.bind(surface), perform: surface.perform.bind(surface), actions: ['tap'],
     });
     const session = createEngineSession({ engine, targetName: 'web-generations' });
+    let nativeId: string | undefined = '@e7'; let text = '0'; let captures = 0;
     interceptRequest = (frame, reply) => {
       if (frame['command'] !== 'browser.observe') return false;
-      reply({ data: { ...observation('1'), root: { ref: { id: '@e1', revision: '1' }, role: 'document', children: [{ ref: { id: '@e7', revision: '1' }, role: 'button' }] } } }); return true;
+      reply({ data: { ...observation(String(++captures)), root: { ref: { id: '@e1', revision: '1' }, role: 'document', children: [
+        { ref: { id: '@e8', revision: '1' }, role: 'status', name: 'Counter', text },
+        ...(nativeId === undefined ? [] : [{ ref: { id: nativeId, revision: '1' }, role: 'button', name: 'Increment' }]),
+      ] } } }); return true;
     };
     try {
-      const first = await session.observe(operation()); const second = await session.observe(operation());
+      const first = await session.observe(operation()); text = '1'; const second = await session.observe(operation());
       if (first.kind !== 'semantic' || second.kind !== 'semantic') throw new Error('semantic observations required');
-      const old = first.tree.children![0]!.ref; const fresh = second.tree.children![0]!.ref;
-      expect(fresh.id).not.toBe(old.id);
-      await expect(session.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      await expect(session.perform({ id: old.id, revision: second.revision }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      expect(frames.some(frame => frame['command'] === 'browser.perform')).toBe(false);
+      const old = first.tree.children![1]!.ref; const fresh = second.tree.children![1]!.ref;
+      expect(fresh.id).toBe(old.id); expect(fresh.revision).not.toBe(old.revision);
+      const options = { redact: (value: string) => value, redactCut: (value: string) => value, maxBytes: 4096 };
+      const initial = prepareObservation(first, options); const updated = prepareObservation(second, options);
+      if (initial.kind !== 'semantic' || updated.kind !== 'semantic') throw new Error('semantic observations required');
+      const presenter = new ScreenPresenter();
+      presenter.initial({ revision: initial.revision, text: initial.text, truncated: initial.truncated, viewport: initial.viewport });
+      expect(presenter.update({ revision: updated.revision, text: updated.text, truncated: updated.truncated, viewport: updated.viewport })).toContain('changed #n16 status "Counter" text="1"');
+      expect(updated.kind === 'semantic' && updated.nodes.has(old.id)).toBe(true);
+      await session.perform(old, { kind: 'tap' }, operation());
       await session.perform(fresh, { kind: 'tap' }, operation());
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => frame['args'])).toEqual([
+        { identityScope: currentScope, ref: { id: '@e7', revision: '1' }, action: { kind: 'tap' } },
+        { identityScope: currentScope, ref: { id: '@e7', revision: '1' }, action: { kind: 'tap' } },
+      ]);
+      nativeId = undefined; await session.observe(operation());
+      await expect(session.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      nativeId = '@e9'; const replacement = await session.observe(operation());
+      await expect(session.perform({ id: old.id, revision: replacement.revision }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      expect(frames.filter(frame => frame['command'] === 'browser.perform')).toHaveLength(2);
     } finally { await surface.dispose(cleanup()); }
   });
 

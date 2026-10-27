@@ -197,8 +197,8 @@ describe('native fallback adapter ownership', () => {
     const options = { pixels: true, pixelFallback: true };
     const fallback = await surface.observe(operation(), options);
     expect(fallback).toEqual({
-      identityScope: 'scope', root: { ref: { id: 'root', revision: 'r3' } },
-      viewport: { width: 100, height: 80 }, viewportRef: { id: 'n4', revision: '1' },
+      identityScope: 'scope', root: { ref: { id: 'root', revision: 'r5' } },
+      viewport: { width: 100, height: 80 }, viewportRef: { id: 'n7', revision: '1' },
       location: 'https://app.test/current', treeUnavailable: true, truncated: true, maskedRegionCount: 1,
       pixels: { data: bytes, mediaType: 'image/png', width: 100, height: 80, scale: 1 },
     });

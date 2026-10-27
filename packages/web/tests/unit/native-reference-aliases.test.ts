@@ -6,17 +6,76 @@ const node = (id = '@e77', revision = '7'): SemanticNode => ({ ref: { id, revisi
 const stale = { code: 'NODE_STALE' };
 
 describe('Web public reference aliases', () => {
-  it('publishes nN IDs without deriving native numbers or changing semantics', () => {
+  it('publishes nN IDs from issued immutable identities without changing semantics', () => {
     const aliases = new NativeReferenceAliases(); const current = owner();
     const source = { ...node(), children: [node('@e912')] };
     const [publicNode] = aliases.capture(current, [source]).nodes;
-    expect(publicNode).toEqual({ ...source, ref: { id: 'root', revision: 'r1' }, children: [{ ...source.children[0], ref: { id: 'n2', revision: '7' } }] });
+    expect(publicNode).toEqual({ ...source, ref: { id: 'root', revision: 'r1' }, children: [{ ...source.children[0], ref: { id: 'n1824', revision: '7' } }] });
     expect(source.ref.id).toBe('@e77');
     expect(aliases.resolve(current, publicNode!.ref)).toEqual(source.ref);
     expect(() => aliases.resolve(current, { id: 'n77', revision: '7' })).toThrow(expect.objectContaining(stale));
     expect(() => aliases.resolve(current, source.ref)).toThrow(expect.objectContaining(stale));
   });
-  it('retires the old observation generation instead of upgrading a captured reference', () => {
+  it('keeps the same live observed identity stable while absent and replaced identities cannot act', () => {
+    const aliases = new NativeReferenceAliases(); const current = owner();
+    const tree = (children: SemanticNode[]): SemanticNode => ({ ...node('@e1'), children });
+    const old = aliases.capture(current, [tree([node()])]).nodes[0]!.children![0]!.ref;
+    const fresh = aliases.capture(current, [tree([{ ...node(), name: 'Saved' }])]).nodes[0]!.children![0]!.ref;
+    expect(fresh).toEqual(old);
+    expect(aliases.resolve(current, old)).toEqual(node().ref);
+    expect(() => aliases.resolve(current, { ...old, revision: '8' })).toThrow(expect.objectContaining(stale));
+    aliases.capture(current, [tree([])]);
+    expect(() => aliases.resolve(current, old)).toThrow(expect.objectContaining(stale));
+    const returned = aliases.capture(current, [tree([node()])]).nodes[0]!.children![0]!.ref;
+    expect(returned).toEqual(old); // Same native durable identity, not a descriptor match.
+    const replaced = aliases.capture(current, [tree([node('@e78')])]).nodes[0]!.children![0]!.ref;
+    expect(replaced.id).not.toBe(old.id);
+    expect(() => aliases.resolve(current, old)).toThrow(expect.objectContaining(stale));
+    const trace = aliases.trace([tree([node('@e78')])]).nodes[0]!.children![0]!.ref;
+    expect(trace.id).not.toBe(replaced.id);
+    expect(() => aliases.resolve(current, trace)).toThrow(expect.objectContaining(stale));
+  });
+  it.each(['attempt', 'client', 'scope', 'epoch'] as const)('never revives a non-root observed identity after %s replacement', field => {
+    const aliases = new NativeReferenceAliases(); const current = owner();
+    const tree = { ...node('@e1'), children: [node()] };
+    const old = aliases.capture(current, [tree]).nodes[0]!.children![0]!.ref;
+    const replacement = { ...current, [field]: field === 'attempt' || field === 'client' ? {} : field === 'scope' ? 'replacement' : 1 };
+    const fresh = aliases.capture(replacement, [tree]).nodes[0]!.children![0]!.ref;
+    expect(fresh.id).not.toBe(old.id);
+    expect(() => aliases.resolve(replacement, old)).toThrow(expect.objectContaining(stale));
+    expect(aliases.resolve(replacement, fresh)).toEqual(node().ref);
+  });
+  it('clears authority without forgetting presentation identity through fallback and publication retirement', () => {
+    const aliases = new NativeReferenceAliases(); const current = owner();
+    const tree = { ...node('@e1'), children: [node()] };
+    const old = aliases.capture(current, [tree]).nodes[0]!.children![0]!.ref;
+    aliases.retire();
+    aliases.capture(current, [{ ref: { id: '@e2', revision: '8' } }], { id: '@e3', revision: '8' }, 'pixels');
+    expect(() => aliases.resolve(current, old)).toThrow(expect.objectContaining(stale));
+    const recovered = aliases.capture(current, [tree]).nodes[0]!.children![0]!.ref;
+    expect(recovered).toEqual(old);
+    expect(aliases.resolve(current, old)).toEqual(node().ref);
+    const fenced = { ...current, publication: 1 };
+    expect(() => aliases.resolve(fenced, old)).toThrow(expect.objectContaining(stale));
+    const admitted = aliases.capture(fenced, [tree]).nodes[0]!.children![0]!.ref;
+    expect(admitted).toEqual(old);
+    expect(aliases.resolve(fenced, old)).toEqual(node().ref);
+  });
+  it('keeps stable presentation without retaining dormant authority or colliding with query and trace aliases', () => {
+    const aliases = new NativeReferenceAliases(); const current = owner();
+    const tree = (id: string): SemanticNode => ({ ...node('@e1'), children: [node(id)] });
+    const huge = aliases.capture(current, [tree('@e18446744073709551615')]).nodes[0]!.children![0]!.ref;
+    expect(huge.id).toMatch(/^n[0-9]+$/);
+    const located = aliases.capture(current, [node('@e18446744073709551615')], undefined, 'locate').nodes[0]!.ref;
+    const trace = aliases.trace([tree('@e18446744073709551615')]).nodes[0]!.children![0]!.ref;
+    expect(new Set([huge.id, located.id, trace.id]).size).toBe(3);
+    aliases.retire();
+    const nextOwner = { ...current, client: {} };
+    const replacement = aliases.capture(nextOwner, [{ ...node('@e2'), children: [node('@e1')] }]).nodes[0]!.children![0]!.ref;
+    expect(replacement.id).not.toBe(huge.id);
+    expect(() => aliases.resolve(nextOwner, huge)).toThrow(expect.objectContaining(stale));
+  });
+  it('retires an old root capture instead of upgrading its guarded authority', () => {
     const aliases = new NativeReferenceAliases(); const current = owner();
     const first = aliases.capture(current, [node()]).nodes[0]!.ref;
     const second = aliases.capture(current, [node('@e77', '8')]).nodes[0]!.ref;

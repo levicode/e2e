@@ -18,21 +18,31 @@ interface Evidence { readonly ref: NodeRef; readonly kind: Kind }
 const key = (ref: NodeRef): string => JSON.stringify([ref.id, ref.revision]);
 const stale = (): EngineError => new EngineError('NODE_STALE', 'The web reference has retired; re-resolve or observe the screen again', { retryable: true });
 
-/** One allocator survives attempt replacement; retired aliases are never recycled. */
+/** Presentation counters survive replacement; names never rebind to unrelated native identities. */
 export class NativeReferenceAliases {
   private next = 0;
+  // Native observed IDs are durable element identities, not capture ordinals.
+  // Even ordinals encode those identities in a non-recycled owner namespace;
+  // odd ordinals are fresh locator/viewport/trace aliases. No dormant authority is kept.
+  private observedOffset = 0n;
+  private observedHighWater = 0n;
   private owner: ReferenceOwner | undefined;
   private observation = new Map<string, Evidence>();
   private viewport: NodeRef | undefined;
   private readonly located = new Map<string, Evidence>();
 
+  /** Clear current authority, not the identity of a still-live native element. */
   retire(): void { this.observation.clear(); this.located.clear(); this.viewport = undefined; }
 
   private scopeOf(owner: ReferenceOwner): void {
     if (!owner.owns()) throw stale();
     const prior = this.owner;
-    if (prior === undefined || prior.attempt !== owner.attempt || prior.client !== owner.client
-      || prior.scope !== owner.scope || prior.epoch !== owner.epoch || prior.publication !== owner.publication) this.retire();
+    const identityChanged = prior !== undefined && (prior.attempt !== owner.attempt || prior.client !== owner.client
+      || prior.scope !== owner.scope || prior.epoch !== owner.epoch);
+    // A positive native ordinal in the new namespace is above every earlier
+    // observed alias. Publication fences revoke authority, not element identity.
+    if (identityChanged) this.observedOffset = this.observedHighWater;
+    if (prior === undefined || identityChanged || prior.publication !== owner.publication) this.retire();
     this.owner = owner;
   }
 
@@ -45,10 +55,11 @@ export class NativeReferenceAliases {
       const source = key(ref);
       let alias = aliases.get(source);
       if (alias === undefined) {
-        const reserved = this.allocate();
-        // The legacy root ID is stable. Only its internal revision needs a
-        // generation guard when native revision text repeats after replacement.
-        alias = root ? { id: 'root', revision: `r${reserved.slice(1)}` } : { id: reserved, revision: ref.revision };
+        // The root needs a capture guard even when its native text repeats.
+        // Non-root observations retain identity only from the exact native ID;
+        // public IDs are never decoded to recover or manufacture authority.
+        alias = root ? { id: 'root', revision: `r${this.allocate().slice(1)}` }
+          : { id: purpose === 'locate' || kind === 'viewport' ? this.allocate() : this.observedId(ref), revision: ref.revision };
         aliases.set(source, alias); staged.set(key(alias), { ref: { ...ref }, kind });
       } else if (staged.get(key(alias))!.kind !== kind) {
         throw new EngineError('INVALID_STATE', 'A native reference changed capability kind', { retryable: false });
@@ -129,8 +140,15 @@ export class NativeReferenceAliases {
     return { nodes: nodes.map((node, index) => project(node, index === 0)), ...(viewport === undefined ? {} : { viewport: reference(viewport) }) };
   }
 
+  private observedId(ref: NodeRef): string {
+    if (!/^@e[1-9][0-9]*$/.test(ref.id)) throw new EngineError('INVALID_STATE', 'An observed native reference has invalid identity', { retryable: false });
+    const ordinal = this.observedOffset + BigInt(ref.id.slice(2));
+    if (ordinal > this.observedHighWater) this.observedHighWater = ordinal;
+    return `n${2n * ordinal}`;
+  }
+
   private allocate(): string {
     if (this.next >= Number.MAX_SAFE_INTEGER) throw new EngineError('INVALID_STATE', 'Web reference identity space exhausted', { retryable: false });
-    return `n${++this.next}`;
+    return `n${2n * BigInt(++this.next) - 1n}`;
   }
 }

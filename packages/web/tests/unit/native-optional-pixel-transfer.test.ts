@@ -76,7 +76,7 @@ describe('native optional immutable pixel transfer', () => {
     await vi.advanceTimersByTimeAsync(79);
     expect(published).toHaveBeenCalledOnce();
     const value = published.mock.calls[0]![0];
-    expect(value).toMatchObject({ root: { name: 'tree 1', children: [{ ref: { id: 'n2', revision: '1' } }] } });
+    expect(value).toMatchObject({ root: { name: 'tree 1', children: [{ ref: { id: 'n4', revision: '1' } }] } });
     expect(value.treeUnavailable).toBeUndefined(); expect(value.pixels).toBeUndefined(); expect(value.maskedRegionCount).toBeUndefined();
     expect(fixture.peer.requests.filter(request => request.command === 'blob.release')).toHaveLength(0);
     read.resolve(chunk()); await vi.advanceTimersByTimeAsync(0);
