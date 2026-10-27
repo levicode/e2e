@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { EngineError, TestError, type EngineAttemptContext, type EngineFixtureContext, type OperationContext, type ProviderRecording } from 'e2e/engine';
+import { defineEngine, EngineError, TestError, type EngineAttemptContext, type EngineFixtureContext, type OperationContext, type ProviderRecording } from 'e2e/engine';
 import * as uploadFiles from '../../src/native/upload-files.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { decodeEngineResult } from '../../src/native/engine-decode.ts';
@@ -20,6 +20,8 @@ import { createBrowserFixture } from '../../src/browser.ts';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { web } from '../../src/index.ts';
 import { nativeBrowser } from '../helpers/native-browser.ts';
+import { createEngineSession } from '../../../e2e/dist/engine/session.js';
+import { prepareObservation, projectTree } from '../../../e2e/dist/agent/observation.js';
 import { HOSTILE_NAMES } from '../helpers/artifact-names.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
@@ -293,7 +295,7 @@ describe('native node swipe public entry forwarding', () => {
       }
       const requests = frames.slice(before).filter(frame => frame['type'] === 'request');
       expect(requests.map(frame => [frame['command'], frame['args']])).toEqual(originalActions.map(action => [
-        'browser.perform', { identityScope: scope, ref: originalRef, action },
+        'browser.perform', { identityScope: scope, ref: { id: '@e1', revision: '1' }, action },
       ]));
       expect(requests.map(frame => frame['timeoutMs'])).toEqual(actions.map(() => 7));
       expect(ref).toEqual(originalRef);
@@ -687,7 +689,7 @@ describe('native observation presentation ordering', () => {
       if (mode === 'pending' || mode === 'cancelled' || mode === 'recovered') {
         const fresh = surface.observe(operation());
         (await peer.next('browser.observe')).succeed(observation('2'));
-        await expect(fresh).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 2', ref: { id: '@e1', revision: '1' } }, viewportRef: { id: '@e2', revision: '1' } });
+        await expect(fresh).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 2', ref: { id: 'root', revision: 'r1' } }, viewportRef: { id: 'n2', revision: '1' } });
       }
       if (mode === 'dirty-release') { resolveEndpoint('ws://synthetic.test/browser'); await expect(recovery).resolves.toBeInstanceOf(EngineError); }
     } finally {
@@ -714,7 +716,7 @@ describe('native observation presentation ordering', () => {
       expect(transfer.args['handle']).toBe('older-image');
       const newer = surface.observe(operation());
       (await peer.next('browser.observe')).succeed(observation(newRevision));
-      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: '@e2', revision: '1' } });
+      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: 'n2', revision: '1' } });
       if (boundary === 'blob.read') finishBlob(transfer); else transfer.succeed({ released: true });
       await expect(older).resolves.toMatchObject({ code: 'NODE_STALE', retryable: true });
       expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => frame['args'])).toEqual([{ identityScope: currentScope, handle: 'older-image' }]);
@@ -830,8 +832,8 @@ describe('native observation presentation ordering', () => {
       const action = surface.perform(current.root.ref, { kind: 'tap' }, operation());
       (await peer.next('browser.trace')).succeed(observation('2'));
       await action;
-      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: observation('2').root }));
-      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as Record<string, unknown>)['ref'])).toEqual([current.root.ref]);
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: 't2' } } }));
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as Record<string, unknown>)['ref'])).toEqual([{ id: '@e3', revision: '2' }]);
     } finally { await surface.dispose(cleanup()); }
   });
 
@@ -932,12 +934,13 @@ describe('native observation presentation ordering', () => {
 describe('native surface ownership and fixed policy binding', () => {
   it('passes classified errors through untouched, whatever their class', async () => {
     const surface = new NativeSurface({}); await start(surface);
+    const observed = await surface.observe(operation());
     const command = vi.spyOn(EngineChannel.prototype, 'command');
     const before = frames.length;
     try {
       for (const failure of [new EngineError('NODE_STALE', 'gone', { retryable: true }), new TestError('INVALID_ARGUMENT', 'bad')]) {
         command.mockRejectedValueOnce(failure);
-        await expect(surface.perform({ id: '@e1', revision: '1' }, { kind: 'tap' }, operation())).rejects.toBe(failure);
+        await expect(surface.perform(observed.root.ref, { kind: 'tap' }, operation())).rejects.toBe(failure);
       }
       expect(command.mock.calls.map(([name]) => name)).toEqual(['browser.perform', 'browser.perform']);
       expect(frames.slice(before).filter(frame => frame['command'] === 'browser.perform')).toEqual([]);
@@ -1658,7 +1661,7 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(1);
       expect(frames.filter(frame => frame['command'] === 'browser.trace')).toHaveLength(3);
       expect(frames.filter(frame => frame['command'] === 'capture.screenshot')).toHaveLength(0);
-      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([snapshot.root.ref, snapshot.root.ref]);
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([{ id: '@e1', revision: '1' }, { id: '@e1', revision: '1' }]);
       expect(environment).toHaveBeenCalledWith({ browser: 'Synthetic Chromium', 'user agent': 'synthetic-agent' });
       expect(frames.some(frame => frame['command'] === 'fixture.query')).toBe(false);
     } finally { read.mockRestore(); await surface.dispose(cleanup()); }
@@ -1688,10 +1691,10 @@ describe('native surface ownership and fixed policy binding', () => {
       const second = surface.perform(snapshot.root.ref, { kind: 'tap' }, operation());
       (await peer.next('browser.trace')).succeed(observation('2'));
       await expect(second).resolves.toBeUndefined();
-      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: observation('2').root }));
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: 't2' } } }));
       expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(1);
       expect(frames.filter(frame => frame['command'] === 'browser.trace')).toHaveLength(2);
-      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([snapshot.root.ref, snapshot.root.ref]);
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([{ id: '@e1', revision: '1' }, { id: '@e1', revision: '1' }]);
       expect(frames.some(frame => ['fixture.query', 'capture.screenshot'].includes(String(frame['command'])))).toBe(false);
     } finally { cancellationObserved = undefined; await surface.dispose(cleanup()); }
   });
@@ -1798,7 +1801,9 @@ describe('native surface ownership and fixed policy binding', () => {
     let finish!: (selection: uploadFiles.UploadSelection) => void;
     const select = vi.spyOn(uploadFiles, 'selectUploadFiles').mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     try {
-      const pending = surface.perform({ id: '@e7', revision: '1' }, { kind: 'setInputFiles', paths: ['/synthetic/file'] }, operation()).catch((cause: unknown) => cause);
+      queryNodes = [{ ref: { id: '@e7', revision: '1' } }];
+      const [located] = await surface.locate({ kind: 'selector', selector: '#upload' }, operation(), { purpose: 'fixture' });
+      const pending = surface.perform(located!.ref, { kind: 'setInputFiles', paths: ['/synthetic/file'] }, operation()).catch((cause: unknown) => cause);
       await new Promise(resolve => setImmediate(resolve)); await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement'));
       finish({ files: [] }); expect(await pending).toMatchObject({ code: 'CANCELLED' });
       expect(frames.some(frame => frame['command'] === 'blob.create' || frame['command'] === 'browser.perform')).toBe(false);
@@ -2135,7 +2140,7 @@ describe('native initial action trace publication', () => {
       if (mode === 'failed-trace') request.fail('cleanup-failed', 'unknown'); else request.succeed(observation('7'));
       await action;
       if (mode === 'first') {
-        expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ref: { id: '@e1', revision: '1' }, role: 'document', name: 'snapshot 7' }, viewport: { width: 100, height: 80 } }));
+        expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ref: { id: 'root', revision: 't1' }, role: 'document', name: 'snapshot 7' }, viewport: { width: 100, height: 80 } }));
         expect(frames.some(frame => frame['command'] === 'browser.observe' || frame['command'] === 'fixture.query')).toBe(false);
       } else expect(screen).not.toHaveBeenCalled();
       expect(frames.some(frame => ['capture.screenshot', 'blob.read', 'blob.release'].includes(String(frame['command'])))).toBe(false);
@@ -2428,4 +2433,160 @@ describe('bounded native attempt cleanup ownership', () => {
     expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
     expect(release).toHaveBeenCalledTimes(1);
   });
+});
+
+/** Restored public aliases over the same framed native protocol, not a fake alias engine. */
+describe('native Web public reference compatibility', () => {
+  it('round-trips public trees, fixture/protected queries, drag and viewport through core evidence', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'browser.observe') return false;
+      reply({ data: { ...observation('19'), root: { ref: { id: '@e41', revision: '19' }, role: 'document', children: [
+        { ref: { id: '@e58', revision: '19' }, role: 'button', name: 'Source' },
+        { ref: { id: '@e90', revision: '19' }, role: 'button', name: 'Target' },
+      ] }, viewportRef: { id: '@e501', revision: '19' } } }); return true;
+    };
+    const engine = defineEngine({ name: 'web-boundary', version: '1', spiVersion: 1, referenceRevisions: 'engine',
+      observe: surface.observe.bind(surface), locate: surface.locate.bind(surface), perform: surface.perform.bind(surface),
+      actions: ['tap', 'dragTo', 'swipe'],
+    });
+    const session = createEngineSession({ engine, targetName: 'web-boundary' });
+    try {
+      const raw = await session.observe(operation());
+      const observed = prepareObservation(raw, { redact: text => text, redactCut: text => text, maxBytes: 4096 });
+      expect(observed.text).toContain('#n2 button "Source"');
+      expect(observed.text).toContain('#n3 button "Target"');
+      expect(observed.text).not.toContain('@e');
+      if (observed.kind !== 'semantic') throw new Error('semantic tree required');
+      expect(projectTree(observed.tree).children?.map(child => child.id)).toEqual(['n2', 'n3']);
+      await session.perform({ id: 'n2', revision: raw.revision }, { kind: 'dragTo', target: { id: 'n3', revision: raw.revision } }, operation());
+      await session.swipe('down', undefined, operation());
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => frame['args'])).toEqual([
+        { identityScope: currentScope, ref: { id: '@e58', revision: '19' }, action: { kind: 'dragTo', target: { id: '@e90', revision: '19' } } },
+        { identityScope: currentScope, ref: { id: '@e501', revision: '19' }, action: { kind: 'swipe', direction: 'down' } },
+      ]);
+      queryNodes = [{ ref: { id: '@e908', revision: '23' }, role: 'button', name: 'Located' }];
+      for (const purpose of ['fixture', 'protected'] as const) {
+        const [located] = await session.locate({ kind: 'selector', selector: '#actual-css-id' }, operation(), { purpose });
+        expect(located!.id).toMatch(/^n\d+$/);
+        await session.perform(located!, { kind: 'tap' }, operation());
+        expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toEqual({ identityScope: currentScope, ref: { id: '@e908', revision: '23' }, action: { kind: 'tap' } });
+      }
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('never turns a guessed native ID or viewport into an element, and leaves point drag unchanged', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    const peer = holdRequests('browser.observe');
+    const pending = surface.observe(operation()); (await peer.next('browser.observe')).succeed(observation('1')); const snapshot = await pending;
+    try {
+      const before = frames.length;
+      for (const ref of [{ id: '@e1', revision: '1' }, { id: 'n9000', revision: '1' }, { ...snapshot.root.ref, revision: '2' }]) {
+        await expect(surface.perform(ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      }
+      await expect(surface.perform(snapshot.viewportRef!, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await expect(surface.perform(snapshot.root.ref, { kind: 'dragTo', target: snapshot.viewportRef! }, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(frames.slice(before).some(frame => frame['command'] === 'browser.perform')).toBe(false);
+      await surface.performAt({ x: 12, y: 34 }, { kind: 'dragTo', target: { x: 56, y: 78 } }, operation());
+      expect(frames.findLast(frame => frame['command'] === 'browser.pointer')!['args']).toEqual({ identityScope: currentScope, point: { x: 12, y: 34 }, action: { kind: 'dragTo', target: { x: 56, y: 78 } } });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it.each(['reset', 'restart', 'same-scope-restart', 'navigation', 'attempt'] as const)('does not revive prior public refs after %s, even if native text repeats', async transition => {
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const old = (await surface.observe(operation())).root.ref;
+      if (transition === 'reset') await surface.reset(operation());
+      else if (transition === 'restart' || transition === 'same-scope-restart') { preserveRestartScope = transition === 'same-scope-restart'; await surface.restart(operation()); }
+      else if (transition === 'navigation') await sendEvent('app.navigation', { identityScope: currentScope, kind: 'main', url: 'https://synthetic.test/next' });
+      else { await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement')); }
+      const fresh = (await surface.observe(operation())).root.ref;
+      expect(fresh).not.toEqual(old);
+      const before = frames.length;
+      await expect(surface.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      expect(frames).toHaveLength(before);
+      await surface.perform(fresh, { kind: 'tap' }, operation());
+      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toMatchObject({ ref: { id: '@e1', revision: '1' } });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('retires aliases across persistent reconnect before allowing fresh same-text refs', async () => {
+    const surface = new NativeSurface({ connect: { cdpEndpoint: async () => 'ws://synthetic.test/browser', reconnectEndpoint: async () => 'ws://synthetic.test/browser' } }); await start(surface);
+    try {
+      const old = (await surface.observe(operation())).root.ref;
+      await sendEvent('scope.disconnected', { identityScope: currentScope, reason: 'browser-connection-closed' });
+      const fresh = (await surface.observe(operation())).root.ref;
+      expect(fresh).not.toEqual(old);
+      await expect(surface.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      await surface.perform(fresh, { kind: 'tap' }, operation());
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('keeps diagnostic correlation on native refs and returns only the pinned public candidate', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    try {
+      const observed = (await surface.observe(operation())).root.ref;
+      queryNodes = [{ ref: { id: '@e33', revision: '4' } }];
+      const located = (await surface.locate({ kind: 'selector', selector: '#root' }, operation(), { purpose: 'fixture' }))[0]!.ref;
+      interceptRequest = (frame, reply) => {
+        if (frame['command'] !== 'fixture.correlate') return false;
+        expect(frame['args']).toEqual({ identityScope: currentScope, located: [{ id: '@e33', revision: '4' }], observed: [{ id: '@e1', revision: '1' }] });
+        reply({ data: { identityScope: currentScope, matches: [{ id: '@e1', revision: '1' }] } }); return true;
+      };
+      await expect(surface.command('fixture.correlate', { located: [located], observed: [observed] }, operation())).resolves.toEqual({ identityScope: currentScope, matches: [observed] });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('shows trace aliases but refuses them as action authority without retiring live refs', async () => {
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const screen = vi.fn(); await surface.startAttempt({ ...context('trace-aliases'), screen });
+    try {
+      const live = (await surface.observe(operation())).root.ref;
+      await surface.perform(live, { kind: 'tap' }, operation());
+      const historical = screen.mock.calls[0]![0].root.ref;
+      expect(historical.id).toBe('root'); expect(historical.revision).not.toBe(live.revision);
+      await expect(surface.perform(historical, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      await surface.perform(live, { kind: 'tap' }, operation());
+      expect(frames.filter(frame => frame['command'] === 'browser.perform')).toHaveLength(2);
+    } finally { await surface.dispose(cleanup()); }
+  });
+  it('keeps the current observed reference after more than 16K locator acquisitions', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    const engine = defineEngine({ name: 'web-populations', version: '1', spiVersion: 1, referenceRevisions: 'engine',
+      observe: surface.observe.bind(surface), locate: surface.locate.bind(surface), perform: surface.perform.bind(surface), actions: ['tap'],
+    });
+    const session = createEngineSession({ engine, targetName: 'web-populations' });
+    try {
+      const observed = await session.observe(operation());
+      for (let batch = 0; batch < 17; batch++) {
+        queryNodes = Array.from({ length: 1024 }, (_, index) => ({ ref: { id: `@e${batch * 1024 + index + 100}`, revision: '1' } }));
+        await session.locate({ kind: 'selector', selector: '.candidate' }, operation());
+      }
+      await session.perform(observed.root, { kind: 'tap' }, operation());
+      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toMatchObject({ ref: { id: '@e1', revision: '1' } });
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('does not bind an old public ID to a newer capture with identical native text', async () => {
+    const surface = new NativeSurface({}); await start(surface);
+    const engine = defineEngine({ name: 'web-generations', version: '1', spiVersion: 1, referenceRevisions: 'engine',
+      observe: surface.observe.bind(surface), locate: surface.locate.bind(surface), perform: surface.perform.bind(surface), actions: ['tap'],
+    });
+    const session = createEngineSession({ engine, targetName: 'web-generations' });
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'browser.observe') return false;
+      reply({ data: { ...observation('1'), root: { ref: { id: '@e1', revision: '1' }, role: 'document', children: [{ ref: { id: '@e7', revision: '1' }, role: 'button' }] } } }); return true;
+    };
+    try {
+      const first = await session.observe(operation()); const second = await session.observe(operation());
+      if (first.kind !== 'semantic' || second.kind !== 'semantic') throw new Error('semantic observations required');
+      const old = first.tree.children![0]!.ref; const fresh = second.tree.children![0]!.ref;
+      expect(fresh.id).not.toBe(old.id);
+      await expect(session.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      await expect(session.perform({ id: old.id, revision: second.revision }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      expect(frames.some(frame => frame['command'] === 'browser.perform')).toBe(false);
+      await session.perform(fresh, { kind: 'tap' }, operation());
+    } finally { await surface.dispose(cleanup()); }
+  });
+
 });

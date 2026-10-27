@@ -16,8 +16,8 @@ describe('canonical reference round trip', () => {
       async runStep(ctx) {
         const observation = await ctx.observe({ tree: true });
         expect(observation.tree?.id).toBe('@e7');
-        expect(observation.text).toContain('@e7 button');
-        expect(observation.text).not.toContain('#@');
+        expect(observation.text).toContain('#@e7 button');
+        expect(observation.tree?.id).not.toContain('#');
         await ctx.actions.tap({ id: target });
         return { status: 'passed', summary: 'used the observed canonical reference' };
       },

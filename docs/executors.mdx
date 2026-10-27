@@ -148,8 +148,9 @@ path outside the project root or a hidden one with `POLICY_DENIED`, and a
 missing file with `INVALID_ARGUMENT`.
 
 Treat node IDs as opaque: pass the tree's `id` unchanged to actions. Screen text
-keeps canonical `@` references intact and prefixes other engine IDs with `#`.
-Do not add a prefix, parse a numeric suffix, or reuse an ID after its scope ends.
+prefixes every engine's IDs with `#`. Web nodes use `n` followed by digits,
+with `root` for the main document. Copy an observed ID; do not construct it
+from a native browser reference or reuse it after its scope ends.
 
 The observation's `keyboardVisible` says whether an on-screen keyboard is
 showing, and is absent when the engine can't tell.

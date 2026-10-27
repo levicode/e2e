@@ -163,6 +163,7 @@ it('rejects a delayed old-page semantic result without invalidating the complete
   const snapshot = (revision: string) => ({ identityScope: 'scope-1', revision, viewport: { width: 100, height: 80 }, root: { ref: { id: '@e1', revision }, role: 'document' } });
   const engine = await fixture(frame => {
     if (frame.command === 'browser.observe') { if (++observations === 1) { captured.resolve(); return reply.promise; } return { data: snapshot('2') }; }
+    if (frame.command === 'browser.perform') return { data: null };
     if (frame.command === 'page.navigate') return (async () => { await peer!.event('scope.page-reopened', refresh()); return { data: null }; })();
     return undefined;
   });
@@ -172,7 +173,12 @@ it('rejects a delayed old-page semantic result without invalidating the complete
     await nativeBrowser(engine, operation).goto('https://synthetic.test/reopened');
     reply.resolve({ data: snapshot('1') });
     await stale;
-    await expect(engine.observe!(operation())).resolves.toMatchObject({ identityScope: 'scope-1', root: { ref: { revision: '2' } } });
+    const current = await engine.observe!(operation());
+    expect(current).toMatchObject({ identityScope: 'scope-1', root: { ref: { id: 'root', revision: 'r1' } } });
+    await engine.perform!(current.root.ref, { kind: 'tap' }, operation());
+    expect(peer!.requests.findLast(frame => frame.command === 'browser.perform')?.args).toEqual({
+      identityScope: 'scope-1', ref: { id: '@e1', revision: '2' }, action: { kind: 'tap' },
+    });
     await expect(nativeBrowser(engine, operation).title()).resolves.toBe('current title');
   } finally { reply.resolve({ error: 'cancelled' }); await engine.dispose!(cleanup()); }
 });

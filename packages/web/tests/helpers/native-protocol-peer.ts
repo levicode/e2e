@@ -8,7 +8,7 @@ export interface PeerRequest {
   readonly type: 'request'; readonly id: string; readonly generation: number;
   readonly operationSeq: number; readonly command: string; readonly args: Record<string, JsonValue>;
 }
-export type PeerOutcome = { readonly data: JsonValue } | {
+export type PeerOutcome = { readonly data: JsonValue; readonly scopeState?: ScopeState } | {
   readonly error: string; readonly frameSelection?: unknown; readonly effects?: Effects; readonly scopeState?: ScopeState;
 };
 
@@ -37,7 +37,7 @@ export class NativeProtocolPeer {
           this.requests.push(call);
           void Promise.resolve().then(() => request(call)).then(outcome => this.send({
             type: 'result', id: call.id, generation: call.generation, operationSeq: call.operationSeq,
-            ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed', scopeState: 'usable' }
+            ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed', scopeState: outcome.scopeState ?? 'usable' }
               : { ok: false, error: { code: outcome.error, ...(outcome.frameSelection === undefined ? {} : { frameSelection: outcome.frameSelection }) }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable' }),
           })).catch(error => this.output.destroy(error instanceof Error ? error : new Error('Synthetic peer failed')));
         } else throw new Error(`Unexpected synthetic peer frame ${String(frame['type'])}`);

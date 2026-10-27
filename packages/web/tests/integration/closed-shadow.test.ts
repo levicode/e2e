@@ -98,7 +98,7 @@ it('discovers late author closed roots exactly once and acts on their observed r
 it('refuses unprovable closed-root masks without publishing pixels, restores author state, and succeeds after the author constraint is removed', async () => {
   const f = await fixture('closed-root-mask-refusal');
   try {
-    await nativeDocument(f.browser, '<body style="margin:0;background:blue"><div id="host"></div><div style="position:absolute;left:180px;top:20px;width:100px;height:40px;background:rgb(0,128,0)"></div></body>');
+    await nativeDocument(f.browser, '<body style="margin:0;background:blue"><div id="host"></div><div style="position:absolute;left:180px;top:20px;width:100px;height:40px;background:rgb(0,128,0)"></div><button data-testid="optional-tree-witness" style="position:absolute;left:300px;top:260px">Optional tree witness</button></body>');
     await f.browser.evaluate(() => {
       const root = document.querySelector('#host')!.attachShadow({ mode: 'closed' });
       const input = document.createElement('input'); input.type = 'password'; input.value = 'synthetic-closed-mask-secret';
@@ -109,11 +109,21 @@ it('refuses unprovable closed-root masks without publishing pixels, restores aut
       Reflect.set(globalThis, '__closedMaskContract', { root, input, style: input.getAttribute('style') });
       return null;
     });
-    for (const capture of [
-      () => f.engine.observe!(f.operation(), { pixels: true }),
-      () => f.engine.artifacts!.screenshot('must-not-publish', f.operation()),
-    ]) {
-      await expect(capture()).rejects.toMatchObject({ code: 'POLICY_DENIED', retryable: false });
+    for (const capture of ['optional-observation', 'mandatory-screenshot'] as const) {
+      if (capture === 'optional-observation') {
+        const tree = await f.engine.observe!(f.operation(), { pixels: true });
+        expect(tree.treeUnavailable).toBeUndefined();
+        expect(tree.root).toBeDefined();
+        expect(observedNodes(tree.root).filter(node => node.testId === 'optional-tree-witness'))
+          .toMatchObject([{ role: 'button', name: 'Optional tree witness' }]);
+        expect(tree.truncated).not.toBe(true);
+        expect(tree.pixels).toBeUndefined();
+        expect(tree.maskedRegionCount).toBeUndefined();
+        expect(JSON.stringify(tree.root)).not.toContain('synthetic-closed-mask-secret');
+      } else {
+        await expect(f.engine.artifacts!.screenshot('must-not-publish', f.operation()))
+          .rejects.toMatchObject({ code: 'POLICY_DENIED', retryable: false });
+      }
       expect(readdirSync(f.artifactsDir, { recursive: true }).filter(entry => entry.toString().endsWith('.png'))).toEqual([]);
       expect(await f.browser.evaluate(() => {
         const state = Reflect.get(globalThis, '__closedMaskContract') as { root: ShadowRoot; input: HTMLInputElement; style: string };

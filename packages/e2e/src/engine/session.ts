@@ -457,7 +457,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
       locateRevision += 1;
       const locateRev = `${LOCATE_REVISION_PREFIX}${locateRevision}`;
       const refs: NodeRef[] = [];
-      evidence.capture(nodes, locateRev);
+      evidence.capture(nodes, locateRev, undefined, 'locate');
       for (const node of nodes) {
         const stamped = stampRevision(node, locateRev);
         located.delete(stamped.ref.id);

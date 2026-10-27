@@ -19,12 +19,13 @@ import { httpCredentials, lowercaseNames, siteHeadersFor } from './protected-app
 import { withConnectionBudget, type ConnectionBudget } from './operation-budget.ts';
 import { ErrorLatch, isClassified, sanitizeFilename } from './runtime-support.ts';
 import type { WebOptions } from './web-options.ts';
-import { decodeBrowserEvent, decodeBrowserResult, snapshotCorrelationArgs } from './native/browser-decode.ts';
+import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
-import { EngineChannel } from './native/engine-channel.ts';
+import { EngineChannel, isUnavailableBlobRead } from './native/engine-channel.ts';
+import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-aliases.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
-import type { EngineCommandMap, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
+import type { EngineCommandMap, NativeImage, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
 import type { NativeClient } from './native/client.ts';
 import { connectNativeProcess } from './native/process.ts';
 import type { NativeEvent } from './native/protocol.ts';
@@ -98,6 +99,7 @@ export class NativeSurface implements NativeWebSurface {
   private registryHighWater = 0;
   private registryCurrent = 0;
   private readonly usedContexts = new Set<string>();
+  private readonly references = new NativeReferenceAliases();
   private readonly listeners = new Map<keyof BrowserEventMap, Set<Listener>>();
 
   constructor(private readonly options: WebOptions) {
@@ -276,6 +278,7 @@ export class NativeSurface implements NativeWebSurface {
     const attempt = this.attempt ?? this.retiringAttempt;
     const client = this.client; const engine = this.engine; const connecting = this.connecting;
     attempt?.retirement.abort();
+    this.references.retire();
     const finalizedCleanup = attempt?.finalizedVideo?.retire();
     let finalizedCleanupProven = finalizedCleanup === undefined;
     this.attempt = undefined; this.retiringAttempt = attempt; this.listeners.clear(); attempt?.channel?.dispose();
@@ -406,7 +409,7 @@ export class NativeSurface implements NativeWebSurface {
       this.client = client;
       client.onOperationRetired(() => {
         // Retire only cached presentation. Routes, recordings, downloads, and the exact owner survive.
-        if (this.client === client && this.attempt !== undefined) delete this.attempt.observationHighWater;
+        if (this.client === client && this.attempt !== undefined) { delete this.attempt.observationHighWater; this.references.retire(); }
       });
       client.onFinalizedRecording((owner, download, endsAt) => {
         const ownerAttempt = this.attempt;
@@ -521,6 +524,7 @@ export class NativeSurface implements NativeWebSurface {
     if (event.event === 'app.navigation') {
       const kind = payload['kind']; const url = payload['url']; const frameName = payload['frameName'];
       if ((kind !== 'main' && kind !== 'popup' && kind !== 'popup-navigation' && kind !== 'frame') || typeof url !== 'string' || (frameName !== undefined && typeof frameName !== 'string')) throw this.invalidate();
+      if (kind === 'main') this.references.retire();
       if (kind === 'popup') attempt.context.navigation(`the app opened a new tab${url === 'about:blank' ? '' : ` at ${url}`}; the test stays on its page`);
       else if (kind === 'popup-navigation') { if (url !== 'about:blank' && url !== 'about:srcdoc' && !url.startsWith('data:')) attempt.context.navigation(`the new tab navigated to ${url}`); }
       else if (url !== 'about:blank' && url !== 'about:srcdoc' && !url.startsWith('data:') && payload['initiatedByOperation'] !== true) attempt.context.navigation(kind === 'frame' ? `frame${frameName ? ` "${frameName}"` : ''} loaded ${url}` : `navigated to ${url}`);
@@ -595,10 +599,13 @@ export class NativeSurface implements NativeWebSurface {
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {
     const attempt = this.requireAttempt();
-    if (name === 'fixture.correlate') args = snapshotCorrelationArgs(args) as BrowserCommandMap[K]['args'];
+    const correlationOwner = name === 'fixture.correlate' ? this.referenceOwner() : undefined;
+    const correlation = correlationOwner === undefined ? undefined : this.references.correlation(correlationOwner, args);
+    if (correlation !== undefined) args = correlation.args as BrowserCommandMap[K]['args'];
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     this.assertAttempt(attempt);
     if (attempt.channel === undefined) throw invalidState('The native browser scope is not ready');
+    if (correlationOwner !== undefined && !correlationOwner.owns()) throw new EngineError('NODE_STALE', 'The correlation reference owner has retired', { retryable: true });
     if (name === 'download.read') {
       const read = args as BrowserCommandMap['download.read']['args'];
       const bytes = await this.providerDownload(attempt, read.handle, operation);
@@ -613,7 +620,11 @@ export class NativeSurface implements NativeWebSurface {
     const result = await withinAttemptRequest(operation, attempt, current => channel.command(name, args, current));
     this.assertAttempt(attempt);
     if ((name.startsWith('page.') && name !== 'page.navigate' || name.startsWith('input.') || name === 'fixture.correlate') && attempt.epoch !== pageEpoch) throw new EngineError('NODE_STALE', 'The application page changed during the operation', { retryable: true });
-    if (name === 'fixture.correlate') this.assertPublication(client, publication);
+    if (name === 'fixture.correlate') {
+      this.assertPublication(client, publication);
+      const correlated = result as BrowserCommandMap['fixture.correlate']['result'];
+      return { ...correlated, matches: correlation!.project(correlated.matches) } as BrowserCommandMap[K]['result'];
+    }
     if (name === 'page.navigate' || name === 'page.reload' || name === 'page.back' || name === 'page.forward') this.tellEnvironment(attempt);
     if (name === 'network.routes.replace') this.registryCurrent = (args as BrowserCommandMap['network.routes.replace']['args']).version;
     return result;
@@ -674,6 +685,7 @@ export class NativeSurface implements NativeWebSurface {
     return result;
   }
   async observe(operation: OperationContext, options: EngineObserveOptions = {}): Promise<EngineSnapshot> {
+    const optionalPixels = options.pixels === true;
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
     const epoch = attempt.epoch; const client = this.requireClient(); const publication = client.publicationCheckpoint();
@@ -688,23 +700,69 @@ export class NativeSurface implements NativeWebSurface {
         highWater = { epoch, scope, client, revision }; attempt.observationHighWater = highWater;
       } else if (revision > highWater.revision) highWater.revision = revision;
     }
-    const pixels = snapshot.pixels === undefined ? undefined : { data: await engine.readBlob(snapshot.pixels, scope, operation, () => this.attempt === attempt && this.client === client && attempt.scope === scope && attempt.epoch === epoch), mediaType: snapshot.pixels.mediaType, width: snapshot.pixels.width, height: snapshot.pixels.height, scale: snapshot.pixels.scale };
+    const owns = () => this.attempt === attempt && this.client === client && attempt.scope === scope && attempt.epoch === epoch;
+    const data = snapshot.pixels === undefined ? undefined
+      : optionalPixels && snapshot.treeUnavailable !== true
+        ? await this.optionalObservationPixels(snapshot.pixels, scope, operation, attempt, engine, owns)
+        : await engine.readBlob(snapshot.pixels, scope, operation, owns);
+    const pixels = data === undefined || snapshot.pixels === undefined ? undefined : { data, mediaType: snapshot.pixels.mediaType, width: snapshot.pixels.width, height: snapshot.pixels.height, scale: snapshot.pixels.scale };
     this.assertScope(attempt, scope); this.assertBudget(operation);
     this.assertObservationOwner(attempt, scope, epoch, client);
     this.assertPublication(client, publication);
     // Recovery and operation retirement never bypass exact blob cleanup.
     if (attempt.recoveryPending) throw new EngineError('NODE_STALE', 'observation capture was retired by browser recovery', { retryable: true });
     if (highWater !== undefined && revision < highWater.revision) throw new EngineError('NODE_STALE', 'observation capture was superseded', { retryable: true });
-    // Only this public return grants point input, never native capture or partial pixel transfer.
+    if (snapshot.treeUnavailable === true) this.references.retire();
+    const aliases = this.references.capture(this.referenceOwner(), [snapshot.root], snapshot.viewportRef, snapshot.treeUnavailable === true ? 'pixels' : 'observe');
+    // Only this complete public return grants point input, never a partial capture.
     attempt.recoveryObservationRequired = false;
-    return { identityScope: scope, root: snapshot.root, viewport: snapshot.viewport,
-      ...(snapshot.viewportRef === undefined ? {} : { viewportRef: snapshot.viewportRef }),
+    return { identityScope: scope, root: aliases.nodes[0]!, viewport: snapshot.viewport,
+      ...(aliases.viewport === undefined ? {} : { viewportRef: aliases.viewport }),
       ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
       ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }),
       ...(snapshot.treeUnavailable === true ? { treeUnavailable: true as const } : {}),
-      ...(snapshot.maskedRegionCount === undefined ? {} : { maskedRegionCount: snapshot.maskedRegionCount }),
+      ...(snapshot.maskedRegionCount === undefined || (snapshot.pixels !== undefined && pixels === undefined) ? {} : { maskedRegionCount: snapshot.maskedRegionCount }),
       ...(pixels === undefined ? {} : { pixels }),
     };
+  }
+  /** Optional bytes cannot make an already validated semantic receipt wait for transfer cleanup. */
+  private async optionalObservationPixels(image: NativeImage, scope: string, operation: OperationContext, attempt: Attempt, engine: EngineChannel, owns: () => boolean): Promise<Buffer | undefined> {
+    const remaining = operation.timeoutMs;
+    // One timer tick for the synchronous publication checks, not a new capture budget.
+    const timeoutMs = remaining - Math.min(1, remaining / 5);
+    const cutoff = new AbortController();
+    const latch = this.latch;
+    let delivered = false;
+    const signal = AbortSignal.any([operation.signal, attempt.retirement.signal]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let completeRead!: (bytes: Buffer | undefined) => void;
+    let rejectRead!: (cause: unknown) => void;
+    const read = new Promise<Buffer | undefined>((resolve, reject) => { completeRead = resolve; rejectRead = reject; });
+    const expired = new Promise<undefined>(resolve => {
+      timer = setTimeout(() => { resolve(undefined); cutoff.abort(); }, timeoutMs);
+    });
+    // Registration covers readBlob's finally too. Retirement joins this exact
+    // old transfer even when optional acceptance has already closed.
+    const transfer = withinAttemptRequest({ ...operation, signal: AbortSignal.any([signal, cutoff.signal]), timeoutMs }, attempt,
+      current => engine.readBlob(image, scope, current, owns, {
+        complete: completeRead,
+        fail: cause => {
+          // Neither validated bytes nor a read failure waits for readonly cleanup.
+          if (isUnavailableBlobRead(cause)) completeRead(undefined); else rejectRead(cause);
+        },
+      })).catch((cause: unknown) => {
+      if (isUnavailableBlobRead(cause)) return undefined;
+      if (delivered && owns() && !(cause instanceof EngineError && (cause.code === 'CANCELLED' || cause.code === 'OPERATION_TIMEOUT'))) {
+        latch.latch(cause instanceof Error ? cause : invalidState('Late optional pixel transfer failed'));
+      }
+      throw cause;
+    });
+    try {
+      const bytes = await raceAbort(() => Promise.race([read, transfer, expired]), signal, 'native optional pixel transfer');
+      delivered = true;
+      return bytes;
+    }
+    finally { clearTimeout(timer); cutoff.abort(); }
   }
   async locate(expression: LocatorExpression, operation: OperationContext, options?: EngineLocateOptions): Promise<readonly SemanticNode[]> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
@@ -713,7 +771,7 @@ export class NativeSurface implements NativeWebSurface {
     if (result.identityScope !== scope) throw this.invalidate();
     this.assertPublication(client, publication);
     this.assertObservationOwner(admitted.attempt, scope, pageEpoch, client);
-    return result.nodes;
+    return this.references.capture(this.referenceOwner(), result.nodes, undefined, 'locate').nodes;
   }
   async readFields(expression: LocatorExpression, fields: readonly EngineReadField[], operation: OperationContext): Promise<readonly EngineFieldValues[]> {
     fields = Object.freeze([...fields]);
@@ -728,6 +786,7 @@ export class NativeSurface implements NativeWebSurface {
   }
   async perform(ref: NodeRef, action: LocatorAction, operation: OperationContext): Promise<void> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
+    ({ ref, action } = this.references.action(this.referenceOwner(), ref, action));
     if (action.kind !== 'setInputFiles') { await this.engineCommand('browser.perform', { identityScope: this.identityScope, ref, action }, operation); await this.screenAfterAction(operation, admitted.attempt, admitted.scope); return; }
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
     const selection = await selectUploadFiles(action.paths.map(file => this.projectPath(file)), operation);
@@ -949,12 +1008,23 @@ export class NativeSurface implements NativeWebSurface {
       this.assertBudget(trace); this.assertObservationOwner(attempt, scope, epoch, client); this.assertPublication(client, publication);
       if (snapshot.identityScope !== scope || attempt.recoveryPending || this.latch.hasPending()
         || attempt.observationHighWater !== highWater || highWater?.revision !== revision) return;
-      attempt.context.screen({ identityScope: scope, root: snapshot.root,
-        ...(snapshot.viewportRef === undefined ? {} : { viewportRef: snapshot.viewportRef }),
+      const aliases = this.references.trace([snapshot.root], snapshot.viewportRef);
+      attempt.context.screen({ identityScope: scope, root: aliases.nodes[0]!,
+        ...(aliases.viewport === undefined ? {} : { viewportRef: aliases.viewport }),
         viewport: snapshot.viewport,
         ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
         ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }) });
     } catch { /* Optional live trace never consumes callback failures or fails the action. */ }
+  }
+
+  /** A textual scope alone cannot revive evidence after reconnect or page replacement. */
+  private referenceOwner(): ReferenceOwner {
+    const attempt = this.requireAttempt(); const client = this.requireClient();
+    const scope = attempt.scope; const epoch = attempt.epoch; const publication = client.publicationCheckpoint();
+    return { attempt, client, scope, epoch, publication,
+      owns: () => this.attempt === attempt && this.client === client && attempt.scope === scope
+        && attempt.epoch === epoch && client.publicationCheckpoint() === publication
+        && !attempt.retirement.signal.aborted && !attempt.recoveryPending };
   }
 
   private callbackIsCurrent(): boolean { const owner = this.callbackOwner.getStore(); return owner === undefined || (owner.notRevoked() && this.attempt === owner.attempt && owner.attempt.epoch === owner.epoch); }

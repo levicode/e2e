@@ -277,8 +277,11 @@ A redacted snapshot of the screen (roles, names, text, states), prior-step
 summaries, and your context; never raw HTML, cookies, headers, environment
 values, or a `Secret`'s value; password fields masked. The first
 screen of a step arrives whole; later action results report what changed,
-keyed by node ids stable while an element exists, or the whole screen when
-most changed. Pixels arrive through `vision` on a judgment or the act loop's
+keyed by the engine's node IDs, or the whole screen when most changed.
+Screen text prefixes IDs with `#`; Web uses `nN` and the main document's
+`root`. Copy the observed ID unchanged into actions, never a native browser
+reference or an ID from a retired scope. Pixels arrive through `vision` on
+a judgment or the act loop's
 `screenshot` and point tools, masked and withheld after a secret fill. When
 the browser engine's tree capture times out, the model gets a screenshot and
 a warning, a judgment needs `vision: true`, and no control may be inferred

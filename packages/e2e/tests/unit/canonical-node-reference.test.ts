@@ -20,17 +20,17 @@ function screen(rootId: string, buttonId: string) {
   return prepareObservation(raw, { redact: text => text, redactCut: text => text, maxBytes: 4_096 });
 }
 
-describe('canonical engine references', () => {
-  it('renders an engine-supplied reference without adding another sigil', () => {
-    expect(screen('@e1', '@e7').text).toContain('@e7 button "Save"');
-    expect(screen('@e1', '@e7').text).not.toContain('#@');
+describe('engine-independent public reference grammar', () => {
+  it('renders every engine-supplied ID with the original public # prefix', () => {
+    expect(screen('@e1', '@e7').text).toContain('#@e7 button "Save"');
+    expect(screen('n1', 'n7').text).toContain('#n7 button');
     expect(screen('root', 'mobile7').text).toContain('#mobile7 button');
   });
 
   it('retains the same ID in custom-executor trees and point feedback', () => {
     const observation = screen('@e1', '@e7');
-    expect(nodeLine(observation, '@e7')).toBe('@e7 button "Save"');
-    expect(nodeLine({ text: '' }, '@e7')).toBe('@e7');
+    expect(nodeLine(observation, '@e7')).toBe('#@e7 button "Save"');
+    expect(nodeLine({ text: '' }, '@e7')).toBe('#@e7');
     expect(nodeLine(screen('root', 'mobile7'), 'mobile7')).toBe('#mobile7 button "Save"');
     if (observation.kind !== 'semantic') throw new Error('expected semantic observation');
     expect(projectTree(observation.tree).children?.[0]?.id).toBe('@e7');
@@ -38,10 +38,10 @@ describe('canonical engine references', () => {
 
   it('tracks canonical IDs in incremental screen updates', () => {
     const presenter = new ScreenPresenter();
-    presenter.initial({ revision: 'r1', text: '@e1 document\n @e7 button "Save"', truncated: false, viewport: { width: 100, height: 100 } });
-    const output = presenter.update({ revision: 'r2', text: '@e1 document\n @e7 button "Saved"', truncated: false, viewport: { width: 100, height: 100 } });
-    expect(output).toContain('changed @e7 button');
-    expect(output).not.toContain('#@');
+    presenter.initial({ revision: 'r1', text: '#@e1 document\n #@e7 button "Save"', truncated: false, viewport: { width: 100, height: 100 } });
+    const output = presenter.update({ revision: 'r2', text: '#@e1 document\n #@e7 button "Saved"', truncated: false, viewport: { width: 100, height: 100 } });
+    expect(output).toContain('changed #@e7 button');
+    expect(output).not.toContain('changed @e7');
   });
 
   it('dispatches the unchanged canonical ID and uses it in action feedback', async () => {
@@ -50,12 +50,12 @@ describe('canonical engine references', () => {
     const tools = createGrammarTools({
       ...context,
       actions: { ...context.actions, tap: async target => { ids.push(target.id); } },
-      observe: async () => ({ revision: 'r1', text: '@e7 button "Save"', truncated: false, viewport: { width: 100, height: 100 } }),
+      observe: async () => ({ revision: 'r1', text: '#@e7 button "Save"', truncated: false, viewport: { width: 100, height: 100 } }),
     });
     const result = await tools['tap']!.execute!({ target: '@e7' }, { toolCallId: 'tap', messages: [], context: undefined });
     expect(ids).toEqual(['@e7']);
-    expect(result).toContain('Tapped @e7.');
-    expect(result).not.toContain('#@');
+    expect(result).toContain('Tapped #@e7.');
+    expect(result).not.toContain('Tapped @e7.');
   });
 
   it('counts controls and ignores ID churn in screen comparison for either grammar', () => {

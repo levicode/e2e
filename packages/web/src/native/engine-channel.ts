@@ -16,6 +16,17 @@ function captureActionErrorContext(action: EngineCommandMap['browser.perform']['
   return kind === undefined ? undefined : { kind, sensitive: action?.kind === 'fill' && action.sensitive === true };
 }
 
+interface BlobReadObserver {
+  readonly complete: (bytes: Buffer) => void;
+  readonly fail: (cause: unknown) => void;
+}
+
+const unavailableBlobReads = new WeakSet<EngineError | TestError>();
+/** Only an exact, clean blob-read refusal proves optional transfer unavailability. */
+export function isUnavailableBlobRead(cause: unknown): boolean {
+  return (cause instanceof EngineError || cause instanceof TestError) && unavailableBlobReads.has(cause);
+}
+
 /** No retries, backend implementation, or alternative process transport. */
 export class EngineChannel {
   constructor(private readonly client: NativeClient, private readonly captureScope: (scope: string) => () => boolean = () => () => true) {}
@@ -73,14 +84,17 @@ export class EngineChannel {
         if (facts === undefined || selector === undefined) throw this.client.invalidate();
         frameDiagnostic = { selector, index: facts.index, count: facts.count };
       }
-      throw resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
+      const cause = resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
+      if (name === 'blob.read' && result.effects === 'not-dispatched' && result.scopeState === 'usable'
+        && (result.error?.code === 'deadline-exceeded' || result.error?.code === 'capacity-exceeded')) unavailableBlobReads.add(cause);
+      throw cause;
     }
     try { return decodeEngineResult(name, result.data, args); }
     catch { throw this.client.invalidate(); }
   }
 
-  /** Read exact bytes, verify the final digest, and retire the scoped handle once. */
-  async readBlob(blob: NativeBlob, expectedScope: string, operation: OperationContext, pageOwner?: () => boolean): Promise<Buffer> {
+  /** Verify exact bytes before notifying optional waiters; the returned promise also owns handle retirement. */
+  async readBlob(blob: NativeBlob, expectedScope: string, operation: OperationContext, pageOwner?: () => boolean, observer?: BlobReadObserver): Promise<Buffer> {
     const capturedScope = this.captureScope(expectedScope);
     const capturedOwner = () => capturedScope() && (pageOwner?.() ?? true);
     const notRevoked = this.client.recoveryRevocationGuard();
@@ -110,10 +124,12 @@ export class EngineChannel {
         chunks.push(bytes); hash.update(bytes); offset = chunk.nextOffset;
         if (chunk.eof) {
           if (offset !== blob.size || hash.digest('hex') !== blob.sha256) throw this.client.invalidate();
-          return Buffer.concat(chunks, offset);
+          const data = Buffer.concat(chunks, offset);
+          observer?.complete(data);
+          return data;
         }
       }
-    } catch (cause) { failed = true; throw cause; }
+    } catch (cause) { failed = true; observer?.fail(cause); throw cause; }
     finally { await this.releaseBlob(blob.handle, operation, failed, expectedScope, owns); }
   }
 

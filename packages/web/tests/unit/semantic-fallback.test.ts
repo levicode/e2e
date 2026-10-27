@@ -179,7 +179,7 @@ describe('native fallback adapter ownership', () => {
     expect(peer.requests.slice(start).map(request => request.command)).toEqual(['browser.observe', 'page.title']);
   });
 
-  it('collects a minimal fresh fallback and forwards old refs unchanged for native stale refusal', async () => {
+  it('collects a minimal fresh fallback and retires earlier public refs', async () => {
     const bytes = Buffer.from('synthetic-pixel-transfer');
     const oldRef = { id: '@e1', revision: '1' };
     const viewportRef = { id: '@e2', revision: '1' };
@@ -188,7 +188,8 @@ describe('native fallback adapter ownership', () => {
       if (request.command === 'browser.observe') return { data: ++observations === 1
         ? { identityScope: 'scope', revision: '1', viewport: { width: 100, height: 80 }, viewportRef, root: { ref: oldRef, role: 'document' } }
         : fallbackSnapshot(bytes, '2') };
-      if (request.command === 'browser.perform') return { error: 'stale-reference' };
+      if (request.command === 'browser.perform') return { data: null };
+      if (request.command === 'browser.trace') return { data: { identityScope: 'scope', revision: '2', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e900', revision: '2' }, role: 'document' } } };
       return fallbackTransfer(request, bytes);
     });
     const before = await surface.observe(operation());
@@ -196,19 +197,24 @@ describe('native fallback adapter ownership', () => {
     const options = { pixels: true, pixelFallback: true };
     const fallback = await surface.observe(operation(), options);
     expect(fallback).toEqual({
-      identityScope: 'scope', root: { ref: { id: '@e3', revision: '2' } },
-      viewport: { width: 100, height: 80 }, viewportRef: before.viewportRef,
+      identityScope: 'scope', root: { ref: { id: 'root', revision: 'r3' } },
+      viewport: { width: 100, height: 80 }, viewportRef: { id: 'n4', revision: '1' },
       location: 'https://app.test/current', treeUnavailable: true, truncated: true, maskedRegionCount: 1,
       pixels: { data: bytes, mediaType: 'image/png', width: 100, height: 80, scale: 1 },
     });
     expect(fallback.root.ref).not.toEqual(before.root.ref);
-    expect(before.root.ref).toEqual(oldRef);
+    expect(before.root.ref).toEqual({ id: 'root', revision: 'r1' });
+    expect(fallback.viewportRef).not.toEqual(before.viewportRef);
     expectFallbackTransfer(peer.requests.slice(start), options);
-    // This checks authority forwarding, not synthetic proof that a renderer
-    // retired refs. The public fault test proves actual observed/located staleness.
+    // Publication retires earlier public aliases even when a native viewport ID
+    // repeats. Only the newly returned viewport can acquire its exact authority.
     await expect(surface.perform(before.root.ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+    await expect(surface.perform(before.viewportRef!, { kind: 'swipe', direction: 'down' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+    expect(peer.requests.slice(start + 4)).toEqual([]);
+    await surface.perform(fallback.viewportRef!, { kind: 'swipe', direction: 'down' }, operation());
     expect(peer.requests.slice(start + 4).map(request => [request.command, request.args])).toEqual([
-      ['browser.perform', { identityScope: 'scope', ref: oldRef, action: { kind: 'tap' } }],
+      ['browser.perform', { identityScope: 'scope', ref: viewportRef, action: { kind: 'swipe', direction: 'down' } }],
+      ['browser.trace', { identityScope: 'scope', options: {}, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' }],
     ]);
     expect(observations).toBe(2);
   });
@@ -220,7 +226,7 @@ describe('native fallback adapter ownership', () => {
     const start = peer.requests.length;
     const options = { pixelFallback: true };
     const fallback = await surface.observe(operation(), options);
-    expect(fallback.root).toEqual({ ref: { id: '@e3', revision: '1' } });
+    expect(fallback.root).toEqual({ ref: { id: 'root', revision: 'r1' } });
     expect(fallback).toMatchObject({ treeUnavailable: true, truncated: true, maskedRegionCount: 1 });
     expect(fallback.pixels?.data).toEqual(bytes);
     expectFallbackTransfer(peer.requests.slice(start), options);

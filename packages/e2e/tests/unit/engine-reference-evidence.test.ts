@@ -124,4 +124,12 @@ describe('exact engine revision provenance', () => {
     expect(() => evidence.resolve({ id: 'missing', revision: 'b2' })).toThrow();
     expect(evidence.resolve({ id: '@e2', revision: '41' })).toEqual({ id: '@e2', revision: '41' });
   });
+  it('does not let locator churn evict observed revision evidence', () => {
+    const evidence = new ReferenceEvidence(true); evidence.scopeOf('scope-a');
+    evidence.capture([{ ref: { id: 'observed', revision: 'native-observed' } }], 'b1');
+    for (let i = 0; i <= 16_384; i++) evidence.capture([{ ref: { id: `located-${i}`, revision: 'native-located' } }], `l${i}`, undefined, 'locate');
+    expect(evidence.resolve({ id: 'observed', revision: 'b1' })).toEqual({ id: 'observed', revision: 'native-observed' });
+    expect(() => evidence.resolve({ id: 'located-0', revision: 'l0' })).toThrow();
+  });
+
 });
