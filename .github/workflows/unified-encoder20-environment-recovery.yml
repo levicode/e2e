@@ -1,0 +1,105 @@
+name: Exact encoder20 environment recovery
+'on':
+  push:
+    branches:
+    - implement/unified-encoder20-environment-recovery-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: unified-encoder20-environment-recovery-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 2ba6a58f785850c2197f84b073711bb4f80488cb
+  NATIVE_SOURCE_TREE: 64e6ae4ba52f322dba9a5c347ace797c8ef20039
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  encoder20:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Validate installed encoder with actual encode and decode
+      timeout-minutes: 15
+      run: "set -euo pipefail\nmkdir -p evidence\ndate -u +%FT%TZ > evidence/encoder-install.started\n\
+        cat /etc/os-release > evidence/encoder-host.txt\nprobe() {\n command -v ffmpeg\
+        \ >/dev/null && command -v ffprobe >/dev/null || return 1\n timeout 20 ffmpeg\
+        \ -v error -f lavfi -i color=c=black:s=64x64:d=0.2 -c:v libvpx -y \"$RUNNER_TEMP/encoder-preflight.webm\"\
+        \ || return 1\n timeout 10 ffprobe -v error -show_entries stream=codec_name,width,height\
+        \ -of json \"$RUNNER_TEMP/encoder-preflight.webm\" > evidence/encoder-preflight.json\
+        \ || return 1\n timeout 20 ffmpeg -v error -i \"$RUNNER_TEMP/encoder-preflight.webm\"\
+        \ -frames:v 1 -f null - || return 1\n}\nif ! probe > evidence/encoder-first-probe.log\
+        \ 2>&1; then\n timeout 120 sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20\
+        \ -o Acquire::https::Timeout=20 update 2>&1 | tee evidence/encoder-apt-update.log\n\
+        \ timeout 30 apt-get --simulate install ffmpeg > evidence/encoder-default-plan.log\n\
+        \ timeout 30 apt-get --simulate --no-install-recommends install ffmpeg > evidence/encoder-minimal-plan.log\n\
+        \ python3 - <<'PY_PLANS'\nimport pathlib,json\np=pathlib.Path('evidence')\n\
+        def names(f):return sorted({x.split()[1] for x in (p/f).read_text().splitlines()\
+        \ if x.startswith('Inst ')})\na=names('encoder-default-plan.log');b=names('encoder-minimal-plan.log');assert\
+        \ set(b)<=set(a)\njson.dump({'defaultCount':len(a),'noRecommendsCount':len(b),'retained':b,'removedRecommendedOnly':sorted(set(a)-set(b))},open(p/'encoder-package-plan.json','w'),indent=2)\n\
+        PY_PLANS\n timeout 600 sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20\
+        \ -o Acquire::https::Timeout=20 --no-install-recommends install -y ffmpeg\
+        \ 2>&1 | tee evidence/encoder-apt-install.log\n probe > evidence/encoder-final-probe.log\
+        \ 2>&1\nfi\nffmpeg -version > evidence/ffmpeg-version.txt\nffprobe -version\
+        \ > evidence/ffprobe-version.txt\nsha256sum \"$(readlink -f \"$(command -v\
+        \ ffmpeg)\")\" \"$(readlink -f \"$(command -v ffprobe)\")\" > evidence/encoder-binaries.sha256\n\
+        date -u +%FT%TZ > evidence/encoder-install.finished\ndpkg-query -W -f='${Package}\
+        \ ${Version}\\n' > evidence/installed-packages.txt\n"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: '12739179422'
+        path: native-harness
+        merge-multiple: true
+        run-id: '40515709946'
+        github-token: ${{ github.token }}
+    - name: Verify exact same-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: 7b4f61e02e770c33f30b694e070632bd1519f1e30213c4a23f542797d6c1278a
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "40515709946"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Run exactly 20 real encoder contracts, not Chrome evidence
+      run: python3 scripts/ci/run-encoder-contracts.py native-harness/agent-browser-tests
+        evidence/encoder20 scripts/ci/encoder-contracts-inventory.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: failed-video-encoder19-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
