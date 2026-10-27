@@ -1,8 +1,8 @@
-name: Pending popup retirement baseline three exact tests
+name: Pending popup retirement baseline corrected managed fixture
 'on':
   push:
     branches:
-    - ci/pending-popup-retirement-baseline
+    - ci/pending-popup-retirement-baseline-fixture
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -10,8 +10,8 @@ concurrency:
   group: pending-popup-baseline-${{ github.ref }}
   cancel-in-progress: false
 env:
-  NATIVE_SOURCE_SHA: 071e5f42a5dfb6e0c2da77192be3fa4d214eb245
-  NATIVE_SOURCE_TREE: 8f4791391b6aebe24057c670decdcbd22c598cbd
+  NATIVE_SOURCE_SHA: 6319ab20917d2927a7ee6468d36a9c8b97858a5c
+  NATIVE_SOURCE_TREE: a2c587338d4353c637ba00e8064e95048099586a
 jobs:
   baseline-three:
     runs-on: ubuntu-24.04
