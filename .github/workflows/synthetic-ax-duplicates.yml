@@ -1,0 +1,173 @@
+name: Independent single synthetic AX duplicate control
+'on':
+  push:
+    branches:
+    - ci/synthetic-ax-duplicates
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: synthetic-ax-duplicates-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  synthetic-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 2
+    - name: Verify exact source and reviewed helper identities
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+        test "$(git rev-parse HEAD^)" = d70bef871b14128e741aca65a1e9a4a1706d8ebf
+
+        mkdir -p evidence
+
+        test "$(git rev-parse HEAD:.github/native-candidate.json)" = e2452da9c60616ad882e91388739a44e4360cce1
+
+        test "$(git rev-parse HEAD:apps/testbed/app)" = f46cbba9c141e82932137da3a4ba8e32c438e348
+
+        test "$(git rev-parse HEAD:package.json)" = 1e5d90fe0df18a0093a3848a8c231894a6c10c87
+
+        test "$(git rev-parse HEAD:packages/web/package.json)" = 95967b4f7acbedc1cba578c470fda99fa1dfc9ec
+
+        test "$(git rev-parse HEAD:pnpm-lock.yaml)" = d4b79cb9bf29acbc4c88c56778b0962f9620fe46
+
+        test "$(git rev-parse HEAD:scripts/ci/browser-recovery-runtime-pins.json)" = 0b25c03909f3f52a8475cd64f379862750592d2a
+
+        test "$(git rev-parse HEAD:scripts/ci/download-browser-recovery-runtime.py)" = b485dfa85d83a4a53e35e3b84e2770d12ca7f336
+
+        test "$(git rev-parse HEAD:scripts/ci/native-runtime.ts)" = 37f92fe3f0fa7c016ff66b732b33039cd38e2a24
+
+        test "$(git rev-parse HEAD:scripts/ci/verify-browser-recovery-runtime.ts)" = 6389a4483f7991e36462268cef622c91793b1bdc
+
+        git rev-parse HEAD > evidence/source.sha
+
+        git rev-parse HEAD^{tree} > evidence/source.tree
+
+        echo "E2E_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+        echo "E2E_SOURCE_TREE=$(git rev-parse HEAD^{tree})" >> "$GITHUB_ENV"
+
+        echo "72db519f0c3f0e7e11c6a468b15e971ed5d5566ce658ee4452abf35dea922cd6  scripts/ci/synthetic-ax/test-ax-duplicate-summary.mjs" | sha256sum -c -
+
+        echo "98ce850a9ddc3262efba969db344e6a2f271ea83a32495a6c0d66da49e8bbd08  scripts/ci/synthetic-ax/collect-synthetic-ax-duplicates.mjs" | sha256sum -c -
+
+        echo "61abd76747b5a0280218129de123e1dcaff65cfbc618c67f0386de03f4d62433  scripts/ci/synthetic-ax/ax-duplicate-summary.mjs" | sha256sum -c -
+
+        sha256sum scripts/ci/synthetic-ax/*.mjs .github/workflows/synthetic-ax-duplicates.yml pnpm-lock.yaml > evidence/recipe-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        cache: pnpm
+    - name: Install frozen dependencies
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY DEBUG PWDEBUG
+
+        pnpm install --frozen-lockfile
+
+        '
+    - name: Restore reviewed immutable ordinary installer
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'python3 scripts/ci/download-browser-recovery-runtime.py
+
+        '
+    - name: Verify producer manifest and binary
+      run: 'unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY DEBUG PWDEBUG
+
+        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+
+        '
+    - name: Install original pinned Chrome with existing ordinary installer
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY DEBUG PWDEBUG
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps
+
+        '
+    - name: Select exact Chrome binary without extra browser launch
+      run: 'python3 - <<''PY_CHROME''
+
+        import pathlib,hashlib,os,json
+
+        expected=''8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80''
+
+        roots=sorted((pathlib.Path.home()/''.agent-browser/browsers'').glob(''chrome-*''))
+
+        paths=[p.resolve() for r in roots for p in (r/''chrome'',r/''chrome-linux64/chrome'') if p.is_file()]
+
+        matches=[p for p in paths if hashlib.sha256(p.read_bytes()).hexdigest()==expected]
+
+        assert len(matches)==1
+
+        assert ''\n'' not in str(matches[0])
+
+        with open(os.environ[''GITHUB_ENV''],''a'') as f:f.write(''AX_CHROME_EXECUTABLE=''+str(matches[0])+''\n'')
+
+        pathlib.Path(''evidence/chrome-pin.json'').write_text(json.dumps({''version'':''156.0.8078.73'',''sha256'':expected})+''\n'')
+
+        PY_CHROME
+
+        '
+    - name: Check reviewed pure classifier
+      run: 'unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY DEBUG PWDEBUG
+
+        node --check scripts/ci/synthetic-ax/collect-synthetic-ax-duplicates.mjs
+
+        node --test scripts/ci/synthetic-ax/test-ax-duplicate-summary.mjs
+
+        '
+    - name: One fresh synthetic control; closed summary only
+      id: control
+      timeout-minutes: 3
+      env:
+        CI: 'true'
+        AX_SYNTHETIC_DIAGNOSTIC: '1'
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY DEBUG PWDEBUG
+
+        set +e
+
+        node scripts/ci/synthetic-ax/collect-synthetic-ax-duplicates.mjs > evidence/ax-duplicate-summary.json 2>/dev/null
+
+        s=$?
+
+        printf ''%s\n'' "$s" > evidence/control.exit
+
+        exit "$s"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: synthetic-ax-duplicate-closed-summary
+        path: 'evidence/ax-duplicate-summary.json
+
+          evidence/control.exit
+
+          evidence/recipe-pins.sha256
+
+          evidence/source.sha
+
+          evidence/source.tree
+
+          evidence/chrome-pin.json'
+        if-no-files-found: error
+        retention-days: 7
