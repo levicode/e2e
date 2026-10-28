@@ -114,7 +114,15 @@ it.each([{ ownership: 'borrowed', race: false }, { ownership: 'borrowed', race: 
       await context.route('**/headers', async route => { rawRoutes++; await route.fallback(); });
       await engine.session!.open!(url, operation());
       const oldPage = live.page(); expect(oldPage.context()).toBe(context);
-      await context.addCookies([{ name: 'persistent-value', value: 'kept', url }]);
+      // Paired e557/current run40602169810 proves last-Page close drops
+      // session cookies in pinned Chrome, while expiry cookies remain. Keep
+      // the original session input as evidence; assert persistent storage with
+      // an added expiry control rather than demanding unsupported retention.
+      await context.addCookies([
+        { name: 'persistent-value', value: 'kept', url },
+        { name: 'persistent-expiry', value: 'kept', url, expires: Math.floor(Date.now() / 1000) + 86400 },
+      ]);
+      expect((await context.cookies(url)).map(cookie => cookie.name).toSorted()).toEqual(['persistent-expiry', 'persistent-value']);
       await oldPage.evaluate(() => localStorage.setItem('persistent-value', 'kept'));
       await fixture.setViewport({ width: 801, height: 603 });
       expect(attachedViewports).toEqual([{ width: 801, height: 603, scale: 1 }]);
@@ -192,7 +200,9 @@ it.each([{ ownership: 'borrowed', race: false }, { ownership: 'borrowed', race: 
       expect(context.pages()).toEqual([next]); expect(rawBrowser!.contexts()).toEqual([context]); expect(contextCloseEvents).toBe(0);
       expect(next.viewportSize()).toEqual({ width: 801, height: 603 });
       expect(await next.evaluate(() => ({ local: localStorage.getItem('persistent-value'), configured: (globalThis as typeof globalThis & { configuredCount?: number }).configuredCount, raw: (globalThis as typeof globalThis & { rawCount?: number }).rawCount, dark: matchMedia('(prefers-color-scheme: dark)').matches, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches }))).toEqual({ local: 'kept', configured: 1, raw: 1, dark: true, reduce: true });
-      expect((await context.cookies(url)).map(cookie => ({ name: cookie.name, value: cookie.value }))).toContainEqual({ name: 'persistent-value', value: 'kept' });
+      const reopenedCookies = await context.cookies(url);
+      expect(reopenedCookies.map(cookie => ({ name: cookie.name, value: cookie.value }))).toContainEqual({ name: 'persistent-expiry', value: 'kept' });
+      evidence['sessionCookieAfterLastPageClose'] = reopenedCookies.some(cookie => cookie.name === 'persistent-value');
       expect(await next.locator('h1').textContent()).toBe('Native and Playwright');
       expect((await engine.locate!({ kind: 'query', query: { kind: 'role', value: { kind: 'string', value: 'heading', exact: true } } }, operation())).map(node => node.name)).toContain('Native and Playwright');
       const selected = await context.newCDPSession(next);
@@ -223,7 +233,7 @@ it.each([{ ownership: 'borrowed', race: false }, { ownership: 'borrowed', race: 
       evidence['contextCloseEvents'] = contextCloseEvents;
       if (host !== undefined) {
         expect(host.isConnected()).toBe(true);
-        expect((await host.contexts()[0]!.cookies()).some(cookie => cookie.name === 'persistent-value' && cookie.value === 'kept')).toBe(true);
+        expect((await host.contexts()[0]!.cookies()).some(cookie => cookie.name === 'persistent-expiry' && cookie.value === 'kept')).toBe(true);
         const session = await host.newBrowserCDPSession();
         try { expect((await session.send('Target.getBrowserContexts')).browserContextIds).toEqual([]); }
         finally { await session.detach(); }
