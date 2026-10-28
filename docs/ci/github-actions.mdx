@@ -27,6 +27,14 @@ defaults, model keys, and exit codes, see [Continuous integration](/ci).
 
 ## Web
 
+The Web job below is a template, not a complete fresh-machine setup. Before its
+browser-install step, add your trusted producer's platform bundle acquisition
+and verified installation step. That step must use an independently trusted
+manifest digest, install the matching core/Web pair and create this project's
+`.e2e/native-runtime.json`. The bundle must remain available for the whole job.
+No public bundle URL or automatic npm runtime installation is assumed here.
+See [Installing browsers](/reference/web#installing-browsers).
+
 This workflow runs deterministic and agent tests in one job. It assumes a
 config [command](/web#starting-your-app) that starts the app, and AI
 Gateway for the model calls. The model key and user credentials come from
@@ -58,6 +66,17 @@ jobs:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # Add the trusted producer's verified platform-bundle install step here.
+      # Package installation alone does not create the runtime descriptor.
+      - name: Require explicit runtime setup
+        run: |
+          test -f .e2e/native-runtime.json || {
+            echo 'Install and verify the matching native runtime bundle before this job runs.'
+            exit 1
+          }
+        # Presence is only a prerequisite check; e2e-web verifies the descriptor
+        # and installed package/binary bytes before invoking the executable.
 
       - name: Install browsers
         run: pnpm exec e2e-web install chromium --with-deps
@@ -92,7 +111,8 @@ jobs:
 
 `npx e2e` runs the version the lockfile installs. The
 [install command](/reference/web#installing-browsers) downloads the browsers
-for the engine's pinned Playwright version, with their system libraries. A
+through the verified native runtime, with their system libraries. Native Chrome
+selection is independent of the pinned Playwright client version. A
 test that passed on retry keeps its failed attempt's evidence in the upload.
 
 ## iOS and Android

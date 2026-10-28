@@ -13,6 +13,7 @@ import { USER_AGENT } from '../../internal/client-identity.ts';
 import { packageVersion } from '../../internal/package-version.ts';
 import { readPackage, serializePackage } from './package.ts';
 import { dependencyRange, recordedSiblingRange } from './versions.ts';
+import type { EngineId } from './engines.ts';
 
 export interface ExamplePreset {
   /** The folder name under `examples/`, which is also the flag value. */
@@ -23,16 +24,18 @@ export interface ExamplePreset {
   readonly script: string;
   /** Whether the app has to be built and installed on a device before the tests run. */
   readonly build: boolean;
+  /** Engines used by the advertised example run; setup is not inferred from config code. */
+  readonly setupEngines?: readonly EngineId[];
 }
 
 /** Every standalone app under `examples/`. `with-limrun` is left out: it reuses the SwiftUI and Compose apps. */
 export const EXAMPLES: readonly ExamplePreset[] = [
-  { id: 'with-vite', project: '.', script: 'test:e2e', build: false },
-  { id: 'with-next', project: '.', script: 'test:e2e', build: false },
-  { id: 'with-astro', project: '.', script: 'test:e2e', build: false },
-  { id: 'with-angular', project: '.', script: 'test:e2e', build: false },
+  { id: 'with-vite', setupEngines: ['web'], project: '.', script: 'test:e2e', build: false },
+  { id: 'with-next', setupEngines: ['web'], project: '.', script: 'test:e2e', build: false },
+  { id: 'with-astro', setupEngines: ['web'], project: '.', script: 'test:e2e', build: false },
+  { id: 'with-angular', setupEngines: ['web'], project: '.', script: 'test:e2e', build: false },
   // The web target starts the dev server itself; the device targets need a build first.
-  { id: 'with-expo', project: '.', script: 'test:e2e:web', build: false },
+  { id: 'with-expo', setupEngines: ['web'], project: '.', script: 'test:e2e:web', build: false },
   { id: 'with-swiftui', project: 'e2e', script: 'test:e2e', build: true },
   { id: 'with-compose', project: 'e2e', script: 'test:e2e', build: true },
   { id: 'with-kotlin-multiplatform', project: 'e2e', script: 'test:e2e:android', build: true },

@@ -116,6 +116,13 @@ describe('example presets', () => {
     }
   });
 
+  it('declares setup only for known Web example entry points', () => {
+    expect(EXAMPLES.filter(example => example.setupEngines?.includes('web')).map(example => example.id)).toEqual([
+      'with-vite', 'with-next', 'with-astro', 'with-angular', 'with-expo',
+    ]);
+    expect(EXAMPLES.filter(example => example.build).every(example => example.setupEngines === undefined)).toBe(true);
+  });
+
   it('accept the folder name with or without with-', () => {
     expect(findExample('expo')?.id).toBe('with-expo');
     expect(findExample('with-flutter')?.id).toBe('with-flutter');
@@ -175,7 +182,21 @@ describe('e2e init --example', () => {
     expect(existsSync(path.join(target, '.mcp.json'))).toBe(true);
     expect(readFileSync(path.join(target, '.gitignore'), 'utf8')).toContain('.e2e/results/');
     expect(output()).not.toContain('Add scripts');
-    expect(output()).toContain('Next: cd my-app, then npm install, then npm run test:e2e');
+    expect(output()).toContain('Next: cd my-app, then npm install, then install and verify a matching native runtime bundle with its independently trusted manifest digest (follow the runtime bundle delivery instructions), then npm exec -- e2e-web install chromium, then npm run test:e2e');
+  });
+
+  it('keeps a native example free of Web prerequisites without evaluating its config', async () => {
+    const archive = gzipSync(tar([
+      { name: 'e2e-tag/examples/with-swiftui/e2e/package.json', content: '{"name":"native-example","scripts":{"test:e2e":"e2e run"},"devDependencies":{"e2e":"0.x","@e2e-dev/mobile":"0.x"}}' },
+      { name: 'e2e-tag/examples/with-swiftui/e2e/e2e.config.ts', content: 'throw new Error("config must not execute during init");\n' },
+    ]));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array(archive))));
+    const target = path.join(dir, 'native-app');
+    expect(await init(target, { yes: true, example: 'with-swiftui', skills: [], mcp: [] })).toMatchObject({ result: 'scaffolded', exitCode: 0 });
+    expect(output()).not.toContain('native runtime bundle');
+    expect(output()).not.toContain('e2e-web install');
+    expect(output()).toContain('build and install the app');
+    expect(readFileSync(path.join(target, 'e2e/e2e.config.ts'), 'utf8')).toContain('config must not execute');
   });
 
   it('falls back to main when the tag is missing and says so', async () => {

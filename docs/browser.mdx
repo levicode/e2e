@@ -184,35 +184,19 @@ origin it would go to. When one entry is refused, e2e sets none.
 
 ## Pick a browser
 
-The browser is an option of the engine, `chromium` by default. Two
-browsers on one app are two targets, as in
-[One size per target](/web#one-size-per-target):
+This native backend currently supports Chromium. Its public installer rejects
+`firefox` and `webkit`; changing a browser name does not select an implemented
+alternative backend. The engine/provider extension points remain available for
+separately implemented backends, but are not a claim of acceptance here.
 
-```ts title="Target fragment"
-{ name: 'webkit', engine: web({ browser: 'webkit' }), app },
-```
+Before the first run, install and verify the matching native runtime bundle,
+then explicitly install Chromium as described in
+[Installing browsers](/reference/web#installing-browsers). Installing the npm
+packages or running `e2e init` alone does not satisfy the runtime prerequisite.
 
-In CI, install the extra browser with the
-[install command](/reference/web#installing-browsers):
-
-<CodeGroup>
-```bash npm
-npx @e2e-dev/web install webkit --with-deps
-```
-
-```bash pnpm
-pnpm exec e2e-web install webkit --with-deps
-```
-
-```bash bun
-bunx @e2e-dev/web install webkit --with-deps
-```
-</CodeGroup>
-
-`connect` attaches to a remote Chromium over CDP instead of launching one,
-or to another browser that speaks CDP, such as a running
-[Lightpanda](/integrations/lightpanda).
-To set sizes, see [Viewports](/web#viewports).
+`connect` attaches to a remote Chromium over CDP instead of launching one.
+Other CDP implementations require their own compatibility validation; a shared
+protocol alone does not prove support. To set sizes, see [Viewports](/web#viewports).
 
 ## Hosted browsers
 

@@ -25,6 +25,9 @@ vi.mock('@clack/prompts', { spy: true });
 vi.mock('../../src/cli/skill.ts', { spy: true });
 vi.mock('node:child_process', () => ({ spawnSync: vi.fn() }));
 
+const WEB_PREREQUISITE = 'install and verify a matching native runtime bundle with its independently trusted manifest digest (follow the runtime bundle delivery instructions)';
+const WEB_SETUP = `${WEB_PREREQUISITE}, then npm exec -- e2e-web install chromium, then `;
+
 let dir: string;
 let stdoutSpy: ReturnType<typeof vi.spyOn>;
 /** What each multiselect question answers; a test sets one before calling init. */
@@ -93,7 +96,7 @@ afterEach(() => {
 });
 
 describe('e2e init', () => {
-  it('adds the runner, Playwright, and AI with --yes and does not install or prompt', async () => {
+  it('adds the runner, native Web engine, and AI with --yes and does not install or prompt', async () => {
     expect((await init(dir, { yes: true })).exitCode).toBe(0);
     // The runner pins itself the way it pins engines: a caret on a stable version, exact on a canary.
     const runnerVersion = (JSON.parse(readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')) as { version: string }).version;
@@ -132,7 +135,39 @@ describe('e2e init', () => {
     expect(spawnSync).not.toHaveBeenCalled();
     expect(output()).toContain('Add scripts: test:e2e (e2e run)');
     expect(output()).toContain('No tsconfig.json');
-    expect(output()).toContain('Next: npm install, then APP_URL=http://localhost:3000 npm run test:e2e');
+    expect(output()).toContain(`Next: npm install, then ${WEB_SETUP}APP_URL=http://localhost:3000 npm run test:e2e`);
+  });
+
+  it.each([['web'], ['web', 'mobile']] as const)('requires explicit Web setup for %j without spawning an installer', async (...selected) => {
+    const engines = selected as readonly ('web' | 'mobile')[];
+    await init(dir, { yes: true, engines, gateway: 'none', skills: [], mcp: [], install: false });
+    expect(output()).toContain(`${WEB_SETUP}APP_URL=`);
+    expect(output().split(WEB_PREREQUISITE)).toHaveLength(2);
+    expect(existsSync(path.join(dir, '.e2e/native-runtime.json'))).toBe(false);
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it.each([['mobile'], []] as const)('does not inject Web setup into %j', async (...selected) => {
+    await init(dir, { yes: true, engines: selected as readonly ('mobile')[], gateway: 'none', skills: [], mcp: [], install: false });
+    expect(output()).not.toContain('native runtime bundle');
+    expect(output()).not.toContain('e2e-web install');
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it('does not call an existing descriptor verified or skip explicit Web setup', async () => {
+    mkdirSync(path.join(dir, '.e2e'));
+    writeFileSync(path.join(dir, '.e2e/native-runtime.json'), '{"unverified":true}');
+    await init(dir, { yes: true, gateway: 'none', skills: [], mcp: [], install: false });
+    expect(output()).toContain(WEB_PREREQUISITE);
+    expect(read('.e2e/native-runtime.json')).toBe('{"unverified":true}');
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it('does not print a run-ready next step when dependency installation fails', async () => {
+    vi.mocked(spawnSync).mockReturnValueOnce(spawnResult(1));
+    expect(await init(dir, { yes: true, gateway: 'none', skills: [], mcp: [], install: true })).toMatchObject({ result: 'install-failed', exitCode: 2 });
+    expect(output()).not.toContain('Next:');
+    expect(spawnSync).toHaveBeenCalledExactlyOnceWith('npm', ['install'], expect.objectContaining({ cwd: dir }));
   });
 
   it('hands back what --yes chose, then that a second run had nothing to do', async () => {
@@ -226,7 +261,7 @@ describe('e2e init', () => {
     expect(read('e2e.config.ts').includes('@e2e-dev/mobile')).toBe(device);
     expect(read('tests/example.e2e.ts').includes('@e2e-dev/mobile')).toBe(device);
     expect(read('e2e.config.ts').includes('APP_URL')).toBe(engine === 'web');
-    expect(output()).toContain(`Next: npm install, then ${device ? '' : 'APP_URL=http://localhost:3000 '}npm run test:e2e`);
+    expect(output()).toContain(`Next: npm install, then ${engine === 'web' ? WEB_SETUP : ''}${device ? '' : 'APP_URL=http://localhost:3000 '}npm run test:e2e`);
     expect(spawnSync).not.toHaveBeenCalled();
   });
 
@@ -246,7 +281,7 @@ describe('e2e init', () => {
       initialValues: ['web'],
       required: false,
       options: [
-        expect.objectContaining({ value: 'web', label: 'Web', hint: 'Playwright' }),
+        expect.objectContaining({ value: 'web', label: 'Web', hint: 'native agent-browser (Chromium)' }),
         expect.objectContaining({ value: 'mobile', label: 'Mobile (iOS/Android)', hint: 'agent-device' }),
       ],
     }));
@@ -284,7 +319,7 @@ describe('e2e init', () => {
     expect(read('tests/mobile.e2e.ts')).toContain("// test('the agent opens General', { requires: ['device'] }, async ({ agent, app, device }) => {");
     expect(output()).toContain('  - Create tests/web.e2e.ts\n');
     expect(output()).toContain('  - Create tests/mobile.e2e.ts\n');
-    expect(output()).toContain('Next: npm install, then APP_URL=http://localhost:3000 npm run test:e2e');
+    expect(output()).toContain(`Next: npm install, then ${WEB_SETUP}APP_URL=http://localhost:3000 npm run test:e2e`);
   });
 
   it('offers every gateway and none, and asks an OpenAI-compatible endpoint for its URL', async () => {
@@ -474,7 +509,7 @@ describe('e2e init', () => {
     expect(spawnSync).toHaveBeenCalledExactlyOnceWith('npm', ['install'], {
       cwd: dir, stdio: 'inherit', shell: process.platform === 'win32',
     });
-    expect(output()).toContain('Next: APP_URL=http://localhost:3000 npm run test:e2e');
+    expect(output()).toContain(`Next: ${WEB_SETUP}APP_URL=http://localhost:3000 npm run test:e2e`);
   });
 
   it('writes the selected dependencies when installation is declined', async () => {
@@ -484,7 +519,7 @@ describe('e2e init', () => {
     expect((await init(dir)).exitCode).toBe(0);
     expect(JSON.parse(read('package.json')).devDependencies).toHaveProperty('ai', '^7.0.0');
     expect(spawnSync).not.toHaveBeenCalled();
-    expect(output()).toContain('Next: npm install, then APP_URL=');
+    expect(output()).toContain(`Next: npm install, then ${WEB_SETUP}APP_URL=`);
   });
 
   it.each(['engine', 'gateway', 'endpoint', 'skill', 'mcp', 'files', 'install'])('leaves the directory untouched when cancelling at %s', async (stage) => {
@@ -532,7 +567,7 @@ describe('e2e init', () => {
     vi.mocked(clack.confirm).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     expect((await init(dir)).exitCode).toBe(0);
     expect(JSON.parse(read('package.json')).scripts).toEqual({ 'test:e2e': script });
-    expect(output()).toContain(`Next: npm install, then APP_URL=http://localhost:3000 ${step}`);
+    expect(output()).toContain(`Next: npm install, then ${WEB_SETUP}APP_URL=http://localhost:3000 ${step}`);
   });
 
   it('adds missing dependencies without changing existing fields, ranges, or formatting', async () => {
@@ -596,7 +631,7 @@ describe('e2e init', () => {
     expect(existsSync(path.join(target, 'e2e.config.ts'))).toBe(true);
     expect(existsSync(path.join(target, 'tests', 'example.e2e.ts'))).toBe(true);
     expect(output()).toContain('e2e init apps/web');
-    expect(output()).toContain('Next: cd apps/web, then npm install, then APP_URL=http://localhost:3000 npm run test:e2e');
+    expect(output()).toContain(`Next: cd apps/web, then npm install, then ${WEB_SETUP}APP_URL=http://localhost:3000 npm run test:e2e`);
   });
 
   it('quotes a directory the shell would otherwise split, for the platform it runs on', async () => {

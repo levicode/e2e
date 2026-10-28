@@ -966,6 +966,53 @@ Chromium installer is run only when explicitly requested, as a separate CI or
 image-preparation step. Tests do not download browsers or install Linux system
 libraries implicitly.
 
+Before these commands, obtain a matching platform runtime bundle and its
+manifest SHA-256 from an independently trusted producer. Run that bundle's
+verified installer for this project to install its matching core/Web package
+pair and write `.e2e/native-runtime.json`. Keep the bundle at its installed
+location; the descriptor verifies its contents when resolving the executable.
+The digest must not be trusted merely because it is stored inside the bundle.
+Use the already-installed public CLI with an explicit package manager and a
+local bundle. The target directory must exist and contain a valid package.json:
+
+```bash
+pnpm exec e2e-web runtime install --bundle "$BUNDLE" --manifest-sha256 "$TRUSTED_MANIFEST_SHA256" --package-manager pnpm --project "$PWD"
+# With an already-installed e2e-web on PATH, npm is also supported:
+e2e-web runtime install --bundle "$BUNDLE" --manifest-sha256 "$TRUSTED_MANIFEST_SHA256" --package-manager npm --project "$PWD"
+```
+
+`--project` defaults to the current directory; the other three options are
+required. No package manager is inferred or silently substituted. Both paths
+install the bundle's local core/Web archives with `--ignore-scripts` and
+`--save-exact`, then verify the installed package inventory before writing the
+trust descriptor. An existing descriptor (including a dangling symlink) is
+refused before package installation; a concurrent descriptor is never replaced.
+The `.e2e` parent must be a real project-local directory, not a symlink or file;
+this is checked before package installation and again before writing trust.
+If package installation or inventory verification fails, no descriptor is
+written. Package-manager changes made before failure are not rolled back;
+review the project's package.json and lockfile before retrying. Dependencies
+may still be resolved by the selected package manager; this is not a promise
+of a network-free dependency install. Chromium installation remains separate.
+
+For bootstrapping without an already-installed CLI, the legacy bundle installer
+`install.mjs` still requires pnpm. After verifying the producer and installer
+bytes, use the independently supplied digest and an existing directory. This
+legacy bootstrap also accepts an empty directory; the public CLI requires
+`package.json` and tells empty-directory users to run `e2e init` first:
+
+```bash
+node "$BUNDLE/install.mjs" "$BUNDLE" "$TRUSTED_MANIFEST_SHA256" "$PWD"
+```
+
+`BUNDLE` is the existing trusted local bundle directory, not an inferred download
+URL. Do not replace the independent digest with the bundle's own checksum file.
+
+This integration currently requires that explicit offline bundle step. A plain
+npm/pnpm package install or `e2e init --install` does not obtain a native runtime
+or create a verified descriptor. Do not proceed directly to a Web test in a
+fresh project. No public automatic runtime-download path is claimed here.
+
 <CodeGroup>
 ```bash npm
 npx @e2e-dev/web install chromium --with-deps
@@ -989,6 +1036,13 @@ bunx @e2e-dev/web install chromium --with-deps
   installation and trust verification are separate prerequisites; the developer
   override is `E2E_AGENT_BROWSER_EXECUTABLE`, an absolute trusted executable path.
 - Starting a test never implicitly runs the installer or installs system dependencies.
+- The native installer selects Chrome for Testing Stable, not Playwright's
+  browser revision. Record the actual Chromium version and executable hash in
+  reproducible installation evidence; `playwright-core` is the raw client only.
+- Linux ARM64 needs a separately installed system Chromium and an explicit
+  supported executable configuration; the native Chrome for Testing installer
+  does not supply an ARM64 Linux build. Recording also needs a system FFmpeg
+  with the required encoders; npm package installation does not provide it.
 - Reports display recognized Chromium product versions as `chromium <version>`
   and preserve the configured user-agent text.
 

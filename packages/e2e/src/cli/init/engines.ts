@@ -24,6 +24,8 @@ export interface EnginePreset {
   readonly aiExample: (options: string) => string;
   /** Whether the run hint sets APP_URL, for engines that drive a URL. */
   readonly needsAppUrl: boolean;
+  /** Explicit engine setup before first run; never performed by scaffolding. */
+  readonly setup?: { readonly prerequisite: string; readonly command: string };
 }
 
 /** Builds prompt choices and scaffolds with defaults for the machine running init. */
@@ -33,7 +35,11 @@ export function getEnginePresets() {
     {
       id: 'web',
       label: 'Web',
-      hint: 'Playwright',
+      hint: 'native agent-browser (Chromium)',
+      setup: {
+        prerequisite: 'install and verify a matching native runtime bundle with its independently trusted manifest digest (follow the runtime bundle delivery instructions)',
+        command: 'e2e-web install chromium',
+      },
       dependencies: siblingDependency('@e2e-dev/web'),
       imports: ["import { web } from '@e2e-dev/web';"],
       target: `{

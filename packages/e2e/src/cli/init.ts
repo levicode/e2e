@@ -20,7 +20,7 @@ import {
   splitSkillDirs,
   type SkillInstall,
 } from './init/agent-skill.ts';
-import { getEnginePresets, DEFAULT_ENGINE_IDS, type EngineId } from './init/engines.ts';
+import { getEnginePreset, getEnginePresets, DEFAULT_ENGINE_IDS, type EngineId } from './init/engines.ts';
 import { copyExample, ExampleCopyCancelled, ExampleDownloadError, findExample, isEmptyDirectory, type ExampleCopy } from './init/examples.ts';
 import { DEFAULT_ENDPOINT, GATEWAYS, getGatewayPreset, validateEndpoint, type GatewayId } from './init/gateways.ts';
 import { findRegisteredMcpFiles, MCP_LOCATIONS, planMcpRegistration } from './init/mcp-config.ts';
@@ -429,6 +429,10 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   const next = [
     projectDir === undefined ? undefined : `cd ${shellArgument(projectDir)}`,
     install ? undefined : `${manager} install`,
+    ...(example?.setupEngines ?? engines).flatMap(id => {
+      const setup = getEnginePreset(id).setup;
+      return setup === undefined ? [] : [setup.prerequisite, execCommand(manager, setup.command)];
+    }),
     subscription === undefined ? undefined : execCommand(manager, `e2e login ${subscription}`),
     // A native app's README.md sits beside the e2e/ folder the line has just changed into.
     example?.build === true ? `build and install the app as ${example.project === '.' ? '' : '../'}README.md describes` : undefined,

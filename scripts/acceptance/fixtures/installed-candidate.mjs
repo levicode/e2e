@@ -4,9 +4,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { openHost } from 'e2e/runner';
-import { web } from '@e2e-dev/web';
+import { web, surfaceOf } from '@e2e-dev/web';
 
 assert.equal(process.env.E2E_AGENT_BROWSER_EXECUTABLE, undefined, 'Must use the installed verified runtime descriptor');
+assert.equal(process.env.NODE_PATH, undefined);
+assert.equal(process.env.NODE_OPTIONS, undefined);
 const server = createServer((_request, response) => {
   response.writeHead(200, { 'content-type': 'text/html' });
   response.end('<!doctype html><title>Installed native candidate</title><button onclick="this.textContent=\'Saved\'">Save</button><input type="password" value="synthetic-private-value">');
@@ -28,12 +30,20 @@ async function cleanup() {
 }
 
 try {
-  host = await openHost({ cwd: process.cwd(), config: { targets: [{ name: 'installed', engine: web(), app: { url } }] } });
+  const engine = web();
+  host = await openHost({ cwd: process.cwd(), config: { targets: [{ name: 'installed', engine, app: { url } }] } });
   session = await host.openSession({ name: 'installed candidate public browser contract', timeout: 30_000 });
   const { browser, screen, app } = session.fixtures;
   await app.open();
-  assert.equal(await browser.title(), 'Installed native candidate'); checks++;
-  await screen.getByRole('button', { name: 'Save' }).click();
+  assert.equal(await browser.title(), 'Installed native candidate');
+  const live = surfaceOf(engine);
+  assert.ok(live, 'Installed Web must expose its actual Playwright surface');
+  const page = live.page(); const context = live.context();
+  const browserConnection = context.browser(); assert.ok(browserConnection);
+  assert.equal(page.context(), context);
+  assert.equal(await page.title(), 'Installed native candidate');
+  assert.ok(context.pages().includes(page)); checks++;
+  await screen.getByRole('button', { name: 'Save' }).tap();
   assert.equal(await browser.locator('button').textContent(), 'Saved'); checks++;
   await browser.route('**/callback', async route => {
     assert.equal(await browser.title(), 'Installed native candidate');
@@ -42,12 +52,16 @@ try {
   assert.equal(await browser.evaluate(() => fetch('/callback').then(response => response.text())), 'installed callback'); checks++;
   await browser.setCookies([{ name: 'candidate', value: 'synthetic', url }]);
   assert.ok((await browser.cookies()).some(cookie => cookie.name === 'candidate' && cookie.value === 'synthetic')); checks++;
-  const capture = readFileSync(resolve(session.artifactsDir, await app.screenshot('installed-candidate')));
+  const screenshotPath = resolve(session.artifactsDir, await app.screenshot('installed-candidate'));
+  const capture = readFileSync(screenshotPath);
   assert.equal(capture.subarray(0, 8).toString('hex'), '89504e470d0a1a0a'); checks++;
   assert.deepEqual(await session.close(), []);
+  assert.equal(page.isClosed(), true, 'Session cleanup must close the actual owned Page');
   assert.equal(session.report()?.run.status, 'passed');
-  assert.deepEqual(await host.close(), []); closed = true; checks++;
-  writeFileSync('installed-public-result.json', JSON.stringify({ status: 'passed', checks, runtimeOverrideAbsent: true, publicBrowserActionPassed: true, callbackPassed: true, cleanupConfirmed: true, report: session.report() }, null, 2));
+  assert.deepEqual(await host.close(), []);
+  assert.equal(browserConnection.isConnected(), false, 'Host cleanup must disconnect the actual browser transport');
+  closed = true; checks++;
+  writeFileSync('installed-public-result.json', JSON.stringify({ status: 'passed', checks, screenshotPath, runtimeOverrideAbsent: true, publicBrowserActionPassed: true, callbackPassed: true, surfaceOfPassed: true, locateTapPassed: true, cleanupConfirmed: true, report: session.report() }, null, 2));
 } finally {
   await cleanup();
 }
