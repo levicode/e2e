@@ -25,7 +25,7 @@ function fixture() {
   }) as unknown as BrowserContext;
   const browser = Object.assign(browserEvents, { isConnected: () => true }) as unknown as Browser;
   const page = (id: string, announce = true) => {
-    const next = { context: () => context, isClosed: () => closed.has(next) } as Page;
+    const next = Object.assign(new EventEmitter(), { context: () => context, isClosed: () => closed.has(next) }) as unknown as Page;
     pages.push(next); ids.set(next, id);
     if (announce) contextEvents.emit('page', next);
     return next;
@@ -120,4 +120,18 @@ it.each(['CANCELLED', 'ENGINE_FAILURE'] as const)('preserves dispatched detach %
   detach.reject(failure); await expect(binding).rejects.toBe(failure);
   expect(f.sessions).toEqual(['open:exact', 'detach:exact']);
   expect(f.sessionEvents[0]!.listenerCount('close')).toBe(1); f.assertNoListeners();
+});
+
+
+it('guards only a verified borrowed replacement through its own Page lifetime', async () => {
+  const f = fixture(); const sibling = f.page('sibling'); const exact = f.page('exact');
+  const rebound = await bindExistingPlaywrightPage({ ...f.binding, kind: 'persistent' }, expected, operation());
+  expect(rebound.page).toBe(exact);
+  expect((exact as unknown as EventEmitter).listenerCount('dialog')).toBe(1);
+  expect((sibling as unknown as EventEmitter).listenerCount('dialog')).toBe(0);
+  expect(f.contextEvents.listenerCount('dialog')).toBe(0);
+  const user = () => {}; exact.on('dialog', user);
+  f.closed.add(exact); (exact as unknown as EventEmitter).emit('close');
+  expect((exact as unknown as EventEmitter).listeners('dialog')).toEqual([user]);
+  f.assertNoListeners();
 });

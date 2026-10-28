@@ -99,7 +99,10 @@ export class NativeInteropResources {
     resource.targetId = newTargetId; this.targetIds.add(newTargetId); scope.identityScope = nextScope;
     this.events.push(`native-page-created:${newTargetId}`);
     for (const client of this.clients) for (const wrapper of client.wrappers) {
-      if (client.connected && !wrapper.closed && wrapper.resource === resource) wrapper.page = this.pageWrapper(wrapper);
+      if (client.connected && !wrapper.closed && wrapper.resource === resource) {
+        (wrapper.page as unknown as EventEmitter).emit('close', wrapper.page);
+        wrapper.page = this.pageWrapper(wrapper);
+      }
     }
     return { contextId: resource.contextId, targetId: newTargetId };
   }
@@ -109,6 +112,9 @@ export class NativeInteropResources {
     resource.pageAlive = false;
     this.events.push(`native-page-destroyed:${targetId}`);
     for (const session of this.sessions) if (session.resource === resource && session.targetId === targetId) this.closeSession(session);
+    for (const client of this.clients) for (const wrapper of client.wrappers) {
+      if (client.connected && !wrapper.closed && wrapper.resource === resource) (wrapper.page as unknown as EventEmitter).emit('close', wrapper.page);
+    }
   }
   /** Explicit native closed-root reopen seam: no context allocation or restart. */
   reopenClosedNativePage(expectedScope: string, oldTargetId: string, newTargetId: string): void {
@@ -356,13 +362,16 @@ export class NativeInteropResources {
   }
   private closeWrapper(wrapper: Wrapper): void {
     if (wrapper.closed) return;
-    wrapper.closed = true; this.events.push(`pw-context-closed:${wrapper.resource.contextId}`); wrapper.events.emit('close');
+    wrapper.closed = true; this.events.push(`pw-context-closed:${wrapper.resource.contextId}`);
+    (wrapper.page as unknown as EventEmitter).emit('close', wrapper.page);
+    wrapper.events.emit('close');
   }
   private wrap(client: Client, resource: NativeContext): Wrapper {
     const wrapper = { resource, closed: false, events: new EventEmitter(), context: undefined as unknown as BrowserContext, page: undefined as unknown as Page };
     const live = () => { if (!client.connected || wrapper.closed || !resource.alive) fail('PW wrapper names a destroyed native context'); };
     const context = {
       browser: () => client.browser,
+      isClosed: () => wrapper.closed,
       pages: () => !wrapper.closed && resource.pageAlive && resource.alive ? [wrapper.page] : [],
       newPage: async () => { live(); if (resource.pageAlive) fail('only the reserved page is modeled'); resource.pageAlive = true; this.events.push(`native-page-created:${resource.targetId}`); return wrapper.page; },
       addInitScript: vi.fn(async (_source: unknown, _arg?: unknown) => { live(); if (this.replacement?.allocation === resource && !resource.nativeAdopted) fail('user script precedes replacement adoption'); this.events.push(`pw-init-script:${resource.contextId}`); }),
@@ -388,11 +397,11 @@ export class NativeInteropResources {
     const resource = wrapper.resource; const targetId = resource.targetId;
     const closed = () => !resource.alive || !resource.pageAlive || wrapper.closed || resource.targetId !== targetId;
     const live = () => { if (closed()) fail('PW Page names a destroyed native target'); };
-    return {
+    return Object.assign(new EventEmitter(), {
       context: () => wrapper.context, url: () => 'about:blank', isClosed: closed,
       close: async () => { if (!closed()) this.closeNativePage(resource, targetId); },
       setViewportSize: vi.fn(async (_value: unknown) => { live(); }),
       emulateMedia: vi.fn(async (_value: unknown) => { live(); }),
-    } as unknown as Page;
+    }) as unknown as Page;
   }
 }

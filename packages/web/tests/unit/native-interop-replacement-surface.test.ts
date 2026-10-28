@@ -46,7 +46,8 @@ class Fixture {
     } catch (error) { done(error as Error); }
   } });
   constructor() {
-    this.browser = {
+    const browserEvents = new EventEmitter();
+    this.browser = Object.assign(browserEvents, {
       isConnected: () => this.connected,
       contexts: () => this.resources.filter(r => !r.wrapperClosed).map(r => r.context),
       newContext: async () => {
@@ -55,6 +56,7 @@ class Fixture {
         const resource = { cid: `context-${n}`, tid: `page-${n}`, alive: true, pageAlive: false, wrapperClosed: false, closes: 0, scripts: 0 } as Resource;
         const live = () => { if (!resource.alive || resource.wrapperClosed || !this.connected) throw new Error('actual resource model is not live'); };
         resource.context = {
+          isClosed: () => resource.wrapperClosed,
           browser: () => this.browser, pages: () => resource.pageAlive && !resource.wrapperClosed ? [resource.page] : [],
           newPage: async () => { live(); expect(resource.pageAlive).toBe(false); resource.pageAlive = true; return resource.page; },
           addInitScript: async () => { live(); expect(this.phase).toBe('live'); if (n > 1 && this.scriptRelease) { this.scriptEntered = true; await this.scriptRelease.promise; } if (n > 1 && this.scriptError) throw this.scriptError; resource.scripts++; this.log.push(`script:${resource.cid}`); },
@@ -65,8 +67,8 @@ class Fixture {
         resource.page = { context: () => resource.context, url: () => 'about:blank', isClosed: () => !resource.alive, setViewportSize: async () => { live(); }, emulateMedia: async () => { live(); } } as unknown as Page;
         this.resources.push(resource); this.log.push(`create:${resource.cid}`); return resource.context;
       },
-      close: async () => { this.log.push('pw-disconnect'); this.connected = false; for (const resource of this.resources) { resource.alive = false; resource.wrapperClosed = true; } },
-    } as unknown as Browser;
+      close: async () => { this.log.push('pw-disconnect'); this.connected = false; for (const resource of this.resources) { resource.alive = false; resource.wrapperClosed = true; } browserEvents.emit('disconnected', this.browser); },
+    }) as unknown as Browser;
   }
   send(message: unknown) { queueMicrotask(() => { if (!this.output.destroyed) this.output.write(`${JSON.stringify(message)}\n`); }); }
   event(frame: Record<string, any>, phase: 'retire' | 'create', cid?: string): Promise<Record<string, any>> {

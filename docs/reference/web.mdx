@@ -863,6 +863,13 @@ await off();
   at its end when no step follows. One that throws before answering has its
   dialog dismissed.
 
+The harness owns dialog decisions, including the no-handler default above.
+`surfaceOf` keeps genuine Playwright dialog events available to observers. Do
+not install independent deciding handlers on both the harness and raw Playwright
+surfaces: their `accept`/`dismiss` calls compete, as they did with the previous
+Playwright-backed harness router. There is no automatic ownership handoff based
+on listener count. Removing harness handlers does not delegate the default.
+
 The errors surface on the next step, not on `onDialog`:
 
 | Throws | When |

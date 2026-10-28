@@ -33,10 +33,40 @@ export async function connectPlaywrightClient(endpoint: string, operation: Opera
   try { check(operation); return browser; }
   catch (error) { await browser.close(); throw error; }
 }
+// Native owns the dialog decision, including its no-handler dismissal/error.
+// PW otherwise automatically dismisses a dialog with no PW subscribers. This
+// observer prevents that competing default; it never answers, wraps a Dialog,
+// replaces a method, or removes another consumer's listener. As with the legacy
+// harness router, independent deciding handlers on both surfaces are unsupported.
+const dialogObservers = new WeakMap<BrowserContext | Page, () => void>();
+function observeNativeDialogs(owner: BrowserContext | Page, browser: Browser): () => void {
+  // A late identity continuation must not subscribe after its retirement event.
+  if (!browser.isConnected() || owner.isClosed()) invalid('the dialog owner retired before subscription');
+  const existing = dialogObservers.get(owner);
+  if (existing !== undefined) return existing;
+  const observe = () => {};
+  // Both public owner types expose this lifecycle event with different payloads.
+  const lifecycle: { on(event: 'close', listener: () => void): unknown; off(event: 'close', listener: () => void): unknown } = owner;
+  let disposed = false;
+  const retired = () => {
+    if (disposed) return;
+    disposed = true;
+    owner.off('dialog', observe);
+    lifecycle.off('close', retired);
+    browser.off('disconnected', retired);
+    dialogObservers.delete(owner);
+  };
+  dialogObservers.set(owner, retired);
+  owner.on('dialog', observe);
+  lifecycle.on('close', retired);
+  browser.on('disconnected', retired);
+  return retired;
+}
 interface PageIdentity { readonly contextId: string; readonly targetId: string }
-async function identity(page: Page, operation: OperationContext, candidate?: false, persistent?: boolean): Promise<PageIdentity>;
-async function identity(page: Page, operation: OperationContext, candidate: true): Promise<PageIdentity | undefined>;
-async function identity(page: Page, operation: OperationContext, candidate = false, persistent = false): Promise<PageIdentity | undefined> {
+type IdentifiedPage = (ids: PageIdentity) => void;
+async function identity(page: Page, operation: OperationContext, candidate?: false, persistent?: boolean, identified?: IdentifiedPage): Promise<PageIdentity>;
+async function identity(page: Page, operation: OperationContext, candidate: true, persistent?: false, identified?: IdentifiedPage): Promise<PageIdentity | undefined>;
+async function identity(page: Page, operation: OperationContext, candidate = false, persistent = false, identified?: IdentifiedPage): Promise<PageIdentity | undefined> {
   check(operation);
   const session = await page.context().newCDPSession(page).catch(cause => {
     // A candidate can disappear before we acquire any session. This is not
@@ -60,7 +90,9 @@ async function identity(page: Page, operation: OperationContext, candidate = fal
     check(operation);
     const { targetInfo } = result;
     if (targetInfo.type !== 'page' || targetInfo.subtype !== undefined || !targetInfo.targetId || !targetInfo.browserContextId) invalid('the Page has no exact context/target identity');
-    return { contextId: targetInfo.browserContextId, targetId: targetInfo.targetId };
+    const ids = { contextId: targetInfo.browserContextId, targetId: targetInfo.targetId };
+    identified?.(ids);
+    return ids;
   } finally {
     try {
       // Do not issue a second release after the exact session closed. Once
@@ -85,7 +117,12 @@ export async function createPlaywrightContext(browser: Browser, options: ScopeCr
     ...(options.media.reducedMotion === undefined ? {} : { reducedMotion: options.media.reducedMotion }),
     serviceWorkers: options.blockServiceWorkers ? 'block' : 'allow',
   });
+  let disposeDialogs: (() => void) | undefined;
   try {
+    // This context is exclusively ours. Subscribe before the first Page exists,
+    // so first-document scripts and owned popups have no PW default dismissor.
+    // newPage's public receipt also orders the PW subscription before adoption.
+    disposeDialogs = observeNativeDialogs(context, browser);
     check(operation);
     const page = await context.newPage();
     check(operation);
@@ -95,7 +132,9 @@ export async function createPlaywrightContext(browser: Browser, options: ScopeCr
   } catch (error) {
     // This function has not dispatched adoption; its own exact context is still
     // bridge-owned. Never close a sibling/default context or the remote browser.
-    await context.close();
+    // Release the subscription independently of close-event delivery, even
+    // when the owned close is already settled or reports a real failure.
+    try { await context.close(); } finally { disposeDialogs?.(); }
     throw error;
   }
 }
@@ -125,7 +164,14 @@ export async function bindPersistentPlaywrightContext(browser: Browser, expected
   if (contexts.length !== 1) invalid('the dedicated default context is not unique');
   const context = contexts[0]!;
   for (const page of context.pages()) {
-    const ids = await identity(page, operation, false, true);
+    const ids = await identity(page, operation, false, true, identified => {
+      if (identified.targetId !== expected.targetId) return;
+      if (identified.contextId !== expected.contextId) invalid('the exact target belongs to a different context');
+      // Never subscribe on a borrowed Context: unrelated host Pages retain
+      // their original PW behavior. The already-owned identity detach below
+      // is a public PW receipt after subscription, before native navigation.
+      observeNativeDialogs(page, browser);
+    });
     if (ids.targetId !== expected.targetId) continue;
     if (ids.contextId !== expected.contextId) invalid('the exact target belongs to a different context');
     return { kind: 'persistent', browser, context, page, ...ids };
@@ -179,7 +225,11 @@ export async function bindExistingPlaywrightPage(binding: PlaywrightBinding, exp
         continue;
       }
       if (page.isClosed()) continue;
-      const ids = await identity(page, current, true);
+      const ids = await identity(page, current, true, false, identified => {
+        if (binding.kind !== 'persistent' || identified.targetId !== expected.targetId) return;
+        if (identified.contextId !== expected.contextId || page.context() !== context || page.isClosed()) invalid('the replacement target changed ownership');
+        observeNativeDialogs(page, browser);
+      });
       check(current);
       if (ids === undefined || ids.targetId !== expected.targetId) continue;
       if (ids.contextId !== expected.contextId || page.context() !== context || page.isClosed()) invalid('the replacement target changed ownership');

@@ -503,6 +503,11 @@ the app opens itself (`target="_blank"`, `window.open`) is not followed:
   text; no handler, or one that neither accepts nor dismisses, fails the
   next step with `INVALID_STATE`. A throwing handler's unanswered dialog is
   dismissed too, and its error fails the next step.
+  The harness owns the decision and no-handler default. Raw `surfaceOf` dialog
+  observers still receive genuine Playwright events; do not independently call
+  `accept`/`dismiss` from both raw Playwright and harness handlers. Unsubscribing
+  the harness handler does not hand ownership to raw Playwright.
+
 - `waitForDownload(() => trigger, { timeout? })`: returns
   `{ path, absolutePath, suggestedFilename }`; `absolutePath` names the saved
   runner-side file for reading its contents, including with a hosted browser.
