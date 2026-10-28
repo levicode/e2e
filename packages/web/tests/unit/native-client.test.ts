@@ -36,6 +36,169 @@ async function close(fixture: Awaited<ReturnType<typeof opened>>) {
 }
 
 describe('native session client', () => {
+  it.each(['before-deadline', 'after-deadline'] as const)('preserves ordinary decision deadline during automatic terminal cleanup: %s', async timing => {
+    vi.useFakeTimers();
+    try {
+      const fixture = harness();
+      const connecting = NativeClient.connect({ readable: fixture.output, writable: fixture.input, dispose: fixture.dispose }, ['terminal.close/1'], context(), () => {});
+      fixture.send(fixture.ready({ capabilities: ['terminal.close/1'] }));
+      const client = await connecting;
+      const lifetime = new AbortController();
+      const deciding = client.decide('terminal-held-control', { kind: 'continue' }, { ...context(lifetime.signal), timeoutMs: 20 }).then(() => 'accepted', cause => cause);
+      const decision = fixture.requests.at(-1)!;
+      const action = client.request('page.title', { identityScope: 'scope-one' }, context());
+      const request = fixture.requests.at(-1)!;
+      lifetime.abort();
+      // This later request result arrives BEFORE the earlier decision ACK.
+      fixture.send(fixture.result(request, { ok: false, data: undefined, error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined' }));
+      await action;
+      expect(client.isTerminal()).toBe(true);
+      const closing = client.close(context()).then(() => 'closed', cause => cause);
+      await vi.advanceTimersByTimeAsync(timing === 'before-deadline' ? 19 : 21);
+      if (timing === 'before-deadline') {
+        fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
+        expect(await deciding).toBe('accepted');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fixture.requests.at(-1)!['type']).toBe('close');
+        fixture.send({ type: 'closed', id: fixture.requests.at(-1)!['id'], generation: 1, scopeState: 'closed' });
+        expect(await closing).toBe('closed');
+      } else {
+        // A broken timer implementation would still admit this late ACK.
+        if (fixture.dispose.mock.calls.length === 0) fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
+        expect(await deciding).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+        expect(await closing).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+        expect(fixture.requests.filter(frame => frame['type'] === 'close')).toHaveLength(0);
+        expect(fixture.dispose).toHaveBeenCalledOnce();
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('retains callback decision custody without reopening selected callback authority after abort', async () => {
+    const fixture = harness();
+    const lifetime = new AbortController();
+    let client!: NativeClient;
+    let written!: () => void;
+    const dispatched = new Promise<void>(resolve => { written = resolve; });
+    let done!: () => void;
+    const handled = new Promise<void>(resolve => { done = resolve; });
+    const connecting = fixture.connect(async event => {
+      const deciding = client.decide(event.decision!.token, { kind: 'continue' }, context(lifetime.signal));
+      written();
+      try {
+        await deciding;
+        await expect(client.request('page.title', {}, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      } finally { done(); }
+    });
+    fixture.send(fixture.ready()); client = await connecting;
+    fixture.send({ type: 'event', generation: 1, sequence: 1, event: 'request', payload: {}, decision: { token: 'exact-callback', timeoutMs: 1000 } });
+    await dispatched;
+    const decision = fixture.requests.at(-1)!;
+    lifetime.abort();
+    fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
+    await handled;
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'decision']);
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    await close({ ...fixture, client });
+  });
+
+
+  it('retains an ordinary decision ACK after caller abort and joins it before terminal close', async () => {
+    const fixture = await opened();
+    const lifetime = new AbortController();
+    const deciding = fixture.client.decide('held-control-token', { kind: 'continue' }, context(lifetime.signal));
+    void deciding.catch(() => {});
+    const decision = fixture.requests.at(-1)!;
+    expect(decision['type']).toBe('decision');
+    lifetime.abort();
+    const closing = fixture.client.close(context());
+    void closing.catch(() => {});
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'decision']);
+    fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: true, scopeState: 'usable' });
+    await deciding;
+    await vi.waitFor(() => expect(fixture.requests.at(-1)!['type']).toBe('close'));
+    fixture.send({ type: 'closed', id: fixture.requests.at(-1)!['id'], generation: 1, scopeState: 'closed' });
+    await closing;
+    expect(fixture.requests.filter(frame => frame['type'] === 'decision')).toHaveLength(1);
+  });
+
+  it('rejects an already-aborted ordinary decision without writing or poisoning the client', async () => {
+    const fixture = await opened();
+    const lifetime = new AbortController(); lifetime.abort();
+    await expect(fixture.client.decide('not-dispatched', { kind: 'continue' }, context(lifetime.signal))).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello']);
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    await close(fixture);
+  });
+
+  it('checks ordinary decision dispatch cancellation after serialization without leaking payload', async () => {
+    const fixture = await opened();
+    const lifetime = new AbortController();
+    const decision = { get kind() { lifetime.abort(); return 'continue'; } };
+    await expect(fixture.client.decide('private-not-dispatched', decision, context(lifetime.signal))).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello']);
+    await close(fixture);
+  });
+
+  it('keeps the original ordinary decision deadline after abort and refuses unknown ACK cleanup', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = await opened();
+      const lifetime = new AbortController();
+      const failure = fixture.client.decide('deadline-token', { kind: 'continue' }, { ...context(lifetime.signal), timeoutMs: 20 }).catch(cause => cause);
+      lifetime.abort();
+      const closing = fixture.client.close(context()).catch(cause => cause);
+      await vi.advanceTimersByTimeAsync(21);
+      expect(await failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      expect(await closing).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'decision']);
+      expect(fixture.dispose).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('bounds an outstanding ordinary decision receipt by the existing close budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = await opened();
+      const deciding = fixture.client.decide('long-receipt', { kind: 'continue' }, { ...context(), timeoutMs: 60000 }).catch(cause => cause);
+      const closing = fixture.client.close(context()).catch(cause => cause);
+      await vi.advanceTimersByTimeAsync(15001);
+      expect(await closing).toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(await deciding).toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'decision']);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(['crash', 'wrong-generation'] as const)('does not launder %s through caller-aborted decision cleanup', async fault => {
+    const fixture = await opened();
+    const lifetime = new AbortController();
+    const privateMarker = 'synthetic-private-control-marker';
+    const deciding = fixture.client.decide(privateMarker, { kind: 'continue' }, context(lifetime.signal)).catch(cause => cause);
+    const decision = fixture.requests.at(-1)!;
+    lifetime.abort();
+    const closing = fixture.client.close(context()).catch(cause => cause);
+    if (fault === 'crash') fixture.output.destroy(new Error(privateMarker));
+    else fixture.send({ type: 'control-result', id: decision['id'], generation: 2, accepted: true, scopeState: 'usable' });
+    const failure = await deciding;
+    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(String(failure)).not.toContain(privateMarker);
+    expect(await closing).toBe(failure);
+    expect(fixture.requests.map(frame => frame['type'])).toEqual(['hello', 'decision']);
+  });
+
+  it('preserves an explicit rejected decision ACK without treating it as success', async () => {
+    const fixture = await opened();
+    const lifetime = new AbortController();
+    const deciding = fixture.client.decide('rejected-control', { kind: 'continue' }, context(lifetime.signal));
+    const decision = fixture.requests.at(-1)!;
+    lifetime.abort();
+    const rejected = expect(deciding).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    fixture.send({ type: 'control-result', id: decision['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
+    await rejected;
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    await close(fixture);
+  });
+
   it('publishes negotiated readiness before an event coalesced in the same stream chunk', async () => {
     const fixture = harness();
     const events: NativeEvent[] = [];

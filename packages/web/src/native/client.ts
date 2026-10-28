@@ -293,7 +293,11 @@ export class NativeClient {
     const owner = this.callback.getStore();
     if (owner !== undefined && !owner.active) throw new EngineError('INVALID_STATE', 'The native callback has already completed', { retryable: false });
     if (Array.from(this.pending.values()).filter(item => item.kind === 'decision').length >= Math.min(this.ready!.limits.maxPendingDecisions, 256)) throw new EngineError('ENGINE_FAILURE', 'The native browser decision capacity was exceeded', { retryable: false });
-    const message = await this.exchange('decision', { type: 'decision', generation: this.ready!.generation, token, decision }, context);
+    // The original signal authorizes dispatch, not abandonment of its receipt.
+    // Once written, retain the exact control ACK under the SAME time budget.
+    const timeoutMs = this.timeout(context);
+    const receipt: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs };
+    const message = await this.exchange('decision', { type: 'decision', generation: this.ready!.generation, token, decision }, receipt, undefined, undefined, undefined, context.signal);
     if (message.type !== 'control-result') throw this.invalidate();
     if (!message.accepted) throw rejectedDecision(new EngineError('ENGINE_FAILURE', 'The native browser rejected an expired or invalid decision', { retryable: false }));
     const callback = this.callback.getStore();
@@ -324,7 +328,19 @@ export class NativeClient {
   private async finishClose(context: OperationContext, started: number): Promise<void> {
     try {
       if (this.ready === undefined) throw this.fail('The native browser session is not available');
-      const message = await this.exchange('close', { type: 'close', generation: this.ready.generation }, context);
+      // A closed frame cannot stand in for an already-dispatched decision ACK.
+      // Join only existing control receipts, never arbitrary user callback work.
+      const receipts = [...this.pending.values()].filter(pending => pending.kind === 'decision').map(pending => pending.settlement);
+      if (receipts.length > 0) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([Promise.all(receipts), new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(this.fail('The native decision receipt did not settle before cleanup')), Math.max(0, 15000 - (performance.now() - started)));
+          })]);
+        } finally { if (timer !== undefined) clearTimeout(timer); }
+        if (this.failure !== undefined) throw this.failure;
+      }
+      const message = await this.exchange('close', { type: 'close', generation: this.ready.generation }, { ...context, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
       if (message.type !== 'closed') throw this.fail('The native browser did not confirm scope closure');
       await this.channel.settle?.({ runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: context.signal, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
       if (this.failure !== undefined) throw this.failure;
@@ -345,8 +361,9 @@ export class NativeClient {
     }
     this.stagedEvents.length = 0;
     this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(false);
-    // The one cleanup exchange bounds remaining correlation bookkeeping.
-    for (const pending of this.pending.values()) if (pending.kind !== 'close') pending.clear();
+    // Close bounds remaining bookkeeping, but dispatched decision receipts
+    // retain their ORIGINAL watchdog even during automatic terminal cleanup.
+    for (const pending of this.pending.values()) if (pending.kind !== 'close' && pending.kind !== 'decision') pending.clear();
     const cleanup: OperationContext = { runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 };
     let collected: Promise<unknown> | undefined;
     if (!this.explicitClose && this.closing === undefined && failed?.kind === 'request' && failed.callbackToken === undefined
@@ -395,7 +412,7 @@ export class NativeClient {
     return Math.min(Math.ceil(context.timeoutMs), this.ready?.limits.maxTimeoutMs ?? MAX_TIMEOUT_MS, MAX_TIMEOUT_MS);
   }
 
-  private exchange(kind: Pending['kind'], message: Readonly<Record<string, unknown>>, context: OperationContext, operationSeq?: number, callbackTransition?: number, cancelTarget?: number): Promise<ServerMessage> {
+  private exchange(kind: Pending['kind'], message: Readonly<Record<string, unknown>>, context: OperationContext, operationSeq?: number, callbackTransition?: number, cancelTarget?: number, dispatchSignal?: AbortSignal): Promise<ServerMessage> {
     const trace = this.channel.acceptanceTrace;
     const target = operationSeq ?? cancelTarget;
     // Artifact controls reuse request framing; diagnostics describe the wire kind.
@@ -475,6 +492,12 @@ export class NativeClient {
       const args = message['args'];
       const scope = args !== null && typeof args === 'object' && 'identityScope' in args && typeof args.identityScope === 'string' ? args.identityScope : undefined;
       this.pending.set(id, { kind, ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
+      // Check after serialization and before the sole write. Pre-dispatch
+      // caller cancellation is definite no-effect, not a protocol failure.
+      if (dispatchSignal?.aborted) {
+        this.pending.delete(id); clear(); retire();
+        reject(connectionCancellation('The native decision was cancelled before dispatch')); return;
+      }
       context.signal.addEventListener('abort', abort, { once: true });
       if (context.signal.aborted) { abort(); return; }
       if (trace === undefined) {
