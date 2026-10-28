@@ -2,7 +2,6 @@ import { constants } from 'node:fs';
 import { access, readFile, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { verifyRuntimeDescriptor, type InstalledPackageRoots } from './bundle.ts';
 
 export async function installedPackageRoots(projectRoot: string): Promise<InstalledPackageRoots> {
@@ -29,7 +28,7 @@ export async function resolveInstalledRuntime(projectRoot: string): Promise<stri
   const descriptor: unknown = JSON.parse(await readFile(path.join(projectRoot, '.e2e', 'native-runtime.json'), 'utf8'));
   const roots = await installedPackageRoots(projectRoot);
   // Never verify a different Web installation from the one executing this resolver.
-  const executingRoot = await realpath(fileURLToPath(new URL('../..', import.meta.url)));
+  const executingRoot = await realpath(path.resolve(import.meta.dirname, '../..'));
   if (roots.web !== executingRoot) throw new Error('Executing Web package is not the verified installation');
   const { executable } = verifyRuntimeDescriptor(descriptor, roots);
   await access(executable, constants.X_OK);

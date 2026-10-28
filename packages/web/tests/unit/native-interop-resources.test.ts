@@ -5,7 +5,7 @@ import type { JsonValue, OperationContext } from 'e2e/engine';
 import { NativeInteropResources, type NativeInteropResourceOptions } from '../helpers/native-interop-resources.ts';
 import { createReplacementOperation } from '../helpers/native-interop-replacement.ts';
 import { NativeProtocolPeer, type PeerRequest } from '../helpers/native-protocol-peer.ts';
-import { NativeProtocolPeer as RetirementProtocolPeer } from '../helpers/retirement-protocol-peer.ts';
+import { RetirementProtocolPeer } from '../helpers/retirement-protocol-peer.ts';
 import { FinalizedRecordingPeer } from '../helpers/native-finalized-recording-peer.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { bindPersistentPlaywrightContext, connectPlaywrightClient, createPlaywrightContext } from '../../src/native/playwright-binding.ts';

@@ -18,8 +18,6 @@ export const WEB_ACCEPTANCE = [
   },
 ] as const;
 
-export type AcceptanceSuite = (typeof WEB_ACCEPTANCE)[number];
-
 /** Backend-specific proof, separate from universal protocol and public consumer contracts. */
 export const NATIVE_BROWSER_CONTRACTS = [
   'native::client_browser::tests::chromium_owned_scope_isolation_and_cleanup',

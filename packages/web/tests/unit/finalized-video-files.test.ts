@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, type OperationContext } from 'e2e/engine';
 import { PartialVideoTransferError } from '../../src/native/finalized-recording.ts';
-import { FinalizedVideoFiles, type FinalizedVideoBytes } from '../../src/native/finalized-video-files.ts';
+import { FinalizedVideoFiles, type FinalizedVideoDeliveryBytes as FinalizedVideoBytes } from '../../src/native/finalized-video-files.ts';
 
 const interception = vi.hoisted(() => ({ write: undefined as undefined | (() => Promise<void>), publish: undefined as undefined | (() => Promise<void>), partialFailure: false, closeFailures: 0 }));
 vi.mock('node:fs/promises', async importOriginal => {

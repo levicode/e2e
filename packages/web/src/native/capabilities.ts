@@ -23,7 +23,7 @@ export const QUERY_UNION_CAPABILITY = 'browser.query-union/1';
 export const OBSERVE_FRAME_POLICY_CAPABILITY = 'browser.observe-frame-policy/1';
 
 /** Exact PW-context retirement/adoption within the original reset/restore operation. */
-export const INTEROP_CONTEXT_REPLACEMENT_CAPABILITY = 'browser.interop-context-replacement/1';
+const INTEROP_CONTEXT_REPLACEMENT_CAPABILITY = 'browser.interop-context-replacement/1';
 
 /** Full public Web candidate contract. Advertising handlers is not acceptance certification. */
 export const REQUIRED_CAPABILITIES = [

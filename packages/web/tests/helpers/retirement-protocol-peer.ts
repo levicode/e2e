@@ -4,16 +4,16 @@ import { withTimeout, type JsonValue, type OperationContext } from 'e2e/engine';
 import { NativeClient } from '../../src/native/client.ts';
 import type { Effects, NativeEvent, ScopeState } from '../../src/native/protocol.ts';
 
-export interface PeerRequest {
+interface PeerRequest {
   readonly type: 'request'; readonly id: string; readonly generation: number;
   readonly operationSeq: number; readonly command: string; readonly args: Record<string, JsonValue>;
 }
-export type PeerOutcome = { readonly data: JsonValue; readonly scopeState?: ScopeState } | {
+type PeerOutcome = { readonly data: JsonValue; readonly scopeState?: ScopeState } | {
   readonly error: string; readonly frameSelection?: unknown; readonly effects?: Effects; readonly scopeState?: ScopeState;
 };
 
 /** Keeps the real NativeClient parser, sequence checks, cancellation, and result decoding in the test. */
-export class NativeProtocolPeer {
+class NativeProtocolPeer {
   readonly frames: Record<string, unknown>[] = [];
   readonly requests: PeerRequest[] = [];
   private readonly output = new PassThrough();
@@ -68,3 +68,6 @@ export class NativeProtocolPeer {
   dispose(): void { this.input.destroy(); this.output.destroy(); }
   private send(message: unknown): void { queueMicrotask(() => { if (!this.output.destroyed) this.output.write(`${JSON.stringify(message)}\n`); }); }
 }
+
+export { NativeProtocolPeer as RetirementProtocolPeer };
+export type { PeerRequest as RetirementPeerRequest, PeerOutcome as RetirementPeerOutcome };

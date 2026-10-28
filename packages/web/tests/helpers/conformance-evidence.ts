@@ -25,7 +25,7 @@ export interface ConformanceCoordinate {
 }
 export const conformanceCoordinateKey = (row: ConformanceCoordinate): string =>
   `${row.tableOrdinal}:${row.caseOrdinal}:${row.targetOrdinal}:${row.field}`;
-export const conformanceList = <T,>(value: T | readonly T[]): readonly T[] => Array.isArray(value) ? value : [value as T];
+const conformanceList = <T,>(value: T | readonly T[]): readonly T[] => Array.isArray(value) ? value : [value as T];
 
 /** The source, not producer output, defines the legal domain and expected counts. */
 export function conformanceSourceDomain(sourceTables: ConformanceTables, expectedSource: string) {

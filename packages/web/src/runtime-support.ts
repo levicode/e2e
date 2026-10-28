@@ -20,10 +20,6 @@ export function invalidState(text: string): EngineError {
   return new EngineError('INVALID_STATE', text, { retryable: false });
 }
 
-export function cancelled(text: string): EngineError {
-  return new EngineError('CANCELLED', text, { retryable: false });
-}
-
 /**
  * Holds one error raised on a path nobody awaits - a native dialog nobody
  * handled, a route handler that broke its contract - until the next step

@@ -37,57 +37,6 @@ export function connectionAbort(signal: AbortSignal, label: string): EngineError
     : new EngineError('CANCELLED', `${label} cancelled`, { retryable: false });
 }
 
-/**
- * How much sooner than an operation's deadline Playwright's own timeout
- * fires: its error names what blocked an action, or that the input was
- * already dispatched, and this lead lets that answer arrive before the
- * deadline does. The deadline is for the calls Playwright never answers: an
- * evaluate, which takes no timeout, and a point tap on a page whose renderer
- * is stuck in a script. A budget shorter than twice the
- * lead splits in half.
- */
-const PLAYWRIGHT_TIMEOUT_LEAD_MS = 250;
-
-/**
- * Whether the operation's deadline may end it. `test-code` is for an
- * operation that runs the test's own code (a download trigger): that code
- * keeps its own steps and their budgets, so the operation is not cut under
- * it, and only cancellation ends the wait.
- */
-export type OperationBound = 'deadline' | 'test-code';
-
-/**
- * Bounds one operation by its budget: a call still pending at the deadline
- * is abandoned as `OPERATION_TIMEOUT` instead of holding the test until its
- * own timeout. `remaining` hands `work` the time left before Playwright's
- * own timeout, the one to pass Playwright.
- */
-export function withOperationDeadline<T>(
-  budget: ConnectionBudget,
-  label: string,
-  work: (remaining: () => ConnectionBudget) => Promise<T>,
-  bound: OperationBound = 'deadline',
-): Promise<T> {
-  if (bound === 'test-code') {
-    const endsAt = performance.now() + budget.timeoutMs;
-    return raceAbort(
-      () => work(() => {
-        if (budget.signal.aborted) throw connectionAbort(budget.signal, label);
-        return { signal: budget.signal, timeoutMs: Math.max(1, endsAt - performance.now()) };
-      }),
-      budget.signal,
-      label,
-    );
-  }
-  return withConnectionBudget(budget, label, (remaining) =>
-    work(() => {
-      const current = remaining();
-      const lead = Math.min(PLAYWRIGHT_TIMEOUT_LEAD_MS, current.timeoutMs / 2);
-      return { signal: current.signal, timeoutMs: Math.ceil(current.timeoutMs - lead) };
-    }),
-  );
-}
-
 /** Bounds the entire transition, aborts abandoned work, and never grants a fresh dispatch budget. */
 export async function withConnectionBudget<T>(
   budget: ConnectionBudget,

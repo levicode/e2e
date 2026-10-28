@@ -1,0 +1,485 @@
+name: Reviewed dead-code scope and Node floor compatibility
+'on':
+  push:
+    branches:
+    - ci/standard-deadcode-repairs
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: standard-deadcode-repairs-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+  NATIVE_SOURCE_SHA: ef81a637abb7bd63aa877f1790949d0a2a5d9e71
+  NATIVE_SOURCE_TREE: 3822bc7dcc16bcfdfc6c6d3f81296edc832b1ea4
+jobs:
+  static-repairs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Assert locked oxlint version before lint
+      run: 'set -euo pipefail
+
+        pnpm exec oxlint --version | tee evidence/oxlint.version
+
+        grep -Eq "(^| )1\.89\.0$" evidence/oxlint.version
+
+        '
+    - name: lint
+      id: lint
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm lint
+
+        ) 2>&1 | tee "evidence/lint.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/lint.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Assert locked fallow version
+      run: 'set -euo pipefail
+
+        pnpm exec fallow --version | tee evidence/fallow.version
+
+        grep -Eq "(^| )3\.33\.1$" evidence/fallow.version
+
+        '
+    - name: dead-code
+      id: dead_code
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm check:dead-code
+
+        ) 2>&1 | tee "evidence/dead-code.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dead-code.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: typecheck
+      id: typecheck
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm typecheck
+
+        ) 2>&1 | tee "evidence/typecheck.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/typecheck.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: plugin-sources
+      id: plugin_sources
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm plugins:check
+
+        ) 2>&1 | tee "evidence/plugin-sources.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/plugin-sources.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: root-docs-check
+      id: root_docs_check
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm docs:check
+
+        ) 2>&1 | tee "evidence/root-docs-check.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/root-docs-check.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Require every independent command outcome; no skipped execution passes
+      if: ${{ always() }}
+      env:
+        COMMAND_STEPS: ${{ toJSON(steps) }}
+      run: 'python3 - <<''PY_RESULT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
+
+        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
+        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
+
+        failed={k:v for k,v in out.items() if v!=''success''}
+
+        assert not failed,failed
+
+        PY_RESULT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: reviewed-deadcode-static-evidence
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+  node-floor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node:
+        - 22
+        - 24
+        - 26
+        - 22.22.3
+        - 24.8.0
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: ${{ matrix.node }}
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: web-types
+      id: web_types
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY ANTHROPIC_API_KEY
+        AI_GATEWAY_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm --filter @e2e-dev/web typecheck
+
+        ) 2>&1 | tee evidence/web-types.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/web-types.exit
+
+        exit "$s"
+
+        '
+    - name: path-equivalence
+      id: path_equivalence
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY\
+        \ ANTHROPIC_API_KEY AI_GATEWAY_API_KEY\nset +e\n( set -e\ncat > evidence/path-equivalence.mjs\
+        \ <<'JS_PATH'\nimport assert from 'node:assert/strict';\nimport path from\
+        \ 'node:path';\nimport { fileURLToPath, pathToFileURL } from 'node:url';\n\
+        import { mkdtemp, mkdir, realpath, symlink, rm } from 'node:fs/promises';\n\
+        import os from 'node:os';\nconst dir = await mkdtemp(path.join(os.tmpdir(),\
+        \ 'deadcode-path-proof-'));\nlet count = 0;\ntry {\n  for (const name of ['plain',\
+        \ 'has space', 'hash#and?query', 'percent%20literal', '\u4F60\u597D-\xE9'])\
+        \ {\n    const root = path.join(dir, name);\n    await mkdir(path.join(root,\
+        \ 'dist', 'native'), { recursive: true });\n    for (const base of ['dist',\
+        \ 'src']) {\n      await mkdir(path.join(root, base, 'native'), { recursive:\
+        \ true });\n      const moduleFile = path.join(root, base, 'native', 'installed-runtime.js');\n\
+        \      const previous = fileURLToPath(new URL('../..', pathToFileURL(moduleFile)));\n\
+        \      const candidate = path.resolve(path.dirname(moduleFile), '../..');\n\
+        \      assert.equal(await realpath(previous), await realpath(candidate));\n\
+        \      assert.equal(await realpath(candidate), await realpath(root));\n  \
+        \    count++;\n    }\n  }\n  const physical = path.join(dir, 'physical');\n\
+        \  await mkdir(path.join(physical, 'dist', 'native'), { recursive: true });\n\
+        \  const alias = path.join(dir, 'alias with space');\n  await symlink(physical,\
+        \ alias, 'dir');\n  const moduleFile = path.join(alias, 'dist', 'native',\
+        \ 'installed-runtime.js');\n  assert.equal(await realpath(fileURLToPath(new\
+        \ URL('../..', pathToFileURL(moduleFile)))), await realpath(path.resolve(path.dirname(moduleFile),\
+        \ '../..')));\n  assert.equal(await realpath(path.resolve(path.dirname(moduleFile),\
+        \ '../..')), await realpath(physical));\n  count++;\n  console.log(`${count}\
+        \ URL/path root equivalence checks passed, including encoded characters and\
+        \ symlink realpath; no product module executed`);\n} finally { await rm(dir,\
+        \ { recursive: true, force: true }); }\n\nassert.equal(path.resolve(import.meta.dirname,\
+        \ '../..'), fileURLToPath(new URL('../..', import.meta.url)));\nconsole.log('actual\
+        \ import.meta.dirname equals original URL path');\n\nJS_PATH\nnode evidence/path-equivalence.mjs\n\
+        ) 2>&1 | tee evidence/path-equivalence.log\ns=${PIPESTATUS[0]}\nprintf \"\
+        %s\\n\" \"$s\" > evidence/path-equivalence.exit\nexit \"$s\"\n"
+    - name: affected-unit-tests
+      id: affected_unit_tests
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY ANTHROPIC_API_KEY
+        AI_GATEWAY_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/unit/cleanup-late-receipt.test.ts
+        tests/unit/finalized-video-files.test.ts tests/unit/native-bundle.test.ts
+        tests/unit/native-bundle-install.test.ts tests/unit/native-interop-resources.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/unit-collection.json"
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit/cleanup-late-receipt.test.ts
+        tests/unit/finalized-video-files.test.ts tests/unit/native-bundle.test.ts
+        tests/unit/native-bundle-install.test.ts tests/unit/native-interop-resources.test.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/unit-results.json"
+
+        ) 2>&1 | tee evidence/affected-unit-tests.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/affected-unit-tests.exit
+
+        exit "$s"
+
+        '
+    - name: Preserve counts and complete collection without false green
+      if: ${{ always() }}
+      run: 'python3 - <<''PY_COUNT''
+
+        import json,pathlib
+
+        p=pathlib.Path(''evidence'');c=json.load(open(p/''unit-collection.json''));r=json.load(open(p/''unit-results.json''));a=[a
+        for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        expected=set([''cleanup-late-receipt.test.ts'', ''finalized-video-files.test.ts'',
+        ''native-bundle.test.ts'', ''native-bundle-install.test.ts'', ''native-interop-resources.test.ts''])
+
+        assert {x[''file''].split(''/'')[-1] for x in c}==expected
+
+        out={k:r[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};out[''collected'']=len(c);(p/''counts.json'').write_text(json.dumps(out,indent=2))
+
+        assert len(c)==len(a)==r[''numTotalTests''] and r[''numPendingTests'']==0,out
+
+        PY_COUNT
+
+        '
+    - name: Require every independent command outcome; no skipped execution passes
+      if: ${{ always() }}
+      env:
+        COMMAND_STEPS: ${{ toJSON(steps) }}
+      run: 'python3 - <<''PY_RESULT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
+
+        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
+        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
+
+        failed={k:v for k,v in out.items() if v!=''success''}
+
+        assert not failed,failed
+
+        PY_RESULT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: reviewed-deadcode-node-${{ matrix.node }}-evidence
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7

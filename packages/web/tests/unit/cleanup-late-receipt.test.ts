@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAttemptContext } from 'e2e/engine';
 import { web, type WebOptions } from '../../src/index.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
-import { NativeProtocolPeer, type PeerRequest, type PeerOutcome } from '../helpers/retirement-protocol-peer.ts';
+import { RetirementProtocolPeer as NativeProtocolPeer, type RetirementPeerRequest as PeerRequest, type RetirementPeerOutcome as PeerOutcome } from '../helpers/retirement-protocol-peer.ts';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
