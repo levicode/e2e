@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
 import type { OperationContext } from 'e2e/engine';
 import { NativeClient, type NativeChannel } from '../../src/native/client.ts';
-import { REQUIRED_CAPABILITIES } from '../../src/native/capabilities.ts';
+import { ISOLATED_PAGE_REOPEN_CAPABILITY, PAGE_IDENTITY_FENCE_CAPABILITY, REQUIRED_CAPABILITIES } from '../../src/native/capabilities.ts';
 import type { NativeEvent } from '../../src/native/protocol.ts';
 export interface ArtifactRequest { type: 'request'; id: string; generation: number; operationSeq: number; timeoutMs: number; command: string; args: Record<string, unknown> }
 export interface ArtifactReply { ok: boolean; data?: unknown; error?: { code: string }; effects: 'completed' | 'not-dispatched' | 'unknown'; scopeState: 'usable' | 'quarantined' }
@@ -37,7 +37,7 @@ export class FinalizedRecordingPeer {
       } catch (error) { done(error as Error); }
     } });
   }
-  advertised: readonly string[] = REQUIRED_CAPABILITIES;
+  advertised: readonly string[] = [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ISOLATED_PAGE_REOPEN_CAPABILITY];
   manifest(): Record<string, unknown> { return { identityScope: this.scope, failedOperationSeq: this.failedSequence, token: this.token, segments: [{ handle: 'frozen-handle', size: this.bytes.length,
     sha256: createHash('sha256').update(this.bytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-10-26T00:00:00.000Z', ordinal: 1 }] }; }
   private reply(request: ArtifactRequest): ArtifactReply {

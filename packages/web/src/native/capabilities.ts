@@ -7,6 +7,9 @@ export const DISCONNECTED_RECOVERY_CAPABILITY = 'scope.reconnect-quarantined/1';
 /** Create-only persistent page reopen with exact owner identity refresh. */
 export const PERSISTENT_PAGE_REOPEN_CAPABILITY = 'browser.persistent-page-reopen/1';
 
+/** Same-context isolated page reopen after the exact application Page closes. */
+export const ISOLATED_PAGE_REOPEN_CAPABILITY = 'browser.isolated-page-reopen/1';
+
 /** Exact acknowledged raw Page constraint; never permission to create or retarget. */
 export const PAGE_IDENTITY_FENCE_CAPABILITY = 'browser.page-identity-fence/1';
 

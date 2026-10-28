@@ -37,7 +37,7 @@ import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
 import { resolveNativeExecutable } from './native/runtime.ts';
 
 import { isNativeProcessCleanupUnresolved } from './native/process-cleanup.ts';
-import { PAGE_IDENTITY_FENCE_CAPABILITY, PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './native/capabilities.ts';
+import { ISOLATED_PAGE_REOPEN_CAPABILITY, PAGE_IDENTITY_FENCE_CAPABILITY, PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './native/capabilities.ts';
 const SECURE_FIELD_SELECTOR = 'input[type="password" i]';
 const LIFECYCLE_TIMEOUT_MS = 3_600_000;
 const LATE_RECORDING_STOP_MS = 10_000;
@@ -628,7 +628,7 @@ export class NativeSurface implements NativeWebSurface {
     const pending: PendingConnection = { work: Promise.resolve() };
     this.connecting = pending;
     pending.work = (async () => {
-      const client = await connectNativeProcess({ executable: this.executable!, cwd: info.projectRoot, env: info.env, capabilities: this.persistent ? [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY] : REQUIRED_CAPABILITIES }, operation, event => tenure === this.clientTenure ? this.onEvent(event) : undefined);
+      const client = await connectNativeProcess({ executable: this.executable!, cwd: info.projectRoot, env: info.env, capabilities: [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ...(this.persistent ? [] : [ISOLATED_PAGE_REOPEN_CAPABILITY])] }, operation, event => tenure === this.clientTenure ? this.onEvent(event) : undefined);
       if (tenure !== this.clientTenure || operation.signal.aborted || (attempt !== undefined && this.attempt !== attempt)) {
         try { await client.close(this.operation(AbortSignal.timeout(1000), 1000)); }
         catch (cause) { pending.cleanupFailure = cause; throw cause; }
@@ -723,7 +723,7 @@ export class NativeSurface implements NativeWebSurface {
     if (event.event === 'scope.page-reopened') {
       const recovery = payload['recoveryIdentity'];
       const previous = attempt.recovery;
-      if (!this.requireClient().negotiation().capabilities.includes(PERSISTENT_PAGE_REOPEN_CAPABILITY)
+      if (!this.requireClient().negotiation().capabilities.includes(this.persistent ? PERSISTENT_PAGE_REOPEN_CAPABILITY : ISOLATED_PAGE_REOPEN_CAPABILITY)
         || event.decision !== undefined || payload['version'] !== 1
         || Object.keys(payload).toSorted().join(',') !== 'identityScope,previousPageIdentity,recoveryIdentity,version'
         || recovery === null || typeof recovery !== 'object' || Array.isArray(recovery)
@@ -743,7 +743,7 @@ export class NativeSurface implements NativeWebSurface {
       if (process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') console.error('REOPEN_BINDING_DIAGNOSTIC', JSON.stringify({ hasBinding: binding !== undefined, persistentBinding: binding?.kind === 'persistent', contextMatches: binding?.contextId === recovery.context, pendingPublication: attempt.rawReopened !== undefined }));
       // Recovery identities are opaque native fingerprints, not raw CDP IDs.
       // Validate their chain above; exact CID/TID binding is a later owned read.
-      if (binding?.kind !== 'persistent' || attempt.rawReopened !== undefined) throw this.invalidate();
+      if (binding?.kind !== (this.persistent ? 'persistent' : 'isolated') || attempt.rawReopened !== undefined) throw this.invalidate();
       attempt.recovery = { browser: previous.browser, context: previous.context, page: recovery.page };
       attempt.epoch += 1;
       attempt.rawReopened = { binding, recovery: attempt.recovery, scope: attempt.scope, epoch: attempt.epoch };
@@ -892,14 +892,14 @@ export class NativeSurface implements NativeWebSurface {
     const client = this.requireClient(); const publication = client.publicationCheckpoint();
     const channel = attempt.channel; const pageEpoch = attempt.epoch;
     const result = await withinAttemptRequest(operation, attempt, async current => {
-      if (name === 'page.navigate' && this.persistent) {
+      if (name === 'page.navigate') {
         // Match ensurePage→goto: the create-only result releases its native
         // event barrier before application navigation needs route decisions.
         await this.creatingPage(attempt, current, () => this.requireEngine().command('page.activate', { identityScope: admitted.scope }, current));
-        if (attempt.retirement.signal.aborted) throw connectionCancellation('Persistent activation retired before navigation');
+        if (attempt.retirement.signal.aborted) throw connectionCancellation('Page activation retired before navigation');
         this.assertScope(attempt, admitted.scope); assertPublicationBudget(current);
         const binding = attempt.rawBinding;
-        if (binding?.kind !== 'persistent') throw this.invalidate();
+        if (binding?.kind !== (this.persistent ? 'persistent' : 'isolated')) throw this.invalidate();
         // Raw CDP identity comes from the acknowledged native identify/binding,
         // not the opaque recovery chain. Native rechecks this captured Page and
         // must not ensure a replacement if it closes before dispatch.
@@ -1137,19 +1137,19 @@ export class NativeSurface implements NativeWebSurface {
     if (reopened === undefined) return;
     const failed = (error: unknown) => this.recordPublicationFailure(attempt, error);
     const check = (current: OperationContext) => {
-      if (attempt.retirement.signal.aborted) throw connectionCancellation('Persistent page publication retired with its attempt');
+      if (attempt.retirement.signal.aborted) throw connectionCancellation('Page publication retired with its attempt');
       this.assertScope(attempt, reopened.scope); assertPublicationBudget(current);
-      if (attempt.rawReopened !== reopened || attempt.epoch !== reopened.epoch) throw invalidState('Persistent page publication changed owners');
+      if (attempt.rawReopened !== reopened || attempt.epoch !== reopened.epoch) throw invalidState('Page publication changed owners');
     };
     try {
-      await withPublicationBudget(operation, 'binding the reopened persistent Page', remaining => {
+      await withPublicationBudget(operation, 'binding the reopened Page', remaining => {
         const current: OperationContext = { ...operation, signal: remaining().signal, get timeoutMs() { return remaining().timeoutMs; } };
         return withinAttemptRequest(current, attempt, async active => {
           try {
             check(active);
             const expected = await this.requireEngine().command('scope.interop.identify', { identityScope: reopened.scope }, active);
             check(active);
-            if (!expected.persistent || expected.contextId !== reopened.binding.contextId) throw invalidState('Persistent page metadata changed its exact context');
+            if (expected.persistent !== (reopened.binding.kind === 'persistent') || expected.contextId !== reopened.binding.contextId) throw invalidState('Reopened page metadata changed its ownership mode or exact context');
             const binding = await bindExistingPlaywrightPage(reopened.binding, expected, active);
             check(active);
             if (attempt.rawViewport !== undefined && attempt.rawViewport !== null) { await binding.page.setViewportSize(attempt.rawViewport); check(active); }

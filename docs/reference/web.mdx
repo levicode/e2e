@@ -1032,6 +1032,19 @@ live!.context();
 
 The native engine owns Chromium and its ordinary actions, observations, network policy and recording lifecycle. The objects above are real Playwright objects on that same browser, not reduced facades. An isolated context exposes its reserved blank Page through raw `context.pages()` before public `page()` becomes ready; first navigation reuses that Page and does not create a second tab.
 
+Closing only the application `Page` does not end its isolated context. The next
+public open creates a new Page in that same context and publishes it only after
+the native activation result and exact context/target binding complete. Existing
+context cookies, storage, init scripts and routes remain context-owned; old page
+references are stale. Cookie lifetime still follows Chromium behavior; closing
+the last Page does not guarantee retention of session cookies. The attempt's configured or `browser.setViewport` size and
+`browser.emulateMedia` settings apply to the new Page. Direct raw-Page viewport
+changes are not a replacement for these attempt settings. Navigation is fenced to
+the acknowledged Page: if it closes again before dispatch, the operation fails
+rather than silently creating another Page. This requires coordinated native
+`browser.isolated-page-reopen/1` and `browser.page-identity-fence/1` support; it is
+not browser-disconnect recovery, a new-context fallback, or an acceptance claim.
+
 **Unreleased integration slice:** fresh startup and final cleanup are the current executable gate, not full release acceptance. Same-transport worker reuse, context replacement, and persistent client recovery still require their integration proofs. Persistent binding selects the exact existing default context and target; it must not rebuild lost document state in an incognito context. Read the accessors again after a completed recovery.
 
 ## Custom executor migration

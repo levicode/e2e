@@ -103,6 +103,25 @@ export class NativeInteropResources {
     }
     return { contextId: resource.contextId, targetId: newTargetId };
   }
+  /** A real Page.close only destroys its exact target, not its context owner. */
+  private closeNativePage(resource: NativeContext, targetId: string): void {
+    if (!resource.alive || !resource.pageAlive || resource.targetId !== targetId) fail('close requires the exact live target');
+    resource.pageAlive = false;
+    this.events.push(`native-page-destroyed:${targetId}`);
+    for (const session of this.sessions) if (session.resource === resource && session.targetId === targetId) this.closeSession(session);
+  }
+  /** Explicit native closed-root reopen seam: no context allocation or restart. */
+  reopenClosedNativePage(expectedScope: string, oldTargetId: string, newTargetId: string): void {
+    const scope = this.ownedScope({ identityScope: expectedScope }); const resource = scope.resource;
+    if (!resource.alive || resource.pageAlive || scope.retiring || resource.targetId !== oldTargetId) fail('reopen requires the exact closed target in its live context');
+    identity(newTargetId);
+    if (this.targetIds.has(newTargetId)) fail('target identity was already allocated');
+    resource.targetId = newTargetId; resource.pageAlive = true; this.targetIds.add(newTargetId);
+    this.events.push(`native-page-created:${newTargetId}`);
+    for (const client of this.clients) for (const wrapper of client.wrappers) {
+      if (client.connected && !wrapper.closed && wrapper.resource === resource) wrapper.page = this.pageWrapper(wrapper);
+    }
+  }
   /** Explicit legacy native-only reset/restore seam. This deliberately leaves
    * the old PW wrapper stale; it cannot make a production replacement GREEN. */
   replaceNativeScope(expectedScope: string, nextScope: string): { identityScope: string } {
@@ -371,6 +390,7 @@ export class NativeInteropResources {
     const live = () => { if (closed()) fail('PW Page names a destroyed native target'); };
     return {
       context: () => wrapper.context, url: () => 'about:blank', isClosed: closed,
+      close: async () => { if (!closed()) this.closeNativePage(resource, targetId); },
       setViewportSize: vi.fn(async (_value: unknown) => { live(); }),
       emulateMedia: vi.fn(async (_value: unknown) => { live(); }),
     } as unknown as Page;

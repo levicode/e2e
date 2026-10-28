@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAppInfo, OperationContext } from 'e2e/engine';
 import { NativeSurface } from '../../src/native-surface.ts';
 import { NativeClient } from '../../src/native/client.ts';
-import { OBSERVE_FRAME_POLICY_CAPABILITY, REQUIRED_CAPABILITIES } from '../../src/native/capabilities.ts';
+import { ISOLATED_PAGE_REOPEN_CAPABILITY, PAGE_IDENTITY_FENCE_CAPABILITY, OBSERVE_FRAME_POLICY_CAPABILITY, REQUIRED_CAPABILITIES } from '../../src/native/capabilities.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import type { NativeEvent } from '../../src/native/protocol.ts';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
@@ -74,7 +74,7 @@ function attachPeer(fixture: ReturnType<typeof peer>): void {
 describe('native observation frame-policy capability', () => {
   it('rejects an old native missing the required frame-policy contract before scope creation', async () => {
     expect(OBSERVE_FRAME_POLICY_CAPABILITY).toBe('browser.observe-frame-policy/1');
-    const advertised = REQUIRED_CAPABILITIES.filter(capability => capability !== OBSERVE_FRAME_POLICY_CAPABILITY);
+    const advertised = [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ISOLATED_PAGE_REOPEN_CAPABILITY].filter(capability => capability !== OBSERVE_FRAME_POLICY_CAPABILITY);
     const fixture = peer(advertised);
     attachPeer(fixture);
     const surface = new NativeSurface({});
@@ -82,7 +82,7 @@ describe('native observation frame-policy capability', () => {
       await expect(init(surface, { site: 'example.test' })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY', retryable: false });
       expect(REQUIRED_CAPABILITIES.filter(capability => capability === OBSERVE_FRAME_POLICY_CAPABILITY)).toHaveLength(1);
       expect(fixture.frames.map(frame => frame['type'])).toEqual(['hello']);
-      expect(fixture.frames[0]?.['requiredCapabilities']).toEqual(REQUIRED_CAPABILITIES);
+      expect(fixture.frames[0]?.['requiredCapabilities']).toEqual([...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ISOLATED_PAGE_REOPEN_CAPABILITY]);
       expect(fixture.dispose).toHaveBeenCalledOnce();
     } finally { await surface.dispose(cleanup()); }
   });
@@ -101,7 +101,7 @@ describe('native observation frame-policy capability', () => {
   });
 
   it.each([undefined, 'example.test', 'EXACT.Configured.Site'])('sends app.site=%s only through scope.configure, never an observe override', async site => {
-    const fixture = peer([...REQUIRED_CAPABILITIES, 'future.additive/1']);
+    const fixture = peer([...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ISOLATED_PAGE_REOPEN_CAPABILITY, 'future.additive/1']);
     attachPeer(fixture);
     const surface = new NativeSurface({});
     const app: { site?: string } = site === undefined ? {} : { site };
