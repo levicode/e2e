@@ -1,0 +1,163 @@
+name: Test-only exact final-stage paired controls
+'on':
+  push:
+    branches:
+    - ci/query-final-stage-focused-controls
+permissions:
+  contents: read
+  actions: read
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '1'
+      NATIVE_SOURCE_SHA: e31ff837746c5f0b99418350fcaa914421b905d0
+      NATIVE_SOURCE_TREE: 0385ccdf3daa90a5594aa8b23b70dae038043492
+      QUERY_PAIR_SIDE: candidate
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Compile supplementary fast-profile test harness (not production acceptance)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse\
+        \ HEAD)\" = \"$NATIVE_SOURCE_SHA\"\ntest \"$(git rev-parse HEAD^{tree})\"\
+        \ = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\nrustup\
+        \ toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset\
+        \ RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo\
+        \ +1.99.1 test --locked --profile ci-test-fast --config 'profile.ci-test-fast.inherits=\"\
+        ci\"' --config profile.ci-test-fast.opt-level=1 --config 'profile.ci-test-fast.lto=\"\
+        off\"' --config profile.ci-test-fast.codegen-units=16 --config profile.ci-test-fast.debug=0\
+        \ --config profile.ci-test-fast.debug-assertions=false --config profile.ci-test-fast.overflow-checks=false\
+        \ --config 'profile.ci-test-fast.panic=\"unwind\"' --config profile.ci-test-fast.incremental=false\
+        \ --config profile.ci-test-fast.strip=true --timings --no-default-features\
+        \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout\
+        \ = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished\
+        \ = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n  \
+        \  record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
+        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason')\
+        \ == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
+        \ [])\n        and record.get('profile', {}).get('test') is True\n       \
+        \ and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n\
+        \        assert record['profile']['opt_level']=='1' and record['profile']['debug_assertions']\
+        \ is False and record['profile']['overflow_checks'] is False\n        paths.add(record['executable'])\n\
+        if build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected\
+        \ exactly one test executable, got {len(paths)}')\nharness = paths.pop()\n\
+        if not Path(harness).is_file():\n    raise SystemExit('Compiler-selected harness\
+        \ is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\n\
+        mkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\"\
+        )\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests\
+        \ > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\\
+        n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - name: Execute exact final-stage control and actual staged commit control
+      run: python3 scripts/ci/run-query-final-stage-focused.py
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: query-final-stage-candidate-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '1'
+      NATIVE_SOURCE_SHA: bf83ec1f54539d5a9b05d89e0de89d0d18075f70
+      NATIVE_SOURCE_TREE: 22907831eb2e62f91ebcac51ffceee95187dc846
+      QUERY_PAIR_SIDE: baseline
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Compile supplementary fast-profile test harness (not production acceptance)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse\
+        \ HEAD)\" = \"$NATIVE_SOURCE_SHA\"\ntest \"$(git rev-parse HEAD^{tree})\"\
+        \ = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\nrustup\
+        \ toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset\
+        \ RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo\
+        \ +1.99.1 test --locked --profile ci-test-fast --config 'profile.ci-test-fast.inherits=\"\
+        ci\"' --config profile.ci-test-fast.opt-level=1 --config 'profile.ci-test-fast.lto=\"\
+        off\"' --config profile.ci-test-fast.codegen-units=16 --config profile.ci-test-fast.debug=0\
+        \ --config profile.ci-test-fast.debug-assertions=false --config profile.ci-test-fast.overflow-checks=false\
+        \ --config 'profile.ci-test-fast.panic=\"unwind\"' --config profile.ci-test-fast.incremental=false\
+        \ --config profile.ci-test-fast.strip=true --timings --no-default-features\
+        \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout\
+        \ = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished\
+        \ = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n  \
+        \  record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
+        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason')\
+        \ == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
+        \ [])\n        and record.get('profile', {}).get('test') is True\n       \
+        \ and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n\
+        \        assert record['profile']['opt_level']=='1' and record['profile']['debug_assertions']\
+        \ is False and record['profile']['overflow_checks'] is False\n        paths.add(record['executable'])\n\
+        if build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected\
+        \ exactly one test executable, got {len(paths)}')\nharness = paths.pop()\n\
+        if not Path(harness).is_file():\n    raise SystemExit('Compiler-selected harness\
+        \ is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\n\
+        mkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\"\
+        )\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests\
+        \ > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\\
+        n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - name: Execute exact final-stage control; preserve baseline failure
+      run: python3 scripts/ci/run-query-final-stage-focused.py
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: query-final-stage-baseline-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
