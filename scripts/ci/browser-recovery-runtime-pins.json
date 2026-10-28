@@ -1,26 +1,26 @@
 {
-  "artifactId": 12801534331,
-  "artifactName": "ci-native-runtime-Selector and typed-query complete acceptance-40656200174-1",
-  "artifactSize": 13931008,
-  "artifactDigest": "sha256:b2b37a8c5f0031cab4e74814f54206f811746aec8cb0db798caf0270e38b15f1",
-  "manifestSha256": "e16d9043e7e8f90c12290d47442e553b47a3e0ca8bd0bf25b43982d78d452ef3",
+  "artifactId": 12825695095,
+  "artifactName": "ci-native-runtime-Bounded strict raw selector three-slice verification-40706445587-1",
+  "artifactSize": 13976190,
+  "artifactDigest": "sha256:d6102e9e2b853b42791b1dc57177d2c3d0ab833499ff837be8aeeb0a0e5f7890",
+  "manifestSha256": "f8f11d35b4235158865b817f9b0736c9f25ee0f4bdea3d2a36d6ed543ae2b648",
   "expected": {
     "source": {
-      "commit": "40a54453ef9ca02aec0a9141a5f384d632b998f1",
-      "tree": "f5a13e514e6cfea0d2ae3e07788b153544299a96"
+      "commit": "3e64442b6597296ecee8b52e45eaf753cdeddbc5",
+      "tree": "585156201c752bcb7cf07a02376ea09ea6cc5d12"
     },
     "repository": "levicode/e2e",
-    "runId": "40656200174",
+    "runId": "40706445587",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "1b0d6fe15fbca4e916edadfa12e529365c48435d"
+    "nativeCommit": "92cab5a6015697e36c934ab4d76ef50d6010581b"
   },
   "nativeSource": {
-    "commit": "1b0d6fe15fbca4e916edadfa12e529365c48435d",
-    "tree": "0bc8ba70ba1c8e26ac2717f8194c403d109d964c"
+    "commit": "92cab5a6015697e36c934ab4d76ef50d6010581b",
+    "tree": "56656b852fe169407b7711fc86996728d286d14e"
   },
-  "binarySha256": "a2215fe00def6bced56eb09275797df6ad73a08d5406273affc42db280aa01b3",
-  "harnessNative": "1b0d6fe15fbca4e916edadfa12e529365c48435d",
-  "scope": "Paired public selector verification and unchanged original reset two-case diagnostic; reused immutable binary, not new compilation or full acceptance"
+  "binarySha256": "8a2c6e5c56d6de6c69da7620da32f25ec2931a439a4ee399e5abbb045a6878b2",
+  "harnessNative": "92cab5a6015697e36c934ab4d76ef50d6010581b",
+  "scope": "Only static-fixture paired CSS six exact public contracts; immutable ordinary reuse, no product changes"
 }

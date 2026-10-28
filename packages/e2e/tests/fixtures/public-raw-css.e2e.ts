@@ -1,4 +1,5 @@
 /** Exact original 40663028464 CSS records, now strict on both paired sides. */
+import { appendFileSync } from 'node:fs';
 import { test, type Browser } from '@e2e-dev/web';
 import { expect } from 'e2e';
 async function expectRaw(browser: Browser, id: string, selector: string, expectedIds?: string[]): Promise<void> {
@@ -14,15 +15,31 @@ async function expectRaw(browser: Browser, id: string, selector: string, expecte
       .toEqual({ id, name: 'E2EError', category: 'infrastructure', code: 'ENGINE_FAILURE', retryable: false, causeCode: 'ENGINE_FAILURE', causeRetryable: false });
     return;
   }
+  const output = process.env['E2E_RAW_CSS_PAIR_OUTPUT'];
+  if (output === undefined) throw new Error('owned CSS pair evidence path required');
   const count = await locator.count();
-  expect({ id, count }).toEqual({ id, count: expectedIds.length });
+  if (!Number.isInteger(count) || count < 0 || count > 8) {
+    appendFileSync(output, `${JSON.stringify({ id, count, stage: 'count-bound-refused' })}\n`);
+    throw new Error('synthetic CSS fixture count outside bounded range');
+  }
   const ids: Array<string | null> = [];
   for (let index = 0; index < count; index++) ids.push(await locator.nth(index).getAttribute('id'));
+  const visibilityFacts = id === 'css-visible' ? await browser.evaluate(() =>
+    Array.from(document.querySelectorAll('button')).slice(0, 8).map(button => {
+      const rect = button.getBoundingClientRect();
+      return { id: button.id || null, displayNone: getComputedStyle(button).display === 'none',
+        positiveBox: rect.width > 0 && rect.height > 0,
+        lateArrival: button.id === '' && button.textContent === 'Late arrival' };
+    })) : null;
+  // Record exact ordered synthetic IDs before assertions, including a mismatch.
+  appendFileSync(output, `${JSON.stringify({ id, count, ids, visibilityFacts })}\n`);
+  expect({ id, count }).toEqual({ id, count: expectedIds.length });
   expect({ id, ids }).toEqual({ id, ids: expectedIds });
 }
 
 test('public raw CSS: exact original baseline parity', async ({ app, browser }) => {
-  await app.open();
+  // Static route: Home has a 400ms timer that survives body.innerHTML replacement.
+  await app.open('/about');
   await browser.evaluate(() => {
     document.body.innerHTML = '<section><div class="row" id="css-a">Alpha <span>Beta</span></div><div class="row" id="css-b">Alpha Beta</div><button id="css-shown">Save</button><button id="css-hidden" style="display:none">Save</button></section>';
     return null;

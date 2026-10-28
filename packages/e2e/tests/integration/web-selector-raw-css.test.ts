@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../../../web/tests/helpers/cdp-host.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
@@ -14,6 +15,7 @@ describe('public raw CSS exact baseline parity on real Chromium', () => {
   let chrome: RemoteChrome | undefined;
   let project: FixtureProject | undefined;
   let outcome: RunOutcome | undefined;
+  let records: Array<{ id: string }> = [];
 
   beforeAll(async () => {
     app = await startFixtureApp();
@@ -26,7 +28,17 @@ export default {
   cache: 'off',
 } satisfies E2EConfig;`;
     project = createProject({ 'tests/public-raw-css.e2e.ts': SUITE, 'e2e.config.ts': configSource });
-    outcome = await runExistingWithConfigFile(project, { appUrl: app.url });
+    const output = path.join(project.dir, 'raw-css-pair.jsonl');
+    writeFileSync(output, '');
+    const previousOutput = process.env['E2E_RAW_CSS_PAIR_OUTPUT'];
+    process.env['E2E_RAW_CSS_PAIR_OUTPUT'] = output;
+    try { outcome = await runExistingWithConfigFile(project, { appUrl: app.url }); }
+    finally {
+      if (previousOutput === undefined) delete process.env['E2E_RAW_CSS_PAIR_OUTPUT'];
+      else process.env['E2E_RAW_CSS_PAIR_OUTPUT'] = previousOutput;
+      records = readFileSync(output, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { id: string });
+      console.log('RAW_CSS_PAIR_RECORDS', JSON.stringify(records));
+    }
   }, 300_000);
 
   afterAll(async () => {
@@ -42,6 +54,7 @@ export default {
     expect(outcome!.results).toHaveLength(1);
     expect(outcome!.results.map(result => result.test.title)).toEqual(['public raw CSS: exact original baseline parity']);
     expect(outcome!.results.map(result => result.status), JSON.stringify(outcome!.report)).toEqual(['passed']);
+    expect(records.map(record => record.id)).toEqual(['css-has-text', 'css-text', 'css-text-is', 'css-text-matches', 'css-visible', 'css-nth-match']);
     expect(outcome!.report.run.errors).toEqual([]);
   });
 });
