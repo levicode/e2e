@@ -1,26 +1,26 @@
 {
-  "artifactId": 12752118010,
-  "artifactName": "ci-native-runtime-Native interop allocation uncertainty finite validation-40544356482-1",
-  "artifactSize": 13891549,
-  "artifactDigest": "sha256:156ec759d404c0788c3b639681f91761fa2591ba1dbb745b46a9aa0f8aa40ad3",
-  "manifestSha256": "d66fca0a645408cbd840fba5f927a410ccab4146f3ab9074382b8dd5c20e618f",
+  "artifactId": 12779766720,
+  "artifactName": "ci-native-runtime-Typed owner stop same-source validation-40603519510-1",
+  "artifactSize": 13814767,
+  "artifactDigest": "sha256:8a1c0a80d5474d71410958bd96a2e409dd17e54d7940d82efac0e35a17c75348",
+  "manifestSha256": "f658026ed95168425fb5187299c1ea86ee00e8ced6c2fd1c13688a2ab6a2f19b",
   "expected": {
     "source": {
-      "commit": "0460f6bdc043195e72fa697a318691869461f5ee",
-      "tree": "a74ef1b4c5799bd4c0a125a727746feab3d08595"
+      "commit": "0e73c259fffcfe72dc507eef70d9887afb489beb",
+      "tree": "d8cc62cab0c12defc638d03d3badfba6af394b84"
     },
     "repository": "levicode/e2e",
-    "runId": "40544356482",
+    "runId": "40603519510",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf"
+    "nativeCommit": "1fc0adbfd00a93ec20852195d01c52a1428b38d4"
   },
   "nativeSource": {
-    "commit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
-    "tree": "f7a53c5498970b5e05dffc95e53a080d5324af36"
+    "commit": "1fc0adbfd00a93ec20852195d01c52a1428b38d4",
+    "tree": "60b81b2446b8b9e8b1f857ba5da97870acea6eb6"
   },
-  "binarySha256": "f25e1f6469d2afd962344c1afd0fd299aee7faff799e4646aa8b807d78fc0d5c",
-  "harnessNative": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
-  "scope": "Exact 74ec ordinary production reuse from 405443; new Node source, finite diagnostic lanes, not full acceptance."
+  "binarySha256": "ff54b73cbf1b8de428edb0a87aa20f2d76a7994d7b363c1095150a566b68ea41",
+  "harnessNative": "1fc0adbfd00a93ec20852195d01c52a1428b38d4",
+  "scope": "Existing trace opt-in only; same V5 ordinary binary; original reset/restart assertions, counts and budgets unchanged."
 }
