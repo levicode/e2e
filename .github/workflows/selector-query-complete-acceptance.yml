@@ -2,7 +2,7 @@ name: Selector and typed-query complete acceptance
 'on':
   push:
     branches:
-    - ci/selector-query-complete-acceptance
+    - ci/selector-query-complete-acceptance-r2
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -2981,6 +2981,9 @@ jobs:
 
         test "$(git -C baseline rev-parse HEAD^{tree})" = "f937e69e052e68ae1260077af43279ccbf889be7"
 
+        printf "PLAYWRIGHT_BROWSERS_PATH=%s/selector-pw-host\n" "$RUNNER_TEMP" >>
+        "$GITHUB_ENV"
+
         '
     - run: pnpm install --frozen-lockfile
       working-directory: baseline
@@ -3155,7 +3158,6 @@ jobs:
       E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
       E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
       E2E_SELECTOR_PAIR_LABEL: baseline
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/selector-pw-host
     needs:
     - native-runtime
   public-selectors-candidate:
@@ -3191,6 +3193,9 @@ jobs:
         printf "%s\n" candidate > evidence/pair-label
 
         test -z "$(git -C . status --porcelain)"
+
+        printf "PLAYWRIGHT_BROWSERS_PATH=%s/selector-pw-host\n" "$RUNNER_TEMP" >>
+        "$GITHUB_ENV"
 
         '
     - run: pnpm install --frozen-lockfile
@@ -3380,6 +3385,5 @@ jobs:
       E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
       E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
       E2E_SELECTOR_PAIR_LABEL: candidate
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/selector-pw-host
     needs:
     - native-runtime
