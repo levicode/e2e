@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 export function snapshotCache(directory) {
-  return readdirSync(directory).sort().map((file) => {
+  return readdirSync(directory).toSorted().map((file) => {
     assert.match(file, /^[a-f0-9]{64}\.json$/u, `unexpected cache member: ${file}`);
     const name = path.join(directory, file);
     const bytes = readFileSync(name);
@@ -26,9 +26,9 @@ export function validateReplay(manifest, outcome, calls) {
   assert.deepEqual(outcome.report.run.errors, []);
   const results = outcome.report.run.results.filter((result) => result.selected);
   assert.equal(results.length, 30, 'no dropped or extra recorded tests');
-  assert.deepEqual(results.map((result) => result.testId).sort(), manifest.entries.map((entry) => entry.testId).sort());
+  assert.deepEqual(results.map((result) => result.testId).toSorted(), manifest.entries.map((entry) => entry.testId).toSorted());
   assert.equal(calls.length, 4, 'only the four original derived gaps may reach an executor');
-  assert.deepEqual(calls.map((call) => call.testId).sort(), manifest.entries.filter((entry) => entry.gap).map((entry) => entry.testId).sort());
+  assert.deepEqual(calls.map((call) => call.testId).toSorted(), manifest.entries.filter((entry) => entry.gap).map((entry) => entry.testId).toSorted());
   for (const entry of manifest.entries) {
     const result = results.find((row) => row.testId === entry.testId);
     assert.equal(result.attempts.length, 1, `${entry.testId}: retries must not hide failures`);

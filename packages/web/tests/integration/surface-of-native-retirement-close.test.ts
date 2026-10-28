@@ -9,6 +9,17 @@ import { web, surfaceOf } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
+/** Require owned Chromium exit; preserve unexpected process-probe errors. */
+async function expectOwnedProcessExited(pid: number): Promise<void> {
+  const deadline = Date.now() + 5000;
+  let alive = true;
+  while (alive && Date.now() < deadline) {
+    try { process.kill(pid, 0); await new Promise(resolve => setTimeout(resolve, 20)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; alive = false; }
+  }
+  expect(alive).toBe(false);
+}
+
 async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try { return await Promise.race([work, new Promise<never>((_done, reject) => { timer = setTimeout(() => reject(new Error(`${label} exceeded test-only bound`)), ms); })]); }
@@ -67,12 +78,7 @@ it.each(['before-dispose', 'after-dispose'] as const)('terminal close joins phas
       if (stopping !== undefined) await bounded(stopping.catch(() => {}), 1000, 'stop receipt');
       if (pendingClose !== undefined) await bounded(pendingClose, 1000, 'PW receipt');
       if (pid !== undefined) {
-        const until = Date.now() + 5000; let alive = true;
-        while (alive && Date.now() < until) {
-          try { process.kill(pid, 0); await new Promise(done => setTimeout(done, 20)); }
-          catch (cause) { if ((cause as NodeJS.ErrnoException).code !== 'ESRCH') throw cause; alive = false; }
-        }
-        expect(alive).toBe(false);
+        await expectOwnedProcessExited(pid);
       }
       evidence['cleanup'] = 'passed'; cleanupPassed = true;
     } catch (cause) { failure ??= cause; evidence['cleanup'] = 'failed'; }

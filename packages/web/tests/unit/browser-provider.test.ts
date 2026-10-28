@@ -69,10 +69,10 @@ function installNativePeers(): void {
       if (owner.resources === undefined) throw new Error('Provider command preceded native ownership');
       if (command === 'scope.end' && failEnd) return { error: 'cleanup-failed', effects: 'unknown', scopeState: 'quarantined' };
       return owner.resources.respond(request, frame => {
-        const command = frame.command;
+        const frameCommand = frame.command;
         // No frozen native recorder proof: this is a terminal refusal, not a usable scope reply.
-        if (command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-        if (command === 'scope.reconnect') {
+        if (frameCommand === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
+        if (frameCommand === 'scope.reconnect') {
           const identity = owner.resources!.currentIdentity()!;
           expect(frame.args).toMatchObject({ identityScope: owner.scope,
             expectedBrowserIdentity: identity.recoveryIdentity.browser,
@@ -81,14 +81,14 @@ function installNativePeers(): void {
           const data = owner.resources!.reconnectScope(owner.scope, next); owner.scope = next;
           return { data };
         }
-        if (command === 'page.activate') return { data: { activated: true } };
-        if (['scope.configure', 'network.routes.replace', 'recording.start'].includes(command)) return { data: null };
-        if (command === 'blob.release') return { data: { released: true } };
-        if (command === 'page.title') return { data: { title: 'reattached' } };
-        if (command === 'recording.stop') return { data: { identityScope: owner.scope, segments: [{ identityScope: owner.scope, handle: 'provider-unit-video', size: videoBytes.length,
+        if (frameCommand === 'page.activate') return { data: { activated: true } };
+        if (['scope.configure', 'network.routes.replace', 'recording.start'].includes(frameCommand)) return { data: null };
+        if (frameCommand === 'blob.release') return { data: { released: true } };
+        if (frameCommand === 'page.title') return { data: { title: 'reattached' } };
+        if (frameCommand === 'recording.stop') return { data: { identityScope: owner.scope, segments: [{ identityScope: owner.scope, handle: 'provider-unit-video', size: videoBytes.length,
           sha256: createHash('sha256').update(videoBytes).digest('hex'), mediaType: 'video/webm', startedAt: '2026-09-28T10:00:00.000Z' }] } };
-        if (command === 'blob.read') return { data: { base64: videoBytes.toString('base64'), nextOffset: videoBytes.length, eof: true } };
-        throw new Error(`Unexpected provider peer command ${command}`);
+        if (frameCommand === 'blob.read') return { data: { base64: videoBytes.toString('base64'), nextOffset: videoBytes.length, eof: true } };
+        throw new Error(`Unexpected provider peer command ${frameCommand}`);
       });
     }, { close: () => owner.resources?.closeNative() });
     peers.push(owner);

@@ -503,9 +503,18 @@ the app opens itself (`target="_blank"`, `window.open`) is not followed:
   text; no handler, or one that neither accepts nor dismisses, fails the
   next step with `INVALID_STATE`. A throwing handler's unanswered dialog is
   dismissed too, and its error fails the next step.
+  The harness owns the decision and no-handler default. Raw `surfaceOf` dialog
+  observers still receive genuine Playwright events; do not independently call
+  `accept`/`dismiss` from both raw Playwright and harness handlers. Unsubscribing
+  the harness handler does not hand ownership to raw Playwright.
+
 - `waitForDownload(() => trigger, { timeout? })`: returns
   `{ path, absolutePath, suggestedFilename }`; `absolutePath` names the saved
   runner-side file for reading its contents, including with a hosted browser.
+  Cancelled downloads keep cleanup with their original owner. A successful
+  context reset or storage-state restoration may retire that owner; cleanup
+  never retries the release against the replacement. A later actual cleanup
+  failure still belongs to that attempt; reset does not erase it.
 - `keyboard.press(key)`, `keyboard.type(text)`, `keyboard.down(key)`,
   `keyboard.up(key)`, `mouse.*`: unfocused input. Only `down(key)` holds a
   key or modifier until `up(key)`. `press(key)` presses and releases within
@@ -533,3 +542,5 @@ A `route`, `unroute`, or `waitForResponse` pattern is a glob string or
   state exactly.
 - `await` every step call and `expect.poll`, else `STEP_NOT_AWAITED` at the line of the call.
 - Assert the fact a model produced with `toContain`, not its exact sentence.
+
+Native Web callback locator value reads use a negotiated pure-value contract. They preserve secure-field restrictions and do not grant action or reference authority while another operation is pending. Do not treat a successful callback read or a cancellation acknowledgment as permission to resume input; native settlement and scope health still govern reuse.

@@ -12,6 +12,17 @@ import { launchRemoteChrome, closeRemoteChrome, type RemoteChrome } from '../hel
 import { web, surfaceOf } from '../../src/index.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
+/** Require owned Chromium exit; preserve unexpected process-probe errors. */
+async function expectOwnedProcessExited(pid: number): Promise<void> {
+  const deadline = Date.now() + 5000;
+  let alive = true;
+  while (alive && Date.now() < deadline) {
+    try { process.kill(pid, 0); await new Promise(resolve => setTimeout(resolve, 20)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; alive = false; }
+  }
+  expect(alive).toBe(false);
+}
+
 /** Test-only bounds: Vitest's watchdog alone does not cancel owned work. */
 async function bounded<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -166,13 +177,7 @@ it.each(['owned', 'borrowed'] as const)('reuses one %s Chromium without reconnec
         evidence['borrowedHostPreserved'] = true;
       }
       if (ownership === 'owned' && browserPid !== undefined) {
-        const deadline = Date.now() + 5000;
-        let alive = true;
-        while (alive && Date.now() < deadline) {
-          try { process.kill(browserPid, 0); await new Promise(resolve => setTimeout(resolve, 20)); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; alive = false; }
-        }
-        expect(alive).toBe(false);
+        await expectOwnedProcessExited(browserPid);
       }
       if (work !== undefined) await bounded(work.catch(() => undefined), 1000, 'retired witness settlement');
       cleanupPassed = true; evidence['cleanup'] = 'passed';

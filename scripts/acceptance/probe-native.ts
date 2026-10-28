@@ -75,7 +75,7 @@ try {
     const result = await client!.request(command, args, { signal: AbortSignal.timeout(15_000), timeoutMs: 15_000 });
     if (unexpectedEvent) throw unexpectedEvent;
     if (!result.ok || result.effects !== 'completed' || result.scopeState !== 'usable') {
-      failedOperation = { command, ok: result.ok, effects: result.effects, scopeState: result.scopeState, errorCode: result.error?.code };
+      failedOperation = { command, ok: result.ok, effects: result.effects, scopeState: result.scopeState, ...(result.error?.code === undefined ? {} : { errorCode: result.error.code }) };
       throw new Error(`Native scope exercise failed: ${command}`);
     }
     return result.data;
