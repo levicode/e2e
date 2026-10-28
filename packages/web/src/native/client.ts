@@ -30,6 +30,9 @@ interface Pending {
   readonly kind: 'hello' | 'request' | 'artifact' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
   readonly cancelTarget?: number;
+  // Only ordinary decide() receipts require ACK-before-close custody. Private
+  // interop handoff controls retain their distinct validated-close contract.
+  readonly decisionReceipt?: 'ordinary';
   readonly callbackToken?: string;
   readonly callbackTransition?: number;
   readonly command?: string;
@@ -330,7 +333,7 @@ export class NativeClient {
       if (this.ready === undefined) throw this.fail('The native browser session is not available');
       // A closed frame cannot stand in for an already-dispatched decision ACK.
       // Join only existing control receipts, never arbitrary user callback work.
-      const receipts = [...this.pending.values()].filter(pending => pending.kind === 'decision').map(pending => pending.settlement);
+      const receipts = [...this.pending.values()].filter(pending => pending.decisionReceipt === 'ordinary').map(pending => pending.settlement);
       if (receipts.length > 0) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -363,7 +366,7 @@ export class NativeClient {
     this.publishingEpoch = undefined; this.publishingCommand = undefined; this.completeTransition(false);
     // Close bounds remaining bookkeeping, but dispatched decision receipts
     // retain their ORIGINAL watchdog even during automatic terminal cleanup.
-    for (const pending of this.pending.values()) if (pending.kind !== 'close' && pending.kind !== 'decision') pending.clear();
+    for (const pending of this.pending.values()) if (pending.kind !== 'close' && pending.decisionReceipt !== 'ordinary') pending.clear();
     const cleanup: OperationContext = { runId: 'native-cleanup', attemptId: 'native-cleanup', origin: 'test', signal: new AbortController().signal, timeoutMs: 15000 };
     let collected: Promise<unknown> | undefined;
     if (!this.explicitClose && this.closing === undefined && failed?.kind === 'request' && failed.callbackToken === undefined
@@ -491,7 +494,7 @@ export class NativeClient {
       };
       const args = message['args'];
       const scope = args !== null && typeof args === 'object' && 'identityScope' in args && typeof args.identityScope === 'string' ? args.identityScope : undefined;
-      this.pending.set(id, { kind, ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
+      this.pending.set(id, { kind, ...(kind === 'decision' && dispatchSignal !== undefined ? { decisionReceipt: 'ordinary' as const } : {}), ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
       // Check after serialization and before the sole write. Pre-dispatch
       // caller cancellation is definite no-effect, not a protocol failure.
       if (dispatchSignal?.aborted) {
