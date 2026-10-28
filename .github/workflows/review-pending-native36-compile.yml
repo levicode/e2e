@@ -1,0 +1,61 @@
+name: REVIEW PENDING compile-only native selected query 6097
+'on':
+  push:
+    branches:
+    - ci/review-pending-native36-compile-6097
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: review-pending-native36-compile-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  NATIVE_SOURCE_SHA: e1bad45d8ca04389f8e530f6267e8fdb646fb573
+  NATIVE_SOURCE_TREE: e7ca1b2b33207c99cdc01997ff1945bd4a09efcc
+jobs:
+  typecheck-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Check default and acceptance-faults tests without executing any harness
+      run: "set -uo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse\
+        \ HEAD)\" = \"$NATIVE_SOURCE_SHA\" || exit 1\ntest \"$(git rev-parse HEAD^{tree})\"\
+        \ = \"$NATIVE_SOURCE_TREE\" || exit 1\ntest -z \"$(git status --porcelain)\"\
+        \ || exit 1\nrustup toolchain install 1.99.1 --profile minimal || exit 1\n\
+        rustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\ncargo\
+        \ +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nsha256sum\
+        \ Cargo.lock > \"$GITHUB_WORKSPACE/evidence/cargo-lock.sha256\"\nunset RUSTC_WRAPPER\
+        \ RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"\
+        $RUNNER_TEMP/native36-check-target\"\nfailed=0\nfor kind in default acceptance-faults;\
+        \ do\n  args=()\n  if test \"$kind\" = acceptance-faults; then args+=(--features\
+        \ acceptance-faults); fi\n  cargo +1.99.1 check --locked --profile ci --tests\
+        \ --bin agent-browser -j1 \"${args[@]}\" --message-format=json > \"$GITHUB_WORKSPACE/evidence/$kind.jsonl\"\
+        \ 2> \"$GITHUB_WORKSPACE/evidence/$kind.log\"\n  status=$?\n  printf '%s\\\
+        n' \"$status\" > \"$GITHUB_WORKSPACE/evidence/$kind.exit\"\n  if test \"$status\"\
+        \ -ne 0; then failed=1; fi\ndone\npython3 - <<'PY_RECEIPT'\nimport json,os,pathlib\n\
+        p=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'evidence';rows=[]\nfor kind\
+        \ in ['default','acceptance-faults']:\n records=[json.loads(x) for x in (p/(kind+'.jsonl')).read_text().splitlines()]\n\
+        \ errors=[r['message']['rendered'] for r in records if r.get('reason')=='compiler-message'\
+        \ and r.get('message',{}).get('level')=='error']\n rows.append({'kind':kind,'exit':int((p/(kind+'.exit')).read_text()),'buildFinished':[r.get('success')\
+        \ for r in records if r.get('reason')=='build-finished'],'errors':errors})\n\
+        (p/'result.json').write_text(json.dumps({'nativeSource':{'commit':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE']},'kind':'cargo-check-tests-only','reviewPending':True,'testExecution':False,'runtimeAcceptance':False,'results':rows},indent=2))\n\
+        assert all(r['exit']==0 and r['buildFinished']==[True] for r in rows),rows\n\
+        PY_RECEIPT\nreceipt=$?\ntest \"$failed\" -eq 0 && test \"$receipt\" -eq 0\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: review-pending-native36-compile-only-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
