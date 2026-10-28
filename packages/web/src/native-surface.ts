@@ -831,32 +831,130 @@ export class NativeSurface implements NativeWebSurface {
   private async ensureConnected(operation: OperationContext, attempt: Attempt): Promise<void> {
     this.assertAttempt(attempt);
     if (attempt.recoveryFailure !== undefined) throw attempt.recoveryFailure.error;
-    if (attempt.rawBinding !== undefined && disconnectedBindingMode(attempt.rawBinding) === 'isolated-context-lost') throw invalidState('The isolated context was destroyed with its Playwright connection; a fresh attempt is required');
-    if (this.requireClient().recoveryScope() === attempt.scope) attempt.recoveryPending = true;
-    if (!attempt.recoveryPending) return;
+    const previous = attempt.rawBinding;
+    const rawMode = previous === undefined ? undefined : disconnectedBindingMode(previous);
+    if (rawMode === 'isolated-context-lost') throw invalidState('The isolated context was destroyed with its Playwright connection; a fresh attempt is required');
+    const client = this.requireClient();
+    if (client.recoveryScope() === attempt.scope) attempt.recoveryPending = true;
+    if (!attempt.recoveryPending && rawMode !== 'persistent-rebind') return;
     if (attempt.reconnect === undefined || attempt.recovery === undefined) throw invalidState('The native browser disconnected and has no persistent recovery contract');
-    const recovering = attempt.recovering;
-    if (recovering !== undefined) {
-      // A waiter owns only its wait; its cancellation cannot fail the shared owner.
-      await withConnectionBudget(operation, 'native browser recovery', () => recovering);
+    if (attempt.recovering !== undefined) {
+      // A second caller owns its waiter, never the first recovery's outcome.
+      await withConnectionBudget(operation, 'native browser recovery', () => attempt.recovering!);
+      if (attempt.recoveryPending) { attempt.pageReady = false; throw invalidState('Persistent recovery disconnected during publication'); }
       return;
     }
-    attempt.recoveryObservationRequired = true;
-    // Share the owner's classified deadline/cancellation, not an inner aborted resolver.
-    attempt.recovering = withConnectionBudget(operation, 'native browser recovery', async remaining => {
-      const endpoint = await this.resolveEndpoint(attempt.reconnect!, remaining().signal, 'connect.reconnectEndpoint');
-      this.assertAttempt(attempt);
-      const identity = attempt.recovery!;
-      const client = this.requireClient(); const callbackEpoch = client.reconnectCheckpoint(attempt.scope);
-      const result = await this.requireEngine().command('scope.reconnect', { identityScope: attempt.scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, { ...operation, ...remaining() }, callbackEpoch);
-      this.assertAttempt(attempt); remaining();
-      client.retireCallbacks(callbackEpoch, 'scope-reconnected'); attempt.epoch += 1; attempt.scope = result.identityScope; attempt.recoveryPending = false; this.bindChannel(attempt);
-    }).catch((error: unknown) => {
-      // Only this captured owner may record failure. Callback errors remain one-shot.
-      attempt.recoveryFailure ??= { error };
-      throw attempt.recoveryFailure.error;
-    }).finally(() => { attempt.recovering = undefined; });
+    const scope = attempt.scope; const epoch = attempt.epoch; const identity = attempt.recovery;
+    const wasPageReady = attempt.pageReady; const resolver = attempt.reconnect;
+    const reopened = attempt.rawReopened;
+    const viewport = rawMode === 'persistent-rebind' ? previous!.page.viewportSize() : undefined;
+    const engine = this.requireEngine(); const endsAt = performance.now() + operation.timeoutMs;
+    const original: OperationContext = { ...operation, get timeoutMs() { return Math.max(0, endsAt - performance.now()); } };
+    let publicationStarted = false;
+    attempt.recoveryObservationRequired = true; attempt.pageReady = false;
+    const check = (active: OperationContext) => {
+      if (attempt.retirement.signal.aborted) throw connectionCancellation('Persistent recovery publication retired with its attempt');
+      this.assertScope(attempt, scope); assertPublicationBudget(active);
+      if (attempt.epoch !== epoch || this.client !== client) throw invalidState('Persistent recovery owner changed before publication');
+    };
+    const failed = (cause: unknown) => {
+      // Resolving an endpoint or a clean native refusal is a business failure,
+      // not a fabricated resource-cleanup receipt. ACK/acquisition publication
+      // and validated terminal outcomes retain the existing exact cleanup owner.
+      if (publicationStarted || client.isTerminal() || isClosedFrameCancellation(cause)) this.recordPublicationFailure(attempt, cause);
+      else attempt.recoveryFailure ??= { error: cause };
+    };
+    const work = withinAttemptRequest(original, attempt, async current => {
+      const phase = <T>(label: string, run: (active: OperationContext) => Promise<T>, retainActualReceipt = true): Promise<T> =>
+        withPublicationBudget(current, label, remaining => {
+          const budget: OperationContext = { ...current, signal: remaining().signal, get timeoutMs() { return remaining().timeoutMs; } };
+          return withinAttemptRequest(budget, attempt, async active => {
+            try { check(active); const result = await run(active); check(active); return result; }
+            catch (cause) { if (retainActualReceipt) failed(cause); throw cause; }
+          });
+        });
+      try {
+        // User resolver cancellation is not a resource receipt. Let the phase's
+        // owning budget classify timeout/cancel before latching one exact error
+        // for current and later followers; actual PW/native phases stay retained.
+        const endpoint = await phase('resolving persistent browser recovery', active => this.resolveEndpoint(resolver, active.signal, 'connect.reconnectEndpoint'), false);
+        let nextScope = scope; let callbackEpoch: number | undefined;
+        const pendingNative = () => attempt.recoveryPending === true || client.recoveryScope() !== undefined;
+        const recoverNative = async () => {
+          if (!pendingNative()) return;
+          if (callbackEpoch !== undefined) throw invalidState('The persistent native connection retired again before recovery publication');
+          check(current); callbackEpoch = client.reconnectCheckpoint(scope);
+          // Never race this dispatched mutation against a local waiter. Its
+          // actual result (including Unknown) remains the original outcome.
+          const result = await engine.command('scope.reconnect', { identityScope: scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, current, callbackEpoch);
+          publicationStarted = true; nextScope = result.identityScope;
+          attempt.recoveryPending = false; check(current);
+        };
+        await recoverNative();
+        const identify = () => phase('identifying the retained persistent context', async active => {
+          const metadata = new EngineChannel(client, requested => () => requested === nextScope
+            && this.client === client && (this.attempt === attempt || this.retiringAttempt === attempt)
+            && attempt.scope === scope && attempt.epoch === epoch);
+          const expected = await metadata.command('scope.interop.identify', { identityScope: nextScope }, active);
+          check(active);
+          if (!expected.persistent || previous?.kind !== 'persistent'
+            || expected.contextId !== previous.contextId
+            || (reopened === undefined && expected.targetId !== previous.targetId)
+            || (reopened !== undefined && (reopened !== attempt.rawReopened || reopened.binding !== previous
+              || reopened.scope !== scope || reopened.epoch !== epoch || reopened.recovery !== identity))) throw invalidState('Persistent recovery changed its exact context or Page');
+          return expected;
+        });
+        const expected = await identify();
+        let rebound = previous;
+        if (previous !== undefined && !previous.browser.isConnected()) {
+          publicationStarted = true;
+          rebound = await phase('binding the recovered persistent Playwright client', async active => {
+            const acquired = connectPlaywrightClient(endpoint, active).then(candidate => {
+              this.playwrightClient = candidate;
+              return candidate;
+            });
+            // Custody acquisition only: identity work can require disconnect
+            // to settle, and is separately retained by this wire-request owner.
+            attempt.rawOpening = acquired.then(() => undefined); void attempt.rawOpening.catch(() => {});
+            const candidate = await acquired;
+            const bound = await bindPersistentPlaywrightContext(candidate, expected, active);
+            check(active);
+            if (viewport !== undefined && viewport !== null) { await bound.page.setViewportSize(viewport); check(active); }
+            await bound.page.emulateMedia(attempt.rawMedia ?? {}); check(active);
+            return bound;
+          });
+        }
+        else if (previous !== undefined && reopened !== undefined) {
+          // The validated page-reopened event already retired the old target.
+          // Reconnect verifies its opaque identity; identify supplies exact raw IDs.
+          publicationStarted = true;
+          rebound = await phase('binding the retained reopened persistent Page', async active => {
+            const bound = await bindExistingPlaywrightPage(previous, expected, active);
+            check(active);
+            if (attempt.rawViewport !== undefined && attempt.rawViewport !== null) { await bound.page.setViewportSize(attempt.rawViewport); check(active); }
+            await bound.page.emulateMedia(attempt.rawMedia ?? {}); check(active);
+            return bound;
+          });
+        }
+        // A raw-only recovery can acquire a native disconnect obligation while
+        // its resolver or actual PW identity receipt is pending. Consume it,
+        // never clear a stale entry snapshot and falsely publish a live scope.
+        if (pendingNative()) { await recoverNative(); await identify(); }
+        check(current);
+        if (pendingNative()) throw invalidState('Persistent recovery disconnected before publication');
+        if (rebound !== undefined) attempt.rawBinding = rebound;
+        if (reopened !== undefined) delete attempt.rawReopened;
+        if (viewport !== undefined) attempt.rawViewport = viewport;
+        if (callbackEpoch !== undefined) client.retireCallbacks(callbackEpoch, 'scope-reconnected');
+        attempt.epoch++; attempt.scope = nextScope; attempt.pageReady = wasPageReady;
+        this.references.retire(); delete attempt.observationHighWater; this.bindChannel(attempt);
+      } catch (cause) { failed(cause); throw cause; }
+    });
+    attempt.recovering = work.finally(() => { attempt.recovering = undefined; });
     await attempt.recovering;
+    // Retiring callbacks queues validated lifecycle delivery. Recheck after
+    // the owned recovery promise settles, before admitting navigation.
+    if (attempt.recoveryPending) { attempt.pageReady = false; throw invalidState('Persistent recovery disconnected during publication'); }
   }
 
   async command<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext): Promise<BrowserCommandMap[K]['result']> {

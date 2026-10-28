@@ -677,7 +677,7 @@ describe('AttemptSession', () => {
 
   it('keeps late reconnect completion from reviving an owner after failed retirement', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-    let cleanupFailure: unknown;
+    let cleanupFailure: unknown; let primaryFailed = false;
     const reconnect = deferred<PeerOutcome>();
     const requested = deferred<void>();
     let hold = true;
@@ -693,18 +693,25 @@ describe('AttemptSession', () => {
     try {
       const owner = engine.observe!(operation(1_000, caller.signal)).catch(error => error);
       await requested.promise;
+      let ownerSettled = false; void owner.then(() => { ownerSettled = true; });
       caller.abort();
-      const failure: unknown = await owner;
-      expect(failure).toMatchObject({ code: 'CANCELLED' });
-      await expect(engine.observe!(operation(30))).rejects.toBe(failure);
+      await Promise.resolve();
+      expect(ownerSettled).toBe(false);
+      const follower = engine.observe!(operation(2_000)).catch(error => error);
       expect(old.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'browser.observe')).toEqual([]);
       const ending = engine.endAttempt!(cleanup()).catch(cause => cause);
       await vi.advanceTimersByTimeAsync(999);
+      expect(ownerSettled).toBe(false);
+      const request = old.requests.find(frame => frame.command === 'scope.reconnect')!;
+      expect(old.frames.filter(frame => frame['type'] === 'cancel' && frame['operationSeq'] === request.operationSeq)).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'scope.end')).toEqual([]);
       expect(old.frames.filter(frame => frame['type'] === 'close')).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       const callerResult: unknown = await ending;
+      const failure: unknown = await owner;
+      expect(failure).toMatchObject({ code: 'CANCELLED' });
+      expect(await follower).toBe(failure);
       cleanupFailure = await engine.dispose!(cleanup()).catch(cause => cause);
       expect(cleanupFailure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'Synthetic acknowledged proxy cleanup failed' });
       if (callerResult !== undefined) expect(callerResult).toBe(cleanupFailure);
@@ -718,7 +725,13 @@ describe('AttemptSession', () => {
       expect(peers).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
       expect(old.requests.filter(frame => frame.command === 'page.title' || frame.command === 'browser.observe')).toEqual([]);
-    } finally { reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } }); await expect(engine.dispose!(cleanup())).rejects.toBe(cleanupFailure); }
+    } catch (cause) { primaryFailed = true; throw cause; }
+    finally {
+      reconnect.resolve({ data: { identityScope: 'retired-late-reconnect' } });
+      const finalCleanup = await engine.dispose!(cleanup()).catch(cause => cause);
+      // Preserve an earlier assertion failure instead of masking it in teardown.
+      if (!primaryFailed) expect(finalCleanup).toBe(cleanupFailure);
+    }
   });
 
   it('snapshots a public viewport before waiting for recovery', async () => {

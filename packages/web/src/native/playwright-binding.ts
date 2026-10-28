@@ -34,9 +34,9 @@ export async function connectPlaywrightClient(endpoint: string, operation: Opera
   catch (error) { await browser.close(); throw error; }
 }
 interface PageIdentity { readonly contextId: string; readonly targetId: string }
-async function identity(page: Page, operation: OperationContext): Promise<PageIdentity>;
+async function identity(page: Page, operation: OperationContext, candidate?: false, persistent?: boolean): Promise<PageIdentity>;
 async function identity(page: Page, operation: OperationContext, candidate: true): Promise<PageIdentity | undefined>;
-async function identity(page: Page, operation: OperationContext, candidate = false): Promise<PageIdentity | undefined> {
+async function identity(page: Page, operation: OperationContext, candidate = false, persistent = false): Promise<PageIdentity | undefined> {
   check(operation);
   const session = await page.context().newCDPSession(page).catch(cause => {
     // A candidate can disappear before we acquire any session. This is not
@@ -49,7 +49,7 @@ async function identity(page: Page, operation: OperationContext, candidate = fal
   // authority already retired. Page/browser closure alone is insufficient.
   let sessionClosed = false;
   const closed = () => { sessionClosed = true; };
-  if (candidate) session.on('close', closed);
+  if (candidate || persistent) session.on('close', closed);
   try {
     check(operation);
     const result = await session.send('Target.getTargetInfo').catch(cause => {
@@ -66,7 +66,7 @@ async function identity(page: Page, operation: OperationContext, candidate = fal
       // Do not issue a second release after the exact session closed. Once
       // detach is dispatched, its actual rejection survives any later close.
       if (!sessionClosed) await session.detach();
-    } finally { if (candidate) session.off('close', closed); }
+    } finally { if (candidate || persistent) session.off('close', closed); }
   }
 }
 /** One actual PW context and one reserved own blank Page. User scripts are not
@@ -105,16 +105,27 @@ export async function createPlaywrightContext(browser: Browser, options: ScopeCr
 export async function bindPersistentPlaywrightContext(browser: Browser, expected: { readonly contextId: string; readonly targetId: string }, operation: OperationContext): Promise<PlaywrightBinding> {
   check(operation);
   const session = await browser.newBrowserCDPSession();
+  let sessionClosed = false;
+  const closed = () => { sessionClosed = true; };
+  session.on('close', closed);
   try {
     const inventory = await session.send('Target.getBrowserContexts');
     check(operation);
     if (inventory.browserContextIds.length !== 0 || inventory.defaultBrowserContextId !== expected.contextId) invalid('the dedicated default context identity changed');
-  } finally { await session.detach(); }
+  } finally {
+    // Exact session retirement, not browser.isConnected(), proves no second
+    // detach is needed. A detach already dispatched must still settle itself.
+    try { if (!sessionClosed) await session.detach(); }
+    finally { session.off('close', closed); }
+  }
+  // A successful detach may settle after this publication's deadline/retirement.
+  // Do not reinterpret the resulting empty client inventory as identity failure.
+  check(operation);
   const contexts = browser.contexts();
   if (contexts.length !== 1) invalid('the dedicated default context is not unique');
   const context = contexts[0]!;
   for (const page of context.pages()) {
-    const ids = await identity(page, operation);
+    const ids = await identity(page, operation, false, true);
     if (ids.targetId !== expected.targetId) continue;
     if (ids.contextId !== expected.contextId) invalid('the exact target belongs to a different context');
     return { kind: 'persistent', browser, context, page, ...ids };

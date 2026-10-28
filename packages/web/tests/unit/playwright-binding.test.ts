@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import type { OperationContext } from 'e2e/engine';
@@ -9,10 +10,10 @@ function persistent(ids: readonly string[], actualContext = 'default-context') {
   const pages: Page[] = [];
   const context = {
     pages: () => pages,
-    newCDPSession: async (page: Page) => ({
+    newCDPSession: async (page: Page) => { const events = new EventEmitter(); return Object.assign(events, {
       send: async () => ({ targetInfo: { type: 'page', targetId: ids[pages.indexOf(page)], browserContextId: actualContext } }),
-      detach: async () => { calls.push('detach-page-session'); },
-    }),
+      detach: async () => { calls.push('detach-page-session'); events.emit('close'); },
+    }); },
   } as unknown as BrowserContext;
   for (const _id of ids) pages.push({ context: () => context } as unknown as Page);
   const browser = {
@@ -20,10 +21,10 @@ function persistent(ids: readonly string[], actualContext = 'default-context') {
     isConnected: () => true,
     newContext: () => { throw new Error('persistent bind must not create a context'); },
     close: () => { throw new Error('identity failure must not close a borrowed browser'); },
-    newBrowserCDPSession: async () => ({
+    newBrowserCDPSession: async () => { const events = new EventEmitter(); return Object.assign(events, {
       send: async () => ({ browserContextIds: [], defaultBrowserContextId: actualContext }),
-      detach: async () => { calls.push('detach-browser-session'); },
-    }),
+      detach: async () => { calls.push('detach-browser-session'); events.emit('close'); },
+    }); },
   } as unknown as Browser;
   return { browser, context, pages, calls };
 }
