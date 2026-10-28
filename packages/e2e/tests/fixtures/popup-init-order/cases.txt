@@ -1,0 +1,79 @@
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+const first = () => { globalThis.initOrder = [...(globalThis.initOrder ?? []), 'first']; };
+const second = () => {
+  globalThis.initOrder = [...(globalThis.initOrder ?? []), 'second'];
+  if (window.opener && location.href === 'about:blank') window.opener.postMessage({ kind: 'init-blank', order: [...globalThis.initOrder] }, '*');
+};
+
+test('existing document stays untouched until next navigation', { timeout: 12_000 }, async ({ browser }) => {
+  await browser.goto('/main');
+  await browser.addInitScript(first);
+  await browser.addInitScript(second);
+  expect(await browser.evaluate(() => globalThis.initOrder ?? [])).toEqual([]);
+  expect(await browser.evaluate(() => globalThis.firstInline)).toEqual([]);
+  await browser.goto('/next');
+  expect(await browser.evaluate(() => ({ first: globalThis.firstInline, final: globalThis.initOrder }))).toEqual({ first: ['first', 'second'], final: ['first', 'second'] });
+});
+
+test('popup first inline sees each init once and reload starts a fresh document', { timeout: 12_000 }, async ({ browser }) => {
+  await browser.addInitScript(first);
+  await browser.addInitScript(second);
+  await browser.goto('/main');
+  const snapshots = await browser.evaluate(() => new Promise((resolve, reject) => {
+    let child;
+    const snapshots = [];
+    const dispose = () => { removeEventListener('message', received); removeEventListener('pagehide', dispose); };
+    const received = event => {
+      if (event.source !== child || event.origin !== location.origin || event.data?.kind !== 'init-document') return;
+      snapshots.push(event.data.snapshot);
+      if (snapshots.length === 1) { child.location.reload(); return; }
+      dispose(); child.close(); resolve(snapshots);
+    };
+    addEventListener('message', received);
+    addEventListener('pagehide', dispose, { once: true });
+    child = window.open('/popup');
+    if (!child) { dispose(); reject(new Error('Synthetic popup missing')); }
+  }));
+  expect(snapshots).toEqual([
+    { first: ['first', 'second'], final: ['first', 'second'] },
+    { first: ['first', 'second'], final: ['first', 'second'] },
+  ]);
+});
+
+test('blank popup has each init once before explicit first navigation', { timeout: 12_000 }, async ({ browser }) => {
+  await browser.addInitScript(first);
+  await browser.addInitScript(second);
+  await browser.goto('/main');
+  await browser.evaluate(() => new Promise((resolve, reject) => {
+    let child;
+    const dispose = () => { removeEventListener('message', received); removeEventListener('pagehide', dispose); };
+    const received = event => {
+      if (event.source !== child || event.origin !== location.origin || event.data?.kind !== 'init-blank') return;
+      dispose(); resolve(null);
+    };
+    addEventListener('message', received);
+    addEventListener('pagehide', dispose, { once: true });
+    child = window.open('about:blank');
+    globalThis.blankChild = child;
+    if (!child) { dispose(); reject(new Error('Synthetic popup missing')); }
+  }));
+  // Separate public operation: the ready signal is not itself a registration
+  // ACK. Normal engine admission must finish enrollment before this read.
+  const snapshots = await browser.evaluate(() => new Promise((resolve, reject) => {
+    const child = globalThis.blankChild;
+    if (!child) { reject(new Error('Synthetic popup missing')); return; }
+    const blank = [...(child.initOrder ?? [])];
+    const dispose = () => { removeEventListener('message', received); removeEventListener('pagehide', dispose); };
+    const received = event => {
+      if (event.source !== child || event.origin !== location.origin || event.data?.kind !== 'init-document') return;
+      dispose(); child.close(); delete globalThis.blankChild;
+      resolve({ blank, next: event.data.snapshot });
+    };
+    addEventListener('message', received);
+    addEventListener('pagehide', dispose, { once: true });
+    child.location.href = '/popup';
+  }));
+  expect(snapshots).toEqual({ blank: ['first', 'second'], next: { first: ['first', 'second'], final: ['first', 'second'] } });
+});

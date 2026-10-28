@@ -1,0 +1,45 @@
+import { test } from '@e2e-dev/web';
+import { expect, type Locator, type Point } from 'e2e';
+type Box = { x: number; y: number; width: number; height: number };
+async function boxOf(locator: Locator): Promise<Box> {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error('node has no box');
+  return box;
+}
+
+/** The center of a box, the point a finger would aim for. */
+function centerOf(box: Box): Point {
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+test('init scripts and partial media updates cover frames and new tabs', { timeout: 12_000 }, async ({ browser }) => {
+  await browser.addInitScript(value => { globalThis.fixtureInit = value; }, { marker: 'synthetic' });
+  await browser.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await browser.emulateMedia({ colorScheme: 'light' });
+  await browser.goto('/a');
+  expect(await browser.evaluate(() => ({ marker: globalThis.fixtureAtFirstScript, light: matchMedia('(prefers-color-scheme: light)').matches, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches }))).toEqual({ marker: 'synthetic', light: true, reduce: true });
+  expect(await browser.frameLocator('iframe').locator('body').getAttribute('data-init')).toBe('synthetic');
+  const popup = await browser.evaluate(() => new Promise(resolve => {
+    const child = window.open('/popup');
+    try { navigator.sendBeacon('/__pair_facts', JSON.stringify({kind:'parent', phase:'created', marker:child ? 'present' : 'absent', ready:document.readyState})); } catch { /* Preserve original popup outcome. */ }
+    if (!child) throw new Error('Synthetic popup was not created');
+    const timer = setInterval(() => {
+      if (child.fixtureAtFirstScript !== 'synthetic') return;
+      clearInterval(timer);
+      resolve({ marker: child.fixtureAtFirstScript, light: child.matchMedia('(prefers-color-scheme: light)').matches, reduce: child.matchMedia('(prefers-reduced-motion: reduce)').matches });
+      child.close();
+    }, 10);
+  }));
+  expect(popup).toEqual({ marker: 'synthetic', light: true, reduce: true });
+  expect(await browser.url()).toMatch(/\/a$/);
+});
+
+test('a path swipe drags and drops on the board', async ({ app, screen }) => {
+  await app.open('/board');
+
+  const card = centerOf(await boxOf(screen.getByText('Design review', { exact: true })));
+  const done = centerOf(await boxOf(screen.getByLabel('Done column')));
+  await screen.swipe({ from: card, to: done });
+
+  await expect(screen.getByLabel('Board state')).toHaveText('Design review is done');
+});

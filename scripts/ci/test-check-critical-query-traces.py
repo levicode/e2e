@@ -71,6 +71,21 @@ class QueryValidatorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(summary['completeEvidence'])
 
+    def test_candidate_schema_reasons_are_closed_and_payload_free(self):
+        expected = {'candidate-plan-dom-object', 'candidate-plan-dom-backend', 'candidate-plan-attributes', 'candidate-plan-ax-decode', 'candidate-plan-duplicate-ax', 'candidate-plan-roots', 'candidate-plan-ax-child', 'candidate-plan-ax-rows', 'candidate-plan-author-ids', 'candidate-plan-fallback', 'candidate-plan-duplicate-dom', 'candidate-plan-missing-record'}
+        self.assertEqual({s for s in validator.READ_STAGES if s.startswith('candidate-plan-')}, expected)
+        for stage in sorted(expected):
+            item = failure(); item['queryReadStage'] = stage
+            result, summary = self.run_capture([record(), item])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(summary['completeEvidence'])
+        for field in ['backendNodeId', 'attributes', 'dom', 'exceptionDetails']:
+            item = failure(); item.update(queryReadStage='candidate-plan-attributes')
+            item[field] = 'not-permitted'
+            self.assert_invalid(item)
+        item = failure(); item['queryReadStage'] = 'candidate-plan-invented'
+        self.assert_invalid(item)
+
     def test_all_closed_scope_stages_and_reasons(self):
         for stage in sorted(validator.SCOPE_STAGES):
             for reason in sorted(validator.SCOPE_REASONS):
