@@ -1,26 +1,26 @@
 {
-  "artifactId": 12825695095,
-  "artifactName": "ci-native-runtime-Bounded strict raw selector three-slice verification-40706445587-1",
-  "artifactSize": 13976190,
-  "artifactDigest": "sha256:d6102e9e2b853b42791b1dc57177d2c3d0ab833499ff837be8aeeb0a0e5f7890",
-  "manifestSha256": "f8f11d35b4235158865b817f9b0736c9f25ee0f4bdea3d2a36d6ed543ae2b648",
+  "artifactId": 12829745464,
+  "artifactName": "ci-native-runtime-Typed action admission cause preservation bounded acceptance-40715430269-1",
+  "artifactSize": 13968293,
+  "artifactDigest": "sha256:4fe2fb36b8ff5664e50f8ef76e8879aa8739a88f6cc6df6252695ba47cfcef06",
+  "manifestSha256": "80b93c2dba4302bc2ea571c720e97ba2d3de47e4f58eedcb5468c415ca236a6a",
   "expected": {
     "source": {
-      "commit": "3e64442b6597296ecee8b52e45eaf753cdeddbc5",
-      "tree": "585156201c752bcb7cf07a02376ea09ea6cc5d12"
+      "commit": "76a7765ed15eab90d5958a417e1b2224eb0a2b12",
+      "tree": "91f42f655a92bbd4aa3134a1f6609344689be697"
     },
     "repository": "levicode/e2e",
-    "runId": "40706445587",
+    "runId": "40715430269",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "92cab5a6015697e36c934ab4d76ef50d6010581b"
+    "nativeCommit": "ef81a637abb7bd63aa877f1790949d0a2a5d9e71"
   },
   "nativeSource": {
-    "commit": "92cab5a6015697e36c934ab4d76ef50d6010581b",
-    "tree": "56656b852fe169407b7711fc86996728d286d14e"
+    "commit": "ef81a637abb7bd63aa877f1790949d0a2a5d9e71",
+    "tree": "3822bc7dcc16bcfdfc6c6d3f81296edc832b1ea4"
   },
-  "binarySha256": "8a2c6e5c56d6de6c69da7620da32f25ec2931a439a4ee399e5abbb045a6878b2",
-  "harnessNative": "92cab5a6015697e36c934ab4d76ef50d6010581b",
-  "scope": "Only static-fixture paired CSS six exact public contracts; immutable ordinary reuse, no product changes"
+  "binarySha256": "6623feec49e931c29e92001221b8635a679f3913831075f3e498a317d133eabd",
+  "harnessNative": "ef81a637abb7bd63aa877f1790949d0a2a5d9e71",
+  "scope": "Existing current-source remaining Linux consumers; immutable ordinary reuse; no native build/product/fixture changes"
 }
