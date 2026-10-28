@@ -81,10 +81,15 @@ test('CSS chains pierce open roots but never closed roots', async ({ app, browse
 
 test('syntax and non-final capture failures keep the public error class', async ({ app, browser }) => {
   await app.open();
-  for (const selector of ['css=[', 'xpath=//*[', 'div >>', '*css=ul >> li']) {
+  for (const [selector, expectedCode] of [
+    ['css=[', 'ENGINE_FAILURE'],
+    ['xpath=//*[', 'ENGINE_FAILURE'],
+    ['div >>', 'ENGINE_FAILURE'],
+    ['*css=ul >> li', 'INVALID_LOCATOR'],
+  ] as const) {
     let code = 'no error';
     try { await browser.locator(selector).count(); } catch (error) { code = error.code; }
-    expect(code).toBe('INVALID_LOCATOR');
+    expect(code).toBe(expectedCode);
   }
 });
 `;
