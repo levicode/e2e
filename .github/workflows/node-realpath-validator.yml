@@ -1,0 +1,84 @@
+name: Realpath-equivalent Node floor validator correction
+'on':
+  push:
+    branches:
+    - ci/node-realpath-validator
+permissions:
+  contents: read
+jobs:
+  realpath:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node:
+        - 22
+        - 24
+        - 26
+        - 22.22.3
+        - 24.8.0
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Record exact unchanged product before evidence
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/source.sha
+
+        git rev-parse HEAD^{tree} > evidence/source.tree
+
+        '
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: ${{ matrix.node }}
+        check-latest: true
+    - name: Record actual Node
+      run: 'node --version > evidence/node.version
+
+        '
+    - name: path-equivalence
+      id: path_equivalence
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY\
+        \ ANTHROPIC_API_KEY AI_GATEWAY_API_KEY\nset +e\n( set -e\ncat > evidence/path-equivalence.mjs\
+        \ <<'JS_PATH'\nimport assert from 'node:assert/strict';\nimport path from\
+        \ 'node:path';\nimport { fileURLToPath, pathToFileURL } from 'node:url';\n\
+        import { mkdtemp, mkdir, realpath, symlink, rm } from 'node:fs/promises';\n\
+        import os from 'node:os';\nconst dir = await mkdtemp(path.join(os.tmpdir(),\
+        \ 'deadcode-path-proof-'));\nlet count = 0;\ntry {\n  for (const name of ['plain',\
+        \ 'has space', 'hash#and?query', 'percent%20literal', '\u4F60\u597D-\xE9'])\
+        \ {\n    const root = path.join(dir, name);\n    await mkdir(path.join(root,\
+        \ 'dist', 'native'), { recursive: true });\n    for (const base of ['dist',\
+        \ 'src']) {\n      await mkdir(path.join(root, base, 'native'), { recursive:\
+        \ true });\n      const moduleFile = path.join(root, base, 'native', 'installed-runtime.js');\n\
+        \      const previous = fileURLToPath(new URL('../..', pathToFileURL(moduleFile)));\n\
+        \      const candidate = path.resolve(path.dirname(moduleFile), '../..');\n\
+        \      assert.equal(await realpath(previous), await realpath(candidate));\n\
+        \      assert.equal(await realpath(candidate), await realpath(root));\n  \
+        \    count++;\n    }\n  }\n  const physical = path.join(dir, 'physical');\n\
+        \  await mkdir(path.join(physical, 'dist', 'native'), { recursive: true });\n\
+        \  const alias = path.join(dir, 'alias with space');\n  await symlink(physical,\
+        \ alias, 'dir');\n  const moduleFile = path.join(alias, 'dist', 'native',\
+        \ 'installed-runtime.js');\n  assert.equal(await realpath(fileURLToPath(new\
+        \ URL('../..', pathToFileURL(moduleFile)))), await realpath(path.resolve(path.dirname(moduleFile),\
+        \ '../..')));\n  assert.equal(await realpath(path.resolve(path.dirname(moduleFile),\
+        \ '../..')), await realpath(physical));\n  count++;\n  console.log(`${count}\
+        \ URL/path root equivalence checks passed, including encoded characters and\
+        \ symlink realpath; no product module executed`);\n} finally { await rm(dir,\
+        \ { recursive: true, force: true }); }\n\nassert.equal(await realpath(path.resolve(import.meta.dirname,\
+        \ '../..')), await realpath(fileURLToPath(new URL('../..', import.meta.url))));\n\
+        console.log('actual import.meta.dirname equals original URL path');\n\nJS_PATH\n\
+        node evidence/path-equivalence.mjs\n) 2>&1 | tee evidence/path-equivalence.log\n\
+        s=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > evidence/path-equivalence.exit\n\
+        exit \"$s\"\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: realpath-validator-${{ matrix.node }}-evidence
+        path: evidence/
+        if-no-files-found: error
