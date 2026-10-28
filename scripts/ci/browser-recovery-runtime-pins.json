@@ -1,26 +1,26 @@
 {
-  "artifactId": 12752118010,
-  "artifactName": "ci-native-runtime-Native interop allocation uncertainty finite validation-40544356482-1",
-  "artifactSize": 13891549,
-  "artifactDigest": "sha256:156ec759d404c0788c3b639681f91761fa2591ba1dbb745b46a9aa0f8aa40ad3",
-  "manifestSha256": "d66fca0a645408cbd840fba5f927a410ccab4146f3ab9074382b8dd5c20e618f",
+  "artifactId": 12781019473,
+  "artifactName": "ci-native-runtime-Isolated page reopen complete same-source validation-40609234174-1",
+  "artifactSize": 13739893,
+  "artifactDigest": "sha256:2b4a4b7130315f42ec8259ca94489f791c66da3f80e545d7fd9c5158c722d617",
+  "manifestSha256": "8cfb8146b811e3694d9917aa2b0b6e70729f113dffffabbcd08da8e67ab4d138",
   "expected": {
     "source": {
-      "commit": "0460f6bdc043195e72fa697a318691869461f5ee",
-      "tree": "a74ef1b4c5799bd4c0a125a727746feab3d08595"
+      "commit": "1981f339962f567a6caf3fc8d77cc444d3edbb4b",
+      "tree": "8976b5b733eef29598415385b6da28844cbc2e6b"
     },
     "repository": "levicode/e2e",
-    "runId": "40544356482",
+    "runId": "40609234174",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf"
+    "nativeCommit": "9e6d0723d08f328e2e0f715f4297230e9e642425"
   },
   "nativeSource": {
-    "commit": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
-    "tree": "f7a53c5498970b5e05dffc95e53a080d5324af36"
+    "commit": "9e6d0723d08f328e2e0f715f4297230e9e642425",
+    "tree": "e0b448694a7117ed3a4b4917afc220a0074d28e0"
   },
-  "binarySha256": "f25e1f6469d2afd962344c1afd0fd299aee7faff799e4646aa8b807d78fc0d5c",
-  "harnessNative": "74ec6576036f45ca4cf195b4f0617ae458b0fecf",
-  "scope": "Exact 74ec ordinary production reuse from 405443; new Node source, finite diagnostic lanes, not full acceptance."
+  "binarySha256": "eaab1d38194db0ed1edb0f86a3b5dd3eae6dbc4d80d02c881fe85878e7d1b0cd",
+  "harnessNative": "9e6d0723d08f328e2e0f715f4297230e9e642425",
+  "scope": "Exact clean ordinary 9e6d runtime reused for raw Browser reconnect and full Web regression; no native rebuild."
 }
