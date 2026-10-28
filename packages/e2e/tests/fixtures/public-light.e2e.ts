@@ -116,9 +116,7 @@ test('public light projection: frame owner and inner document boundaries', async
     await rejected(`${engine} frame owner count is checked`, () => browser.frameLocator(selector(engine, 'frame')).locator('#inside').count());
     await rejected(`${engine} inner frame result is checked`, () => browser.frameLocator('#frame').locator(selector(engine, 'inside')).count());
     await count(`${engine} inner frame miss remains empty`, () => browser.frameLocator('#frame').locator(selector(engine, 'absent')).count(), 0);
-    await rejected(`${engine} empty owner keeps frame-not-found taxonomy`, () => browser.frameLocator(selector(engine, 'absent')).locator('#inside').count(), {
-      category: 'test', code: 'LOCATOR_NOT_FOUND', causeCode: 'FRAME_NOT_FOUND', causeRetryable: true,
-    });
+    await count(`${engine} empty owner is zero for immediate public count`, () => browser.frameLocator(selector(engine, 'absent')).locator('#inside').count(), 0);
   }
   await count('css:light frame owner and child remain supported', () => browser.frameLocator('css:light=#frame').locator('css:light=#inside').count(), 1);
 });

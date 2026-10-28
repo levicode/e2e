@@ -1,26 +1,26 @@
 {
-  "artifactId": 12781019473,
-  "artifactName": "ci-native-runtime-Isolated page reopen complete same-source validation-40609234174-1",
-  "artifactSize": 13739893,
-  "artifactDigest": "sha256:2b4a4b7130315f42ec8259ca94489f791c66da3f80e545d7fd9c5158c722d617",
-  "manifestSha256": "8cfb8146b811e3694d9917aa2b0b6e70729f113dffffabbcd08da8e67ab4d138",
+  "artifactId": 12801534331,
+  "artifactName": "ci-native-runtime-Selector and typed-query complete acceptance-40656200174-1",
+  "artifactSize": 13931008,
+  "artifactDigest": "sha256:b2b37a8c5f0031cab4e74814f54206f811746aec8cb0db798caf0270e38b15f1",
+  "manifestSha256": "e16d9043e7e8f90c12290d47442e553b47a3e0ca8bd0bf25b43982d78d452ef3",
   "expected": {
     "source": {
-      "commit": "1981f339962f567a6caf3fc8d77cc444d3edbb4b",
-      "tree": "8976b5b733eef29598415385b6da28844cbc2e6b"
+      "commit": "40a54453ef9ca02aec0a9141a5f384d632b998f1",
+      "tree": "f5a13e514e6cfea0d2ae3e07788b153544299a96"
     },
     "repository": "levicode/e2e",
-    "runId": "40609234174",
+    "runId": "40656200174",
     "runAttempt": "1",
     "platform": "linux",
     "architecture": "x64",
-    "nativeCommit": "9e6d0723d08f328e2e0f715f4297230e9e642425"
+    "nativeCommit": "1b0d6fe15fbca4e916edadfa12e529365c48435d"
   },
   "nativeSource": {
-    "commit": "9e6d0723d08f328e2e0f715f4297230e9e642425",
-    "tree": "e0b448694a7117ed3a4b4917afc220a0074d28e0"
+    "commit": "1b0d6fe15fbca4e916edadfa12e529365c48435d",
+    "tree": "0bc8ba70ba1c8e26ac2717f8194c403d109d964c"
   },
-  "binarySha256": "eaab1d38194db0ed1edb0f86a3b5dd3eae6dbc4d80d02c881fe85878e7d1b0cd",
-  "harnessNative": "9e6d0723d08f328e2e0f715f4297230e9e642425",
-  "scope": "Exact clean ordinary 9e6d runtime reused for raw Browser reconnect and full Web regression; no native rebuild."
+  "binarySha256": "a2215fe00def6bced56eb09275797df6ad73a08d5406273affc42db280aa01b3",
+  "harnessNative": "1b0d6fe15fbca4e916edadfa12e529365c48435d",
+  "scope": "Paired public selector verification and unchanged original reset two-case diagnostic; reused immutable binary, not new compilation or full acceptance"
 }
