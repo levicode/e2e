@@ -8,13 +8,13 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 1489c1351e13f828708bc17827a150f7dbc71e5f
-  NATIVE_SOURCE_TREE: f3d04dda554fc9963e693f75c0c1ff9e8c0be2a4
+  NATIVE_SOURCE_SHA: ea9ac35f48ddcf81a2fb2dc59f86b7bbaca2a2ae
+  NATIVE_SOURCE_TREE: 7545e1b2531342a438d8407edf1c154753c525ab
   NEXT_TELEMETRY_DISABLED: '1'
 'on':
   push:
     branches:
-    - ci/popup-paused-init
+    - ci/popup-paused-init-r2
 jobs:
   preflight-both-mode-typecheck:
     runs-on: ubuntu-24.04
