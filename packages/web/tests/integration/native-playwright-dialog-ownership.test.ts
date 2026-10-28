@@ -38,6 +38,11 @@ it('keeps a native-held prompt open across a read-only Playwright CDP barrier', 
     pageCdp.on('Page.javascriptDialogClosed', onClosed);
     try {
       await pageCdp.send('Page.enable');
+      const { targetInfo: capturedTarget } = await dialogBounded(pageCdp.send('Target.getTargetInfo'), 'capture exact prompt target');
+      expect(capturedTarget.type).toBe('page');
+      expect(capturedTarget.targetId).not.toBe('');
+      expect(capturedTarget.browserContextId).toBeTypeOf('string');
+      expect(capturedTarget.browserContextId).not.toBe('');
       await browser.onDialog(async dialog => {
         facts['nativeHandlerEntered'] = true;
         nativeEntered.resolve();
@@ -52,12 +57,18 @@ it('keeps a native-held prompt open across a read-only Playwright CDP barrier', 
       response = page.evaluate(() => prompt('held prompt', 'initial'));
       void response.catch(() => undefined);
       await dialogBounded(Promise.all([opened.promise, nativeEntered.promise]), 'both real dialog opening observations');
-      // These real responses share PW's Chromium connection. PW dispatches
-      // received session events in microtasks and queues its no-listener
-      // dismissal synchronously. Chromium's cross-session fan-out order is not
-      // asserted here: the closed-before-decision receipt is the runtime witness.
+      // Both held-dialog markers stay on the browser session: Page.getFrameTree
+      // depends on the renderer, which the held modal can block. Its completion
+      // must not be required before the test permits the native decision.
+      // Target.getTargetInfo reads the captured target's browser-side identity.
+      // These responses share PW's Chromium connection; cross-session event
+      // ordering is still not asserted. Actual early-close/answer is the witness.
       await dialogBounded(browserCdp.send('Browser.getVersion'), 'browser marker');
-      await dialogBounded(pageCdp.send('Page.getFrameTree'), 'page marker');
+      facts['browserMarkerCompleted'] = true;
+      const { targetInfo: heldTarget } = await dialogBounded(browserCdp.send('Target.getTargetInfo', { targetId: capturedTarget.targetId }), 'exact target browser marker');
+      facts['targetMarkerMatched'] = heldTarget.targetId === capturedTarget.targetId
+        && heldTarget.type === capturedTarget.type && heldTarget.browserContextId === capturedTarget.browserContextId;
+      expect(facts['targetMarkerMatched']).toBe(true);
       facts['barrierCompleted'] = true;
       facts['closedBeforeNativeDecision'] = closed;
       facts['decisionStartedBeforeRelease'] = nativeDecisionStarted;

@@ -1,0 +1,978 @@
+name: Query boundary and corrected dialog witness diagnostic
+'on':
+  push:
+    branches:
+    - ci/query-boundary-dialog-diagnostic
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: query-boundary-dialog-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 2f46a8e555fdf2f77250e6ed2ab15d1275281e0f
+  NATIVE_SOURCE_TREE: 987d90464dc90bec2229ad49e826b37237707c99
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  preflight-both-mode-typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Check default and acceptance-faults tests without executing any harness
+      run: "set +e\nset -uo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git\
+        \ rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\" || exit 1\ntest \"$(git rev-parse\
+        \ HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\" || exit 1\ntest -z \"$(git status\
+        \ --porcelain)\" || exit 1\nrustup toolchain install 1.99.1 --profile minimal\
+        \ || exit 1\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nsha256sum\
+        \ Cargo.lock > \"$GITHUB_WORKSPACE/evidence/cargo-lock.sha256\"\nunset RUSTC_WRAPPER\
+        \ RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"\
+        $RUNNER_TEMP/native36-check-target\"\nfailed=0\nfor kind in default acceptance-faults;\
+        \ do\n  args=()\n  if test \"$kind\" = acceptance-faults; then args+=(--features\
+        \ acceptance-faults); fi\n  cargo +1.99.1 check --locked --profile ci --tests\
+        \ --bin agent-browser -j1 \"${args[@]}\" --message-format=json > \"$GITHUB_WORKSPACE/evidence/$kind.jsonl\"\
+        \ 2> \"$GITHUB_WORKSPACE/evidence/$kind.log\"\n  status=$?\n  printf '%s\\\
+        n' \"$status\" > \"$GITHUB_WORKSPACE/evidence/$kind.exit\"\n  if test \"$status\"\
+        \ -ne 0; then failed=1; fi\ndone\npython3 - <<'PY_RECEIPT'\nimport json,os,pathlib\n\
+        p=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'evidence';rows=[]\nfor kind\
+        \ in ['default','acceptance-faults']:\n records=[json.loads(x) for x in (p/(kind+'.jsonl')).read_text().splitlines()]\n\
+        \ errors=[r['message']['rendered'] for r in records if r.get('reason')=='compiler-message'\
+        \ and r.get('message',{}).get('level')=='error']\n rows.append({'kind':kind,'exit':int((p/(kind+'.exit')).read_text()),'buildFinished':[r.get('success')\
+        \ for r in records if r.get('reason')=='build-finished'],'errors':errors})\n\
+        (p/'result.json').write_text(json.dumps({'nativeSource':{'commit':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE']},'kind':'cargo-check-tests-only','reviewPending':False,'testExecution':False,'runtimeAcceptance':False,'results':rows},indent=2))\n\
+        assert all(r['exit']==0 and r['buildFinished']==[True] for r in rows),rows\n\
+        PY_RECEIPT\nreceipt=$?\ntest \"$failed\" -eq 0 && test \"$receipt\" -eq 0\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: native36-final-both-mode-compile-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  native-runtime:
+    uses: ./.github/workflows/native-runtime.yml
+    needs:
+    - preflight-both-mode-typecheck
+  isolated-page-reopen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/product-checkout.sha
+
+        git rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum packages/web/tests/integration/isolated-page-reopen.test.ts packages/web/vitest.isolated-page-reopen.config.ts
+        > evidence/probe-files.sha256
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact same-run source host compiler executable
+      id: verify
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat evidence/borrowed-chrome.path)"
+
+        ldd "$chrome" > evidence/borrowed-chrome-ldd.txt
+
+        ! grep -q ''not found'' evidence/borrowed-chrome-ldd.txt
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > evidence/borrowed-chrome-preflight.html
+        2> evidence/borrowed-chrome-preflight.log
+
+        '
+    - name: Typecheck exact public gate on own product source
+      run: 'set -euo pipefail
+
+        cat > tsconfig.isolated-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/web/tests/integration/isolated-page-reopen.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.isolated-gate.json
+
+        rm tsconfig.isolated-gate.json
+
+        '
+    - name: Enable per-process bounded native trace without changing binary
+      run: 'set -euo pipefail
+
+        # Install only after the verified binary has installed Chrome, before original
+        tests.
+
+        test -x "$E2E_AGENT_BROWSER_EXECUTABLE"
+
+        mkdir -p "$GITHUB_WORKSPACE/evidence/native-trace"
+
+        printf ''%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.path
+
+        sha256sum "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.sha256
+
+        cp scripts/ci/native-trace-wrapper.sh "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        chmod +x "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        printf ''E2E_DIAGNOSTIC_NATIVE_EXECUTABLE=%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_DIAGNOSTIC_DIR=%s\n'' "$GITHUB_WORKSPACE/evidence/native-trace"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_AGENT_BROWSER_EXECUTABLE=%s\n'' "$RUNNER_TEMP/native-trace-wrapper.sh"
+        >> "$GITHUB_ENV"
+
+        '
+      id: trace_setup
+    - name: Execute exact two real isolated reopen cases and native receipts
+      run: 'set -euo pipefail
+
+        export E2E_INTEROP_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/receipts"
+
+        pnpm --filter @e2e-dev/web exec vitest list --config vitest.isolated-page-reopen-native.config.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json
+
+        assert len(json.load(open(''evidence/collection.json'')))==2
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run --config vitest.isolated-page-reopen-native.config.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee evidence/tests.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/tests.exit
+
+        python3 - <<''PY_COUNT''
+
+        import json
+
+        r=json.load(open(''evidence/results.json''));a=[a for t in r[''testResults'']
+        for a in t[''assertionResults'']];c={k:r[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};json.dump(c,open(''evidence/counts.json'',''w''),indent=2);assert
+        len(a)==r[''numTotalTests'']==2 and r[''numPendingTests'']==0
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      if: ${{ success() && steps.trace_setup.outcome == 'success' }}
+    - name: Validate separate per-process ordinary and critical trace boundaries
+      if: always()
+      run: 'set +e
+
+        python3 scripts/ci/check-native-firstcause-traces-lossaware.py 2
+
+        a=$?
+
+        python3 scripts/ci/check-critical-query-traces.py 2
+
+        b=$?
+
+        test "$a" -eq 0 && test "$b" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: isolated-reopen-fixed-native-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_ISOLATED_REOPEN_LABEL: fixed-native
+    needs:
+    - native-runtime
+  original-web-platform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact same-run source host compiler executable
+      id: verify
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium
+      timeout-minutes: 8
+    - name: Enable per-process bounded native trace without changing binary
+      run: 'set -euo pipefail
+
+        # Install only after the verified binary has installed Chrome, before original
+        tests.
+
+        test -x "$E2E_AGENT_BROWSER_EXECUTABLE"
+
+        mkdir -p "$GITHUB_WORKSPACE/evidence/native-trace"
+
+        printf ''%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.path
+
+        sha256sum "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.sha256
+
+        cp scripts/ci/native-trace-wrapper.sh "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        chmod +x "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        printf ''E2E_DIAGNOSTIC_NATIVE_EXECUTABLE=%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_DIAGNOSTIC_DIR=%s\n'' "$GITHUB_WORKSPACE/evidence/native-trace"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_AGENT_BROWSER_EXECUTABLE=%s\n'' "$RUNNER_TEMP/native-trace-wrapper.sh"
+        >> "$GITHUB_ENV"
+
+        '
+      id: trace_setup
+    - name: Execute unchanged full original test file
+      run: 'set -euo pipefail
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        sha256sum "$E2E_DIAGNOSTIC_NATIVE_EXECUTABLE" > evidence/native-executable.sha256
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter e2e exec vitest list tests/integration/web-platform.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_COLLECT''
+
+        import json
+
+        from pathlib import Path
+
+        r=json.loads(Path(''evidence/collection.json'').read_text())
+
+        assert isinstance(r,list) and len(r)>0
+
+        assert all(x[''file''].endswith(''/tests/integration/web-platform.test.ts'')
+        for x in r)
+
+
+        PY_COLLECT
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-platform.test.ts --bail=0
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        python3 - <<''PY_COUNT''
+
+        import json
+
+        from pathlib import Path
+
+        expected=len(json.loads(Path(''evidence/collection.json'').read_text()))
+
+        r=json.loads(Path(''evidence/results.json'').read_text())
+
+        a=[a for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        counts={''expected'':expected,''executed'':sum(x[''status''] in (''passed'',''failed'')
+        for x in a),''passed'':sum(x[''status'']==''passed'' for x in a),''failed'':sum(x[''status'']==''failed''
+        for x in a),''pending'':sum(x[''status''] not in (''passed'',''failed'') for
+        x in a)}
+
+        Path(''evidence/execution-counts.json'').write_text(json.dumps(counts,indent=2)+''\n'')
+
+        assert len(a)==expected and counts[''executed'']==expected and counts[''pending'']==0,counts
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      if: ${{ success() && steps.trace_setup.outcome == 'success' }}
+    - name: Validate separate per-process ordinary and critical trace boundaries
+      if: always()
+      run: 'set +e
+
+        python3 scripts/ci/check-native-firstcause-traces-lossaware.py 5
+
+        a=$?
+
+        python3 scripts/ci/check-critical-query-traces.py 5
+
+        b=$?
+
+        test "$a" -eq 0 && test "$b" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: original-web-platform-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '1'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '1'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '1'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+    needs:
+    - native-runtime
+  real-dialog-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: 662744be7b60b644b7770c311d5dbc933fffbc77
+        path: baseline
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        git -C baseline rev-parse HEAD > evidence/product-checkout.sha
+
+        git -C baseline rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum baseline/packages/web/tests/integration/native-playwright-dialog-ownership.test.ts
+        baseline/packages/web/tests/helpers/native-dialog-fixture.ts > evidence/probe-files.sha256
+
+        printf ''%s\n'' ''baseline'' > evidence/pair-label
+
+        test "$(git -C baseline rev-parse HEAD)" = "662744be7b60b644b7770c311d5dbc933fffbc77"
+
+        test "$(git -C baseline rev-parse HEAD^{tree})" = "f0aeabefa0ca89905009dc6ef91c87afe43da7df"
+
+        test -z "$(git -C baseline status --porcelain)"
+
+        '
+    - run: pnpm install --frozen-lockfile
+      working-directory: baseline
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact same-run source host compiler executable
+      id: verify
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+      working-directory: baseline
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat "$GITHUB_WORKSPACE/evidence/borrowed-chrome.path")"
+
+        ldd "$chrome" > "$GITHUB_WORKSPACE/evidence/borrowed-chrome-ldd.txt"
+
+        ! grep -q ''not found'' "$GITHUB_WORKSPACE/evidence/borrowed-chrome-ldd.txt"
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > "$GITHUB_WORKSPACE/evidence/borrowed-chrome-preflight.html"
+        2> "$GITHUB_WORKSPACE/evidence/borrowed-chrome-preflight.log"
+
+        '
+      working-directory: baseline
+    - name: Typecheck exact six real dialog ownership gates on this source
+      run: 'set -euo pipefail
+
+        cat > tsconfig.isolated-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/web/tests/integration/native-playwright-dialog-ownership.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.isolated-gate.json
+
+        rm tsconfig.isolated-gate.json
+
+        '
+      working-directory: baseline
+    - name: Enable per-process bounded native trace without changing binary
+      run: 'set -euo pipefail
+
+        # Install only after the verified binary has installed Chrome, before original
+        tests.
+
+        test -x "$E2E_AGENT_BROWSER_EXECUTABLE"
+
+        mkdir -p "$GITHUB_WORKSPACE/evidence/native-trace"
+
+        printf ''%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.path
+
+        sha256sum "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.sha256
+
+        cp scripts/ci/native-trace-wrapper.sh "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        chmod +x "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        printf ''E2E_DIAGNOSTIC_NATIVE_EXECUTABLE=%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_DIAGNOSTIC_DIR=%s\n'' "$GITHUB_WORKSPACE/evidence/native-trace"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_AGENT_BROWSER_EXECUTABLE=%s\n'' "$RUNNER_TEMP/native-trace-wrapper.sh"
+        >> "$GITHUB_ENV"
+
+        '
+      id: trace_setup
+    - name: Execute identical six real dialog ownership gates without masking baseline
+        failures
+      run: 'set -euo pipefail
+
+        export E2E_INTEROP_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/receipts"
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/integration/native-playwright-dialog-ownership.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        assert len(json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json'')))==6
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/integration/native-playwright-dialog-ownership.test.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        python3 - <<''PY_COUNT''
+
+        import json,pathlib,os
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[x
+        for t in r[''testResults''] for x in t[''assertionResults'']];c={k:r[k] for
+        k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};receipts=sorted((p/''receipts'').glob(''dialog-guard-*.json''));c[''receipts'']=len(receipts);c[''baselineIsCharacterizationNotCandidateAcceptance'']=os.environ[''E2E_DIALOG_PAIR_LABEL'']==''baseline'';(p/''counts.json'').write_text(json.dumps(c,indent=2));assert
+        len(a)==r[''numTotalTests'']==6 and r[''numPendingTests'']==0;assert len(receipts)==6,len(receipts)
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      working-directory: baseline
+      if: ${{ success() && steps.trace_setup.outcome == 'success' }}
+    - name: Validate separate per-process ordinary and critical trace boundaries
+      if: always()
+      run: 'set +e
+
+        python3 scripts/ci/check-native-firstcause-traces-lossaware.py 6
+
+        a=$?
+
+        python3 scripts/ci/check-critical-query-traces.py 6
+
+        b=$?
+
+        test "$a" -eq 0 && test "$b" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: real-dialog-ownership-baseline-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_DIALOG_PAIR_LABEL: baseline
+    needs:
+    - native-runtime
+  real-dialog-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        git -C . rev-parse HEAD > evidence/product-checkout.sha
+
+        git -C . rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum ./packages/web/tests/integration/native-playwright-dialog-ownership.test.ts
+        ./packages/web/tests/helpers/native-dialog-fixture.ts > evidence/probe-files.sha256
+
+        printf ''%s\n'' ''candidate'' > evidence/pair-label
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact same-run source host compiler executable
+      id: verify
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat evidence/borrowed-chrome.path)"
+
+        ldd "$chrome" > evidence/borrowed-chrome-ldd.txt
+
+        ! grep -q ''not found'' evidence/borrowed-chrome-ldd.txt
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > evidence/borrowed-chrome-preflight.html
+        2> evidence/borrowed-chrome-preflight.log
+
+        '
+    - name: Typecheck exact six real dialog ownership gates on this source
+      run: 'set -euo pipefail
+
+        cat > tsconfig.isolated-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/web/tests/integration/native-playwright-dialog-ownership.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.isolated-gate.json
+
+        rm tsconfig.isolated-gate.json
+
+        '
+    - name: Enable per-process bounded native trace without changing binary
+      run: 'set -euo pipefail
+
+        # Install only after the verified binary has installed Chrome, before original
+        tests.
+
+        test -x "$E2E_AGENT_BROWSER_EXECUTABLE"
+
+        mkdir -p "$GITHUB_WORKSPACE/evidence/native-trace"
+
+        printf ''%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.path
+
+        sha256sum "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-trace/original-executable.sha256
+
+        cp scripts/ci/native-trace-wrapper.sh "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        chmod +x "$RUNNER_TEMP/native-trace-wrapper.sh"
+
+        printf ''E2E_DIAGNOSTIC_NATIVE_EXECUTABLE=%s\n'' "$E2E_AGENT_BROWSER_EXECUTABLE"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_DIAGNOSTIC_DIR=%s\n'' "$GITHUB_WORKSPACE/evidence/native-trace"
+        >> "$GITHUB_ENV"
+
+        printf ''E2E_AGENT_BROWSER_EXECUTABLE=%s\n'' "$RUNNER_TEMP/native-trace-wrapper.sh"
+        >> "$GITHUB_ENV"
+
+        '
+      id: trace_setup
+    - name: Execute identical six real dialog ownership gates without masking baseline
+        failures
+      run: 'set -euo pipefail
+
+        export E2E_INTEROP_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/receipts"
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/integration/native-playwright-dialog-ownership.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        assert len(json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json'')))==6
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/integration/native-playwright-dialog-ownership.test.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        python3 - <<''PY_COUNT''
+
+        import json,pathlib,os
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[x
+        for t in r[''testResults''] for x in t[''assertionResults'']];c={k:r[k] for
+        k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};receipts=sorted((p/''receipts'').glob(''dialog-guard-*.json''));c[''receipts'']=len(receipts);c[''baselineIsCharacterizationNotCandidateAcceptance'']=os.environ[''E2E_DIALOG_PAIR_LABEL'']==''baseline'';(p/''counts.json'').write_text(json.dumps(c,indent=2));assert
+        len(a)==r[''numTotalTests'']==6 and r[''numPendingTests'']==0;assert len(receipts)==6,len(receipts)
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      if: ${{ success() && steps.trace_setup.outcome == 'success' }}
+    - name: Validate separate per-process ordinary and critical trace boundaries
+      if: always()
+      run: 'set +e
+
+        python3 scripts/ci/check-native-firstcause-traces-lossaware.py 6
+
+        a=$?
+
+        python3 scripts/ci/check-critical-query-traces.py 6
+
+        b=$?
+
+        test "$a" -eq 0 && test "$b" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: real-dialog-ownership-candidate-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_DIALOG_PAIR_LABEL: candidate
+    needs:
+    - native-runtime
