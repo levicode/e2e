@@ -58,13 +58,13 @@ describe('same-fixture popup and path-swipe diagnostic pair', () => {
         request.on('end', () => {
           try {
             const data = JSON.parse(body) as { records: Record<string, unknown>[]; overflow: number };
-            const eventTypes = ['pointerdown','pointermove','pointerup','pointercancel','mousedown','mousemove','mouseup','dragstart','dragenter','dragover','dragleave','drop','dragend'];
-            if (dragFacts.length >= 3 || Object.keys(data).sort().join(',') !== 'overflow,records'
+            const eventTypes = new Set(['pointerdown','pointermove','pointerup','pointercancel','mousedown','mousemove','mouseup','dragstart','dragenter','dragover','dragleave','drop','dragend']);
+            if (dragFacts.length >= 3 || Object.keys(data).toSorted().join(',') !== 'overflow,records'
               || !Number.isInteger(data.overflow) || data.overflow < 0 || data.overflow > 65535
               || !Array.isArray(data.records) || data.records.length > 64
-              || !data.records.every((record, index) => Object.keys(record).sort().join(',') === 'bucket,button,buttons,dataTypes,ordinal,trusted,type'
+              || !data.records.every((record, index) => Object.keys(record).toSorted().join(',') === 'bucket,button,buttons,dataTypes,ordinal,trusted,type'
                 && record['ordinal'] === index && typeof record['trusted'] === 'boolean'
-                && typeof record['type'] === 'string' && eventTypes.includes(record['type'])
+                && typeof record['type'] === 'string' && eventTypes.has(record['type'])
                 && typeof record['bucket'] === 'string' && ['source','destination','other'].includes(record['bucket'])
                 && Number.isInteger(record['button']) && Number(record['button']) >= -1 && Number(record['button']) <= 4
                 && Number.isInteger(record['buttons']) && Number(record['buttons']) >= 0 && Number(record['buttons']) <= 31
@@ -88,7 +88,7 @@ describe('same-fixture popup and path-swipe diagnostic pair', () => {
           try {
             if (size > 256 || facts.length >= 8) throw new Error('bounded');
             const data = JSON.parse(body) as Record<string, unknown>;
-            if (Object.keys(data).sort().join(',') !== 'kind,marker,phase,ready'
+            if (Object.keys(data).toSorted().join(',') !== 'kind,marker,phase,ready'
               || !Object.values(data).every(value => typeof value === 'string')
               || !['main','frame','popup','parent'].includes(String(data['kind']))
               || !['first-script','dom-content-loaded','created'].includes(String(data['phase']))
