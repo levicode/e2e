@@ -1,0 +1,283 @@
+name: Linux public runtime install clean npm and pnpm candidate
+'on':
+  push:
+    branches:
+    - ci/linux-public-runtime-install-candidate
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: linux-public-runtime-install-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 9e6d0723d08f328e2e0f715f4297230e9e642425
+  NATIVE_SOURCE_TREE: e0b448694a7117ed3a4b4917afc220a0074d28e0
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  built-web-and-core-init:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+    - name: Full Web unit and source type checks
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/unit --no-staticParse --json="$GITHUB_WORKSPACE/evidence/web-collection.json"
+
+        pnpm --filter @e2e-dev/web exec tsc --noEmit
+
+        pnpm --filter e2e exec tsc --noEmit
+
+        pnpm --filter e2e exec vitest run tests/unit/action-outcome-diagnostics.test.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/closed-helper.json"
+
+        pnpm exec oxlint packages/e2e/src/expect/async.ts packages/e2e/src/locator/engine.ts
+        packages/e2e/tests/helpers/action-outcome-diagnostics.ts packages/e2e/tests/integration/web-selector-chains.test.ts
+        packages/e2e/tests/unit/action-outcome-diagnostics.test.ts packages/e2e/tests/unit/locator-field-assertions.test.ts
+        packages/web/src/native-surface.ts packages/web/src/native/browser-channel.ts
+        packages/web/src/native/protocol.ts packages/web/tests/unit/native-finalized-recording-surface.test.ts
+        packages/web/tests/unit/native-selector-errors.test.ts packages/web/tests/unit/native-worker-reinit.test.ts
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit --reporter=verbose --reporter=json
+        --outputFile.json="$GITHUB_WORKSPACE/evidence/web-units.json" 2>&1 | tee evidence/web-units.log
+
+        '
+    - name: Targeted core init and installer harness tests
+      if: ${{ !cancelled() }}
+      run: 'set -euo pipefail
+
+        pnpm --filter e2e exec vitest run tests/unit/cli-init.test.ts tests/unit/init-examples.test.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/core-init.json"
+
+        node --test scripts/acceptance/candidate-runtime-install.test.ts 2>&1 | tee
+        evidence/runtime-harness-tests.log
+
+        '
+    - name: Verify actual complete Web counts without skips
+      if: always()
+      run: 'python3 - <<''PY_COUNT''
+
+        import json
+
+        r=json.load(open(''evidence/web-units.json''));c=json.load(open(''evidence/web-collection.json''));assert
+        r[''numTotalTests'']==len(c) and r[''numPendingTests'']==0
+
+        json.dump({''collected'':len(c),''executed'':r[''numPassedTests'']+r[''numFailedTests''],''passed'':r[''numPassedTests''],''failed'':r[''numFailedTests''],''pending'':r[''numPendingTests'']},open(''evidence/web-counts.json'',''w''),indent=2)
+
+        PY_COUNT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: packaging24-built-web-core-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+  clean-public-consumers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Restore exact prior 9e6d ordinary artifact
+      timeout-minutes: 4
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        python3 scripts/ci/download-browser-recovery-runtime.py
+
+        '
+    - name: Verify exact prior source compiler host and binary
+      id: verify
+      run: 'set -euo pipefail
+
+        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+
+        '
+      timeout-minutes: 1
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Live production capability and scope probe
+      id: probe
+      run: 'set -euo pipefail
+
+        mkdir -p .artifacts/native-candidate
+
+        export E2E_CHROMIUM_EXECUTABLE="$(python3 -c ''import json;print(json.load(open("evidence/focused-chrome.json"))["chrome"])'')"
+
+        node --input-type=module -e "import { REQUIRED_CAPABILITIES } from ''./packages/web/dist/native/capabilities.js'';
+        process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > .artifacts/native-candidate/required-capabilities.json
+
+        node scripts/acceptance/probe-native.ts "$E2E_AGENT_BROWSER_EXECUTABLE" .artifacts/native-candidate/required-capabilities.json
+        .artifacts/native-candidate/negotiation.json
+
+        '
+    - name: Record verified artifact provenance only (not native acceptance)
+      run: 'set -euo pipefail
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';
+
+        import assert from ''node:assert/strict'';
+
+        import {createHash} from ''node:crypto'';
+
+        const m=JSON.parse(fs.readFileSync(''evidence/native-runtime.manifest.json''));
+
+        const pins=JSON.parse(fs.readFileSync(''scripts/ci/browser-recovery-runtime-pins.json''));
+
+        assert.deepEqual(m.nativeSource,pins.nativeSource);
+
+        assert.equal(m.binarySha256,pins.binarySha256);
+
+        assert.equal(createHash(''sha256'').update(fs.readFileSync(process.env.E2E_AGENT_BROWSER_EXECUTABLE)).digest(''hex''),m.binarySha256);
+
+        assert.deepEqual(m.compilation.features,[]);
+
+        assert.equal(m.platform,process.platform);assert.equal(m.architecture,process.arch);
+
+        fs.writeFileSync(''.artifacts/native-candidate/producer.json'',JSON.stringify({schemaVersion:1,kind:''verified-ordinary-artifact-provenance-only'',source:m.nativeSource,binary:{sha256:m.binarySha256},producer:{platform:m.platform,architecture:m.architecture,repository:m.repository,runId:m.runId,runAttempt:m.runAttempt},artifact:{id:12781019473,zipSha256:''2b4a4b7130315f42ec8259ca94489f791c66da3f80e545d7fd9c5158c722d617'',manifestSha256:pins.manifestSha256},acceptanceEvidence:false,releaseEligible:false,note:''Artifact
+        identity only; full native acceptance currently has failures. No baseline
+        or browser contract approval is claimed.''},null,2));
+
+        JS
+
+        '
+    - name: Assemble unpublished source-matched bundle
+      id: bundle
+      run: 'set -euo pipefail
+
+        mv evidence .artifacts/native-candidate/prebundle-evidence
+
+        node scripts/acceptance/package-bundle.ts "$E2E_AGENT_BROWSER_EXECUTABLE"
+        .artifacts/native-candidate/producer.json .artifacts/native-candidate/negotiation.json
+        "$RUNNER_TEMP/native-candidate-bundle"
+
+        digest="$(sha256sum "$RUNNER_TEMP/native-candidate-bundle/manifest.json" |
+        cut -d '' '' -f1)"
+
+        printf ''%s\n'' "$digest" > .artifacts/native-candidate/trusted-manifest-sha256.txt
+
+        echo "manifest_sha256=$digest" >> "$GITHUB_OUTPUT"
+
+        '
+    - name: Exercise public runtime installation from clean npm and pnpm consumers
+      id: runtime-install
+      if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ steps.bundle.outputs.manifest_sha256 }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN\n\
+        failed=0\nfor manager in npm pnpm; do\n  node scripts/acceptance/candidate-runtime-install.ts\
+        \ \\\n    \"$RUNNER_TEMP/native-candidate-bundle\" \"$EXPECTED_MANIFEST_SHA256\"\
+        \ \"$manager\" \\\n    \"$RUNNER_TEMP/public-runtime-$manager-consumer\" \\\
+        \n    \"$RUNNER_TEMP/public-runtime-$manager-home\" \\\n    \".artifacts/native-candidate/runtime-install-$manager\"\
+        \ || failed=1\ndone\ntest \"$failed\" -eq 0\n"
+    - name: Require both actual public CLI consumers
+      if: ${{ always() }}
+      run: 'test "${{ steps.probe.outcome }}" = success
+
+        test "${{ steps.bundle.outcome }}" = success
+
+        test "${{ steps.runtime-install.outcome }}" = success
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: packaging24-linux-npm-pnpm-public-cli-evidence
+        path: 'evidence/
+
+          .artifacts/native-candidate/'
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
