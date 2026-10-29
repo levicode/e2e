@@ -1,0 +1,102 @@
+{
+  "configured": true,
+  "ordinary": {
+    "artifactId": 12875097394,
+    "artifactName": "ci-native-runtime-final source-pinned ordinary runtime producer-40822737480-1",
+    "artifactSize": 14337268,
+    "artifactDigest": "sha256:e87c36b7dce1af0b12bb17386f7a1c00e5e9d60b915b30aa28ced386bd6db634",
+    "manifestSha256": "cb7bd322f063b5b3dd6540ca3b8fe665aa4e643ab7da77db31db378f99c51bfe",
+    "binarySha256": "399675a321e9f1286e05f477f65709e4002827729aff5779dce1bc55f3eb1a09",
+    "nativeSource": {
+      "commit": "d5a818ff466c5293168348abe3df3a36f14c78e9",
+      "tree": "f8ce2b55f3c10966af9463840ed77da5228580d8"
+    },
+    "expected": {
+      "source": {
+        "commit": "16a8bc5c6d5e16f7f41d1aa85ddb7c51a8163338",
+        "tree": "676c5bdd7386d4af973c915099caa8e87b7dec8c"
+      },
+      "repository": "levicode/e2e",
+      "runId": "40822737480",
+      "runAttempt": "1",
+      "platform": "linux",
+      "architecture": "x64",
+      "nativeCommit": "d5a818ff466c5293168348abe3df3a36f14c78e9"
+    },
+    "producer": {
+      "workflowId": 400219961,
+      "workflowPath": ".github/workflows/final-ordinary-runtime.yml",
+      "runConclusion": "success",
+      "jobId": 123278677662,
+      "jobName": "build"
+    },
+    "compiler": {
+      "rustcSHA256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369",
+      "compilerSHA256": "8c704147d8c22ce09b81b765a893cd5927b61a135a13a5b0af9ec3445e11d9e0",
+      "rustcVersion": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "manifestPath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/Cargo.toml",
+      "sourcePath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/src/main.rs",
+      "executable": "/home/runner/work/_temp/ci-native-target/ci/agent-browser",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--message-format=json"
+      ]
+    }
+  },
+  "fault": {
+    "artifactId": 12875596641,
+    "artifactName": "ci-native-fault-runtime-build source-pinned test-only fault runtime-40822742165-1",
+    "artifactSize": 14374803,
+    "artifactDigest": "sha256:88263fde98ae0fa6ff8ed0fa8715005662752d2767ac81acd46568eff25f0987",
+    "manifestSha256": "8ff72ff1bfa16b6d3fee795f8ba49bf3c9a97d9537891a2d66ade281ba757e71",
+    "binarySha256": "2c01fcf2d0a5ad5c5bf3e26b9b094d71a6e7701a7fcc000ac8de6a846a72b59e",
+    "nativeSource": {
+      "commit": "d5a818ff466c5293168348abe3df3a36f14c78e9",
+      "tree": "f8ce2b55f3c10966af9463840ed77da5228580d8"
+    },
+    "expected": {
+      "source": {
+        "commit": "16a8bc5c6d5e16f7f41d1aa85ddb7c51a8163338",
+        "tree": "676c5bdd7386d4af973c915099caa8e87b7dec8c"
+      },
+      "repository": "levicode/e2e",
+      "runId": "40822742165",
+      "runAttempt": "1",
+      "platform": "linux",
+      "architecture": "x64",
+      "nativeCommit": "d5a818ff466c5293168348abe3df3a36f14c78e9"
+    },
+    "producer": {
+      "workflowId": 400219987,
+      "workflowPath": ".github/workflows/native-fault-runtime.yml",
+      "runConclusion": "success",
+      "jobId": 123278691361,
+      "jobName": "build"
+    },
+    "compiler": {
+      "rustcSHA256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369",
+      "compilerSHA256": "5a5ffc4bb7983a5c2387628bac05611d6ad94f70b1ba44dd1009859be9f36486",
+      "rustcVersion": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "manifestPath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/Cargo.toml",
+      "sourcePath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/src/main.rs",
+      "executable": "/home/runner/work/_temp/ci-native-target/ci/agent-browser",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--message-format=json"
+      ]
+    },
+    "testOnly": true
+  }
+}
