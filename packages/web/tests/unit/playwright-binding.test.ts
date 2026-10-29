@@ -154,3 +154,21 @@ it('does not subscribe to a Context that closed before acquisition returned', as
   expect(events.listeners('dialog')).toEqual([user]);
   expect(events.listenerCount('close')).toBe(0); expect(browserEvents.listenerCount('disconnected')).toBe(0);
 });
+
+
+it.each([null, { width: 777, height: 555 }])('passes viewport %j to the single actual Playwright context creation', async viewport => {
+  const events = new EventEmitter(); const browserEvents = new EventEmitter(); const options: unknown[] = [];
+  const page = { context: () => context, url: () => 'about:blank' } as Page;
+  const context = Object.assign(events, {
+    isClosed: () => false, newPage: async () => page,
+    newCDPSession: async () => ({ send: async () => ({ targetInfo: { type: 'page', targetId: 'own-page', browserContextId: 'own-context' } }), detach: async () => {} }),
+    close: async () => { events.emit('close'); },
+  }) as unknown as BrowserContext;
+  const browser = Object.assign(browserEvents, { isConnected: () => true, newContext: async (value: unknown) => { options.push(value); return context; } }) as unknown as Browser;
+  try {
+    const binding = await createPlaywrightContext(browser, { blockServiceWorkers: false, viewport, media: {}, initScripts: [] }, operation());
+    expect(options).toEqual([{ viewport, serviceWorkers: 'allow' }]);
+    expect(binding).toMatchObject({ kind: 'isolated', contextId: 'own-context', targetId: 'own-page' });
+    expect(binding.context).toBe(context); expect(binding.page).toBe(page);
+  } finally { await context.close(); }
+});

@@ -1,3 +1,4 @@
+import { IsolatedScopeCreation } from '../helpers/isolated-scope-creation.ts';
 /** Real protocol client over an in-memory native peer; no browser success is implied. */
 import { createHash } from 'node:crypto';
 import { AsyncResource } from 'node:async_hooks';
@@ -613,6 +614,18 @@ describe('failed download file custody', () => {
       await expect(held.surface.endAttempt(cleanup())).rejects.toBe(failure);
       await expect(held.surface.dispose(cleanup())).rejects.toBe(failure);
     } finally { held.release(); await held.finish(); }
+  });
+});
+
+describe('isolated native startup creation receipts', () => {
+  it.each([null, { width: 777, height: 555 }])('publishes one successfully prepared and adopted scope with viewport %j', async viewport => {
+    const surface = new NativeSurface({ viewport }); const creation = new IsolatedScopeCreation();
+    const command = EngineChannel.prototype.command;
+    const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, current, transition) {
+      return creation.observe(name, args, command.call(this, name, args, current, transition));
+    });
+    try { await start(surface); creation.assertOne({ viewport, identityScope: surface.identityScope }); }
+    finally { await surface.dispose(cleanup()); spy.mockRestore(); }
   });
 });
 

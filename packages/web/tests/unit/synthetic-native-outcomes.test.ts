@@ -241,6 +241,16 @@ describe('bounded selected operation and cleanup receipts', () => {
   const refused = (operationSeq = 2): NativeResult => ({ type: 'result', id: 'redacted', generation: 1, operationSeq, ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
   const selectedFact = (facts: SyntheticFact[], ordinal = 0) => facts.find(fact => fact.kind === 'selected-operation' && fact.ordinal === ordinal);
 
+  it('records the actual isolated adopt receipt for the P31 fresh-attempt selection', async () => {
+    const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'start');
+    const raw = Promise.resolve(ok());
+    const returned = observer.select(1, 'scope.interop.adopt', () => { observer.observePromise('scope.interop.adopt', 'start', raw); return raw; });
+    expect(returned).toBe(raw); await returned;
+    observer.assert(1, () => expect(true).toBe(true)); observer.close();
+    expect(selectedFact(sink.facts, 1)).toMatchObject({ command: 'scope.interop.adopt', requestCount: 1, requestPending: 0,
+      firstResult: { ok: true }, firstFailure: null, adapter: 'fulfilled', assertion: 'passed' });
+  });
+
   it('captures selected success independently after an expected setup refusal, without changing the promise', async () => {
     const sink = recorder(); const observer = new SyntheticNativeObserver(sink.evidence, () => 'point-perform');
     observer.observePromise('browser.perform', 'freeze-renderer', Promise.resolve(refused()));

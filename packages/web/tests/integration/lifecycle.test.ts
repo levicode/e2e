@@ -1,3 +1,4 @@
+import { IsolatedScopeCreation } from '../helpers/isolated-scope-creation.ts';
 import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 import { LifecycleAttemptDiagnostic } from '../helpers/lifecycle-attempt-diagnostic.ts';
 import { SyntheticNativeObserver } from '../helpers/synthetic-native-outcomes.ts';
@@ -1174,7 +1175,7 @@ describe('web engine lifecycle', () => {
       evidence.phase('body', 'end');
       await evidence.assert(0, () => expect(evidence.select(0, 'scope.end', () => engine.endAttempt!({ signal: exhausted.signal, timeoutMs: 0 }))).resolves.toBeUndefined());
       evidence.phase('body', 'start');
-      const next = await evidence.select(1, 'scope.open', () => openAttempt(engine, app, artifactsDir, 'g2', evidence));
+      const next = await evidence.select(1, 'scope.interop.adopt', () => openAttempt(engine, app, artifactsDir, 'g2', evidence));
       evidence.assert(1, () => expect(next).toBe('Home'));
       evidence.passed('body');
     } catch (cause) { evidence.failed(booted ? 'body' : 'setup', cause); throw cause; }
@@ -1264,20 +1265,20 @@ describe('web engine lifecycle', () => {
 
   it('follows the window under viewport: null, reports the measured size, and swipes by it', async () => {
     const engine = web({ viewport: null });
-    const openedViewport: unknown[] = [];
+    const creation = new IsolatedScopeCreation();
     const command = EngineChannel.prototype.command;
     const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, context, transition) {
-      if (name === 'scope.open') openedViewport.push('viewport' in args ? args.viewport : undefined);
-      return command.call(this, name, args, context, transition);
+      return creation.observe(name, args, command.call(this, name, args, context, transition));
     });
     try {
       await withAttempt(engine, app, artifactsDir, 'w1', async () => {
         await engine.session!.open!(`${app.url}/form`, operation('w1'));
         const browser = fixtureOf(engine, 'w1');
-        expect(openedViewport).toEqual([null]);
+        creation.assertOne({ viewport: null });
         const measured = await browser.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         expect(measured.width).toBeGreaterThan(0);
         const snapshot = await engine.observe!(operation('w1'), { pixels: true });
+        creation.assertScope(snapshot.identityScope);
         expect(snapshot.viewport).toEqual(measured);
         expect(snapshot.pixels).toBeDefined();
 

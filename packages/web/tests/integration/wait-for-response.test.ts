@@ -1,3 +1,4 @@
+import { IsolatedScopeCreation } from '../helpers/isolated-scope-creation.ts';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -83,7 +84,7 @@ describe('browser.waitForResponse bodies', () => {
   let origin: string;
   let browser: Browser;
   let operationBudgetMs: number;
-  const openedScopes: string[] = [];
+  let creation: IsolatedScopeCreation;
 
   beforeAll(async () => {
     ({ server, url: origin } = await startBodyServer());
@@ -92,11 +93,10 @@ describe('browser.waitForResponse bodies', () => {
   });
 
   beforeEach(async () => {
-    openedScopes.length = 0;
+    creation = new IsolatedScopeCreation();
     const command = EngineChannel.prototype.command;
     vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, name, args, operation, transition) {
-      if (name === 'scope.open') openedScopes.push(name);
-      return command.call(this, name, args, operation, transition);
+      return creation.observe(name, args, command.call(this, name, args, operation, transition));
     });
     await surface.startAttempt({ attemptId: 'responses', artifactsDir, signal, resolveSecret: noSecrets, ...ignoreTrace });
     operationBudgetMs = 2_000;
@@ -151,7 +151,7 @@ describe('browser.waitForResponse bodies', () => {
     const identity = await browser.evaluate(() => document.documentElement.dataset.document ?? null);
     expect(identity).not.toBeNull();
     expect(body).toContain(`data-document="${identity}"`);
-    expect(openedScopes).toEqual(['scope.open']);
+    creation.assertOne({ identityScope: surface.identityScope });
     // The independent target-inventory case below also rules out an extra blank page.
   });
 

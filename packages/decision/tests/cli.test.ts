@@ -17,6 +17,13 @@ const reportSchema = z.object({ run: z.object({
     steps: z.array(z.object({ error: z.object({ code: z.string() }).optional(), agentMetrics: z.unknown().optional() })),
   })) })),
 }) });
+/** Keeps failed attempt codes visible without serializing model input or report artifacts. */
+function attemptFailureCodes(result: z.infer<typeof reportSchema>['run']['results'][number] | undefined): string {
+  return JSON.stringify(result?.attempts.map((attempt, attemptIndex) => ({
+    attemptIndex,
+    failedSteps: attempt.steps.flatMap((step, stepIndex) => step.error === undefined ? [] : [{ stepIndex, code: step.error.code }]),
+  })) ?? []);
+}
 /** Starts an actual HTTP server and returns its ephemeral URL. */
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -187,15 +194,18 @@ describe('decision executor through the built CLI and real Chromium', () => {
     if (directory) await rm(directory, { recursive: true, force: true });
   });
   it('completes the todo flow in plain language', () => {
-    expect(report.run.results.find((result) => result.titlePath.at(-1) === 'todo flow in plain language')?.status).toBe('passed');
+    const result = report.run.results.find((entry) => entry.titlePath.at(-1) === 'todo flow in plain language');
+    expect(result?.status, attemptFailureCodes(result)).toBe('passed');
   });
   it('fills a runner-authorized secret without sending it anywhere', () => {
-    expect(report.run.results.find((result) => result.titlePath.at(-1) === 'secret login')?.status).toBe('passed');
+    const result = report.run.results.find((entry) => entry.titlePath.at(-1) === 'secret login');
+    expect(result?.status, attemptFailureCodes(result)).toBe('passed');
     expect(JSON.stringify(requests)).not.toContain(password);
     for (const artifact of artifacts) expect(artifact).not.toContain(password);
   });
   it('completes a long page past the choice cap', () => {
-    expect(report.run.results.find((result) => result.titlePath.at(-1) === 'long page')?.status).toBe('passed');
+    const result = report.run.results.find((entry) => entry.titlePath.at(-1) === 'long page');
+    expect(result?.status, attemptFailureCodes(result)).toBe('passed');
   });
   it('asks the operation first and the target in its own call', () => {
     const asked = requests
