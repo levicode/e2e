@@ -47,6 +47,8 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
   'native::client_observation::equivalence_tests::chromium_svg_title_idref_public_names_contract',
   'native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab',
   'native::client_browser::recording_attempt_tests::chromium_two_attempt_recording_late_old_completion_cannot_mutate_new_artifact',
+  'native::client_capture::pseudo_tests::chromium_pseudo_capture_preserves_public_pixels_and_refuses_secure_generated_paint',
+  'native::client_observation::tests::chromium_historical_public_content_name_contract',
 ] as const;
 
 /** Not passes or waivers: ingress and controlled-window diagnostics stay outside acceptance. */

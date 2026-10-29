@@ -14,7 +14,9 @@ export const MANAGED_ENCODER_CONTRACTS = [
   "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_stop_exports_verified_bytes_without_repeating_stop_or_new_session",
   "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_navigation_exports_real_previous_segment_without_reopening_scope",
   "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_cdp_connection_exports_real_previous_segment_without_reconnect",
-  "native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota"
+  "native::client_browser::state_lifecycle_tests::terminal_recording_tests::close_before_failed_replacement_result_releases_late_unclaimed_frozen_quota",
+  "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_peer_phase_one_still_contains_exact_context_on_terminal_shutdown",
+  "native::client_browser::state_lifecycle_tests::terminal_recording_tests::interop_marker_three_create_refusal_joins_recording_and_terminal_close",
 ] as const;
 
 export const LEGACY_COMPONENT_ENCODER_CONTRACTS = [
