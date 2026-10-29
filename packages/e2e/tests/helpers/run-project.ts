@@ -29,8 +29,8 @@ type Target = NonNullable<E2EConfig['targets']>[number];
  * symbol is shared at runtime even though the src/dist types differ; this is
  * the one place that difference is cast away.
  */
-export function webTarget(name: string, url: string): Target {
-  return { name, engine: web() as unknown as NonNullable<Target['engine']>, app: { url } };
+export function webTarget(name: string, url: string, options?: Parameters<typeof web>[0]): Target {
+  return { name, engine: web(options) as unknown as NonNullable<Target['engine']>, app: { url } };
 }
 
 /**

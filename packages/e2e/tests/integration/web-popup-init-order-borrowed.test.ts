@@ -1,12 +1,11 @@
 /** Same source fixture on original and current engines. Real browser required. */
-import { web } from '@e2e-dev/web';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../../../web/tests/helpers/cdp-host.ts';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { resultByTitle, createProject, runExisting, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
+import { resultByTitle, createProject, runExisting, webTarget, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 const titles = [
   'existing document stays untouched until next navigation',
@@ -33,7 +32,7 @@ describe('popup initialization document boundary controls', () => {
     chrome = await launchRemoteChrome(executable);
     const endpoint = chrome.endpoint;
     project = createProject({ 'tests/popup-init-order.e2e.ts': readFileSync(new URL('../fixtures/popup-init-order/cases.txt', import.meta.url), 'utf8') });
-    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1, targets: [{ name: 'web', engine: web({ connect: { cdpEndpoint: () => endpoint } }), app: { url: origin } }] } });
+    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1, targets: [webTarget('web', origin, { connect: { cdpEndpoint: () => endpoint } })] } });
   }, 120_000);
   afterAll(async () => {
     try {

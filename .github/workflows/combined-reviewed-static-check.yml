@@ -37,7 +37,7 @@ jobs:
         git ls-tree -r HEAD | grep -vF $''\t.github/workflows/combined-reviewed-static-check.yml''
         > evidence/source-inventory.txt
 
-        printf ''%s  %s\n'' ''043ef6ddb412460f660efe6540ac270eea72cb9b85d9c674e3a5d6dc61d6112c''
+        printf ''%s  %s\n'' ''2f4f0aad5606d71dc60c30c7189aca96536dbc98fbaf232e87a057999223a4d1''
         evidence/source-inventory.txt | sha256sum -c -
 
         cp package.json evidence/root-package.json
@@ -399,7 +399,7 @@ jobs:
         git ls-tree -r HEAD | grep -vF $''\t.github/workflows/combined-reviewed-static-check.yml''
         > evidence/source-inventory.txt
 
-        printf ''%s  %s\n'' ''043ef6ddb412460f660efe6540ac270eea72cb9b85d9c674e3a5d6dc61d6112c''
+        printf ''%s  %s\n'' ''2f4f0aad5606d71dc60c30c7189aca96536dbc98fbaf232e87a057999223a4d1''
         evidence/source-inventory.txt | sha256sum -c -
 
         cp package.json evidence/root-package.json

@@ -3,11 +3,10 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { web } from '@e2e-dev/web';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../../../web/tests/helpers/cdp-host.ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { primitiveFixtureDocument } from '../fixtures/popup-swipe/primitive.ts';
-import { resultByTitle, createProject, runExisting, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
+import { resultByTitle, createProject, runExisting, webTarget, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 const fixture = new URL('../fixtures/popup-swipe/', import.meta.url);
 const titles = ['init scripts and partial media updates cover frames and new tabs', 'a path swipe drags and drops on the board'];
@@ -118,7 +117,7 @@ describe('same-fixture borrowed popup and path-swipe diagnostic pair', () => {
     chrome = await launchRemoteChrome(executable);
     const endpoint = chrome.endpoint;
     project = createProject({ 'tests/popup-swipe.e2e.ts': readFileSync(new URL('cases.txt', fixture), 'utf8') });
-    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1, targets: [{ name: 'web', engine: web({ connect: { cdpEndpoint: () => endpoint } }), app: { url: origin } }] } });
+    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1, targets: [webTarget('web', origin, { connect: { cdpEndpoint: () => endpoint } })] } });
   }, 120_000);
   afterAll(async () => {
     // Persist before deleting project. No browser read/command is issued after cancellation.

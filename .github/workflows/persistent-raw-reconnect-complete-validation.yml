@@ -1021,7 +1021,7 @@ jobs:
 
         git rev-parse HEAD^{tree} > evidence/product-checkout.tree
 
-        sha256sum packages/web/tests/integration/isolated-page-reopen.test.ts packages/web/vitest.isolated-page-reopen.config.ts
+        sha256sum packages/web/tests/integration/isolated-page-reopen.test.ts packages/web/vitest.isolated-page-reopen-native.config.ts packages/web/tests/integration/isolated-page-reopen-native-receipts.test.ts
         > evidence/probe-files.sha256
 
         '
