@@ -1,0 +1,135 @@
+name: State capture deterministic receipt controls (FAST only)
+permissions:
+  contents: read
+concurrency:
+  group: state-capture-deterministic-controls-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  NATIVE_SOURCE_SHA: c1423ec8074875073672817b4dea136d7cdcdc24
+  NATIVE_SOURCE_TREE: 2b4bd25801bbfdfcc0cff3a713a513d34c7c08b8
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+'on':
+  push:
+    branches:
+    - ci/state-capture-deterministic-controls
+jobs:
+  exact-fast-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        fetch-depth: 2
+        persist-credentials: false
+    - name: Verify exact parent tree and only four reviewed test files
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        python3 - <<''PY_SOURCE''
+
+        import pathlib,subprocess,json,hashlib,os
+
+        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
+
+        def g(*args):return subprocess.check_output([''git'',''-C'',''native'',*args],text=True).strip()
+
+        assert g(''rev-parse'',''HEAD'')==os.environ[''NATIVE_SOURCE_SHA'']
+
+        assert g(''rev-parse'',''HEAD^'')==''ea9ac35f48ddcf81a2fb2dc59f86b7bbaca2a2ae''
+
+        assert g(''rev-parse'',''HEAD^{tree}'')==''2b4bd25801bbfdfcc0cff3a713a513d34c7c08b8''
+
+        assert g(''rev-parse'',''HEAD^1^{tree}'')==''7545e1b2531342a438d8407edf1c154753c525ab''
+
+        expected={"cli/src/native/client_state.rs": "25e25fc68c6148b71bc344a22d913a37b60e4eba73d16311fa19b109437a5b42", "cli/src/native/client_state_close_receipt_tests.rs":
+        "7befec3245c63cf40ab59a27bc2893d7d8739ad882c6b2378a2e70a7f36664cb", "cli/src/native/client_enrollment.rs": "991130ad274bd5da883c4d862ca2d51aac99158af90c79eca9d2ef6cf6e3fdf6",
+        "cli/src/native/client_capture_tenure_retained_tests.rs": "8c03fab52c5330cbf730521960da20863239a6586f37a5db28d89a1370783628"}
+
+        changed=g(''diff-tree'',''--no-commit-id'',''--name-only'',''-r'',''HEAD'').splitlines();assert sorted(changed)==sorted(expected),(changed,expected)
+
+        for name,digest in expected.items():assert hashlib.sha256((pathlib.Path(''native'')/name).read_bytes()).hexdigest()==digest,name
+
+        assert not g(''status'',''--porcelain'')
+
+        assert g(''rev-parse'',''HEAD:cli/Cargo.lock'')==g(''rev-parse'',''HEAD^:cli/Cargo.lock'')
+
+        (p/''source-receipt.json'').write_text(json.dumps({''commit'':g(''rev-parse'',''HEAD''),''tree'':g(''rev-parse'',''HEAD^{tree}''),''parent'':g(''rev-parse'',''HEAD^''),''files'':expected,''runId'':os.environ[''GITHUB_RUN_ID''],''runAttempt'':os.environ[''GITHUB_RUN_ATTEMPT'']},indent=2))
+
+        PY_SOURCE
+
+        '
+    - name: Compile only pinned FAST acceptance-faults test harness
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\"\n\
+        test \"$(git rev-parse HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\nrustup toolchain\
+        \ install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\ngrep -Fx\
+        \ 'commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67' \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\nsha256sum\
+        \ Cargo.lock > \"$GITHUB_WORKSPACE/evidence/cargo-lock.sha256\"\ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\
+        \nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\
+        \nset +e\ncargo +1.99.1 test --locked --profile ci-test-fast --config 'profile.ci-test-fast.inherits=\"ci\"' --config\
+        \ profile.ci-test-fast.opt-level=1 --config 'profile.ci-test-fast.lto=\"off\"' --config profile.ci-test-fast.codegen-units=16\
+        \ --config profile.ci-test-fast.debug=0 --config profile.ci-test-fast.debug-assertions=false --config profile.ci-test-fast.overflow-checks=false\
+        \ --config 'profile.ci-test-fast.panic=\"unwind\"' --config profile.ci-test-fast.incremental=false --config profile.ci-test-fast.strip=true\
+        \ --timings --no-default-features --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\ncompile_status=$?\n\
+        set -e\nprintf '%s\\n' \"$compile_status\" > \"$GITHUB_WORKSPACE/evidence/harness-build.exit\"\npython3 - <<'PY_HARNESS'\n\
+        import json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\n\
+        build_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n    record = json.loads(line)\n\
+        \    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success') is True)\n\
+        \    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name') == 'agent-browser'\n\
+        \        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile', {}).get('test')\
+        \ is True\n        and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n \
+        \       assert record['profile']['opt_level']=='1' and record['profile']['debug_assertions'] is False and record['profile']['overflow_checks']\
+        \ is False\n        paths.add(record['executable'])\nif int((out / 'harness-build.exit').read_text()) != 0:\n    raise\
+        \ SystemExit('Compiler process exited unsuccessfully')\nif build_finished != [True]:\n    raise SystemExit('Missing\
+        \ or unsuccessful final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected exactly one\
+        \ test executable, got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n    raise SystemExit('Compiler-selected\
+        \ harness is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\
+        \nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults\
+        \ > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - name: Run exactly four new tests once and reject empty or ignored selection
+      if: ${{ always() && steps.compile.outcome == 'success' }}
+      run: "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY ANTHROPIC_API_KEY AI_GATEWAY_API_KEY\n\
+        python3 - <<'PY_EXACT'\nimport pathlib,json,subprocess,re,hashlib,os\np=pathlib.Path('evidence/exact-controls');p.mkdir(parents=True,exist_ok=True)\n\
+        h=pathlib.Path('evidence/harness.path').read_text().strip()\nexpected=['native::client_state::close_receipt_tests::state_close_receipt_ack_then_detach_keeps_exact_cleanup',\
+        \ 'native::client_state::close_receipt_tests::state_close_receipt_detach_then_ack_keeps_root_waiter', 'native::client_state::close_receipt_tests::state_close_receipt_destroyed_then_ack_is_not_synthetic_ack',\
+        \ 'native::client_enrollment::tests::capture_mutation_then_tenure_not_export_retains_primary_and_cleanup']\nassert\
+        \ len(expected)==4 and len(set(expected))==4\nlisted=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        ignored=subprocess.check_output([h,'--ignored','--list','--format','terse'],text=True)\n(p/'all-tests.list').write_text(listed);(p/'ignored-tests.list').write_text(ignored)\n\
+        names=[x[:-6] for x in listed.splitlines() if x.endswith(': test')]\nignored_names=[x[:-6] for x in ignored.splitlines()\
+        \ if x.endswith(': test')]\nselection={'expected':expected,'count':4,'tenureMatrixCases':4,'allHarnessCount':len(names),'counts':{n:names.count(n)\
+        \ for n in expected},'ignoredSelection':list(set(expected)&set(ignored_names))}\n(p/'selection.json').write_text(json.dumps(selection,indent=2))\n\
+        assert all(names.count(n)==1 for n in expected),selection\nassert not selection['ignoredSelection'],selection\nresults=[]\n\
+        def text(value):return value.decode(errors='replace') if isinstance(value,bytes) else (value or '')\nfor index,name\
+        \ in enumerate(expected):\n argv=[h,'--exact',name,'--nocapture','--test-threads=1']\n try:\n  result=subprocess.run(argv,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=65);log=result.stdout;code=result.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  log=text(error.stdout)+'\\nOUTER_TEST_WATCHDOG_TIMEOUT\\n';code=124\n\
+        \ (p/(str(index)+'.log')).write_text(log);(p/(str(index)+'.exit')).write_text(str(code)+'\\n')\n counts=re.findall(r'test\
+        \ result: (ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored; (\\d+) measured; (\\d+) filtered out',log)\n\
+        \ valid=len(counts)==1 and sum(map(int,counts[0][1:3]))==1 and counts[0][3]=='0' and counts[0][4]=='0' and int(counts[0][5])==len(names)-1\n\
+        \ results.append({'name':name,'argv':argv,'exit':code,'summaries':counts,'exactOneNoSkip':valid})\n # Persist all\
+        \ attempted results even when an earlier case fails. No retry.\n receipt={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'results':results,'expectedCount':4,'profile':'ci-test-fast','features':['acceptance-faults'],'notFullCaptureOrProductionAcceptance':True}\n\
+        \ (p/'result.json').write_text(json.dumps(receipt,indent=2))\n print(name,code,counts,flush=True)\nassert len(results)==4\
+        \ and all(x['exit']==0 and x['exactOneNoSkip'] for x in results),results\nassert not subprocess.check_output(['git','-C','native','status','--porcelain'],text=True).strip()\n\
+        PY_EXACT\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: state-capture-deterministic-controls-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
