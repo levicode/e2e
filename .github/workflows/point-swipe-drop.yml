@@ -1,4 +1,4 @@
-name: Point swipe exact realm fixture r5
+name: Point swipe typed event fixture r6
 permissions:
   contents: read
   actions: read
@@ -8,13 +8,13 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 7a407469dd5eaf58d97f980aaeff4005a4a6c889
-  NATIVE_SOURCE_TREE: 79b0ce5c028910d83da61dd866a664caabdae14e
+  NATIVE_SOURCE_SHA: 746559333c3ba692b2ace7fae0d695056ba8813c
+  NATIVE_SOURCE_TREE: 768f97e6794687b9003331c4332f5555d55a1117
   NEXT_TELEMETRY_DISABLED: '1'
 'on':
   push:
     branches:
-    - ci/point-swipe-fixture-r5
+    - ci/point-swipe-fixture-r6
 jobs:
   preflight-both-mode-typecheck:
     runs-on: ubuntu-24.04
