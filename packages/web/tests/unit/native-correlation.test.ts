@@ -41,15 +41,25 @@ describe('test-only protected observation identity join', () => {
     expect(() => decodeBrowserResult('fixture.correlate', { identityScope: 'scope-1', matches: [] })).toThrow();
   });
 
-  it('accepts the exact combined candidate bound and u64 endpoints without number conversion', () => {
+  it('accepts the exact combined candidate bound, u64 IDs and opaque revisions without number conversion', () => {
     const located = Array.from({ length: 50_000 }, (_, index) => ({ id: `@e${index + 1}`, revision: '1' }));
-    const observed = Array.from({ length: 50_000 }, (_, index) => ({ id: `@e${index + 50_001}`, revision: '18446744073709551615' }));
-    observed[0] = { id: '@e18446744073709551615', revision: '18446744073709551615' };
+    const observed = Array.from({ length: 50_000 }, (_, index) => ({ id: `@e${index + 50_001}`, revision: 'nr1:7:scope-1:1:18446744073709551615' }));
+    observed[0] = { id: '@e18446744073709551615', revision: 'nr1:7:scope-1:1:18446744073709551615' };
     const result = snapshotCorrelationArgs({ located, observed });
     expect(result.located).toHaveLength(50_000);
     expect(result.observed).toHaveLength(50_000);
     expect(result.observed[0]).toEqual(observed[0]);
     expect(result.observed[0]).not.toBe(observed[0]);
+  });
+
+  it('preserves opaque revision bytes without interpreting issuance authority', () => {
+    for (const revision of ['nr1:3:界:1:1', 'nr1:7:scope-1:2:1', '0', '01', '18446744073709551616']) {
+      const args = { located: [{ id: '@e1', revision }], observed: [] };
+      expect(snapshotCorrelationArgs(args)).toEqual(args);
+    }
+    for (const revision of ['', undefined, null, 1]) {
+      expect(() => snapshotCorrelationArgs({ located: [{ id: '@e1', revision }], observed: [] })).toThrow();
+    }
   });
 
   it('does not expand a bounded request with sparse candidate arrays', () => {

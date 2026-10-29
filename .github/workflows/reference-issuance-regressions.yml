@@ -1,0 +1,573 @@
+name: Reviewed reference issuance compile and pure regression gates (not browser acceptance)
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: point-swipe-drop-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 5d46951741d93adef5b5b23a9040572ae0c0b851
+  NATIVE_SOURCE_TREE: 613e437eebf2e25d83eff5491e12c399173584d1
+  NEXT_TELEMETRY_DISABLED: '1'
+'on':
+  push:
+    branches:
+    - ci/reference-issuance-regressions
+jobs:
+  original-four-compile-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Validate exact source pin and reserve fresh target
+      id: source
+      run: 'set -euo pipefail
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain)"
+
+        python3 - <<''PY_PIN''
+
+        import json,os
+
+        p=json.load(open(''.github/native-candidate.json''))
+
+        assert p[''schemaVersion'']==1 and p[''repository'']==''levicode/agent-browser''
+
+        assert p[''commit'']==os.environ[''NATIVE_SOURCE_SHA'']
+
+        PY_PIN
+
+        mkdir -p .artifacts/native-candidate
+
+        git rev-parse HEAD > .artifacts/native-candidate/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > .artifacts/native-candidate/e2e-source.tree
+
+        test ! -e "$RUNNER_TEMP/native-reference-lint-target"
+
+        test ! -e "$RUNNER_TEMP/native-reference-lint-cargo"
+
+        echo "CARGO_TARGET_DIR=$RUNNER_TEMP/native-reference-lint-target" >> "$GITHUB_ENV"
+
+        echo "CARGO_HOME=$RUNNER_TEMP/native-reference-lint-cargo" >> "$GITHUB_ENV"
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      id: native-checkout
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: .artifacts/native-source
+        persist-credentials: false
+    - name: Require exact reviewed native checkout before toolchain and compilation
+      id: native_identity
+      working-directory: .artifacts/native-source
+      run: 'set -euo pipefail
+
+        test "$(git rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test -z "$(git status --porcelain)"
+
+        git rev-parse HEAD > "$GITHUB_WORKSPACE/.artifacts/native-candidate/native-source.sha"
+
+        git rev-parse HEAD^{tree} > "$GITHUB_WORKSPACE/.artifacts/native-candidate/native-source.tree"
+
+        '
+    - name: Install exact reviewed Rust and lint components
+      id: toolchain
+      if: ${{ !cancelled() && steps.native_identity.outcome == 'success' }}
+      run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+    - name: Check all native compilation boundaries before browser execution
+      id: native-lint
+      if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+      working-directory: .artifacts/native-source/cli
+      env:
+        EXPECTED_NATIVE_SHA: ${{ env.NATIVE_SOURCE_SHA }}
+      run: "set -euo pipefail\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\ntest\
+        \ \"$(git rev-parse HEAD)\" = \"$EXPECTED_NATIVE_SHA\"\ntest -z \"$(git status --porcelain)\"\nout=\"$GITHUB_WORKSPACE/.artifacts/native-candidate\"\
+        \nmkdir -p \"$out\"\nprintf '%s\\n' \"$EXPECTED_NATIVE_SHA\" > \"$out/native-compile-source.txt\"\nfailed=0\n\
+        check_boundary() {\n  local name=\"$1\" status=0\n  shift\n  if \"$@\" > \"$out/$name.log\" 2>&1; then\n\
+        \    status=0\n  else\n    status=$?\n    failed=1\n  fi\n  printf '%s\\n' \"$status\" > \"$out/$name.exit\"\
+        \n  cat \"$out/$name.log\"\n}\ncheck_boundary native-format-check cargo fmt -- --check\ncheck_boundary native-default-clippy\
+        \ cargo clippy --locked --profile ci --no-default-features --all-targets -- -D warnings\ncheck_boundary\
+        \ native-feature-check cargo check --locked --profile ci --no-default-features --features acceptance-faults\
+        \ --tests\ncheck_boundary native-proxy-check cargo check --locked --profile ci --no-default-features --features\
+        \ acceptance-faults --test client-proxy-fixture\ntest \"$failed\" -eq 0\n"
+    - name: Preserve all boundary evidence including earlier failures
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: reference-original-four-boundaries-${{ github.run_id }}
+        path: .artifacts/native-candidate/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+      CARGO_BUILD_JOBS: '2'
+  full-fast-fault:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Exact source JavaScript nine bounded negative and positive controls
+      run: node scripts/ci/check-selector-taxonomy.cjs native/cli/src/native/client_observation/selector_query.js
+    - name: Compile supplementary fast-profile test harness (not production acceptance)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\"\
+        \ntest \"$(git rev-parse HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\
+        \nrustup toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER\
+        \ RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\n\
+        cargo +1.99.1 test --locked --profile ci-test-fast --config 'profile.ci-test-fast.inherits=\"ci\"' --config\
+        \ profile.ci-test-fast.opt-level=1 --config 'profile.ci-test-fast.lto=\"off\"' --config profile.ci-test-fast.codegen-units=16\
+        \ --config profile.ci-test-fast.debug=0 --config profile.ci-test-fast.debug-assertions=false --config profile.ci-test-fast.overflow-checks=false\
+        \ --config 'profile.ci-test-fast.panic=\"unwind\"' --config profile.ci-test-fast.incremental=false --config\
+        \ profile.ci-test-fast.strip=true --timings --no-default-features --features acceptance-faults --bin agent-browser\
+        \ -j1 --no-run --message-format=json > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE'])\
+        \ / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile',\
+        \ {}).get('test') is True\n        and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n\
+        \        assert record['profile']['opt_level']=='1' and record['profile']['debug_assertions'] is False and\
+        \ record['profile']['overflow_checks'] is False\n        paths.add(record['executable'])\nif build_finished\
+        \ != [True]:\n    raise SystemExit('Missing or unsuccessful final compiler build receipt')\nif len(paths)\
+        \ != 1:\n    raise SystemExit(f'Expected exactly one test executable, got {len(paths)}')\nharness = paths.pop()\n\
+        if not Path(harness).is_file():\n    raise SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness\
+        \ + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\"\
+        )\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\n(cd \"$GITHUB_WORKSPACE/native-harness\"\
+        ; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\n\nmkdir -p \"\
+        $GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - name: Run complete original nonignored feature harness without filters
+      run: 'set -euo pipefail
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list
+
+        python3 - <<''PY_INVENTORY''
+
+        import pathlib,json
+
+        p=pathlib.Path(''evidence'')
+
+        def names(f):return [x[:-6] for x in (p/f).read_text().splitlines() if x.endswith('': test'')]
+
+        a=names(''all-tests.list'');i=names(''ignored-tests.list'');assert a and len(a)==len(set(a)) and len(i)==len(set(i))
+        and set(i)<=set(a)
+
+        json.dump({''total'':len(a),''ignored'':len(i),''nonignored'':len(a)-len(i),''features'':[''acceptance-faults''],''standardDefaultFeatureAcceptance'':False},open(p/''inventory.json'',''w''),indent=2)
+
+        PY_INVENTORY
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests > evidence/full-suite.log
+        2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        python3 - <<''PY_RESULTS''
+
+        import pathlib,json,re
+
+        p=pathlib.Path(''evidence'');s=(p/''full-suite.log'').read_text();i=json.load(open(p/''inventory.json''));m=re.findall(r''test
+        result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out'',s)
+
+        result={''exit'':int((p/''full-suite.exit'').read_text()),''inventory'':i,''summaries'':m,''failedTests'':re.findall(r''^test
+        (.+) \.\.\. FAILED$'',s,re.M),''notDefaultFeatureAcceptance'':True}
+
+        (p/''result.json'').write_text(json.dumps(result,indent=2)+''\n'');assert len(m)==1,m
+
+        _,passed,failed,ignored,measured,filtered=m[0];assert int(passed)+int(failed)==i[''nonignored''];assert
+        int(ignored)==i[''ignored''] and int(measured)==int(filtered)==0;assert int(passed)+int(failed)+int(ignored)==i[''total'']
+
+        assert result[''exit'']==0 and int(failed)==0,result
+
+        PY_RESULTS
+
+        test "$status" -eq 0
+
+        '
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+    - name: Run exact optional observation producer inventory
+      run: python3 scripts/ci/run-optional-observe-tests.py "$(cat evidence/harness.path)" scripts/ci/optional-observe-inventory.json
+        evidence/native-focused
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+    - name: Run owner-stop containment isolated reopen and worker error exact controls
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: python3 scripts/ci/run-owner-stop-exact.py
+    - name: Run six typed admission controls plus unchanged original swipe exact
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: python3 scripts/ci/run-typed-admission-exact.py candidate
+    - name: Run exact two selector syntax parser and expression controls
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: python3 scripts/ci/run-selector-taxonomy-exact.py
+    - name: Run three exact paused popup initialization wire controls
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: "python3 - <<'PY_POPUP_WIRE'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\nout=pathlib.Path('evidence/popup-init-wire');out.mkdir(parents=True,exist_ok=True)\n\
+        h=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['immediate_init_requires_exact_paused_attachment_receipt', 'immediate_init_is_explicit_and_installed_once_per_session',\
+        \ 'popup_runtime_ack_precedes_every_script_and_failure_never_resumes']\nresults=[]\nfor suffix in suffixes:\n\
+        \ names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+': test')];assert len(names)==1\n\
+        \ try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1 and\
+        \ sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in results)\
+        \ else 1)\n\nPY_POPUP_WIRE\n"
+    - name: Run new 22 exact drop controls and original 18 pointer node-drag cleanup regressions
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: "python3 - <<'PY_SWIPE_EXACT'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\nout=pathlib.Path('evidence/swipe-drop-exact');out.mkdir(parents=True,exist_ok=True)\n\
+        h=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['exact_drag_foreign_payload_cannot_charge_or_mint_receipt', 'exact_drag_oversize_retains_receipt_but_never_returns_data',\
+        \ 'exact_drag_duplicate_overflow_retains_receipt_and_fails_closed', 'exact_drag_closed_without_event_never_mints_receipt',\
+        \ 'exact_drag_invalid_envelope_never_mints_cleanup_authority', 'exact_drag_route_outlives_helper_through_retained_receiver',\
+        \ 'exact_drag_final_seal_rejects_duplicate_after_first_receive', 'exact_drag_cleanup_seal_accepts_only_one_healthy_owned_payload',\
+        \ 'direct_point_html5_early_and_late_interception_wait_for_exact_drop_ack', 'direct_point_html5_rejected_drop_is_failure_and_cleans_own_drag_once',\
+        \ 'direct_point_existing_object_capacity_rejects_before_press_and_cleans_every_observer', 'direct_point_enable_error_ack_before_held_move_preserves_primary_and_cleans',\
+        \ 'direct_point_held_move_error_ack_without_drag_receipt_preserves_unknown', 'direct_point_held_move_error_ack_with_own_receipt_cleans_without_replay',\
+        \ 'snapshot_includes_same_process_and_oopif_but_not_popup', 'snapshot_changes_for_added_removed_parent_and_loader_frames',\
+        \ 'incomplete_or_unready_ownership_is_not_empty_success', 'unrelated_application_epoch_conservatively_rejects_equal_selected_bindings',\
+        \ 'frame_cap_is_bounded_before_remote_resources', 'sibling_realms_need_not_receive_the_mouse_move', 'degenerate_move_remains_pointer_only_but_missing_inventory_is_not_false',\
+        \ 'malformed_probe_result_does_not_become_no_drag', 'direct_point_original_tap_at_10_20', 'direct_point_original_double_tap_at_10_20',\
+        \ 'direct_point_original_secondary_tap_at_10_20', 'direct_point_original_long_press_at_10_20_holds_700_ms',\
+        \ 'direct_point_original_fractional_tap_and_swipe_round_to_css_pixels', 'direct_point_original_swipe_to_110_20_uses_midpoint',\
+        \ 'direct_point_original_swipe_to_70_20_paces_three_moves_over_48_ms', 'direct_point_original_swipe_to_70_20_cancel_after_first_move_releases_once',\
+        \ 'direct_point_uses_only_exact_input_and_late_ack_never_resumes_double_tap', 'live_drag_destination_revalidates_after_press_without_replay',\
+        \ 'managed_drag_cleanup_keeps_one_release_and_its_original_late_ack', 'live_drag_destination_can_follow_unique_replacement_after_press',\
+        \ 'node_drag_repeats_destination_move_before_its_only_release', 'observed_drag_destination_keeps_exact_identity_after_press',\
+        \ 'pointer_drag_keeps_exact_points_without_destination_resolution', 'action_success_cannot_hide_cleanup_integrity_and_primary_error_survives',\
+        \ 'shared_pointer_secondary_double_click_and_cleanup_preserve_state', 'pointer_state_survives_move_down_drag_wheel_up']\n\
+        results=[]\nfor suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+':\
+        \ test')];assert len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1 and\
+        \ sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in results)\
+        \ else 1)\n\nPY_SWIPE_EXACT\n"
+    - name: Run nine exact typed receipt rejection and cleanup controls
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: "python3 - <<'PY_SWIPE_EXACT'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\nout=pathlib.Path('evidence/swipe-receipt-exact');out.mkdir(parents=True,exist_ok=True)\n\
+        h=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['native::cdp::client::tests::point_drag_setup_preserves_only_typed_local_capacity_and_exact_cancellation',\
+        \ 'native::client_debt::tests::validated_rejected_input_reply_is_terminal_failure_not_release_proof', 'native::client_debt::tests::validated_error_reply_requires_exact_reader_envelope_not_unknown_or_success',\
+        \ 'native::client_debt::tests::point_drag_cleanup_proof_retires_only_its_exact_rejections_without_success_ack',\
+        \ 'native::client_debt::tests::point_drag_cleanup_proof_rejects_mixed_unknown_cleanup_and_wrong_scope_without_partial_retirement',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_submitted_finish_without_value_is_not_replayed',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_finish_timeout_preserves_unknown',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_negative_in_destroyed_realm_is_not_proof',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_late_own_event_is_cancelled_once']\n\
+        results=[]\nfor suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l==suffix+': test'];assert\
+        \ len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix.rsplit('::',1)[-1]+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1 and\
+        \ sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in results)\
+        \ else 1)\n\nPY_SWIPE_EXACT\n"
+    - name: Run exact unique realm destruction receipt validator
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: "python3 - <<'PY_SWIPE_EXACT'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\nout=pathlib.Path('evidence/exact-realm-validator');out.mkdir(parents=True,exist_ok=True)\n\
+        h=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['exact_realm_destroy_requires_matching_unique_receipt_before_marking_destroyed']\nresults=[]\n\
+        for suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+': test')];assert\
+        \ len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix.rsplit('::',1)[-1]+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1 and\
+        \ sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in results)\
+        \ else 1)\n\nPY_SWIPE_EXACT\n"
+    - name: Run new reference issuance controls with exact one execution each
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+      run: "python3 - <<'PY_POPUP_WIRE'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\nout=pathlib.Path('evidence/reference-issuance-exact');out.mkdir(parents=True,exist_ok=True)\n\
+        h=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['current_owner_action_rejects_old_client_or_generation_with_colliding_id', 'disposable_trace_wire_refs_never_gain_action_authority',\
+        \ 'pixel_root_actions_refuse_before_resolution_even_with_valid_issuance', 'pixel_root_cannot_be_forged_into_semantic_correlation',\
+        \ 'colliding_current_owner_refs_refuse_old_client_issuance_in_correlation', 'pixel_root_identity_never_aliases_dom_or_css_pseudo_authority',\
+        \ 'wire_revision_is_exact_versioned_utf8_issuance_not_a_numeric_counter', 'fresh_client_colliding_ids_and_counters_cannot_rebind_old_wire_references']\n\
+        results=[]\nfor suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+':\
+        \ test')];assert len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1 and\
+        \ sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in results)\
+        \ else 1)\n\nPY_POPUP_WIRE\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: reference-fast-fault-evidence-${{ github.run_id }}
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  full-fast-default:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Compile supplementary fast-profile test harness (not production acceptance)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\"\
+        \ntest \"$(git rev-parse HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\
+        \nrustup toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER\
+        \ RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\n\
+        cargo +1.99.1 test --locked --profile ci-test-fast --config 'profile.ci-test-fast.inherits=\"ci\"' --config\
+        \ profile.ci-test-fast.opt-level=1 --config 'profile.ci-test-fast.lto=\"off\"' --config profile.ci-test-fast.codegen-units=16\
+        \ --config profile.ci-test-fast.debug=0 --config profile.ci-test-fast.debug-assertions=false --config profile.ci-test-fast.overflow-checks=false\
+        \ --config 'profile.ci-test-fast.panic=\"unwind\"' --config profile.ci-test-fast.incremental=false --config\
+        \ profile.ci-test-fast.strip=true --timings --no-default-features --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\npython3\
+        \ - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout = Path(os.environ['GITHUB_WORKSPACE'])\
+        \ / 'evidence'\npaths = set()\nbuild_finished = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n\
+        \    record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n        build_finished.append(record.get('success')\
+        \ is True)\n    if (record.get('reason') == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind', [])\n        and record.get('profile',\
+        \ {}).get('test') is True\n        and record.get('features') == []\n        and record.get('executable')):\n\
+        \        assert record['profile']['opt_level']=='1' and record['profile']['debug_assertions'] is False and\
+        \ record['profile']['overflow_checks'] is False\n        paths.add(record['executable'])\nif build_finished\
+        \ != [True]:\n    raise SystemExit('Missing or unsuccessful final compiler build receipt')\nif len(paths)\
+        \ != 1:\n    raise SystemExit(f'Expected exactly one test executable, got {len(paths)}')\nharness = paths.pop()\n\
+        if not Path(harness).is_file():\n    raise SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness\
+        \ + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\"\
+        )\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\n(cd \"$GITHUB_WORKSPACE/native-harness\"\
+        ; sha256sum agent-browser-tests > SHA256SUMS)\n\nprintf '%s\\n' default > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\n\nmkdir -p \"\
+        $GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - name: Run complete original nonignored default harness without filters
+      run: 'set -euo pipefail
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list
+
+        python3 - <<''PY_INVENTORY''
+
+        import pathlib,json
+
+        p=pathlib.Path(''evidence'')
+
+        def names(f):return [x[:-6] for x in (p/f).read_text().splitlines() if x.endswith('': test'')]
+
+        a=names(''all-tests.list'');i=names(''ignored-tests.list'');assert a and len(a)==len(set(a)) and len(i)==len(set(i))
+        and set(i)<=set(a)
+
+        json.dump({''total'':len(a),''ignored'':len(i),''nonignored'':len(a)-len(i),''features'':[],''standardDefaultFeatureAcceptance'':False},open(p/''inventory.json'',''w''),indent=2)
+
+        PY_INVENTORY
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests > evidence/full-suite.log
+        2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        python3 - <<''PY_RESULTS''
+
+        import pathlib,json,re
+
+        p=pathlib.Path(''evidence'');s=(p/''full-suite.log'').read_text();i=json.load(open(p/''inventory.json''));m=re.findall(r''test
+        result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out'',s)
+
+        result={''exit'':int((p/''full-suite.exit'').read_text()),''inventory'':i,''summaries'':m,''failedTests'':re.findall(r''^test
+        (.+) \.\.\. FAILED$'',s,re.M),''notOptimizedProductionAcceptance'':True}
+
+        (p/''result.json'').write_text(json.dumps(result,indent=2)+''\n'');assert len(m)==1,m
+
+        _,passed,failed,ignored,measured,filtered=m[0];assert int(passed)+int(failed)==i[''nonignored''];assert
+        int(ignored)==i[''ignored''] and int(measured)==int(filtered)==0;assert int(passed)+int(failed)+int(ignored)==i[''total'']
+
+        assert result[''exit'']==0 and int(failed)==0,result
+
+        PY_RESULTS
+
+        test "$status" -eq 0
+
+        '
+      if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: reference-fast-default-evidence-${{ github.run_id }}
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  node-public-types-and-pure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - name: Install and build actual public core before Web source types
+      id: public_build
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        pnpm install --frozen-lockfile
+
+        pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build
+
+        '
+    - name: Strict actual Web source and all test typecheck
+      id: web_types
+      if: ${{ !cancelled() && steps.public_build.outcome == 'success' }}
+      run: pnpm --filter @e2e-dev/web exec tsc --noEmit
+    - name: Collect and execute seven complete relevant pure files without changing config budgets
+      if: ${{ !cancelled() && steps.public_build.outcome == 'success' }}
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/unit/native-reference-bridge.test.ts tests/unit/browser-channel.test.ts
+        tests/unit/native-correlation.test.ts tests/unit/native-engine-decode.test.ts tests/unit/native-surface.test.ts
+        tests/unit/native-persistent-raw-recovery.test.ts tests/unit/native-reconnect-admission.test.ts --no-staticParse
+        --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_SELECT''
+
+        import json,pathlib,collections
+
+        r=json.load(open(''evidence/collection.json''));expected=[''native-reference-bridge.test.ts'', ''browser-channel.test.ts'',
+        ''native-correlation.test.ts'', ''native-engine-decode.test.ts'', ''native-surface.test.ts'', ''native-persistent-raw-recovery.test.ts'',
+        ''native-reconnect-admission.test.ts'']
+
+        counts=collections.Counter(x[''file''].rsplit(''/'',1)[-1] for x in r)
+
+        assert set(counts)==set(expected) and all(counts[x]>0 for x in expected),counts
+
+        pathlib.Path(''evidence/collected-counts.json'').write_text(json.dumps(dict(counts),indent=2))
+
+        PY_SELECT
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit/native-reference-bridge.test.ts tests/unit/browser-channel.test.ts
+        tests/unit/native-correlation.test.ts tests/unit/native-engine-decode.test.ts tests/unit/native-surface.test.ts
+        tests/unit/native-persistent-raw-recovery.test.ts tests/unit/native-reconnect-admission.test.ts --reporter=verbose
+        --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json" > evidence/tests.log 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/tests.exit
+
+        cat evidence/tests.log
+
+        python3 - <<''PY_COUNT''
+
+        import json,collections,pathlib
+
+        c=json.load(open(''evidence/collection.json''));r=json.load(open(''evidence/results.json''));a=[a for t
+        in r[''testResults''] for a in t[''assertionResults'']]
+
+        assert len(a)==len(c) and all(x[''status''] in (''passed'',''failed'') for x in a)
+
+        assert collections.Counter((x[''file''].rsplit(''/'',1)[-1],x[''name'']) for x in c)==collections.Counter((t[''name''].rsplit(''/'',1)[-1],''
+        > ''.join(a[''ancestorTitles'']+[a[''title'']])) for t in r[''testResults''] for a in t[''assertionResults''])
+
+        pathlib.Path(''evidence/execution-counts.json'').write_text(json.dumps({''collected'':len(c),''executed'':len(a),''passed'':sum(x[''status'']==''passed''
+        for x in a),''failed'':sum(x[''status'']==''failed'' for x in a)},indent=2))
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: reference-node-pure-evidence-${{ github.run_id }}
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7

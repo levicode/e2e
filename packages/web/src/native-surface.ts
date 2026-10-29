@@ -25,8 +25,8 @@ import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched, isNativeResourceCleanupFailure, isNativeUsableFailure } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
-import { EngineChannel, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
-import { NativeReferenceAliases, type ReferenceOwner } from './native/reference-aliases.ts';
+import { EngineChannel, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
+import { NativeReferenceBridge, type ReferenceOwner } from './native/reference-bridge.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
 import type { EngineCommandMap, NativeImage, RecoveryIdentity, ScopeCreationOptions } from './native/engine-contract.ts';
@@ -122,7 +122,7 @@ export class NativeSurface implements NativeWebSurface {
   private registryHighWater = 0;
   private registryCurrent = 0;
   private readonly usedContexts = new Set<string>();
-  private readonly references = new NativeReferenceAliases();
+  private readonly references = new NativeReferenceBridge();
   private readonly listeners = new Map<keyof BrowserEventMap, Set<Listener>>();
 
   constructor(private readonly options: WebOptions) {
@@ -851,6 +851,7 @@ export class NativeSurface implements NativeWebSurface {
     const engine = this.requireEngine(); const endsAt = performance.now() + operation.timeoutMs;
     const original: OperationContext = { ...operation, get timeoutMs() { return Math.max(0, endsAt - performance.now()); } };
     let publicationStarted = false;
+    let rejectedNativeAdmission: unknown;
     attempt.recoveryObservationRequired = true; attempt.pageReady = false;
     const check = (active: OperationContext) => {
       if (attempt.retirement.signal.aborted) throw connectionCancellation('Persistent recovery publication retired with its attempt');
@@ -860,8 +861,11 @@ export class NativeSurface implements NativeWebSurface {
     const failed = (cause: unknown) => {
       // Resolving an endpoint or a clean native refusal is a business failure,
       // not a fabricated resource-cleanup receipt. ACK/acquisition publication
-      // and validated terminal outcomes retain the existing exact cleanup owner.
-      if (publicationStarted || client.isTerminal() || isClosedFrameCancellation(cause)) this.recordPublicationFailure(attempt, cause);
+      // retains the existing exact cleanup owner. A validated pre-publication
+      // reconnect refusal seals business use, but only the original terminal
+      // Close/transport receipts can prove or fail cleanup of that old owner.
+      const rejectedAdmission = rejectedNativeAdmission !== undefined && cause === rejectedNativeAdmission;
+      if (publicationStarted || (client.isTerminal() && !rejectedAdmission) || isClosedFrameCancellation(cause)) this.recordPublicationFailure(attempt, cause);
       else attempt.recoveryFailure ??= { error: cause };
     };
     const work = withinAttemptRequest(original, attempt, async current => {
@@ -886,7 +890,13 @@ export class NativeSurface implements NativeWebSurface {
           check(current); callbackEpoch = client.reconnectCheckpoint(scope);
           // Never race this dispatched mutation against a local waiter. Its
           // actual result (including Unknown) remains the original outcome.
-          const result = await engine.command('scope.reconnect', { identityScope: scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, current, callbackEpoch);
+          let result: EngineCommandMap['scope.reconnect']['result'];
+          try {
+            result = await engine.command('scope.reconnect', { identityScope: scope, endpoint, expectedBrowserIdentity: identity.browser, expectedContextIdentity: identity.context, expectedPageIdentity: identity.page }, current, callbackEpoch);
+          } catch (cause) {
+            if (isNativeReconnectAdmissionRefusal(cause)) rejectedNativeAdmission = cause;
+            throw cause;
+          }
           publicationStarted = true; nextScope = result.identityScope;
           attempt.recoveryPending = false; check(current);
         };
@@ -1115,11 +1125,11 @@ export class NativeSurface implements NativeWebSurface {
     if (attempt.recoveryPending) throw new EngineError('NODE_STALE', 'observation capture was retired by browser recovery', { retryable: true });
     if (highWater !== undefined && revision < highWater.revision) throw new EngineError('NODE_STALE', 'observation capture was superseded', { retryable: true });
     if (snapshot.treeUnavailable === true) this.references.retire();
-    const aliases = this.references.capture(this.referenceOwner(), [snapshot.root], snapshot.viewportRef, snapshot.treeUnavailable === true ? 'pixels' : 'observe');
+    const references = this.references.capture(this.referenceOwner(), [snapshot.root], snapshot.viewportRef, snapshot.treeUnavailable === true ? 'pixels' : 'observe');
     // Only this complete public return grants point input, never a partial capture.
     attempt.recoveryObservationRequired = false;
-    return { identityScope: scope, root: aliases.nodes[0]!, viewport: snapshot.viewport,
-      ...(aliases.viewport === undefined ? {} : { viewportRef: aliases.viewport }),
+    return { identityScope: scope, root: references.nodes[0]!, viewport: snapshot.viewport,
+      ...(references.viewport === undefined ? {} : { viewportRef: references.viewport }),
       ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
       ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }),
       ...(snapshot.treeUnavailable === true ? { treeUnavailable: true as const } : {}),
@@ -1666,9 +1676,9 @@ export class NativeSurface implements NativeWebSurface {
       this.assertBudget(trace); this.assertObservationOwner(attempt, scope, epoch, client); this.assertPublication(client, publication);
       if (snapshot.identityScope !== scope || attempt.recoveryPending || this.latch.hasPending()
         || attempt.observationHighWater !== highWater || highWater?.revision !== revision) return;
-      const aliases = this.references.trace([snapshot.root], snapshot.viewportRef);
-      attempt.context.screen({ identityScope: scope, root: aliases.nodes[0]!,
-        ...(aliases.viewport === undefined ? {} : { viewportRef: aliases.viewport }),
+      const references = this.references.trace([snapshot.root], snapshot.viewportRef);
+      attempt.context.screen({ identityScope: scope, root: references.nodes[0]!,
+        ...(references.viewport === undefined ? {} : { viewportRef: references.viewport }),
         viewport: snapshot.viewport,
         ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
         ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }) });

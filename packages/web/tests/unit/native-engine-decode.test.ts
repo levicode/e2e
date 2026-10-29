@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { decodeEngineResult } from '../../src/native/engine-decode.ts';
 
-const snapshot = () => ({ identityScope: 'scope-1', revision: '18446744073709551615', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e7', revision: '18446744073709551615' }, role: 'document', children: [{ ref: { id: '@e8', revision: '18446744073709551615' }, role: 'button', name: 'Submit' }] } });
+const snapshot = () => ({ identityScope: 'scope-1', revision: '18446744073709551615', viewport: { width: 100, height: 80 }, root: { ref: { id: '@e7', revision: 'nr1:7:scope-1:1:18446744073709551615' }, role: 'document', children: [{ ref: { id: '@e8', revision: 'nr1:7:scope-1:1:18446744073709551615' }, role: 'button', name: 'Submit' }] } });
 
 describe('native engine result boundary', () => {
-  it('preserves exact native references and decimal revisions without JS number coercion', () => {
+  it('preserves opaque native references and independent decimal snapshot revisions without coercion', () => {
     expect(decodeEngineResult('browser.observe', snapshot())).toEqual(snapshot());
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), revision: 42 })).toThrow();
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), root: { ref: { id: 'invented-uuid', revision: '1' } } })).toThrow();
@@ -56,10 +56,15 @@ describe('native engine result boundary', () => {
 it('requires native trace metadata only for trace purpose and never fabricates a semantic revision', () => {
   const plain = { identityScope: 'scope-1', handle: 'image-1', size: 1, sha256: '0'.repeat(64), mediaType: 'image/png', width: 100, height: 80, scale: 1, maskedRegionCount: 0 };
   const args = { identityScope: 'scope-1', secureFieldSelector: 'input', purpose: 'trace' as const };
-  const trace = { ...plain, viewportRef: { id: '@e7', revision: '18446744073709551615' }, viewport: { width: 100, height: 80 }, location: 'https://synthetic.test/' };
+  const trace = { ...plain, viewportRef: { id: '@e7', revision: 'nr1:7:scope-1:1:18446744073709551615' }, viewport: { width: 100, height: 80 }, location: 'https://synthetic.test/' };
   expect(decodeEngineResult('capture.screenshot', plain)).toEqual(plain);
   expect(decodeEngineResult('capture.screenshot', trace, args)).toEqual(trace);
   for (const key of ['viewportRef', 'viewport', 'location'] as const) expect(() => decodeEngineResult('capture.screenshot', { ...trace, [key]: undefined }, args)).toThrow();
-  for (const revision of ['0', '01', '-1', '18446744073709551616']) expect(() => decodeEngineResult('capture.screenshot', { ...trace, viewportRef: { id: '@e7', revision } }, args)).toThrow();
+  for (const revision of ['', undefined, null, 1]) expect(() => decodeEngineResult('capture.screenshot', { ...trace, viewportRef: { id: '@e7', revision } }, args)).toThrow();
+  // Syntax is not native issuance proof; opaque strings are preserved, not interpreted.
+  for (const revision of ['0', '01', '-1', '18446744073709551616', 'nr1:2:界:1:1']) {
+    const value = { ...trace, viewportRef: { id: '@e7', revision } };
+    expect(decodeEngineResult('capture.screenshot', value, args)).toEqual(value);
+  }
   expect(decodeEngineResult('capture.screenshot', trace)).toEqual(plain);
 });

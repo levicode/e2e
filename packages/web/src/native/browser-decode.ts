@@ -78,15 +78,15 @@ const MAX_CORRELATION_CANDIDATES = 100_000;
 const MAX_U64 = '18446744073709551615';
 type CorrelationArgs = BrowserCommandMap['fixture.correlate']['args'];
 
-/** Correlation never admits aliases, extra fields, or noncanonical native references. */
+/** Correlation keeps canonical native IDs and opaque issuer-owned revisions. */
 function correlationRef(value: unknown): NodeRef {
   const item = record(value);
   exactKeys(item, ['id', 'revision']);
   const id = string(item['id']);
   const revision = string(item['revision']);
-  if (!/^@e[1-9][0-9]*$/.test(id) || !/^[1-9][0-9]*$/.test(revision)) invalid();
+  if (!/^@e[1-9][0-9]*$/.test(id) || revision.length === 0) invalid();
   const bounded = (digits: string): boolean => digits.length < MAX_U64.length || (digits.length === MAX_U64.length && digits <= MAX_U64);
-  if (!bounded(id.slice(2)) || !bounded(revision)) invalid();
+  if (!bounded(id.slice(2))) invalid();
   return { id, revision };
 }
 

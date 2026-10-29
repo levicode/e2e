@@ -27,7 +27,8 @@ function image(value: unknown): NativeImage {
 function traceImage(value: unknown): NativeTraceImage {
   const item = record(value);
   const viewportRef = node({ ref: item['viewportRef'] }).ref;
-  if (!/^[1-9][0-9]{0,19}$/.test(viewportRef.revision) || BigInt(viewportRef.revision) > 18446744073709551615n) invalid();
+  // The native issuer owns revision semantics; this decoder validates only shape.
+  if (viewportRef.revision.length === 0) invalid();
   const capturedViewport = viewport(item['viewport']);
   if (capturedViewport.width === 0 || capturedViewport.height === 0) invalid();
   return { ...image(item), viewportRef, viewport: capturedViewport, location: text(item['location']) };

@@ -31,6 +31,11 @@ export interface BlobBatchCustody {
 }
 
 const unavailableBlobReads = new WeakSet<EngineError | TestError>();
+const rejectedReconnectAdmissions = new WeakSet<EngineError | TestError>();
+/** Exact native refusal evidence, not a public error code or cleanup receipt. */
+export function isNativeReconnectAdmissionRefusal(cause: unknown): boolean {
+  return (cause instanceof EngineError || cause instanceof TestError) && rejectedReconnectAdmissions.has(cause);
+}
 /** Only an exact, clean blob-read refusal proves optional transfer unavailability. */
 export function isUnavailableBlobRead(cause: unknown): boolean {
   return (cause instanceof EngineError || cause instanceof TestError) && unavailableBlobReads.has(cause);
@@ -108,6 +113,8 @@ export class EngineChannel {
         frameDiagnostic = { selector, index: facts.index, count: facts.count };
       }
       const cause = resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
+      if (name === 'scope.reconnect' && result.effects === 'not-dispatched' && result.scopeState === 'quarantined'
+        && result.error?.code === 'stale-scope') rejectedReconnectAdmissions.add(cause);
       if (name === 'blob.read' && result.effects === 'not-dispatched' && result.scopeState === 'usable'
         && (result.error?.code === 'deadline-exceeded' || result.error?.code === 'capacity-exceeded')) unavailableBlobReads.add(cause);
       throw cause;

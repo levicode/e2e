@@ -714,7 +714,7 @@ describe('public point input recovery freshness', () => {
       finishBlob(await peer.next('blob.read'));
       await screenshot;
       const action = surface.open('https://synthetic.test/', operation());
-      (await peer.next('browser.trace')).succeed(observation('2'));
+      (await peer.next('browser.trace')).succeed({ ...observation('2'), root: { ...observation('2').root, ref: { id: '@e900', revision: '1' } }, viewportRef: { id: '@e901', revision: '1' } });
       await action;
       expect(screen).toHaveBeenCalledTimes(1);
       interceptRequest = undefined;
@@ -766,7 +766,7 @@ describe('native observation presentation ordering', () => {
       if (mode === 'pending' || mode === 'cancelled' || mode === 'recovered') {
         const fresh = surface.observe(operation());
         (await peer.next('browser.observe')).succeed(observation('2'));
-        await expect(fresh).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 2', ref: { id: 'root', revision: 'r1' } }, viewportRef: { id: 'n3', revision: '1' } });
+        await expect(fresh).resolves.toMatchObject({ identityScope: currentScope, root: { name: 'snapshot 2', ref: { id: '@e1', revision: '1' } }, viewportRef: { id: '@e2', revision: '1' } });
       }
       if (mode === 'dirty-release') { resolveEndpoint('ws://synthetic.test/browser'); await expect(recovery).resolves.toBeInstanceOf(EngineError); }
     } finally {
@@ -793,7 +793,7 @@ describe('native observation presentation ordering', () => {
       expect(transfer.args['handle']).toBe('older-image');
       const newer = surface.observe(operation());
       (await peer.next('browser.observe')).succeed(observation(newRevision));
-      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: 'n3', revision: '1' } });
+      await expect(newer).resolves.toMatchObject({ root: { name: `snapshot ${newRevision}` }, viewportRef: { id: '@e2', revision: '1' } });
       if (boundary === 'blob.read') finishBlob(transfer); else transfer.succeed({ released: true });
       await expect(older).resolves.toMatchObject({ code: 'NODE_STALE', retryable: true });
       expect(frames.filter(frame => frame['command'] === 'blob.release').map(frame => frame['args'])).toEqual([{ identityScope: currentScope, handle: 'older-image' }]);
@@ -907,9 +907,9 @@ describe('native observation presentation ordering', () => {
       oldRelease.succeed({ released: true });
       await expect(older).resolves.toMatchObject({ code: 'NODE_STALE' });
       const action = surface.perform(current.root.ref, { kind: 'tap' }, operation());
-      (await peer.next('browser.trace')).succeed(observation('2'));
+      (await peer.next('browser.trace')).succeed({ ...observation('2'), root: { ...observation('2').root, ref: { id: '@e900', revision: '1' } }, viewportRef: { id: '@e901', revision: '1' } });
       await action;
-      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: expect.stringMatching(/^t[0-9]+$/) } } }));
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: '@e900', revision: '1' } } }));
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as Record<string, unknown>)['ref'])).toEqual([{ id: '@e3', revision: '2' }]);
     } finally { await surface.dispose(cleanup()); }
   });
@@ -2139,9 +2139,9 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(screen).not.toHaveBeenCalled();
       expect(frames.filter(frame => frame['command'] === 'browser.perform')).toHaveLength(1);
       const second = surface.perform(snapshot.root.ref, { kind: 'tap' }, operation());
-      (await peer.next('browser.trace')).succeed(observation('2'));
+      (await peer.next('browser.trace')).succeed({ ...observation('2'), root: { ...observation('2').root, ref: { id: '@e900', revision: '1' } }, viewportRef: { id: '@e901', revision: '1' } });
       await expect(second).resolves.toBeUndefined();
-      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: 'root', revision: expect.stringMatching(/^t[0-9]+$/) } } }));
+      expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ...observation('2').root, ref: { id: '@e900', revision: '1' } } }));
       expect(frames.filter(frame => frame['command'] === 'browser.observe')).toHaveLength(1);
       expect(frames.filter(frame => frame['command'] === 'browser.trace')).toHaveLength(2);
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([{ id: '@e1', revision: '1' }, { id: '@e1', revision: '1' }]);
@@ -2598,7 +2598,7 @@ describe('native initial action trace publication', () => {
       if (mode === 'observe') await surface.observe(operation());
       if (mode === 'same-scope restart') { preserveRestartScope = true; await surface.restart(operation()); }
       if (mode === 'cancelled') controller.abort();
-      if (mode === 'failed-trace') request.fail('cleanup-failed', 'unknown'); else request.succeed(observation('7'));
+      if (mode === 'failed-trace') request.fail('cleanup-failed', 'unknown'); else request.succeed({ ...observation('7'), root: { ...observation('7').root, ref: { id: '@e900', revision: '1' } }, viewportRef: { id: '@e901', revision: '1' } });
       if (mode === 'cancelled') {
         const trace = frames.findLast(frame => frame['command'] === 'browser.trace')!;
         expect(frames.filter(frame => frame['type'] === 'cancel')).toMatchObject([{ operationSeq: trace['operationSeq'] }]);
@@ -2606,7 +2606,7 @@ describe('native initial action trace publication', () => {
       }
       await action;
       if (mode === 'first') {
-        expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ref: { id: 'root', revision: 't1' }, role: 'document', name: 'snapshot 7' }, viewport: { width: 100, height: 80 } }));
+        expect(screen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ root: { ref: { id: '@e900', revision: '1' }, role: 'document', name: 'snapshot 7' }, viewport: { width: 100, height: 80 } }));
         expect(frames.some(frame => frame['command'] === 'browser.observe' || frame['command'] === 'fixture.query')).toBe(false);
       } else expect(screen).not.toHaveBeenCalled();
       expect(frames.some(frame => ['capture.screenshot', 'blob.read', 'blob.release'].includes(String(frame['command'])))).toBe(false);
@@ -3112,16 +3112,19 @@ describe('bounded native attempt cleanup ownership', () => {
   });
 });
 
-/** Restored public aliases over the same framed native protocol, not a fake alias engine. */
+/** Native identity forwarding over an in-memory peer, not native authority proof. */
 describe('native Web public reference compatibility', () => {
-  it('round-trips public trees, fixture/protected queries, drag and viewport through core evidence', async () => {
+  const issued = (revision = 1, scope = currentScope, generation = 1) => `nr1:${Buffer.byteLength(scope)}:${scope}:${generation}:${revision}`;
+  const refuse = (reply: (result: Record<string, unknown>) => void, code: 'stale-reference' | 'not-actionable') => reply({ ok: false, error: { code }, effects: 'not-dispatched', scopeState: 'usable' });
+
+  it('round-trips native trees, fixture/protected queries, drag and viewport through core evidence', async () => {
     const surface = new NativeSurface({}); await start(surface);
     interceptRequest = (frame, reply) => {
       if (frame['command'] !== 'browser.observe') return false;
-      reply({ data: { ...observation('19'), root: { ref: { id: '@e41', revision: '19' }, role: 'document', children: [
-        { ref: { id: '@e58', revision: '19' }, role: 'button', name: 'Source' },
-        { ref: { id: '@e90', revision: '19' }, role: 'button', name: 'Target' },
-      ] }, viewportRef: { id: '@e501', revision: '19' } } }); return true;
+      reply({ data: { ...observation('19'), root: { ref: { id: '@e41', revision: issued(19) }, role: 'document', children: [
+        { ref: { id: '@e58', revision: issued(19) }, role: 'button', name: 'Source' },
+        { ref: { id: '@e90', revision: issued(19) }, role: 'button', name: 'Target' },
+      ] }, viewportRef: { id: '@e501', revision: issued(19) } } }); return true;
     };
     const engine = defineEngine({ name: 'web-boundary', version: '1', spiVersion: 1, referenceRevisions: 'engine',
       observe: surface.observe.bind(surface), locate: surface.locate.bind(surface), perform: surface.perform.bind(surface),
@@ -3131,102 +3134,161 @@ describe('native Web public reference compatibility', () => {
     try {
       const raw = await session.observe(operation());
       const observed = prepareObservation(raw, { redact: text => text, redactCut: text => text, maxBytes: 4096 });
-      expect(observed.text).toContain('#n116 button "Source"');
-      expect(observed.text).toContain('#n180 button "Target"');
-      expect(observed.text).not.toContain('@e');
+      expect(observed.text).toContain('#@e58 button "Source"');
+      expect(observed.text).toContain('#@e90 button "Target"');
+      expect(observed.text).not.toContain('#n116');
       if (observed.kind !== 'semantic') throw new Error('semantic tree required');
-      expect(projectTree(observed.tree).children?.map(child => child.id)).toEqual(['n116', 'n180']);
-      await session.perform({ id: 'n116', revision: raw.revision }, { kind: 'dragTo', target: { id: 'n180', revision: raw.revision } }, operation());
+      expect(projectTree(observed.tree).children?.map(child => child.id)).toEqual(['@e58', '@e90']);
+      await session.perform({ id: '@e58', revision: raw.revision }, { kind: 'dragTo', target: { id: '@e90', revision: raw.revision } }, operation());
       await session.swipe('down', undefined, operation());
+      await surface.perform({ id: '@e41', revision: issued(19) }, { kind: 'swipe', direction: 'up' }, operation());
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => frame['args'])).toEqual([
-        { identityScope: currentScope, ref: { id: '@e58', revision: '19' }, action: { kind: 'dragTo', target: { id: '@e90', revision: '19' } } },
-        { identityScope: currentScope, ref: { id: '@e501', revision: '19' }, action: { kind: 'swipe', direction: 'down' } },
+        { identityScope: currentScope, ref: { id: '@e58', revision: issued(19) }, action: { kind: 'dragTo', target: { id: '@e90', revision: issued(19) } } },
+        { identityScope: currentScope, ref: { id: '@e501', revision: issued(19) }, action: { kind: 'swipe', direction: 'down' } },
+        { identityScope: currentScope, ref: { id: '@e501', revision: issued(19) }, action: { kind: 'swipe', direction: 'up' } },
       ]);
-      queryNodes = [{ ref: { id: '@e908', revision: '23' }, role: 'button', name: 'Located' }];
+      queryNodes = [{ ref: { id: '@e908', revision: issued(23) }, role: 'button', name: 'Located' }];
       for (const purpose of ['fixture', 'protected'] as const) {
         const [located] = await session.locate({ kind: 'selector', selector: '#actual-css-id' }, operation(), { purpose });
-        expect(located!.id).toMatch(/^n\d+$/);
+        expect(located!.id).toBe('@e908');
         await session.perform(located!, { kind: 'tap' }, operation());
-        expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toEqual({ identityScope: currentScope, ref: { id: '@e908', revision: '23' }, action: { kind: 'tap' } });
+        expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toEqual({ identityScope: currentScope, ref: { id: '@e908', revision: issued(23) }, action: { kind: 'tap' } });
       }
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it('never turns a guessed native ID or viewport into an element, and leaves point drag unchanged', async () => {
+  it('forwards exact unissued and kind-invalid refs to native refusal and leaves point drag unchanged', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const peer = holdRequests('browser.observe');
-    const pending = surface.observe(operation()); (await peer.next('browser.observe')).succeed(observation('1')); const snapshot = await pending;
+    const data = { ...observation('1'), root: { ...observation('1').root, ref: { id: '@e1', revision: issued() } }, viewportRef: { id: '@e2', revision: issued() } };
+    const pending = surface.observe(operation()); (await peer.next('browser.observe')).succeed(data); const snapshot = await pending;
+    let simulatedInputs = 0;
+    const requests: unknown[] = [];
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'browser.perform') return false;
+      const args = frame['args'] as { ref: { id: string; revision: string }; action: { kind: string; target?: { id: string; revision: string } } };
+      requests.push(args);
+      if (args.ref.id === '@e999' || args.ref.revision !== issued() || args.action.target?.id === '@e999' || (args.action.target !== undefined && args.action.target.revision !== issued())) refuse(reply, 'stale-reference');
+      else if (args.ref.id === '@e2' || args.action.target?.id === '@e2') refuse(reply, 'not-actionable');
+      else { simulatedInputs++; reply({ data: null }); }
+      return true;
+    };
     try {
-      const before = frames.length;
-      for (const ref of [{ id: '@e1', revision: '1' }, { id: 'n9000', revision: '1' }, { ...snapshot.root.ref, revision: '2' }]) {
-        await expect(surface.perform(ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      }
-      await expect(surface.perform(snapshot.viewportRef!, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
-      await expect(surface.perform(snapshot.root.ref, { kind: 'dragTo', target: snapshot.viewportRef! }, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
-      expect(frames.slice(before).some(frame => frame['command'] === 'browser.perform')).toBe(false);
+      const stale = [{ id: '@e999', revision: issued() }, { ...snapshot.root.ref, revision: issued(2) }];
+      for (const ref of stale) await expect(surface.perform(ref, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE', retryable: true });
+      await expect(surface.perform(stale[0]!, { kind: 'dragTo', target: snapshot.root.ref }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      await expect(surface.perform(snapshot.root.ref, { kind: 'dragTo', target: stale[0]! }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      await expect(surface.perform(snapshot.viewportRef!, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+      await expect(surface.perform(snapshot.root.ref, { kind: 'dragTo', target: snapshot.viewportRef! }, operation())).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+      expect(requests).toEqual([
+        ...stale.map(ref => ({ identityScope: currentScope, ref, action: { kind: 'tap' } })),
+        { identityScope: currentScope, ref: stale[0], action: { kind: 'dragTo', target: snapshot.root.ref } },
+        { identityScope: currentScope, ref: snapshot.root.ref, action: { kind: 'dragTo', target: stale[0] } },
+        { identityScope: currentScope, ref: snapshot.viewportRef, action: { kind: 'tap' } },
+        { identityScope: currentScope, ref: snapshot.root.ref, action: { kind: 'dragTo', target: snapshot.viewportRef } },
+      ]);
+      expect(simulatedInputs).toBe(0);
+      await surface.perform(snapshot.root.ref, { kind: 'tap' }, operation()); expect(simulatedInputs).toBe(1);
       await surface.performAt({ x: 12, y: 34 }, { kind: 'dragTo', target: { x: 56, y: 78 } }, operation());
       expect(frames.findLast(frame => frame['command'] === 'browser.pointer')!['args']).toEqual({ identityScope: currentScope, point: { x: 12, y: 34 }, action: { kind: 'dragTo', target: { x: 56, y: 78 } } });
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it.each(['reset', 'restart', 'same-scope-restart', 'navigation', 'attempt'] as const)('does not revive prior public refs after %s, even if native text repeats', async transition => {
+  it.each(['reset', 'restart', 'same-scope-restart', 'navigation', 'attempt'] as const)('preserves native stale-ref refusal after %s rather than reminting aliases', async transition => {
     const surface = new NativeSurface({}); await start(surface);
+    let document = 1; let simulatedInputs = 0;
+    const ref = () => ({ id: document === 1 ? '@e1' : '@e3', revision: issued(document) });
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'browser.observe') { reply({ data: { ...observation(String(document)), root: { ...observation(String(document)).root, ref: ref() } } }); return true; }
+      if (frame['command'] !== 'browser.perform') return false;
+      const args = frame['args'] as { ref: { id: string; revision: string } };
+      if (args.ref.id !== ref().id || args.ref.revision !== ref().revision) refuse(reply, 'stale-reference');
+      else { simulatedInputs++; reply({ data: null }); }
+      return true;
+    };
     try {
-      const old = (await surface.observe(operation())).root.ref;
+      const oldScope = currentScope; const old = (await surface.observe(operation())).root.ref;
       if (transition === 'reset') await surface.reset(operation());
       else if (transition === 'restart' || transition === 'same-scope-restart') { preserveRestartScope = transition === 'same-scope-restart'; await surface.restart(operation()); }
       else if (transition === 'navigation') await sendEvent('app.navigation', { identityScope: currentScope, kind: 'main', url: 'https://synthetic.test/next' });
       else { await surface.endAttempt(cleanup()); await surface.startAttempt(context('replacement')); }
+      // New clients can restart @e1/counter1, but their native issuer token differs.
+      // Same-owner document replacement instead burns the old element ID.
+      if (currentScope === oldScope) document = 2;
       const fresh = (await surface.observe(operation())).root.ref;
-      expect(fresh).not.toEqual(old);
-      const before = frames.length;
-      await expect(surface.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      expect(frames).toHaveLength(before);
-      await surface.perform(fresh, { kind: 'tap' }, operation());
-      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toMatchObject({ ref: { id: '@e1', revision: '1' } });
+      expect(fresh).toEqual(ref()); expect(fresh).not.toEqual(old);
+      if (currentScope !== oldScope) { expect(fresh.id).toBe(old.id); expect(fresh.revision).not.toBe(old.revision); }
+      await expect(surface.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE', retryable: true });
+      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toEqual({ identityScope: currentScope, ref: old, action: { kind: 'tap' } });
+      expect(simulatedInputs).toBe(0);
+      await surface.perform(fresh, { kind: 'tap' }, operation()); expect(simulatedInputs).toBe(1);
+      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toEqual({ identityScope: currentScope, ref: fresh, action: { kind: 'tap' } });
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it('retires aliases across persistent reconnect before allowing fresh same-text refs', async () => {
+  it('forwards same-ID old-issuer refs after persistent reconnect for native refusal', async () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: async () => 'ws://synthetic.test/browser', reconnectEndpoint: async () => 'ws://synthetic.test/browser' } }); await start(surface);
+    let simulatedInputs = 0;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'browser.observe') { reply({ data: { ...observation('1'), root: { ...observation('1').root, ref: { id: '@e1', revision: issued() } } } }); return true; }
+      if (frame['command'] !== 'browser.perform') return false;
+      if ((frame['args'] as { ref: { revision: string } }).ref.revision !== issued()) refuse(reply, 'stale-reference');
+      else { simulatedInputs++; reply({ data: null }); }
+      return true;
+    };
     try {
       const old = (await surface.observe(operation())).root.ref;
       await sendEvent('scope.disconnected', { identityScope: currentScope, reason: 'browser-connection-closed' });
       const fresh = (await surface.observe(operation())).root.ref;
-      expect(fresh).not.toEqual(old);
+      expect(fresh.id).toBe(old.id); expect(fresh.revision).not.toBe(old.revision);
       await expect(surface.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      await surface.perform(fresh, { kind: 'tap' }, operation());
+      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toEqual({ identityScope: currentScope, ref: old, action: { kind: 'tap' } });
+      expect(simulatedInputs).toBe(0);
+      await surface.perform(fresh, { kind: 'tap' }, operation()); expect(simulatedInputs).toBe(1);
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it('keeps diagnostic correlation on native refs and returns only the pinned public candidate', async () => {
+  it('keeps diagnostic correlation on exact native refs and returns the pinned candidate', async () => {
     const surface = new NativeSurface({}); await start(surface);
     try {
       const observed = (await surface.observe(operation())).root.ref;
-      queryNodes = [{ ref: { id: '@e33', revision: '4' } }];
+      queryNodes = [{ ref: { id: '@e33', revision: issued(4) } }];
       const located = (await surface.locate({ kind: 'selector', selector: '#root' }, operation(), { purpose: 'fixture' }))[0]!.ref;
       interceptRequest = (frame, reply) => {
         if (frame['command'] !== 'fixture.correlate') return false;
-        expect(frame['args']).toEqual({ identityScope: currentScope, located: [{ id: '@e33', revision: '4' }], observed: [{ id: '@e1', revision: '1' }] });
-        reply({ data: { identityScope: currentScope, matches: [{ id: '@e1', revision: '1' }] } }); return true;
+        expect(frame['args']).toEqual({ identityScope: currentScope, located: [located], observed: [observed] });
+        reply({ data: { identityScope: currentScope, matches: [observed] } }); return true;
       };
       await expect(surface.command('fixture.correlate', { located: [located], observed: [observed] }, operation())).resolves.toEqual({ identityScope: currentScope, matches: [observed] });
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it('shows trace aliases but refuses them as action authority without retiring live refs', async () => {
+  it('copies disposable native trace IDs and propagates native refusal without retiring live refs', async () => {
     const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
-    const screen = vi.fn(); await surface.startAttempt({ ...context('trace-aliases'), screen });
+    const screen = vi.fn(); await surface.startAttempt({ ...context('trace-native-refs'), screen });
+    let simulatedInputs = 0;
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'browser.trace') { reply({ data: { ...observation('2'), root: { ...observation('2').root, ref: { id: '@e900', revision: issued(2) } }, viewportRef: { id: '@e901', revision: issued(2) } } }); return true; }
+      if (frame['command'] !== 'browser.perform') return false;
+      if (['@e900', '@e901'].includes((frame['args'] as { ref: { id: string } }).ref.id)) refuse(reply, 'stale-reference');
+      else { simulatedInputs++; reply({ data: null }); }
+      return true;
+    };
     try {
       const live = (await surface.observe(operation())).root.ref;
       await surface.perform(live, { kind: 'tap' }, operation());
       const historical = screen.mock.calls[0]![0].root.ref;
-      expect(historical.id).toBe('root'); expect(historical.revision).not.toBe(live.revision);
+      expect(historical).toEqual({ id: '@e900', revision: issued(2) }); expect(historical.id).not.toBe(live.id);
       await expect(surface.perform(historical, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      await surface.perform(live, { kind: 'tap' }, operation());
-      expect(frames.filter(frame => frame['command'] === 'browser.perform')).toHaveLength(2);
+      const historicalViewport = screen.mock.calls[0]![0].viewportRef;
+      expect(historicalViewport).toEqual({ id: '@e901', revision: issued(2) });
+      await expect(surface.perform(historicalViewport, { kind: 'swipe', direction: 'down' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      expect(simulatedInputs).toBe(1);
+      await surface.perform(live, { kind: 'tap' }, operation()); expect(simulatedInputs).toBe(2);
+      expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => (frame['args'] as { ref: unknown }).ref)).toEqual([live, historical, historicalViewport, live]);
     } finally { await surface.dispose(cleanup()); }
   });
+
   it('keeps the current observed reference after more than 16K locator acquisitions', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const engine = defineEngine({ name: 'web-populations', version: '1', spiVersion: 1, referenceRevisions: 'engine',
@@ -3236,7 +3298,7 @@ describe('native Web public reference compatibility', () => {
     try {
       const observed = await session.observe(operation());
       for (let batch = 0; batch < 17; batch++) {
-        queryNodes = Array.from({ length: 1024 }, (_, index) => ({ ref: { id: `@e${batch * 1024 + index + 100}`, revision: '1' } }));
+        queryNodes = Array.from({ length: 1024 }, (_, index) => ({ ref: { id: `@e${batch * 1024 + index + 100}`, revision: issued() } }));
         await session.locate({ kind: 'selector', selector: '.candidate' }, operation());
       }
       await session.perform(observed.root, { kind: 'tap' }, operation());
@@ -3244,18 +3306,24 @@ describe('native Web public reference compatibility', () => {
     } finally { await surface.dispose(cleanup()); }
   });
 
-  it('preserves stable live-element IDs through core revisions and refuses absent or replaced identities', async () => {
+  it('preserves stable native IDs through core revisions and propagates missing/replaced identity refusals', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const engine = defineEngine({ name: 'web-generations', version: '1', spiVersion: 1, referenceRevisions: 'engine',
       observe: surface.observe.bind(surface), locate: surface.locate.bind(surface), perform: surface.perform.bind(surface), actions: ['tap'],
     });
     const session = createEngineSession({ engine, targetName: 'web-generations' });
-    let nativeId: string | undefined = '@e7'; let text = '0'; let captures = 0;
+    let nativeId: string | undefined = '@e7'; let text = '0'; let captures = 0; let simulatedInputs = 0;
     interceptRequest = (frame, reply) => {
+      if (frame['command'] === 'browser.perform') {
+        const ref = (frame['args'] as { ref: { id: string; revision: string } }).ref;
+        if (ref.id !== nativeId || ref.revision !== issued()) refuse(reply, 'stale-reference');
+        else { simulatedInputs++; reply({ data: null }); }
+        return true;
+      }
       if (frame['command'] !== 'browser.observe') return false;
-      reply({ data: { ...observation(String(++captures)), root: { ref: { id: '@e1', revision: '1' }, role: 'document', children: [
-        { ref: { id: '@e8', revision: '1' }, role: 'status', name: 'Counter', text },
-        ...(nativeId === undefined ? [] : [{ ref: { id: nativeId, revision: '1' }, role: 'button', name: 'Increment' }]),
+      reply({ data: { ...observation(String(++captures)), root: { ref: { id: '@e1', revision: issued() }, role: 'document', children: [
+        { ref: { id: '@e8', revision: issued() }, role: 'status', name: 'Counter', text },
+        ...(nativeId === undefined ? [] : [{ ref: { id: nativeId, revision: issued() }, role: 'button', name: 'Increment' }]),
       ] } } }); return true;
     };
     try {
@@ -3268,22 +3336,23 @@ describe('native Web public reference compatibility', () => {
       if (initial.kind !== 'semantic' || updated.kind !== 'semantic') throw new Error('semantic observations required');
       const presenter = new ScreenPresenter();
       presenter.initial({ revision: initial.revision, text: initial.text, truncated: initial.truncated, viewport: initial.viewport });
-      expect(presenter.update({ revision: updated.revision, text: updated.text, truncated: updated.truncated, viewport: updated.viewport })).toContain('changed #n16 status "Counter" text="1"');
-      expect(updated.kind === 'semantic' && updated.nodes.has(old.id)).toBe(true);
-      await session.perform(old, { kind: 'tap' }, operation());
-      await session.perform(fresh, { kind: 'tap' }, operation());
+      expect(presenter.update({ revision: updated.revision, text: updated.text, truncated: updated.truncated, viewport: updated.viewport })).toContain('changed #@e8 status "Counter" text="1"');
+      expect(updated.nodes.has(old.id)).toBe(true);
+      await session.perform(old, { kind: 'tap' }, operation()); await session.perform(fresh, { kind: 'tap' }, operation());
       expect(frames.filter(frame => frame['command'] === 'browser.perform').map(frame => frame['args'])).toEqual([
-        { identityScope: currentScope, ref: { id: '@e7', revision: '1' }, action: { kind: 'tap' } },
-        { identityScope: currentScope, ref: { id: '@e7', revision: '1' }, action: { kind: 'tap' } },
+        { identityScope: currentScope, ref: { id: '@e7', revision: issued() }, action: { kind: 'tap' } },
+        { identityScope: currentScope, ref: { id: '@e7', revision: issued() }, action: { kind: 'tap' } },
       ]);
       nativeId = undefined; await session.observe(operation());
       await expect(session.perform(old, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
+      expect(frames.findLast(frame => frame['command'] === 'browser.perform')!['args']).toMatchObject({ ref: { id: '@e7', revision: issued() } });
       nativeId = '@e9'; const replacement = await session.observe(operation());
+      const beforeMissingEvidence = frames.length;
+      // No core evidence exists for old ID under the new presentation revision.
       await expect(session.perform({ id: old.id, revision: replacement.revision }, { kind: 'tap' }, operation())).rejects.toMatchObject({ code: 'NODE_STALE' });
-      expect(frames.filter(frame => frame['command'] === 'browser.perform')).toHaveLength(2);
+      expect(frames).toHaveLength(beforeMissingEvidence); expect(simulatedInputs).toBe(2);
     } finally { await surface.dispose(cleanup()); }
   });
-
 });
 
 

@@ -321,8 +321,8 @@ describe('typed native browser channel', () => {
 });
 
 describe('request-aware fixture acquisition correlation', () => {
-  const located = () => [{ id: '@e10', revision: '2' }, { id: '@e11', revision: '2' }, { id: '@e12', revision: '2' }];
-  const observed = () => [{ id: '@e20', revision: '3' }, { id: '@e21', revision: '3' }];
+  const located = () => [{ id: '@e10', revision: 'nr1:7:scope-1:1:2' }, { id: '@e11', revision: 'nr1:7:scope-1:1:2' }, { id: '@e12', revision: 'nr1:7:scope-1:1:2' }];
+  const observed = () => [{ id: '@e20', revision: 'nr1:7:scope-1:1:3' }, { id: '@e21', revision: 'nr1:7:scope-1:1:3' }];
 
   it('accepts distinct located/observed IDs, repeated matches and valid nonmatches without another request', async () => {
     const fixture = await opened();
@@ -358,13 +358,15 @@ describe('request-aware fixture acquisition correlation', () => {
     ['short output', { identityScope: 'scope-1', matches: [null] }],
     ['long output', { identityScope: 'scope-1', matches: [null, null, null, null] }],
     ['nonarray matches', { identityScope: 'scope-1', matches: {} }],
-    ['invented ref', { identityScope: 'scope-1', matches: [{ id: '@e99', revision: '3' }, null, null] }],
-    ['located ref as result', { identityScope: 'scope-1', matches: [{ id: '@e10', revision: '2' }, null, null] }],
-    ['wrong observed revision', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: '2' }, null, null] }],
-    ['extra ref key', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: '3', kind: 'observed' }, null, null] }],
+    ['invented ref', { identityScope: 'scope-1', matches: [{ id: '@e99', revision: 'nr1:7:scope-1:1:3' }, null, null] }],
+    ['located ref as result', { identityScope: 'scope-1', matches: [{ id: '@e10', revision: 'nr1:7:scope-1:1:2' }, null, null] }],
+    ['old issuer with same ID and numeric issuance', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: 'nr1:7:scope-0:1:3' }, null, null] }],
+    ['old generation with same ID and numeric issuance', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: 'nr1:7:scope-1:0:3' }, null, null] }],
+    ['wrong observed revision', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: 'nr1:7:scope-1:1:2' }, null, null] }],
+    ['extra ref key', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: 'nr1:7:scope-1:1:3', kind: 'observed' }, null, null] }],
     ['missing revision', { identityScope: 'scope-1', matches: [{ id: '@e20' }, null, null] }],
     ['numeric revision', { identityScope: 'scope-1', matches: [{ id: '@e20', revision: 3 }, null, null] }],
-    ['noncanonical ref', { identityScope: 'scope-1', matches: [{ id: 'e20', revision: '3' }, null, null] }],
+    ['noncanonical ref', { identityScope: 'scope-1', matches: [{ id: 'e20', revision: 'nr1:7:scope-1:1:3' }, null, null] }],
   ])('invalidates the actual framed transport for %s', async (_name, result) => {
     const fixture = await opened();
     const pending = fixture.channel.command('fixture.correlate', { located: located(), observed: observed() }, operation());
@@ -388,17 +390,16 @@ describe('request-aware fixture acquisition correlation', () => {
     ['missing array', { located: [] }],
     ['wrong array kind', { located: {}, observed: [] }],
     ['extra request key', { located: [], observed: [], identityScope: 'spoofed' }],
-    ['duplicate located ID', { located: [{ id: '@e1', revision: '1' }, { id: '@e1', revision: '2' }], observed: [] }],
-    ['duplicate observed ID', { located: [], observed: [{ id: '@e1', revision: '1' }, { id: '@e1', revision: '2' }] }],
+    ['duplicate located ID', { located: [{ id: '@e1', revision: '1' }, { id: '@e1', revision: 'nr1:7:scope-1:1:2' }], observed: [] }],
+    ['duplicate observed ID', { located: [], observed: [{ id: '@e1', revision: '1' }, { id: '@e1', revision: 'nr1:7:scope-1:1:2' }] }],
     ['extra ref key', { located: [{ id: '@e1', revision: '1', role: 'button' }], observed: [] }],
     ['missing revision', { located: [{ id: '@e1' }], observed: [] }],
     ['ref alias', { located: [{ id: 'ref=e1', revision: '1' }], observed: [] }],
     ['zero ID', { located: [{ id: '@e0', revision: '1' }], observed: [] }],
-    ['zero revision', { located: [{ id: '@e1', revision: '0' }], observed: [] }],
-    ['noncanonical revision', { located: [{ id: '@e1', revision: '01' }], observed: [] }],
+    ['empty revision', { located: [{ id: '@e1', revision: '' }], observed: [] }],
+    ['null revision', { located: [{ id: '@e1', revision: null }], observed: [] }],
     ['numeric revision', { located: [{ id: '@e1', revision: 1 }], observed: [] }],
     ['out-of-range ID', { located: [{ id: '@e18446744073709551616', revision: '1' }], observed: [] }],
-    ['out-of-range revision', { located: [{ id: '@e1', revision: '18446744073709551616' }], observed: [] }],
   ])('rejects %s before dispatch without poisoning the peer', async (_name, args) => {
     const fixture = await opened();
     await expect(fixture.channel.command('fixture.correlate', args as never, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });

@@ -6,6 +6,8 @@ import { EngineError } from 'e2e/engine';
 import { isLocalBudgetDeparture } from '../../src/operation-budget.ts';
 import { web, surfaceOf } from '../../src/index.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
+import type { NativeChannel } from '../../src/native/client.ts';
+import { EngineChannel, isNativeReconnectAdmissionRefusal } from '../../src/native/engine-channel.ts';
 import { NativeProtocolPeer, type PeerRequest, type PeerOutcome } from '../helpers/native-protocol-peer.ts';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/native' }));
@@ -14,7 +16,7 @@ const operation = (timeoutMs = 1000) => ({ timeoutMs, signal: new AbortControlle
 const cleanup = () => ({ timeoutMs: 1000, signal: new AbortController().signal });
 let peer: NativeProtocolPeer | undefined;
 afterEach(() => { peer?.dispose(); peer = undefined; vi.restoreAllMocks(); });
-async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined, hooks: { resolve?: () => string | Promise<string>; connected?: (browser: Browser, index: number) => void } = {}) {
+async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<PeerOutcome | undefined> | undefined, hooks: { resolve?: () => string | Promise<string>; connected?: (browser: Browser, index: number) => void; settle?: NativeChannel['settle'] } = {}) {
   const resources = new NativeInteropResources({ endpoint: 'ws://persistent.initial/', browserIdentity: 'opaque-browser', allocateScopeIdentity: () => 'scope-1', allocateContextIdentity: () => ({ contextId: 'persistent-context', targetId: 'persistent-page' }) });
   let connects = 0; const reconnect = vi.fn(hooks.resolve ?? (() => 'ws://persistent.refreshed/'));
   vi.spyOn(chromium, 'connectOverCDP').mockImplementation(async endpoint => { const index = connects++; expect(endpoint).toBe(index === 0 ? resources.endpoint : 'ws://persistent.refreshed/'); const browser = await resources.connectPlaywright(resources.endpoint);
@@ -40,7 +42,7 @@ async function fixture(custom?: (frame: PeerRequest) => PeerOutcome | Promise<Pe
       if ((request.command === 'scope.open' || request.command === 'scope.reconnect') && 'data' in outcome) return { ...outcome, data: { ...(outcome.data as Record<string, unknown>), recoveryIdentity: { browser: 'opaque-browser', context: 'opaque-context', page: 'opaque-page' } } };
       return outcome;
     }, { close: () => resources.closeNative() });
-    return peer.connect(budget, onEvent);
+    return peer.connect(budget, onEvent, hooks.settle);
   });
   const engine = web({ connect: { cdpEndpoint: () => resources.endpoint, reconnectEndpoint: reconnect } });
   await engine.init!({ runId: 'raw-recovery', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: operation().signal, log: () => {} });
@@ -89,6 +91,101 @@ it('does not let the original recovery waiter deadline replace a dispatched nati
 });
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
+function reconnectOutcome(frame: PeerRequest, outcome: PeerOutcome): PeerOutcome | undefined {
+  if (frame.command === 'scope.reconnect') return outcome;
+  // This peer has no encoder output: refuse the read-only terminal lane,
+  // rather than destroying transport before the actual closed/settle receipts.
+  if (frame.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
+  return undefined;
+}
+it.each(['success', 'failure'] as const)('keeps rejected reconnect admission separate from actual terminal transport %s', async receipt => {
+  const entered = deferred<void>(); const release = deferred<void>();
+
+  const state = await fixture(frame => reconnectOutcome(frame, { error: 'stale-scope', effects: 'not-dispatched', scopeState: 'quarantined' }), {
+    settle: async () => {
+      entered.resolve(); await release.promise;
+      if (receipt === 'failure') throw new EngineError('ENGINE_FAILURE', 'actual terminal transport settlement failed', { retryable: false });
+    },
+  });
+
+  let retirement: Promise<unknown> | undefined;
+  try {
+    await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
+  
+    const refusal: unknown = await state.engine.session!.open!('about:blank', operation()).catch((cause: unknown) => cause);
+  
+    expect(refusal).toMatchObject({ code: 'INVALID_STATE', retryable: false });
+    expect(isNativeReconnectAdmissionRefusal(refusal)).toBe(true);
+    await expect(state.engine.session!.open!('about:blank', operation())).rejects.toBe(refusal);
+    expect(state.reconnect).toHaveBeenCalledTimes(1);
+    expect(state.connects()).toBe(1);
+    expect(peer!.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+    expect(peer!.requests.filter(frame => frame.command === 'page.navigate')).toHaveLength(1);
+  
+    let settled = false;
+    retirement = state.engine.endAttempt!(cleanup()).then(value => { settled = true; return value; }, (cause: unknown) => { settled = true; return cause; });
+    // NativeClient calls transport settlement only after validating the closed frame.
+    await entered.promise;
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false);
+    release.resolve();
+    const actual = await retirement; 
+    if (receipt === 'success') {
+      expect(actual).toBeUndefined();
+      await expect(state.engine.dispose!(cleanup())).resolves.toBeUndefined();
+    } else {
+      expect(actual).not.toBe(refusal);
+      expect(actual).toMatchObject({ code: 'ENGINE_FAILURE', message: expect.stringContaining('actual terminal transport settlement failed') });
+      await expect(state.engine.endAttempt!(cleanup())).rejects.toBe(actual);
+      await expect(state.engine.dispose!(cleanup())).rejects.toBe(actual);
+    }
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(peer!.requests.some(frame => frame.command === 'scope.end')).toBe(false);
+  } finally { release.resolve(); await retirement; await state.engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+it.each([
+  { error: 'stale-scope', effects: 'unknown', scopeState: 'quarantined' },
+  { error: 'stale-scope', effects: 'completed', scopeState: 'quarantined' },
+  { error: 'cleanup-failed', effects: 'not-dispatched', scopeState: 'quarantined' },
+  { error: 'browser-failure', effects: 'not-dispatched', scopeState: 'quarantined' },
+  { error: 'stale-scope', effects: 'not-dispatched', scopeState: 'closed' },
+] as const)('retains non-admission terminal recovery failure $error/$effects/$scopeState', async outcome => {
+  const state = await fixture(frame => reconnectOutcome(frame, outcome));
+  try {
+    await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
+    const failure: unknown = await state.engine.session!.open!('about:blank', operation()).catch((cause: unknown) => cause);
+    expect(failure).toBeInstanceOf(EngineError);
+    expect(isNativeReconnectAdmissionRefusal(failure)).toBe(false);
+    await expect(state.engine.session!.open!('about:blank', operation())).rejects.toBe(failure);
+    await expect(state.engine.endAttempt!(cleanup())).rejects.toBe(failure);
+    await expect(state.engine.dispose!(cleanup())).rejects.toBe(failure);
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(peer!.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+    expect(peer!.requests.filter(frame => frame.command === 'page.navigate')).toHaveLength(1);
+    expect(peer!.requests.some(frame => frame.command === 'scope.end')).toBe(false);
+  } finally { await state.engine.dispose!(cleanup()).catch(() => {}); }
+});
+
+it('does not treat a forged public error as the validated terminal reconnect refusal', async () => {
+  const state = await fixture(frame => reconnectOutcome(frame, { error: 'stale-scope', effects: 'not-dispatched', scopeState: 'quarantined' }));
+  const forged = new EngineError('INVALID_STATE', 'The native browser operation failed (stale-scope)', { retryable: false });
+  const command = EngineChannel.prototype.command;
+  const spy = vi.spyOn(EngineChannel.prototype, 'command').mockImplementation(function (this: EngineChannel, ...args) {
+    return Reflect.apply(command, this, args).catch((cause: unknown) => { throw args[0] === 'scope.reconnect' ? forged : cause; });
+  });
+  try {
+    await peer!.event('scope.disconnected', { identityScope: 'scope-1', reason: 'browser-connection-closed' });
+    await expect(state.engine.session!.open!('about:blank', operation())).rejects.toBe(forged);
+    expect(isNativeReconnectAdmissionRefusal(forged)).toBe(false);
+    await expect(state.engine.endAttempt!(cleanup())).rejects.toBe(forged);
+    await expect(state.engine.dispose!(cleanup())).rejects.toBe(forged);
+    expect(peer!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(peer!.requests.filter(frame => frame.command === 'scope.reconnect')).toHaveLength(1);
+  } finally { spy.mockRestore(); await state.engine.dispose!(cleanup()).catch(() => {}); }
+});
+
 it('shares one existing recovery owner across concurrent ordinary callers', async () => {
   const release = deferred<string>(); const state = await fixture(undefined, { resolve: () => release.promise }); const live = surfaceOf(state.engine)!;
   try {
