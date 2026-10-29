@@ -8,13 +8,13 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 3bdb7541dacd750caa979b36f6018a903f9b934b
-  NATIVE_SOURCE_TREE: b9acf8d5e10bd1b5af32f531da2fe69a94ccc7a7
+  NATIVE_SOURCE_SHA: cc7c04634b00ad40a1d1b33db016615e9c1344a2
+  NATIVE_SOURCE_TREE: 35c0896d6ea9641ac6f19f17a34267c9911f4496
   NEXT_TELEMETRY_DISABLED: '1'
 'on':
   push:
     branches:
-    - ci/native-final-regression-20261029
+    - ci/native-final-regression-r2-20261029
 jobs:
   original-four-compile-boundaries:
     runs-on: ubuntu-24.04

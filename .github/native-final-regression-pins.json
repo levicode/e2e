@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "repository": "levicode/agent-browser",
-  "commit": "3bdb7541dacd750caa979b36f6018a903f9b934b",
-  "tree": "b9acf8d5e10bd1b5af32f531da2fe69a94ccc7a7",
+  "commit": "cc7c04634b00ad40a1d1b33db016615e9c1344a2",
+  "tree": "35c0896d6ea9641ac6f19f17a34267c9911f4496",
   "files": {
     "cli/src/native/cdp/client.rs": "1235cec0fedcf1a94d8c5c600746cdb00f23247a1ddf0b16123dc48929f3d85c",
-    "cli/src/native/client_browser.rs": "71d07a697639e5d5e5bb5427daf2f64a8c40f07e9464760442e152e660d17798",
+    "cli/src/native/client_browser.rs": "d3c91625630f096684efe93242ea757c2be3d633643c2394ae8c3630d75ec61a",
     "cli/src/native/client_debt.rs": "ab0926b0eba203091c12f0a96a1d35e082e84b677bd6d142609ef7a40ee6700e",
     "cli/src/native/client_observation/fresh_query.rs": "8c8c6527c6ff3b854730cabc6f7a370b33ff4e8b957ae7a2820bd47aa3b2ebb5",
     "cli/src/native/client_observation/fresh_query_resolve.rs": "22b8be7ff219da68e39dffc1dc30501fdb050ed9c277a2796c0b43a6c03f4de2",
@@ -13,7 +13,7 @@
     "cli/src/native/daemon.rs": "568542f09d803d834c36f99db863f01430d7f0446a82df6aee058879cbaec7bc",
     "cli/src/native/client_observation.rs": "9a1a3874b2709a9700e5dd6aa5222af1138288b6ccad53bf7a06d695bc1ac100"
   },
-  "nativePatchSHA256": "89b7d6932bab5e9731acc9ffba18509f70cef3a206e13aa5fa8511a33d520a96",
+  "nativePatchSHA256": "1710a868e7c213462cfa5aea75080ab4774e2a5d14ad87fd4a67e38aa0c163c5",
   "toolchain": "1.99.1",
   "profile": "ci",
   "features": [],
@@ -36,7 +36,7 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "scope": "candidate-only all-PASS controls; no baseline causality/browser/fullmatrix claim",
-  "producerParent": "b10176acc812e656372e0667824c77719c2e72aa",
+  "producerParent": "e29cfa1376ffb04d436368a4fe7ef691c30fc38d",
   "expectedInventories": {
     "default": {
       "total": 3366,
