@@ -1,0 +1,118 @@
+name: N2 original four native compilation boundaries (not full formal acceptance)
+'on':
+  push:
+    branches:
+    - ci/native-formal-lint-repair
+permissions:
+  contents: read
+concurrency:
+  group: native-formal-lint-repair-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  REVIEWED_NATIVE_SHA: 699c360aabd1406ac67fd530fb3aaa31e072073d
+  REVIEWED_NATIVE_TREE: 17733d6431ddf4f79fbaeb177f49297e0a8ec471
+  RUSTUP_TOOLCHAIN: 1.99.1
+  CARGO_BUILD_JOBS: '2'
+jobs:
+  native-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Validate exact source pin and reserve fresh target
+      id: source
+      run: 'set -euo pipefail
+
+        [[ "$REVIEWED_NATIVE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$REVIEWED_NATIVE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain)"
+
+        python3 - <<''PY_PIN''
+
+        import json,os
+
+        p=json.load(open(''.github/native-candidate.json''))
+
+        assert p[''schemaVersion'']==1 and p[''repository'']==''levicode/agent-browser''
+
+        assert p[''commit'']==os.environ[''REVIEWED_NATIVE_SHA'']
+
+        PY_PIN
+
+        mkdir -p .artifacts/native-candidate
+
+        git rev-parse HEAD > .artifacts/native-candidate/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > .artifacts/native-candidate/e2e-source.tree
+
+        test ! -e "$RUNNER_TEMP/native-n2-lint-target"
+
+        test ! -e "$RUNNER_TEMP/native-n2-lint-cargo"
+
+        echo "CARGO_TARGET_DIR=$RUNNER_TEMP/native-n2-lint-target" >> "$GITHUB_ENV"
+
+        echo "CARGO_HOME=$RUNNER_TEMP/native-n2-lint-cargo" >> "$GITHUB_ENV"
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      id: native-checkout
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.REVIEWED_NATIVE_SHA }}
+        path: .artifacts/native-source
+        persist-credentials: false
+    - name: Require exact N2 checkout tree before toolchain and compilation
+      id: native_identity
+      working-directory: .artifacts/native-source
+      run: 'set -euo pipefail
+
+        test "$(git rev-parse HEAD)" = "$REVIEWED_NATIVE_SHA"
+
+        test "$(git rev-parse HEAD^{tree})" = "$REVIEWED_NATIVE_TREE"
+
+        test -z "$(git status --porcelain)"
+
+        git rev-parse HEAD > "$GITHUB_WORKSPACE/.artifacts/native-candidate/native-source.sha"
+
+        git rev-parse HEAD^{tree} > "$GITHUB_WORKSPACE/.artifacts/native-candidate/native-source.tree"
+
+        '
+    - name: Install exact reviewed Rust and lint components
+      id: toolchain
+      if: ${{ !cancelled() && steps.native_identity.outcome == 'success' }}
+      run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component
+        clippy
+    - name: Check all native compilation boundaries before browser execution
+      id: native-lint
+      if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+      working-directory: .artifacts/native-source/cli
+      env:
+        EXPECTED_NATIVE_SHA: ${{ env.REVIEWED_NATIVE_SHA }}
+      run: "set -euo pipefail\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS\
+        \ CARGO_ENCODED_RUSTFLAGS\ntest \"$(git rev-parse HEAD)\" = \"$EXPECTED_NATIVE_SHA\"\
+        \ntest -z \"$(git status --porcelain)\"\nout=\"$GITHUB_WORKSPACE/.artifacts/native-candidate\"\
+        \nmkdir -p \"$out\"\nprintf '%s\\n' \"$EXPECTED_NATIVE_SHA\" > \"$out/native-compile-source.txt\"\
+        \nfailed=0\ncheck_boundary() {\n  local name=\"$1\" status=0\n  shift\n  if\
+        \ \"$@\" > \"$out/$name.log\" 2>&1; then\n    status=0\n  else\n    status=$?\n\
+        \    failed=1\n  fi\n  printf '%s\\n' \"$status\" > \"$out/$name.exit\"\n\
+        \  cat \"$out/$name.log\"\n}\ncheck_boundary native-format-check cargo fmt\
+        \ -- --check\ncheck_boundary native-default-clippy cargo clippy --locked --profile\
+        \ ci --no-default-features --all-targets -- -D warnings\ncheck_boundary native-feature-check\
+        \ cargo check --locked --profile ci --no-default-features --features acceptance-faults\
+        \ --tests\ncheck_boundary native-proxy-check cargo check --locked --profile\
+        \ ci --no-default-features --features acceptance-faults --test client-proxy-fixture\n\
+        test \"$failed\" -eq 0\n"
+    - name: Preserve all boundary evidence including earlier failures
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-n2-original-four-boundaries-${{ github.run_id }}-${{ github.run_attempt
+          }}
+        path: .artifacts/native-candidate/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
