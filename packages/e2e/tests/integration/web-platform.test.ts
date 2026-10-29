@@ -1,3 +1,4 @@
+import { withShortReadDiagnostics } from '../helpers/short-read-diagnostics.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -434,7 +435,7 @@ describe('web platform integration', () => {
 
   beforeAll(async () => {
     app = await startFixtureApp();
-    ({ outcome, project } = await runProjectWithConfigFile(
+    ({ outcome, project } = await withShortReadDiagnostics('web-platform', onEvent => runProjectWithConfigFile(
       {
         'tests/kitchen.e2e.ts': KITCHEN_SINK,
         'tests/late-handler.e2e.ts': LATE_HANDLER_THEN_TEARDOWN,
@@ -445,9 +446,10 @@ describe('web platform integration', () => {
       },
       {
         appUrl: app.url,
+        runOptions: { onEvent },
         configSource: workerConfigSource(1, "\n  cache: 'off',\n  actionTimeout: 5_000,\n  assertionTimeout: 4_000,\n  timeout: 30_000,"),
       },
-    ));
+    )));
     if (process.env['E2E_PLATFORM_HANDLER_DIAGNOSTIC'] === '1') {
       // Retain chronology before project cleanup; never print fixture arguments or raw errors.
       const fixtureFiles = ['tests/kitchen.e2e.ts', 'tests/late-handler.e2e.ts', 'tests/schemes.e2e.ts', 'tests/classes.e2e.ts', 'tests/url-patterns.e2e.ts'];

@@ -14,14 +14,19 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const password = 'decision-secret-test-value';
 const reportSchema = z.object({ run: z.object({
   results: z.array(z.object({ titlePath: z.array(z.string()), status: z.string(), attempts: z.array(z.object({
-    steps: z.array(z.object({ error: z.object({ code: z.string() }).optional(), agentMetrics: z.unknown().optional() })),
+    steps: z.array(z.object({ error: z.object({ code: z.string(), message: z.string().optional() }).optional(), agentMetrics: z.unknown().optional() })),
   })) })),
 }) });
-/** Keeps failed attempt codes visible without serializing model input or report artifacts. */
+/** Keeps bounded failed-step diagnostics visible without serializing model input or report artifacts. */
 function attemptFailureCodes(result: z.infer<typeof reportSchema>['run']['results'][number] | undefined): string {
   return JSON.stringify(result?.attempts.map((attempt, attemptIndex) => ({
     attemptIndex,
-    failedSteps: attempt.steps.flatMap((step, stepIndex) => step.error === undefined ? [] : [{ stepIndex, code: step.error.code }]),
+    failedSteps: attempt.steps.flatMap((step, stepIndex) => step.error === undefined ? [] : [{
+      stepIndex,
+      code: step.error.code,
+      // Redact before truncating so the boundary cannot expose a partial fixture password.
+      message: step.error.message?.replaceAll(password, '[REDACTED]').slice(0, 1000),
+    }]),
   })) ?? []);
 }
 /** Starts an actual HTTP server and returns its ephemeral URL. */

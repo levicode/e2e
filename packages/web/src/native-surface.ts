@@ -61,6 +61,8 @@ interface Attempt {
   rawViewport?: ScopeCreationOptions['viewport'];
   readonly context: EngineAttemptContext;
   readonly retirement: AbortController;
+  /** Already-admitted resource receipts survive ordinary business retirement. */
+  readonly resourceCleanup: AbortController;
   cleanupSignal?: AbortSignal;
   lateRecordingFailure?: unknown;
   resourceCleanupFailure?: unknown;
@@ -239,7 +241,7 @@ export class NativeSurface implements NativeWebSurface {
       await raceAbort(() => retirement, context.signal, 'waiting for native attempt retirement');
     }
     if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), downloadFiles: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
+    const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), resourceCleanup: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), downloadFiles: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
     const startingOperation = this.operation(startupSignal);
@@ -399,6 +401,11 @@ export class NativeSurface implements NativeWebSurface {
     const client = this.client; const engine = this.engine; const connecting = this.connecting;
     if (connecting !== undefined) this.clientTenure++;
     if (attempt !== undefined) attempt.cleanupSignal = cleanup.signal;
+    // Ending business admission must not cancel the cleanup receipt it joins.
+    // The original end/dispose deadline still revokes this exact owner.
+    const cancelResourceCleanup = () => attempt?.resourceCleanup.abort(cleanup.signal.reason);
+    cleanup.signal.addEventListener('abort', cancelResourceCleanup, { once: true });
+    if (cleanup.signal.aborted) cancelResourceCleanup();
     this.leases?.retireWorkerAcquisition(cleanup, 'attempt');
     attempt?.retirement.abort(); this.references.retire();
     const finalizedCleanup = attempt?.finalizedVideo?.retire();
@@ -551,7 +558,11 @@ export class NativeSurface implements NativeWebSurface {
         if (attempt !== undefined) delete attempt.observationHighWater;
         this.retiringAttempt = undefined;
       } else failure ??= invalidState('Native attempt cleanup remains unresolved');
-    } finally { if (attempt !== undefined) attempt.credentials = undefined; }
+    } finally {
+      cleanup.signal.removeEventListener('abort', cancelResourceCleanup);
+      attempt?.resourceCleanup.abort();
+      if (attempt !== undefined) attempt.credentials = undefined;
+    }
     if (failure !== undefined) throw failure;
   }
 
@@ -711,7 +722,7 @@ export class NativeSurface implements NativeWebSurface {
     const latch = this.latch;
     attempt.channel = new BrowserChannel(this.requireClient(), {
       identityScope: () => { this.assertAttempt(attempt); return attempt.scope; },
-      operation: () => this.operation(attempt.retirement.signal),
+      operation: () => this.operation(attempt.resourceCleanup.signal, LIFECYCLE_TIMEOUT_MS, attempt.context.attemptId),
       captureReadiness: () => this.captureDownloadReadiness(attempt),
       trackResourceCleanup: (work, callbackFailed) => {
         const currentCallback = this.callbackOwner.getStore();

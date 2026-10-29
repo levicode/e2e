@@ -1125,3 +1125,254 @@ describe('page URL fixed-field result diagnostics', () => {
     });
   });
 });
+
+describe('query read fixed-field result diagnostics', () => {
+  async function observe(run: (lines: string[]) => Promise<void>) {
+    const previous = process.env['E2E_QUERY_READ_DIAGNOSTIC'];
+    process.env['E2E_QUERY_READ_DIAGNOSTIC'] = 'transformed-secrets';
+    const lines: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(chunk => { lines.push(String(chunk)); return true; });
+    try { await run(lines); } finally {
+      write.mockRestore(); vi.useRealTimers();
+      if (previous === undefined) delete process.env['E2E_QUERY_READ_DIAGNOSTIC'];
+      else process.env['E2E_QUERY_READ_DIAGNOSTIC'] = previous;
+    }
+  }
+  function records(lines: string[]): Record<string, unknown>[] {
+    return lines.filter(line => line.startsWith('QUERY_READ_RESULT_DIAGNOSTIC ')).map(line => JSON.parse(line.slice('QUERY_READ_RESULT_DIAGNOSTIC '.length)) as Record<string, unknown>);
+  }
+  it.each(['fixture.read-fields', 'fixture.query', 'browser.query'] as const)('records validated %s cancellation before any local cancel without payloads', async command => {
+    await observe(async lines => {
+      const f = await opened();
+      const pending = f.client.request(command, { identityScope: 'private-scope', expression: 'private-query', fields: ['private-field'], url: 'private-url', token: 'Tok-9f3aC0DeB1e7', source: 'private-page' }, context());
+      const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+      expect(records(lines)).toEqual([{ phase: 'settled-failure', suite: 'transformed-secrets', command, transmittedTimeoutMs: 1000, selectedLocalCancel: 'none', rawCode: 'cancelled', rawEffects: 'not-dispatched', rawScopeState: 'usable', returnedCode: 'cancelled', timeoutRewritten: false, cancelAckSeen: false }]);
+      expect(lines.join('')).not.toMatch(/private|Tok-9f3aC0DeB1e7|expression|identityScope|operationSeq|generation|sessionId/);
+      expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request']); await close(f);
+    });
+  });
+  it.each([undefined, { code: 'OPERATION_TIMEOUT' }])('does not relabel an external abort, even with a timeout-shaped reason: %s', async reason => {
+    await observe(async lines => {
+      const f = await opened(); const controller = new AbortController();
+      const pending = f.client.request('fixture.read-fields', {}, context(controller.signal)); const request = f.requests.at(-1)!;
+      controller.abort(reason); const cancel = f.requests.at(-1)!;
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' } });
+      expect(records(lines)[0]).toMatchObject({ selectedLocalCancel: 'abort', rawCode: 'cancelled', returnedCode: 'cancelled', timeoutRewritten: false, cancelAckSeen: true });
+      await close(f);
+    });
+  });
+  it.each([
+    { code: 'cancelled', effects: 'not-dispatched', scopeState: 'usable', rewritten: true },
+    { code: 'deadline-exceeded', effects: 'completed', scopeState: 'usable', rewritten: true },
+    { code: 'cancelled', effects: 'not-dispatched', scopeState: 'quarantined', rewritten: false },
+    { code: 'cancelled', effects: 'unknown', scopeState: 'quarantined', rewritten: false },
+    { code: 'browser-failure', effects: 'unknown', scopeState: 'quarantined', rewritten: false },
+  ] as const)('observes selected deadline without changing $code/$effects/$scopeState', async row => {
+    await observe(async lines => {
+      vi.useFakeTimers(); const f = await opened();
+      const pending = f.client.request('fixture.read-fields', {}, { ...context(), timeoutMs: 20 }); const request = f.requests.at(-1)!;
+      await vi.advanceTimersByTimeAsync(21); const cancel = f.requests.at(-1)!;
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      await Promise.resolve();
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: row.code }, effects: row.effects, scopeState: row.scopeState }));
+      expect(await pending).toMatchObject({ error: { code: row.rewritten ? 'deadline-exceeded' : row.code }, effects: row.effects, scopeState: row.scopeState });
+      expect(records(lines)).toEqual([{ phase: 'settled-failure', suite: 'transformed-secrets', command: 'fixture.read-fields', transmittedTimeoutMs: 20, selectedLocalCancel: 'deadline', rawCode: row.code, rawEffects: row.effects, rawScopeState: row.scopeState, returnedCode: row.rewritten ? 'deadline-exceeded' : row.code, timeoutRewritten: row.rewritten, cancelAckSeen: true }]);
+      if (row.scopeState === 'usable') await close(f); else expect(f.dispose).toHaveBeenCalledOnce();
+    });
+  });
+  it('does not reread an expired caller budget during settled-result observation', async () => {
+    await observe(async lines => {
+      const f = await opened(); let expired = false;
+      const pending = f.client.request('fixture.read-fields', {}, { ...context(), get timeoutMs() { if (expired) throw new Error('private-expired-getter'); return 1000; } });
+      const request = f.requests.at(-1)!; expired = true;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' } });
+      expect(records(lines)[0]).toMatchObject({ transmittedTimeoutMs: 1000 }); await close(f);
+    });
+  });
+  it('requires an exact fixture opt-in and command, and never logs success', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      for (const [suite, command, ok] of [['', 'fixture.read-fields', false], ['1', 'fixture.read-fields', false], ['private-suite', 'fixture.read-fields', false], ['web-platform', 'page.title', false], ['web-platform', 'fixture.read-fields', true]] as const) {
+        process.env['E2E_QUERY_READ_DIAGNOSTIC'] = suite;
+        const pending = f.client.request(command, {}, context()); const request = f.requests.at(-1)!;
+        f.send(f.result(request, ok ? {} : { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' })); await pending;
+      }
+      expect(records(lines)).toEqual([]); await close(f);
+    });
+  });
+  it('caps eight records and retains the overflow-triggering failure facts with an explicit omission marker', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      for (let n = 0; n < 11; n++) {
+        const pending = f.client.request('fixture.read-fields', {}, context()); const request = f.requests.at(-1)!;
+        const code = n === 8 ? 'deadline-exceeded' : 'cancelled';
+        f.send(f.result(request, { ok: false, data: undefined, error: { code }, effects: 'not-dispatched' }));
+        expect(await pending).toMatchObject({ error: { code } });
+      }
+      expect(records(lines)).toHaveLength(9);
+      expect(records(lines).slice(0, 8).every(record => record['phase'] === 'settled-failure')).toBe(true);
+      expect(records(lines)[8]).toMatchObject({ phase: 'capture-limit-reached', limit: 8, laterFailuresOmitted: true, rawCode: 'deadline-exceeded', returnedCode: 'deadline-exceeded' });
+      expect(f.requests.filter(frame => frame['type'] === 'request')).toHaveLength(11); await close(f);
+    });
+  });
+  it('does not emit unvalidated native text', async () => {
+    await observe(async lines => {
+      const f = await opened(); const pending = f.client.request('fixture.read-fields', {}, context()).catch(error => error); const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'private-invalid-native-code' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(records(lines)).toEqual([]); expect(lines.join('')).not.toContain('private-invalid-native-code');
+      expect(f.dispose).toHaveBeenCalledOnce();
+    });
+  });
+  it('cannot replace an actual failed result when the diagnostic sink throws', async () => {
+    await observe(async () => {
+      const f = await opened(); vi.mocked(process.stderr.write).mockImplementation(() => { throw new Error('private sink failure'); });
+      const pending = f.client.request('fixture.read-fields', {}, context()); const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'browser-failure' }, effects: 'completed' }));
+      expect(await pending).toMatchObject({ error: { code: 'browser-failure' }, effects: 'completed', scopeState: 'usable' }); await close(f);
+    });
+  });
+});
+
+describe('lifecycle open cancellation fixed-field result diagnostics', () => {
+  async function observe(run: (lines: string[]) => Promise<void>) {
+    const previous = process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'];
+    process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'] = 'lifecycle-open-cancel';
+    const lines: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(chunk => { lines.push(String(chunk)); return true; });
+    try { await run(lines); } finally {
+      write.mockRestore(); vi.useRealTimers();
+      if (previous === undefined) delete process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'];
+      else process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'] = previous;
+    }
+  }
+  function records(lines: string[]): Record<string, unknown>[] {
+    return lines.filter(line => line.startsWith('LIFECYCLE_OPEN_CANCEL_RESULT_DIAGNOSTIC ')).map(line => JSON.parse(line.slice('LIFECYCLE_OPEN_CANCEL_RESULT_DIAGNOSTIC '.length)) as Record<string, unknown>);
+  }
+  it.each(['page.activate', 'page.navigate', 'browser.observe'] as const)('records validated %s cancellation before any local cancel without payloads', async command => {
+    await observe(async lines => {
+      const f = await opened();
+      const pending = f.client.request(command, { identityScope: 'private-scope', expression: 'private-query', fields: ['private-field'], url: 'private-url', token: 'Tok-9f3aC0DeB1e7', source: 'private-page' }, context());
+      const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+      expect(records(lines)).toEqual([{ phase: 'settled-failure', suite: 'lifecycle-open-cancel', command, transmittedTimeoutMs: 1000, selectedLocalCancel: 'none', rawCode: 'cancelled', rawEffects: 'not-dispatched', rawScopeState: 'usable', returnedCode: 'cancelled', timeoutRewritten: false, cancelAckSeen: false }]);
+      expect(lines.join('')).not.toMatch(/private|Tok-9f3aC0DeB1e7|expression|identityScope|operationSeq|generation|sessionId/);
+      expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request']); await close(f);
+    });
+  });
+  it.each([undefined, { code: 'OPERATION_TIMEOUT' }])('does not relabel an external abort, even with a timeout-shaped reason: %s', async reason => {
+    await observe(async lines => {
+      const f = await opened(); const controller = new AbortController();
+      const pending = f.client.request('page.activate', {}, context(controller.signal)); const request = f.requests.at(-1)!;
+      controller.abort(reason); const cancel = f.requests.at(-1)!;
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' } });
+      expect(records(lines)[0]).toMatchObject({ selectedLocalCancel: 'abort', rawCode: 'cancelled', returnedCode: 'cancelled', timeoutRewritten: false, cancelAckSeen: true });
+      await close(f);
+    });
+  });
+  it.each([
+    { code: 'cancelled', effects: 'not-dispatched', scopeState: 'usable', rewritten: true },
+    { code: 'deadline-exceeded', effects: 'completed', scopeState: 'usable', rewritten: true },
+    { code: 'cancelled', effects: 'not-dispatched', scopeState: 'quarantined', rewritten: false },
+    { code: 'cancelled', effects: 'unknown', scopeState: 'quarantined', rewritten: false },
+    { code: 'browser-failure', effects: 'unknown', scopeState: 'quarantined', rewritten: false },
+  ] as const)('observes selected deadline without changing $code/$effects/$scopeState', async row => {
+    await observe(async lines => {
+      vi.useFakeTimers(); const f = await opened();
+      const pending = f.client.request('page.activate', {}, { ...context(), timeoutMs: 20 }); const request = f.requests.at(-1)!;
+      await vi.advanceTimersByTimeAsync(21); const cancel = f.requests.at(-1)!;
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      await Promise.resolve();
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: row.code }, effects: row.effects, scopeState: row.scopeState }));
+      expect(await pending).toMatchObject({ error: { code: row.rewritten ? 'deadline-exceeded' : row.code }, effects: row.effects, scopeState: row.scopeState });
+      expect(records(lines)).toEqual([{ phase: 'settled-failure', suite: 'lifecycle-open-cancel', command: 'page.activate', transmittedTimeoutMs: 20, selectedLocalCancel: 'deadline', rawCode: row.code, rawEffects: row.effects, rawScopeState: row.scopeState, returnedCode: row.rewritten ? 'deadline-exceeded' : row.code, timeoutRewritten: row.rewritten, cancelAckSeen: true }]);
+      if (row.scopeState === 'usable') await close(f); else expect(f.dispose).toHaveBeenCalledOnce();
+    });
+  });
+  it('does not reread an expired caller budget during settled-result observation', async () => {
+    await observe(async lines => {
+      const f = await opened(); let expired = false;
+      const pending = f.client.request('page.activate', {}, { ...context(), get timeoutMs() { if (expired) throw new Error('private-expired-getter'); return 1000; } });
+      const request = f.requests.at(-1)!; expired = true;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' } });
+      expect(records(lines)[0]).toMatchObject({ transmittedTimeoutMs: 1000 }); await close(f);
+    });
+  });
+  it('requires an exact fixture opt-in and command, and never logs success', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      for (const [suite, command, ok] of [['', 'page.activate', false], ['1', 'page.activate', false], ['private-suite', 'page.activate', false], ['lifecycle-open-cancel', 'page.title', false], ['lifecycle-open-cancel', 'page.activate', true]] as const) {
+        process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'] = suite;
+        const pending = f.client.request(command, {}, context()); const request = f.requests.at(-1)!;
+        f.send(f.result(request, ok ? {} : { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' })); await pending;
+      }
+      expect(records(lines)).toEqual([]); await close(f);
+    });
+  });
+  it('caps eight records and retains the overflow-triggering failure facts with an explicit omission marker', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      for (let n = 0; n < 11; n++) {
+        const pending = f.client.request('page.activate', {}, context()); const request = f.requests.at(-1)!;
+        const code = n === 8 ? 'deadline-exceeded' : 'cancelled';
+        f.send(f.result(request, { ok: false, data: undefined, error: { code }, effects: 'not-dispatched' }));
+        expect(await pending).toMatchObject({ error: { code } });
+      }
+      expect(records(lines)).toHaveLength(9);
+      expect(records(lines).slice(0, 8).every(record => record['phase'] === 'settled-failure')).toBe(true);
+      expect(records(lines)[8]).toMatchObject({ phase: 'capture-limit-reached', limit: 8, laterFailuresOmitted: true, rawCode: 'deadline-exceeded', returnedCode: 'deadline-exceeded' });
+      expect(f.requests.filter(frame => frame['type'] === 'request')).toHaveLength(11); await close(f);
+    });
+  });
+  it('does not emit unvalidated native text', async () => {
+    await observe(async lines => {
+      const f = await opened(); const pending = f.client.request('page.activate', {}, context()).catch(error => error); const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'private-invalid-native-code' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(records(lines)).toEqual([]); expect(lines.join('')).not.toContain('private-invalid-native-code');
+      expect(f.dispose).toHaveBeenCalledOnce();
+    });
+  });
+  it('cannot replace an actual failed result when the diagnostic sink throws', async () => {
+    await observe(async () => {
+      const f = await opened(); vi.mocked(process.stderr.write).mockImplementation(() => { throw new Error('private sink failure'); });
+      const pending = f.client.request('page.activate', {}, context()); const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'browser-failure' }, effects: 'completed' }));
+      expect(await pending).toMatchObject({ error: { code: 'browser-failure' }, effects: 'completed', scopeState: 'usable' }); await close(f);
+    });
+  });
+});
+
+it('keeps query and lifecycle diagnostic tags, command allowlists, and capture caps independent', async () => {
+  const oldQuery = process.env['E2E_QUERY_READ_DIAGNOSTIC']; const oldLifecycle = process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'];
+  process.env['E2E_QUERY_READ_DIAGNOSTIC'] = 'web-platform'; process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'] = 'lifecycle-open-cancel';
+  const lines: string[] = []; const write = vi.spyOn(process.stderr, 'write').mockImplementation(chunk => { lines.push(String(chunk)); return true; });
+  try {
+    const f = await opened();
+    for (let i = 0; i < 11; i++) {
+      const pending = f.client.request('fixture.read-fields', {}, context()); const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' })); await pending;
+    }
+    const pending = f.client.request('page.activate', {}, context()); const request = f.requests.at(-1)!;
+    f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' })); await pending;
+    const queries = lines.filter(line => line.startsWith('QUERY_READ_RESULT_DIAGNOSTIC '));
+    const lifecycle = lines.filter(line => line.startsWith('LIFECYCLE_OPEN_CANCEL_RESULT_DIAGNOSTIC '));
+    expect(queries).toHaveLength(9); expect(lifecycle).toHaveLength(1);
+    expect(queries.every(line => line.includes('"suite":"web-platform","command":"fixture.read-fields"'))).toBe(true);
+    expect(lifecycle[0]).toContain('"phase":"settled-failure","suite":"lifecycle-open-cancel","command":"page.activate"');
+    await close(f);
+  } finally {
+    write.mockRestore();
+    if (oldQuery === undefined) delete process.env['E2E_QUERY_READ_DIAGNOSTIC']; else process.env['E2E_QUERY_READ_DIAGNOSTIC'] = oldQuery;
+    if (oldLifecycle === undefined) delete process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC']; else process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'] = oldLifecycle;
+  }
+});

@@ -78,6 +78,8 @@ class ReceiveFailure extends Error {
 export class NativeClient {
   private readonly frames = new NativeFrames(MAX_FRAME_BYTES);
   private pageUrlDiagnosticAttempts = 0;
+  private queryReadDiagnosticAttempts = 0;
+  private lifecycleOpenCancelDiagnosticAttempts = 0;
   private readonly callback = new AsyncLocalStorage<CallbackOwner>();
   private callbackEpoch = 0;
   private publicationEpoch = 0;
@@ -430,6 +432,46 @@ export class NativeClient {
     } catch { /* Observation cannot change a settled result or its cleanup. */ }
   }
 
+  /** Exact synthetic-fixture opt-in; closed result facts only, never query/args/error text. */
+  private observeQueryReadFailure(command: 'fixture.read-fields' | 'fixture.query' | 'browser.query', raw: NativeResult, returned: NativeResult, transmittedTimeoutMs: unknown, cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined, timeoutRewritten: boolean, cancelAckSeen: boolean): void {
+    try {
+      const suite = process.env['E2E_QUERY_READ_DIAGNOSTIC'];
+      if ((suite !== 'transformed-secrets' && suite !== 'web-platform') || this.queryReadDiagnosticAttempts > 8) return;
+      // Capture only the serialized wire budget: the live getter can now be expired.
+      if (typeof transmittedTimeoutMs !== 'number' || !Number.isSafeInteger(transmittedTimeoutMs) || transmittedTimeoutMs <= 0) return;
+      this.queryReadDiagnosticAttempts++;
+      const overflow = this.queryReadDiagnosticAttempts === 9;
+      process.stderr.write(`QUERY_READ_RESULT_DIAGNOSTIC ${JSON.stringify({
+        phase: overflow ? 'capture-limit-reached' : 'settled-failure', suite, command,
+        ...(overflow ? { limit: 8, laterFailuresOmitted: true } : {}),
+        transmittedTimeoutMs,
+        selectedLocalCancel: cancellation === undefined ? 'none' : cancellation === 'CANCELLED' ? 'abort' : 'deadline',
+        rawCode: raw.error?.code, rawEffects: raw.effects, rawScopeState: raw.scopeState,
+        returnedCode: returned.error?.code, timeoutRewritten, cancelAckSeen,
+      })}\n`);
+    } catch { /* Diagnostic sink failures cannot replace the original result or cleanup. */ }
+  }
+
+  /** Exact synthetic-fixture opt-in; closed result facts only, never query/args/error text. */
+  private observeLifecycleOpenCancelFailure(command: 'page.activate' | 'page.navigate' | 'browser.observe', raw: NativeResult, returned: NativeResult, transmittedTimeoutMs: unknown, cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined, timeoutRewritten: boolean, cancelAckSeen: boolean): void {
+    try {
+      const suite = process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'];
+      if (suite !== 'lifecycle-open-cancel' || this.lifecycleOpenCancelDiagnosticAttempts > 8) return;
+      // Capture only the serialized wire budget: the live getter can now be expired.
+      if (typeof transmittedTimeoutMs !== 'number' || !Number.isSafeInteger(transmittedTimeoutMs) || transmittedTimeoutMs <= 0) return;
+      this.lifecycleOpenCancelDiagnosticAttempts++;
+      const overflow = this.lifecycleOpenCancelDiagnosticAttempts === 9;
+      process.stderr.write(`LIFECYCLE_OPEN_CANCEL_RESULT_DIAGNOSTIC ${JSON.stringify({
+        phase: overflow ? 'capture-limit-reached' : 'settled-failure', suite, command,
+        ...(overflow ? { limit: 8, laterFailuresOmitted: true } : {}),
+        transmittedTimeoutMs,
+        selectedLocalCancel: cancellation === undefined ? 'none' : cancellation === 'CANCELLED' ? 'abort' : 'deadline',
+        rawCode: raw.error?.code, rawEffects: raw.effects, rawScopeState: raw.scopeState,
+        returnedCode: returned.error?.code, timeoutRewritten, cancelAckSeen,
+      })}\n`);
+    } catch { /* Diagnostic sink failures cannot replace the original result or cleanup. */ }
+  }
+
   private timeout(context: OperationContext): number {
     if (context.signal.aborted) throw connectionCancellation('The native browser operation was cancelled before dispatch');
     if (!Number.isFinite(context.timeoutMs)) throw new EngineError('OPERATION_TIMEOUT', 'The native browser operation budget expired before dispatch', { retryable: false });
@@ -474,6 +516,10 @@ export class NativeClient {
         this.pending.delete(id); clear();
         if (cancellation !== undefined) this.settlingRequests--;
         retire();
+        const queryReadCommand = kind === 'request' && (message['command'] === 'fixture.read-fields' || message['command'] === 'fixture.query' || message['command'] === 'browser.query') ? message['command'] : undefined;
+        const queryReadFailure = queryReadCommand !== undefined && settled.type === 'result' && !settled.ok ? settled : undefined;
+        const lifecycleOpenCancelCommand = kind === 'request' && (message['command'] === 'page.activate' || message['command'] === 'page.navigate' || message['command'] === 'browser.observe') ? message['command'] : undefined;
+        const lifecycleOpenCancelFailure = lifecycleOpenCancelCommand !== undefined && settled.type === 'result' && !settled.ok ? settled : undefined;
         const pageUrlFailure = kind === 'request' && message['command'] === 'page.url' && settled.type === 'result' && !settled.ok ? settled : undefined;
         let timeoutRewritten = false;
         // A local deadline may race the native cancellation signal. Only a reusable,
@@ -483,6 +529,8 @@ export class NativeClient {
           timeoutRewritten = true;
         }
         if (pageUrlFailure !== undefined && settled.type === 'result') this.observePageUrlFailure(pageUrlFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
+        if (queryReadCommand !== undefined && queryReadFailure !== undefined && settled.type === 'result') this.observeQueryReadFailure(queryReadCommand, queryReadFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
+        if (lifecycleOpenCancelCommand !== undefined && lifecycleOpenCancelFailure !== undefined && settled.type === 'result') this.observeLifecycleOpenCancelFailure(lifecycleOpenCancelCommand, lifecycleOpenCancelFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
         resolve(settled);
       };
       const abandon = (code: 'CANCELLED' | 'OPERATION_TIMEOUT') => {

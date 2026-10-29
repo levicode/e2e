@@ -1,38 +1,38 @@
 {
   "configured": true,
   "ordinary": {
-    "artifactId": 12893993430,
-    "artifactName": "ci-native-runtime-final source-pinned ordinary runtime producer-40867264279-1",
-    "artifactSize": 14390862,
-    "artifactDigest": "sha256:f3a791cc45a71af3b0b7d921e3fac9d0394481b55975433ef8b4bd644d8a27b9",
-    "manifestSha256": "745b6a8fecc78d1f825d9e6a5bd66d5e2ce4432a9e10c3f5af524af102563aff",
-    "binarySha256": "8899218c611f238fc1790b950c99bec4bfdbc32d325ed1c69927887e2d39fb15",
+    "artifactId": 12908596933,
+    "artifactName": "ci-native-runtime-final source-pinned ordinary runtime producer-40898524140-1",
+    "artifactSize": 14392462,
+    "artifactDigest": "sha256:e5da7fdc4f0eb4ed073c5a7de67cee2cd28387797aca5e2fcd13501ae60be176",
+    "manifestSha256": "9961adbd47c5ab0dfa164658ba67afeaf10d2d135e95ef32512efc436d8ea420",
+    "binarySha256": "a36fe63e0f56c7b149452c78a48edab66f753487b1015a7aaf555cc94f025ba3",
     "nativeSource": {
-      "commit": "3bdb7541dacd750caa979b36f6018a903f9b934b",
-      "tree": "b9acf8d5e10bd1b5af32f531da2fe69a94ccc7a7"
+      "commit": "795af19c94645729421b4f0505c88d1389bb8861",
+      "tree": "19780942d884951eeb2c980cc827ecbb92a010aa"
     },
     "expected": {
       "source": {
-        "commit": "d7f3ef68f2262b0b89b37940150ddc5fe5052168",
-        "tree": "f0510a21fd19764b22586fbe8e62599db4cd9691"
+        "commit": "145d0746233b4d6e2a6fae17c5244dafebc39336",
+        "tree": "e89c3130e93c4fcf816048e562efbd09ac0e3729"
       },
       "repository": "levicode/e2e",
-      "runId": "40867264279",
+      "runId": "40898524140",
       "runAttempt": "1",
       "platform": "linux",
       "architecture": "x64",
-      "nativeCommit": "3bdb7541dacd750caa979b36f6018a903f9b934b"
+      "nativeCommit": "795af19c94645729421b4f0505c88d1389bb8861"
     },
     "producer": {
       "workflowId": 400219961,
       "workflowPath": ".github/workflows/final-ordinary-runtime.yml",
       "runConclusion": "success",
-      "jobId": 123425060114,
+      "jobId": 123534149882,
       "jobName": "build"
     },
     "compiler": {
       "rustcSHA256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369",
-      "compilerSHA256": "c30d3bcaffc45815c405e85a81b5e5093b3d7c31f646fff4d2bb89514d6b6548",
+      "compilerSHA256": "66fb723dcaddd0fa782bf9a34621a5940b44af6b08e5c890372381c47b0dd78b",
       "rustcVersion": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
       "manifestPath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/Cargo.toml",
       "sourcePath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/src/main.rs",
@@ -49,38 +49,38 @@
     }
   },
   "fault": {
-    "artifactId": 12894094025,
-    "artifactName": "ci-native-fault-runtime-build source-pinned test-only fault runtime-40867269884-1",
-    "artifactSize": 14388061,
-    "artifactDigest": "sha256:202b7c4e8560112f4bf66073475b85cc990782f584f31920dd969379206f5dba",
-    "manifestSha256": "dcb3c94c0fa3b0f292126c1b9e7a5b089d5a6fc212ab6a15a1843bd29aa02e1b",
-    "binarySha256": "e3a591d64b340f179abbde6bdc18304a0a67308c513496666275fc572093a0b1",
+    "artifactId": 12909425178,
+    "artifactName": "ci-native-fault-runtime-build source-pinned test-only fault runtime-40898530440-1",
+    "artifactSize": 14409706,
+    "artifactDigest": "sha256:202ab9d1bfdb982dfc076826a08585ab48384f20c62cd54c654dc59dbad34fe5",
+    "manifestSha256": "a560105bdf7880a977070374383570812cdd72326ed279041a1525fe2e719f34",
+    "binarySha256": "0a60e9613283bab5da6fc56c53320724b0df31006f284ec498b6db75401dc0a3",
     "nativeSource": {
-      "commit": "3bdb7541dacd750caa979b36f6018a903f9b934b",
-      "tree": "b9acf8d5e10bd1b5af32f531da2fe69a94ccc7a7"
+      "commit": "795af19c94645729421b4f0505c88d1389bb8861",
+      "tree": "19780942d884951eeb2c980cc827ecbb92a010aa"
     },
     "expected": {
       "source": {
-        "commit": "d7f3ef68f2262b0b89b37940150ddc5fe5052168",
-        "tree": "f0510a21fd19764b22586fbe8e62599db4cd9691"
+        "commit": "145d0746233b4d6e2a6fae17c5244dafebc39336",
+        "tree": "e89c3130e93c4fcf816048e562efbd09ac0e3729"
       },
       "repository": "levicode/e2e",
-      "runId": "40867269884",
+      "runId": "40898530440",
       "runAttempt": "1",
       "platform": "linux",
       "architecture": "x64",
-      "nativeCommit": "3bdb7541dacd750caa979b36f6018a903f9b934b"
+      "nativeCommit": "795af19c94645729421b4f0505c88d1389bb8861"
     },
     "producer": {
       "workflowId": 400219987,
       "workflowPath": ".github/workflows/native-fault-runtime.yml",
       "runConclusion": "success",
-      "jobId": 123425079078,
+      "jobId": 123534172370,
       "jobName": "build"
     },
     "compiler": {
       "rustcSHA256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369",
-      "compilerSHA256": "263e342d0710285dfc9be61d5806c9a639e639233428075bbd8c51ed24f90331",
+      "compilerSHA256": "d967f55d64bc4e0396d07ae04270181c02af33cbabe0237fd5a333fd5aee81d9",
       "rustcVersion": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
       "manifestPath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/Cargo.toml",
       "sourcePath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/src/main.rs",

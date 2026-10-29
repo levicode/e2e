@@ -277,7 +277,7 @@ it('rejects a delayed old-page semantic result without invalidating the complete
     reply.resolve({ data: snapshot('1') });
     await stale;
     const current = await engine.observe!(operation());
-    expect(current).toMatchObject({ identityScope: 'scope-1', root: { ref: { id: 'root', revision: 'r1' } } });
+    expect(current).toMatchObject({ identityScope: 'scope-1', root: { ref: { id: '@e1', revision: '2' } } });
     await engine.perform!(current.root.ref, { kind: 'tap' }, operation());
     expect(peer!.requests.findLast(frame => frame.command === 'browser.perform')?.args).toEqual({
       identityScope: 'scope-1', ref: { id: '@e1', revision: '2' }, action: { kind: 'tap' },

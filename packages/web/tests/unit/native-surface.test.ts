@@ -2243,7 +2243,7 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { release?.(); await surface.dispose(cleanup()).catch(() => undefined); }
   });
 
-  it('joins both actual old release receipts before ending its captured attempt', async () => {
+  it('joins the actual old release receipt without cancelling it when ending its captured attempt', async () => {
     const surface = new NativeSurface({}); await start(surface);
     const scope = surface.identityScope;
     let release!: () => void; let entered!: () => void;
@@ -2263,8 +2263,9 @@ describe('native surface ownership and fixed policy binding', () => {
       expect(done).toBe(false);
       expect(frames.some(frame => frame['command'] === 'scope.end' || frame['type'] === 'close')).toBe(false);
       release(); await new Promise(resolve => setImmediate(resolve));
-      expect(done).toBe(false); // Result alone cannot discharge its cancellation.
-      acknowledgeCancel!();
+      // Ordinary retirement no longer manufactures a second cancellation receipt.
+      // Explicit cleanup deadline cancellation is covered in both receipt orders below.
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
       const receipt = await ending;
       expect(receipt).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser operation failed (cleanup-failed)' });
       await expect(surface.startAttempt(context('replacement-attempt'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
@@ -3938,4 +3939,144 @@ it.each(['download.started', 'network.response'] as const)('retains actual clean
     await expect(surface.endAttempt(cleanup())).rejects.toBe(receipt);
     await expect(surface.dispose(cleanup())).rejects.toBe(receipt);
   } finally { if (!delivered) release?.(); await surface.dispose(cleanup()).catch(() => undefined); }
+});
+
+/** Admitted resource cleanup is not ordinary business work to cancel on end. */
+describe('exact-attempt automatic resource cleanup lifetime', () => {
+  it.each(['network.response', 'download.started'] as const)('joins an admitted %s release without cancelling it during retirement', async event => {
+    const surface = new NativeSurface({}); await start(surface);
+    const releaseName = event === 'network.response' ? 'network.body.release' : 'download.release';
+    let replyRelease!: (result: Record<string, unknown>) => void;
+    let releaseSent = false;
+    let entered!: () => void; const reached = new Promise<void>(resolve => { entered = resolve; });
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== releaseName) return false;
+      replyRelease = reply; entered(); return true;
+    };
+    cancellationObserved = () => {
+      acknowledgeCancel!();
+      if (!releaseSent) { releaseSent = true; replyRelease({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' }); }
+    };
+    let ending: Promise<void> | undefined;
+    try {
+      await sendEvent(event, event === 'network.response'
+        ? { identityScope: surface.identityScope, activePage: true, handle: 'retiring-body', url: 'https://synthetic.test/', status: 200, headers: {} }
+        : { identityScope: surface.identityScope, activePage: true, handle: 'retiring-download', suggestedFilename: 'retiring.bin' });
+      await reached;
+      let ended = false;
+      ending = surface.endAttempt(cleanup());
+      void ending.then(() => { ended = true; }, () => { ended = true; });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
+      expect(ended).toBe(false);
+      expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+      releaseSent = true; replyRelease({ data: null });
+      await expect(ending).resolves.toBeUndefined();
+      await surface.startAttempt(context('after-retired-resource'));
+      await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(frames.filter(frame => frame['command'] === releaseName)).toHaveLength(1);
+    } finally {
+      if (!releaseSent) { releaseSent = true; replyRelease?.({ data: null }); }
+      await ending?.catch(() => undefined);
+      await surface.dispose(cleanup()).catch(() => undefined);
+    }
+  });
+});
+
+  it.each(['result-first', 'ack-first'] as const)('keeps the original cleanup deadline and both release receipts (%s)', async order => {
+    const surface = new NativeSurface({}); await start(surface);
+    let replyRelease!: (result: Record<string, unknown>) => void;
+    let entered!: () => void; const reached = new Promise<void>(resolve => { entered = resolve; });
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'network.body.release') return false;
+      replyRelease = reply; entered(); return true;
+    };
+    let replySent = false; let ackSent = false;
+    const reply = () => { if (!replySent) { replySent = true; replyRelease({ ok: false, error: { code: 'cleanup-failed' }, effects: 'not-dispatched', scopeState: 'usable' }); } };
+    const acknowledge = () => { if (!ackSent && acknowledgeCancel !== undefined) { ackSent = true; acknowledgeCancel(); } };
+    let owner: Promise<unknown> | undefined;
+    try {
+      await sendEvent('network.response', { identityScope: surface.identityScope, activePage: true, handle: 'bounded-release', url: 'https://synthetic.test/', status: 200, headers: {} });
+      await reached; holdClose = true;
+      const attempt = (surface as unknown as { attempt: { resourceCleanupFailure?: unknown } }).attempt;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const waiter = surface.endAttempt(cleanup());
+      owner = retirementState(surface).endingAttempt!.catch((cause: unknown) => cause);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1); await waiter;
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+      expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+      let completed = false; void owner.then(() => { completed = true; });
+      if (order === 'result-first') reply(); else acknowledge();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(attempt.resourceCleanupFailure).toBeUndefined();
+      expect(completed).toBe(false);
+      if (order === 'result-first') acknowledge(); else reply();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(attempt.resourceCleanupFailure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser operation failed (cleanup-failed)' });
+      expect(completed).toBe(false); // Neither receipt fabricates terminal Closed.
+      releaseClose!();
+      const failure = await owner;
+      expect(failure).toBe(attempt.resourceCleanupFailure);
+      await expect(surface.startAttempt(context('must-not-reuse-failed-release'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      expect(frames.filter(frame => frame['command'] === 'network.body.release')).toHaveLength(1);
+    } finally {
+      reply(); acknowledge(); releaseClose?.();
+      await owner; vi.useRealTimers();
+      await surface.dispose(cleanup()).catch(() => undefined);
+    }
+  });
+
+it('joins automatic body release after the public waitForResponse body has returned', async () => {
+  const surface = new NativeSurface({}); await start(surface);
+  const fixture = createBrowserFixture(surface.fixtureSurface(), {
+    operation: (timeoutMs = 1000) => ({ ...operation(), timeoutMs }), signal,
+    timeouts: { action: 1000, test: 5000, assertion: 1000 },
+    fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+  } as unknown as EngineFixtureContext);
+  const requests = holdRequests('network.responses.subscribe', 'network.body.read', 'network.body.release');
+  let release: HeldRequest | undefined;
+  let ending: Promise<void> | undefined;
+  try {
+    const waiting = fixture.waitForResponse('**/held');
+    (await requests.next('network.responses.subscribe')).succeed({ subscriptionId: 'body-publication' });
+    await sendEvent('network.response', { identityScope: surface.identityScope, activePage: true, handle: 'public-body', url: 'https://synthetic.test/held', status: 200, headers: {} });
+    (await requests.next('network.body.read')).succeed({ base64: Buffer.from('complete body').toString('base64'), nextOffset: 13, eof: true });
+    const response = await waiting;
+    await expect(response.text()).resolves.toBe('complete body');
+    release = await requests.next('network.body.release');
+    ending = surface.endAttempt(cleanup());
+    let ended = false; void ending.then(() => { ended = true; }, () => { ended = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(ended).toBe(false);
+    expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
+    release.succeed(null); release = undefined;
+    await ending;
+    await surface.startAttempt(context('after-public-response'));
+    await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+  } finally { release?.succeed(null); await ending?.catch(() => undefined); await surface.dispose(cleanup()).catch(() => undefined); }
+});
+
+it('does not start a late body release after failed attempt cleanup or into another attempt', async () => {
+  const surface = new NativeSurface({}); await start(surface);
+  let finish!: () => void;
+  const callback = new Promise<void>(resolve => { finish = resolve; });
+  surface.subscribe('network.response', () => callback);
+  const requests = holdRequests('download.release');
+  try {
+    await sendEvent('network.response', { identityScope: surface.identityScope, activePage: true, handle: 'late-body', url: 'https://synthetic.test/', status: 200, headers: {} });
+    await sendEvent('download.started', { identityScope: surface.identityScope, activePage: true, handle: 'failed-download', suggestedFilename: 'failed.bin' });
+    const release = await requests.next('download.release');
+    const ending = surface.endAttempt(cleanup()).catch((cause: unknown) => cause);
+    release.fail('cleanup-failed');
+    const failure = await ending;
+    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser operation failed (cleanup-failed)' });
+    finish(); await new Promise(resolve => setImmediate(resolve));
+    expect(frames.filter(frame => frame['command'] === 'network.body.release')).toHaveLength(0);
+    await expect(surface.startAttempt(context('must-not-reuse-late-body'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(surface.dispose(cleanup())).rejects.toBe(failure);
+    expect(frames.filter(frame => frame['command'] === 'network.body.release')).toHaveLength(0);
+  } finally { finish(); await surface.dispose(cleanup()).catch(() => undefined); }
 });

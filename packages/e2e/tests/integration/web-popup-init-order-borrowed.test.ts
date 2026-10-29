@@ -7,6 +7,8 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resultByTitle, createProject, runExisting, webTarget, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
+import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
+
 const titles = [
   'existing document stays untouched until next navigation',
   'popup first inline sees each init once and reload starts a fresh document',
@@ -32,7 +34,7 @@ describe('popup initialization document boundary controls', () => {
     chrome = await launchRemoteChrome(executable);
     const endpoint = chrome.endpoint;
     project = createProject({ 'tests/popup-init-order.e2e.ts': readFileSync(new URL('../fixtures/popup-init-order/cases.txt', import.meta.url), 'utf8') });
-    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1, targets: [webTarget('web', origin, { connect: { cdpEndpoint: () => endpoint } })] } });
+    outcome = await runExisting(project, { appUrl: origin, runOptions: popupEvalDiagnosticOptions(project.dir, origin), config: { workers: 1, targets: [webTarget('web', origin, { connect: { cdpEndpoint: () => endpoint } })] } });
   }, 120_000);
   afterAll(async () => {
     try {

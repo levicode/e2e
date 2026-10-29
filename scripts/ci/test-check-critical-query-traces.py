@@ -31,7 +31,7 @@ def failure(number=1, **extra):
 
 
 class QueryValidatorTests(unittest.TestCase):
-    def run_capture(self, records=None, raw=None, setup=None, expected=1):
+    def run_capture(self, records=None, raw=None, setup=None, expected=1, explicit_root=False):
         with tempfile.TemporaryDirectory(prefix='query-validator-') as temp:
             root = pathlib.Path(temp) / 'evidence/native-trace'
             root.mkdir(parents=True)
@@ -40,7 +40,7 @@ class QueryValidatorTests(unittest.TestCase):
             query.write_bytes(raw if raw is not None else b''.join((json.dumps(x) + '\n').encode() for x in records))
             if setup:
                 setup(ordinary, query)
-            result = subprocess.run([sys.executable, str(SCRIPT), str(expected)], cwd=temp,
+            result = subprocess.run([sys.executable, str(SCRIPT), str(expected), *([str(root)] if explicit_root else [])], cwd=temp,
                                     capture_output=True, text=True)
             summary = json.loads((root / 'query-capture-validation.json').read_text())
             return result, summary
@@ -191,6 +191,60 @@ class QueryValidatorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue(any('ordinary sink not regular' in x for x in summary['errors']))
 
+
+    def test_explicit_fixture_capture_root_preserves_original_validation(self):
+        result, summary = self.run_capture([record()], explicit_root=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])
+
+    def test_eval_all_closed_enums_and_nulls(self):
+        for stage in ('entry', 'wait', 'capture'):
+            for reason in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard'):
+                for watermark in ('equal', 'behind', 'ahead', 'unk'):
+                    value = dict(s=stage, c=reason, h=None, p=None, t=None, r=None, w=watermark, v=None, e=None)
+                    self.assertTrue(validator.schema_valid(record('EvalAdmission', 1, generation=1, eval=value)))
+        value.update(h=[65535,65535,7], p=[65535]*8, t=[65535]*3, r=[False]*4, v=validator.SAFE_INTEGER, e=validator.SAFE_INTEGER)
+        result, summary = self.run_capture([record(), record('EvalAdmission', 1, generation=1, eval=value)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])
+        worst = record('EvalAdmission', validator.SAFE_INTEGER, generation=validator.SAFE_INTEGER, eval=value)
+        worst.update(pid=(1 << 32)-1, droppedBefore=validator.SAFE_INTEGER,
+                     emittedBefore=validator.SAFE_INTEGER, suppressedBefore=validator.SAFE_INTEGER)
+        value.update(s='capture', c='unresumed', w='behind')
+        encoded = json.dumps(worst, separators=(',', ':')).encode() + b'\n'
+        self.assertLessEqual(len(encoded), 512)
+        self.assertTrue(validator.schema_valid(worst))
+
+    def test_eval_closed_types_and_bounds(self):
+        import copy
+        good = dict(s='entry', c='entry', h=[0,0,0], p=[0]*8, t=[0]*3, r=[True]*4, w='equal', v=0, e=0)
+        bad = [('s', 'raw'), ('s', []), ('c', {}), ('w', 'payload'),
+               ('p', [0]*7), ('p', [True]*8), ('p', [65536]*8), ('p', [-1]*8),
+               ('t', [0]*4), ('t', [1.0]*3), ('r', [0]*4), ('r', [True]*3),
+               ('v', True), ('e', -1), ('v', validator.SAFE_INTEGER+1), ('e', '123'), ('h', [0,0,8]), ('h', [0,0,True]), ('h', [65536,0,0]), ('h', [0,0]), ('h', [0,0,0,0])]
+        for key, item in bad:
+            value = copy.deepcopy(good); value[key] = item
+            with self.subTest(key=key, item=item):
+                self.assert_invalid(record('EvalAdmission', 1, generation=1, eval=value))
+        for key in good:
+            value = copy.deepcopy(good); del value[key]
+            self.assert_invalid(record('EvalAdmission', 1, generation=1, eval=value))
+        value = copy.deepcopy(good); value['url'] = 'forbidden'
+        self.assert_invalid(record('EvalAdmission', 1, generation=1, eval=value))
+        self.assert_invalid(record('EvalAdmission', 1, generation=1, eval=good, message='forbidden'))
+
+    def test_eval_duplicate_nested_field_rejected_and_loss_retained(self):
+        value = dict(s='capture', c='guard', h=None, p=None, t=None, r=None, w='unk', v=None, e=None)
+        row = record('EvalAdmission', 1, generation=1, eval=value)
+        raw = (json.dumps(record())+'\n'+json.dumps(row).replace('"s": "capture"', '"s":"capture","s":"entry"')+'\n').encode()
+        result, summary = self.run_capture(raw=raw)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(summary['completeEvidence'])
+        row['droppedBefore'] = 1
+        result, summary = self.run_capture([record(), row])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(summary['completeEvidence'])
+        self.assertTrue(summary['processes'][0]['observedLoss'])
 
 if __name__ == '__main__':
     unittest.main()

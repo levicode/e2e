@@ -84,7 +84,7 @@ describe('native observation capture ownership', () => {
     expect(snapshot.treeUnavailable).toBeUndefined();
     expect(snapshot.pixels).toBeUndefined();
     expect(snapshot.truncated).toBe(false);
-    expect(snapshot.root.children?.[0]).toMatchObject({ ref: { ...ref, id: 'n4' }, role: 'button', name: 'Button' });
+    expect(snapshot.root.children?.[0]).toMatchObject({ ref, role: 'button', name: 'Button' });
     expect(fixture.peer.frames.find(frame => frame['type'] === 'request' && frame['command'] === 'browser.observe')?.['timeoutMs']).toBe(80);
     expect(fixture.peer.requests.slice(start).map(request => [request.command, request.args])).toEqual([
       ['browser.observe', { identityScope: 'scope', options: { pixels: true }, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' }],

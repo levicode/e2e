@@ -4,7 +4,7 @@ import { NativeSurface } from '../../src/native-surface.ts';
 function fixture(slot: 'attempt' | 'retiringAttempt') {
   const surface = new NativeSurface({});
   Reflect.set(surface, 'leases', { hasOnlyPendingWorkerAcquisition: () => true });
-  const owner = { ready: false, scope: '', wireRequests: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map(), videoBlobBatches: new Set<unknown>(), downloads: new Map(), nativeVideoStop: undefined as Promise<void> | undefined };
+  const owner = { ready: false, scope: '', wireRequests: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map(), videoBlobBatches: new Set<unknown>(), downloads: new Map(), downloadFiles: new Set(), nativeVideoStop: undefined as Promise<void> | undefined };
   Reflect.set(surface, slot, owner);
   const probe = () => (Reflect.get(surface, 'onlyPendingWorkerAcquisition') as () => boolean).call(surface);
   return { owner, probe };

@@ -23,6 +23,27 @@ def uint(value, maximum=SAFE_INTEGER):
     return type(value) is int and 0 <= value <= maximum
 
 
+def eval_valid(value):
+    if not isinstance(value, dict) or set(value) != {'s', 'c', 'h', 'p', 't', 'r', 'w', 'v', 'e'}:
+        return False
+    if type(value['s']) is not str or value['s'] not in ('entry', 'wait', 'capture'):
+        return False
+    if type(value['c']) is not str or value['c'] not in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard'):
+        return False
+    if type(value['w']) is not str or value['w'] not in ('equal', 'behind', 'ahead', 'unk'):
+        return False
+    for key, size in (('p', 8), ('t', 3), ('r', 4)):
+        item = value[key]
+        if item is not None and (type(item) is not list or len(item) != size or
+                not all(type(x) is bool if key == 'r' else uint(x, 65535) for x in item)):
+            return False
+    health = value['h']
+    if health is not None and (type(health) is not list or len(health) != 3 or
+            not uint(health[0], 65535) or not uint(health[1], 65535) or not uint(health[2], 7)):
+        return False
+    return all(value[key] is None or uint(value[key]) for key in ('v', 'e'))
+
+
 def schema_valid(record):
     if not isinstance(record, dict):
         return False
@@ -35,6 +56,10 @@ def schema_valid(record):
     elif phase == 'QueryReadFailure':
         extra = {'generation', 'queryReadStage', 'queryReadError'}
         if record.get('queryReadStage') not in READ_STAGES or record.get('queryReadError') not in READ_ERRORS:
+            return False
+    elif phase == 'EvalAdmission':
+        extra = {'generation', 'eval'}
+        if not eval_valid(record.get('eval')):
             return False
     elif phase not in ('CaptureStarted', 'CaptureLimitReached'):
         return False
@@ -63,7 +88,7 @@ def regular(path):
 
 
 def main():
-    root = pathlib.Path('evidence/native-trace')
+    root = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else pathlib.Path('evidence/native-trace')
     expected = int(sys.argv[1])
     ordinary = sorted(root.glob('native-*.jsonl'))
     files = sorted(root.glob('query-*.jsonl'))

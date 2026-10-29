@@ -1,3 +1,4 @@
+import { withLifecycleOpenCancelDiagnostics } from '../helpers/lifecycle-open-cancel-diagnostics.ts';
 import { IsolatedScopeCreation } from '../helpers/isolated-scope-creation.ts';
 import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 import { LifecycleAttemptDiagnostic } from '../helpers/lifecycle-attempt-diagnostic.ts';
@@ -1192,7 +1193,7 @@ describe('web engine lifecycle', () => {
     }
   });
 
-  it('cancels an in-flight native operation when its signal aborts', async () => {
+  it('cancels an in-flight native operation when its signal aborts', async () => withLifecycleOpenCancelDiagnostics(async () => {
     const evidence = new LifecycleEvidence('P32');
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 'h1', async () => {
@@ -1209,7 +1210,7 @@ describe('web engine lifecycle', () => {
       evidence.phase('body', 'assertion');
       expect(Date.now() - started).toBeLessThan(3_000);
     }, evidence);
-  });
+  }));
 
   it('round-trips persisted state through capture and restore, and reset drops it', async () => {
     const evidence = new LifecycleEvidence('P33');

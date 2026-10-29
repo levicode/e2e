@@ -6,6 +6,8 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resultByTitle, createProject, runExisting, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
+import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
+
 const titles = [
   'existing document stays untouched until next navigation',
   'popup first inline sees each init once and reload starts a fresh document',
@@ -26,7 +28,7 @@ describe('popup initialization document boundary controls', () => {
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     project = createProject({ 'tests/popup-init-order.e2e.ts': readFileSync(new URL('../fixtures/popup-init-order/cases.txt', import.meta.url), 'utf8') });
-    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1 } });
+    outcome = await runExisting(project, { appUrl: origin, runOptions: popupEvalDiagnosticOptions(project.dir, origin), config: { workers: 1 } });
   }, 120_000);
   afterAll(async () => {
     try {
