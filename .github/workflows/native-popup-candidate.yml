@@ -1,7 +1,7 @@
-name: Native popup candidate bounded causal controls R2
+name: Native popup candidate bounded causal controls R3
 'on':
   push:
-    branches: [ci/native-popup-preparation-candidate-r2-20261030]
+    branches: [ci/native-popup-preparation-candidate-r3-20261030]
 permissions:
   contents: read
 concurrency:
