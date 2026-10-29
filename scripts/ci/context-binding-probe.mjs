@@ -45,7 +45,8 @@ class Cdp {
       if (!entry) return;
       this.pending.delete(value.id);
       clearTimeout(entry.timeout);
-      value.error ? entry.reject(new Error(JSON.stringify(value.error))) : entry.resolve(value.result);
+      if (value.error) entry.reject(new Error(JSON.stringify(value.error)));
+      else entry.resolve(value.result);
     });
     ws.addEventListener('close', () => {
       for (const entry of this.pending.values()) { clearTimeout(entry.timeout); entry.reject(new Error('CDP disconnected')); }

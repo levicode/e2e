@@ -1015,3 +1015,113 @@ describe('terminal cleanup control', () => {
     expect(peer.requests.filter(item => item['type'] === 'close')).toHaveLength(0);
   });
 });
+
+describe('page URL fixed-field result diagnostics', () => {
+  async function observe(run: (lines: string[]) => Promise<void>) {
+    const prior = process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'];
+    process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] = '1';
+    const lines: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(chunk => { lines.push(String(chunk)); return true; });
+    try { await run(lines); } finally {
+      write.mockRestore();
+      if (prior === undefined) delete process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'];
+      else process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] = prior;
+      vi.useRealTimers();
+    }
+  }
+  function records(lines: string[]): Record<string, unknown>[] {
+    return lines.filter(line => line.startsWith('PAGE_URL_RESULT_DIAGNOSTIC ')).map(line => JSON.parse(line.slice('PAGE_URL_RESULT_DIAGNOSTIC '.length)) as Record<string, unknown>);
+  }
+  it('observes validated native failure without selecting a local cancellation or exposing payloads', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      const pending = f.client.request('page.url', { identityScope: 'secret-scope', url: 'https://secret.invalid/credential', source: 'private-dom', token: 'private-token' }, context());
+      const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+      expect(records(lines)).toEqual([{ phase: 'settled-failure', command: 'page.url', transmittedTimeoutMs: request['timeoutMs'], selectedLocalCancel: 'none', rawCode: 'cancelled', rawEffects: 'not-dispatched', rawScopeState: 'usable', returnedCode: 'cancelled', timeoutRewritten: false, cancelAckSeen: false }]);
+      expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request']);
+      expect(lines.join('')).not.toMatch(/secret|private|operationSeq|generation|sessionId|identityScope/);
+      await close(f);
+    });
+  });
+  it('records the actually selected abort branch after its original cancellation ACK', async () => {
+    await observe(async lines => {
+      const f = await opened(); const controller = new AbortController();
+      const pending = f.client.request('page.url', {}, context(controller.signal)); const request = f.requests.at(-1)!;
+      controller.abort(); const cancel = f.requests.at(-1)!;
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await pending).toMatchObject({ error: { code: 'cancelled' } });
+      expect(records(lines)).toHaveLength(1);
+      expect(records(lines)[0]).toMatchObject({ selectedLocalCancel: 'abort', rawCode: 'cancelled', returnedCode: 'cancelled', timeoutRewritten: false, cancelAckSeen: true });
+      expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']); await close(f);
+    });
+  });
+  it.each([
+    { code: 'cancelled', effects: 'not-dispatched', scopeState: 'usable', rewritten: true },
+    { code: 'deadline-exceeded', effects: 'completed', scopeState: 'usable', rewritten: true },
+    { code: 'cancelled', effects: 'not-dispatched', scopeState: 'quarantined', rewritten: false },
+    { code: 'cancelled', effects: 'unknown', scopeState: 'quarantined', rewritten: false },
+  ] as const)('preserves raw result and unchanged timeout normalization: $code/$effects/$scopeState', async row => {
+    await observe(async lines => {
+      vi.useFakeTimers(); const f = await opened();
+      const pending = f.client.request('page.url', {}, { ...context(), timeoutMs: 20 }); const request = f.requests.at(-1)!;
+      await vi.advanceTimersByTimeAsync(21); const cancel = f.requests.at(-1)!;
+      expect(cancel['type']).toBe('cancel');
+      f.send({ type: 'control-result', id: cancel['id'], generation: 1, accepted: true, scopeState: 'usable' });
+      await Promise.resolve(); // Let the already-received cancel control settle before the result.
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: row.code }, effects: row.effects, scopeState: row.scopeState }));
+      const result = await pending;
+      expect(result).toMatchObject({ error: { code: row.rewritten ? 'deadline-exceeded' : row.code }, effects: row.effects, scopeState: row.scopeState });
+      expect(records(lines)).toHaveLength(1);
+      expect(records(lines)[0]).toEqual({ phase: 'settled-failure', command: 'page.url', transmittedTimeoutMs: 20, selectedLocalCancel: 'deadline', rawCode: row.code, rawEffects: row.effects, rawScopeState: row.scopeState, returnedCode: row.rewritten ? 'deadline-exceeded' : row.code, timeoutRewritten: row.rewritten, cancelAckSeen: true });
+      expect(f.requests.map(frame => frame['type'])).toEqual(['hello', 'request', 'cancel']);
+      if (row.scopeState === 'usable') await close(f);
+      else expect(f.dispose).toHaveBeenCalledOnce();
+    });
+  });
+  it('does not emit when disabled, for another command, or for a successful page URL', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      for (const [enabled, command, ok] of [[false, 'page.url', false], [true, 'page.title', false], [true, 'page.url', true]] as const) {
+        process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] = enabled ? '1' : '0';
+        const p = f.client.request(command, {}, context()); const request = f.requests.at(-1)!;
+        f.send(f.result(request, ok ? {} : { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' })); await p;
+      }
+      expect(records(lines)).toEqual([]); await close(f);
+    });
+  });
+  it('caps eight failures plus one marker without changing any result or adding requests', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      for (let n = 0; n < 11; n++) {
+        const p = f.client.request('page.url', {}, context()); const request = f.requests.at(-1)!;
+        f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+        expect(await p).toMatchObject({ error: { code: 'cancelled' } });
+      }
+      expect(records(lines)).toHaveLength(9); expect(records(lines).slice(0, 8).every(record => record['phase'] === 'settled-failure')).toBe(true);
+      expect(records(lines)[8]).toEqual({ phase: 'capture-limit-reached', limit: 8 });
+      expect(f.requests.filter(frame => frame['type'] === 'request')).toHaveLength(11); await close(f);
+    });
+  });
+  it('does not log an unvalidated error code containing arbitrary text', async () => {
+    await observe(async lines => {
+      const f = await opened();
+      const p = f.client.request('page.url', {}, context()).then(() => 'unexpected success', error => error);
+      const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'secret-invalid-native-code' }, effects: 'not-dispatched' }));
+      expect(await p).toMatchObject({ code: 'ENGINE_FAILURE' });
+      expect(records(lines)).toEqual([]); expect(lines.join('')).not.toContain('secret-invalid-native-code');
+      expect(f.dispose).toHaveBeenCalledOnce();
+    });
+  });
+  it('isolates a throwing diagnostic writer from the original failed result', async () => {
+    await observe(async () => {
+      const f = await opened(); vi.mocked(process.stderr.write).mockImplementation(() => { throw new Error('synthetic diagnostic sink failure'); });
+      const p = f.client.request('page.url', {}, context()); const request = f.requests.at(-1)!;
+      f.send(f.result(request, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+      expect(await p).toMatchObject({ error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' }); await close(f);
+    });
+  });
+});

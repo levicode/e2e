@@ -37,11 +37,12 @@ open.shadowRoot=new Root([new Element('button')],open);
 const closedRoot=new Root([new Element('button')],closed);
 const document=new Root([...sections,open,closed]);
 document.evaluate=(xpath,root)=>{assert.ok(['.//li','//li'].includes(xpath));const found=root.querySelectorAll('li');let i=0;return {iterateNext:()=>found[i++]??null};};
+// oxlint-disable-next-line typescript/no-extraneous-class -- Test-only nominal brand for the extracted matcher; generic Element nodes must not become HTMLInputElement instances.
 Object.assign(globalThis,{document,Element,HTMLInputElement:class{},XPathResult:{ORDERED_NODE_ITERATOR_TYPE:5,ORDERED_NODE_SNAPSHOT_TYPE:7}});
 const elements=[...document.querySelectorAll('*'),...open.shadowRoot.querySelectorAll('*'),...closedRoot.querySelectorAll('*')];
 const data=elements.map(()=>({states:{}})),labels=elements.map(()=>[]),safeNames=elements.map(()=>null),protectedAncestors=elements.map(()=>false);
 function compile(selector) {const result=spawnSync(process.env.SELECTOR_PARSER_BIN,[selector],{encoding:'utf8'});assert.equal(result.status,0);const line=result.stdout.trim();assert.ok(!line.startsWith('!'),line);return {kind:'selector',selector,nativeParts:line.split(';').filter(Boolean).map(part=>{const i=part.lastIndexOf(':');return{engine:part.slice(0,i),body:Buffer.from(part.slice(i+1),'hex').toString()};})};}
-function run(source,expression) {return Function('return ('+source+')')()(expression,structuredClone(data),structuredClone(labels),safeNames,'input[type="password" i]',protectedAncestors,...elements);}
+function run(matcherSource,expression) {return Function('return ('+matcherSource+')')()(expression,structuredClone(data),structuredClone(labels),safeNames,'input[type="password" i]',protectedAncestors,...elements);}
 function ids(nodes){return nodes.map(n=>elements.indexOf(n));}
 const cases=[
  ['css=ul[data-testid="items"] >> *css=li',ids(first)],

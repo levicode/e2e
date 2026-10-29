@@ -16,7 +16,7 @@ function persistent(ids: readonly string[], actualContext = 'default-context') {
       detach: async () => { calls.push('detach-page-session'); if ((page as unknown as EventEmitter).listenerCount('dialog') > 0) guardedAtDetach.push(ids[pages.indexOf(page)]!); events.emit('close'); },
     }); },
   }) as unknown as BrowserContext;
-  for (const _id of ids) pages.push(Object.assign(new EventEmitter(), { context: () => context, isClosed: () => false }) as unknown as Page);
+  for (let index = 0; index < ids.length; index++) pages.push(Object.assign(new EventEmitter(), { context: () => context, isClosed: () => false }) as unknown as Page);
   const browser = Object.assign(new EventEmitter(), {
     contexts: () => [context],
     isConnected: () => true,

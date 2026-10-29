@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.mocked(connectNativeProcess).mockImplementation(async (options, context, onEvent) => {
     const resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/browser' });
     vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
-    const peer = new NativeProtocolPeer(options.capabilities, request => resources.respond(request, request => {
+    const peer = new NativeProtocolPeer(options.capabilities, frame => resources.respond(frame, request => {
       if (request.command === 'page.activate') {
         setupEvents.push('activate');
         return activation === 'success' ? { data: { activated: true } }

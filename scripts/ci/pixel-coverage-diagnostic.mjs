@@ -24,6 +24,13 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const fail = code => { const error = new Error('closed diagnostic refusal'); error.code = code; return error; };
 const scalarFailure = error => ['arguments','chrome-launch','chrome-endpoint','cdp-connect','cdp-command','cdp-timeout','fixture-ready','source-extraction','snapshot-schema','resolve-object','reader-exception','reader-schema','cleanup'].includes(error?.code) ? error.code : 'diagnostic-failure';
 
+/** Encode bounded diagnostic output without exposing caught errors. */
+function encodeReport(value) {
+  const json = JSON.stringify(value, null, 2);
+  if (Buffer.byteLength(json) > 8192) throw fail('diagnostic-failure');
+  return `${json}\n`;
+}
+
 async function command(method, params = {}, sessionId = session) {
   const id = ++sequence;
   const result = new Promise((resolve, reject) => {
@@ -96,7 +103,7 @@ try {
     if (message.error) wait.reject(fail('cdp-command')); else wait.resolve(message.result);
   });
   cdp.addEventListener('close', () => { for (const wait of pending.values()) wait.reject(fail('cdp-command')); pending.clear(); });
-  const target = (await command('Target.getTargets')).targetInfos.find(target => target.type === 'page');
+  const target = (await command('Target.getTargets')).targetInfos.find(info => info.type === 'page');
   if (!target) throw fail('cdp-command');
   session = (await command('Target.attachToTarget', { targetId: target.targetId, flatten: true })).sessionId;
   await command('Page.enable');
@@ -184,9 +191,7 @@ try {
   report.cleanup = cleanup;
   // Output is a bounded, explicit scalar schema. Never print caught errors.
   if (outputDir) {
-    const json = JSON.stringify(report, null, 2);
-    if (Buffer.byteLength(json) > 8192) throw fail('diagnostic-failure');
-    await writeFile(path.join(outputDir, 'pixel-coverage-diagnostic.json'), `${json}\n`, { mode: 0o600 });
+    await writeFile(path.join(outputDir, 'pixel-coverage-diagnostic.json'), encodeReport(report), { mode: 0o600 });
   }
   process.exitCode = cleanup ? 0 : 1;
 }

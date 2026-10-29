@@ -1,0 +1,499 @@
+name: Combined reviewed source static check (not full delivery)
+'on':
+  push:
+    branches:
+    - ci/combined-reviewed-static-check
+permissions:
+  contents: read
+concurrency:
+  group: combined-reviewed-static-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        git ls-tree -r HEAD | grep -vF $''\t.github/workflows/combined-reviewed-static-check.yml''
+        > evidence/source-inventory.txt
+
+        printf ''%s  %s\n'' ''043ef6ddb412460f660efe6540ac270eea72cb9b85d9c674e3a5d6dc61d6112c''
+        evidence/source-inventory.txt | sha256sum -c -
+
+        cp package.json evidence/root-package.json
+
+        cp .fallowrc.json evidence/fallow-config.json
+
+        '
+      id: source_identity
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.source_identity.outcome == 'success' }}
+    - name: locked-tools
+      id: locked_tools
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm exec fallow --version\
+        \ | tee evidence/fallow.version\ngrep -Eq '(^| )3\\.33\\.1$' evidence/fallow.version\n\
+        pnpm exec oxlint --version | tee evidence/oxlint.version\ngrep -Eq '(^| )1\\\
+        .89\\.0$' evidence/oxlint.version\nnode --input-type=module - <<'JS'\nimport\
+        \ fs from 'node:fs';\nconst p=JSON.parse(fs.readFileSync('node_modules/fallow/package.json','utf8'));\n\
+        if(p.version!=='3.33.1') throw new Error('wrong fallow package');\nconst c=JSON.parse(fs.readFileSync('node_modules/fallow/capabilities.json','utf8'));\n\
+        if(c.version!=='3.33.1'||!c.global_flags.some(x=>x.name==='--format'&&x.possible_values.includes('json'))||!c.global_flags.some(x=>x.name==='--quiet'))\
+        \ throw new Error('JSON CLI contract missing');\nfor(const f of ['package.json','capabilities.json','types/check.d.ts'])\
+        \ {\n if(fs.existsSync('node_modules/fallow/'+f)) fs.copyFileSync('node_modules/fallow/'+f,'evidence/fallow-'+f.replaceAll('/','-'));\n\
+        }\nJS\n) 2>&1 | tee evidence/locked-tools.log\ns=${PIPESTATUS[0]}\nprintf\
+        \ \"%s\\n\" \"$s\" > evidence/locked-tools.exit\nexit \"$s\"\n"
+    - name: typecheck
+      id: typecheck
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run typecheck
+
+        ) 2>&1 | tee evidence/typecheck.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/typecheck.exit
+
+        exit "$s"
+
+        '
+    - name: lint
+      id: lint
+      if: ${{ !cancelled() && steps.locked_tools.outcome == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run lint
+
+        ) 2>&1 | tee evidence/lint.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/lint.exit
+
+        exit "$s"
+
+        '
+    - name: dead-code
+      id: dead_code
+      if: ${{ !cancelled() && steps.locked_tools.outcome == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run check:dead-code
+
+        ) 2>&1 | tee evidence/dead-code.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/dead-code.exit
+
+        exit "$s"
+
+        '
+    - name: dead-code-json
+      id: dead_code_json
+      if: ${{ !cancelled() && steps.locked_tools.outcome == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        pnpm exec fallow dead-code --format json --quiet > evidence/dead-code-full.json
+        2> evidence/dead-code-json.stderr
+
+        s=$?
+
+        printf ''%s\n'' "$s" > evidence/dead-code-json.exit
+
+        exit "$s"
+
+        '
+    - name: validate-json-report
+      id: validate_json_report
+      if: ${{ !cancelled() && steps.locked_tools.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npython3 - <<'PY_JSON'\n\
+        import json,pathlib\np=pathlib.Path('evidence');v=json.loads((p/'dead-code-full.json').read_text());assert\
+        \ isinstance(v,dict)\n# Archive full unmodified JSON; generic array-length\
+        \ census is supplemental, never a capped member list.\na={}\ndef walk(x,path='$'):\n\
+        \ if isinstance(x,list):\n  a[path]=len(x)\n  for i,v in enumerate(x):walk(v,f'{path}[{i}]')\n\
+        \ elif isinstance(x,dict):\n  for k,v in x.items():walk(v,f'{path}.{k}')\n\
+        walk(v);(p/'dead-code-array-counts.json').write_text(json.dumps(a,indent=2)+'\\\
+        n')\nprint(json.dumps({k:v for k,v in a.items() if 'member' in k.lower()},indent=2))\n\
+        PY_JSON\n) 2>&1 | tee evidence/validate-json-report.log\ns=${PIPESTATUS[0]}\n\
+        printf \"%s\\n\" \"$s\" > evidence/validate-json-report.exit\nexit \"$s\"\n"
+    - name: error-codes
+      id: error_codes
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run docs:check-errors
+
+        ) 2>&1 | tee evidence/error-codes.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/error-codes.exit
+
+        exit "$s"
+
+        '
+    - name: peer-ranges
+      id: peer_ranges
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run check:peer-ranges
+
+        ) 2>&1 | tee evidence/peer-ranges.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/peer-ranges.exit
+
+        exit "$s"
+
+        '
+    - name: changeset-bumps
+      id: changeset_bumps
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run check:changeset-bumps
+
+        ) 2>&1 | tee evidence/changeset-bumps.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/changeset-bumps.exit
+
+        exit "$s"
+
+        '
+    - name: install-scripts
+      id: install_scripts
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run check:install-scripts
+
+        ) 2>&1 | tee evidence/install-scripts.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/install-scripts.exit
+
+        exit "$s"
+
+        '
+    - name: plugin-sources
+      id: plugin_sources
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run plugins:check
+
+        ) 2>&1 | tee evidence/plugin-sources.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/plugin-sources.exit
+
+        exit "$s"
+
+        '
+    - name: mcp-sources
+      id: mcp_sources
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run mcp-server:check
+
+        ) 2>&1 | tee evidence/mcp-sources.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/mcp-sources.exit
+
+        exit "$s"
+
+        '
+    - name: Require every independent command outcome; no skipped execution passes
+      if: ${{ always() }}
+      env:
+        COMMAND_STEPS: ${{ toJSON(steps) }}
+      run: 'python3 - <<''PY_RESULT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
+
+        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
+        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
+
+        failed={k:v for k,v in out.items() if v!=''success''}
+
+        assert not failed,failed
+
+        PY_RESULT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: combined-reviewed-static-${{ github.run_attempt }}
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        git ls-tree -r HEAD | grep -vF $''\t.github/workflows/combined-reviewed-static-check.yml''
+        > evidence/source-inventory.txt
+
+        printf ''%s  %s\n'' ''043ef6ddb412460f660efe6540ac270eea72cb9b85d9c674e3a5d6dc61d6112c''
+        evidence/source-inventory.txt | sha256sum -c -
+
+        cp package.json evidence/root-package.json
+
+        cp .fallowrc.json evidence/fallow-config.json
+
+        '
+      id: source_identity
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.source_identity.outcome == 'success' }}
+    - name: root-docs-check
+      id: root_docs_check
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.source_identity.outcome
+        == 'success' }}
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run docs:check
+
+        ) 2>&1 | tee evidence/root-docs-check.log
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > evidence/root-docs-check.exit
+
+        exit "$s"
+
+        '
+    - name: Require every independent command outcome; no skipped execution passes
+      if: ${{ always() }}
+      env:
+        COMMAND_STEPS: ${{ toJSON(steps) }}
+      run: 'python3 - <<''PY_RESULT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
+
+        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
+        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
+
+        failed={k:v for k,v in out.items() if v!=''success''}
+
+        assert not failed,failed
+
+        PY_RESULT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: combined-reviewed-docs-${{ github.run_attempt }}
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { PartialVideoTransferError, type FinalizedVideoSnapshot } from './finalized-recording.ts';
 import { EngineError, type OperationContext, type VideoSegment } from 'e2e/engine';
 
-export interface FinalizedVideoBytes { readonly bytes: Uint8Array; readonly startedAt: string }
+export interface FinalizedVideoDeliveryBytes { readonly bytes: Uint8Array; readonly startedAt: string }
 interface Owner {
   readonly artifactsDir: string;
   readonly allocatePart: () => number;
@@ -49,12 +49,12 @@ export class FinalizedVideoFiles {
   }
 
   /** Start once, using the original automatic-cleanup deadline, not a new lease. */
-  prepare(download: Promise<readonly FinalizedVideoBytes[]>, endsAt: number, snapshot: () => FinalizedVideoSnapshot = () => ({ segments: [] })): void {
+  prepare(download: Promise<readonly FinalizedVideoDeliveryBytes[]>, endsAt: number, snapshot: () => FinalizedVideoSnapshot = () => ({ segments: [] })): void {
     if (this.prepared) throw invalid('Finalized video collection was already prepared');
     this.prepared = true;
     const budget = { signal: this.owner.retirement, endsAt };
     const work = async () => {
-      let segments: readonly FinalizedVideoBytes[];
+      let segments: readonly FinalizedVideoDeliveryBytes[];
       try { segments = await this.wait(download, budget); }
       catch (error) {
         const retained = snapshot();

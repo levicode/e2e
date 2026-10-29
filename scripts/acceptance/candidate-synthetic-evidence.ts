@@ -28,7 +28,7 @@ export interface SyntheticEvidenceReceipt {
   schemaVersion: 1; status: 'complete' | 'unknown'; file: string | null; sha256: string | null; bytes: number;
   reason: 'collected' | 'setup-failed' | 'collection-failed';
 }
-export const syntheticArtifactFile = (suite: SyntheticSuite): string => `${suite}.synthetic-evidence.json`;
+const syntheticArtifactFile = (suite: SyntheticSuite): string => `${suite}.synthetic-evidence.json`;
 /** Inherited sink paths are never authority; only the exact fresh runner configuration is propagated. */
 export function cleanSyntheticEnvironment(inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...inherited };

@@ -67,7 +67,7 @@ export type SyntheticSuite = typeof SYNTHETIC_CASE_MANIFEST[SyntheticCaseId]['su
 export const SYNTHETIC_TOTAL_BYTES = Object.values(SYNTHETIC_CASE_MANIFEST).reduce((sum, item) => sum + item.maxBytes, 0);
 export const SYNTHETIC_RECORD_BYTES = 2048;
 export const SYNTHETIC_MANIFEST_BYTES = 2 * 1024 * 1024;
-export const SYNTHETIC_PHASES = [
+const SYNTHETIC_PHASES = [
   'init', 'host', 'start', 'open', 'document', 'readiness', 'witness', 'viewport', 'seed-state',
   'initial-locate', 'initial-observe', 'other-tab', 'route', 'dialog', 'disconnect', 'reconnect',
   'recovered-locate', 'recovered-state', 'stale-element', 'stale-viewport', 'stale-coordinate',
@@ -97,7 +97,7 @@ export const SYNTHETIC_CODES = [
   'checked-control-replaced', 'locator-not-found', 'decision-missing', 'decision-expired',
   'decision-kind-mismatch', 'registry-missing', 'registry-in-use', 'identifier-exhausted',
 ] as const;
-export const SYNTHETIC_PUBLIC_CODES = ['NODE_STALE', 'FRAME_NOT_FOUND', 'FRAME_AMBIGUOUS', 'NOT_ACTIONABLE', 'ACTION_MAY_HAVE_COMMITTED', 'OPERATION_TIMEOUT', 'CANCELLED', 'UNSUPPORTED_CAPABILITY', 'INVALID_STATE', 'ENGINE_FAILURE', 'ACTION_FAILED', 'EVALUATE_FAILED', 'LOCATOR_NOT_FOUND', 'LOCATOR_AMBIGUOUS', 'POLICY_DENIED', 'other'] as const;
+const SYNTHETIC_PUBLIC_CODES = ['NODE_STALE', 'FRAME_NOT_FOUND', 'FRAME_AMBIGUOUS', 'NOT_ACTIONABLE', 'ACTION_MAY_HAVE_COMMITTED', 'OPERATION_TIMEOUT', 'CANCELLED', 'UNSUPPORTED_CAPABILITY', 'INVALID_STATE', 'ENGINE_FAILURE', 'ACTION_FAILED', 'EVALUATE_FAILED', 'LOCATOR_NOT_FOUND', 'LOCATOR_AMBIGUOUS', 'POLICY_DENIED', 'other'] as const;
 export interface SyntheticRetention {
   version: 1; retiredOperationSeq: number; producerState: 'retiring' | 'retired'; inputDebt: number; objectDebt: number;
 }
@@ -106,7 +106,7 @@ export interface SyntheticNativeResult {
   effects: 'not-dispatched' | 'completed' | 'unknown'; scopeState: 'usable' | 'quarantined' | 'closed';
   retention?: SyntheticRetention;
 }
-export const SYNTHETIC_FAILURE_REASONS = ['native-stale-scope', 'native-stale-generation', 'native-scope-unavailable', 'settling-cancellation', 'callback-completed', 'session-unavailable', 'scope-retired', 'attempt-not-ready', 'scope-changed', 'browser-reused', 'capability-contract', 'other'] as const;
+const SYNTHETIC_FAILURE_REASONS = ['native-stale-scope', 'native-stale-generation', 'native-scope-unavailable', 'settling-cancellation', 'callback-completed', 'session-unavailable', 'scope-retired', 'attempt-not-ready', 'scope-changed', 'browser-reused', 'capability-contract', 'other'] as const;
 
 export interface SyntheticSelectedOperation {
   kind: 'selected-operation'; ordinal: number; phase: SyntheticPhase; command: SyntheticCommand;
@@ -287,7 +287,7 @@ export function validSyntheticFact(value: unknown, caseId: SyntheticCaseId): val
     default: return false;
   }
 }
-export function validSyntheticOutcome(value: unknown): value is SyntheticOutcome {
+function validSyntheticOutcome(value: unknown): value is SyntheticOutcome {
   return syntheticObject(value) && syntheticKeys(value, ['setup', 'body', 'cleanup'])
     && Object.values(value).every(item => member(['not-started', 'passed', 'failed', 'incomplete'], item));
 }

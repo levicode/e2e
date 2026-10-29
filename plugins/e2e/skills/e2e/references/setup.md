@@ -228,7 +228,11 @@ start a script that brings them up and serves the app.
 - `reconnectEndpoint` or an attempt-scoped provider rides one persistent
   context without `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`, `app.clearState()`, or
   session state. Recovery never repeats a dispatched operation; exhausting
-  the budget is `OPERATION_TIMEOUT`. Without `reconnectEndpoint` a dropped
+  the budget is `OPERATION_TIMEOUT`. A disconnected action can remain
+  `ACTION_MAY_HAVE_COMMITTED` while the next explicit operation recovers the
+  exact browser and page, if native recovery is qualified. Never replay that
+  action or treat a later successful read as proof it did not execute.
+  Without `reconnectEndpoint` a dropped
   connection is reacquired at the next attempt.
   Recovery retires in-flight observation presentation after its pixel blob cleanup;
   only fresh observations can be published after a successful reconnect.

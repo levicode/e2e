@@ -63,7 +63,7 @@ export function containedFile(root: string, path: string): string {
 }
 
 /** Reject additions as well as mutations: a package stamp alone does not bind executable code. */
-export function verifyPackageInventory(root: string, inventory: PackageInventory): void {
+function verifyPackageInventory(root: string, inventory: PackageInventory): void {
   if (!inventory || typeof inventory.name !== 'string' || typeof inventory.version !== 'string' || !Array.isArray(inventory.files) || inventory.files.length === 0) throw new Error('Missing installed package inventory');
   const expected = new Map<string, string>();
   for (const file of inventory.files) {

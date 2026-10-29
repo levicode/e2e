@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { SYNTHETIC_CODES } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 export const CLEANUP_ENV = 'AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE';
 export const CLEANUP_BYTES = 256 * 1024;
-export const CLEANUP_RECORDS = 2048;
+const CLEANUP_RECORDS = 2048;
 const common = ['schemaVersion', 'source', 'pid', 'record', 'operationSeq', 'phase', 'droppedBefore', 'emittedBefore', 'suppressedBefore', 'overflow'];
 const identity = ['generation', 'cleanupOwner', 'cleanupAttempt', 'cleanupLifecycle'];
 const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inventoryIntegrityLost', 'inventoryReservations', 'inventoryUnconfigured', 'inventoryObserved'];

@@ -24,7 +24,7 @@ try {
   phase = 'verified-native-candidate';
   // The acceptance lane owns integrity, installed-package binding and the mandatory capability set.
   // No user-set ready boolean, version string, or foundation-only negotiation can replace that proof.
-  const verifierPath = new URL('../../../scripts/acceptance/heldout-candidate.ts', import.meta.url).href;
+  const verifierPath = new URL('../../scripts/acceptance/heldout-candidate.ts', import.meta.url).href;
   const verifier = await import(verifierPath) as { verifyHeldoutCandidate?: (options: Record<string, string>) => Promise<unknown> };
   if (typeof verifier.verifyHeldoutCandidate !== 'function') throw new Error('blocked');
   const coreEntry = import.meta.resolve('e2e/runner');

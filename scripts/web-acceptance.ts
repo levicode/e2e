@@ -1,4 +1,8 @@
-/** Run one manifest suite; no retries, no silent skips, and persisted failure evidence. */
+/**
+ * Manual local acceptance: node scripts/web-acceptance.ts <suite> [output-dir].
+ * Runs one WEB_ACCEPTANCE suite with its prerequisites, no retries or silent skips,
+ * and persisted failure evidence; hosted candidate receipt checks remain separate.
+ */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';

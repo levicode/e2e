@@ -168,17 +168,17 @@ it('reopens a closed isolated Page in its exact context only after actual activa
   });
   try {
     await engine.session!.open!('https://synthetic.test/first', operation());
-    const raw = surfaceOf(engine)!; const context = raw.context(); const old = raw.page();
+    const raw = surfaceOf(engine)!; const rawContext = raw.context(); const old = raw.page();
     await nativeBrowser(engine, operation).setViewport({ width: 715, height: 493 });
     await nativeBrowser(engine, operation).emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await old.close(); expect(old.isClosed()).toBe(true); expect(context.pages()).toEqual([]);
+    await old.close(); expect(old.isClosed()).toBe(true); expect(rawContext.pages()).toEqual([]);
     reopening = true;
     const opening = engine.session!.open!('https://synthetic.test/reopened', operation());
     await entered.promise;
     expect(peer!.requests.filter(frame => frame.command === 'page.navigate')).toHaveLength(1);
     expect(peer!.requests.filter(frame => frame.command === 'scope.interop.identify')).toHaveLength(0);
     ack.resolve({ data: { activated: true } }); await opening;
-    expect(raw.context()).toBe(context); expect(raw.page()).not.toBe(old); expect(raw.page().isClosed()).toBe(false);
+    expect(raw.context()).toBe(rawContext); expect(raw.page()).not.toBe(old); expect(raw.page().isClosed()).toBe(false);
     expect(resources.currentIdentity()!.persistent).toBe(false);
     expect(raw.page().setViewportSize).toHaveBeenCalledWith({ width: 715, height: 493 });
     expect(raw.page().emulateMedia).toHaveBeenCalledWith({ colorScheme: 'dark', reducedMotion: 'reduce' });

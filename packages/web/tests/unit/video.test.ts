@@ -35,7 +35,7 @@ function connectPeer(override?: (request: PeerRequest) => PeerOutcome | undefine
   const resources = new NativeInteropResources({ browserIdentity: 'browser', allocateScopeIdentity: () => scope, allocateContextIdentity: () => ({ contextId: 'context', targetId: 'page' }) });
   vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, context, onEvent) => {
-    peer = new NativeProtocolPeer(config.capabilities, request => resources.respond(request, async request => {
+    peer = new NativeProtocolPeer(config.capabilities, frame => resources.respond(frame, async request => {
       const outcome = await override?.(request);
       if (outcome !== undefined) return outcome;
       switch (request.command) {
@@ -216,7 +216,7 @@ it('joins concurrent stop callers without a second stop or duplicate delivery', 
     await vi.waitFor(() => expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(1));
     const second = surface.stopVideo(operation());
     release(); const results = await Promise.all([first, second]);
-    expect(results.map(result => result.length).sort()).toEqual([0, 1]);
+    expect(results.map(result => result.length).toSorted()).toEqual([0, 1]);
     expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(1);
     expect(peer.requests.filter(request => request.command === 'blob.read')).toHaveLength(1);
   } finally { release(); await surface.dispose(operation()); }
