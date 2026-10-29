@@ -16,7 +16,7 @@ import { web } from '../../src/engine.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
-import { NativeProtocolPeer, type PeerRequest } from '../helpers/native-protocol-peer.ts';
+import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
@@ -50,7 +50,7 @@ async function fixture(mode: Mode) {
   };
   let submitted = 0;
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (settings, budget, onEvent) => {
-    peer = new NativeProtocolPeer(settings.capabilities, request => resources.respond(request, async call => {
+    peer = new NativeProtocolPeer(settings.capabilities, request => resources.respond(request, async (call): Promise<PeerOutcome> => {
       if (['scope.configure', 'network.routes.replace'].includes(call.command)) return { data: null };
       if (call.command === 'session.environment') return { data: { identityScope: scope, browser: 'synthetic' } };
       if (call.command === 'page.title') return { data: { title: 'synthetic' } };

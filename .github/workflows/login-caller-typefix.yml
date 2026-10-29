@@ -1,0 +1,122 @@
+name: Caller retry controls strict type correction
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: login-caller-typefix-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 33d5d8593abfa0a6fc9acfdcfa4c0163efdcd5ad
+  NATIVE_SOURCE_TREE: f42cc4dfe64fec39b2fd14da3da684b02fcd6a35
+  NEXT_TELEMETRY_DISABLED: '1'
+'on':
+  push:
+    branches:
+    - ci/login-caller-typefix
+jobs:
+  caller-retry-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact caller source before generated files
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/source.sha
+
+        git rev-parse HEAD^{tree} > evidence/source.tree
+
+        sha256sum packages/web/tests/unit/native-fixture-query-caller-retry.test.ts > evidence/test.sha256
+
+        node --version > evidence/node.version
+
+        '
+    - name: Install exact locked dependencies without browsers
+      run: pnpm install --frozen-lockfile
+      env:
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    - name: Build exact core dist required by caller control
+      run: 'set -euo pipefail
+
+        pnpm --filter e2e run build 2>&1 | tee evidence/core-build.log
+
+        sha256sum packages/e2e/dist/internal/time.js packages/e2e/dist/locator/engine.js > evidence/core-dist.sha256
+
+        '
+    - name: Strict caller and real dependencies typecheck
+      run: 'set -euo pipefail
+
+        cat > tsconfig.login-caller.json <<''JSON_CALLER_TYPES''
+
+        {"extends":"./tsconfig.base.json","compilerOptions":{"lib":["ES2023","DOM","DOM.Iterable"],"noEmit":true},"files":["packages/web/tests/unit/native-fixture-query-caller-retry.test.ts"]}
+
+        JSON_CALLER_TYPES
+
+        pnpm exec tsc -p tsconfig.login-caller.json 2>&1 | tee evidence/types.log
+
+        '
+    - name: Collect and execute all five actual caller controls
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/unit/native-fixture-query-caller-retry.test.ts --project unit --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_CALLER_LIST''
+
+        import json
+
+        r=json.load(open(''evidence/collection.json''));assert len(r)==5 and all(x[''file''].endswith(''/native-fixture-query-caller-retry.test.ts'') for x in r),r
+
+        PY_CALLER_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit/native-fixture-query-caller-retry.test.ts --project unit --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json" 2>&1 | tee evidence/tests.log
+
+        s=${PIPESTATUS[0]}
+
+        printf ''%s\n'' "$s" > evidence/tests.exit
+
+        python3 - <<''PY_CALLER_RESULT''
+
+        import json
+
+        r=json.load(open(''evidence/results.json''));a=[a for f in r[''testResults''] for a in f[''assertionResults'']]
+
+        assert len(a)==5 and all(x[''status'']==''passed'' for x in a),a
+
+        assert r[''numTotalTests'']==5 and r[''numPassedTests'']==5 and r[''numFailedTests'']==0 and r.get(''numPendingTests'',0)==0 and r.get(''numTodoTests'',0)==0,r
+
+        expected={''retries one clean native stale query through the original scalar assertion, same scope and remaining deadline, without replaying submit'',''unknown-query cannot enter assertion retry or replay the settled submit'',''completed-query cannot enter assertion retry or replay the settled submit'',''unknown-submit mutation refusal cannot relocate/retry the original input'',''completed-submit mutation refusal cannot relocate/retry the original input''}
+
+        assert {x[''title''] for x in a}==expected,a
+
+        PY_CALLER_RESULT
+
+        v=$?
+
+        test "$s" -eq 0 && test "$v" -eq 0
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: login-caller-typefix-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
