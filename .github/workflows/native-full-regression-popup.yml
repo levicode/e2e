@@ -23,8 +23,6 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: '2'
-      CARGO_TARGET_DIR: ${{ runner.temp }}/native-full-popup-boundaries-target
-      CARGO_HOME: ${{ runner.temp }}/native-full-popup-boundaries-cargo
       REGRESSION_EVIDENCE: .artifacts/native-candidate
       REGRESSION_NATIVE: .artifacts/native-source
     steps:
@@ -32,6 +30,12 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Export fresh target and Cargo paths from runner shell
+      shell: bash
+      run: |
+        set -euo pipefail
+        printf 'CARGO_TARGET_DIR=%s/native-full-popup-boundaries-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+        printf 'CARGO_HOME=%s/native-full-popup-boundaries-cargo\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
     - run: python3 .github/native-full-regression/ci.py prepare --gate boundaries
       name: Reserve fresh target/cache and record producer identity
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -121,12 +125,16 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: '1'
-      CARGO_TARGET_DIR: ${{ runner.temp }}/native-full-popup-default-target
-      CARGO_HOME: ${{ runner.temp }}/native-full-popup-default-cargo
       REGRESSION_EVIDENCE: evidence
       REGRESSION_NATIVE: native
     steps:
     - *id001
+    - name: Export fresh target and Cargo paths from runner shell
+      shell: bash
+      run: |
+        set -euo pipefail
+        printf 'CARGO_TARGET_DIR=%s/native-full-popup-default-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+        printf 'CARGO_HOME=%s/native-full-popup-default-cargo\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
     - run: python3 .github/native-full-regression/ci.py prepare --gate default
       name: Reserve fresh target/cache and record producer identity
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -318,12 +326,16 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: '1'
-      CARGO_TARGET_DIR: ${{ runner.temp }}/native-full-popup-fault-target
-      CARGO_HOME: ${{ runner.temp }}/native-full-popup-fault-cargo
       REGRESSION_EVIDENCE: evidence
       REGRESSION_NATIVE: native
     steps:
     - *id001
+    - name: Export fresh target and Cargo paths from runner shell
+      shell: bash
+      run: |
+        set -euo pipefail
+        printf 'CARGO_TARGET_DIR=%s/native-full-popup-fault-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+        printf 'CARGO_HOME=%s/native-full-popup-fault-cargo\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
     - run: python3 .github/native-full-regression/ci.py prepare --gate fault
       name: Reserve fresh target/cache and record producer identity
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
