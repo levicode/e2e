@@ -16,7 +16,7 @@ import { web } from '../../src/engine.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 import { connectNativeProcess } from '../../src/native/process.ts';
 import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
-import { NativeProtocolPeer, type PeerRequest } from '../helpers/native-protocol-peer.ts';
+import { NativeProtocolPeer, type PeerOutcome, type PeerRequest } from '../helpers/native-protocol-peer.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
@@ -50,7 +50,7 @@ async function fixture(mode: Mode) {
   };
   let submitted = 0;
   vi.mocked(connectNativeProcess).mockImplementationOnce(async (settings, budget, onEvent) => {
-    peer = new NativeProtocolPeer(settings.capabilities, request => resources.respond(request, async call => {
+    peer = new NativeProtocolPeer(settings.capabilities, request => resources.respond(request, async (call): Promise<PeerOutcome> => {
       if (['scope.configure', 'network.routes.replace'].includes(call.command)) return { data: null };
       if (call.command === 'session.environment') return { data: { identityScope: scope, browser: 'synthetic' } };
       if (call.command === 'page.title') return { data: { title: 'synthetic' } };
@@ -132,7 +132,10 @@ it.each(['unknown-query', 'completed-query'] as const)('%s cannot enter assertio
   expect(mapped).toHaveLength(1);
   expect(mapped[0]).toMatchObject({ code: mode === 'unknown-query' ? 'ACTION_MAY_HAVE_COMMITTED' : 'NODE_STALE', retryable: false });
   expect(f.queries).toHaveLength(1); expect(f.submitted()).toBe(1);
-  expect(peer!.requests.slice(before).map(request => request.command)).toEqual(['fixture.query']);
+  const tail = peer!.requests.slice(before);
+  expect(tail.map(request => request.command)).toEqual(mode === 'unknown-query'
+    ? ['fixture.query', 'recording.finalized.collect'] : ['fixture.query']);
+  if (mode === 'unknown-query') expectTerminalCollection(tail[0]!, tail[1]!);
 });
 
 it.each(['unknown-submit', 'completed-submit'] as const)('%s mutation refusal cannot relocate/retry the original input', async mode => {
@@ -143,5 +146,18 @@ it.each(['unknown-submit', 'completed-submit'] as const)('%s mutation refusal ca
   expect(mapped).toHaveLength(1);
   expect(mapped[0]).toMatchObject({ code: mode === 'unknown-submit' ? 'ACTION_MAY_HAVE_COMMITTED' : 'NODE_STALE', retryable: false });
   expect(f.submitted()).toBe(1); expect(f.queries).toHaveLength(0);
-  expect(peer!.requests.slice(before).map(request => request.command)).toEqual(['fixture.query', 'browser.perform']);
+  const tail = peer!.requests.slice(before);
+  expect(tail.map(request => request.command)).toEqual(mode === 'unknown-submit'
+    ? ['fixture.query', 'browser.perform', 'recording.finalized.collect'] : ['fixture.query', 'browser.perform']);
+  if (mode === 'unknown-submit') expectTerminalCollection(tail[1]!, tail[2]!);
 });
+
+// NativeClient's quarantined-result path synchronously starts terminal-only
+// recording collection. It cannot reopen ordinary browser/query admission.
+function expectTerminalCollection(failed: PeerRequest, collection: PeerRequest): void {
+  expect(failed.args['identityScope']).toBe(scope);
+  expect(collection.command).toBe('recording.finalized.collect');
+  expect(collection.args).toEqual({ identityScope: scope, failedOperationSeq: failed.operationSeq });
+  expect(collection.generation).toBe(failed.generation);
+  expect(collection.operationSeq).toBeGreaterThan(failed.operationSeq);
+}

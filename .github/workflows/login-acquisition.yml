@@ -8,13 +8,13 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 33d5d8593abfa0a6fc9acfdcfa4c0163efdcd5ad
-  NATIVE_SOURCE_TREE: f42cc4dfe64fec39b2fd14da3da684b02fcd6a35
+  NATIVE_SOURCE_SHA: bb6202a580628f93843485fc90eb0f7c891cf9c7
+  NATIVE_SOURCE_TREE: 9384dbe9e9493a8f0be118aff339f9525e77b69d
   NEXT_TELEMETRY_DISABLED: '1'
 'on':
   push:
     branches:
-    - ci/login-acquisition
+    - ci/login-acquisition-r2
 jobs:
   preflight-both-mode-typecheck:
     runs-on: ubuntu-24.04
