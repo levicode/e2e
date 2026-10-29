@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "repository": "levicode/agent-browser",
+  "commit": "6cecceabd6a76cbcab08fad7b98eeac190b46420",
+  "tree": "955b3e987d1d711106816421bf6180f9fdea268c",
+  "files": {
+    "cli/src/native/client_enrollment.rs": "3594e95aac45ead27178e695dd0f69beec8a16504da844cb29da3441c62d1255",
+    "cli/src/native/client_targets.rs": "0c272ca15de7277fd11528ee56e17856d97638c888f0a42c824636a605887d76",
+    "cli/src/native/client_settlement_trace.rs": "8f73ebf80eda59d18a0962a7a9f593260ded12871f4e39845e1daf340d86704b"
+  },
+  "nativePatchSHA256": "7eb156d34776f34940e9f7dc53b02e4bfc5030a13477c82a54348170830a4e20",
+  "toolchain": "1.99.1",
+  "profile": "ci",
+  "features": [],
+  "tests": [
+    "native::client_settlement_trace::eval_admission_schema_tests::eval_admission_closed_schema_and_worst_case_record_fit_existing_limit",
+    "native::client_settlement_trace::eval_admission_schema_tests::eval_admission_unknown_is_not_zero_or_success_and_numbers_clamp",
+    "native::client_settlement_trace::eval_admission_schema_tests::eval_admission_reuses_query_cap_and_explicit_loss_without_new_sink",
+    "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
+  ],
+  "scope": "diagnostic-only ordinary compile and four exact serializer/try-lock controls; no admission or browser acceptance claim"
+}
