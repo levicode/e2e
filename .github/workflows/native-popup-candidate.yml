@@ -1,0 +1,116 @@
+name: Native popup candidate bounded causal controls
+'on':
+  push:
+    branches: [ci/native-popup-preparation-candidate-20261030]
+permissions:
+  contents: read
+concurrency:
+  group: native-popup-candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  narrow:
+    name: ordinary ${{ matrix.gate }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [clippy, controls]
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+      GIT_NO_LAZY_FETCH: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Select fresh runtime temporary paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          for kind in evidence target cargo; do
+            test ! -e "$RUNNER_TEMP/native-popup-candidate-${{ matrix.gate }}-$kind"
+          done
+          printf 'GATE_EVIDENCE=%s\nCARGO_TARGET_DIR=%s\nCARGO_HOME=%s\n' \
+            "$RUNNER_TEMP/native-popup-candidate-${{ matrix.gate }}-evidence" \
+            "$RUNNER_TEMP/native-popup-candidate-${{ matrix.gate }}-target" \
+            "$RUNNER_TEMP/native-popup-candidate-${{ matrix.gate }}-cargo" >> "$GITHUB_ENV"
+      - name: Validate immutable pins and record producer
+        id: prepare
+        run: python3 .github/native-popup-candidate/ci.py prepare --gate ${{ matrix.gate }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: ${{ steps.prepare.outputs.native_commit }}
+          path: native-source
+          persist-credentials: false
+      - name: Verify exact composed native candidate source
+        run: python3 .github/native-popup-candidate/ci.py verify-source --gate ${{ matrix.gate }}
+      - name: Install exact ordinary toolchain and test pure oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "$CARGO_TARGET_DIR"
+          test ! -e "$CARGO_HOME"
+          mkdir "$CARGO_TARGET_DIR" "$CARGO_HOME"
+          rustup toolchain install 1.99.1 --profile minimal --component clippy
+          rustc +1.99.1 -Vv > "$GATE_EVIDENCE/rustc-version.txt"
+          cargo +1.99.1 -Vv > "$GATE_EVIDENCE/cargo-version.txt"
+          cargo +1.99.1 clippy -V > "$GATE_EVIDENCE/clippy-version.txt"
+          python3 .github/native-popup-candidate/test-run-stage.py > "$GATE_EVIDENCE/oracle-pure-controls.txt"
+      - name: Ordinary all-target Clippy with warnings denied
+        if: matrix.gate == 'clippy'
+        working-directory: native-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          printf '%s\n' 'cargo +1.99.1 clippy --manifest-path cli/Cargo.toml --locked --profile ci --no-default-features --all-targets --message-format=json -- -D warnings' > "$GATE_EVIDENCE/compiler-argv.txt"
+          timeout --signal=TERM --kill-after=30s 100m cargo +1.99.1 clippy --manifest-path cli/Cargo.toml --locked --profile ci --no-default-features --all-targets --message-format=json -- -D warnings > "$GATE_EVIDENCE/cargo-artifacts.jsonl" 2> "$GATE_EVIDENCE/compiler-stderr.log"
+      - name: Compile ordinary test binary
+        if: matrix.gate == 'controls'
+        working-directory: native-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+          printf '%s\n' 'cargo +1.99.1 test --manifest-path cli/Cargo.toml --locked --profile ci --no-default-features --bin agent-browser --no-run --message-format=json' > "$GATE_EVIDENCE/compiler-argv.txt"
+          timeout --signal=TERM --kill-after=30s 100m cargo +1.99.1 test --manifest-path cli/Cargo.toml --locked --profile ci --no-default-features --bin agent-browser --no-run --message-format=json > "$GATE_EVIDENCE/cargo-artifacts.jsonl" 2> "$GATE_EVIDENCE/compiler-stderr.log"
+      - name: Select newly built test executable
+        if: matrix.gate == 'controls'
+        id: binary
+        run: python3 .github/native-popup-candidate/ci.py select-executable --gate controls
+      - name: Run exact selected candidate controls, all expected PASS
+        if: matrix.gate == 'controls'
+        env:
+          TEST_EXECUTABLE: ${{ steps.binary.outputs.executable }}
+        run: python3 .github/native-popup-candidate/run-stage.py --executable "$TEST_EXECUTABLE" --output "$GATE_EVIDENCE/controls"
+      - name: Collect independent custody after every outcome
+        if: ${{ always() }}
+        run: python3 .github/native-popup-candidate/ci.py audit --gate ${{ matrix.gate }}
+      - name: Accept only successfully compiled exact candidate controls
+        run: python3 .github/native-popup-candidate/ci.py postcheck --gate ${{ matrix.gate }}
+      - name: Retain known evidence on every outcome
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-popup-candidate-${{ matrix.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.GATE_EVIDENCE }}/producer.json
+            ${{ env.GATE_EVIDENCE }}/source-before.json
+            ${{ env.GATE_EVIDENCE }}/source-after.json
+            ${{ env.GATE_EVIDENCE }}/custody-after.json
+            ${{ env.GATE_EVIDENCE }}/test-binary.json
+            ${{ env.GATE_EVIDENCE }}/gate-receipt.json
+            ${{ env.GATE_EVIDENCE }}/rustc-version.txt
+            ${{ env.GATE_EVIDENCE }}/cargo-version.txt
+            ${{ env.GATE_EVIDENCE }}/clippy-version.txt
+            ${{ env.GATE_EVIDENCE }}/oracle-pure-controls.txt
+            ${{ env.GATE_EVIDENCE }}/compiler-argv.txt
+            ${{ env.GATE_EVIDENCE }}/cargo-artifacts.jsonl
+            ${{ env.GATE_EVIDENCE }}/compiler-stderr.log
+            ${{ env.GATE_EVIDENCE }}/controls/receipt.json
+            ${{ env.GATE_EVIDENCE }}/controls/collection.log
+            ${{ env.GATE_EVIDENCE }}/controls/*.log
+            ${{ env.GATE_EVIDENCE }}/controls/*.overflow.json
+          if-no-files-found: error
+          retention-days: 7
