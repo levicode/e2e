@@ -77,6 +77,7 @@ class ReceiveFailure extends Error {
 /** One negotiated native client. No automatic reconnect, command replay, or engine-specific browser calls. */
 export class NativeClient {
   private readonly frames = new NativeFrames(MAX_FRAME_BYTES);
+  private pageUrlDiagnosticAttempts = 0;
   private readonly callback = new AsyncLocalStorage<CallbackOwner>();
   private callbackEpoch = 0;
   private publicationEpoch = 0;
@@ -408,6 +409,27 @@ export class NativeClient {
     if (this.terminal || this.recovery !== undefined || this.awaitingQuarantinedResult() || this.closing !== undefined || this.closed || this.ready === undefined) throw new EngineError('INVALID_STATE', 'The native browser session is not available', { retryable: false });
   }
 
+  /** Opt-in scalar diagnostics only: never serializes URL, args, identity or native text. */
+  private observePageUrlFailure(raw: NativeResult, returned: NativeResult, transmittedTimeoutMs: unknown, cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined, timeoutRewritten: boolean, cancelAckSeen: boolean): void {
+    try {
+      if (process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] !== '1' || this.pageUrlDiagnosticAttempts > 8) return;
+      this.pageUrlDiagnosticAttempts++;
+      if (this.pageUrlDiagnosticAttempts === 9) {
+        process.stderr.write('PAGE_URL_RESULT_DIAGNOSTIC {"phase":"capture-limit-reached","limit":8}\n');
+        return;
+      }
+      // Result fields already passed serverMessage's closed protocol validation.
+      // Use the serialized request value, never reread the caller's deadline getter.
+      if (typeof transmittedTimeoutMs !== 'number' || !Number.isSafeInteger(transmittedTimeoutMs) || transmittedTimeoutMs <= 0) return;
+      process.stderr.write(`PAGE_URL_RESULT_DIAGNOSTIC ${JSON.stringify({
+        phase: 'settled-failure', command: 'page.url', transmittedTimeoutMs,
+        selectedLocalCancel: cancellation === undefined ? 'none' : cancellation === 'CANCELLED' ? 'abort' : 'deadline',
+        rawCode: raw.error?.code, rawEffects: raw.effects, rawScopeState: raw.scopeState,
+        returnedCode: returned.error?.code, timeoutRewritten, cancelAckSeen,
+      })}\n`);
+    } catch { /* Observation cannot change a settled result or its cleanup. */ }
+  }
+
   private timeout(context: OperationContext): number {
     if (context.signal.aborted) throw connectionCancellation('The native browser operation was cancelled before dispatch');
     if (!Number.isFinite(context.timeoutMs)) throw new EngineError('OPERATION_TIMEOUT', 'The native browser operation budget expired before dispatch', { retryable: false });
@@ -452,11 +474,15 @@ export class NativeClient {
         this.pending.delete(id); clear();
         if (cancellation !== undefined) this.settlingRequests--;
         retire();
+        const pageUrlFailure = kind === 'request' && message['command'] === 'page.url' && settled.type === 'result' && !settled.ok ? settled : undefined;
+        let timeoutRewritten = false;
         // A local deadline may race the native cancellation signal. Only a reusable,
         // definitive failure can preserve the caller's original timeout reason.
         if (cancellation === 'OPERATION_TIMEOUT' && settled.type === 'result' && !settled.ok && settled.effects !== 'unknown' && settled.scopeState === 'usable' && (settled.error?.code === 'cancelled' || settled.error?.code === 'deadline-exceeded')) {
           settled = { ...settled, error: { code: 'deadline-exceeded' } };
+          timeoutRewritten = true;
         }
+        if (pageUrlFailure !== undefined && settled.type === 'result') this.observePageUrlFailure(pageUrlFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
         resolve(settled);
       };
       const abandon = (code: 'CANCELLED' | 'OPERATION_TIMEOUT') => {
