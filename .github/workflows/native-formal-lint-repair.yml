@@ -9,8 +9,8 @@ concurrency:
   group: native-formal-lint-repair-${{ github.ref }}
   cancel-in-progress: false
 env:
-  REVIEWED_NATIVE_SHA: 699c360aabd1406ac67fd530fb3aaa31e072073d
-  REVIEWED_NATIVE_TREE: 17733d6431ddf4f79fbaeb177f49297e0a8ec471
+  REVIEWED_NATIVE_SHA: a7078bd92c3ae59e474e130088c0e64977a09e9c
+  REVIEWED_NATIVE_TREE: 978b67bc068ba623b5aa1a8a6360218bd8bbf405
   RUSTUP_TOOLCHAIN: 1.99.1
   CARGO_BUILD_JOBS: '2'
 jobs:
