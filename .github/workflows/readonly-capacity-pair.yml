@@ -2,7 +2,7 @@ name: Readonly stopped-world capacity causal pair (not browser acceptance)
 'on':
   push:
     branches:
-    - ci/readonly-capacity-pair-20261029
+    - ci/readonly-capacity-pair-r2-20261029
 permissions:
   contents: read
 concurrency:

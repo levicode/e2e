@@ -3,28 +3,28 @@
   "repository": "levicode/agent-browser",
   "baseProductionCommit": "5d46951741d93adef5b5b23a9040572ae0c0b851",
   "baseProductionTree": "613e437eebf2e25d83eff5491e12c399173584d1",
-  "e2eBaseCommit": "9899a8b4bf7ec842b3dc0bd76947606f6cd8e3c7",
-  "e2eBaseTree": "d80214212eca04b5f8a35516dcb75e419244e01f",
-  "controlsPatchSHA256": "145e49977eed9eee52c11f3f10742d5b83fbf8a386b443107b9d1bb4604f3863",
+  "e2eBaseCommit": "d9d454dfd5395819cafc612497f1de02ce08f772",
+  "e2eBaseTree": "1a36d449d5b7523728970b64c87ae7c2a6c87edb",
+  "controlsPatchSHA256": "7086ed2f8ee3af0343fa9ec92d57c8a66a2686aa0b5aa59cbf679d17dd77d0bf",
   "fixPatchSHA256": "eee65467d882318082b68974f1319a8a8dc3d8314c974b9db5717d8b56ed5096",
   "toolchain": "1.99.1",
   "profile": "ci",
   "features": [],
   "stages": {
     "baseline": {
-      "commit": "9ca045b6afca2c0c06c8fa6a0f79af491d480aef",
-      "tree": "78b339b5f00e452591e0d1cc90a3634b358bf90e",
+      "commit": "a1c4e0fdb79848d3fb2ca0f83bc32fa3ce4f7394",
+      "tree": "61550a7eacc624252feab00f16c13b5e90d3ff6c",
       "files": {
-        "cli/src/native/client_observation.rs": "a4642ca7044d75b9e3bc37dbaf6d3e43da996f9bc96edc74383870c7d9446904",
+        "cli/src/native/client_observation.rs": "b615cddc641b5059ea2c5bf60277705883b452a4e42ced2987242fd2f956cebc",
         "cli/src/native/cdp/client.rs": "934a04f06854e524a23ebf4425980438f45698ab7a7af1c9eea1063972a09443",
         "cli/src/native/client_observation/fresh_query.rs": "3103284e615c730d599f0510c71cbc74cb8cf7995b6b6b3ea05b3673a3aba5dd"
       }
     },
     "candidate": {
-      "commit": "1800c6bc1e27f98f9fe5f0bd45971c051730275f",
-      "tree": "da472bd11ff7ca23a7fa759fa2bc2c15f9078a75",
+      "commit": "9e87fd23ea5ba982c418ed373ef8975cf1b604ed",
+      "tree": "cee3b02790a07ef6b1e741016cba81d58dd5055c",
       "files": {
-        "cli/src/native/client_observation.rs": "a4642ca7044d75b9e3bc37dbaf6d3e43da996f9bc96edc74383870c7d9446904",
+        "cli/src/native/client_observation.rs": "b615cddc641b5059ea2c5bf60277705883b452a4e42ced2987242fd2f956cebc",
         "cli/src/native/cdp/client.rs": "934a04f06854e524a23ebf4425980438f45698ab7a7af1c9eea1063972a09443",
         "cli/src/native/client_observation/fresh_query.rs": "09e9670a9d3a3a3200cbb6bf3ddb818a834a738a94671132674ad0bcec294fb4"
       }
