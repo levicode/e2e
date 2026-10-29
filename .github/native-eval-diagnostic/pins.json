@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "repository": "levicode/agent-browser",
-  "commit": "6cecceabd6a76cbcab08fad7b98eeac190b46420",
-  "tree": "955b3e987d1d711106816421bf6180f9fdea268c",
+  "commit": "795af19c94645729421b4f0505c88d1389bb8861",
+  "tree": "19780942d884951eeb2c980cc827ecbb92a010aa",
   "files": {
-    "cli/src/native/client_enrollment.rs": "3594e95aac45ead27178e695dd0f69beec8a16504da844cb29da3441c62d1255",
+    "cli/src/native/client_enrollment.rs": "3149ef2a053d1db6b8f02c64b25f09a50a33464859748dc6f5dd0b18117f7cbc",
     "cli/src/native/client_targets.rs": "0c272ca15de7277fd11528ee56e17856d97638c888f0a42c824636a605887d76",
     "cli/src/native/client_settlement_trace.rs": "8f73ebf80eda59d18a0962a7a9f593260ded12871f4e39845e1daf340d86704b"
   },
-  "nativePatchSHA256": "7eb156d34776f34940e9f7dc53b02e4bfc5030a13477c82a54348170830a4e20",
+  "nativePatchSHA256": "a94925941e7e3755dfee46dbc12a05997f38b753a95d95dc3ef36ac9203efe87",
   "toolchain": "1.99.1",
   "profile": "ci",
   "features": [],

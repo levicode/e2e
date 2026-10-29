@@ -1,7 +1,7 @@
 name: Native eval-admission diagnostic source gates
 'on':
   push:
-    branches: [ci/native-eval-diagnostic-20261029]
+    branches: [ci/native-eval-diagnostic-r2-20261029]
 permissions:
   contents: read
 concurrency:
