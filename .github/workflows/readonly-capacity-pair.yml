@@ -1,0 +1,135 @@
+name: Readonly stopped-world capacity causal pair (not browser acceptance)
+'on':
+  push:
+    branches:
+    - ci/readonly-capacity-pair-20261029
+permissions:
+  contents: read
+concurrency:
+  group: readonly-capacity-pair-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  paired-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Initialize closed-stage runtime paths without reserving directories
+      env:
+        PAIR_STAGE: ${{ matrix.stage }}
+      shell: bash
+      run: 'set -euo pipefail
+
+        case "$PAIR_STAGE" in baseline|candidate) ;; *) exit 2;; esac
+
+        printf ''%s\n'' "PAIR_EVIDENCE=$RUNNER_TEMP/readonly-capacity-$PAIR_STAGE-evidence" "CARGO_TARGET_DIR=$RUNNER_TEMP/readonly-capacity-$PAIR_STAGE-target"
+        "CARGO_HOME=$RUNNER_TEMP/readonly-capacity-$PAIR_STAGE-cargo" >> "$GITHUB_ENV"
+
+        '
+    - name: Validate immutable pins and reserve evidence
+      id: prepare
+      run: python3 .github/readonly-capacity-pair/ci.py prepare --stage ${{ matrix.stage }}
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ steps.prepare.outputs.native_commit }}
+        path: native-source
+        persist-credentials: false
+    - name: Verify exact native tree and controls before tooling
+      id: verified
+      run: python3 .github/readonly-capacity-pair/ci.py verify-source --stage ${{ matrix.stage }}
+    - name: Install reviewed ordinary toolchain and reserve fresh directories
+      shell: bash
+      run: 'set -euo pipefail
+
+        test ! -e "$CARGO_TARGET_DIR"
+
+        test ! -e "$CARGO_HOME"
+
+        mkdir "$CARGO_TARGET_DIR" "$CARGO_HOME"
+
+        rustup toolchain install 1.99.1 --profile minimal
+
+        rustc +1.99.1 -Vv > "$PAIR_EVIDENCE/rustc-version.txt"
+
+        cargo +1.99.1 -Vv > "$PAIR_EVIDENCE/cargo-version.txt"
+
+        python3 .github/readonly-capacity-pair/test-run-stage.py > "$PAIR_EVIDENCE/oracle-pure-controls.txt"
+
+        '
+    - name: Compile one ordinary-feature test binary; compile failure is not causal RED
+      shell: bash
+      working-directory: native-source
+      run: 'set -euo pipefail
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        printf ''%s\n'' ''cargo +1.99.1 test --manifest-path cli/Cargo.toml --locked --profile ci --no-default-features
+        --bin agent-browser --no-run --message-format=json'' > "$PAIR_EVIDENCE/compiler-argv.txt"
+
+        timeout --signal=TERM --kill-after=30s 100m cargo +1.99.1 test --manifest-path cli/Cargo.toml --locked --profile
+        ci --no-default-features --bin agent-browser --no-run --message-format=json > "$PAIR_EVIDENCE/cargo-artifacts.jsonl"
+        2> "$PAIR_EVIDENCE/compiler-stderr.log"
+
+        '
+    - name: Select exactly the newly compiled ordinary test executable
+      id: binary
+      run: python3 .github/readonly-capacity-pair/ci.py select-executable --stage ${{ matrix.stage }}
+    - name: Run four exact managed-native controls with strict stage oracle
+      env:
+        TEST_EXECUTABLE: ${{ steps.binary.outputs.executable }}
+      run: python3 .github/readonly-capacity-pair/run-stage.py --stage ${{ matrix.stage }} --executable "$TEST_EXECUTABLE"
+        --output "$PAIR_EVIDENCE/controls"
+    - name: Verify unchanged source and accepted binary-bound receipt
+      id: postcheck
+      if: ${{ always() && steps.verified.outcome == 'success' }}
+      run: python3 .github/readonly-capacity-pair/ci.py postcheck --stage ${{ matrix.stage }}
+    - name: Preserve bounded known evidence on every outcome
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: readonly-capacity-${{ matrix.stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: '${{ env.PAIR_EVIDENCE }}/producer.json
+
+          ${{ env.PAIR_EVIDENCE }}/source-before.json
+
+          ${{ env.PAIR_EVIDENCE }}/source-after.json
+
+          ${{ env.PAIR_EVIDENCE }}/test-binary.json
+
+          ${{ env.PAIR_EVIDENCE }}/rustc-version.txt
+
+          ${{ env.PAIR_EVIDENCE }}/cargo-version.txt
+
+          ${{ env.PAIR_EVIDENCE }}/oracle-pure-controls.txt
+
+          ${{ env.PAIR_EVIDENCE }}/compiler-argv.txt
+
+          ${{ env.PAIR_EVIDENCE }}/cargo-artifacts.jsonl
+
+          ${{ env.PAIR_EVIDENCE }}/compiler-stderr.log
+
+          ${{ env.PAIR_EVIDENCE }}/controls/receipt.json
+
+          ${{ env.PAIR_EVIDENCE }}/controls/collection.log
+
+          ${{ env.PAIR_EVIDENCE }}/controls/0.log
+
+          ${{ env.PAIR_EVIDENCE }}/controls/1.log
+
+          ${{ env.PAIR_EVIDENCE }}/controls/2.log
+
+          ${{ env.PAIR_EVIDENCE }}/controls/3.log'
+        if-no-files-found: error
+        retention-days: 7
+    name: ${{ matrix.stage }} ordinary causal controls
+    strategy:
+      fail-fast: false
+      matrix:
+        stage:
+        - baseline
+        - candidate

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "repository": "levicode/agent-browser",
+  "baseProductionCommit": "5d46951741d93adef5b5b23a9040572ae0c0b851",
+  "baseProductionTree": "613e437eebf2e25d83eff5491e12c399173584d1",
+  "e2eBaseCommit": "9899a8b4bf7ec842b3dc0bd76947606f6cd8e3c7",
+  "e2eBaseTree": "d80214212eca04b5f8a35516dcb75e419244e01f",
+  "controlsPatchSHA256": "145e49977eed9eee52c11f3f10742d5b83fbf8a386b443107b9d1bb4604f3863",
+  "fixPatchSHA256": "eee65467d882318082b68974f1319a8a8dc3d8314c974b9db5717d8b56ed5096",
+  "toolchain": "1.99.1",
+  "profile": "ci",
+  "features": [],
+  "stages": {
+    "baseline": {
+      "commit": "9ca045b6afca2c0c06c8fa6a0f79af491d480aef",
+      "tree": "78b339b5f00e452591e0d1cc90a3634b358bf90e",
+      "files": {
+        "cli/src/native/client_observation.rs": "a4642ca7044d75b9e3bc37dbaf6d3e43da996f9bc96edc74383870c7d9446904",
+        "cli/src/native/cdp/client.rs": "934a04f06854e524a23ebf4425980438f45698ab7a7af1c9eea1063972a09443",
+        "cli/src/native/client_observation/fresh_query.rs": "3103284e615c730d599f0510c71cbc74cb8cf7995b6b6b3ea05b3673a3aba5dd"
+      }
+    },
+    "candidate": {
+      "commit": "1800c6bc1e27f98f9fe5f0bd45971c051730275f",
+      "tree": "da472bd11ff7ca23a7fa759fa2bc2c15f9078a75",
+      "files": {
+        "cli/src/native/client_observation.rs": "a4642ca7044d75b9e3bc37dbaf6d3e43da996f9bc96edc74383870c7d9446904",
+        "cli/src/native/cdp/client.rs": "934a04f06854e524a23ebf4425980438f45698ab7a7af1c9eea1063972a09443",
+        "cli/src/native/client_observation/fresh_query.rs": "09e9670a9d3a3a3200cbb6bf3ddb818a834a738a94671132674ad0bcec294fb4"
+      }
+    }
+  },
+  "scope": "world-stage-only; post-world pre-submit boundary OPEN; not original F2 root-cause proof"
+}
