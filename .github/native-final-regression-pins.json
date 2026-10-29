@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "repository": "levicode/agent-browser",
+  "commit": "3bdb7541dacd750caa979b36f6018a903f9b934b",
+  "tree": "b9acf8d5e10bd1b5af32f531da2fe69a94ccc7a7",
+  "files": {
+    "cli/src/native/cdp/client.rs": "1235cec0fedcf1a94d8c5c600746cdb00f23247a1ddf0b16123dc48929f3d85c",
+    "cli/src/native/client_browser.rs": "71d07a697639e5d5e5bb5427daf2f64a8c40f07e9464760442e152e660d17798",
+    "cli/src/native/client_debt.rs": "ab0926b0eba203091c12f0a96a1d35e082e84b677bd6d142609ef7a40ee6700e",
+    "cli/src/native/client_observation/fresh_query.rs": "8c8c6527c6ff3b854730cabc6f7a370b33ff4e8b957ae7a2820bd47aa3b2ebb5",
+    "cli/src/native/client_observation/fresh_query_resolve.rs": "22b8be7ff219da68e39dffc1dc30501fdb050ed9c277a2796c0b43a6c03f4de2",
+    "cli/src/native/client_observation/fresh_query_submission_tests.rs": "2a4cb7dba47e605edb4fc4c69598091f7d624f716d7be3d38b56df633f60c34f",
+    "cli/src/native/daemon.rs": "568542f09d803d834c36f99db863f01430d7f0446a82df6aee058879cbaec7bc",
+    "cli/src/native/client_observation.rs": "9a1a3874b2709a9700e5dd6aa5222af1138288b6ccad53bf7a06d695bc1ac100"
+  },
+  "nativePatchSHA256": "89b7d6932bab5e9731acc9ffba18509f70cef3a206e13aa5fa8511a33d520a96",
+  "toolchain": "1.99.1",
+  "profile": "ci",
+  "features": [],
+  "capability": "browser.issuance-bound-references/1",
+  "tests": [
+    "native::client_observation::fresh_query::resolve_custody::tests::only_abandoned_is_never_submitted_not_ack_destroyed_or_reserved",
+    "native::client_observation::fresh_query::resolve_custody::tests::resolve_receipts_require_exact_capture_group_and_terminal_drop",
+    "native::client_observation::fresh_query::resolve_custody::tests::readonly_resolve_owner_rejects_foreign_channel_session_and_journal",
+    "native::client_observation::fresh_query::resolve_custody::tests::readonly_resolve_owner_rejects_actual_journal_and_ledger_integrity_loss",
+    "native::client_observation::fresh_query::submission_tests::stopped_after_world_before_reservation_does_not_enqueue_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::abandoned_resolve_reservation_does_not_enqueue_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::mixed_acknowledged_and_abandoned_resolves_keep_exact_cleanup",
+    "native::client_observation::fresh_query::submission_tests::unchanged_resolve_and_sample_keep_exact_cleanup_until_ack",
+    "native::client_observation::fresh_query::submission_tests::revoked_submission_after_reservation_preserves_primary_without_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::original_deadline_after_world_before_reservation_has_no_empty_cleanup",
+    "native::cdp::client::tests::readonly_empty_group_acks_exhaust_cleanup_before_reference_admission",
+    "native::client_observation::tests::stopped_worlds_with_exact_release_ack_leave_fresh_fields_usable",
+    "native::client_observation::tests::stopped_worlds_without_release_ack_do_not_poison_later_fresh_fields",
+    "native::client_observation::tests::cancelled_fresh_fields_resolve_retains_group_until_late_disposal_ack",
+    "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
+  ],
+  "scope": "candidate-only all-PASS controls; no baseline causality/browser/fullmatrix claim",
+  "producerParent": "b10176acc812e656372e0667824c77719c2e72aa",
+  "expectedInventories": {
+    "default": {
+      "total": 3366,
+      "ignored": 240,
+      "nonignored": 3126
+    },
+    "fault": {
+      "total": 3427,
+      "ignored": 240,
+      "nonignored": 3187
+    }
+  },
+  "addedTests": [
+    "native::cdp::client::tests::readonly_empty_group_acks_exhaust_cleanup_before_reference_admission",
+    "native::client_observation::fresh_query::resolve_custody::tests::only_abandoned_is_never_submitted_not_ack_destroyed_or_reserved",
+    "native::client_observation::fresh_query::resolve_custody::tests::readonly_resolve_owner_rejects_actual_journal_and_ledger_integrity_loss",
+    "native::client_observation::fresh_query::resolve_custody::tests::readonly_resolve_owner_rejects_foreign_channel_session_and_journal",
+    "native::client_observation::fresh_query::resolve_custody::tests::resolve_receipts_require_exact_capture_group_and_terminal_drop",
+    "native::client_observation::fresh_query::submission_tests::abandoned_resolve_reservation_does_not_enqueue_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::mixed_acknowledged_and_abandoned_resolves_keep_exact_cleanup",
+    "native::client_observation::fresh_query::submission_tests::original_deadline_after_world_before_reservation_has_no_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::revoked_submission_after_reservation_preserves_primary_without_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::stopped_after_world_before_reservation_does_not_enqueue_empty_cleanup",
+    "native::client_observation::fresh_query::submission_tests::unchanged_resolve_and_sample_keep_exact_cleanup_until_ack",
+    "native::client_observation::tests::cancelled_fresh_fields_resolve_retains_group_until_late_disposal_ack",
+    "native::client_observation::tests::stopped_worlds_with_exact_release_ack_leave_fresh_fields_usable",
+    "native::client_observation::tests::stopped_worlds_without_release_ack_do_not_poison_later_fresh_fields"
+  ],
+  "helperBlobs": {
+    "scripts/ci/run-optional-observe-tests.py": "484e06bd4437642c6b1f200d207d439c6d60cc54",
+    "scripts/ci/optional-observe-inventory.json": "f008da818866b744f6c9fb4b058018d101891797",
+    "scripts/ci/run-owner-stop-exact.py": "8f0e35276e443863d6b9cb1378b3c4002e8ecbcc",
+    "scripts/ci/run-typed-admission-exact.py": "646db6cb70eecf204083900fa7a7d63ab761cc6e",
+    "scripts/ci/run-selector-taxonomy-exact.py": "47d2c7870c388193fe180074643e2977b23c7dc4",
+    "scripts/ci/check-selector-taxonomy.cjs": "3898c2aa0640c4db4e0f65b9caf320bdc4824dc8"
+  }
+}
