@@ -1,7 +1,9 @@
 """Validate bounded, payload-free native query diagnostic captures (schema 2)."""
+import argparse
 import hashlib
 import json
 import pathlib
+import re
 import stat
 import sys
 
@@ -15,6 +17,8 @@ BASE_KEYS = {
 SCOPE_STAGES = set('warm-worlds initial-frames initial-frames-entry initial-frames-exit protected-frames final-frames classification acquire recheck barrier-acquire barrier-check publication'.split())
 SCOPE_REASONS = set('owner-health owner-identity index-health pending-classification subscription-changed watermark-pending attribution-changed attribution-invalid registry-health creation-debt unclaimed-auxiliary guard-mismatch already-protected selected-not-ready foreign-owner unclassified-purpose unknown-lineage related-not-ready unretained-unrelated target-set-changed original-budget selected-target-missing dependency-revision-changed dependency-set-changed dependency-identity-changed target-revision-changed unknown-revision-changed target-count-changed target-identity-changed target-lineage-changed enrollment-target-set-changed'.split())
 READ_STAGES = set('fresh-fields frame-entry ax dom candidate-plan candidate-plan-roots candidate-plan-dom-backend candidate-plan-attributes candidate-plan-duplicate-dom candidate-plan-ax-rows candidate-plan-ax-decode candidate-plan-duplicate-ax candidate-plan-author-ids candidate-plan-missing-record candidate-plan-ax-child candidate-plan-dom-object candidate-plan-fallback security metadata query-world query-resolve query-match candidate-confirm security-confirm metadata-confirm projection cleanup frame-final lease-final'.split())
+READ_STAGES.update('read-admission read-ui read-frames-before fresh-inventory fresh-world fresh-resolve fresh-sample fresh-cleanup fresh-roots-final read-frames-after read-publish'.split())
+PROTOCOL_ERRORS = set('frame-not-found frame-ambiguous invalid-frame unsupported-protocol unsupported-capability stale-generation scope-unavailable sequence-reused invalid-sequence invalid-timeout capacity-exceeded operation-missing content-length-mismatch redirect-body-unavailable unsupported-command deadline-exceeded cancelled invalid-arguments invalid-locator browser-failure stale-scope cleanup-failed stale-reference policy-denied not-actionable intercepted-pointer checked-state-unchanged checked-control-replaced fill-unsupported-target no-editable-focus tap-target-replaced-before-press locator-not-found decision-missing decision-expired decision-kind-mismatch registry-missing registry-in-use identifier-exhausted'.split())
 READ_ERRORS = set('invalid-arguments invalid-locator frame-not-found frame-ambiguous unsupported-capability stale-reference superseded cancelled deadline-exceeded backend-failure policy-denied resource-limit cleanup-failed'.split())
 
 
@@ -54,9 +58,24 @@ def schema_valid(record):
         if record.get('queryScopeStage') not in SCOPE_STAGES or record.get('queryScopeReason') not in SCOPE_REASONS:
             return False
     elif phase == 'QueryReadFailure':
-        extra = {'generation', 'queryReadStage', 'queryReadError'}
-        if record.get('queryReadStage') not in READ_STAGES or record.get('queryReadError') not in READ_ERRORS:
+        extra = {'generation', 'queryReadStage'}
+        if record.get('queryReadStage') not in READ_STAGES:
             return False
+        if 'queryReadError' in record:
+            extra.add('queryReadError')
+            if record['queryReadError'] not in READ_ERRORS:
+                return False
+        elif 'error' in record and 'readMs' in record:
+            extra.add('error')
+            if record['error'] not in PROTOCOL_ERRORS:
+                return False
+        else:
+            return False
+        if 'readMs' in record:
+            extra.add('readMs')
+            timing = record['readMs']
+            if type(timing) is not list or len(timing) != 13 or not all(uint(value, 65535) for value in timing):
+                return False
     elif phase == 'EvalAdmission':
         extra = {'generation', 'eval'}
         if not eval_valid(record.get('eval')):
@@ -87,12 +106,167 @@ def regular(path):
     return not path.is_symlink() and stat.S_ISREG(path.lstat().st_mode)
 
 
+JS_PREFIX = 'QUERY_READ_RESULT_DIAGNOSTIC '
+CUSTODY_PREFIX = 'QUERY_READ_DIAGNOSTIC_CUSTODY '
+JS_KEYS = set('phase suite generation operationSeq command transmittedTimeoutMs selectedLocalCancel rawCode rawEffects rawScopeState returnedCode timeoutRewritten cancelAckSeen'.split())
+CUSTODY_KEYS = set('suite workerRecords invalidRecords lineOverflow recordOverflow'.split())
+
+
+def js_valid(row):
+    if not isinstance(row, dict):
+        return False
+    limit = row.get('phase') == 'capture-limit-reached'
+    if set(row) != JS_KEYS | ({'limit', 'laterFailuresOmitted'} if limit else set()):
+        return False
+    enums = {
+        'phase': ('settled-failure', 'capture-limit-reached'), 'suite': ('replaced-nodes',),
+        'command': ('fixture.read-fields', 'fixture.query', 'browser.query'),
+        'selectedLocalCancel': ('none', 'abort', 'deadline'),
+        'rawEffects': ('not-dispatched', 'completed', 'unknown'),
+        'rawScopeState': ('usable', 'quarantined', 'closed'),
+        'rawCode': PROTOCOL_ERRORS, 'returnedCode': PROTOCOL_ERRORS,
+    }
+    if any(type(row[key]) is not str or row[key] not in choices for key, choices in enums.items()):
+        return False
+    return (all(uint(row[key]) and row[key] > 0 for key in ('generation', 'operationSeq'))
+            and uint(row['transmittedTimeoutMs'], 3_600_000) and row['transmittedTimeoutMs'] > 0
+            and all(type(row[key]) is bool for key in ('timeoutRewritten', 'cancelAckSeen'))
+            and (not limit or (type(row['limit']) is int and row['limit'] == 8 and row['laterFailuresOmitted'] is True)))
+
+
+def read_regular(path, maximum):
+    if not regular(path):
+        raise ValueError('not regular')
+    with path.open('rb') as stream:
+        data = stream.read(maximum + 1)
+    if len(data) > maximum:
+        raise ValueError('byte bound exceeded')
+    return data
+
+
+def field_inputs(archive, log, errors):
+    """Accept exactly one fresh fixture-owned run, never select an old sibling."""
+    summary = {'targetedFailures': 0, 'joinedFailures': 0, 'joins': []}
+    try:
+        if archive.is_symlink() or not archive.is_dir():
+            raise ValueError('archive is not an owned directory')
+        runs = [p for p in archive.iterdir() if p.name != 'query-capture-validation.json']
+        if len(runs) != 1 or not runs[0].name.startswith('run-') or runs[0].is_symlink() or not runs[0].is_dir():
+            raise ValueError('expected exactly one run-owned directory; stale/ambiguous siblings rejected')
+        run = runs[0]
+        if {p.name for p in run.iterdir()} != {'report.json', 'closed-js.jsonl', 'custody.json', 'native-trace'}:
+            raise ValueError('missing or unexpected run-owned inputs')
+        trace = run / 'native-trace'
+        if trace.is_symlink() or not trace.is_dir():
+            raise ValueError('native trace is not an owned directory')
+        if any(not re.fullmatch(r'(native|query)-[0-9]+\.jsonl', p.name) for p in trace.iterdir()):
+            raise ValueError('unexpected native trace input')
+        custody = json.loads(read_regular(run / 'custody.json', 512), object_pairs_hook=unique_pairs)
+        if (not isinstance(custody, dict) or set(custody) != {'schemaVersion', 'run', 'reportSHA256', 'closedJsSHA256'}
+                or type(custody['schemaVersion']) is not int or custody['schemaVersion'] != 1
+                or custody['run'] != run.name):
+            raise ValueError('invalid archive custody')
+        if log is None:
+            raise ValueError('current harness log required for archive custody')
+        receipts = []
+        # Scan bounded lines without retaining or echoing unrelated/raw test output.
+        if not regular(log):
+            raise ValueError('harness log not regular')
+        with log.open('rb') as stream:
+            while line := stream.readline(1_048_577):
+                if len(line) > 1_048_576:
+                    raise ValueError('harness log line bound exceeded')
+                if b'REPLACED_FIELD_CAPTURE_CUSTODY_FAILED' in line:
+                    raise ValueError('archive custody failure marker')
+                if line.startswith(b'REPLACED_FIELD_CAPTURE_ARCHIVE '):
+                    if len(line) > 512 or not line.endswith(b'\n'):
+                        raise ValueError('invalid archive custody receipt')
+                    receipts.append(json.loads(line[len(b'REPLACED_FIELD_CAPTURE_ARCHIVE '):], object_pairs_hook=unique_pairs))
+                    if len(receipts) > 1:
+                        raise ValueError('duplicate archive custody receipt')
+        if receipts != [custody]:
+            raise ValueError('missing or mismatched current archive custody receipt')
+        report = read_regular(run / 'report.json', 64 * 1024 * 1024)
+        report_value = json.loads(report, object_pairs_hook=unique_pairs)
+        if not isinstance(report_value, dict) or not isinstance(report_value.get('run'), dict):
+            raise ValueError('missing original report')
+        data = read_regular(run / 'closed-js.jsonl', 65 * 2048)
+        if custody['reportSHA256'] != hashlib.sha256(report).hexdigest() or custody['closedJsSHA256'] != hashlib.sha256(data).hexdigest():
+            raise ValueError('archive custody digest mismatch')
+        failures, custodies = [], []
+        lines = data.splitlines(keepends=True)
+        if len(lines) > 65:
+            raise ValueError('closed JS record bound exceeded')
+        for line in lines:
+            if len(line) > 2048 or not line.endswith(b'\n'):
+                raise ValueError('closed JS line bound/termination invalid')
+            text = line.decode('utf-8')
+            if text.startswith(JS_PREFIX):
+                if custodies:
+                    raise ValueError('JS failure after terminal custody')
+                row = json.loads(text[len(JS_PREFIX):], object_pairs_hook=unique_pairs)
+                if not js_valid(row):
+                    raise ValueError('invalid closed JS failure')
+                if row['phase'] != 'settled-failure':
+                    raise ValueError('JS capture limit/later failures omitted')
+                failures.append(row)
+            elif text.startswith(CUSTODY_PREFIX):
+                row = json.loads(text[len(CUSTODY_PREFIX):], object_pairs_hook=unique_pairs)
+                if (not isinstance(row, dict) or set(row) != CUSTODY_KEYS or row.get('suite') != 'replaced-nodes'
+                        or not uint(row['workerRecords'], 64) or not uint(row['invalidRecords'], 65)
+                        or type(row['lineOverflow']) is not bool or type(row['recordOverflow']) is not bool):
+                    raise ValueError('invalid JS custody')
+                custodies.append(row)
+            else:
+                raise ValueError('unexpected closed JS line')
+        if len(custodies) != 1:
+            raise ValueError('missing or duplicate JS custody')
+        custody = custodies[0]
+        if custody['workerRecords'] != len(failures) or custody['invalidRecords'] or custody['lineOverflow'] or custody['recordOverflow']:
+            raise ValueError('JS custody loss/count mismatch')
+        targets = [row for row in failures if row['command'] == 'fixture.read-fields']
+        summary['targetedFailures'] = len(targets)
+        if not targets:
+            raise ValueError('missing targeted settled field failure')
+        if len({(r['generation'], r['operationSeq']) for r in targets}) != len(targets):
+            raise ValueError('duplicate targeted JS operation')
+        return trace, targets, summary
+    except (OSError, ValueError, TypeError) as exc:
+        errors.append('field capture: ' + (str(exc) if type(exc) is ValueError else 'malformed or unreadable owned input'))
+        return archive / 'missing-native-trace', [], summary
+
+
+def join_fields(targets, native_index, summary, errors):
+    for target in targets:
+        key = (target['generation'], target['operationSeq'])
+        matches = native_index.get(key, [])
+        # Index ALL owned QueryReadFailure rows first: one timed plus one untimed
+        # collision is still ambiguous. Neither PID order nor error equality joins.
+        if len(matches) != 1 or 'readMs' not in matches[0][1]:
+            errors.append(f'field operation {key}: expected one unique timed native failure, got {len(matches)} matches')
+            continue
+        file, row = matches[0]
+        summary['joins'].append({'generation': key[0], 'operationSeq': key[1], 'nativeFile': file,
+                                 'nativePid': row['pid'], 'nativeRecord': row['record'],
+                                 'stage': row['queryReadStage'], 'readMs': row['readMs']})
+        summary['joinedFailures'] += 1
+
 def main():
-    root = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else pathlib.Path('evidence/native-trace')
-    expected = int(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('expected', type=int)
+    parser.add_argument('root', nargs='?', default='evidence/native-trace')
+    parser.add_argument('--field-only', action='store_true', help='root is the archived .e2e/replaced-nodes directory')
+    parser.add_argument('--field-log', type=pathlib.Path, help='current archived test-e2e.log, required with --field-only')
+    args = parser.parse_args()
+    root, expected = pathlib.Path(args.root), args.expected
+    errors, targets, field_summary = [], [], None
+    output_root = root
+    if args.field_only:
+        root, targets, field_summary = field_inputs(root, args.field_log, errors)
+    native_index = {}
     ordinary = sorted(root.glob('native-*.jsonl'))
     files = sorted(root.glob('query-*.jsonl'))
-    rows, errors = [], []
+    rows = []
     if len(files) != expected:
         errors.append(f'Expected {expected} critical process captures, got {len(files)}')
     if {p.stem.removeprefix('query-') for p in files} != {p.stem.removeprefix('native-') for p in ordinary}:
@@ -111,14 +285,16 @@ def main():
         with p.open('rb') as stream:
             data = stream.read(BYTE_BUDGET + 1)
         records, invalid, line_count = [], 0, 0
-        for line in data.splitlines():
+        for line in data.splitlines(keepends=True):
             line_count += 1
             try:
                 record = json.loads(line, object_pairs_hook=unique_pairs)
-                if len(line) > 512 or not schema_valid(record):
+                if not line.endswith(b'\n') or len(line) > 512 or not schema_valid(record):
                     invalid += 1
                     continue
                 records.append(record)
+                if record['phase'] == 'QueryReadFailure':
+                    native_index.setdefault((record['generation'], record['operationSeq']), []).append((p.name, record))
             except (ValueError, TypeError):
                 invalid += 1
         started = sum(x['phase'] == 'CaptureStarted' for x in records) == 1
@@ -140,12 +316,17 @@ def main():
             errors.append(p.name + ': malformed or non-schema JSONL')
         if byte_count > BYTE_BUDGET:
             errors.append(p.name + ': byte bound exceeded')
-        if line_count > RECORD_BUDGET + 1:
+        if line_count > RECORD_BUDGET:
             errors.append(p.name + ': record bound exceeded')
         if records and (len({x['pid'] for x in records}) != 1 or len({x['record'] for x in records}) != len(records)):
             errors.append(p.name + ': inconsistent capture identity or duplicate record')
-    root.mkdir(parents=True, exist_ok=True)
-    (root / 'query-capture-validation.json').write_text(json.dumps({
+    if args.field_only:
+        join_fields(targets, native_index, field_summary, errors)
+        if any(x['observedLoss'] for x in rows):
+            errors.append('field capture: native diagnostic loss')
+    output_root.mkdir(parents=True, exist_ok=True)
+    (output_root / 'query-capture-validation.json').write_text(json.dumps({
+        **({'fieldOnly': field_summary} if args.field_only else {}),
         'expectedProcesses': expected, 'recordBudget': RECORD_BUDGET,
         'byteBudget': BYTE_BUDGET, 'processes': rows, 'errors': errors,
         'completeEvidence': not errors and not any(x['observedLoss'] for x in rows),

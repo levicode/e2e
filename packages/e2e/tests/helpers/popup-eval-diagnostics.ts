@@ -3,8 +3,8 @@ import { accessSync, constants, lstatSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { RunOptions } from './run-project.ts';
 
-export function popupEvalDiagnosticOptions(projectDir: string, appUrl: string): Partial<RunOptions> {
-  if (process.env['E2E_POPUP_EVAL_CAPTURE'] !== '1') return {};
+export function popupEvalDiagnosticOptions(projectDir: string, appUrl: string, optIn: 'E2E_POPUP_EVAL_CAPTURE' | 'E2E_REPLACED_FIELD_CAPTURE' = 'E2E_POPUP_EVAL_CAPTURE'): Partial<RunOptions> {
+  if (process.env[optIn] !== '1') return {};
   const wrapper = process.env['E2E_POPUP_EVAL_WRAPPER'];
   const native = process.env['E2E_AGENT_BROWSER_EXECUTABLE'];
   for (const executable of [wrapper, native]) {

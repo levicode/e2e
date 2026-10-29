@@ -1205,6 +1205,36 @@ describe('query read fixed-field result diagnostics', () => {
       expect(records(lines)).toEqual([]); await close(f);
     });
   });
+  it('joins only the active original replaced-field body to the serialized native operation', async () => {
+    const prior = process.env['E2E_REPLACED_FIELD_ACTIVE'];
+    try {
+      await observe(async lines => {
+        process.env['E2E_QUERY_READ_DIAGNOSTIC'] = 'replaced-nodes';
+        delete process.env['E2E_REPLACED_FIELD_ACTIVE'];
+        const f = await opened();
+        const first = f.client.request('fixture.read-fields', { expression: 'private-query' }, context());
+        const inactive = f.requests.at(-1)!;
+        f.send(f.result(inactive, { ok: false, data: undefined, error: { code: 'cancelled' }, effects: 'not-dispatched' }));
+        await first;
+        expect(records(lines)).toEqual([]);
+        process.env['E2E_REPLACED_FIELD_ACTIVE'] = '1';
+        const pending = f.client.request('fixture.read-fields', { expression: 'private-query', token: 'private-token' }, context());
+        const request = f.requests.at(-1)!;
+        f.send(f.result(request, { ok: false, data: undefined, error: { code: 'deadline-exceeded' }, effects: 'not-dispatched' }));
+        expect(await pending).toMatchObject({ error: { code: 'deadline-exceeded' }, scopeState: 'usable' });
+        expect(records(lines)).toEqual([{ phase: 'settled-failure', suite: 'replaced-nodes', command: 'fixture.read-fields',
+          generation: request['generation'], operationSeq: request['operationSeq'], transmittedTimeoutMs: request['timeoutMs'],
+          selectedLocalCancel: 'none', rawCode: 'deadline-exceeded', rawEffects: 'not-dispatched', rawScopeState: 'usable',
+          returnedCode: 'deadline-exceeded', timeoutRewritten: false, cancelAckSeen: false }]);
+        expect(records(lines)[0]!['operationSeq']).not.toBe(request['id']);
+        expect(lines.join('')).not.toMatch(/private|expression|identityScope|sessionId/);
+        expect(f.requests.filter(frame => frame['type'] === 'request')).toHaveLength(2);
+        await close(f);
+      });
+    } finally {
+      if (prior === undefined) delete process.env['E2E_REPLACED_FIELD_ACTIVE']; else process.env['E2E_REPLACED_FIELD_ACTIVE'] = prior;
+    }
+  });
   it('caps eight records and retains the overflow-triggering failure facts with an explicit omission marker', async () => {
     await observe(async lines => {
       const f = await opened();

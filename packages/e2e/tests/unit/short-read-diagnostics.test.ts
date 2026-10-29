@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { withShortReadDiagnostics } from '../helpers/short-read-diagnostics.ts';
-const original = { enabled: process.env['E2E_SHORT_READ_DIAGNOSTIC'], suite: process.env['E2E_QUERY_READ_DIAGNOSTIC'] };
+const original = { enabled: process.env['E2E_SHORT_READ_DIAGNOSTIC'], suite: process.env['E2E_QUERY_READ_DIAGNOSTIC'], fields: process.env['E2E_REPLACED_FIELD_CAPTURE'] };
 afterEach(() => {
   vi.restoreAllMocks();
-  for (const [key, value] of [['E2E_SHORT_READ_DIAGNOSTIC', original.enabled], ['E2E_QUERY_READ_DIAGNOSTIC', original.suite]] as const) {
+  for (const [key, value] of [['E2E_SHORT_READ_DIAGNOSTIC', original.enabled], ['E2E_QUERY_READ_DIAGNOSTIC', original.suite], ['E2E_REPLACED_FIELD_CAPTURE', original.fields]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
 });
@@ -85,4 +85,63 @@ it('cannot replace the original result or failure when the custody sink fails', 
   expect(await withShortReadDiagnostics('web-platform', async () => result)).toBe(result);
   const failure = new Error('original failure');
   await expect(withShortReadDiagnostics('web-platform', async () => { throw failure; })).rejects.toBe(failure);
+});
+
+it('forwards the exact replaced-field wire join through the existing worker output pipe and restores its tag', async () => {
+  const lines = sink();
+  process.env['E2E_REPLACED_FIELD_CAPTURE'] = '1';
+  process.env['E2E_QUERY_READ_DIAGNOSTIC'] = 'prior';
+  const joined = { ...row, suite: 'replaced-nodes', generation: 4, operationSeq: 19 };
+  const outcome = { failed: true, cleanup: 'failed' };
+  const returned = await withShortReadDiagnostics('replaced-nodes', async onEvent => {
+    expect({ ...process.env }['E2E_QUERY_READ_DIAGNOSTIC']).toBe('replaced-nodes');
+    const text = line(joined);
+    for (const piece of [text.slice(0, 31), text.slice(31)]) {
+      await onEvent!({ seq: 1, at: '2026-10-29T12:00:00.000Z', type: 'output', target: 'web', pair: undefined, stream: 'stderr', text: piece });
+    }
+    for (const invalid of [{ ...row, suite: 'replaced-nodes' }, { ...joined, operationSeq: true }, { ...joined, generation: 0 }, { ...joined, query: 'private-query' }]) {
+      await onEvent!({ seq: 1, at: '2026-10-29T12:00:00.000Z', type: 'output', target: 'web', pair: undefined, stream: 'stderr', text: line(invalid) });
+    }
+    return outcome;
+  });
+  expect(returned).toBe(outcome);
+  expect(process.env['E2E_QUERY_READ_DIAGNOSTIC']).toBe('prior');
+  expect(JSON.parse(lines[0]!.slice('QUERY_READ_RESULT_DIAGNOSTIC '.length))).toEqual(joined);
+  expect(lines.join('')).not.toContain('private-query');
+  expect(lines.at(-1)).toContain('"invalidRecords":4');
+});
+it('does not turn on replaced-field capture through the unrelated short-read opt-in', async () => {
+  process.env['E2E_SHORT_READ_DIAGNOSTIC'] = '1';
+  delete process.env['E2E_REPLACED_FIELD_CAPTURE'];
+  await withShortReadDiagnostics('replaced-nodes', async onEvent => { expect(onEvent).toBeUndefined(); });
+});
+
+it('archives exactly the bounded closed forwarded rows and custody without raw worker output', async () => {
+  const lines = sink();
+  process.env['E2E_REPLACED_FIELD_CAPTURE'] = '1';
+  const joined = { ...row, suite: 'replaced-nodes', generation: 4, operationSeq: 19 };
+  const captured: string[] = [];
+  const result = { status: 'failed', cleanup: 'failed' };
+  expect(await withShortReadDiagnostics('replaced-nodes', async onEvent => {
+    await onEvent!({ seq: 1, at: '2026-10-29T12:00:00.000Z', type: 'output', target: 'web', pair: undefined, stream: 'stderr', text: `PRIVATE RAW\n${line(joined)}` });
+    return result;
+  }, text => { captured.push(text); })).toBe(result);
+  expect(captured).toEqual([lines.join('')]);
+  expect(captured[0]).not.toContain('PRIVATE');
+  expect(captured[0]).toContain('QUERY_READ_DIAGNOSTIC_CUSTODY');
+});
+
+it('a failed archive callback preserves forwarding and the exact business failure', async () => {
+  const lines = sink();
+  const original = new Error('original failure');
+  await expect(withShortReadDiagnostics('web-platform', async () => { throw original; }, () => { throw new Error('archive failed'); })).rejects.toBe(original);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toContain('QUERY_READ_DIAGNOSTIC_CUSTODY');
+});
+
+it('disabled diagnostics never invoke the archive callback', async () => {
+  delete process.env['E2E_REPLACED_FIELD_CAPTURE'];
+  const capture = vi.fn();
+  expect(await withShortReadDiagnostics('replaced-nodes', async () => 'unchanged', capture)).toBe('unchanged');
+  expect(capture).not.toHaveBeenCalled();
 });

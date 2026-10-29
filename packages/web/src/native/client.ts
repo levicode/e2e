@@ -433,10 +433,16 @@ export class NativeClient {
   }
 
   /** Exact synthetic-fixture opt-in; closed result facts only, never query/args/error text. */
-  private observeQueryReadFailure(command: 'fixture.read-fields' | 'fixture.query' | 'browser.query', raw: NativeResult, returned: NativeResult, transmittedTimeoutMs: unknown, cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined, timeoutRewritten: boolean, cancelAckSeen: boolean): void {
+  private observeQueryReadFailure(command: 'fixture.read-fields' | 'fixture.query' | 'browser.query', raw: NativeResult, returned: NativeResult, transmittedTimeoutMs: unknown, cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined, timeoutRewritten: boolean, cancelAckSeen: boolean, wireGeneration: unknown, wireOperationSeq: unknown): void {
     try {
       const suite = process.env['E2E_QUERY_READ_DIAGNOSTIC'];
-      if ((suite !== 'transformed-secrets' && suite !== 'web-platform') || this.queryReadDiagnosticAttempts > 8) return;
+      if ((suite !== 'transformed-secrets' && suite !== 'web-platform' && suite !== 'replaced-nodes') || this.queryReadDiagnosticAttempts > 8) return;
+      // This tag exists only during the original stable-field body. The join
+      // uses the SAME serialized request generation/operationSeq, never cN IDs.
+      const replaced = suite === 'replaced-nodes';
+      if (replaced && (process.env['E2E_REPLACED_FIELD_ACTIVE'] !== '1'
+        || typeof wireGeneration !== 'number' || !Number.isSafeInteger(wireGeneration) || wireGeneration < 1
+        || typeof wireOperationSeq !== 'number' || !Number.isSafeInteger(wireOperationSeq) || wireOperationSeq < 1)) return;
       // Capture only the serialized wire budget: the live getter can now be expired.
       if (typeof transmittedTimeoutMs !== 'number' || !Number.isSafeInteger(transmittedTimeoutMs) || transmittedTimeoutMs <= 0) return;
       this.queryReadDiagnosticAttempts++;
@@ -444,6 +450,7 @@ export class NativeClient {
       process.stderr.write(`QUERY_READ_RESULT_DIAGNOSTIC ${JSON.stringify({
         phase: overflow ? 'capture-limit-reached' : 'settled-failure', suite, command,
         ...(overflow ? { limit: 8, laterFailuresOmitted: true } : {}),
+        ...(replaced ? { generation: wireGeneration, operationSeq: wireOperationSeq } : {}),
         transmittedTimeoutMs,
         selectedLocalCancel: cancellation === undefined ? 'none' : cancellation === 'CANCELLED' ? 'abort' : 'deadline',
         rawCode: raw.error?.code, rawEffects: raw.effects, rawScopeState: raw.scopeState,
@@ -529,7 +536,7 @@ export class NativeClient {
           timeoutRewritten = true;
         }
         if (pageUrlFailure !== undefined && settled.type === 'result') this.observePageUrlFailure(pageUrlFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
-        if (queryReadCommand !== undefined && queryReadFailure !== undefined && settled.type === 'result') this.observeQueryReadFailure(queryReadCommand, queryReadFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
+        if (queryReadCommand !== undefined && queryReadFailure !== undefined && settled.type === 'result') this.observeQueryReadFailure(queryReadCommand, queryReadFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged, message['generation'], message['operationSeq']);
         if (lifecycleOpenCancelCommand !== undefined && lifecycleOpenCancelFailure !== undefined && settled.type === 'result') this.observeLifecycleOpenCancelFailure(lifecycleOpenCancelCommand, lifecycleOpenCancelFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
         resolve(settled);
       };

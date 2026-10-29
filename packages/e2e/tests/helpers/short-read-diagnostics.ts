@@ -1,4 +1,4 @@
-/** Opt-in only around the two original synthetic short-read integration workloads. */
+/** Opt-in only around the original synthetic short-read integration workloads. */
 import { z } from 'zod';
 import type { RunEventSink } from '../../src/run/events.ts';
 
@@ -10,7 +10,9 @@ const code = z.enum([
 ]);
 const recordSchema = z.object({
   phase: z.enum(['settled-failure', 'capture-limit-reached']),
-  suite: z.enum(['transformed-secrets', 'web-platform']),
+  suite: z.enum(['transformed-secrets', 'web-platform', 'replaced-nodes']),
+  generation: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
+  operationSeq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
   command: z.enum(['fixture.read-fields', 'fixture.query', 'browser.query']),
   transmittedTimeoutMs: z.number().int().min(1).max(3_600_000),
   selectedLocalCancel: z.enum(['none', 'abort', 'deadline']),
@@ -21,8 +23,8 @@ const recordSchema = z.object({
 const PREFIX = 'QUERY_READ_RESULT_DIAGNOSTIC ';
 
 /** Receives worker output even when quiet=true; emits only validated closed rows after run settles. */
-export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' | 'web-platform', run: (onEvent: RunEventSink | undefined) => Promise<T>): Promise<T> {
-  if (process.env['E2E_SHORT_READ_DIAGNOSTIC'] !== '1') return run(undefined);
+export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' | 'web-platform' | 'replaced-nodes', run: (onEvent: RunEventSink | undefined) => Promise<T>, capture?: (closedRows: string) => void): Promise<T> {
+  if (process.env[suite === 'replaced-nodes' ? 'E2E_REPLACED_FIELD_CAPTURE' : 'E2E_SHORT_READ_DIAGNOSTIC'] !== '1') return run(undefined);
   const previous = process.env['E2E_QUERY_READ_DIAGNOSTIC'];
   process.env['E2E_QUERY_READ_DIAGNOSTIC'] = suite;
   const records: z.infer<typeof recordSchema>[] = [];
@@ -32,6 +34,7 @@ export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' |
     try {
       const parsed = recordSchema.safeParse(JSON.parse(line.slice(PREFIX.length)));
       if (!parsed.success || parsed.data.suite !== suite
+        || (suite === 'replaced-nodes' ? parsed.data.generation === undefined || parsed.data.operationSeq === undefined : parsed.data.generation !== undefined || parsed.data.operationSeq !== undefined)
         || (parsed.data.phase === 'capture-limit-reached') !== (parsed.data.limit === 8 && parsed.data.laterFailuresOmitted === true)
         || (parsed.data.phase === 'settled-failure' && (parsed.data.limit !== undefined || parsed.data.laterFailuresOmitted !== undefined))) {
         invalidRecords = Math.min(65, invalidRecords + 1); return;
@@ -60,8 +63,13 @@ export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' |
     // Worker rows would be lost by quiet=true, so forward these after the run, before cleanup.
     try {
       if (!skipping && tail !== '') accept(tail);
-      for (const record of records) process.stderr.write(`${PREFIX}${JSON.stringify(record)}\n`);
-      process.stderr.write(`QUERY_READ_DIAGNOSTIC_CUSTODY ${JSON.stringify({ suite, workerRecords: records.length, invalidRecords, lineOverflow, recordOverflow })}\n`);
+      const rows = records.map(record => `${PREFIX}${JSON.stringify(record)}\n`);
+      const custody = `QUERY_READ_DIAGNOSTIC_CUSTODY ${JSON.stringify({ suite, workerRecords: records.length, invalidRecords, lineOverflow, recordOverflow })}\n`;
+      // Archive the same bounded closed worker facts, never raw stderr. A failed
+      // archive callback cannot replace business outcomes or suppress forwarding.
+      try { capture?.(rows.join('') + custody); } catch { /* Missing archive fails acceptance. */ }
+      for (const row of rows) process.stderr.write(row);
+      process.stderr.write(custody);
     } catch { /* Custody output must not replace the original outcome or cleanup failure. */ }
   }
 }
