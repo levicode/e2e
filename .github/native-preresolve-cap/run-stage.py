@@ -3,9 +3,9 @@
 import argparse, hashlib, json, pathlib, subprocess
 p=argparse.ArgumentParser();p.add_argument('--executable',required=True);p.add_argument('--output',required=True);a=p.parse_args()
 pins=json.loads(pathlib.Path(__file__).with_name('pins.json').read_text());tests=pins['tests']
-assert len(tests)==14 and len(set(tests))==14
+assert len(tests)==15 and len(set(tests))==15
 exe=pathlib.Path(a.executable).resolve(strict=True);out=pathlib.Path(a.output);out.mkdir(parents=True,exist_ok=False)
-receipt={'binarySHA256':hashlib.sha256(exe.read_bytes()).hexdigest(),'results':[],'accepted':False,'expected':'all14PASS'}
+receipt={'binarySHA256':hashlib.sha256(exe.read_bytes()).hexdigest(),'results':[],'accepted':False,'expected':'all15PASS'}
 def save(): (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
 def call(args,name):
  try:r=subprocess.run([str(exe),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30,check=False)

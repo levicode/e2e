@@ -1,7 +1,7 @@
 name: Native pre-resolve and issuance-capability narrow gates
 'on':
   push:
-    branches: [ci/native-preresolve-cap-20261029]
+    branches: [ci/native-preresolve-cap-r2-20261029]
 permissions:
   contents: read
 concurrency:
@@ -78,7 +78,7 @@ jobs:
         if: matrix.gate == 'controls'
         id: binary
         run: python3 .github/native-preresolve-cap/ci.py select-executable --gate controls
-      - name: Run fourteen exact candidate controls, all expected PASS
+      - name: Run fifteen exact candidate controls, all expected PASS
         if: matrix.gate == 'controls'
         env:
           TEST_EXECUTABLE: ${{ steps.binary.outputs.executable }}
@@ -119,5 +119,6 @@ jobs:
             ${{ env.GATE_EVIDENCE }}/controls/11.log
             ${{ env.GATE_EVIDENCE }}/controls/12.log
             ${{ env.GATE_EVIDENCE }}/controls/13.log
+            ${{ env.GATE_EVIDENCE }}/controls/14.log
           if-no-files-found: error
           retention-days: 7

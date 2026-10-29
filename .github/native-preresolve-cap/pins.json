@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "repository": "levicode/agent-browser",
-  "commit": "fa6998d3a8128fae3f30d16446d6adfa7f171314",
-  "tree": "3d70512ddb9b0ceec0d99f97fd4829a970aa1117",
+  "commit": "3bdb7541dacd750caa979b36f6018a903f9b934b",
+  "tree": "b9acf8d5e10bd1b5af32f531da2fe69a94ccc7a7",
   "files": {
     "cli/src/native/cdp/client.rs": "1235cec0fedcf1a94d8c5c600746cdb00f23247a1ddf0b16123dc48929f3d85c",
     "cli/src/native/client_browser.rs": "71d07a697639e5d5e5bb5427daf2f64a8c40f07e9464760442e152e660d17798",
@@ -10,9 +10,10 @@
     "cli/src/native/client_observation/fresh_query.rs": "8c8c6527c6ff3b854730cabc6f7a370b33ff4e8b957ae7a2820bd47aa3b2ebb5",
     "cli/src/native/client_observation/fresh_query_resolve.rs": "22b8be7ff219da68e39dffc1dc30501fdb050ed9c277a2796c0b43a6c03f4de2",
     "cli/src/native/client_observation/fresh_query_submission_tests.rs": "2a4cb7dba47e605edb4fc4c69598091f7d624f716d7be3d38b56df633f60c34f",
-    "cli/src/native/daemon.rs": "568542f09d803d834c36f99db863f01430d7f0446a82df6aee058879cbaec7bc"
+    "cli/src/native/daemon.rs": "568542f09d803d834c36f99db863f01430d7f0446a82df6aee058879cbaec7bc",
+    "cli/src/native/client_observation.rs": "9a1a3874b2709a9700e5dd6aa5222af1138288b6ccad53bf7a06d695bc1ac100"
   },
-  "nativePatchSHA256": "5ec0838a0aa53a3fe0c670c8aef23f073585dc41ddf2c392ff4a25b9c8267053",
+  "nativePatchSHA256": "89b7d6932bab5e9731acc9ffba18509f70cef3a206e13aa5fa8511a33d520a96",
   "toolchain": "1.99.1",
   "profile": "ci",
   "features": [],
@@ -31,7 +32,8 @@
     "native::cdp::client::tests::readonly_empty_group_acks_exhaust_cleanup_before_reference_admission",
     "native::client_observation::tests::stopped_worlds_with_exact_release_ack_leave_fresh_fields_usable",
     "native::client_observation::tests::stopped_worlds_without_release_ack_do_not_poison_later_fresh_fields",
-    "native::client_observation::tests::cancelled_fresh_fields_resolve_retains_group_until_late_disposal_ack"
+    "native::client_observation::tests::cancelled_fresh_fields_resolve_retains_group_until_late_disposal_ack",
+    "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "scope": "candidate-only all-PASS controls; no baseline causality/browser/fullmatrix claim"
 }
