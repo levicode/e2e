@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AcceptanceRecord } from '../../src/native/acceptance-trace.ts';
 
 interface Notice {
@@ -16,7 +16,10 @@ interface Notice {
   records?: AcceptanceRecord[];
   failure?: { code: string; message: string };
 }
-const ownerScript = fileURLToPath(new URL('../helpers/native-process-owner.ts', import.meta.url));
+const ownerProject = fileURLToPath(new URL('../helpers/tsconfig.native-process-owner.json', import.meta.url));
+const compilerScript = path.join(path.dirname(fileURLToPath(import.meta.resolve('typescript/package.json'))), 'bin/tsc');
+let ownerBuildDirectory: string | undefined;
+let ownerScript: string;
 const peerScript = fileURLToPath(new URL('../helpers/native-process-peer.cjs', import.meta.url));
 
 /** Read only scalar process identity/state, never argv or environment. */
@@ -39,7 +42,7 @@ async function withOwner(mode: string, body: (owner: {
   const executable = path.join(directory, 'peer.cjs');
   copyFileSync(peerScript, executable);
   chmodSync(executable, 0o700);
-  const child = spawn(process.execPath, ['--experimental-transform-types', ownerScript, executable], {
+  const child = spawn(process.execPath, [ownerScript, executable], {
     detached: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: { ...process.env, PROCESS_FIXTURE_EXIT: mode },
   });
@@ -74,6 +77,27 @@ async function withOwner(mode: string, body: (owner: {
 }
 
 describe.skipIf(process.platform === 'win32')('native proxy process-group ownership', () => {
+  beforeAll(() => {
+    // Compile the real owner and its production imports, including parameter
+    // properties. Node 26 removed --experimental-transform-types; no TS loader
+    // or runtime-specific flags are needed by the emitted JavaScript.
+    // Keep output inside this package so bare e2e/engine imports resolve normally.
+    ownerBuildDirectory = mkdtempSync(fileURLToPath(new URL('../.native-process-owner-', import.meta.url)));
+    try {
+      execFileSync(process.execPath, [compilerScript, '--project', ownerProject, '--outDir', ownerBuildDirectory], {
+        stdio: 'pipe', timeout: 5_000, killSignal: 'SIGKILL',
+      });
+      ownerScript = path.join(ownerBuildDirectory, 'tests/helpers/native-process-owner.js');
+    } catch (error) {
+      rmSync(ownerBuildDirectory, { recursive: true, force: true });
+      ownerBuildDirectory = undefined;
+      throw error;
+    }
+  });
+  afterAll(() => {
+    if (ownerBuildDirectory !== undefined) rmSync(ownerBuildDirectory, { recursive: true, force: true });
+  });
+
   it('survives repeated foreground Ctrl-C and still requires closed plus clean process exit', () =>
     withOwner('clean', async owner => {
       const ownerGroup = processState(owner.pid)?.group;

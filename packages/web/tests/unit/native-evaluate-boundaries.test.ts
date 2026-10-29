@@ -35,6 +35,7 @@ async function transport() {
   const client = await connecting;
   const channel = new BrowserChannel(client, { identityScope: () => 'synthetic-scope', operation });
   const surface: NativeWebSurface = {
+    retainDownloadFile: () => { throw new Error('This fixture does not retain download files'); },
     latch: new ErrorLatch(), identityScope: 'synthetic-scope',
     latchCallbackFailure: (scope, error) => { if (scope === surface.identityScope) surface.latch.latch(error); },
     routeRegistryVersion: () => 0,

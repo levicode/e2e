@@ -237,7 +237,7 @@ describe('agent.act pixel verbs', () => {
 
   it('opens tree-first with every pixel verb on offer, and the rules say to prefer ids', () => {
     const [first] = turnsOf('pick the red pin');
-    expect(first!.prompt).toMatch(/#n\d+ button "Reset"/);
+    expect(first!.prompt).toMatch(/#@e\d+ button "Reset"/);
     expect(first!.prompt).not.toContain('Screenshot attached');
     for (const verb of POINT_VERBS) expect(first!.toolNames).toContain(verb);
     expect(first!.system).toContain('use the point tools only for a target the screen does not list');

@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { interopEvidenceDirectory } from '../helpers/interop-evidence.ts';
 import { expect, it } from 'vitest';
 import type { EngineCleanupContext, EngineFixtureContext, Expectable, OperationContext } from 'e2e/engine';
 import { chromium, type Browser as PlaywrightBrowser, type Page } from 'playwright-core';
@@ -166,7 +167,8 @@ it.each(['owned', 'borrowed'] as const)('reopens an isolated Page twice through 
         expect(await page.locator('output').textContent()).toBe('clicked');
         const screenshot = await engine.artifacts!.screenshot(`isolated-reopen-${cycle}`, operation());
         const png = readFileSync(path.join(artifactsDir, screenshot));
-        const evidenceDirectory = process.env['E2E_INTEROP_EVIDENCE_DIR'];
+        const evidenceRoot = process.env['E2E_INTEROP_EVIDENCE_DIR'];
+        const evidenceDirectory = evidenceRoot === undefined && process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE'] === undefined ? undefined : interopEvidenceDirectory(evidenceRoot, expect.getState().testPath, process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE']);
         if (evidenceDirectory !== undefined) { mkdirSync(evidenceDirectory, { recursive: true }); copyFileSync(path.join(artifactsDir, screenshot), path.join(evidenceDirectory, `isolated-reopen-${ownership}-${cycle}.png`)); }
         expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
         observations.push({ cycle, after, closeEvents, cookies, state, rawViewportBeforeClose: { width: 803, height: 607 }, requestedViewportAfterReopen: page.viewportSize(), staleRefError: String(stale), screenshot, screenshotBytes: png.length, publicInteraction: true, requests, publicRoutes, rawRoutes });
@@ -217,7 +219,7 @@ it.each(['owned', 'borrowed'] as const)('reopens an isolated Page twice through 
     evidence['cleanup'] = cleanupFailed ? 'failed' : 'passed';
     // Deliberately outside the retirement block: cleanup failures must still
     // produce a diagnostic artifact instead of erasing the failing evidence.
-    await clean('evidence write', async () => { const directory = process.env['E2E_INTEROP_EVIDENCE_DIR'] ?? artifactsDir; mkdirSync(directory, { recursive: true }); writeFileSync(path.join(directory, `isolated-page-reopen-${ownership}.json`), JSON.stringify(evidence, null, 2)); });
+    await clean('evidence write', async () => { const evidenceRoot = process.env['E2E_INTEROP_EVIDENCE_DIR']; const directory = evidenceRoot === undefined && process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE'] === undefined ? artifactsDir : interopEvidenceDirectory(evidenceRoot, expect.getState().testPath, process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE']); mkdirSync(directory, { recursive: true }); writeFileSync(path.join(directory, `isolated-page-reopen-${ownership}.json`), JSON.stringify(evidence, null, 2)); });
     if (!failed && process.env['E2E_INTEROP_EVIDENCE_DIR'] !== undefined) rmSync(artifactsDir, { recursive: true, force: true });
   }
   if (failed) throw failure;

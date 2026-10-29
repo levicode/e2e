@@ -11,6 +11,8 @@ import { isLocalBudgetDeparture, withConnectionBudget } from '../operation-budge
 export interface BrowserChannelContext {
   identityScope(): string;
   operation(): OperationContext;
+  /** An exact-owner local admission check; undefined is a synchronous dispatch permit. */
+  captureReadiness?(): (() => Promise<void> | undefined) | undefined;
   trackResourceCleanup?(work: Promise<void>, callbackFailed?: boolean): void;
 }
 
@@ -61,15 +63,21 @@ export class BrowserChannel {
     this.assertScope();
     const endsAt = performance.now() + operation.timeoutMs;
     const correlation = name === 'fixture.correlate' ? { args: snapshotCorrelationArgs(args), identityScope: this.scope } : undefined;
-    let settling = this.client.cancelledSettlement(this.scope);
-    if (settling !== undefined) {
-      do {
-        await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() }, 'native operation readiness', () => settling!);
-        this.assertScope();
-        settling = this.client.cancelledSettlement(this.scope);
-      } while (settling !== undefined);
-      operation = { ...operation, timeoutMs: endsAt - performance.now() };
+    // Resource controls must remain available to retire the original producer.
+    const ready = retainedCleanup || name === 'network.body.release' || name === 'blob.release' || name === 'network.responses.unsubscribe'
+      ? undefined : this.context.captureReadiness?.();
+    let waited = false;
+    for (;;) {
+      const settling = this.client.cancelledSettlement(this.scope);
+      const waiting = settling ?? ready?.();
+      if (waiting === undefined) break;
+      waited = true;
+      await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() },
+        settling === undefined ? 'retiring unpublished download files' : 'native operation readiness', () => waiting);
+      this.assertScope();
     }
+    // No await between the final local/native readiness checks and wire dispatch.
+    if (waited) operation = { ...operation, timeoutMs: endsAt - performance.now() };
     // Every command argument is a typed JSON object; no opaque browser object is admitted.
     const result = await this.client.request(name, { ...(correlation?.args ?? args), identityScope: this.scope } as Readonly<Record<string, JsonValue>>, operation);
     if ((name === 'download.release' || name === 'network.body.release') && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);

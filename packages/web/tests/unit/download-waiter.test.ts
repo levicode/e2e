@@ -53,6 +53,7 @@ async function fixture(options: { omitTimeouts?: boolean; operationTimeout?: num
   const operation = (timeoutMs = options.operationTimeout ?? 1000): OperationContext => ({ signal: controller.signal, timeoutMs, runId: 'run', attemptId: 'attempt', origin: 'test' });
   const step = <T>(name: string, work: () => Promise<T>): Promise<T> => steps.run('resource', name, '', work);
   const surface: NativeWebSurface = {
+    retainDownloadFile: () => ({ publish: () => {}, retire: work => latch.track('download file cleanup', work.catch(cause => { latch.latch(cause as Error); })) }),
     latch, get identityScope() { return scope; },
     latchCallbackFailure: () => undefined,
     routeRegistryVersion: () => 0,

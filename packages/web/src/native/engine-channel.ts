@@ -8,6 +8,7 @@ import { decodeBrowserResult } from './browser-decode.ts';
 import { decodeEngineResult } from './engine-decode.ts';
 import { QUERY_UNION_CAPABILITY } from './capabilities.ts';
 import type { EngineCommandMap, NativeBlob, NativeTraceImage } from './engine-contract.ts';
+import type { NativeResult } from './protocol.ts';
 import { isClosedFrameCancellation, type NativeClient, type InteropReplacementHandler } from './client.ts';
 import { frameQuerySnapshot, queryDiagnostic, queryUsesUnion, type FrameQueryDiagnostic } from './query-diagnostic.ts';
 
@@ -43,7 +44,8 @@ export function isUnavailableBlobRead(cause: unknown): boolean {
 
 /** No retries, backend implementation, or alternative process transport. */
 export class EngineChannel {
-  constructor(private readonly client: NativeClient, private readonly captureScope: (scope: string) => () => boolean = () => () => true) {}
+  constructor(private readonly client: NativeClient, private readonly captureScope: (scope: string) => () => boolean = () => () => true,
+    private readonly captureReadiness?: (scope: string) => (() => Promise<void> | undefined) | undefined) {}
 
   command(name: 'capture.screenshot', args: EngineCommandMap['capture.screenshot']['args'] & { readonly purpose: 'trace' }, operation: OperationContext, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<NativeTraceImage>;
   command<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<EngineCommandMap[K]['result']>;
@@ -70,20 +72,8 @@ export class EngineChannel {
       ? queryDiagnostic((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
     const frames = name === 'browser.query' || name === 'fixture.query' || name === 'fixture.read-fields'
       ? frameQuerySnapshot((args as EngineCommandMap['browser.query']['args']).expression) : undefined;
-    // Readiness is not recovery or a retry. Join only cancelled work already
-    // owned by this scope, without bounding the dispatched result/Unknown proof.
-    let settling = scope === undefined || this.client.recoveryScope() !== undefined ? undefined : this.client.cancelledSettlement(scope);
-    if (settling !== undefined) {
-      const endsAt = performance.now() + operation.timeoutMs;
-      do {
-        await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() }, 'native operation readiness', () => settling!);
-        this.assertOwner(owns);
-        settling = this.client.cancelledSettlement(scope!);
-      } while (settling !== undefined);
-      operation = { ...operation, timeoutMs: endsAt - performance.now() };
-    }
     // The closed command map contains only structured JSON values.
-    const result = await this.client.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, callbackTransition, interop);
+    const result = await this.request(name, { ...args } as Readonly<Record<string, JsonValue>>, operation, owns, scope, callbackTransition, interop);
     if ((name === 'browser.query' || name === 'fixture.query') && !result.ok && process.env['E2E_INTEROP_BINDING_DIAGNOSTIC'] === '1') console.error('QUERY_RESULT_DIAGNOSTIC', JSON.stringify({ command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState }));
     if ((name === 'scope.interop.retire' || name === 'scope.end' || name === 'scope.reset' || name === 'state.restore' || name === 'state.capture') && !result.ok && process.env['E2E_SCOPE_RETIREMENT_DIAGNOSTIC'] === '1') process.stderr.write(`SCOPE_RETIREMENT_DIAGNOSTIC ${JSON.stringify({ command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
     // Validated uncertainty survives owner retirement; it never authorizes publication.
@@ -121,6 +111,28 @@ export class EngineChannel {
     }
     try { return decodeEngineResult(name, result.data, args); }
     catch { throw this.client.invalidate(); }
+  }
+
+  /** One dispatch boundary for ordinary engine commands and upload prefixes, never releases. */
+  private async request(name: string, args: Readonly<Record<string, JsonValue>>, operation: OperationContext,
+    owns: () => boolean, scope: string | undefined, callbackTransition?: number, interop?: InteropReplacementHandler): Promise<NativeResult> {
+    // Readiness is not recovery or a retry. Join only cancelled work already
+    // owned by this scope, without bounding the dispatched result/Unknown proof.
+    const endsAt = performance.now() + operation.timeoutMs;
+    const ready = scope === undefined ? undefined : this.captureReadiness?.(scope);
+    let waited = false;
+    for (;;) {
+      const settling = scope === undefined || this.client.recoveryScope() !== undefined ? undefined : this.client.cancelledSettlement(scope);
+      const waiting = settling ?? ready?.();
+      if (waiting === undefined) break;
+      waited = true;
+      await withConnectionBudget({ signal: operation.signal, timeoutMs: endsAt - performance.now() },
+        settling === undefined ? 'retiring unpublished download files' : 'native operation readiness', () => waiting);
+      this.assertOwner(owns);
+    }
+    // No await between the final local/native readiness checks and wire dispatch.
+    if (waited) operation = { ...operation, timeoutMs: endsAt - performance.now() };
+    return this.client.request(name, args, operation, callbackTransition, interop);
   }
 
   /** Capture all handles before the first read; never acquire a replacement scope for cleanup. */
@@ -246,7 +258,7 @@ export class EngineChannel {
 
   private async browserCommand<K extends keyof BrowserCommandMap>(name: K, args: BrowserCommandMap[K]['args'], operation: OperationContext, expectedScope: string): Promise<BrowserCommandMap[K]['result']> {
     const owns = this.captureScope(expectedScope); this.assertOwner(owns);
-    const result = await this.client.request(name, { ...args, identityScope: expectedScope } as Readonly<Record<string, JsonValue>>, operation);
+    const result = await this.request(name, { ...args, identityScope: expectedScope } as Readonly<Record<string, JsonValue>>, operation, owns, expectedScope);
     // NativeClient has already quarantined a validated unknown outcome.
     if (!result.ok && result.effects === 'unknown') throw resultError(result);
     this.assertOwner(owns);

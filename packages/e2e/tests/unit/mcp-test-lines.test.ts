@@ -159,6 +159,16 @@ describe('navigationLine', () => {
 });
 
 describe('SessionTestLines', () => {
+  it.each(['@e42', '#@e42'])('derives a replayable test line from native target %s', async (target) => {
+    const save: Fake = { id: '@e42', role: 'button', name: 'Save', y: 40 };
+    const session = await harness({ screen: [save], matches: { 'getByRole("button", name: "Save")': [save] } });
+    const text = await session.run('tap', { target });
+    expect(noteOf(text)).toBe('Test line: await screen.getByRole("button", "Save").tap();');
+    const draft = await session.run('test_lines', {});
+    expect(draft).toContain('\nawait screen.getByRole("button", "Save").tap();\n');
+    expect(draft).toContain('(1 lines)');
+  });
+
   it('answers every grammar action but the point tools, so a new verb needs a line or a reason', async () => {
     const context = { ...fakeExecutorContext().context, observe: async () => ({ revision: 'r', text: '', truncated: false, viewport: { width: 1, height: 1 } }) };
     const tools = createGrammarTools(context);

@@ -44,6 +44,7 @@ const LATE_RECORDING_STOP_MS = 10_000;
 interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEventMap]) => void | Promise<void>; unsubscribe?: (() => void) | undefined }
 interface ResourceCallbackOwner { attempt: Attempt; epoch: number; notRevoked: () => boolean; cleanupFailure?: Error }
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
+interface DownloadFileCustody { retiring: boolean; readonly settled: Promise<void> }
 interface Attempt {
   epoch: number;
   ready: boolean;
@@ -91,6 +92,8 @@ interface Attempt {
   nativeVideoStop?: Promise<void> | undefined;
   readonly videoBlobBatches: Set<BlobBatchCustody>;
   readonly downloads: Map<string, Promise<Uint8Array | undefined>>;
+  readonly downloadFiles: Set<DownloadFileCustody>;
+  downloadFileFailure?: Error;
 }
 
 /** Not exported as a Playwright surface and never supplies raw native/CDP commands to users. */
@@ -137,6 +140,7 @@ export class NativeSurface implements NativeWebSurface {
     return {
       latch,
       latchCallbackFailure: (scope, error) => { if (this.callbackOwner.getStore()?.notRevoked() !== false && (this.attempt !== attempt || (attempt.scope === scope && this.callbackIsCurrent()))) latch.latch(error); },
+      retainDownloadFile: () => { check(); return this.retainAttemptDownloadFile(attempt, latch); },
       get identityScope() { check(); return attempt.scope; },
       routeRegistryVersion: () => { check(); return this.routeRegistryVersion(); },
       allocateRouteRegistryVersion: () => { check(); return this.allocateRouteRegistryVersion(); },
@@ -151,6 +155,39 @@ export class NativeSurface implements NativeWebSurface {
   }
 
   latchCallbackFailure(scope: string, error: Error): void { if (this.attempt?.scope === scope) this.latch.latch(error); }
+  retainDownloadFile(): ReturnType<NativeWebSurface['retainDownloadFile']> { return this.retainAttemptDownloadFile(this.requireAttempt(), this.latch); }
+  private retainAttemptDownloadFile(attempt: Attempt, latch: ErrorLatch): ReturnType<NativeWebSurface['retainDownloadFile']> {
+    let resolve!: () => void;
+    const custody: DownloadFileCustody = { retiring: false, settled: new Promise<void>(done => { resolve = done; }) };
+    attempt.downloadFiles.add(custody);
+    let claimed = false;
+    const claim = () => { if (claimed) throw invalidState('Download file custody already settled'); claimed = true; };
+    const finish = () => { attempt.downloadFiles.delete(custody); resolve(); };
+    return {
+      publish: () => { claim(); finish(); },
+      retire: work => {
+        claim(); custody.retiring = true;
+        const retained = work.catch(cause => {
+          const failure = cause instanceof Error ? cause : invalidState('Download file cleanup failed');
+          attempt.downloadFileFailure ??= failure; attempt.resourceCleanupFailure ??= failure;
+          latch.latch(failure);
+          if (this.attempt === attempt || this.retiringAttempt === attempt) this.retirementFailure ??= failure;
+        }).then(finish);
+        latch.track('download file cleanup', retained);
+      },
+    };
+  }
+  /** Capture ordinary admission, not lifecycle cleanup or a native callback's control lane. */
+  private captureDownloadReadiness(attempt: Attempt | undefined): (() => Promise<void> | undefined) | undefined {
+    if (attempt === undefined || this.attempt !== attempt || attempt.retirement.signal.aborted || this.callbackOwner.getStore() !== undefined) return undefined;
+    return () => {
+      this.assertAttempt(attempt);
+      const files = [...attempt.downloadFiles].filter(file => file.retiring);
+      if (files.length > 0) return Promise.all(files.map(file => file.settled)).then(() => undefined);
+      if (attempt.downloadFileFailure !== undefined) throw attempt.downloadFileFailure;
+      return undefined;
+    };
+  }
   get identityScope(): string { return this.requireAttempt().scope; }
   routeRegistryVersion(): number { return this.registryCurrent; }
   allocateRouteRegistryVersion(): number {
@@ -202,7 +239,7 @@ export class NativeSurface implements NativeWebSurface {
       await raceAbort(() => retirement, context.signal, 'waiting for native attempt retirement');
     }
     if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
-    const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
+    const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), downloadFiles: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
     const startingOperation = this.operation(startupSignal);
@@ -487,6 +524,9 @@ export class NativeSurface implements NativeWebSurface {
       if (attempt?.rawClosing !== undefined) try { await attempt.rawClosing; } catch (cause) { failed(cause); }
       if (scopeEnd !== undefined) try { await scopeEnd; } catch (cause) { failed(cause, true); }
       if (attempt !== undefined) await Promise.allSettled(attempt.wireRequests);
+      // Native retirement can settle a failed read; only its own later close/
+      // unlink receipt retires the local file. Never join user event handlers.
+      if (attempt !== undefined) while (attempt.downloadFiles.size > 0) await Promise.all([...attempt.downloadFiles].map(file => file.settled));
       if (attempt?.resourceCleanupFailure !== undefined) failed(attempt.resourceCleanupFailure);
       if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
       if (connecting !== undefined) {
@@ -505,7 +545,7 @@ export class NativeSurface implements NativeWebSurface {
       }
       try { await releasing; released = true; }
       catch (cause) { this.workerCleanupUnconfirmed = true; failed(cause); }
-      const recordingsRetired = attempt === undefined || (attempt.recording === undefined && attempt.recordingStarts.size === 0 && attempt.lateRecordings.size === 0 && attempt.videoBlobBatches.size === 0);
+      const recordingsRetired = attempt === undefined || (attempt.recording === undefined && attempt.recordingStarts.size === 0 && attempt.lateRecordings.size === 0 && attempt.videoBlobBatches.size === 0 && attempt.downloadFiles.size === 0);
       if (nativeRetired && finalizedCleanupProven && recordingsRetired && released && connecting?.cleanupFailure === undefined) {
         attempt?.downloads.clear();
         if (attempt !== undefined) delete attempt.observationHighWater;
@@ -553,7 +593,7 @@ export class NativeSurface implements NativeWebSurface {
     return attempt === undefined || (!attempt.ready && attempt.rawOpening === undefined && attempt.rawClosing === undefined && attempt.rawBinding === undefined && attempt.interopPrepared !== true && attempt.scope === '' && attempt.channel === undefined && attempt.wireRequests.size === 0
       && attempt.recording === undefined && attempt.recordingStop === undefined && attempt.recordingStarts.size === 0
       && attempt.lateRecordings.size === 0 && attempt.lateRecordingStops.size === 0 && attempt.finalizedVideo === undefined
-      && attempt.nativeVideoStop === undefined && attempt.videoBlobBatches.size === 0 && attempt.downloads.size === 0);
+      && attempt.nativeVideoStop === undefined && attempt.videoBlobBatches.size === 0 && attempt.downloads.size === 0 && attempt.downloadFiles.size === 0);
   }
   private async closeClient(context: EngineCleanupContext, client = this.client): Promise<void> {
     // Capture the exact pending ownership before any await. Context close may
@@ -651,7 +691,7 @@ export class NativeSurface implements NativeWebSurface {
       this.engine = new EngineChannel(client, scope => {
         const owner = this.attempt ?? this.retiringAttempt;
         return () => this.client === client && owner !== undefined && (this.attempt === owner || this.retiringAttempt === owner) && owner.scope === scope;
-      });
+      }, scope => this.attempt?.scope === scope ? this.captureDownloadReadiness(this.attempt) : undefined);
     })().catch(cause => { if (isNativeProcessCleanupUnresolved(cause)) pending.cleanupFailure = cause; throw cause; }).finally(() => { if (this.connecting === pending && pending.cleanupFailure === undefined) this.connecting = undefined; });
     await pending.work;
   }
@@ -672,6 +712,7 @@ export class NativeSurface implements NativeWebSurface {
     attempt.channel = new BrowserChannel(this.requireClient(), {
       identityScope: () => { this.assertAttempt(attempt); return attempt.scope; },
       operation: () => this.operation(attempt.retirement.signal),
+      captureReadiness: () => this.captureDownloadReadiness(attempt),
       trackResourceCleanup: (work, callbackFailed) => {
         const currentCallback = this.callbackOwner.getStore();
         const callback = callbackFailed && currentCallback?.attempt === attempt ? currentCallback : undefined;
@@ -815,16 +856,24 @@ export class NativeSurface implements NativeWebSurface {
     this.latch.throwPending();
     if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
     const endsAt = performance.now() + operation.timeoutMs;
-    await this.ensureConnected(operation, attempt);
-    this.assertAttempt(attempt);
-    if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
-    const timeoutMs = endsAt - performance.now();
-    if (timeoutMs <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native browser recovery exhausted the operation budget', { retryable: false });
     const current = { ...operation, get timeoutMs() {
       const remaining = endsAt - performance.now();
       if (remaining <= 0) throw connectionDeadline('Native operation exhausted its deadline before dispatch');
       return remaining;
     } };
+    // Only failed/unpublished local files fence later ordinary admission. A
+    // native callback may be needed to settle the original read, so it keeps
+    // the existing callback/control lane rather than waiting on itself here.
+    const ready = this.captureDownloadReadiness(attempt);
+    for (;;) {
+      const retiring = ready?.();
+      if (retiring === undefined) break;
+      await withConnectionBudget(current, 'retiring unpublished download files', () => retiring);
+    }
+    await this.ensureConnected(current, attempt);
+    this.assertAttempt(attempt);
+    if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
+    if (endsAt - performance.now() <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native browser recovery exhausted the operation budget', { retryable: false });
     return { attempt, scope: attempt.scope, operation: current };
   }
 

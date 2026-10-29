@@ -1247,20 +1247,40 @@ describe('CDP session recovery', () => {
       cdpEndpoint: () => remote.endpoint,
       reconnectEndpoint: () => { requested(); return endpoint; },
     });
+    let pixelsCompleted = false;
+    let observationSettled = false;
+    let oldObservation: Promise<unknown> | undefined;
+    let recovery: Promise<unknown> | undefined;
     const readBlob = EngineChannel.prototype.readBlob;
     const pixelSpy = vi.spyOn(EngineChannel.prototype, 'readBlob').mockImplementation(async function (this: EngineChannel, ...args) {
-      const pixels = await readBlob.apply(this, args).catch((cause: unknown) => { pixelsFailed(cause); throw cause; });
+      const [blob, scope, current, owns, observer] = args;
+      // Optional observation pixels can publish through observer.complete before
+      // readBlob returns (its finally still owns release). Hold BOTH delivery
+      // lanes, while the real read verifies bytes and retires the real handle.
+      const pixels = await readBlob.call(this, blob, scope, current, owns, {
+        ...observer,
+        complete: () => { pixelsCompleted = true; },
+        fail: cause => observer?.fail(cause),
+      }).catch((cause: unknown) => { pixelsFailed(cause); throw cause; });
       pixelsStarted();
       await pixelsPaused;
+      observer?.complete(pixels);
       return pixels;
     });
     try {
       recoveryPhase('observe');
-      const oldObservation = engine.observe!(operation(), { pixels: true }).catch((cause: unknown) => cause);
+      oldObservation = engine.observe!(operation(), { pixels: true }).then(
+        result => { observationSettled = true; return result; },
+        (cause: unknown) => { observationSettled = true; return cause; },
+      );
       await pixelsReached;
+      expect(pixelsCompleted).toBe(true);
+      expect(observationSettled).toBe(false);
       await disconnect(remote, engine);
       recoveryPhase('locate');
-      const recovery = engine.locate!(heading, operation());
+      recovery = engine.locate!(heading, operation());
+      // Observe rejection immediately, even if an assertion fails before await.
+      void recovery.catch(() => {});
       await reconnectRequested;
       resumePixels();
       expect(await oldObservation).toMatchObject({ code: 'NODE_STALE' });
@@ -1280,6 +1300,9 @@ describe('CDP session recovery', () => {
       recoveryPhase('dispose', 'cleanup');
       resumePixels();
       resolveEndpoint(remote.endpoint);
+      // Join both started operations before restoring the seam or outer dispose,
+      // including when the stale-observation assertion fails before await recovery.
+      await Promise.all([oldObservation, recovery?.catch(() => {})]);
       pixelSpy.mockRestore();
     }
   }));

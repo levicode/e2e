@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { interopEvidenceDirectory } from '../helpers/interop-evidence.ts';
 import { expect, it } from 'vitest';
 import type { EngineCleanupContext, EngineFixtureContext, Expectable, OperationContext } from 'e2e/engine';
 import { chromium, type Browser as PlaywrightBrowser, type Page } from 'playwright-core';
@@ -162,7 +163,8 @@ it('reconnects the exact borrowed target through a refreshed endpoint after publ
     await clean(async () => { if (remote !== undefined) { await bounded(closeRemoteChrome(remote), 10000, 'owned host reap'); expect(remote.proc.exitCode !== null || remote.proc.signalCode !== null).toBe(true); evidence['hostReaped'] = true; } });
     await clean(async () => { server.closeAllConnections(); if (server.listening) await bounded(new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())), 2000, 'app close'); expect(server.listening).toBe(false); });
     evidence['cleanup'] = cleanupFailed ? 'failed' : 'passed';
-    const directory = process.env['E2E_INTEROP_EVIDENCE_DIR'];
+    const evidenceRoot = process.env['E2E_INTEROP_EVIDENCE_DIR'];
+    const directory = evidenceRoot === undefined && process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE'] === undefined ? undefined : interopEvidenceDirectory(evidenceRoot, expect.getState().testPath, process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE']);
     await clean(async () => { if (directory !== undefined) { mkdirSync(directory, { recursive: true }); writeFileSync(path.join(directory, 'persistent-raw-reconnect.json'), JSON.stringify(evidence, null, 2)); } });
     if (!cleanupFailed) rmSync(artifactsDir, { recursive: true, force: true });
   }

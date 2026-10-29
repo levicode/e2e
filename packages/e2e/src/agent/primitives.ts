@@ -324,7 +324,7 @@ export function createGrammarTools(
   const target = z
     .string()
     .min(1)
-    .describe('Node id from any screen in this conversation that is still present, e.g. "n42"');
+    .describe('Exact node ID from the current observation; copy it unchanged');
 
   const tools: ToolSet = {
     observe: screenTool({

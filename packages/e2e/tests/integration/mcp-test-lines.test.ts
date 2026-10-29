@@ -45,7 +45,7 @@ describe('e2e mcp test lines', { timeout: 120_000 }, () => {
   };
 
   const nodeId = (text: string, pattern: RegExp): string => {
-    const match = /#(n\d+)/.exec(text.split('\n').find((line) => pattern.test(line)) ?? '');
+    const match = /^\s*#(@e\d+)\s/.exec(text.split('\n').find((line) => pattern.test(line)) ?? '');
     if (match === null) throw new Error(`no node matches ${pattern} in:\n${text}`);
     return match[1]!;
   };

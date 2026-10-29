@@ -91,6 +91,8 @@ export interface NativeWebSurface {
   readonly identityScope: string;
   /** Route a callback failure to its captured attempt, never a replacement scope. */
   latchCallbackFailure(identityScope: string, error: Error): void;
+  /** Reserve exact-attempt custody before opening a local download artifact. */
+  retainDownloadFile(): { publish(): void; retire(work: Promise<void>): void };
   /** Native registry versions are monotonic for the entire client lifetime. */
   routeRegistryVersion(): number;
   allocateRouteRegistryVersion(): number;

@@ -1,6 +1,7 @@
 /** Candidate-only real receipts; never loaded by the original public gate. */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { interopEvidenceDirectory } from '../helpers/interop-evidence.ts';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import { NativeClient } from '../../src/native/client.ts';
 import type { NativeResult } from '../../src/native/protocol.ts';
@@ -24,7 +25,8 @@ beforeEach(() => {
 afterEach(context => {
   vi.restoreAllMocks();
   const ownership = context.task.name.includes('(borrowed)') ? 'borrowed' : 'owned';
-  const directory = process.env['E2E_INTEROP_EVIDENCE_DIR'];
+  const evidenceRoot = process.env['E2E_INTEROP_EVIDENCE_DIR'];
+  const directory = evidenceRoot === undefined && process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE'] === undefined ? undefined : interopEvidenceDirectory(evidenceRoot, expect.getState().testPath, process.env['E2E_INTEROP_FILE_SCOPED_EVIDENCE']);
   if (directory !== undefined) {
     mkdirSync(directory, { recursive: true });
     // Preserve real receipts before any acceptance assertion can throw.

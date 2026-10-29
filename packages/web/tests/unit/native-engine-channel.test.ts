@@ -6,7 +6,7 @@ import { NativeClient } from '../../src/native/client.ts';
 import { EngineChannel } from '../../src/native/engine-channel.ts';
 
 const operation = (): OperationContext => ({ signal: new AbortController().signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' });
-async function fixture(respond: (command: string) => unknown, captureScope?: (scope: string) => () => boolean) {
+async function fixture(respond: (command: string) => unknown, captureScope?: (scope: string) => () => boolean, captureReadiness?: ConstructorParameters<typeof EngineChannel>[2]) {
   const output = new PassThrough();
   const commands: string[] = [];
   const send = (value: unknown) => { queueMicrotask(() => output.write(JSON.stringify(value) + '\n')); };
@@ -21,7 +21,7 @@ async function fixture(respond: (command: string) => unknown, captureScope?: (sc
     callback();
   } });
   const client = await NativeClient.connect({ readable: output, writable: input, dispose: () => { input.destroy(); output.destroy(); } }, [], operation(), () => {});
-  return { channel: new EngineChannel(client, captureScope), client, commands };
+  return { channel: new EngineChannel(client, captureScope, captureReadiness), client, commands };
 }
 const bytes = Buffer.from('synthetic artifact');
 const blob = () => ({ identityScope: 'scope', handle: 'blob-1', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
@@ -68,6 +68,36 @@ describe('native engine channel artifacts', () => {
   });
 });
 
+
+describe('upload prefix local retirement admission', () => {
+  it.each((['blob.create', 'blob.write', 'blob.seal'] as const).flatMap(stage => (['resume', 'timeout', 'abort'] as const).map(outcome => ({ stage, outcome }))))('fences $stage while preserving $outcome and mandatory release', async ({ stage, outcome }) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let blocked = stage === 'blob.create'; let release!: () => void; let reached!: () => void;
+    const gate = new Promise<void>(resolve => { release = () => { blocked = false; resolve(); }; });
+    const entered = new Promise<void>(resolve => { reached = resolve; });
+    const caller = new AbortController();
+    const f = await fixture(command => {
+      if (command === 'blob.create') { blocked = stage === 'blob.write'; return { handle: 'upload', size: bytes.length, sha256: blob().sha256, maxChunkBytes: 262144 }; }
+      if (command === 'blob.write') { blocked = stage === 'blob.seal'; return { nextOffset: bytes.length }; }
+      if (command === 'blob.seal') return { handle: 'upload', size: bytes.length, sha256: blob().sha256 };
+      return { released: true };
+    }, undefined, () => () => { if (!blocked) return undefined; reached(); return gate; });
+    let completed = false; const work = vi.fn(async () => 'uploaded');
+    const pending = f.channel.withUpload(bytes, { ...operation(), timeoutMs: 20, signal: caller.signal }, work, 'scope')
+      .then(value => { completed = true; return value; }, (cause: unknown) => { completed = true; return cause; });
+    try {
+      await entered; expect(completed).toBe(false); expect(f.commands).not.toContain(stage); expect(work).not.toHaveBeenCalled();
+      if (outcome === 'resume') { release(); await expect(pending).resolves.toBe('uploaded'); expect(work).toHaveBeenCalledOnce(); }
+      else {
+        if (outcome === 'timeout') await vi.advanceTimersByTimeAsync(20); else caller.abort();
+        await expect(pending).resolves.toMatchObject({ code: outcome === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED' });
+        expect(f.commands).not.toContain(stage); expect(work).not.toHaveBeenCalled();
+        expect(f.commands.filter(command => command === 'blob.release')).toHaveLength(stage === 'blob.create' ? 0 : 1);
+        const dispatched = [...f.commands]; release(); await new Promise(resolve => setImmediate(resolve)); expect(f.commands).toEqual(dispatched);
+      }
+    } finally { release(); await pending; await f.client.close(operation()); vi.useRealTimers(); }
+  });
+});
 
 describe('sealed upload ownership', () => {
   const respond = (command: string): unknown => {

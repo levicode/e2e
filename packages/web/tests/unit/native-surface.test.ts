@@ -1,8 +1,10 @@
 /** Real protocol client over an in-memory native peer; no browser success is implied. */
 import { createHash } from 'node:crypto';
+import { AsyncResource } from 'node:async_hooks';
 import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import * as filesystem from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -32,6 +34,10 @@ import { HOSTILE_NAMES } from '../helpers/artifact-names.ts';
 
 vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
 vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open), unlink: vi.fn(actual.unlink) };
+});
 const signal = new AbortController().signal;
 const operation = (): OperationContext => ({ signal, timeoutMs: 1000, runId: 'run', attemptId: 'attempt', origin: 'test' });
 const cleanup = () => ({ signal: new AbortController().signal, timeoutMs: 1000 });
@@ -267,6 +273,348 @@ function observation(revision: unknown, handle?: string, scope = currentScope) {
 function finishBlob(request: HeldRequest): void {
   request.succeed({ base64: recordingBytes.toString('base64'), nextOffset: recordingBytes.length, eof: true });
 }
+
+/** Real local files; only the chosen close/unlink receipt is held. No browser. */
+async function heldDownloadFile(stage: 'close' | 'unlink', failUnlink = false, onCancel?: (surface: NativeSurface) => void) {
+  const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+  const directory = await mkdtemp(path.join(tmpdir(), 'download-file-custody-'));
+  await surface.startAttempt({ ...context('download-file-custody'), artifactsDir: directory });
+  const scope = surface.identityScope;
+  let entered!: () => void; let release!: () => void;
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  const heldFile = new Promise<void>(resolve => { release = resolve; });
+  const originalOpen = vi.mocked(filesystem.open).getMockImplementation()!;
+  const originalUnlink = vi.mocked(filesystem.unlink).getMockImplementation()!;
+  const denied = Object.assign(new Error('controlled download unlink denied'), { code: 'EACCES' });
+  vi.mocked(filesystem.open).mockImplementation(async (...args) => {
+    const file = await originalOpen(...args);
+    if (stage === 'close' && String(args[0]).startsWith(directory)) {
+      const close = file.close.bind(file);
+      vi.spyOn(file, 'close').mockImplementation(async () => { entered(); await heldFile; await close(); });
+    }
+    return file;
+  });
+  vi.mocked(filesystem.unlink).mockImplementation(async (...args) => {
+    if (String(args[0]).startsWith(directory)) {
+      if (stage === 'unlink') { entered(); await heldFile; }
+      if (failUnlink) throw denied;
+    }
+    await originalUnlink(...args);
+  });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const requests = holdRequests('download.metadata');
+  const attached = vi.fn();
+  const fixture = createBrowserFixture(surface.fixtureSurface(), {
+    operation: (timeoutMs = 1000) => ({ ...operation(), timeoutMs }), signal, attachArtifact: attached,
+    fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+    app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+  } as unknown as EngineFixtureContext);
+  const waiting = fixture.waitForDownload(async () => {
+    await sendEvent('download.started', { identityScope: scope, activePage: true, handle: 'held-file-download', suggestedFilename: 'held.bin' });
+  }, { timeout: 100 }).catch((cause: unknown) => cause);
+  const metadata = await requests.next('download.metadata');
+  let acknowledged = false; let replied = false;
+  const acknowledge = () => { if (!acknowledged && acknowledgeCancel !== undefined) { acknowledged = true; acknowledgeCancel(); } };
+  const reply = () => { if (!replied) { replied = true; metadata.fail('cancelled'); } };
+  if (onCancel !== undefined) cancellationObserved = () => onCancel(surface);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(await waiting).toMatchObject({ code: 'ACTION_FAILED', message: 'download did not complete within 100ms' });
+  return {
+    surface, directory, scope, attached, denied, reached, release, acknowledge, reply,
+    async finish() {
+      acknowledge(); reply(); release(); await waiting;
+      await surface.dispose(cleanup()).catch(() => {});
+      vi.mocked(filesystem.open).mockImplementation(originalOpen);
+      vi.mocked(filesystem.unlink).mockImplementation(originalUnlink);
+      vi.useRealTimers(); await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+async function localDownloadFixture(options: { signal?: AbortSignal; attach?: (kind: string, file: string) => void } = {}) {
+  const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+  const directory = await mkdtemp(path.join(tmpdir(), 'download-file-boundary-'));
+  await surface.startAttempt({ ...context('download-file-boundary'), artifactsDir: directory });
+  const scope = surface.identityScope; const attached = options.attach ?? vi.fn();
+  const view = surface.fixtureSurface();
+  interceptRequest = (frame, reply) => {
+    if (frame['command'] === 'download.metadata') { reply({ data: { identityScope: scope, source: 'local' } }); return true; }
+    if (frame['command'] === 'download.read') { reply({ data: { base64: Buffer.from('file bytes').toString('base64'), nextOffset: 10, eof: true } }); return true; }
+    return false;
+  };
+  const fixture = createBrowserFixture(view, {
+    operation: (timeoutMs = 1000) => ({ ...operation(), timeoutMs, signal: options.signal ?? signal }), signal: options.signal ?? signal, attachArtifact: attached,
+    fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+    app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+  } as unknown as EngineFixtureContext);
+  return {
+    surface, directory, scope, view, fixture, attached,
+    download: (name = 'file.bin', timeout = 1000) => fixture.waitForDownload(() => sendEvent('download.started', { identityScope: scope, activePage: true, handle: name, suggestedFilename: name }), { timeout }),
+    async finish() { await surface.dispose(cleanup()).catch(() => {}); await rm(directory, { recursive: true, force: true }); },
+  };
+}
+function fileGate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
+
+describe('failed download file custody', () => {
+  it.each((['close', 'unlink'] as const).flatMap(stage => (['ack-first', 'result-first'] as const).flatMap(order => (['browser', 'engine'] as const).map(lane => ({ stage, order, lane })))))('fences an ordinary caller queued before the public failure returns ($stage/$order/$lane)', async ({ stage, order, lane }) => {
+    const ordinary = new AsyncResource('ordinary-download-followup');
+    let completed = false; let following: Promise<unknown> | undefined;
+    const held = await heldDownloadFile(stage, false, surface => {
+      ordinary.runInAsyncScope(() => {
+        following = (lane === 'browser' ? surface.command('page.title', {}, operation()) : surface.locate({ kind: 'selector', selector: 'button' }, operation())).then(value => { completed = true; return value; }, (cause: unknown) => { completed = true; return cause; });
+      });
+    });
+    try {
+      expect(following).toBeDefined();
+      (order === 'ack-first' ? held.acknowledge : held.reply)();
+      (order === 'ack-first' ? held.reply : held.acknowledge)();
+      await held.reached; await new Promise(resolve => setImmediate(resolve));
+      expect(completed).toBe(false); expect(frames.some(frame => frame['command'] === (lane === 'browser' ? 'page.title' : 'browser.query'))).toBe(false);
+      held.release(); await expect(following).resolves.toEqual(lane === 'browser' ? { title: 'Synthetic page' } : []);
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual([]);
+    } finally { held.release(); await following; await held.finish(); ordinary.emitDestroy(); }
+  });
+
+  it.each((['ack-first', 'result-first'] as const).flatMap(order => (['browser', 'engine'] as const).flatMap(lane => (['timeout', 'abort'] as const).map(departure => ({ order, lane, departure })))))('retains an early queued caller original budget without later dispatch ($order/$lane/$departure)', async ({ order, lane, departure }) => {
+    const ordinary = new AsyncResource('bounded-ordinary-download-followup'); const caller = new AbortController();
+    let following: Promise<unknown> | undefined;
+    const held = await heldDownloadFile('unlink', false, surface => {
+      ordinary.runInAsyncScope(() => {
+        const current = { ...operation(), timeoutMs: 20, signal: caller.signal };
+        following = (lane === 'browser' ? surface.command('page.title', {}, current) : surface.locate({ kind: 'selector', selector: 'button' }, current)).catch((cause: unknown) => cause);
+      });
+    });
+    try {
+      expect(following).toBeDefined();
+      (order === 'ack-first' ? held.acknowledge : held.reply)(); (order === 'ack-first' ? held.reply : held.acknowledge)();
+      await held.reached;
+      if (departure === 'timeout') await vi.advanceTimersByTimeAsync(20); else caller.abort();
+      await expect(following).resolves.toMatchObject({ code: departure === 'timeout' ? 'OPERATION_TIMEOUT' : 'CANCELLED' });
+      expect(frames.some(frame => frame['command'] === (lane === 'browser' ? 'page.title' : 'browser.query'))).toBe(false);
+      held.release(); await new Promise(resolve => setImmediate(resolve));
+      expect(frames.some(frame => frame['command'] === (lane === 'browser' ? 'page.title' : 'browser.query'))).toBe(false);
+    } finally { held.release(); await following; await held.finish(); ordinary.emitDestroy(); }
+  });
+
+  it('transfers a successfully published file instead of deleting or fencing it', async () => {
+    const state = await localDownloadFixture();
+    try {
+      const file = await state.download();
+      expect(await readFile(file.absolutePath, 'utf8')).toBe('file bytes');
+      expect(state.attached).toHaveBeenCalledOnce();
+      await expect(state.surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      await state.surface.endAttempt(cleanup());
+      expect(await readFile(file.absolutePath, 'utf8')).toBe('file bytes');
+    } finally { await state.finish(); }
+  });
+
+  it('settles reserved custody when opening the local file rejects', async () => {
+    const state = await localDownloadFixture();
+    const original = vi.mocked(filesystem.open).getMockImplementation()!;
+    const denied = Object.assign(new Error('controlled open denied'), { code: 'EACCES' });
+    vi.mocked(filesystem.open).mockRejectedValueOnce(denied);
+    try {
+      await expect(state.download()).rejects.toBe(denied);
+      await expect(state.surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(await readdir(path.join(state.directory, 'downloads'))).toEqual([]);
+      expect(state.attached).not.toHaveBeenCalled();
+      await state.surface.endAttempt(cleanup());
+    } finally { vi.mocked(filesystem.open).mockImplementation(original); await state.finish(); }
+  });
+
+  it('retains a real close failure even when unlink succeeds', async () => {
+    const state = await localDownloadFixture(); const original = vi.mocked(filesystem.open).getMockImplementation()!;
+    const denied = new Error('controlled close failure'); let closeOwned: (() => Promise<void>) | undefined;
+    vi.mocked(filesystem.open).mockImplementation(async (...args) => {
+      const file = await original(...args); closeOwned = file.close.bind(file);
+      vi.spyOn(file, 'close').mockRejectedValue(denied); return file;
+    });
+    try {
+      const failure = await state.download().catch((cause: unknown) => cause);
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: denied });
+      await expect(state.surface.command('page.title', {}, operation())).rejects.toBe(failure);
+      await expect(state.surface.endAttempt(cleanup())).rejects.toBe(failure);
+      await expect(state.surface.dispose(cleanup())).rejects.toBe(failure);
+      expect(state.attached).not.toHaveBeenCalled();
+    } finally { await closeOwned?.(); vi.mocked(filesystem.open).mockImplementation(original); await state.finish(); }
+  });
+
+  it('settles a token when cancellation occurs after reservation but before the open checkpoint', async () => {
+    const controller = new AbortController(); const state = await localDownloadFixture({ signal: controller.signal });
+    const reserve = state.view.retainDownloadFile;
+    state.view.retainDownloadFile = () => { const custody = reserve(); controller.abort(); return custody; };
+    const opened = vi.mocked(filesystem.open).mock.calls.length;
+    try {
+      await expect(state.download()).rejects.toMatchObject({ code: 'CANCELLED' });
+      await expect(state.surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(vi.mocked(filesystem.open).mock.calls).toHaveLength(opened);
+      expect(state.attached).not.toHaveBeenCalled();
+      await state.surface.endAttempt(cleanup());
+    } finally { await state.finish(); }
+  });
+
+  it('retires the completed file when artifact attachment throws, preserving that primary failure', async () => {
+    const primary = new Error('controlled artifact attachment failure');
+    const state = await localDownloadFixture({ attach: () => { throw primary; } });
+    try {
+      await expect(state.download()).rejects.toBe(primary);
+      await expect(state.surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(await readdir(path.join(state.directory, 'downloads'))).toEqual([]);
+      await state.surface.endAttempt(cleanup());
+    } finally { await state.finish(); }
+  });
+
+  it.each(['same-attempt', 'retiring-attempt'] as const)('does not allocate a file from a callback queued past the wait finally (%s)', async owner => {
+    const state = await localDownloadFixture(); const entered = fileGate(); const release = fileGate();
+    const subscribe = state.view.subscribe;
+    state.view.subscribe = (name, callback) => subscribe(name, async event => {
+      if (name === 'download.started') { entered.release(); await release.promise; }
+      return callback(event);
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const opened = vi.mocked(filesystem.open).mock.calls.length;
+    const waiting = state.download('late.bin', 100).catch((cause: unknown) => cause);
+    let ending: Promise<void> | undefined;
+    try {
+      await entered.promise; await vi.advanceTimersByTimeAsync(100);
+      expect(await waiting).toMatchObject({ code: 'ACTION_FAILED' });
+      if (owner === 'retiring-attempt') ending = state.surface.endAttempt(cleanup());
+      release.release(); await new Promise(resolve => setImmediate(resolve));
+      if (ending !== undefined) await ending;
+      else await state.surface.endAttempt(cleanup());
+      expect(vi.mocked(filesystem.open).mock.calls).toHaveLength(opened);
+      expect(existsSync(path.join(state.directory, 'downloads'))).toBe(false);
+      expect(state.attached).not.toHaveBeenCalled();
+    } finally { release.release(); await waiting; await ending; vi.useRealTimers(); await state.finish(); }
+  });
+
+  it('keeps a late successful open owned after the original public deadline', async () => {
+    const state = await localDownloadFixture(); const entered = fileGate(); const release = fileGate();
+    const original = vi.mocked(filesystem.open).getMockImplementation()!;
+    vi.mocked(filesystem.open).mockImplementation(async (...args) => { entered.release(); await release.promise; return original(...args); });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const waiting = state.download('late-open.bin', 100).catch((cause: unknown) => cause);
+    let following: Promise<unknown> | undefined;
+    try {
+      await entered.promise; await vi.advanceTimersByTimeAsync(100);
+      expect(await waiting).toMatchObject({ code: 'ACTION_FAILED' });
+      let done = false; following = state.surface.command('page.title', {}, operation()).then(value => { done = true; return value; });
+      await new Promise(resolve => setImmediate(resolve)); expect(done).toBe(false);
+      expect(frames.some(frame => frame['command'] === 'download.metadata')).toBe(false);
+      release.release(); await following;
+      expect(await readdir(path.join(state.directory, 'downloads'))).toEqual([]);
+      expect(state.attached).not.toHaveBeenCalled();
+    } finally { release.release(); await waiting; await following; vi.mocked(filesystem.open).mockImplementation(original); vi.useRealTimers(); await state.finish(); }
+  });
+
+  it.each([0, 1])('joins both unpublished downloads, not only the one retired first (release %s first)', async first => {
+    const state = await localDownloadFixture(); const entered = [fileGate(), fileGate()]; const release = [fileGate(), fileGate()]; const removed = [fileGate(), fileGate()];
+    const originalOpen = vi.mocked(filesystem.open).getMockImplementation()!; const originalUnlink = vi.mocked(filesystem.unlink).getMockImplementation()!;
+    vi.mocked(filesystem.open).mockImplementation(async (...args) => { const index = String(args[0]).endsWith('first.bin') ? 0 : 1; entered[index]!.release(); await release[index]!.promise; return originalOpen(...args); });
+    vi.mocked(filesystem.unlink).mockImplementation(async (...args) => { await originalUnlink(...args); removed[String(args[0]).endsWith('first.bin') ? 0 : 1]!.release(); });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const one = state.download('first.bin', 100).catch((cause: unknown) => cause); await entered[0]!.promise;
+    const two = state.download('second.bin', 100).catch((cause: unknown) => cause); await entered[1]!.promise;
+    let following: Promise<unknown> | undefined;
+    try {
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await one).toMatchObject({ code: 'ACTION_FAILED' }); expect(await two).toMatchObject({ code: 'ACTION_FAILED' });
+      let done = false; following = state.surface.command('page.title', {}, operation()).then(value => { done = true; return value; });
+      release[first]!.release(); await removed[first]!.promise; await new Promise(resolve => setImmediate(resolve));
+      expect(done).toBe(false); expect(frames.some(frame => frame['command'] === 'page.title')).toBe(false);
+      release[1 - first]!.release(); await following;
+      expect(await readdir(path.join(state.directory, 'downloads'))).toEqual([]); expect(state.attached).not.toHaveBeenCalled();
+    } finally { release[0]!.release(); release[1]!.release(); await one; await two; await following; vi.mocked(filesystem.open).mockImplementation(originalOpen); vi.mocked(filesystem.unlink).mockImplementation(originalUnlink); vi.useRealTimers(); await state.finish(); }
+  });
+
+  it.each((['close', 'unlink'] as const).flatMap(stage => (['ack-first', 'result-first'] as const).flatMap(order =>
+    (['title', 'reset', 'restart', 'endAttempt', 'dispose'] as const).map(next => ({ stage, order, next }))))
+  )('joins held $stage before $next completes after $order native receipts', async ({ stage, order, next }) => {
+    const held = await heldDownloadFile(stage);
+    const command = next === 'title' ? 'page.title' : `scope.${next}`;
+    const before = frames.filter(frame => frame['command'] === command).length;
+    let completed = false; let following: Promise<unknown> | undefined;
+    try {
+      following = (next === 'title' ? held.surface.command('page.title', {}, operation())
+        : next === 'endAttempt' || next === 'dispose' ? held.surface[next](cleanup()) : held.surface[next](operation()))
+        .then(value => { completed = true; return value; }, (cause: unknown) => { completed = true; return cause; });
+      (order === 'ack-first' ? held.acknowledge : held.reply)();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(completed).toBe(false);
+      (order === 'ack-first' ? held.reply : held.acknowledge)();
+      await held.reached; await new Promise(resolve => setImmediate(resolve));
+      expect(completed).toBe(false);
+      if (next !== 'endAttempt' && next !== 'dispose') expect(frames.filter(frame => frame['command'] === command)).toHaveLength(before);
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual(['001-held.bin']);
+      expect(held.attached).not.toHaveBeenCalled();
+      held.release();
+      expect(await following).toEqual(next === 'title' ? { title: 'Synthetic page' } : undefined);
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual([]);
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      expect(frames.some(frame => frame['command'] === 'scope.reconnect')).toBe(false);
+    } finally { held.release(); await following; await held.finish(); }
+  });
+
+  it.each(['ack-first', 'result-first'] as const)('keeps the next caller budget while unlink remains owned (%s)', async order => {
+    const held = await heldDownloadFile('unlink');
+    let following: Promise<unknown> | undefined;
+    try {
+      (order === 'ack-first' ? held.acknowledge : held.reply)();
+      (order === 'ack-first' ? held.reply : held.acknowledge)();
+      await held.reached;
+      const before = frames.filter(frame => frame['command'] === 'page.title').length;
+      following = held.surface.command('page.title', {}, { ...operation(), timeoutMs: 20 }).catch((cause: unknown) => cause);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(await following).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+      expect(frames.filter(frame => frame['command'] === 'page.title')).toHaveLength(before);
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual(['001-held.bin']);
+      held.release();
+      await expect(held.surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual([]);
+      expect(frames.filter(frame => frame['command'] === 'page.title')).toHaveLength(before + 1);
+    } finally { held.release(); await following; await held.finish(); }
+  });
+
+  it('keeps exact file custody after an endAttempt waiter leaves its cleanup budget', async () => {
+    const held = await heldDownloadFile('unlink');
+    try {
+      held.acknowledge(); held.reply(); await held.reached;
+      const ending = held.surface.endAttempt({ ...cleanup(), timeoutMs: 20 });
+      await vi.advanceTimersByTimeAsync(20); await ending;
+      const controller = new AbortController();
+      const before = frames.filter(frame => frame['command'] === 'scope.interop.prepare').length;
+      let started = false;
+      const starting = held.surface.startAttempt(context('before-file-retirement', controller.signal))
+        .then(() => { started = true; }, (cause: unknown) => { started = true; return cause; });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(started).toBe(false);
+      expect(frames.filter(frame => frame['command'] === 'scope.interop.prepare')).toHaveLength(before);
+      controller.abort(); await expect(starting).resolves.toMatchObject({ code: 'CANCELLED' });
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual(['001-held.bin']);
+      held.release(); await held.surface.dispose(cleanup());
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual([]);
+    } finally { held.release(); await held.finish(); }
+  });
+
+  it.each(['ack-first', 'result-first'] as const)('retains failed unlink as cleanup failure rather than admitting a next command (%s)', async order => {
+    const held = await heldDownloadFile('unlink', true);
+    try {
+      (order === 'ack-first' ? held.acknowledge : held.reply)();
+      (order === 'ack-first' ? held.reply : held.acknowledge)();
+      await held.reached;
+      const before = frames.filter(frame => frame['command'] === 'page.title').length;
+      const following = held.surface.command('page.title', {}, operation()).catch((cause: unknown) => cause);
+      held.release();
+      const failure = await following;
+      expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', cause: held.denied });
+      expect(frames.filter(frame => frame['command'] === 'page.title')).toHaveLength(before);
+      expect(await readdir(path.join(held.directory, 'downloads'))).toEqual(['001-held.bin']);
+      expect(held.attached).not.toHaveBeenCalled();
+      await expect(held.surface.endAttempt(cleanup())).rejects.toBe(failure);
+      await expect(held.surface.dispose(cleanup())).rejects.toBe(failure);
+    } finally { held.release(); await held.finish(); }
+  });
+});
 
 describe('native environment report compatibility', () => {
   it.each([
@@ -1433,6 +1781,7 @@ describe('native surface ownership and fixed policy binding', () => {
   it('requires the complete native capability set and maps protected/fixture queries to different commands', async () => {
     const surface = new NativeSurface({}); await start(surface);
     expect(vi.mocked(connectNativeProcess).mock.calls[0]?.[0].capabilities).toContain('browser.recording/1');
+    expect(vi.mocked(connectNativeProcess).mock.calls[0]?.[0].capabilities).toContain('browser.issuance-bound-references/1');
     const expression = { kind: 'query', query: { kind: 'testId', value: { kind: 'string', value: 'save', exact: true } } } as const;
     await surface.locate(expression, operation()); await surface.locate(expression, operation(), { purpose: 'fixture' });
     expect(frames.filter(frame => String(frame['command']).endsWith('.query')).map(frame => frame['command'])).toEqual(['browser.query', 'fixture.query']);

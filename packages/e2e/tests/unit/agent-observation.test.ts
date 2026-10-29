@@ -26,6 +26,19 @@ function observation(tree: SemanticNode, pixels?: Observation['pixels']): Extrac
 const NO_REDACT = (text: string): string => text;
 
 describe('prepareObservation', () => {
+  it('preserves native references and opaque observation evidence without aliasing', () => {
+    const revision = 'native:issuer-A/generation-B/observation-C';
+    const ref = { id: '@e42', revision };
+    const raw = { ...observation({ ref, role: 'button', name: 'Save' }), revision };
+    const prepared = prepareObservation(raw, { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: 4_096 });
+    expect(prepared.kind).toBe('semantic');
+    if (prepared.kind !== 'semantic') throw new Error('expected semantic evidence');
+    expect(prepared.revision).toBe(raw.revision);
+    expect(prepared.nodes.get('@e42')!.ref).toEqual(ref);
+    expect(prepared.nodes.has('n42')).toBe(false);
+    expect(prepared.text).toBe('#@e42 button "Save"');
+  });
+
   it('keeps unavailable semantics separate from an empty tree and requires permitted masked evidence', () => {
     const pixels = { data: new Uint8Array(4), mediaType: 'image/png' as const, width: 2, height: 2, scale: 1 };
     const unavailable: Observation = {

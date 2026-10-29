@@ -596,6 +596,16 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
       const signal = AbortSignal.any([operation.signal, lifetime.signal]);
       let scope: string | undefined;
       let saved: Promise<{ path: string; absolutePath: string; suggestedFilename: string }> | undefined;
+      let fileCustody: ReturnType<NativeWebSurface['retainDownloadFile']> | undefined;
+      let fileCleanupFailure: EngineError | undefined;
+      const fileCleanupFailed = (cause: unknown): EngineError => fileCleanupFailure ??= new EngineError('ENGINE_FAILURE', 'An unpublished download file could not be retired', { retryable: false, cause });
+      const removeFile = async (absolute: string): Promise<void> => {
+        try { await unlink(absolute); }
+        catch (cause) {
+          if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return;
+          throw fileCleanupFailed(cause);
+        }
+      };
       const latch = surface.latch;
       let subscriptionId: string | undefined;
       let cancelWaiter = (): void => undefined;
@@ -643,6 +653,7 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
           started = true;
           // Native retires the handle when this callback settles. Preserve bytes here,
           // but only the waiting fixture continuation may publish its artifact.
+          fileCustody = surface.retainDownloadFile();
           saved = (async () => {
             checkpoint();
             const { relative, absolute } = surface.artifactPath('downloads', download.suggestedFilename, '');
@@ -651,11 +662,17 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
               try {
                 checkpoint();
                 await readNativeChunks(surface, 'download.read', download.handle, { ...operation, signal, timeoutMs: deadline.remaining() }, async bytes => { checkpoint(); await file.writeFile(bytes); }, download.identityScope);
-              } finally { await file.close(); }
+              } finally { await file.close().catch(fileCleanupFailed); }
+              if (fileCleanupFailure !== undefined) throw fileCleanupFailure;
               checkpoint();
               assertSurfaceScope(surface, download.identityScope);
               return { path: relative, absolutePath: absolute, suggestedFilename: download.suggestedFilename };
-            } catch (cause) { await unlink(absolute).catch(() => undefined); throw cause; }
+            } catch (cause) {
+              // Keep the primary read failure; the separate custody receipt
+              // retains any actual close/unlink failure for admission/teardown.
+              await removeFile(absolute).catch(fileCleanupFailed);
+              throw cause;
+            }
           })();
           return saved.then(() => undefined, () => undefined);
         });
@@ -680,12 +697,14 @@ export function createBrowserFixture(surface: NativeWebSurface, context: EngineF
         published = true;
         return file;
       } catch (cause) { failed = true; throw cause; } finally {
+        // Publish the local retirement barrier before abort listeners can
+        // synchronously re-enter ordinary admission from a cancel receipt.
+        if (!published && saved !== undefined) {
+          const discard = saved.then(file => removeFile(file.absolutePath), () => { if (fileCleanupFailure !== undefined) throw fileCleanupFailure; });
+          fileCustody!.retire(discard);
+        } else fileCustody?.publish();
         lifetime.abort();
         cancelWaiter();
-        if (!published && saved !== undefined) {
-          const discard = saved.then(file => unlink(file.absolutePath).catch(() => undefined), () => undefined);
-          latch.track('download file cleanup', discard);
-        }
         // Primary failure is already decided. Attempt cleanup joins retirement,
         // without giving this public operation a second timeout budget.
         void unsubscribe(failed);

@@ -41,6 +41,7 @@ export async function dialogPeer(latch = new ErrorLatch()) {
   });
   channel = new BrowserChannel(client, { identityScope: () => 'scope', operation });
   const surface: NativeWebSurface = {
+    retainDownloadFile: () => { throw new Error('This fixture does not retain download files'); },
     identityScope: 'scope', latch, latchCallbackFailure: (_scope, error) => latch.latch(error),
     routeRegistryVersion: () => 0, allocateRouteRegistryVersion: () => 1,
     invalidate: () => channel.invalidate(), command: (name, args, context) => channel.command(name, args, context),

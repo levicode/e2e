@@ -25,6 +25,9 @@ export const OBSERVE_FRAME_POLICY_CAPABILITY = 'browser.observe-frame-policy/1';
 /** Exact PW-context retirement/adoption within the original reset/restore operation. */
 const INTEROP_CONTEXT_REPLACEMENT_CAPABILITY = 'browser.interop-context-replacement/1';
 
+/** Native-issued scope/generation-bound opaque refs and read-only pixel roots. */
+export const ISSUANCE_BOUND_REFERENCES_CAPABILITY = 'browser.issuance-bound-references/1';
+
 /** Full public Web candidate contract. Advertising handlers is not acceptance certification. */
 export const REQUIRED_CAPABILITIES = [
   CONTINUE_EXACT_OWNER_CAPABILITY,
@@ -33,6 +36,7 @@ export const REQUIRED_CAPABILITIES = [
   PERSISTENT_PAGE_REOPEN_CAPABILITY,
   TERMINAL_RECORDING_CAPABILITY,
   OBSERVE_FRAME_POLICY_CAPABILITY,
+  ISSUANCE_BOUND_REFERENCES_CAPABILITY,
   'terminal.close/1',
   'browser.scope/1', 'browser.lifecycle/1', 'browser.evaluate/1', 'browser.page/1',
   'browser.observe/1', 'browser.query/1', 'browser.actions/1', 'browser.network/1',

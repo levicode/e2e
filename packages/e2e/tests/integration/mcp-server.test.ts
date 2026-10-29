@@ -137,7 +137,7 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
   /** The node id of the first observation line matching `pattern`. */
   const nodeId = (text: string, pattern: RegExp): string => {
     const line = text.split('\n').find((candidate) => pattern.test(candidate));
-    const match = line === undefined ? null : /#(n\d+)/.exec(line);
+    const match = line === undefined ? null : /^\s*#(@e\d+)\s/.exec(line);
     if (match === null) throw new Error(`no node matches ${pattern} in:\n${text}`);
     return match[1]!;
   };
@@ -178,7 +178,7 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name)).toEqual(['open_session', 'tools', 'call', 'close_session']);
     const callTool = tools.find((tool) => tool.name === 'call')!;
-    expect(callTool.description).toContain('call {tool: "tap", args: {target: "n42"}, session: "<id>"}');
+    expect(callTool.description).toContain('call {tool: "tap", args: {target: "<node-id>"}, session: "<id>"}');
     expect(callTool.inputSchema).toMatchObject({ type: 'object', required: ['tool'] });
     expect(tools.find((tool) => tool.name === 'tools')?.annotations).toMatchObject({ readOnlyHint: true });
     expect(tools.find((tool) => tool.name === 'open_session')?.inputSchema).toMatchObject({ properties: { target: {}, config: {}, headed: { type: 'boolean' } } });
@@ -258,7 +258,8 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     ]);
     expect(opened.text).toMatch(/^- tap \{target, modifiers\?\}: Tap or click one node: the gesture for a button, link, menu item, tab, checkbox, row, or field\.$/m);
     expect(opened.text).toMatch(/^- locate \{role\?, name\?, text\?, label\?, placeholder\?, testId\?, exact\?\}: .* \[read-only\]$/m);
-    expect(opened.text).toMatch(/Current screen \(revision b\d+, path \/, \d+ nodes\):/);
+    expect(opened.text).toMatch(/Current screen \(revision [^,\n]+, path \/, \d+ nodes\):/);
+    expect(opened.text).toMatch(/^\s*#@e\d+ button "Increment"/m);
     expect(opened.text).toContain('button "Increment"');
     const sessionId = /^Session (\S+) open/.exec(opened.text)![1]!;
 
@@ -287,10 +288,13 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     expect(missing.text).toContain('LOCATOR_NOT_FOUND');
 
     const observed = await call('observe');
+    const observedRevision = /Current screen \(revision ([^,\n]+)/.exec(observed.text)?.[1];
+    expect(observedRevision).toBeDefined();
     const tapped = await call('tap', { target: nodeId(observed.text, /button "Increment"/) });
     expect(tapped.isError, tapped.text).toBe(false);
     // An action reports what changed on screen, as it does for the testing agent.
-    expect(tapped.text).toMatch(/^Tapped #n\d+\.\nTest line: await screen\.getByRole\("button", "Increment"\)\.tap\(\);\n\nScreen changes since revision/);
+    expect(tapped.text).toMatch(/^Tapped #@e\d+\.\nTest line: await screen\.getByRole\("button", "Increment"\)\.tap\(\);\n\nScreen changes since revision/);
+    expect(tapped.text).toContain(`Screen changes since revision ${observedRevision}`);
     const after = await call('observe');
     expect(after.text).toMatch(/status "Counter" text="1"/);
 
@@ -318,6 +322,13 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     expect(stale.text).toMatch(/^tap #n9999 failed: LOCATOR_NOT_FOUND: node #n9999 is not on the current screen/);
     expect(stale.text).not.toContain('Tapped');
     expect(stale.text).toContain('re-observe');
+
+    // A missing native ID is refused too; the legacy-alias negative above stays.
+    const missingNative = await call('tap', { target: '@e9007199254740991' });
+    expect(missingNative.isError).toBe(true);
+    expect(missingNative.text).toMatch(/^tap #@e9007199254740991 failed: LOCATOR_NOT_FOUND: node #@e9007199254740991 is not on the current screen/);
+    expect(missingNative.text).not.toContain('Tapped');
+    expect(missingNative.text).toContain('re-observe');
 
     const before = await call('screenshot');
     expect(before.isError, before.text).toBe(false);
