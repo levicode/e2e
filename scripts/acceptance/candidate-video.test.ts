@@ -13,17 +13,17 @@ const listing = (names: readonly string[]) => names.map(name => `${name}: test`)
 const ignored = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
 const defaults = [...ignored, ...REQUIRED_VIDEO_NORMAL_TESTS];
 test('failed-video delivery keeps all existing browser, feature and preparation gates plus the required real encoder cases', () => {
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44);
-  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 45);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46);
+  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 61);
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8);
-  assert.equal(MANAGED_ENCODER_CONTRACTS.length, 13);
+  assert.equal(MANAGED_ENCODER_CONTRACTS.length, 15);
   assert.equal(LEGACY_COMPONENT_ENCODER_CONTRACTS.length, 5);
   assert.equal(ENCODER_NEGATIVE_CONTRACTS.length, 1);
   assert.equal(REQUIRED_VIDEO_NORMAL_TESTS.length, 12);
-  assert.equal(new Set([...REQUIRED_ENCODER_CONTRACTS, ...REQUIRED_VIDEO_NORMAL_TESTS]).size, 31);
+  assert.equal(new Set([...REQUIRED_ENCODER_CONTRACTS, ...REQUIRED_VIDEO_NORMAL_TESTS]).size, 33);
   for (const name of REQUIRED_ENCODER_CONTRACTS) assert.ok(!CANDIDATE_NATIVE_CONTRACTS.includes(name as never));
 });
-test('all 19 encoder contracts are required separately, never diagnostic exemptions', () => {
+test('all 21 encoder contracts are required separately, never diagnostic exemptions', () => {
   assert.deepEqual(verifyNativeInventory(listing(ignored)), ignored);
   for (const name of REQUIRED_ENCODER_CONTRACTS) {
     assert.throws(() => verifyNativeInventory(listing(ignored.filter(item => item !== name))), /Missing required/);

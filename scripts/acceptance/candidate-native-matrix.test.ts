@@ -1,3 +1,4 @@
+import { REQUIRED_ENCODER_CONTRACTS } from './candidate-video-manifest.ts';
 /** These are Node receipt/parser tests, not execution of any native test or browser. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -50,15 +51,15 @@ function compiledFixture(root: string) {
 
 test('the two exact matrices preserve historical contracts and restore eight preparation regressions without exemptions', () => {
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8); assert.equal(new Set(PREPARATION_SETTLEMENT_TESTS).size, 8);
-  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 45); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 45);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
+  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 61); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 61);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
   assert.deepEqual(CANDIDATE_NATIVE_DIAGNOSTICS, [
     'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
     'native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable',
     'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline',
   ]);
-  assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 45);
-  const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
+  assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 61);
+  const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
   verifyNativeInventory(inventory);
   assert.throws(() => verifyNativeInventory(`${inventory}\n${PREPARATION_SETTLEMENT_TESTS[0]}_unreviewed: test`), /Unclassified/);
 });
@@ -147,7 +148,7 @@ test('both receipts always enumerate every exact unique row, with missing execut
   for (const mode of ['preparation', 'feature'] as const) {
     const result = finalizeMatrixReceipt(mode, {});
     assert.equal(result.status, 'unknown'); assert.equal(result.complete, false);
-    assert.equal(result.results.length, mode === 'feature' ? 45 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
+    assert.equal(result.results.length, mode === 'feature' ? 61 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
     assert.ok(result.results.every(row => row.status === 'unknown' && row.testStatus === 'unknown' && row.execution === null));
     assert.equal(result.releaseEligible, false); assert.equal(result.acceptanceEvidence, true);
   }
@@ -163,12 +164,12 @@ test('any preparation failures remain failed mandatory evidence with all eight o
   assert.equal(finalizeMatrixReceipt('preparation', successfulSteps, matrix('preparation')).status, 'passed');
 });
 
-test('feature compilation failure preserves bounded error summary and all 45 unexecuted unknown rows', () => {
+test('feature compilation failure preserves bounded error summary and all 61 unexecuted unknown rows', () => {
   const result = finalizeMatrixReceipt('feature', { ...successfulSteps, 'native-feature': { outcome: 'failure' } });
   const execution = { ...matrix('feature'), stage: 'compile', status: 'failed' as const, results: result.results,
     compile: compilerProof(JSON.stringify({ reason: 'compiler-message', message: { level: 'error', code: { code: 'E0308' }, rendered: 'private path' } }), 'private stderr', { ...completed, status: 101 }, null) };
   const failed = finalizeMatrixReceipt('feature', { ...successfulSteps, 'native-feature': { outcome: 'failure' } }, execution);
-  assert.equal(failed.status, 'failed'); assert.equal(failed.complete, false); assert.equal(failed.results.length, 45); assert.ok(failed.results.every(row => row.testStatus === 'unknown'));
+  assert.equal(failed.status, 'failed'); assert.equal(failed.complete, false); assert.equal(failed.results.length, 61); assert.ok(failed.results.every(row => row.testStatus === 'unknown'));
   assert.deepEqual(failed.compile?.errorCodes, ['E0308']); assert.doesNotMatch(JSON.stringify(failed), /private path|private stderr/);
 });
 
@@ -366,7 +367,7 @@ test('all original-budget and new browser additions are mandatory exact contract
     'native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab',
     'native::client_browser::recording_attempt_tests::chromium_two_attempt_recording_late_old_completion_cannot_mutate_new_artifact',
 ];
-  const full = [...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
+  const full = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS];
   for (const name of additional) {
     assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
     assert.ok(!(CANDIDATE_NATIVE_DIAGNOSTICS as readonly string[]).includes(name));

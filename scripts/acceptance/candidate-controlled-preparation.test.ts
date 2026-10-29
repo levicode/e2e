@@ -1,3 +1,4 @@
+import { REQUIRED_ENCODER_CONTRACTS } from './candidate-video-manifest.ts';
 /** Closed parser and local Git identity tests. No native harness, browser or socket is executed. */
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -110,9 +111,9 @@ test('concentrated stage preserves mandatory gates and explicit no-bail oracle d
   assert.ok(workflow.includes('id: controlled-preparation'));
   assert.equal((workflow.match(/E2E_SYNTHETIC_EVIDENCE_BATCH: '1'/g) ?? []).length, 2);
   assert.ok(readFileSync(new URL('./candidate-web.ts', import.meta.url), 'utf8').includes("suite.id === 'web-browser' ? ['--bail=0'] : []"));
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46);
   for (const item of CONTROLLED_PREPARATION_CASES) assert.ok((CANDIDATE_NATIVE_DIAGNOSTICS as readonly string[]).includes(item.name));
-  assert.doesNotThrow(() => verifyNativeInventory([...CANDIDATE_NATIVE_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS].map(name => `${name}: test`).join('\n')));
+  assert.doesNotThrow(() => verifyNativeInventory([...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS].map(name => `${name}: test`).join('\n')));
 });
 
 

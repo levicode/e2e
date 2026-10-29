@@ -39,7 +39,7 @@ test('dedicated push is source-locked; manual selection needs an explicit immuta
 test('full native manifest extends foundation without weakening the foundation list', () => {
   for (const name of NATIVE_BROWSER_CONTRACTS) assert.ok((CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
   assert.equal(new Set(CANDIDATE_NATIVE_CONTRACTS).size, CANDIDATE_NATIVE_CONTRACTS.length);
-  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 44);
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46);
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract'));
   assert.ok(CANDIDATE_NATIVE_CONTRACTS.includes('native::client_browser::state_lifecycle_tests::chromium_public_state_capture_after_navigation_and_query'));
   for (const family of ['equivalence_tests', 'client_geometry', 'client_state', 'recording', 'borrowed_capture', 'borrowed_host']) assert.ok(CANDIDATE_NATIVE_CONTRACTS.some(name => name.includes(family)), family);
@@ -187,7 +187,7 @@ test('hosted workflow has narrow opt-in triggers, isolates features, preserves i
   const installedFixture = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
   assert.match(installedFixture, /from 'e2e\/runner'/); assert.match(installedFixture, /from '@e2e-dev\/web'/);
   assert.match(installedFixture, /E2E_AGENT_BROWSER_EXECUTABLE, undefined/);
-  assert.match(installedFixture, /readFileSync\(resolve\(session.artifactsDir, await app.screenshot/);
+  assertInstalledScreenshotRead(installedFixture);
 });
 
 for (const mode of ['browser', 'encoder'] as const) test(`${mode} fake-harness orchestration continues all exact contracts after failure and never seals success`, t => {
@@ -550,4 +550,19 @@ test('P14 permanently retires its PGID after absence and never signals a recycle
   }
   const denied = ownedProcessGroupSignal(12345, () => { throw Object.assign(new Error('denied'), { code: 'EPERM' }); });
   assert.throws(() => denied('SIGTERM'), /denied/);
+});
+
+// Exact adjacent definition/use pair: no alternate base, callback or filename.
+function assertInstalledScreenshotRead(source: string): void {
+  assert.match(source, /const screenshotPath = resolve\(session\.artifactsDir, await app\.screenshot\('installed-candidate'\)\);\s*const capture = readFileSync\(screenshotPath\);/);
+}
+test('installed screenshot oracle rejects wrong paths, producers, consumers and intervening reassignment', () => {
+  const source = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
+  assertInstalledScreenshotRead(source);
+  for (const changed of [
+    source.replace('resolve(session.artifactsDir, await app.screenshot', 'resolve(otherDirectory, await app.screenshot'),
+    source.replace("app.screenshot('installed-candidate')", "app.screenshot('other')"),
+    source.replace('readFileSync(screenshotPath)', 'readFileSync(otherPath)'),
+    source.replace('const capture = readFileSync', "screenshotPath = otherPath; const capture = readFileSync"),
+  ]) assert.throws(() => assertInstalledScreenshotRead(changed));
 });
