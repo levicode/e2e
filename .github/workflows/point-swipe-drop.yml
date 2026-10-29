@@ -8,13 +8,13 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 83149637711ec059d1da3ce13716e4d9ab7b3e4e
-  NATIVE_SOURCE_TREE: a200b8156d564fbfab86f68a49ead1f14a02d028
+  NATIVE_SOURCE_SHA: 32ea08ffb89df927713652bef4ffce738149c779
+  NATIVE_SOURCE_TREE: 1b90bc06530d414fe9309ca2c5d5b81a9557f56e
   NEXT_TELEMETRY_DISABLED: '1'
 'on':
   push:
     branches:
-    - ci/point-swipe-drop
+    - ci/point-swipe-drop-r2
 jobs:
   preflight-both-mode-typecheck:
     runs-on: ubuntu-24.04
