@@ -1,0 +1,182 @@
+{
+  "name": "Frozen F2 N1 short-read diagnostic (not product acceptance)",
+  "on": {
+    "workflow_dispatch": {},
+    "push": {
+      "branches": [
+        "ci/f2-n1-short-read-20261029-0804"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "short-read-${{ github.ref }}",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "diagnostic": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "suite": [
+            "web-platform",
+            "transformed-secrets"
+          ]
+        }
+      },
+      "defaults": {
+        "run": {
+          "working-directory": "frozen",
+          "shell": "bash"
+        }
+      },
+      "env": {
+        "NODE_SELECTOR": "22",
+        "LANE": "short-read-diagnostic",
+        "EXPECTED_BUILD_RUN": "40826634854",
+        "EXPECTED_BUILD_ATTEMPT": "1",
+        "EXPECTED_BUILD_MANIFEST_SHA256": "bc17c80020a60269f900a8749331a875d253c8389c448c25b6af43ade93d6c2e",
+        "E2E_SHORT_READ_SUITE": "${{ matrix.suite }}",
+        "E2E_TELEMETRY_DISABLED": "1",
+        "E2E_UPDATE_CHECK_DISABLED": "1",
+        "NEXT_TELEMETRY_DISABLED": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 1,
+            "path": "diagnostic"
+          }
+        },
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 1,
+            "path": "frozen",
+            "ref": "a736e3ed9a4bfcace102fdf48b01702baf3fcee2"
+          }
+        },
+        {
+          "name": "Prepare exact frozen source and reviewed custody delta",
+          "id": "source",
+          "run": "python3 ../diagnostic/scripts/ci/short-read/prepare.py"
+        },
+        {
+          "uses": "pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1",
+          "with": {
+            "version": "12.3.4",
+            "package_json_file": "frozen/package.json"
+          }
+        },
+        {
+          "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "with": {
+            "node-version": "22.23.4",
+            "cache": "pnpm",
+            "cache-dependency-path": "frozen/pnpm-lock.yaml"
+          }
+        },
+        {
+          "name": "Restore exact original build producer artifact",
+          "id": "download_build",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
+          "run": "python3 ../diagnostic/scripts/ci/short-read/download-build.py"
+        },
+        {
+          "name": "Verify build source/producer/Node identity",
+          "id": "build_identity",
+          "run": "python3 evidence/tools/build-assets.py identity"
+        },
+        {
+          "name": "Dependencies without credential inheritance",
+          "id": "dependencies",
+          "run": "unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\npnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Restore original generated assets, never rebuild",
+          "id": "restore_build",
+          "run": "python3 evidence/tools/build-assets.py restore"
+        },
+        {
+          "name": "Restore source-bound ordinary producer",
+          "id": "download_ordinary",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}",
+            "RUNTIME_KIND": "ordinary"
+          },
+          "run": "python3 evidence/tools/download-runtime.py"
+        },
+        {
+          "name": "verify-runtime",
+          "id": "verify_runtime",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode evidence/tools/verify-runtimes.ts\n) 2>&1 | tee evidence/verify-runtime.log\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > evidence/verify-runtime.exit\nexit \"$s\"\n",
+          "env": {
+            "NEED_FAULT": "0"
+          }
+        },
+        {
+          "name": "native-browser-codecs",
+          "id": "native_browser_codecs",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\" install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\nfi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\nexit \"$s\"\n"
+        },
+        {
+          "name": "playwright-browser-install",
+          "id": "playwright_browser_install",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps\n) 2>&1 | tee \"evidence/playwright-browser-install.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/playwright-browser-install.exit\"\nexit \"$s\"\n"
+        },
+        {
+          "name": "browser-identities",
+          "id": "browser_identities",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npython3 - <<'CHROME'\nimport pathlib,json,hashlib,subprocess,os\npaths=[p.resolve() for r in sorted((pathlib.Path.home()/'.agent-browser/browsers').glob('chrome-*'),reverse=True) for p in (r/'chrome',r/'chrome-linux64/chrome') if p.is_file()];assert paths\nrows=[{'path':str(p),'version':subprocess.check_output([str(p),'--version'],text=True).strip(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths]\npathlib.Path('evidence/native-installed-browsers.json').write_text(json.dumps(rows,indent=2)+'\\n')\nwith open(os.environ['GITHUB_ENV'],'a') as f:f.write('E2E_CHROMIUM_EXECUTABLE='+str(paths[0])+'\\n')\nCHROME\npnpm --filter @e2e-dev/web exec node --input-type=module - <<'PW'\nimport { chromium } from 'playwright-core';import {readFileSync,writeFileSync} from 'node:fs';import {createHash} from 'node:crypto';import {execFileSync} from 'node:child_process';\nconst p=chromium.executablePath();writeFileSync(process.cwd()+'/../../evidence/playwright-installed-browser.json',JSON.stringify({path:p,version:execFileSync(p,['--version'],{encoding:'utf8'}).trim(),sha256:createHash('sha256').update(readFileSync(p)).digest('hex')},null,2));\nPW\n) 2>&1 | tee evidence/browser-identities.log\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > evidence/browser-identities.exit\nexit \"$s\"\n"
+        },
+        {
+          "name": "Require exact original browser before tests",
+          "id": "browser_gate",
+          "run": "python3 ../diagnostic/scripts/ci/short-read/browser-gate.py"
+        },
+        {
+          "name": "One full original suite; original budgets; custody before afterAll",
+          "id": "diagnostic",
+          "run": "python3 ../diagnostic/scripts/ci/short-read/run.py"
+        },
+        {
+          "name": "Postcheck unchanged built assets and native runtime",
+          "id": "postcheck",
+          "if": "${{ always() && steps.restore_build.outcome == 'success' && steps.verify_runtime.outcome == 'success' }}",
+          "env": {
+            "NEED_FAULT": "0"
+          },
+          "run": "python3 evidence/tools/build-assets.py postcheck\nnode evidence/tools/verify-runtimes.ts\npython3 ../diagnostic/scripts/ci/short-read/source-postcheck.py"
+        },
+        {
+          "name": "Retain closed job receipt even on failure",
+          "if": "${{ always() }}",
+          "env": {
+            "STEP_RESULTS": "${{ toJSON(steps) }}"
+          },
+          "run": "mkdir -p evidence\npython3 - <<'PYJOB'\nimport json,os,pathlib\npathlib.Path('evidence/job-receipt.json').write_text(json.dumps({'suite':os.environ['E2E_SHORT_READ_SUITE'],'run':os.environ['GITHUB_RUN_ID'],'attempt':os.environ['GITHUB_RUN_ATTEMPT'],'steps':{k:v.get('outcome') for k,v in json.loads(os.environ['STEP_RESULTS']).items()},'diagnosticOnly':True},indent=2)+'\\n')\nPYJOB"
+        },
+        {
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "if": "${{ always() }}",
+          "with": {
+            "name": "short-read-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path": "frozen/evidence/diagnostic/\nfrozen/evidence/job-receipt.json\nfrozen/evidence/build-producer.json\nfrozen/evidence/build-manifest.json\nfrozen/evidence/ordinary-producer.json\nfrozen/evidence/ordinary.manifest.json\nfrozen/evidence/reused-ordinary-artifact.json\nfrozen/evidence/source.commit\nfrozen/evidence/source.tree\nfrozen/evidence/custody-helper-hashes.json\nfrozen/evidence/native-installed-browsers.json\nfrozen/evidence/playwright-installed-browser.json",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    }
+  }
+}

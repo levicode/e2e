@@ -9,6 +9,7 @@ import type { ListOptions, ListedPair, ListResult, RunOptions, RunOutcome } from
 import type { E2EConfig } from '../../src/index.ts';
 import { createFakeEngine, FAKE_APP } from './fake-engine.ts';
 import { actionOutcomeDiagnostics } from './action-outcome-diagnostics.ts';
+import { registerShortReadFixture, retainShortReadReport } from './short-read-report-custody.ts';
 
 export type { RunOptions, RunOutcome };
 
@@ -63,6 +64,7 @@ export function createProject(files: Readonly<Record<string, string>>): FixtureP
     mkdirSync(path.dirname(absolute), { recursive: true });
     writeFileSync(absolute, content, 'utf8');
   }
+  registerShortReadFixture(dir, files);
   return {
     dir,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
@@ -116,6 +118,7 @@ export async function runExisting(
     quiet: true,
     ...options.runOptions,
   });
+  retainShortReadReport(project.dir, outcome.report);
   if (process.env['E2E_TEST_ACTION_DIAGNOSTICS'] === '1') {
     try {
       for (const row of actionOutcomeDiagnostics(outcome)) process.stderr.write(`E2E_ACTION_OUTCOME ${JSON.stringify(row)}\n`);
@@ -199,12 +202,14 @@ export async function runExistingWithConfigFile(
   const previousAppUrl = process.env['APP_URL'];
   if (options.appUrl !== undefined) process.env['APP_URL'] = options.appUrl;
   try {
-    return await run({
+    const outcome = await run({
       cwd: project.dir,
       env: fixtureEnv(options.appUrl),
       quiet: true,
       ...options.runOptions,
     });
+    retainShortReadReport(project.dir, outcome.report);
+    return outcome;
   } finally {
     if (previousAppUrl === undefined) delete process.env['APP_URL'];
     else process.env['APP_URL'] = previousAppUrl;

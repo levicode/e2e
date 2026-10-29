@@ -1,0 +1,31 @@
+{
+  "sourceCommit": "a736e3ed9a4bfcace102fdf48b01702baf3fcee2",
+  "sourceTree": "8632b8245c3a14cde2a844a4b13ee9801d7bee94",
+  "build": {
+    "id": 12877405127,
+    "name": "full-node-build-22",
+    "bytes": 1675610,
+    "digest": "sha256:120796d8e5a3ef10965be4488bb6a1142cd913d1d91063918444c604f9a1db99",
+    "run": "40826634854",
+    "attempt": "1",
+    "manifestSHA256": "bc17c80020a60269f900a8749331a875d253c8389c448c25b6af43ade93d6c2e"
+  },
+  "browserSHA256": "8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80",
+  "browserVersion": "Google Chrome for Testing 156.0.8078.73",
+  "tests": {
+    "web-platform": {
+      "count": 43,
+      "sha256": "23f95f9f01af5fe6a3d17d745c325c3f970c270854200e457ab64b5dc9631437",
+      "fixtureHash": "7b569b834946506e5589190337659a0f84a738c5273f48bcdaa9c9bf8bbd84a5"
+    },
+    "transformed-secrets": {
+      "count": 4,
+      "sha256": "80a75a5c857ab2602b71dff6a7173c145988d88b77e0967fcef00655b91ede1b",
+      "fixtureHash": "e7a1c840d4661b0060452b9c0343579c129c67466ce1b69c7a3ed88f5680da3c"
+    }
+  },
+  "custodyHelperHashes": {
+    "run-project.ts": "87626716b01be80cf51ca16afc31bc71529c9282bfeb28e77cb66198bf895aaf",
+    "short-read-report-custody.ts": "1b96f9ebc9ccf843c5f9461b6aada198eb1d49dd54647479ea2d11580f75605a"
+  }
+}
