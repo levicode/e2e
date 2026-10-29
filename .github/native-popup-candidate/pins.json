@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "repository": "levicode/agent-browser",
-  "commit": "be565826aad1db34df6b98e3d9c386f5b0a2f4ec",
-  "tree": "6d827fa5a24ade1a983495cf7e090c70df20168f",
+  "commit": "8fdb2e661e34bd3127cd3af8248f507e6efbe25f",
+  "tree": "1c0a5d2b9c5ca7713c785f4d34a0d4197237cbcc",
   "files": {
     "cli/src/native/client_browser.rs": "a0c7249c903b92d95a9e0a050100975d91af612f7eb2ddef19e8d49283c53a34",
     "cli/src/native/client_browser_popup_interposition_tests.rs": "43c960131adf32948ec52c44b075ea37308a36471d28a14022f0813c7d644933",
@@ -14,6 +14,7 @@
     "cli/src/native/client_eval_preparation_tests.rs": "42e25bf25eaf2fa1671f31bdc2fe4166388e48f7fc9420da517513ee0faef6d0",
     "cli/src/native/client_observation.rs": "c040e868c3c3562c585f02a4e10a82a48b8e021d86ae4866f24c3971d05526ae",
     "cli/src/native/client_observation/fresh_query.rs": "2b7f5d41645f405216be1f669b0ee718bb87d1d17713aea34e7726569b4e51f6",
+    "cli/src/native/client_observation/fresh_query_submission_tests.rs": "1a310a6c96b92a36ab17ea39ca3ebceae5a1fc096a72b24fcd59b5a0f225007b",
     "cli/src/native/client_observation/query_diagnostic.rs": "7cca664e91facef0f60298b76e2c068c68be663068b34e6613b6a4c53e518217",
     "cli/src/native/client_observation_dispatch.rs": "6d8294284f7d732815151b1c34476176eeec1f06b50ab0e8edec3ff82025d593",
     "cli/src/native/client_operation_state.rs": "c9aa23cfa10180b6870420fab66f29255897a7a4fcf0a0e73c1783fb7f98e870",
@@ -22,11 +23,11 @@
     "cli/src/native/client_popup_interposition_test_helpers.rs": "ef02e8f192f795e8b6bed61b48e2493d57774f773c5f629bb12ba53e7f9b3809",
     "cli/src/native/client_popup_preparation_tests.rs": "b021948a84ddff4c70fd7f6a3c4c79be9b58e5fd8de738a49eaf733c0779210a",
     "cli/src/native/client_session.rs": "86b9d18090c79af7ce8541b99a5f14e5d29286e5c2e72516845be85d1945dd0c",
-    "cli/src/native/client_settlement_trace.rs": "c5e31ef3723c705a3ffcc41bc473c5fe3c8d93689875f9273e4b316eb060833c",
+    "cli/src/native/client_settlement_trace.rs": "dc2c96f91eb65c63b8d753ba3d0de26f02cd91a20a74afdf720b1e68ac695220",
     "cli/src/native/client_targets.rs": "6be61f8d65df5fd6f30876a42fc09a9b492232969d1b0ca378e775423090e7f5"
   },
-  "nativePatchSHA256": "9647867bf1cb4ee706a0aa5338e4b35e4bdcf28cdb80a5ca647e3de85af11ced",
-  "nativeDeltaOverCommonV2SHA256": "e8bb0ef171cf1ac2dfb8aa31c00c6be6b3ac13254371bed8ddc5055acf7bf153",
+  "nativePatchSHA256": "753ab241692916d731774f31497aa37cc940182af6dbdf31d9690f6c6c7063a7",
+  "nativeDeltaOverCommonV2SHA256": "aad1a987f999dcaa9d907db7048e97fb73f9d267ab253e39625f0b53b1c01c54",
   "toolchain": "1.99.1",
   "profile": "ci",
   "features": [],
@@ -72,8 +73,8 @@
     "native::client_observation::query_diagnostic::tests::timing_accumulates_original_monotonic_intervals_and_saturates",
     "native::client_observation::query_diagnostic::tests::disabled_witness_does_not_change_stage_timing_or_consume_protocol_failure",
     "native::client_observation::query_diagnostic::tests::sample_failure_stays_first_when_cleanup_and_protocol_fail_later",
-    "native::client_settlement_trace::tests::query_read_receipt_is_closed_and_contains_no_scope_or_renderer_payload",
-    "native::client_settlement_trace::tests::timed_field_failure_fits_unchanged_record_bound"
+    "native::client_settlement_trace::query_read_schema_tests::query_read_receipt_is_closed_and_contains_no_scope_or_renderer_payload",
+    "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound"
   ],
   "expectedCodes": [
     0,
@@ -185,8 +186,8 @@
       "native::client_observation::query_diagnostic::tests::sample_failure_stays_first_when_cleanup_and_protocol_fail_later"
     ],
     "client_settlement_trace.rs": [
-      "native::client_settlement_trace::tests::query_read_receipt_is_closed_and_contains_no_scope_or_renderer_payload",
-      "native::client_settlement_trace::tests::timed_field_failure_fits_unchanged_record_bound"
+      "native::client_settlement_trace::query_read_schema_tests::query_read_receipt_is_closed_and_contains_no_scope_or_renderer_payload",
+      "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound"
     ]
   },
   "perTestTimeoutSeconds": 45,
