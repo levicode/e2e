@@ -2019,11 +2019,16 @@
     "native::client_observation::frame_dom_validation_tests::child_without_content_document_keeps_existing_backend_failure",
     "native::client_observation::frame_dom_validation_tests::fresh_fields_final_loader_and_root_changes_still_reject_publication",
     "native::client_observation::frame_dom_validation_tests::fresh_fields_reacquire_final_inventory_with_exact_cdp_counts",
+    "native::client_observation::frame_dom_validation_tests::fresh_fields_stateless_final_description_navigation_and_closed_root_changes_reject",
     "native::client_observation::frame_dom_validation_tests::legacy_frame_dom_keeps_loader_agnostic_root_and_child_behavior",
     "native::client_observation::frame_dom_validation_tests::missing_frame_and_wrong_loader_stop_before_any_dom_command",
     "native::client_observation::frame_dom_validation_tests::pure_frame_validation_requires_exact_id_and_loader_without_new_shape_rules",
     "native::client_observation::frame_dom_validation_tests::root_and_child_dom_keep_exact_branches_with_one_fresh_tree_each",
     "native::client_observation::frame_dom_validation_tests::selected_child_that_is_its_session_root_uses_get_document",
+    "native::client_observation::frame_dom_validation_tests::stateless_root_boundary_keeps_original_cancel_and_deadline_without_group_debt",
+    "native::client_observation::frame_dom_validation_tests::stateless_root_describe_errors_stay_opaque_and_foreign_ack_keeps_debt",
+    "native::client_observation::frame_dom_validation_tests::stateless_root_keeps_zero_frontend_ids_and_full_shadow_security_inventory",
+    "native::client_observation::frame_dom_validation_tests::stateless_root_rejects_malformed_seed_and_deep_document_identity",
     "native::client_observation::frame_policy::tests::exact_budget_three_excludes_data_without_truncating_and_closes_descendants",
     "native::client_observation::frame_policy::tests::exact_depth_four_five_and_site_before_depth",
     "native::client_observation::frame_policy::tests::hidden_before_budget_and_missing_owner_is_not_a_policy_exemption",
@@ -3777,11 +3782,11 @@
     "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
     "native::recording::tests::recording_sparse_frames_preserve_timestamps"
   ],
-  "nativeCommit": "2905c13445e21e26f0e3561da2388bc77551fabd",
-  "nativeTree": "7e121c49a1137578d47a69f17d03f4b8620cfc9a",
-  "nonignored": 3285,
+  "nativeCommit": "3febd5169898bdb702929f8829b435249149d1c8",
+  "nativeTree": "5aa2273c1f47ed34d164bb6dbd88b3a92ca4390f",
+  "nonignored": 3290,
   "profile": "ci",
   "schemaVersion": 1,
-  "sourceReviewSHA256": "16cf4d35cbeb82a960ee05562b774eef54ba4580d256ef0034421d54fccb4fa0",
-  "total": 3527
+  "sourceReviewSHA256": "7b7fe34016a55e39636e8dcbbc2f2374da6096b27cb4bf4d3122f35e0dfa385b",
+  "total": 3532
 }
