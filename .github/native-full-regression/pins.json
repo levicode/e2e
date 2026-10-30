@@ -42,7 +42,7 @@
     "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound",
     "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
   ],
-  "bindingStatus": "S7_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
+  "bindingStatus": "S8_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
   "capability": "browser.issuance-bound-references/1",
   "classProjection": {
     "configFile": ".github/native-full-regression/class-pure.config.ts",
@@ -115,7 +115,7 @@
     },
     "vitestVersion": "5.0.5"
   },
-  "commit": "44db08d47314f585763d12339a1542b4cc55e332",
+  "commit": "6150faa8f813e396eff0ae736311d0e7da626593",
   "expectedInventories": {
     "default": {
       "ignored": 242,
@@ -128,7 +128,7 @@
       "total": 3484
     }
   },
-  "externalPublicationGate": "Exact native commit/source readback verified; E2E bound manifest awaits root GO. No S7 CI/runtime/browser acceptance claimed.",
+  "externalPublicationGate": "Exact S8 native commit/source readback verified; bound4-file E2E manifest awaits root GO. S7 failure remains historical; no S8 CI/runtime/browser result yet.",
   "features": [],
   "files": {
     "cli/Cargo.lock": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb",
@@ -153,6 +153,7 @@
     "cli/src/native/client_observation/fresh_query_submission_tests.rs": "1a310a6c96b92a36ab17ea39ca3ebceae5a1fc096a72b24fcd59b5a0f225007b",
     "cli/src/native/client_observation/query_diagnostic.rs": "7cca664e91facef0f60298b76e2c068c68be663068b34e6613b6a4c53e518217",
     "cli/src/native/client_observation_dispatch.rs": "6d8294284f7d732815151b1c34476176eeec1f06b50ab0e8edec3ff82025d593",
+    "cli/src/native/client_observe_initial_inventory_tests.rs": "7994489c93415bbf7583e10dedd30cf649d89ed5c3b8061b4d398644e0b8853b",
     "cli/src/native/client_operation_state.rs": "c9aa23cfa10180b6870420fab66f29255897a7a4fcf0a0e73c1783fb7f98e870",
     "cli/src/native/client_page.rs": "e68cc8c71d46d344d44e3f54c8bf49769dc6842673e53210a543b89b7a3c8f5b",
     "cli/src/native/client_page_viewport_revision_tests.rs": "d6d26bf19b6207afed5537aeab5575c8f7da6306ee4e68aee6bf84635eae82a1",
@@ -162,6 +163,7 @@
     "cli/src/native/client_session.rs": "86b9d18090c79af7ce8541b99a5f14e5d29286e5c2e72516845be85d1945dd0c",
     "cli/src/native/client_settlement_trace.rs": "6df7e516582a7d8fbedf09e22a6116fd87c46ff22c989916eac81f94b17e1346",
     "cli/src/native/client_targets.rs": "8da6ccca0dfa12f41b410f56948c311aebe02e8f249d000eed7711da4e1b9c27",
+    "cli/src/native/client_trace_initial_inventory_tests.rs": "f0c3bce82baf272cdfc0ef38c42bc3cc6ced9e5fc36650b0634bd8cdbbdb4da9",
     "cli/src/native/mod.rs": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
   },
   "helperBlobs": {
@@ -642,22 +644,23 @@
     "noRemovedTests": true,
     "reviewSHA256": "d1a87a071253e35f2d2739e925a5b7c130c09ddc9feb508f4409ba34dac6462e"
   },
-  "nativeCommitReadbackSHA256": "8170b1cc79de8f1ce36eff035941cb4f710702b3ce4182f8fa46c155390224ad",
-  "nativePatchSHA256": "de0877b78cb14157467e8f402324b92d2760a683ad1e727920fd2a5f10f939ad",
-  "nativeReadbackSHA256": "911dad8b40a98145ac9dc88eb3fbcfe02664d9e5ef84184d13ba36175009e292",
+  "nativeCommitReadbackSHA256": "9659439d962329d67b4766721d7664df16b2483ca302c4391c16098384f74c44",
+  "nativePatchSHA256": "4cd6ad8f57ff4be7782472610c2b0910b2973b77e9503c5b0e4cc0cee269589a",
+  "nativeReadbackSHA256": "d4fc4649b0ccdeb1f169987ca88b1c860f201fd5cf889b8b114bb5ac93ce74c3",
   "nextInventoryDerivation": {
     "addedTests": 0,
-    "baseCommit": "7504775f1e6bb96e6179709088a67c3d88977f18",
-    "baseTree": "f172732bc474e354ddc33804552b32cba7d4c961",
+    "baseCommit": "44db08d47314f585763d12339a1542b4cc55e332",
+    "baseTree": "19c2fc0ef0a1dccc768b096fe897ed279752f292",
     "ignoredExactlyPreserved": true,
-    "nativeManifestSHA256": "465275f46a1a026f79ebdcb8a0958851ea5ff4cad353f70ef30b264fd6e64eb2",
+    "nativeManifestSHA256": "3674cd53e95b43fdb943103d7c3d9fca9e74f70d0f60de79edcf27e2e8088e43",
     "noExistingAttributeChanges": true,
     "noRemovedTests": true,
+    "repairedExistingTest": "native::client_observation_dispatch::trace_initial_inventory_tests::observe_tests::observe_initial_release_error_and_wrong_session_never_authorize_reacquisition",
     "requiredStrengthenedExistingTests": [
       "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
       "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
     ],
-    "reviewSHA256": "21a0be6800fa515953e356a8f1e8eabbf3a43db622791ca38f3101dec074ae82"
+    "reviewSHA256": "b23a7c0ae8ab331d3c0f1e7bb31b58bbca09a836facc76010dce8e73f21dbace"
   },
   "producerFiles": [
     ".github/native-full-regression/ci.py",
@@ -702,8 +705,8 @@
     "scripts/ci/test-check-critical-query-traces.py",
     "scripts/ci/test-original-capture-custody.py"
   ],
-  "producerParent": "c46de845bf841a04b83c822b123e7b5839ece71d",
-  "producerParentTree": "173462fc6cfe967212f35d35561b4a539a124f3c",
+  "producerParent": "92de64405dcaee22becd164a4eb58310dd2a2226",
+  "producerParentTree": "6876f42020cf1e29cabcfd15485659171d4ba7d0",
   "profile": "ci",
   "pureProjection": {
     "file": "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
@@ -810,7 +813,7 @@
   "schemaVersion": 3,
   "scope": "Full unfiltered default and acceptance-faults native test harness plus original four compile boundaries. Exact Rust1.99.1/profileci. Not hosted browser/F4 acceptance. Historical ci-test-fast is not relabeled as ci.",
   "sourceConsumerPreviewTree": "e5b9f968d91574a98ca454cab78ff8305e1eaca3",
-  "sourceManifestSHA256": "465275f46a1a026f79ebdcb8a0958851ea5ff4cad353f70ef30b264fd6e64eb2",
+  "sourceManifestSHA256": "3674cd53e95b43fdb943103d7c3d9fca9e74f70d0f60de79edcf27e2e8088e43",
   "strengthenedExistingTests": [
     "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
     "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
@@ -833,5 +836,5 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "toolchain": "1.99.1",
-  "tree": "19c2fc0ef0a1dccc768b096fe897ed279752f292"
+  "tree": "ee5044a3e050b406e2598c4b655dbe2d98aba5f9"
 }
