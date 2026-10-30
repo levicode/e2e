@@ -11,6 +11,7 @@ import { nodeIdFor } from '../helpers/fake-loop-model.ts';
 import { createProject, resultByTitle, runExisting, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 import { writeFileSync } from 'node:fs';
 import { readEntries } from '../helpers/trace-cache.ts';
+import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
 import type { StepExecutor, StepExecutorContext } from '../../src/agent/executor.ts';
 
 const TITLE = 'screenshots every action';
@@ -237,7 +238,10 @@ describe('agent.act onAction', () => {
       { appUrl: app.url, config: { tests: 'tests/**/*.e2e.ts', agents: { default: { executor: continueExecutor } } } },
     );
     try {
-      expect(screenshotLabels(outcome, 'the hook sees a change that lands after the tap')).toEqual(['arrived']);
+      const result = resultByTitle(outcome, 'the hook sees a change that lands after the tap');
+      const diagnostic = closedFailureDiagnostic(result.attempts, outcome.report.run.errors);
+      expect(result.status, diagnostic).toBe('passed');
+      expect(screenshotLabels(outcome, 'the hook sees a change that lands after the tap'), diagnostic).toEqual(['arrived']);
     } finally {
       project.cleanup();
     }

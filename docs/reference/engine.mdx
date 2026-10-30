@@ -2082,6 +2082,7 @@ The factory runs once per attempt with an `EngineFixtureContext`:
 | `attachArtifact(kind, relativePath)` | Registers a file the current step produced. |
 | `attachViewport(viewport)` | Records the viewport the current step established. |
 | `locator(expression)` | Mints a public locator from a raw expression. |
+| `sampleAttribute?(target, name, deadline)` | Samples one same-context locator attribute under an assertion deadline. |
 | `screen(scope)` | Mints a screen scope. |
 | [`expectable(target, factory)`](#expectations) | Makes `expect(fixture)` return matchers. |
 
@@ -2090,6 +2091,29 @@ The factory runs once per attempt with an `EngineFixtureContext`:
 | `INVALID_CONFIG` | The factory returns a plain surface, not one declared through `context.fixture`, the first time a test reaches for it. |
 | `APP_URL_REQUIRED` | `app.resolveUrl` on a target that declares no URL. |
 | `POLICY_DENIED` | `app.resolveUrl` with any scheme but `http:` and `https:` (`about:blank` aside). |
+
+`sampleAttribute` is optional for compatibility with older harnesses. The
+current runner supplies it. It reads current attributes once, without first
+counting matches or granting a getter a fresh action timeout. It returns
+`undefined` for no match (including an absent frame), `null` for an absent
+attribute, and a string for a present attribute. Multiple matches remain
+`LOCATOR_AMBIGUOUS`; reading a secure node remains `POLICY_DENIED`. A locator
+from another fixture context is `INVALID_ARGUMENT`, even if target names match.
+
+The sample retains the issuing phase's signal and the earlier of its deadline
+and the supplied assertion deadline. It refuses dispatch after that deadline
+and refuses successful data after expiry, cancellation, or a phase change.
+The engine adapter must honor `OperationContext.timeoutMs` and `signal`; the
+sampler awaits its settlement rather than racing and abandoning the read. It
+does not forcibly terminate a noncooperative adapter. The normal fixture
+recorder may still reject the public step promptly on parent cancellation
+while that owned read settles.
+
+A contributed matcher may retain its old path when the optional method is
+absent; an older harness then retains its old budget behavior. Never fall back
+after a sampler error, cancellation, foreign-locator refusal, or unknown
+outcome. A no-match sample is unevaluable, not an automatically passing negation.
+
 
 ```ts
 /**
@@ -2139,6 +2163,8 @@ export interface EngineFixtureContext {
   attachViewport(viewport: { width: number; height: number; scale: number }): void;
   /** Mints a public locator from a raw expression (a platform selector, say). */
   locator(expression: LocatorExpression): Locator;
+  /** One strict, secure-guarded, same-context attribute sample. */
+  sampleAttribute?(target: Locator, name: string, deadline: Deadline): Promise<string | null | undefined>;
   /** Mints a screen scope whose every query is wrapped by `scope` (a nested document, say). */
   screen(scope: (expression: LocatorExpression) => LocatorExpression): Screen;
   /**

@@ -21,12 +21,13 @@ import {
   type ErrorDetails,
 } from '../internal/errors.ts';
 import { requireKey } from '../internal/keys.ts';
+import { EngineError } from '../engine/contract.ts';
 import { describeExpression, expressionHints } from './expression.ts';
-import { cutOffAtDeadline, Deadline, POLL_INTERVAL_MS, sleep } from '../internal/time.ts';
+import { abortError, cancelledError, cutOffAtDeadline, Deadline, POLL_INTERVAL_MS, sleep } from '../internal/time.ts';
 import { timestamp } from '../internal/ids.ts';
 import { obj } from '../internal/objects.ts';
 import { targetLabel } from '../cache/trace.ts';
-import type { AttemptBudget } from '../run/budget.ts';
+import { AttemptBudget } from '../run/budget.ts';
 import type { StepEvent } from '../run/steps.ts';
 
 /** Canonical visibility predicate over a semantic node snapshot. */
@@ -69,6 +70,8 @@ interface LocatorEngineOptions {
   readonly session: TargetSession;
   /** The running phase's signal and deadline, read per operation. */
   readonly budget: AttemptBudget;
+  /** A scoped sample cannot acquire authority from a later fixture phase. */
+  readonly assertPhase?: () => void;
   readonly runId: string;
   readonly attemptId: string;
   readonly actionTimeout: number;
@@ -127,6 +130,7 @@ export class LocatorEngine {
 
   /** An operation context bounded by a deadline a caller shares across steps, such as the swipes of one scroll. */
   operationWithin(deadline: Deadline): OperationContext {
+    this.options.assertPhase?.();
     return {
       signal: this.signal,
       timeoutMs: Math.max(1, deadline.remaining()),
@@ -321,6 +325,27 @@ export class LocatorEngine {
     if (this.options.readPurpose !== 'fixture' || this.session.readFields === undefined) return this.tryRead(expression, deadline, missingFrame);
     const values = await this.fieldValues(expression, fields, deadline, missingFrame);
     return { node: assertSingle(values, expression), count: values.length };
+  }
+
+  /** A single guarded sample, pinned to the issuing phase instead of getter budgets. */
+  async sampleAttribute(expression: LocatorExpression, name: string, assertionDeadline: Deadline): Promise<string | null | undefined> {
+    const signal = this.signal;
+    const deadline = Deadline.min(assertionDeadline, this.options.budget.deadline);
+    const assertPhase = (): void => {
+      if (this.signal !== signal) throw new E2EError('infrastructure', 'CANCELLED', 'locator sample phase retired');
+      if (signal.aborted) throw abortError(signal, cancelledError);
+    };
+    assertPhase();
+    const assertAdmission = (): void => {
+      assertPhase();
+      if (deadline.expired()) throw new EngineError('OPERATION_TIMEOUT', 'attribute sample deadline exceeded', { retryable: false });
+    };
+    const scoped = new LocatorEngine({ ...this.options, budget: new AttemptBudget(signal, deadline), assertPhase: assertAdmission });
+    const { node } = await scoped.tryReadFields(expression, ['attributes'], deadline, 'empty');
+    assertAdmission();
+    if (node === null) return undefined;
+    denySecureRead([node], describeExpression(expression));
+    return attributeOf(node, name);
   }
 
   /** Count current semantic matches without acquiring opaque references. */

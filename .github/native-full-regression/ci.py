@@ -235,6 +235,92 @@ def pure_results_report(root, evidence, pins):
             'sourceSHA256': digest(expected_file), 'count': len(names), 'testNames': names,
             'versions': versions, 'captures': {name: digest(out / name) for name in PURE_CAPTURE_NAMES}, 'browserAcceptance': False}
 
+# Separate S7 pure group: the original attribute23 validator/schema is unchanged.
+CLASS_CONFIG_FILE = '.github/native-full-regression/class-pure.config.ts'
+CLASS_TEST_FILES = ['packages/e2e/tests/unit/fixture-attribute-sampling.test.ts',
+                    'packages/web/tests/unit/class-sampling.test.ts']
+CLASS_SOURCE_FILES = [
+    'docs/reference/engine.mdx', 'packages/e2e/src/engine/index.ts',
+    'packages/e2e/src/locator/engine.ts', 'packages/e2e/src/run/fixtures.ts',
+    'packages/e2e/tests/helpers/fixture-attribute-sampling.ts',
+    *CLASS_TEST_FILES, 'packages/web/src/browser.ts',
+]
+CLASS_CAPTURE_NAMES = ['raw-result.json', 'raw.log', 'run.exit', 'command.json',
+                       'versions.json', 'node-version.txt', 'pnpm-version.txt', 'vitest-version.txt']
+CLASS_SHARED_INSTALL_NAMES = ['install.log', 'install.exit', 'install-command.json']
+
+def class_results_report(root, evidence, pins):
+    bound_identity(pins)
+    projection = pins['classProjection']
+    assert projection['configFile'] == CLASS_CONFIG_FILE, 'wrong class config path'
+    assert projection['nodeMajor'] == 24 and projection['pnpmVersion'] == '12.3.4' and projection['vitestVersion'] == '5.0.5'
+    groups = projection['files']
+    assert type(groups) is list and len(groups) == 2, 'missing/extra class source groups'
+    assert [group['file'] for group in groups] == CLASS_TEST_FILES, 'wrong/duplicate class test files'
+    names_by_file = {group['file']: exact_names(group.get('testNames'), 20, 'class controls', rust=False) for group in groups}
+    all_names = [name for names in names_by_file.values() for name in names]
+    assert len(set(all_names)) == 40, 'class names overlap between files'
+    assert type(projection['sourceFiles']) is dict and set(projection['sourceFiles']) == set(CLASS_SOURCE_FILES), 'class reviewed source set differs'
+    out, install = evidence / 'class-projection', evidence / 'attribute-projection'
+    assert all((out / name).is_file() for name in CLASS_CAPTURE_NAMES), 'missing class capture'
+    assert all((install / name).is_file() for name in CLASS_SHARED_INSTALL_NAMES), 'missing shared frozen install capture'
+    assert (out / 'run.exit').read_text().strip() == (install / 'install.exit').read_text().strip() == '0', 'class run/frozen install failed'
+    assert (out / 'raw.log').stat().st_size > 0 and (install / 'install.log').stat().st_size > 0, 'empty class/shared install log'
+    command = ['pnpm', '--filter', 'e2e', 'exec', 'vitest', 'run', '--config', '../../' + CLASS_CONFIG_FILE,
+               '--reporter=json', '--outputFile=' + str(out / 'raw-result.json')]
+    assert json.loads((out / 'command.json').read_text()) == command, 'nonexact class command'
+    assert json.loads((install / 'install-command.json').read_text()) == ['pnpm', 'install', '--frozen-lockfile'], 'shared install lock not frozen'
+    versions = json.loads((out / 'versions.json').read_text())
+    assert type(versions) is dict and set(versions) == {'node', 'pnpm', 'vitest'}
+    for key in ['node', 'pnpm', 'vitest']:
+        assert type(versions[key]) is str and versions[key] == (out / (key + '-version.txt')).read_text().strip(), 'class raw version differs'
+    assert re.fullmatch(r'v24\.\d+\.\d+', versions['node']), 'wrong class Node major'
+    assert versions['pnpm'] == projection['pnpmVersion'], 'wrong class pnpm version'
+    assert re.match(r'^vitest/' + re.escape(projection['vitestVersion']) + r'\s', versions['vitest']), 'wrong class Vitest version'
+    assert versions == json.loads((install / 'versions.json').read_text()), 'class tool versions differ from frozen install'
+    raw = json.loads((out / 'raw-result.json').read_text())
+    assert raw['success'] is True
+    for key in ['numTotalTests', 'numPassedTests']:
+        assert type(raw[key]) is int and raw[key] == 40, 'wrong class count'
+    for key in ['numFailedTests', 'numPendingTests', 'numTodoTests', 'numFailedTestSuites', 'numPendingTestSuites']:
+        assert type(raw[key]) is int and raw[key] == 0, 'class failure/skip/todo'
+    assert type(raw['numTotalTestSuites']) is int and raw['numTotalTestSuites'] > 0
+    assert type(raw['numPassedTestSuites']) is int and raw['numPassedTestSuites'] == raw['numTotalTestSuites']
+    assert raw.get('numRuntimeErrorTestSuites', 0) == 0 and raw.get('unhandledErrors', []) == [] and raw.get('testExecError') is None
+    assert type(raw['testResults']) is list and len(raw['testResults']) == 2, 'wrong class result file count'
+    expected_paths = {(root / path).resolve(strict=True): path for path in CLASS_TEST_FILES}
+    observed_files = []
+    for suite in raw['testResults']:
+        assert type(suite['name']) is str and Path(suite['name']).is_absolute(), 'class test path not absolute'
+        path = Path(suite['name']).resolve()
+        assert path in expected_paths and path not in observed_files, 'wrong/duplicate class result file'
+        observed_files.append(path)
+        assert suite['status'] == 'passed' and suite.get('message', '') == '' and suite.get('testExecError') is None
+        assertions = suite['assertionResults']
+        assert type(assertions) is list and len(assertions) == 20, 'class per-file count differs'
+        assert Counter(row['fullName'] for row in assertions) == Counter(names_by_file[expected_paths[path]]), 'class exact names differ/duplicate'
+        assert all(row['status'] == 'passed' and row['failureMessages'] == [] for row in assertions), 'class assertion skipped or failed'
+    producer = json.loads((evidence / 'producer.json').read_text())
+    assert producer['gate'] == 'fault' and producer['profile'] == 'ci' and producer['features'] == ['acceptance-faults']
+    assert producer['nativeCommit'] == pins['commit'] and producer['nativeTree'] == pins['tree']
+    for key in ['commit', 'tree']:
+        assert type(producer[key]) is str and re.fullmatch('[0-9a-f]{40}', producer[key]) and producer[key] != '0' * 40
+    source_hashes = dict(projection['sourceFiles'])
+    source_hashes[CLASS_CONFIG_FILE] = projection['configSHA256']
+    for group in groups:
+        assert group['sourceSHA256'] == source_hashes[group['file']], 'class test/group source pin mismatch'
+    for path, expected in source_hashes.items():
+        assert type(expected) is str and re.fullmatch('[0-9a-f]{64}', expected), 'invalid reviewed class source hash'
+        actual = digest(root / path)
+        assert actual == expected == producer['files'][path], 'class source/config bytes differ from reviewed producer source'
+    return {'accepted': True, 'producerCommit': producer['commit'], 'producerTree': producer['tree'],
+            'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'count': 40,
+            'files': groups, 'sourceFiles': source_hashes, 'versions': versions,
+            'captures': {name: digest(out / name) for name in CLASS_CAPTURE_NAMES},
+            'sharedFrozenInstall': {name: digest(install / name) for name in CLASS_SHARED_INSTALL_NAMES},
+            'browserAcceptance': False}
+
+
 def validation_receipt(fn):
     try:
         return fn()
@@ -244,7 +330,7 @@ def validation_receipt(fn):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['prepare', 'source', 'toolchain', 'binary', 'inventory', 'required-controls', 'results', 'exact-results', 'pure-results', 'audit', 'accept'])
+    parser.add_argument('command', choices=['prepare', 'source', 'toolchain', 'binary', 'inventory', 'required-controls', 'results', 'exact-results', 'pure-results', 'class-results', 'audit', 'accept'])
     parser.add_argument('--gate', required=True, choices=['default', 'fault', 'boundaries'])
     args = parser.parse_args()
     root = Path(os.environ['GITHUB_WORKSPACE']).resolve()
@@ -329,6 +415,11 @@ def main():
         report = validation_receipt(lambda: pure_results_report(root, evidence, pins))
         dump('pure-projection-receipt.json', report)
         assert report['accepted'], 'pure projection controls lack complete PASS evidence'
+    elif args.command == 'class-results':
+        assert args.gate == 'fault', 'class pure controls run once on fault producer'
+        report = validation_receipt(lambda: class_results_report(root, evidence, pins))
+        dump('class-projection-receipt.json', report)
+        assert report['accepted'], 'class pure controls lack complete PASS evidence'
     elif args.command == 'results':
         expected = json.loads((evidence / 'inventory.json').read_text())
         report = results((evidence / 'full-suite.log').read_text(), int((evidence / 'full-suite.exit').read_text()), expected)
@@ -403,13 +494,17 @@ def main():
                          'new-native-exact/harness-list.log', 'new-native-exact/results.json', 'pure-projection-receipt.json']
             required += [f'new-native-exact/test-{i:02d}' + suffix for i in range(1, REQUIRED_NEW_COUNT + 1) for suffix in ['.log', '.cleanup.jsonl']]
             required += ['attribute-projection/' + name for name in PURE_CAPTURE_NAMES]
+            required += ['class-projection-receipt.json'] + ['class-projection/' + name for name in CLASS_CAPTURE_NAMES]
             exact = attempt('new-exact-independent', lambda: exact_results_report(evidence, pins, Path(os.environ['CARGO_TARGET_DIR'])))
             saved_exact = attempt('new-exact-receipt', lambda: json.loads((evidence / 'new-native-exact-receipt.json').read_text()))
             report['newExactAccepted'] = bool(exact and exact == saved_exact)
             pure = attempt('pure-projection-independent', lambda: pure_results_report(root, evidence, pins))
             saved_pure = attempt('pure-projection-receipt', lambda: json.loads((evidence / 'pure-projection-receipt.json').read_text()))
             report['pureProjectionAccepted'] = bool(pure and pure == saved_pure)
-            for label, accepted in [('new-exact-match', report['newExactAccepted']), ('pure-projection-match', report['pureProjectionAccepted'])]:
+            class_pure = attempt('class-projection-independent', lambda: class_results_report(root, evidence, pins))
+            saved_class = attempt('class-projection-receipt', lambda: json.loads((evidence / 'class-projection-receipt.json').read_text()))
+            report['classProjectionAccepted'] = bool(class_pure and class_pure == saved_class)
+            for label, accepted in [('new-exact-match', report['newExactAccepted']), ('pure-projection-match', report['pureProjectionAccepted']), ('class-projection-match', report['classProjectionAccepted'])]:
                 if not accepted:
                     report['errors'].append({'check': label, 'detail': 'raw evidence absent or differs from validated receipt'})
         for name in required:
@@ -437,6 +532,8 @@ def main():
             assert custody['newExactAccepted'] is True and custody['pureProjectionAccepted'] is True
             assert json.loads((evidence / 'new-native-exact-receipt.json').read_text())['accepted'] is True
             assert json.loads((evidence / 'pure-projection-receipt.json').read_text())['accepted'] is True
+            assert custody['classProjectionAccepted'] is True
+            assert json.loads((evidence / 'class-projection-receipt.json').read_text())['accepted'] is True
         if args.gate == 'boundaries':
             for boundary in BOUNDARIES:
                 assert (evidence / (boundary + '.exit')).read_text().strip() == '0'

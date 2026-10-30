@@ -25,6 +25,7 @@ import {
   createLocator,
   createScopedScreen,
   createScreen,
+  locatorInternals,
   type ScreenContext,
   type SecretResolver,
 } from '../locator/screen.ts';
@@ -348,6 +349,13 @@ function fixtureContext(
       steps.attachArtifact(environment.artifacts.register(kind, relativePath)),
     attachViewport: (viewport) => steps.attachViewport(viewport),
     locator: (expression) => createLocator(screenContext, expression),
+    sampleAttribute: (target, name, deadline) => {
+      const internals = locatorInternals(target);
+      if (internals?.context.engine !== engine) {
+        throw new ConfigurationError('INVALID_ARGUMENT', 'sampleAttribute requires a locator owned by this fixture context');
+      }
+      return engine.sampleAttribute(internals.expression, name, deadline);
+    },
     screen: (wrap) => createScopedScreen(screenContext, wrap),
     expectable<T extends object, E extends object>(target: T, factory: () => E): T & Expectable<E> {
       let surface: E | undefined;

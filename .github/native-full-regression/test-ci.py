@@ -346,6 +346,8 @@ class S6EvidenceTests(unittest.TestCase):
         self.assertFalse((self.ev / 'pure-projection-receipt.json').exists())
 
     def audit_fixture(self):
+        attach_class_fixture(self)
+        self.write_json(self.ev / 'class-projection-receipt.json', ci.class_results_report(self.root, self.ev, self.pins))
         self.write_json(self.ev / 'new-native-exact-receipt.json', self.exact_report())
         self.write_json(self.ev / 'pure-projection-receipt.json', self.pure_report())
         (self.native / 'cli/source.rs').write_text('// synthetic native source; never executed\n')
@@ -376,6 +378,121 @@ class S6EvidenceTests(unittest.TestCase):
         report = json.loads((self.ev / 'custody-after.json').read_text())
         self.assertFalse(report['custodyAccepted']); self.assertFalse(report['pureProjectionAccepted'])
         self.assertTrue(report['newExactAccepted']); self.assertIn('attribute-projection/raw-result.json', report['captures'])
+
+
+def attach_class_fixture(test):
+    """Synthetic non-executable bytes only; no JS/native project execution."""
+    test.class_dir = test.ev / 'class-projection'; test.class_dir.mkdir(exist_ok=True)
+    source_hashes = {}
+    for name in ci.CLASS_SOURCE_FILES + [ci.CLASS_CONFIG_FILE]:
+        path = test.root / name; path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('// synthetic class source: ' + name + '\n')
+        source_hashes[name] = ci.digest(path)
+    groups = [{'file': path, 'sourceSHA256': source_hashes[path],
+               'testNames': ['class group ' + str(i) + ' control ' + str(n).zfill(2) for n in range(20)]}
+              for i, path in enumerate(ci.CLASS_TEST_FILES)]
+    test.pins['classProjection'] = {'configFile': ci.CLASS_CONFIG_FILE, 'configSHA256': source_hashes[ci.CLASS_CONFIG_FILE],
+        'files': groups, 'sourceFiles': {name: source_hashes[name] for name in ci.CLASS_SOURCE_FILES},
+        'nodeMajor': 24, 'pnpmVersion': '12.3.4', 'vitestVersion': '5.0.5'}
+    test.pins['producerFiles'] = sorted(set(test.pins['producerFiles']) | set(source_hashes))
+    test.producer['files'].update(source_hashes)
+    test.write_json(test.ev / 'producer.json', test.producer)
+    test.class_raw = {'success': True, 'numTotalTests': 40, 'numPassedTests': 40, 'numFailedTests': 0,
+        'numPendingTests': 0, 'numTodoTests': 0, 'numTotalTestSuites': 4, 'numPassedTestSuites': 4,
+        'numFailedTestSuites': 0, 'numPendingTestSuites': 0,
+        'testResults': [{'name': str(test.root / group['file']), 'status': 'passed', 'message': '',
+            'assertionResults': [{'fullName': name, 'status': 'passed', 'failureMessages': []} for name in group['testNames']]} for group in groups]}
+    test.write_json(test.class_dir / 'raw-result.json', test.class_raw)
+    test.write_json(test.class_dir / 'command.json', ['pnpm', '--filter', 'e2e', 'exec', 'vitest', 'run', '--config',
+        '../../' + ci.CLASS_CONFIG_FILE, '--reporter=json', '--outputFile=' + str(test.class_dir / 'raw-result.json')])
+    test.write_json(test.class_dir / 'versions.json', test.versions)
+    for key, value in test.versions.items(): (test.class_dir / (key + '-version.txt')).write_text(value + '\n')
+    (test.class_dir / 'raw.log').write_text('synthetic class command output\n')
+    (test.class_dir / 'run.exit').write_text('0\n')
+
+
+class ClassProjectionTests(unittest.TestCase):
+    def setUp(self):
+        self.b = S6EvidenceTests(); self.b.setUp(); self.addCleanup(self.b.doCleanups)
+        attach_class_fixture(self.b)
+    def report(self): return ci.class_results_report(self.b.root, self.b.ev, self.b.pins)
+    def save(self): self.b.write_json(self.b.class_dir / 'raw-result.json', self.b.class_raw)
+    def reject(self):
+        with self.assertRaises((AssertionError, KeyError, TypeError, FileNotFoundError, ValueError)): self.report()
+    def test_two_files_twenty_each_success(self):
+        r=self.report(); self.assertTrue(r['accepted']);self.assertEqual(r['count'],40);self.assertFalse(r['browserAcceptance'])
+    def test_original_attribute23_receipt_independent(self):
+        before=self.b.pure_report();self.b.class_raw['numTodoTests']=1;self.save();self.assertEqual(before,self.b.pure_report())
+    def test_missing_class_contract(self): del self.b.pins['classProjection'];self.reject()
+    def test_empty_class_groups(self): self.b.pins['classProjection']['files']=[];self.reject()
+    def test_one_class_group(self): self.b.pins['classProjection']['files'].pop();self.reject()
+    def test_duplicate_class_group(self): self.b.pins['classProjection']['files'][1]=self.b.pins['classProjection']['files'][0];self.reject()
+    def test_duplicate_pin_name(self):
+        names=self.b.pins['classProjection']['files'][0]['testNames'];names[0]=names[1];self.reject()
+    def test_cross_file_pin_name_overlap(self):
+        g=self.b.pins['classProjection']['files'];g[1]['testNames'][0]=g[0]['testNames'][0];self.reject()
+    def test_missing_reviewed_production_source(self): self.b.pins['classProjection']['sourceFiles'].pop('packages/web/src/browser.ts');self.reject()
+    def test_wrong_config_path(self): self.b.pins['classProjection']['configFile']='other.ts';self.reject()
+    def test_wrong_config_pin(self): self.b.pins['classProjection']['configSHA256']='e'*64;self.reject()
+    def test_changed_config_bytes(self): (self.b.root/ci.CLASS_CONFIG_FILE).write_text('// changed');self.reject()
+    def test_changed_production_bytes(self): (self.b.root/'packages/web/src/browser.ts').write_text('// changed');self.reject()
+    def test_changed_test_bytes(self): (self.b.root/ci.CLASS_TEST_FILES[0]).write_text('// changed');self.reject()
+    def test_test_and_source_pin_mismatch(self): self.b.pins['classProjection']['files'][0]['sourceSHA256']='e'*64;self.reject()
+    def test_producer_source_capture_mismatch(self):
+        self.b.producer['files'][ci.CLASS_TEST_FILES[0]]='e'*64;self.b.write_json(self.b.ev/'producer.json',self.b.producer);self.reject()
+    def test_foreign_native_identity(self):
+        self.b.producer['nativeCommit']='e'*40;self.b.write_json(self.b.ev/'producer.json',self.b.producer);self.reject()
+    def test_wrong_gate(self):
+        self.b.producer['gate']='default';self.b.write_json(self.b.ev/'producer.json',self.b.producer);self.reject()
+    def test_unbound_native(self): self.b.pins['commit']=None;self.reject()
+    def test_unknown_producer_commit(self):
+        self.b.producer['commit']='unknown';self.b.write_json(self.b.ev/'producer.json',self.b.producer);self.reject()
+    def test_raw_wrong_total(self): self.b.class_raw['numTotalTests']=39;self.save();self.reject()
+    def test_raw_boolean_count(self): self.b.class_raw['numFailedTests']=False;self.save();self.reject()
+    def test_raw_skip_count(self): self.b.class_raw['numPendingTests']=1;self.save();self.reject()
+    def test_raw_todo_count(self): self.b.class_raw['numTodoTests']=1;self.save();self.reject()
+    def test_raw_failure_count(self): self.b.class_raw['numFailedTests']=1;self.save();self.reject()
+    def test_raw_false_success(self): self.b.class_raw['success']=False;self.save();self.reject()
+    def test_raw_runtime_error(self): self.b.class_raw['unhandledErrors']=['unknown'];self.save();self.reject()
+    def test_raw_missing_file(self): self.b.class_raw['testResults'].pop();self.save();self.reject()
+    def test_raw_extra_file(self): self.b.class_raw['testResults'].append(copy.deepcopy(self.b.class_raw['testResults'][0]));self.save();self.reject()
+    def test_raw_duplicate_file(self): self.b.class_raw['testResults'][1]['name']=self.b.class_raw['testResults'][0]['name'];self.save();self.reject()
+    def test_raw_foreign_file(self): self.b.class_raw['testResults'][0]['name']=str(self.b.root/'foreign.ts');self.save();self.reject()
+    def test_raw_relative_file(self): self.b.class_raw['testResults'][0]['name']=ci.CLASS_TEST_FILES[0];self.save();self.reject()
+    def test_raw_duplicate_test_name(self):
+        a=self.b.class_raw['testResults'][0]['assertionResults'];a[0]['fullName']=a[1]['fullName'];self.save();self.reject()
+    def test_raw_foreign_test_name(self): self.b.class_raw['testResults'][0]['assertionResults'][0]['fullName']='foreign';self.save();self.reject()
+    def test_raw_skipped_test(self): self.b.class_raw['testResults'][0]['assertionResults'][0]['status']='pending';self.save();self.reject()
+    def test_raw_failure_message(self): self.b.class_raw['testResults'][0]['assertionResults'][0]['failureMessages']=['unknown'];self.save();self.reject()
+    def test_raw_file_error(self): self.b.class_raw['testResults'][0]['testExecError']='failed';self.save();self.reject()
+    def test_wrong_per_file_count(self): self.b.class_raw['testResults'][0]['assertionResults'].pop();self.save();self.reject()
+    def test_missing_raw_file(self): (self.b.class_dir/'raw-result.json').unlink();self.reject()
+    def test_empty_raw_log(self): (self.b.class_dir/'raw.log').write_text('');self.reject()
+    def test_nonzero_run(self): (self.b.class_dir/'run.exit').write_text('1');self.reject()
+    def test_nonzero_shared_install(self): (self.b.pure_dir/'install.exit').write_text('1');self.reject()
+    def test_nonfrozen_shared_install(self): self.b.write_json(self.b.pure_dir/'install-command.json',['pnpm','install']);self.reject()
+    def test_wrong_argv(self): self.b.write_json(self.b.class_dir/'command.json',['pnpm','test']);self.reject()
+    def test_class_version_capture_mismatch(self): (self.b.class_dir/'node-version.txt').write_text('v22.0.0');self.reject()
+    def test_class_version_wrong_vitest(self):
+        v=dict(self.b.versions,vitest='vitest/5.0.1 linux-x64 node-v24.19.0');self.b.write_json(self.b.class_dir/'versions.json',v);(self.b.class_dir/'vitest-version.txt').write_text(v['vitest']);self.reject()
+    def test_class_version_differs_shared_install(self):
+        v=dict(self.b.versions,node='v24.22.1');self.b.write_json(self.b.class_dir/'versions.json',v);(self.b.class_dir/'node-version.txt').write_text(v['node']);self.reject()
+    def test_main_class_failure_retains_explicit_receipt(self):
+        self.b.class_raw['numTodoTests']=1;self.save()
+        with self.assertRaises(AssertionError): self.b.run_main('class-results')
+        r=json.loads((self.b.ev/'class-projection-receipt.json').read_text());self.assertFalse(r['accepted']);self.assertTrue(r['errors'])
+    def test_audit_revalidates_not_saved_green(self):
+        self.b.audit_fixture();self.b.class_raw['numPendingTests']=1;self.save()
+        with self.assertRaises(AssertionError): self.b.run_main('audit')
+        r=json.loads((self.b.ev/'custody-after.json').read_text());self.assertFalse(r['classProjectionAccepted']);self.assertTrue(r['pureProjectionAccepted']);self.assertFalse(r['custodyAccepted'])
+    def test_accept_rejects_missing_class_boolean(self):
+        self.b.audit_fixture();self.b.run_main('audit');r=json.loads((self.b.ev/'custody-after.json').read_text());del r['classProjectionAccepted'];self.b.write_json(self.b.ev/'custody-after.json',r)
+        with self.assertRaises(KeyError): self.b.run_main('accept')
+    def test_all_current_source_names_exact_twenty_each(self):
+        pins=json.loads((HERE/'pins.json').read_text())
+        # Parent binds this contract only after native identity/readback; no optional success.
+        contract=pins['classProjection']
+        self.assertEqual([len(g['testNames']) for g in contract['files']],[20,20])
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

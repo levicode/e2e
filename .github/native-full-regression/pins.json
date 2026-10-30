@@ -42,9 +42,80 @@
     "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound",
     "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
   ],
-  "bindingStatus": "BOUND_TO_READBACK_SOURCE_PENDING_ROOT_REVIEW",
+  "bindingStatus": "S7_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
   "capability": "browser.issuance-bound-references/1",
-  "commit": "7504775f1e6bb96e6179709088a67c3d88977f18",
+  "classProjection": {
+    "configFile": ".github/native-full-regression/class-pure.config.ts",
+    "configSHA256": "c4f999bef7dd4aec2aa74efc17e8812ea92cbaebe3b827f7e19dad8187092b87",
+    "files": [
+      {
+        "file": "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts",
+        "sourceSHA256": "027ea4d3e5e9ca5958336bafb606f5ddf7a7aeb77ca5900819ea8bbae93e7dcb",
+        "testNames": [
+          "owner-bound attribute samples uses exactly one decoded attributes projection, not a count followed by a getter",
+          "owner-bound attribute samples distinguishes no node, missing attribute, empty string and own prototype keys",
+          "owner-bound attribute samples treats a retryable missing frame as an unevaluable sample, not a missing attribute",
+          "owner-bound attribute samples preserves strict cardinality before reading an attribute",
+          "owner-bound attribute samples rejects every secure attribute before exposing a value",
+          "owner-bound attribute samples does not bypass field projection validation 0",
+          "owner-bound attribute samples does not bypass field projection validation 1",
+          "owner-bound attribute samples does not bypass field projection validation 2",
+          "owner-bound attribute samples rejects a foreign locator despite identical target, run and attempt names",
+          "owner-bound attribute samples rejects a fake locator without falling back to its methods",
+          "owner-bound attribute samples accepts the existing cross-realm symbol contract without instanceof or locator methods",
+          "owner-bound attribute samples caps by the phase deadline and never starts after the assertion deadline",
+          "owner-bound attribute samples does not dispatch from an already cancelled phase",
+          "owner-bound attribute samples passes cancellation to the read and waits for its settlement rather than abandoning it",
+          "owner-bound attribute samples cannot publish success from an adapter that ignored phase cancellation",
+          "owner-bound attribute samples cannot publish old-phase success through a fresh teardown phase",
+          "owner-bound attribute samples cannot retry an old-phase read using the next phase signal or budget",
+          "owner-bound attribute samples preserves an Unknown result even if cancellation or phase replacement also occurred",
+          "owner-bound attribute samples retains a bounded legacy read for missing capability",
+          "owner-bound attribute samples retains a bounded legacy read for protected purpose"
+        ]
+      },
+      {
+        "file": "packages/web/tests/unit/class-sampling.test.ts",
+        "sourceSHA256": "7d537f2c0ed1b1cdf93f3837aa38d7a37ede0928cedfe94eecf89b131bd6ea3e",
+        "testNames": [
+          "deadline-owned class samples keeps the original 300ms mismatch and observed raw-class diagnostic with no count/getter work",
+          "deadline-owned class samples preserves class-list whitespace normalization, exact and regex predicates",
+          "deadline-owned class samples keeps an empty class distinct from a missing class attribute",
+          "deadline-owned class samples keeps absence unevaluable for either sign (negated=false)",
+          "deadline-owned class samples keeps absence unevaluable for either sign (negated=true)",
+          "deadline-owned class samples keeps missing frames unevaluable (negated=false)",
+          "deadline-owned class samples keeps missing frames unevaluable (negated=true)",
+          "deadline-owned class samples polls absence to arrival within the same original budget",
+          "deadline-owned class samples does not suppress strict ambiguity",
+          "deadline-owned class samples denies secure attribute reads before judging either sign (negated=false)",
+          "deadline-owned class samples denies secure attribute reads before judging either sign (negated=true)",
+          "deadline-owned class samples uses the existing final 60ms ordinary-timeout cutoff and preserves the last observed class",
+          "deadline-owned class samples keeps Unknown at the same final cutoff as failure, never a diagnostic rewrite or retry",
+          "deadline-owned class samples does not invent a last observation if the first sample times out and leaves no outstanding read",
+          "deadline-owned class samples cannot pass on a successful value returned after the issuing deadline",
+          "deadline-owned class samples propagates public cancellation to the owned read without dispatching a later getter",
+          "deadline-owned class samples uses the legacy path only for an older context that lacks the optional capability",
+          "deadline-owned class samples never falls back from a declared sampler refusal: ACTION_MAY_HAVE_COMMITTED",
+          "deadline-owned class samples never falls back from a declared sampler refusal: CANCELLED",
+          "deadline-owned class samples never retries a foreign locator through the legacy path"
+        ]
+      }
+    ],
+    "nodeMajor": 24,
+    "pnpmVersion": "12.3.4",
+    "sourceFiles": {
+      "docs/reference/engine.mdx": "ae4ba41f683c28a9b0576fafe3b955f4612583e7270848cd80aa4f7cbb345342",
+      "packages/e2e/src/engine/index.ts": "183b36fbe12c506a1c2be20ab6b76ebffda15e35e7d95a9581ecd88d80dd4c43",
+      "packages/e2e/src/locator/engine.ts": "5358601b17cdabaa94445e4908ed7bc2e21a80ce8641fa07abf21961cb8c5bec",
+      "packages/e2e/src/run/fixtures.ts": "a632168e40ac6e48da3f0d8aacb98b042ebe8a2a294ca88e320d6da3d7b62c38",
+      "packages/e2e/tests/helpers/fixture-attribute-sampling.ts": "7334e5c985c65457e6725675f34618f701ba5fdea5dd71e3aecc08731351c3cf",
+      "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts": "027ea4d3e5e9ca5958336bafb606f5ddf7a7aeb77ca5900819ea8bbae93e7dcb",
+      "packages/web/src/browser.ts": "3c390f1c97e2fd4a56b2d89e09e5b0203bfb6b6e1eb278191fc799e8edaef6cc",
+      "packages/web/tests/unit/class-sampling.test.ts": "7d537f2c0ed1b1cdf93f3837aa38d7a37ede0928cedfe94eecf89b131bd6ea3e"
+    },
+    "vitestVersion": "5.0.5"
+  },
+  "commit": "44db08d47314f585763d12339a1542b4cc55e332",
   "expectedInventories": {
     "default": {
       "ignored": 242,
@@ -57,7 +128,7 @@
       "total": 3484
     }
   },
-  "externalPublicationGate": "Actual native source readback verified. Await root review of this bound E2E publication manifest; no CI/runtime acceptance claimed.",
+  "externalPublicationGate": "Exact native commit/source readback verified; E2E bound manifest awaits root GO. No S7 CI/runtime/browser acceptance claimed.",
   "features": [],
   "files": {
     "cli/Cargo.lock": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb",
@@ -66,6 +137,7 @@
     "cli/src/diagnostic_invocation.rs": "427cc91bed81cf573775bd66b7160d78e55af4db5e97181403598ba3389e40f1",
     "cli/src/diagnostic_invocation_tests.rs": "4953e128711c301fbb5bd4ad15996a2ebf4876fb74d21df08e70a2c1e52ffe6b",
     "cli/src/main.rs": "dbf7aec71b654f979a332048a3fff3712c437a6872fc126113b60975f6bf9a2c",
+    "cli/src/native/cdp/client.rs": "42bef7323a149b06de082b463b1935bc962a3516ac06e84a85e02c21ce7d7d5c",
     "cli/src/native/client_browser.rs": "a0c7249c903b92d95a9e0a050100975d91af612f7eb2ddef19e8d49283c53a34",
     "cli/src/native/client_browser_popup_interposition_tests.rs": "00095c107808a0abe24de0e4481adf68ec0f4b45e0722c1206b6fd4e4ab723a5",
     "cli/src/native/client_browser_response_entry_tests.rs": "e46dee71e154a82af8861f4b5f503210cea3ada5d49130799ba043727d7f598c",
@@ -113,6 +185,116 @@
   "historicalNativeTree": "35c0896d6ea9641ac6f19f17a34267c9911f4496",
   "historicalProfile": "ci-test-fast",
   "historicalRun": 40870376425,
+  "historicalS6InventoryDerivation": {
+    "addedTests": 20,
+    "baseCommit": "f3d9c4aede5836a223a10c972b7c46179fc92de4",
+    "baseTree": "fe577c54f6f89899a43f4e9ec12c1fe9d8fa544d",
+    "ignoredExactlyPreserved": true,
+    "moduleWiring": [
+      {
+        "line": 5,
+        "namespace": "connection",
+        "path": "cli/src/main.rs",
+        "snippet": "mod connection;",
+        "sourceSHA256": "dbf7aec71b654f979a332048a3fff3712c437a6872fc126113b60975f6bf9a2c"
+      },
+      {
+        "line": 10,
+        "namespace": "native",
+        "path": "cli/src/main.rs",
+        "snippet": "mod native;",
+        "sourceSHA256": "dbf7aec71b654f979a332048a3fff3712c437a6872fc126113b60975f6bf9a2c"
+      },
+      {
+        "line": 18,
+        "namespace": "native::client_browser",
+        "path": "cli/src/native/mod.rs",
+        "snippet": "pub mod client_browser;",
+        "sourceSHA256": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
+      },
+      {
+        "line": 30,
+        "namespace": "native::client_observation",
+        "path": "cli/src/native/mod.rs",
+        "snippet": "pub mod client_observation;",
+        "sourceSHA256": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
+      },
+      {
+        "line": 112,
+        "namespace": "native::client_settlement_trace",
+        "path": "cli/src/native/mod.rs",
+        "snippet": "pub(crate) mod client_settlement_trace;",
+        "sourceSHA256": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
+      },
+      {
+        "line": 1,
+        "namespace": "connection::diagnostic_invocation",
+        "path": "cli/src/connection.rs",
+        "snippet": "#[path = \"diagnostic_invocation.rs\"]\nmod diagnostic_invocation;",
+        "sourceSHA256": "5b569d5c2cf30de036a9deb97f7bfb1d3b8ab9f5c23643036277c0aa1a49ffdd"
+      },
+      {
+        "line": 7,
+        "namespace": "connection::diagnostic_invocation::linux",
+        "path": "cli/src/diagnostic_invocation.rs",
+        "snippet": "#[cfg(target_os = \"linux\")]\nmod linux {",
+        "sourceSHA256": "427cc91bed81cf573775bd66b7160d78e55af4db5e97181403598ba3389e40f1"
+      },
+      {
+        "line": 234,
+        "namespace": "connection::diagnostic_invocation::linux::tests",
+        "path": "cli/src/diagnostic_invocation.rs",
+        "snippet": "#[cfg(test)]\n    mod tests {\n        include!(\"diagnostic_invocation_tests.rs\");",
+        "sourceSHA256": "427cc91bed81cf573775bd66b7160d78e55af4db5e97181403598ba3389e40f1"
+      },
+      {
+        "line": 18,
+        "namespace": "native::client_observation::frame_dom_validation_tests",
+        "path": "cli/src/native/client_observation.rs",
+        "snippet": "#[cfg(test)]\n#[path = \"client_observation/frame_dom_validation_tests.rs\"]\nmod frame_dom_validation_tests;",
+        "sourceSHA256": "6a15057789b04ed9da8036817e2f091188e70f7da0467eb8d4c3c7d4d732da29"
+      },
+      {
+        "line": 6964,
+        "namespace": "native::client_browser::state_lifecycle_tests",
+        "path": "cli/src/native/client_browser.rs",
+        "snippet": "#[cfg(test)]\n#[path = \"client_browser_state_tests.rs\"]\nmod state_lifecycle_tests;",
+        "sourceSHA256": "a0c7249c903b92d95a9e0a050100975d91af612f7eb2ddef19e8d49283c53a34"
+      },
+      {
+        "line": 738,
+        "namespace": "native::client_browser::state_lifecycle_tests::restart_transport_tests",
+        "path": "cli/src/native/client_browser_state_tests.rs",
+        "snippet": "#[path = \"client_browser_restart_transport_tests.rs\"]\nmod restart_transport_tests;",
+        "sourceSHA256": "94b6c06ea85b15cefd06bb966967f47e555e4c05cf26fa25b1f2be18be6c73b2"
+      },
+      {
+        "line": 898,
+        "namespace": "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests",
+        "path": "cli/src/native/client_browser_restart_transport_tests.rs",
+        "snippet": "#[path = \"client_browser_popup_interposition_tests.rs\"]\nmod popup_interposition_tests;",
+        "sourceSHA256": "ac94d0670a92b24eeb0d76c9c06759a6498d35339dffa7c1837812f97c481816"
+      },
+      {
+        "line": 424,
+        "namespace": "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests",
+        "path": "cli/src/native/client_browser_popup_interposition_tests.rs",
+        "snippet": "#[path = \"client_popup_stage0_tests.rs\"]\nmod stage0_tests;",
+        "sourceSHA256": "00095c107808a0abe24de0e4481adf68ec0f4b45e0722c1206b6fd4e4ab723a5"
+      },
+      {
+        "line": 3899,
+        "namespace": "native::client_settlement_trace::eval_admission_schema_tests",
+        "path": "cli/src/native/client_settlement_trace.rs",
+        "snippet": "#[cfg(test)]\nmod eval_admission_schema_tests {",
+        "sourceSHA256": "6df7e516582a7d8fbedf09e22a6116fd87c46ff22c989916eac81f94b17e1346"
+      }
+    ],
+    "nativeManifestSHA256": "e037609ecdc358ec4fc287456e1f06fcdb3fcf075eb06d58f73771a8b5739cc0",
+    "noExistingAttributeChanges": true,
+    "noRemovedTests": true,
+    "reviewSHA256": "d330bd0cd98479df001286eaba0baa2834ab0c0bd08208a02f7d3953438c7e8e"
+  },
   "inventoryDerivation": {
     "allAdditionsDefaultAndFault": true,
     "baselineEvidence": {
@@ -460,134 +642,51 @@
     "noRemovedTests": true,
     "reviewSHA256": "d1a87a071253e35f2d2739e925a5b7c130c09ddc9feb508f4409ba34dac6462e"
   },
-  "nativePatchSHA256": null,
-  "nativeReadbackSHA256": "fd165f21bbc02d6b3e356787d40a1362f9a9f2b07e43047e1ca28e9a7c2eccd4",
+  "nativeCommitReadbackSHA256": "8170b1cc79de8f1ce36eff035941cb4f710702b3ce4182f8fa46c155390224ad",
+  "nativePatchSHA256": "de0877b78cb14157467e8f402324b92d2760a683ad1e727920fd2a5f10f939ad",
+  "nativeReadbackSHA256": "911dad8b40a98145ac9dc88eb3fbcfe02664d9e5ef84184d13ba36175009e292",
   "nextInventoryDerivation": {
-    "addedTests": 20,
-    "baseCommit": "f3d9c4aede5836a223a10c972b7c46179fc92de4",
-    "baseTree": "fe577c54f6f89899a43f4e9ec12c1fe9d8fa544d",
+    "addedTests": 0,
+    "baseCommit": "7504775f1e6bb96e6179709088a67c3d88977f18",
+    "baseTree": "f172732bc474e354ddc33804552b32cba7d4c961",
     "ignoredExactlyPreserved": true,
-    "moduleWiring": [
-      {
-        "line": 5,
-        "namespace": "connection",
-        "path": "cli/src/main.rs",
-        "snippet": "mod connection;",
-        "sourceSHA256": "dbf7aec71b654f979a332048a3fff3712c437a6872fc126113b60975f6bf9a2c"
-      },
-      {
-        "line": 10,
-        "namespace": "native",
-        "path": "cli/src/main.rs",
-        "snippet": "mod native;",
-        "sourceSHA256": "dbf7aec71b654f979a332048a3fff3712c437a6872fc126113b60975f6bf9a2c"
-      },
-      {
-        "line": 18,
-        "namespace": "native::client_browser",
-        "path": "cli/src/native/mod.rs",
-        "snippet": "pub mod client_browser;",
-        "sourceSHA256": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
-      },
-      {
-        "line": 30,
-        "namespace": "native::client_observation",
-        "path": "cli/src/native/mod.rs",
-        "snippet": "pub mod client_observation;",
-        "sourceSHA256": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
-      },
-      {
-        "line": 112,
-        "namespace": "native::client_settlement_trace",
-        "path": "cli/src/native/mod.rs",
-        "snippet": "pub(crate) mod client_settlement_trace;",
-        "sourceSHA256": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
-      },
-      {
-        "line": 1,
-        "namespace": "connection::diagnostic_invocation",
-        "path": "cli/src/connection.rs",
-        "snippet": "#[path = \"diagnostic_invocation.rs\"]\nmod diagnostic_invocation;",
-        "sourceSHA256": "5b569d5c2cf30de036a9deb97f7bfb1d3b8ab9f5c23643036277c0aa1a49ffdd"
-      },
-      {
-        "line": 7,
-        "namespace": "connection::diagnostic_invocation::linux",
-        "path": "cli/src/diagnostic_invocation.rs",
-        "snippet": "#[cfg(target_os = \"linux\")]\nmod linux {",
-        "sourceSHA256": "427cc91bed81cf573775bd66b7160d78e55af4db5e97181403598ba3389e40f1"
-      },
-      {
-        "line": 234,
-        "namespace": "connection::diagnostic_invocation::linux::tests",
-        "path": "cli/src/diagnostic_invocation.rs",
-        "snippet": "#[cfg(test)]\n    mod tests {\n        include!(\"diagnostic_invocation_tests.rs\");",
-        "sourceSHA256": "427cc91bed81cf573775bd66b7160d78e55af4db5e97181403598ba3389e40f1"
-      },
-      {
-        "line": 18,
-        "namespace": "native::client_observation::frame_dom_validation_tests",
-        "path": "cli/src/native/client_observation.rs",
-        "snippet": "#[cfg(test)]\n#[path = \"client_observation/frame_dom_validation_tests.rs\"]\nmod frame_dom_validation_tests;",
-        "sourceSHA256": "6a15057789b04ed9da8036817e2f091188e70f7da0467eb8d4c3c7d4d732da29"
-      },
-      {
-        "line": 6964,
-        "namespace": "native::client_browser::state_lifecycle_tests",
-        "path": "cli/src/native/client_browser.rs",
-        "snippet": "#[cfg(test)]\n#[path = \"client_browser_state_tests.rs\"]\nmod state_lifecycle_tests;",
-        "sourceSHA256": "a0c7249c903b92d95a9e0a050100975d91af612f7eb2ddef19e8d49283c53a34"
-      },
-      {
-        "line": 738,
-        "namespace": "native::client_browser::state_lifecycle_tests::restart_transport_tests",
-        "path": "cli/src/native/client_browser_state_tests.rs",
-        "snippet": "#[path = \"client_browser_restart_transport_tests.rs\"]\nmod restart_transport_tests;",
-        "sourceSHA256": "94b6c06ea85b15cefd06bb966967f47e555e4c05cf26fa25b1f2be18be6c73b2"
-      },
-      {
-        "line": 898,
-        "namespace": "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests",
-        "path": "cli/src/native/client_browser_restart_transport_tests.rs",
-        "snippet": "#[path = \"client_browser_popup_interposition_tests.rs\"]\nmod popup_interposition_tests;",
-        "sourceSHA256": "ac94d0670a92b24eeb0d76c9c06759a6498d35339dffa7c1837812f97c481816"
-      },
-      {
-        "line": 424,
-        "namespace": "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests",
-        "path": "cli/src/native/client_browser_popup_interposition_tests.rs",
-        "snippet": "#[path = \"client_popup_stage0_tests.rs\"]\nmod stage0_tests;",
-        "sourceSHA256": "00095c107808a0abe24de0e4481adf68ec0f4b45e0722c1206b6fd4e4ab723a5"
-      },
-      {
-        "line": 3899,
-        "namespace": "native::client_settlement_trace::eval_admission_schema_tests",
-        "path": "cli/src/native/client_settlement_trace.rs",
-        "snippet": "#[cfg(test)]\nmod eval_admission_schema_tests {",
-        "sourceSHA256": "6df7e516582a7d8fbedf09e22a6116fd87c46ff22c989916eac81f94b17e1346"
-      }
-    ],
-    "nativeManifestSHA256": "e037609ecdc358ec4fc287456e1f06fcdb3fcf075eb06d58f73771a8b5739cc0",
+    "nativeManifestSHA256": "465275f46a1a026f79ebdcb8a0958851ea5ff4cad353f70ef30b264fd6e64eb2",
     "noExistingAttributeChanges": true,
     "noRemovedTests": true,
-    "reviewSHA256": "d330bd0cd98479df001286eaba0baa2834ab0c0bd08208a02f7d3953438c7e8e"
+    "requiredStrengthenedExistingTests": [
+      "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
+      "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
+    ],
+    "reviewSHA256": "21a0be6800fa515953e356a8f1e8eabbf3a43db622791ca38f3101dec074ae82"
   },
   "producerFiles": [
     ".github/native-full-regression/ci.py",
+    ".github/native-full-regression/class-pure.config.ts",
     ".github/native-full-regression/inventory-default.json",
     ".github/native-full-regression/inventory-fault.json",
     ".github/native-full-regression/pins.json",
     ".github/native-full-regression/test-ci.py",
     ".github/workflows/native-full-regression-popup.yml",
+    "docs/reference/engine.mdx",
     "package.json",
     "packages/e2e/package.json",
+    "packages/e2e/src/engine/index.ts",
     "packages/e2e/src/expect/async.ts",
+    "packages/e2e/src/locator/engine.ts",
+    "packages/e2e/src/run/fixtures.ts",
+    "packages/e2e/tests/helpers/closed-failure-diagnostic.ts",
     "packages/e2e/tests/helpers/fake-time.ts",
+    "packages/e2e/tests/helpers/fixture-attribute-sampling.ts",
     "packages/e2e/tests/helpers/short-read-diagnostics.ts",
+    "packages/e2e/tests/integration/agent-act-on-action.test.ts",
     "packages/e2e/tests/integration/web-replaced-nodes.test.ts",
     "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
+    "packages/e2e/tests/unit/closed-failure-diagnostic.test.ts",
+    "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts",
     "packages/e2e/tests/unit/short-read-diagnostics.test.ts",
     "packages/e2e/vitest.config.ts",
+    "packages/web/src/browser.ts",
+    "packages/web/tests/unit/class-sampling.test.ts",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "scripts/ci/check-critical-query-traces.py",
@@ -603,8 +702,8 @@
     "scripts/ci/test-check-critical-query-traces.py",
     "scripts/ci/test-original-capture-custody.py"
   ],
-  "producerParent": "ffbe9b547ee044904e55d44abfa405733c20d90f",
-  "producerParentTree": "0af5ce9803eb64f19c759a27b9c224e8611166ea",
+  "producerParent": "c46de845bf841a04b83c822b123e7b5839ece71d",
+  "producerParentTree": "173462fc6cfe967212f35d35561b4a539a124f3c",
   "profile": "ci",
   "pureProjection": {
     "file": "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
@@ -710,8 +809,12 @@
   "s6RequiredControls": true,
   "schemaVersion": 3,
   "scope": "Full unfiltered default and acceptance-faults native test harness plus original four compile boundaries. Exact Rust1.99.1/profileci. Not hosted browser/F4 acceptance. Historical ci-test-fast is not relabeled as ci.",
-  "sourceConsumerPreviewTree": "72dee7f5f833ee5209fbc6d0ad77c09ffc92dcd7",
-  "sourceManifestSHA256": "e037609ecdc358ec4fc287456e1f06fcdb3fcf075eb06d58f73771a8b5739cc0",
+  "sourceConsumerPreviewTree": "e5b9f968d91574a98ca454cab78ff8305e1eaca3",
+  "sourceManifestSHA256": "465275f46a1a026f79ebdcb8a0958851ea5ff4cad353f70ef30b264fd6e64eb2",
+  "strengthenedExistingTests": [
+    "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
+    "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
+  ],
   "tests": [
     "native::client_observation::fresh_query::resolve_custody::tests::only_abandoned_is_never_submitted_not_ack_destroyed_or_reserved",
     "native::client_observation::fresh_query::resolve_custody::tests::resolve_receipts_require_exact_capture_group_and_terminal_drop",
@@ -730,5 +833,5 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "toolchain": "1.99.1",
-  "tree": "f172732bc474e354ddc33804552b32cba7d4c961"
+  "tree": "19c2fc0ef0a1dccc768b096fe897ed279752f292"
 }

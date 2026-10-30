@@ -22,6 +22,7 @@
  */
 
 import { engineBrand } from '../internal/brands.ts';
+import type { Deadline } from '../internal/time.ts';
 
 // Semantics the spec requires every engine and contributed fixture to
 // reproduce exactly, exported so an engine never carries its own copy: the
@@ -235,6 +236,15 @@ export interface EngineFixtureContext {
   attachViewport(viewport: { width: number; height: number; scale: number }): void;
   /** Mints a public locator from a raw expression (a platform selector, say). */
   locator(expression: LocatorExpression): Locator;
+  /**
+   * One strict, secure-guarded attribute sample under an assertion deadline.
+   * Only locators owned by this fixture context are accepted. Undefined means
+   * no current match (including a missing frame); null means no attribute.
+   * The read retains the issuing phase's signal and remaining budget. Optional
+   * for older harnesses; callers may keep their legacy path only when absent,
+   * never after a refused, cancelled, or unknown-outcome sample.
+   */
+  sampleAttribute?(target: Locator, name: string, deadline: Deadline): Promise<string | null | undefined>;
   /** Mints a screen scope whose every query is wrapped by `scope` (a nested document, say). */
   screen(scope: (expression: LocatorExpression) => LocatorExpression): Screen;
   /**

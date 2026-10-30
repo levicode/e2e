@@ -16,10 +16,17 @@ interface AttemptLike {
     readonly status: string;
     readonly durationMs: number;
     readonly error?: ErrorLike | undefined;
+    readonly events?: readonly {
+      readonly kind: string;
+      readonly name?: string | undefined;
+      readonly status: string;
+      readonly durationMs: number;
+      readonly code?: string | undefined;
+    }[] | undefined;
   }[];
 }
 
-const CODES = new Set(['ACTION_FAILED', 'ACTION_MAY_HAVE_COMMITTED', 'APP_NOT_OPEN', 'ASSERTION_FAILED', 'CANCELLED', 'ENGINE_FAILURE', 'HOOK_FAILED', 'INVALID_ARGUMENT', 'INVALID_LOCATOR', 'LOCATOR_AMBIGUOUS', 'LOCATOR_NOT_FOUND', 'POLICY_DENIED', 'TEST_TIMEOUT', 'UNSUPPORTED_CAPABILITY']);
+const CODES = new Set(['ACTION_FAILED', 'ACTION_MAY_HAVE_COMMITTED', 'APP_NOT_OPEN', 'APP_UNREACHABLE', 'ASSERTION_FAILED', 'CANCELLED', 'ENGINE_FAILURE', 'ERROR', 'HOOK_FAILED', 'INVALID_ARGUMENT', 'INVALID_LOCATOR', 'INVALID_STATE', 'LOCATOR_AMBIGUOUS', 'LOCATOR_NOT_FOUND', 'NODE_STALE', 'NOT_ACTIONABLE', 'OPERATION_TIMEOUT', 'POLICY_DENIED', 'STEP_BUDGET_EXHAUSTED', 'STEP_NO_CONCLUSION', 'STEP_TIMEOUT', 'TEST_TIMEOUT', 'UNSUPPORTED_CAPABILITY']);
 const PHASES = new Set(['body', 'launch', 'cleanup', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll']);
 const REASONS = ['stale-reference', 'deadline-exceeded', 'invalid-arguments', 'cleanup-failed', 'scope-unavailable', 'stale-scope', 'stale-generation', 'cancelled', 'browser-failure'] as const;
 const LIFECYCLE = ['settling retired native requests', 'retiring native connection', 'retiring provider recording starts', 'retiring late provider recording', 'retiring provider recording', 'ending native scope', 'retiring finalized video files', 'releasing native attempt lease', 'closing native client', 'retiring native attempt'] as const;
@@ -48,7 +55,11 @@ const ORIGINS = [
   ['transfer-retired', 'The native transfer belongs to a retired browser scope'],
   ['capability-contract', 'The native browser response violated its capability contract'],
 ] as const;
-const COMPLETED_APIS = new Set(['app.open', 'app.restart', 'app.clearState', 'app.back', 'browser.goto', 'browser.route', 'browser.setViewportSize', 'browser.setViewport', 'browser.evaluate', 'locator.tap']);
+const COMPLETED_APIS = new Set(['app.open', 'app.restart', 'app.clearState', 'app.back', 'app.screenshot', 'agent.act', 'browser.goto', 'browser.route', 'browser.setViewportSize', 'browser.setViewport', 'browser.evaluate', 'locator.tap']);
+const EVENT_KINDS = new Set(['poll', 'observation', 'model', 'policy', 'engine', 'schema', 'navigation']);
+const EVENT_NAMES = new Set(['tap', 'observe', 'relocate', 'page']);
+const EVENT_STATUSES = new Set(['passed', 'failed', 'cancelled']);
+const ACTION_HOOK_PREFIX = 'agent.act onAction failed: ';
 
 function finiteNumber(value: unknown): number | 'unknown' {
   return typeof value === 'number' && Number.isFinite(value) ? value : 'unknown';
@@ -71,11 +82,14 @@ function closedStackSource(stack: string | undefined) {
 
 function errorFacts(error: ErrorLike | undefined) {
   if (error === undefined) return undefined;
+  const onActionFailure = error.message?.startsWith(ACTION_HOOK_PREFIX) === true;
+  const message = onActionFailure ? error.message?.slice(ACTION_HOOK_PREFIX.length) : error.message;
   return {
     code: error.code !== undefined && CODES.has(error.code) ? error.code : 'other',
     phase: error.phase !== undefined && PHASES.has(error.phase) ? error.phase : 'other',
-    origin: ORIGINS.find(([, message]) => error.message === message || error.stack?.startsWith(`EngineError: ${message}\n`))?.[0],
-    nativeReason: REASONS.find(reason => error.message === `The native browser operation failed (${reason})`
+    ...(onActionFailure ? { onActionFailure: true } : {}),
+    origin: ORIGINS.find(([, fixed]) => message === fixed || error.stack?.startsWith(`EngineError: ${fixed}\n`))?.[0],
+    nativeReason: REASONS.find(reason => message === `The native browser operation failed (${reason})`
       || error.stack?.startsWith(`EngineError: The native browser operation failed (${reason})\n`)),
     errorKind: ERROR_KINDS.find(kind => error.stack?.startsWith(`${kind}: `)),
     source: closedStackSource(error.stack),
@@ -100,6 +114,16 @@ export function closedFailureDiagnostic(
         line: step.source?.line === undefined ? undefined : finiteNumber(step.source.line),
         durationMs: finiteNumber(step.durationMs),
         error: errorFacts(step.error),
+        ...(step.events === undefined ? {} : {
+          eventCount: finiteNumber(step.events.length),
+          events: step.events.slice(-16).map(event => ({
+            kind: EVENT_KINDS.has(event.kind) ? event.kind : 'other',
+            name: event.name === undefined ? undefined : EVENT_NAMES.has(event.name) ? event.name : 'other',
+            status: EVENT_STATUSES.has(event.status) ? event.status : 'other',
+            durationMs: finiteNumber(event.durationMs),
+            code: event.code === undefined ? undefined : CODES.has(event.code) ? event.code : 'other',
+          })),
+        }),
       })),
     })),
     runErrors: runErrors.slice(0, 8).map(errorFacts),

@@ -327,7 +327,7 @@ class FieldJoinTests(unittest.TestCase):
     def timed(pid=41, generation=4, sequence=1):
         return dict(failure(readMs=[0] * 13), pid=pid, generation=generation, operationSeq=sequence)
 
-    def run_field(self, native=None, js=None, custody=None, raw=None, setup=None, receipt=None, inline=None):
+    def run_field(self, native=None, js=None, custody=None, raw=None, setup=None, receipt=None, inline=None, report_value=None, expected_source='a' * 40):
         import hashlib
         with tempfile.TemporaryDirectory(prefix='field-validator-') as temp:
             archive = pathlib.Path(temp) / 'replaced-nodes'
@@ -341,7 +341,7 @@ class FieldJoinTests(unittest.TestCase):
             js = js if js is not None else [self.js()]
             custody = custody if custody is not None else [dict(suite='replaced-nodes', workerRecords=len(js), invalidRecords=0, lineOverflow=False, recordOverflow=False)]
             data = raw if raw is not None else ''.join(validator.JS_PREFIX + json.dumps(row) + '\n' for row in js) + ''.join(validator.CUSTODY_PREFIX + json.dumps(row) + '\n' for row in custody)
-            report = json.dumps({'run': {'errors': []}, 'tests': []})
+            report = json.dumps(report_value if report_value is not None else {'run': {'errors': []}, 'tests': []})
             (run / 'report.json').write_text(report)
             (run / 'closed-js.jsonl').write_text(data)
             proof = dict(schemaVersion=2, run=run.name, captureNonce='a' * 64, reportSHA256=hashlib.sha256(report.encode()).hexdigest(), closedJsSHA256=hashlib.sha256(data.encode()).hexdigest())
@@ -355,7 +355,7 @@ class FieldJoinTests(unittest.TestCase):
             log.write_text(current_log if receipt is None else receipt)
             if setup:
                 setup(archive, run, trace, log)
-            result = subprocess.run([sys.executable, str(SCRIPT), str(len(native)), str(archive), '--field-only', '--field-log', str(log)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(SCRIPT), str(len(native)), str(archive), '--field-only', '--field-log', str(log), '--field-source-commit', expected_source], capture_output=True, text=True)
             summary = json.loads((archive / 'query-capture-validation.json').read_text())
             return result, summary
 
@@ -485,6 +485,114 @@ class FieldJoinTests(unittest.TestCase):
                 original.symlink_to(other)
             self.rejects(setup=setup)
 
+
+
+class NoFailureCaptureTests(unittest.TestCase):
+    run_field = FieldJoinTests.run_field
+    rejects = FieldJoinTests.rejects
+    js = staticmethod(FieldJoinTests.js)
+    timed = staticmethod(FieldJoinTests.timed)
+
+    @staticmethod
+    def report():
+        results = []
+        for i, title in enumerate(validator.FIELD_TITLES):
+            status = 'failed' if 3 <= i <= 5 else 'passed'
+            results.append(dict(file='tests/replaced.e2e.ts', kind='test', titlePath=[title],
+                testId='tests/replaced.e2e.ts::' + validator.quote(title, safe=''), targetId='web',
+                selected=True, repeat=0, declarationIndex=i, status=status,
+                attempts=[dict(index=0, status=status, cleanup='complete', secondaryErrors=[],
+                               startedAt='2026-10-30T00:00:00.000Z', durationMs=1)]))
+        return dict(schemaVersion='report-1', run=dict(errors=[], results=results, status='failed', exitCode=1,
+                    startedAt='2026-10-30T00:00:00.000Z', finishedAt='2026-10-30T00:00:01.000Z',
+                    vcs=dict(commit='a' * 40, dirty=False),
+                    summary=dict(discovered=8, selected=8, executed=8, passed=5, failed=3, skipped=0, interrupted=0, flaky=0)))
+
+    def test_current_target_pass_all_original_cases_and_empty_failure_stream_accept(self):
+        result, summary = self.run_field(js=[], native={41: []}, report_value=self.report())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])
+        self.assertEqual(len(summary['processes']), 1)
+        self.assertEqual(summary['fieldOnly'], dict(targetedFailures=0, joinedFailures=0, joins=[],
+                          failureWitnessOutcome='not-applicable-target-passed'))
+        self.assertTrue(summary['absenceDoesNotProveSuccess'])
+
+    def test_no_failure_requires_source_bound_original_fixture(self):
+        from unittest.mock import patch
+        with patch.object(validator, 'FIELD_FIXTURE_SHA256', '0' * 64):
+            with self.assertRaisesRegex(ValueError, 'source identity mismatch'):
+                validator.require_current_target_pass(self.report(), 'a' * 40)
+
+    def test_missing_filtered_duplicate_and_unexecuted_inventory_rejected(self):
+        mutations = [lambda r: r['run']['results'].pop(),
+                     lambda r: r['run']['results'].__setitem__(0, r['run']['results'][6]),
+                     lambda r: r['run'].__setitem__('errors', ['failed']),
+                     lambda r: r.__setitem__('schemaVersion', 'unknown')]
+        for key in ('discovered', 'selected', 'executed', 'skipped', 'interrupted', 'flaky'):
+            for value in (True, None, 7 if key in ('discovered', 'selected', 'executed') else 1):
+                mutations.append(lambda r, k=key, v=value: r['run']['summary'].__setitem__(k, v))
+        for change in mutations:
+            report = self.report(); change(report)
+            self.rejects(js=[], report_value=report)
+
+    def test_unproven_target_pass_and_ambiguous_attempt_rejected(self):
+        for update in [dict(status='failed'), dict(status='skipped'), dict(selected=False), dict(repeat=True),
+                       dict(file='other.ts'), dict(testId='wrong'), dict(targetId='other'), dict(declarationIndex=True),
+                       dict(attempts=[]), dict(error=None), dict(titlePath=['unknown'])]:
+            report = self.report(); report['run']['results'][6].update(update)
+            self.rejects(js=[], report_value=report)
+        for update in [dict(status='failed'), dict(index=True), dict(cleanup='incomplete'),
+                       dict(secondaryErrors=['lost']), dict(error=None)]:
+            report = self.report(); report['run']['results'][6]['attempts'][0].update(update)
+            self.rejects(js=[], report_value=report)
+        report = self.report(); report['run']['results'][6]['attempts'] *= 2
+        self.rejects(js=[], report_value=report)
+
+    def test_resealed_nonterminal_foreign_source_and_contradictory_report_rejected(self):
+        mutations = [
+            lambda r: r['run'].update(status='running', finishedAt=None),
+            lambda r: [r['run'].pop(k) for k in ('status', 'exitCode', 'finishedAt')],
+            lambda r: r['run']['vcs'].update(commit='0' * 40),
+            lambda r: r['run'].pop('vcs'),
+            lambda r: r['run']['vcs'].update(dirty=True),
+            lambda r: r['run']['vcs'].update(dirty=0),
+            lambda r: r['run']['vcs'].pop('dirty'),
+            lambda r: r['run']['summary'].update(passed=0, failed=8),
+            lambda r: r['run']['summary'].update(passed=True),
+            lambda r: r['run'].update(status='passed', exitCode=0),
+            lambda r: r['run'].update(exitCode=True),
+            lambda r: r['run'].update(finishedAt='2026-10-29T23:59:59.000Z'),
+            lambda r: r['run'].update(startedAt='bad'),
+            lambda r: r['run']['results'][6]['attempts'][0].update(startedAt='2026-10-30T00:00:02.000Z'),
+            lambda r: r['run']['results'][6]['attempts'][0].update(durationMs=1001),
+            lambda r: r['run']['results'][6]['attempts'][0].update(durationMs=True),
+        ]
+        for change in mutations:
+            report = self.report(); change(report)
+            # run_field hashes/reseals each mutated report into current custody.
+            self.rejects(js=[], report_value=report)
+        for expected in ('', 'invalid', 'b' * 40):
+            self.rejects(js=[], report_value=self.report(), expected_source=expected)
+
+    def test_clean_pass_does_not_bypass_capture_missing_empty_or_loss(self):
+        self.rejects(js=[], report_value=self.report(), native={})
+        for change in [lambda a,r,t,l: (t/'query-41.jsonl').write_text(''),
+                       lambda a,r,t,l: (t/'query-41.jsonl').unlink(),
+                       lambda a,r,t,l: (t/'native-41.jsonl').unlink(),
+                       lambda a,r,t,l: (r/'closed-js.jsonl').write_text(''),
+                       lambda a,r,t,l: (r/'report.json').write_text('{}'),
+                       lambda a,r,t,l: l.write_text(l.read_text().replace('a' * 64, 'b' * 64, 1))]:
+            self.rejects(js=[], report_value=self.report(), setup=change)
+        for update in [dict(droppedBefore=1), dict(suppressedBefore=1), dict(overflow=True)]:
+            self.rejects(js=[], report_value=self.report(), native={41: [dict(self.timed(), **update)]})
+
+    def test_clean_pass_never_exempts_observed_failure_join(self):
+        self.rejects(js=[self.js()], report_value=self.report(), native={41: []})
+        self.rejects(js=[self.js()], report_value=self.report(), native={41: [self.timed(), dict(self.timed(), record=2)]})
+        result, summary = self.run_field(report_value=self.report())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(summary['fieldOnly']['joinedFailures'], 1)
+        self.assertEqual(summary['fieldOnly']['failureWitnessOutcome'], 'observed')
 
 if __name__ == '__main__':
     unittest.main()

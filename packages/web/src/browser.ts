@@ -850,12 +850,15 @@ function createBrowserExpectation(deps: ExpectationDeps, negated = false): Brows
         async (deadline) => {
           let value: string | null | undefined;
           try {
-            // A locator read takes the action timeout; the poll's deadline is the tighter bound.
-            value = await withTimeout(
-              readClass(target),
-              deadline.remaining(),
-              () => new EngineError('OPERATION_TIMEOUT', 'class read timed out', { retryable: false }),
-            );
+            // Older harnesses retain their getter path; a declared sampler owns
+            // its bounded read and is never bypassed after a refusal or cancellation.
+            value = deps.context.sampleAttribute === undefined
+              ? await withTimeout(
+                readClass(target),
+                deadline.remaining(),
+                () => new EngineError('OPERATION_TIMEOUT', 'class read timed out', { retryable: false }),
+              )
+              : await deps.context.sampleAttribute(target, 'class', deadline);
           } catch (error) {
             if (isTestErrorCode(error, 'LOCATOR_NOT_FOUND')) return { matches: undefined, observed: 'no node' };
             throw error;

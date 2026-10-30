@@ -1,11 +1,13 @@
 """Validate bounded, payload-free native query diagnostic captures (schema 2)."""
 import argparse
+import datetime
 import hashlib
 import json
 import pathlib
 import re
 import stat
 import sys
+from urllib.parse import quote
 
 SAFE_INTEGER = (1 << 53) - 1
 BYTE_BUDGET = 64 * 1024
@@ -144,7 +146,89 @@ def read_regular(path, maximum):
     return data
 
 
-def field_inputs(archive, log, errors):
+# Exact original eight-case fixture at consumer c46de845; changes require review.
+FIELD_FIXTURE_SHA256 = 'cb4946cff31e9ea1d78b389666f4ae4b19efa8c93c967c48e9266be6fe069ba3'
+FIELD_FIXTURE = pathlib.Path(__file__).resolve().parents[2] / 'packages/e2e/tests/integration/web-replaced-nodes.test.ts'
+FIELD_TITLES = (
+    'a field replaced every frame never reads as hidden',
+    'a field replaced every frame never reads as hidden on a starved runner',
+    'a stable field beside one replaced every frame reads as shown',
+    'toBeHidden fails on a field replaced every frame: testId',
+    'toBeHidden fails on a field replaced every frame: label',
+    'toBeHidden fails on a field replaced every frame: displayValue',
+    'a stable field among fields replaced every frame resolves promptly',
+    'a field removed while it is being replaced reads as hidden',
+)
+
+
+def report_timestamp(value):
+    if type(value) is not str or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.]\d{1,6})?Z', value):
+        raise ValueError('original field report timestamp missing or invalid')
+    return datetime.datetime.fromisoformat(value.removesuffix('Z') + '+00:00')
+
+
+def require_current_target_pass(report, expected_source):
+    """No failure witness is applicable only for this executed, unfiltered case."""
+    if hashlib.sha256(read_regular(FIELD_FIXTURE, 16384)).hexdigest() != FIELD_FIXTURE_SHA256:
+        raise ValueError('original field fixture source identity mismatch')
+    run = report.get('run')
+    if report.get('schemaVersion') != 'report-1' or not isinstance(run, dict) or run.get('errors') != []:
+        raise ValueError('missing targeted settled field failure: original run not complete')
+    if (type(expected_source) is not str or not re.fullmatch('[0-9a-f]{40}', expected_source)
+            or not isinstance(run.get('vcs'), dict) or run['vcs'].get('commit') != expected_source
+            or run['vcs'].get('dirty') is not False):
+        raise ValueError('original field report does not match independent current source')
+    started = report_timestamp(run.get('startedAt'))
+    finished = report_timestamp(run.get('finishedAt'))
+    if finished < started or run.get('status') not in ('passed', 'failed'):
+        raise ValueError('original field run is not terminal')
+    totals = run.get('summary')
+    results = run.get('results')
+    if (not isinstance(totals, dict) or not isinstance(results, list) or len(results) != len(FIELD_TITLES)
+            or any(type(totals.get(k)) is not int or totals[k] != len(FIELD_TITLES)
+                   for k in ('discovered', 'selected', 'executed'))
+            or any(type(totals.get(k)) is not int or totals[k] != 0 for k in ('skipped', 'interrupted', 'flaky'))):
+        raise ValueError('missing targeted settled field failure: original inventory incomplete or filtered')
+    by_title = {}
+    for result in results:
+        if not isinstance(result, dict) or not isinstance(result.get('titlePath'), list) or len(result['titlePath']) != 1:
+            raise ValueError('invalid original field result identity')
+        title = result['titlePath'][0]
+        if type(title) is not str or title not in FIELD_TITLES or title in by_title:
+            raise ValueError('ambiguous or unexpected original field result')
+        if (result.get('file') != 'tests/replaced.e2e.ts' or result.get('kind') != 'test'
+                or result.get('testId') != 'tests/replaced.e2e.ts::' + quote(title, safe='')
+                or result.get('targetId') != 'web' or result.get('selected') is not True
+                or type(result.get('repeat')) is not int or result['repeat'] != 0
+                or type(result.get('declarationIndex')) is not int or result['declarationIndex'] != FIELD_TITLES.index(title)
+                or result.get('status') not in ('passed', 'failed')):
+            raise ValueError('original field result not selected/executed exactly once')
+        attempts = result.get('attempts')
+        if (not isinstance(attempts, list) or len(attempts) != 1 or not isinstance(attempts[0], dict)
+                or type(attempts[0].get('index')) is not int or attempts[0]['index'] != 0
+                or attempts[0].get('status') != result['status'] or attempts[0].get('cleanup') != 'complete'
+                or attempts[0].get('secondaryErrors') != []):
+            raise ValueError('original field attempt incomplete or ambiguous')
+        attempt = attempts[0]
+        attempt_start = report_timestamp(attempt.get('startedAt'))
+        duration = attempt.get('durationMs')
+        if (not uint(duration) or attempt_start < started or attempt_start > finished
+                or datetime.timedelta(milliseconds=duration) > finished - attempt_start):
+            raise ValueError('original field attempt lies outside completed run')
+        by_title[title] = result
+    passed = sum(result['status'] == 'passed' for result in results)
+    failed = len(results) - passed
+    if (type(totals.get('passed')) is not int or totals['passed'] != passed
+            or type(totals.get('failed')) is not int or totals['failed'] != failed
+            or run['status'] != ('failed' if failed else 'passed')
+            or type(run.get('exitCode')) is not int or run['exitCode'] != (1 if failed else 0)):
+        raise ValueError('original field run terminal status/counts contradict results')
+    target = by_title[FIELD_TITLES[6]]
+    if target['status'] != 'passed' or 'error' in target or 'error' in target['attempts'][0]:
+        raise ValueError('missing targeted settled field failure')
+
+
+def field_inputs(archive, log, errors, expected_source=None):
     """Accept exactly one fresh fixture-owned run, never select an old sibling."""
     summary = {'targetedFailures': 0, 'joinedFailures': 0, 'joins': []}
     try:
@@ -280,7 +364,12 @@ def field_inputs(archive, log, errors):
         targets = [row for row in log_failures if row['command'] == 'fixture.read-fields']
         summary['targetedFailures'] = len(targets)
         if not targets:
-            raise ValueError('missing targeted settled field failure')
+            if log_failures:
+                raise ValueError('missing targeted settled field failure')
+            require_current_target_pass(report_value, expected_source)
+            summary['failureWitnessOutcome'] = 'not-applicable-target-passed'
+        else:
+            summary['failureWitnessOutcome'] = 'observed'
         if len({(r['generation'], r['operationSeq']) for r in targets}) != len(targets):
             raise ValueError('duplicate targeted JS operation')
         return trace, targets, summary
@@ -310,12 +399,15 @@ def main():
     parser.add_argument('root', nargs='?', default='evidence/native-trace')
     parser.add_argument('--field-only', action='store_true', help='root is the archived .e2e/replaced-nodes directory')
     parser.add_argument('--field-log', type=pathlib.Path, help='current archived test-e2e.log, required with --field-only')
+    parser.add_argument('--field-source-commit', help='independent current evidence/source.commit; required to accept no target failure')
     args = parser.parse_args()
     root, expected = pathlib.Path(args.root), args.expected
     errors, targets, field_summary = [], [], None
     output_root = root
     if args.field_only:
-        root, targets, field_summary = field_inputs(root, args.field_log, errors)
+        if expected < 1:
+            errors.append('field capture: positive expected process count required')
+        root, targets, field_summary = field_inputs(root, args.field_log, errors, args.field_source_commit)
     native_index = {}
     ordinary = sorted(root.glob('native-*.jsonl'))
     files = sorted(root.glob('query-*.jsonl'))

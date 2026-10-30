@@ -96,3 +96,87 @@ it('projects transition location and exception kind without leaking stack paths 
   expect(facts.attempts[0].failedSteps[0].api).toBe('app.restart');
   expect(JSON.stringify(facts)).not.toContain(secret);
 });
+
+describe('action-hook first failure evidence', () => {
+  const observed = { kind: 'observation', status: 'passed', durationMs: 1 };
+  const tapped = { kind: 'engine', name: 'tap', status: 'passed', durationMs: 2 };
+  const nativeMessage = 'The native browser operation failed (deadline-exceeded)';
+
+  it.each([
+    { stage: 'opening observation', message: nativeMessage, events: [{ ...observed, status: 'failed', code: 'OPERATION_TIMEOUT' }], onActionFailure: false },
+    { stage: 'tap', message: nativeMessage, events: [observed, { ...tapped, status: 'failed', code: 'OPERATION_TIMEOUT' }], onActionFailure: false },
+    { stage: 'settle before hook', message: `agent.act onAction failed: ${nativeMessage}`, events: [observed, tapped, { ...observed, status: 'failed', code: 'OPERATION_TIMEOUT' }], onActionFailure: true },
+    { stage: 'hook visibility read', message: `agent.act onAction failed: ${nativeMessage}`, events: [observed, tapped, observed], onActionFailure: true },
+  ])('keeps $stage distinct from an absent screenshot', ({ message, events, onActionFailure }) => {
+    const error = { code: 'ACTION_FAILED', phase: 'body', message };
+    const attempt = {
+      error, cleanup: 'failed',
+      secondaryErrors: [{ code: 'ENGINE_FAILURE', phase: 'cleanup', message: 'The native browser did not confirm scope closure' }],
+      steps: [
+        { index: 0, api: 'app.open', source: { line: 4 }, status: 'passed', durationMs: 1 },
+        { index: 1, api: 'agent.act', source: { line: 5 }, status: 'failed', durationMs: 10, error, events },
+      ],
+    };
+    const before = JSON.stringify(attempt);
+    const facts = JSON.parse(closedFailureDiagnostic([attempt], [{ code: 'ENGINE_FAILURE', phase: 'cleanup', message: 'private cleanup text' }]));
+    expect(facts.attempts[0].error).toEqual({ code: 'ACTION_FAILED', phase: 'body', nativeReason: 'deadline-exceeded', ...(onActionFailure ? { onActionFailure: true } : {}) });
+    expect(facts.attempts[0].lastCompletedStep).toEqual({ index: 0, api: 'app.open', line: 4, durationMs: 1 });
+    expect(facts.attempts[0].failedSteps).toEqual([{
+      index: 1, api: 'agent.act', line: 5, durationMs: 10, error: facts.attempts[0].error, eventCount: events.length, events,
+    }]);
+    expect(facts.attempts[0].secondaryErrors).toEqual([{ code: 'ENGINE_FAILURE', phase: 'cleanup', origin: 'close-unconfirmed' }]);
+    expect(facts.runErrors).toEqual([{ code: 'ENGINE_FAILURE', phase: 'cleanup' }]);
+    expect(JSON.stringify(attempt)).toBe(before);
+  });
+
+  it('keeps a failed hook screenshot as its own nested step', () => {
+    const error = { code: 'POLICY_DENIED', phase: 'body', message: 'private screenshot data' };
+    const facts = JSON.parse(closedFailureDiagnostic([{
+      error, cleanup: 'complete', secondaryErrors: [], steps: [
+        { index: 0, api: 'app.open', status: 'passed', durationMs: 1 },
+        { index: 1, api: 'agent.act', status: 'failed', durationMs: 4, error, events: [observed, tapped, observed] },
+        { index: 2, api: 'app.screenshot', source: { line: 8 }, status: 'failed', durationMs: 1, error },
+      ],
+    }]));
+    expect(facts.attempts[0].failedSteps.map((step: { api: string }) => step.api)).toEqual(['agent.act', 'app.screenshot']);
+    expect(facts.attempts[0].failedSteps[1].line).toBe(8);
+    expect(JSON.stringify(facts)).not.toContain('private screenshot data');
+  });
+
+  it('bounds phase events and emits no unknown names, detail, pixels, paths, or numeric objects', () => {
+    const raw = 'synthetic-private-page-and-pixel-token';
+    const event = { kind: raw, name: raw, status: raw, code: raw, durationMs: { toJSON() { throw new Error(raw); } } as unknown as number, detail: raw, pixels: raw };
+    const lastEvent = { ...tapped, detail: raw };
+    const facts = JSON.parse(closedFailureDiagnostic([{
+      cleanup: 'complete', secondaryErrors: [], steps: [{ index: 1, api: 'agent.act', status: 'failed', durationMs: 1, events: [
+        ...Array.from({ length: 20 }, () => event), lastEvent,
+      ] }],
+    }]));
+    const step = facts.attempts[0].failedSteps[0];
+    expect(step.eventCount).toBe(21);
+    expect(step.events).toHaveLength(16);
+    expect(step.events[0]).toEqual({ kind: 'other', name: 'other', status: 'other', code: 'other', durationMs: 'unknown' });
+    expect(step.events.at(-1)).toEqual(tapped);
+    expect(JSON.stringify(facts)).not.toContain(raw);
+  });
+
+  it('recognizes only an exact native or lifecycle message after one fixed hook prefix', () => {
+    const raw = 'private-token';
+    const messages = [
+      'agent.act onAction failed: The native browser session is not available',
+      `agent.act onAction failed: ${nativeMessage} ${raw}`,
+      `agent.act onAction failed: agent.act onAction failed: ${nativeMessage}`,
+      `${raw} agent.act onAction failed: ${nativeMessage}`,
+    ];
+    const facts = JSON.parse(closedFailureDiagnostic(messages.map(message => ({
+      error: { code: 'APP_NOT_OPEN', phase: 'body', message }, cleanup: 'complete', secondaryErrors: [], steps: [],
+    }))));
+    expect(facts.attempts.map((attempt: { error: unknown }) => attempt.error)).toEqual([
+      { code: 'APP_NOT_OPEN', phase: 'body', onActionFailure: true, origin: 'client-session-unavailable' },
+      { code: 'APP_NOT_OPEN', phase: 'body', onActionFailure: true },
+      { code: 'APP_NOT_OPEN', phase: 'body', onActionFailure: true },
+      { code: 'APP_NOT_OPEN', phase: 'body' },
+    ]);
+    expect(JSON.stringify(facts)).not.toContain(raw);
+  });
+});

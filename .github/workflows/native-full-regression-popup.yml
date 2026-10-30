@@ -8,15 +8,15 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 7504775f1e6bb96e6179709088a67c3d88977f18
-  NATIVE_SOURCE_TREE: f172732bc474e354ddc33804552b32cba7d4c961
+  NATIVE_SOURCE_SHA: 44db08d47314f585763d12339a1542b4cc55e332
+  NATIVE_SOURCE_TREE: 19c2fc0ef0a1dccc768b096fe897ed279752f292
   NEXT_TELEMETRY_DISABLED: '1'
   GIT_NO_LAZY_FETCH: '1'
   RUSTUP_TOOLCHAIN: 1.99.1
 'on':
   push:
     branches:
-    - ci/native-full-regression-s6-20261030
+    - ci/native-full-regression-s7-20261030
 jobs:
   original-four-compile-boundaries:
     runs-on: ubuntu-24.04
@@ -502,6 +502,61 @@ jobs:
       shell: bash
       run: python3 .github/native-full-regression/ci.py pure-results --gate fault
       if: ${{ !cancelled() && steps.projection-pure.outcome != 'skipped' }}
+    - name: Run only the separate 40 cross-package class pure controls
+      id: class-pure
+      shell: bash
+      if: ${{ !cancelled() && steps.projection-install.outcome == 'success' }}
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/evidence/class-projection"
+
+        mkdir "$out"
+
+        test "$(cat "$GITHUB_WORKSPACE/evidence/attribute-projection/install.exit")" = 0
+
+        node --version > "$out/node-version.txt"
+
+        pnpm --version > "$out/pnpm-version.txt"
+
+        pnpm --filter e2e exec vitest --version > "$out/vitest-version.txt"
+
+        python3 - "$out" <<''PY_CLASS_COMMAND''
+
+        import json,pathlib,sys
+
+        out=pathlib.Path(sys.argv[1])
+
+        argv=[''pnpm'',''--filter'',''e2e'',''exec'',''vitest'',''run'',''--config'',''../../.github/native-full-regression/class-pure.config.ts'',''--reporter=json'',''--outputFile=''+str(out/''raw-result.json'')]
+
+        (out/''command.json'').write_text(json.dumps(argv)+''\n'')
+
+        versions={k:(out/(k+''-version.txt'')).read_text().strip() for k in [''node'',''pnpm'',''vitest'']}
+
+        (out/''versions.json'').write_text(json.dumps(versions,indent=2)+''\n'')
+
+        PY_CLASS_COMMAND
+
+        set +e
+
+        pnpm --filter e2e exec vitest run --config ../../.github/native-full-regression/class-pure.config.ts
+        --reporter=json --outputFile="$out/raw-result.json" > "$out/raw.log" 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/run.exit"
+
+        cat "$out/raw.log"
+
+        exit "$status"
+
+        '
+    - name: Validate separate class 40 exact names and raw evidence
+      id: class-results
+      shell: bash
+      if: ${{ !cancelled() && steps.class-pure.outcome != 'skipped' }}
+      run: python3 .github/native-full-regression/ci.py class-results --gate fault
     - name: Exact source JavaScript nine bounded negative and positive controls
       run: node scripts/ci/check-selector-taxonomy.cjs native/cli/src/native/client_observation/selector_query.js
     - name: Compile fresh exact ci-profile full test harness

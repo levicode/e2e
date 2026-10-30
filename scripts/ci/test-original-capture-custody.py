@@ -128,4 +128,45 @@ class SpawnCustodyTests(unittest.TestCase):
                                for k in ['native', 'query']])
 
 
+
+class NoFailureGateTests(unittest.TestCase):
+    def gate(self, validation, code=0, business='1'):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(prefix='no-failure-gate-') as tmp:
+            old = os.getcwd(); os.chdir(tmp)
+            try:
+                root=pathlib.Path(tmp)/'archive'
+                dump(root/'replaced-nodes/query-capture-validation.json',validation)
+                put(pathlib.Path('evidence/test-e2e.exit'),business)
+                put(pathlib.Path('evidence/source.commit'),'a' * 40)
+                with patch.object(custody,'verify',return_value=[dict(fixture='replaced-nodes',expected=1)]), \
+                     patch.object(custody.subprocess,'run',return_value=SimpleNamespace(returncode=code)), \
+                     patch.object(custody.sys,'argv',['collector',str(root)]):
+                    with self.assertRaises(SystemExit) as raised: custody.main()
+                return raised.exception.code,json.loads(pathlib.Path('evidence/original-capture-status.json').read_text())
+            finally: os.chdir(old)
+
+    def test_complete_no_failure_is_distinct_and_does_not_rewrite_business_failure(self):
+        validation=dict(completeEvidence=True,errors=[],fieldOnly=dict(targetedFailures=0,joinedFailures=0,
+                        failureWitnessOutcome='not-applicable-target-passed'))
+        code,summary=self.gate(validation)
+        self.assertEqual(code,0)
+        self.assertEqual(summary['originalPackageTestOutcome'],'failed')
+        self.assertEqual(summary['fixtures'][0]['diagnosticOutcome'],'complete/no-target-failure')
+        self.assertIs(summary['fixtures'][0]['targetedFailureWitnessObserved'],False)
+        for report,exit_code in [(dict(validation,completeEvidence=False),0),
+                                 (dict(validation,errors=['missing capture']),0),(validation,1)]:
+            code,summary=self.gate(report,exit_code)
+            self.assertNotEqual(code,0)
+            self.assertFalse(summary['fixtures'][0]['completeEvidence'])
+
+    def test_failed_scenario_still_requires_observed_strict_join(self):
+        validation=dict(completeEvidence=True,errors=[],fieldOnly=dict(targetedFailures=1,joinedFailures=1,
+                        failureWitnessOutcome='observed'))
+        code,summary=self.gate(validation)
+        self.assertEqual(code,0)
+        self.assertIs(summary['fixtures'][0]['targetedFailureWitnessObserved'],True)
+        self.assertEqual(summary['fixtures'][0]['diagnosticOutcome'],'complete')
+
 if __name__ == '__main__': unittest.main()

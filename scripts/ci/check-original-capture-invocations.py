@@ -110,7 +110,7 @@ def main():
         for row in plan:
             name=row['fixture'];args=[sys.executable,'scripts/ci/check-critical-query-traces.py',str(row['expected'])]
             if name=='replaced-nodes':
-                archive=root/name;args += [str(archive),'--field-only','--field-log',str(root/'test-e2e.log')]
+                archive=root/name;args += [str(archive),'--field-only','--field-log',str(root/'test-e2e.log'),'--field-source-commit',pathlib.Path('evidence/source.commit').read_text().strip()]
             else:
                 archive=root/name/'runner/native-trace';args += [str(archive)]
             # All original validators run even if one rejects; never hide failures.
@@ -125,10 +125,11 @@ def main():
             target_count=field_summary.get('targetedFailures',0)
             assert type(target_count) is int and target_count>=0, 'invalid field-only target count'
             complete=code==0 and validation.get('completeEvidence') is True and not errors
-            missing_target=any(x=='field capture: missing targeted settled field failure' for x in errors)
+            missing_target=any(x.startswith('field capture: missing targeted settled field failure') for x in errors)
+            no_failure=complete and name=='replaced-nodes' and target_count==0 and field_summary.get('failureWitnessOutcome')=='not-applicable-target-passed'
             summary['fixtures'].append({'fixture':name,'expectedProcesses':row['expected'],'validatorExit':code,
-                'completeEvidence':complete,'diagnosticOutcome':('complete' if complete else 'not-observed/incomplete' if missing_target else 'rejected/incomplete'),
-                'targetedFailureWitnessObserved':(True if target_count>0 else False if missing_target else None) if name=='replaced-nodes' else None,'errors':errors})
+                'completeEvidence':complete,'diagnosticOutcome':('complete/no-target-failure' if no_failure else 'complete' if complete else 'not-observed/incomplete' if missing_target else 'rejected/incomplete'),
+                'targetedFailureWitnessObserved':(True if target_count>0 else False if missing_target or no_failure else None) if name=='replaced-nodes' else None,'errors':errors})
             status=int(bool(status or not complete))
     except Exception as exc:
         # Malformed evidence and unexpected coordinator failures are also RED.
