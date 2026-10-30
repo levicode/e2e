@@ -197,7 +197,7 @@ def require_current_target_pass(report, expected_source):
         raise ValueError('original field report does not match independent current source')
     started = report_timestamp(run.get('startedAt'))
     finished = report_timestamp(run.get('finishedAt'))
-    if finished < started or run.get('status') not in ('passed', 'failed'):
+    if finished < started or run.get('status') not in ('passed', 'failed', 'error'):
         raise ValueError('original field run is not terminal')
     totals = run.get('summary')
     results = run.get('results')
@@ -207,6 +207,7 @@ def require_current_target_pass(report, expected_source):
             or any(type(totals.get(k)) is not int or totals[k] != 0 for k in ('skipped', 'interrupted', 'flaky'))):
         raise ValueError('missing targeted settled field failure: original inventory incomplete or filtered')
     by_title = {}
+    exit_codes = [0]
     for result in results:
         if not isinstance(result, dict) or not isinstance(result.get('titlePath'), list) or len(result['titlePath']) != 1:
             raise ValueError('invalid original field result identity')
@@ -232,13 +233,27 @@ def require_current_target_pass(report, expected_source):
         if (not uint(duration) or attempt_start < started or attempt_start > finished
                 or datetime.timedelta(milliseconds=duration) > finished - attempt_start):
             raise ValueError('original field attempt lies outside completed run')
+        # Match the runner's verdict fold for this covered complete-case contract.
+        # A failed verdict supplies 1; an explicit infrastructure attempt supplies 3.
+        # Other categories are not admitted by this narrow diagnostic exception.
+        if result['status'] == 'failed':
+            exit_codes.append(1)
+            if 'error' in attempt:
+                error = attempt['error']
+                if not isinstance(error, dict) or error.get('category') not in ('test', 'infrastructure'):
+                    raise ValueError('original field failed attempt error category unsupported or missing')
+                exit_codes.append(3 if error['category'] == 'infrastructure' else 1)
+        elif 'error' in attempt:
+            raise ValueError('original field passed attempt contradicts its error')
         by_title[title] = result
     passed = sum(result['status'] == 'passed' for result in results)
     failed = len(results) - passed
+    expected_exit = max(exit_codes)
+    expected_status = {0: 'passed', 1: 'failed', 3: 'error'}[expected_exit]
     if (type(totals.get('passed')) is not int or totals['passed'] != passed
             or type(totals.get('failed')) is not int or totals['failed'] != failed
-            or run['status'] != ('failed' if failed else 'passed')
-            or type(run.get('exitCode')) is not int or run['exitCode'] != (1 if failed else 0)):
+            or run['status'] != expected_status
+            or type(run.get('exitCode')) is not int or run['exitCode'] != expected_exit):
         raise ValueError('original field run terminal status/counts contradict results')
     target = by_title[FIELD_TITLES[6]]
     if target['status'] != 'passed' or 'error' in target or 'error' in target['attempts'][0]:

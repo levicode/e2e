@@ -60,7 +60,7 @@ def verify(root):
         assert re.fullmatch('p-[0-9a-f]{12}',source.parent.parent.name)
         groups.setdefault(str(source),set()).add(pid)
     used=set();plan=[]
-    for name in ['popup-init-order','popup-init-order-borrowed','replaced-nodes']:
+    for name in ['popup-init-order','popup-init-order-borrowed','replaced-nodes','popup-swipe-pair']:
         d=root/name
         if name=='replaced-nodes':
             runs=[p for p in d.iterdir() if p.name!='query-capture-validation.json'];assert len(runs)==1 and runs[0].is_dir() and not runs[0].is_symlink() and runs[0].name.startswith('run-')

@@ -41,7 +41,7 @@ class SpawnCustodyTests(unittest.TestCase):
                 put(pathlib.Path('evidence/tools/popup-trace.sh'), 'wrapper')
                 dump(pathlib.Path('scripts/ci/full-standard-runtime-pins.json'),
                      {'configured': True, 'ordinary': {'binarySha256': 'c' * 64}})
-                for i, name in enumerate(['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes'], 1):
+                for i, name in enumerate(['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes', 'popup-swipe-pair'], 1):
                     trace = root / name / ('run-a/native-trace' if name == 'replaced-nodes' else 'runner/native-trace')
                     if name != 'replaced-nodes': dump(root / name / 'report.json', {})
                     for proxy in [i * 100 + 1, i * 100 + 2]:
@@ -77,6 +77,51 @@ class SpawnCustodyTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(plan[0]['pids'], [101, 102])
         self.assertEqual(plan[0]['daemonPIDs'], [922, 931])
+
+    def test_owned_pair_is_fourth_independent_group_original_three_unchanged(self):
+        ok, plan = self.capture()
+        self.assertTrue(ok)
+        self.assertEqual([p['fixture'] for p in plan],
+                         ['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes', 'popup-swipe-pair'])
+        for i, row in enumerate(plan, 1):
+            self.assertEqual(row['pids'], [i * 100 + 1, i * 100 + 2])
+            self.assertEqual(row['daemonPIDs'], [p * 9 + 13 for p in row['pids']])
+            self.assertEqual(row['expected'], 2)
+            self.assertEqual(row['traceDirectory'], f'/tmp/p-{i:012x}/.e2e/native-trace')
+
+    def test_owned_pair_missing_archive_report_trace_or_receipt_rejected(self):
+        import shutil
+        self.rejects(lambda r: shutil.rmtree(r / 'popup-swipe-pair'))
+        self.rejects(lambda r: (r / 'popup-swipe-pair/report.json').unlink())
+        for name in ('invocation-401.json', 'daemon-401.json'):
+            self.rejects(lambda r, n=name: (r / 'invocations' / n).unlink())
+        for kind in ('native', 'query'):
+            self.rejects(lambda r, k=kind: (r / f'popup-swipe-pair/runner/native-trace/{k}-401.jsonl').unlink())
+            self.rejects(lambda r, k=kind: put(r / f'popup-swipe-pair/runner/native-trace/{k}-401.jsonl', ''))
+
+    def test_owned_pair_foreign_replayed_receipts_and_self_attested_pid_rejected(self):
+        for update in (dict(run='122'), dict(attempt='2'), dict(sourceCommit='d' * 40),
+                       dict(sourceTree='d' * 40), dict(nativeSHA256='d' * 64),
+                       dict(wrapperSHA256='d' * 64), dict(nonce='f' * 64)):
+            self.rejects(lambda r, u=update: mutate(r / 'invocations/invocation-401.json', **u))
+        for update in (dict(daemonPID=922), dict(nonce='f' * 64), dict(invocationSHA256='f' * 64)):
+            self.rejects(lambda r, u=update: mutate(r / 'invocations/daemon-401.json', **u))
+        self.rejects(lambda r: [mutate(r / f'popup-swipe-pair/runner/native-trace/{k}-401.jsonl', pid=999)
+                               for k in ('native', 'query')])
+
+    def test_owned_pair_cannot_reuse_existing_fixture_group_or_leave_group_unassigned(self):
+        import shutil
+        def duplicate_group(root):
+            own = root / 'popup-swipe-pair/runner/native-trace'
+            shutil.rmtree(own)
+            shutil.copytree(root / 'popup-init-order/runner/native-trace', own)
+        self.rejects(duplicate_group)
+        def swap_one(root):
+            for kind in ('native', 'query'):
+                p = root / f'popup-swipe-pair/runner/native-trace/{kind}-401.jsonl'
+                p.unlink()
+                (p.parent / f'{kind}-101.jsonl').write_bytes((root / f'popup-init-order/runner/native-trace/{kind}-101.jsonl').read_bytes())
+        self.rejects(swap_one)
 
     def test_preexec_failure_cannot_reuse_prior_same_run_receipt(self):
         self.rejects(lambda r: put(r / 'test-e2e.log', 'NATIVE_INVOCATION_CUSTODY_FAILED\n'))
@@ -130,17 +175,18 @@ class SpawnCustodyTests(unittest.TestCase):
 
 
 class NoFailureGateTests(unittest.TestCase):
-    def gate(self, validation, code=0, business='1'):
+    def gate(self, validation, code=0, business='1', fixture='replaced-nodes'):
         from unittest.mock import patch
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory(prefix='no-failure-gate-') as tmp:
             old = os.getcwd(); os.chdir(tmp)
             try:
                 root=pathlib.Path(tmp)/'archive'
-                dump(root/'replaced-nodes/query-capture-validation.json',validation)
+                archive = root / fixture if fixture == 'replaced-nodes' else root / fixture / 'runner/native-trace'
+                dump(archive/'query-capture-validation.json',validation)
                 put(pathlib.Path('evidence/test-e2e.exit'),business)
                 put(pathlib.Path('evidence/source.commit'),'a' * 40)
-                with patch.object(custody,'verify',return_value=[dict(fixture='replaced-nodes',expected=1)]), \
+                with patch.object(custody,'verify',return_value=[dict(fixture=fixture,expected=1)]), \
                      patch.object(custody.subprocess,'run',return_value=SimpleNamespace(returncode=code)), \
                      patch.object(custody.sys,'argv',['collector',str(root)]):
                     with self.assertRaises(SystemExit) as raised: custody.main()
@@ -168,5 +214,34 @@ class NoFailureGateTests(unittest.TestCase):
         self.assertEqual(code,0)
         self.assertIs(summary['fixtures'][0]['targetedFailureWitnessObserved'],True)
         self.assertEqual(summary['fixtures'][0]['diagnosticOutcome'],'complete')
+
+    def test_owned_pair_complete_diagnostics_never_rewrite_original_business_failure(self):
+        validation = dict(completeEvidence=True, errors=[])
+        code, summary = self.gate(validation, fixture='popup-swipe-pair')
+        self.assertEqual(code, 0)
+        self.assertEqual(summary['originalPackageTestOutcome'], 'failed')
+        self.assertEqual(summary['fixtures'][0]['fixture'], 'popup-swipe-pair')
+        self.assertEqual(summary['fixtures'][0]['diagnosticOutcome'], 'complete')
+        self.assertIsNone(summary['fixtures'][0]['targetedFailureWitnessObserved'])
+
+    def test_owned_pair_actual_critical_validator_loss_flows_to_diagnostic_gate(self):
+        import subprocess
+        import sys
+        for update in (dict(droppedBefore=1), dict(suppressedBefore=1), dict(overflow=True)):
+            with tempfile.TemporaryDirectory(prefix='owned-pair-query-loss-') as tmp:
+                root = pathlib.Path(tmp)
+                dump(root / 'native-401.jsonl', dict(pid=3622, record=0, phase='CaptureStarted'))
+                row = dict(schemaVersion=2, source='native', pid=3622, record=0, operationSeq=0,
+                           phase='CaptureStarted', droppedBefore=0, emittedBefore=0, suppressedBefore=0, overflow=False)
+                row.update(update)
+                dump(root / 'query-401.jsonl', row)
+                call = subprocess.run([sys.executable, str(SCRIPT.with_name('check-critical-query-traces.py').resolve()),
+                                       '1', str(root)], capture_output=True, text=True)
+                validation = json.loads((root / 'query-capture-validation.json').read_text())
+                self.assertFalse(validation['completeEvidence'])
+                code, summary = self.gate(validation, call.returncode, fixture='popup-swipe-pair')
+                self.assertNotEqual(code, 0)
+                self.assertFalse(summary['fixtures'][0]['completeEvidence'])
+                self.assertEqual(summary['originalPackageTestOutcome'], 'failed')
 
 if __name__ == '__main__': unittest.main()

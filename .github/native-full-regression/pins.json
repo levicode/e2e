@@ -42,7 +42,7 @@
     "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound",
     "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
   ],
-  "bindingStatus": "S9R1_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
+  "bindingStatus": "S10_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
   "capability": "browser.issuance-bound-references/1",
   "classProjection": {
     "configFile": ".github/native-full-regression/class-pure.config.ts",
@@ -106,7 +106,7 @@
     "sourceFiles": {
       "docs/reference/engine.mdx": "ae4ba41f683c28a9b0576fafe3b955f4612583e7270848cd80aa4f7cbb345342",
       "packages/e2e/src/engine/index.ts": "183b36fbe12c506a1c2be20ab6b76ebffda15e35e7d95a9581ecd88d80dd4c43",
-      "packages/e2e/src/locator/engine.ts": "5358601b17cdabaa94445e4908ed7bc2e21a80ce8641fa07abf21961cb8c5bec",
+      "packages/e2e/src/locator/engine.ts": "e3f6eef692d626b5cb1e1d08b777e6b688067992d09a67effff8e1845fa010d4",
       "packages/e2e/src/run/fixtures.ts": "a632168e40ac6e48da3f0d8aacb98b042ebe8a2a294ca88e320d6da3d7b62c38",
       "packages/e2e/tests/helpers/fixture-attribute-sampling.ts": "7334e5c985c65457e6725675f34618f701ba5fdea5dd71e3aecc08731351c3cf",
       "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts": "027ea4d3e5e9ca5958336bafb606f5ddf7a7aeb77ca5900819ea8bbae93e7dcb",
@@ -115,40 +115,40 @@
     },
     "vitestVersion": "5.0.5"
   },
-  "commit": "efa7b5507d75026bb7bd902d1be73fd11fe75d4b",
+  "commit": "2905c13445e21e26f0e3561da2388bc77551fabd",
   "expectedInventories": {
     "default": {
       "ignored": 242,
-      "nonignored": 3202,
-      "total": 3444
+      "nonignored": 3224,
+      "total": 3466
     },
     "fault": {
       "ignored": 242,
-      "nonignored": 3263,
-      "total": 3505
+      "nonignored": 3285,
+      "total": 3527
     }
   },
-  "externalPublicationGate": "Exact S9R1 native commit/source readback verified; bound4-file E2E manifest awaits root GO. S9 compile failure and inherited S8 runtime pins remain historical only; no S9R1 CI/runtime/browser result yet.",
+  "externalPublicationGate": "Exact S10 native commit/source readback verified; bound source12 plus CI4 E2E manifest awaits root GO. Inherited R1 runtime pins remain historical only; no S10 CI/runtime/browser result yet.",
   "features": [],
   "files": {
     "cli/Cargo.lock": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb",
-    "cli/Cargo.toml": "3bf626a7324dcd3d5948c6d3b98e5de282379a993649c9d4648488364c3a649f",
+    "cli/Cargo.toml": "30fb8f9760f9eb35459f53dde5f8980cb0249cd67b8b687bec0c19d7cfa17a23",
     "cli/src/connection.rs": "5b569d5c2cf30de036a9deb97f7bfb1d3b8ab9f5c23643036277c0aa1a49ffdd",
     "cli/src/diagnostic_invocation.rs": "427cc91bed81cf573775bd66b7160d78e55af4db5e97181403598ba3389e40f1",
     "cli/src/diagnostic_invocation_tests.rs": "4953e128711c301fbb5bd4ad15996a2ebf4876fb74d21df08e70a2c1e52ffe6b",
     "cli/src/main.rs": "dbf7aec71b654f979a332048a3fff3712c437a6872fc126113b60975f6bf9a2c",
-    "cli/src/native/cdp/client.rs": "096e951db416da8f6811e615162cb99e7c56b3280dedc5d8496217fb3d3416c9",
+    "cli/src/native/cdp/client.rs": "ab46761488b7b742f79d9268965bf43ea941e0af88f7473afe538ec22d94edd5",
     "cli/src/native/client_browser.rs": "53738d7ca247ae024b3878300dd6e1d7db3e2b37d637aa70661961621760d861",
     "cli/src/native/client_browser_popup_interposition_tests.rs": "00095c107808a0abe24de0e4481adf68ec0f4b45e0722c1206b6fd4e4ab723a5",
     "cli/src/native/client_browser_response_entry_tests.rs": "e46dee71e154a82af8861f4b5f503210cea3ada5d49130799ba043727d7f598c",
     "cli/src/native/client_browser_restart_transport_tests.rs": "ac94d0670a92b24eeb0d76c9c06759a6498d35339dffa7c1837812f97c481816",
     "cli/src/native/client_browser_state_tests.rs": "94b6c06ea85b15cefd06bb966967f47e555e4c05cf26fa25b1f2be18be6c73b2",
     "cli/src/native/client_debt.rs": "7f59b95a44579c1b6efba220aa6e2c06361b123312c0d1f4c2deea3ecc42afa4",
-    "cli/src/native/client_enrollment.rs": "6993ee571f9c1faaf242e846be5356061bafa32c11f7084e9382f29a98270889",
+    "cli/src/native/client_enrollment.rs": "f189bb663c52897f9dd256448f8e823cb39875eb0bcb7a5a559c9a68ebfb151f",
     "cli/src/native/client_eval_network_watermark_tests.rs": "88833668b4b74dc844bcfdf668177ffeda0577db011d815929347d013af18ef2",
     "cli/src/native/client_eval_preparation_tests.rs": "42e25bf25eaf2fa1671f31bdc2fe4166388e48f7fc9420da517513ee0faef6d0",
     "cli/src/native/client_interop_wire.rs": "332269f72dc4496d6a9a246652f2a0adbaa6b97151185cd4752c6b21564b8451",
-    "cli/src/native/client_observation.rs": "7f8c640edfa58420b93dcbdee23c37a4421dc9cdbc22aee9594cbf6ab27bd9a0",
+    "cli/src/native/client_observation.rs": "47abfa271b0e579366ebb0c0d1fd7eac7ed01bb4a406fed98e90453bd42b3c2b",
     "cli/src/native/client_observation/frame_dom_validation_tests.rs": "013b14f9e8cef85694e808a1a2dc307de9d0a08933ff353e2046df21244f0062",
     "cli/src/native/client_observation/fresh_query.rs": "786cfa5e0955744ef602bdf43313a2ae521066c46d2b0ac7d4c3edaa283aa211",
     "cli/src/native/client_observation/fresh_query_submission_tests.rs": "1a310a6c96b92a36ab17ea39ca3ebceae5a1fc096a72b24fcd59b5a0f225007b",
@@ -159,14 +159,17 @@
     "cli/src/native/client_operation_state.rs": "c9aa23cfa10180b6870420fab66f29255897a7a4fcf0a0e73c1783fb7f98e870",
     "cli/src/native/client_page.rs": "e68cc8c71d46d344d44e3f54c8bf49769dc6842673e53210a543b89b7a3c8f5b",
     "cli/src/native/client_page_viewport_revision_tests.rs": "d6d26bf19b6207afed5537aeab5575c8f7da6306ee4e68aee6bf84635eae82a1",
+    "cli/src/native/client_popup_configuration_proof_stop_tests.rs": "2f2e7e09374f1a640316f1ee6f19968e0d42eedbad34681b7400cfb628703b1f",
+    "cli/src/native/client_popup_configuration_proof_tests.rs": "fdf3d48be511ab3a3172472607ead217f052d961cef0430f84587ef9fb0d1384",
+    "cli/src/native/client_popup_configuration_proof_unit_tests.rs": "710e6c614862969409fd8fade809bf3a4df5c1fc3cc13d7c7b148cfae1414c67",
     "cli/src/native/client_popup_interposition_test_helpers.rs": "ef02e8f192f795e8b6bed61b48e2493d57774f773c5f629bb12ba53e7f9b3809",
     "cli/src/native/client_popup_preparation_tests.rs": "bec829b2f8f0730f98891f1533584a0a353dfe84fe7be751e38784998ae18491",
     "cli/src/native/client_popup_setup_diagnostic_tests.rs": "4a02c611de015e589a0063385f318173ee5e8f3d2e2fc765ae4fedabeae05cba",
     "cli/src/native/client_popup_setup_schema_tests.rs": "df7a5c6140375e53cd7995356600afe2e278cffa7053d00fd63a70a52339c127",
-    "cli/src/native/client_popup_stage0_tests.rs": "159e6548be2fe911af0a11b4b6084307fb6a69366b347b31c6b6759d58117fd8",
+    "cli/src/native/client_popup_stage0_tests.rs": "122480ae1ec47ca799793bd81f4b2e3e48a5e56bea2b004f2819c3db5056e4dc",
     "cli/src/native/client_session.rs": "b2ede17cd17c7d0e93b6e8310c5f43d36e93e0f883ea479097636c4614cf638d",
     "cli/src/native/client_settlement_trace.rs": "c2ee93f56697d5dac5d9bd66aa9253ef84aad5855f96de73dab99076a8b325f5",
-    "cli/src/native/client_targets.rs": "bd0c60313bee5697ce9b36c862dbab1b88355c61a3fa7c6e15e98b9b3327735f",
+    "cli/src/native/client_targets.rs": "1426fd7523b25ae48511cc6997efa7d0aa68c23f2bbf5d8bebfb0636b4b481ec",
     "cli/src/native/client_tasks.rs": "032cd9465d6435913f81e1dd4117b2d2ad738a3a129fbcd022fed874e00c5467",
     "cli/src/native/client_trace_initial_inventory_tests.rs": "f0c3bce82baf272cdfc0ef38c42bc3cc6ced9e5fc36650b0634bd8cdbbdb4da9",
     "cli/src/native/mod.rs": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
@@ -649,20 +652,43 @@
     "noRemovedTests": true,
     "reviewSHA256": "d1a87a071253e35f2d2739e925a5b7c130c09ddc9feb508f4409ba34dac6462e"
   },
-  "nativeCommitReadbackSHA256": "ab5f2995be72cabd2053a5f79689459e85a158eadcc092be0a32ad0cb715ce09",
-  "nativePatchSHA256": "4791b998852e144f7b893d6c0569e76b34f2cb5bc3e351a402848f209149a9fb",
-  "nativeReadbackSHA256": "7c0e2f8578fd41f279e93fbcdc26faae99114f7b683791df590b6a7d8a50d05d",
+  "nativeCommitReadbackSHA256": "020ff9272da771346be2083981218f0f763d972414e65d435bf7139a85186188",
+  "nativePatchSHA256": "34e115f1ec5493c736fa14ffca2c5b3507646fb797747a59ad9161175e4f6c3a",
+  "nativeReadbackSHA256": "81e552cc678f0e5ad624b82992e4efd8c48815809684eb92ece0623724c533e3",
   "nextInventoryDerivation": {
-    "addedTests": 0,
-    "baseCommit": "9f838d80e124a71f21ac4f68ea27d0c53e0f7d50",
-    "baseTree": "e482582d384d96eeb5a68688878a5bc0c7c3ac47",
-    "baselineS9Collection": "NOT_RUN_COMPILE_FAILED",
+    "addedTests": 22,
+    "baseCommit": "efa7b5507d75026bb7bd902d1be73fd11fe75d4b",
+    "baseTree": "7a64af16cbca3d936e3f9b034c0ad173efe865ad",
+    "baselineActualFullGateRun": 41013484305,
     "ignoredExactlyPreserved": true,
-    "nativeManifestSHA256": "a18dcc38e5613480c32acbc78734cdf6912b53b5eec17cd71b47f6f1bee9cdaf",
-    "noExistingFeatureOrIgnoreAttributeChanges": true,
+    "nativeManifestSHA256": "eb9c972bd07fbddc50b807ea961cb809a44adde9bf60e506d78b9e636bd083e6",
     "noRemovedTests": true,
-    "originalS9SourceDerivedInventoriesRetained": true,
-    "reviewSHA256": "22fe69ee4c757ae710c887bda36e8793609a88c8d50478be1cba254f7b4caadb"
+    "requiredFullInventorySubset": [
+      "native::cdp::client::tests::observation_read_later_stop_does_not_relabel_remote_error_transport_or_success",
+      "native::cdp::client::tests::observation_read_stop_evidence_rejects_foreign_operation_bindings",
+      "native::cdp::client::tests::observation_read_submit_stop_keeps_exact_cause_and_zero_wire",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_preserves_original_cancel",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_preserves_original_deadline",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_foreign_frame",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_late_popup_runtime_event",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_late_root_runtime_event",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_navigation_aba",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_new_popup_cohort",
+      "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_waits_then_dispatches_once",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_captured_deadline_cannot_become_later_owner_stop",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_captured_owner_stop_precedes_expiry_and_later_deadline",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_captured_requested_cannot_become_later_owner_stop",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_deadline_stop_remains_supervisor_deadline",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_hard_errors_cannot_borrow_later_owner_stop",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_owner_stop_releases_supervisor_custody_without_poison",
+      "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_requested_stop_remains_supervisor_failure",
+      "native::client_observation::tests::nonretained_object_projection_keeps_late_success_and_opaque_failure",
+      "native::client_observation::tests::nonretained_typed_stop_projection_does_not_consult_later_signal",
+      "native::client_targets::popup_configuration_proof_unit_tests::popup_configuration_proof_is_one_shot_not_rebased_after_revision_or_frontier_change",
+      "native::client_targets::popup_configuration_proof_unit_tests::popup_configuration_proof_requires_same_revision_and_observed_frontier"
+    ],
+    "requiredSubsetExecution": "Both complete per-name full-suite results must be accepted; no extra exact group or receipt",
+    "reviewSHA256": "16cf4d35cbeb82a960ee05562b774eef54ba4580d256ef0034421d54fccb4fa0"
   },
   "producerFiles": [
     ".github/native-full-regression/ci.py",
@@ -673,10 +699,12 @@
     ".github/native-full-regression/test-ci.py",
     ".github/workflows/native-full-regression-popup.yml",
     "docs/reference/engine.mdx",
+    "docs/reference/expect.mdx",
     "package.json",
     "packages/e2e/package.json",
     "packages/e2e/src/engine/index.ts",
     "packages/e2e/src/expect/async.ts",
+    "packages/e2e/src/internal/time.ts",
     "packages/e2e/src/locator/engine.ts",
     "packages/e2e/src/run/fixtures.ts",
     "packages/e2e/tests/helpers/closed-failure-diagnostic.ts",
@@ -685,7 +713,9 @@
     "packages/e2e/tests/helpers/short-read-diagnostics.ts",
     "packages/e2e/tests/integration/agent-act-on-action.test.ts",
     "packages/e2e/tests/integration/unserved-model.test.ts",
+    "packages/e2e/tests/integration/web-popup-swipe-pair.test.ts",
     "packages/e2e/tests/integration/web-replaced-nodes.test.ts",
+    "packages/e2e/tests/unit/assertion-owned-deadline.test.ts",
     "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
     "packages/e2e/tests/unit/closed-failure-diagnostic.test.ts",
     "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts",
@@ -695,6 +725,7 @@
     "packages/web/tests/unit/class-sampling.test.ts",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
+    "scripts/ci/archive-original-captures.sh",
     "scripts/ci/check-critical-query-traces.py",
     "scripts/ci/check-original-capture-invocations.py",
     "scripts/ci/check-selector-taxonomy.cjs",
@@ -708,8 +739,8 @@
     "scripts/ci/test-check-critical-query-traces.py",
     "scripts/ci/test-original-capture-custody.py"
   ],
-  "producerParent": "0873cbaad79a8b482dbab6c0a1b31b980dae520c",
-  "producerParentTree": "1654e6c463a96b591acdb363d89ce80e2e228929",
+  "producerParent": "37fb93624331ef832757daf4e7501dfd9d646f93",
+  "producerParentTree": "57dea5c8f78a49ece84425a33a2f99806fff2f64",
   "profile": "ci",
   "pureProjection": {
     "file": "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
@@ -838,8 +869,8 @@
   ],
   "schemaVersion": 3,
   "scope": "Full unfiltered default and acceptance-faults native test harness plus original four compile boundaries. Exact Rust1.99.1/profileci. Not hosted browser/F4 acceptance. Historical ci-test-fast is not relabeled as ci.",
-  "sourceConsumerPreviewTree": "1654e6c463a96b591acdb363d89ce80e2e228929",
-  "sourceManifestSHA256": "a18dcc38e5613480c32acbc78734cdf6912b53b5eec17cd71b47f6f1bee9cdaf",
+  "sourceConsumerPreviewTree": "95a30364552cea91a9aa8a7449425df8b9c9fb2a",
+  "sourceManifestSHA256": "eb9c972bd07fbddc50b807ea961cb809a44adde9bf60e506d78b9e636bd083e6",
   "strengthenedExistingTests": [
     "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
     "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
@@ -862,5 +893,5 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "toolchain": "1.99.1",
-  "tree": "7a64af16cbca3d936e3f9b034c0ad173efe865ad"
+  "tree": "7e121c49a1137578d47a69f17d03f4b8620cfc9a"
 }

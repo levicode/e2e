@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
 import { primitiveFixtureDocument } from '../fixtures/popup-swipe/primitive.ts';
 import { resultByTitle, createProject, runExisting, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
@@ -111,7 +112,7 @@ describe('same-fixture popup and path-swipe diagnostic pair', () => {
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     project = createProject({ 'tests/popup-swipe.e2e.ts': readFileSync(new URL('cases.txt', fixture), 'utf8') });
-    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1 } });
+    outcome = await runExisting(project, { appUrl: origin, runOptions: popupEvalDiagnosticOptions(project.dir, origin), config: { workers: 1 } });
   }, 120_000);
   afterAll(async () => {
     // Persist before deleting project. No browser read/command is issued after cancellation.

@@ -523,6 +523,75 @@ class NoFailureCaptureTests(unittest.TestCase):
                           failureWitnessOutcome='not-applicable-target-passed'))
         self.assertTrue(summary['absenceDoesNotProveSuccess'])
 
+    @classmethod
+    def infrastructure_report(cls):
+        report = cls.report()
+        report['run'].update(status='error', exitCode=3)
+        report['run']['results'][3]['attempts'][0]['error'] = dict(category='infrastructure', code='ENGINE_FAILURE')
+        return report
+
+    def test_complete_error3_requires_failed_infrastructure_attempt_and_preserves_business_red(self):
+        report = self.infrastructure_report()
+        result, summary = self.run_field(js=[], native={41: []}, report_value=report)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])
+        self.assertEqual(summary['fieldOnly']['failureWitnessOutcome'], 'not-applicable-target-passed')
+        self.assertEqual((report['run']['status'], report['run']['exitCode']), ('error', 3))
+        self.assertEqual(report['run']['results'][3]['status'], 'failed')
+        # The source runner's failed-verdict fallback still permits no error/exit1.
+        report = self.report()
+        report['run']['results'][3]['attempts'][0]['error'] = dict(category='test', code='ASSERTION_FAILED')
+        result, summary = self.run_field(js=[], report_value=report)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_error3_missing_category_wrong_precedence_and_forged_terminal_rejected(self):
+        mutations = [
+            lambda r: r['run']['results'][3]['attempts'][0].pop('error'),
+            lambda r: r['run']['results'][3]['attempts'][0].update(error={}),
+            lambda r: r['run']['results'][3]['attempts'][0].update(error=None),
+            lambda r: r['run']['results'][3]['attempts'][0].update(error='infrastructure'),
+            lambda r: r['run']['results'][3]['attempts'][0]['error'].update(category='test'),
+            lambda r: r['run'].update(status='failed', exitCode=1),
+            lambda r: r['run'].update(status='passed', exitCode=0),
+            lambda r: r['run']['results'][0]['attempts'][0].update(error=dict(category='infrastructure')),
+        ]
+        for category in ('configuration', 'internal', 'interrupted', 'unknown', '', None, True, []):
+            mutations.append(lambda r, c=category: r['run']['results'][4]['attempts'][0].update(error=dict(category=c)))
+        for code in (0, 1, 2, 4, 130, True, None, '3'):
+            mutations.append(lambda r, c=code: r['run'].update(exitCode=c))
+        for status in ('running', 'blocked', 'interrupted', None):
+            mutations.append(lambda r, s=status: r['run'].update(status=s))
+        for mutate in mutations:
+            report = self.infrastructure_report(); mutate(report)
+            self.rejects(js=[], report_value=report)  # Resealed archive, not a stale digest rejection.
+        report = self.report(); report['run'].update(status='error', exitCode=3)
+        report['run']['results'][0]['attempts'][0]['error'] = dict(category='infrastructure')
+        self.rejects(js=[], report_value=report)  # A passed attempt cannot witness error/3.
+
+    def test_error3_never_exempts_partial_foreign_target_failure_or_missing_native_bundle(self):
+        mutations = [
+            lambda r: r['run'].pop('finishedAt'),
+            lambda r: r['run'].update(finishedAt='2026-10-29T23:59:59.000Z'),
+            lambda r: r['run']['vcs'].update(commit='b' * 40),
+            lambda r: r['run']['vcs'].update(dirty=True),
+            lambda r: r['run']['results'].pop(),
+            lambda r: r['run']['summary'].update(selected=7),
+            lambda r: r['run']['summary'].update(skipped=1),
+            lambda r: r['run']['results'][6].update(status='failed'),
+            lambda r: r['run']['results'][3]['attempts'][0].update(cleanup='incomplete'),
+            lambda r: r['run']['results'][3]['attempts'][0].update(secondaryErrors=[{}]),
+        ]
+        for mutate in mutations:
+            report = self.infrastructure_report(); mutate(report)
+            self.rejects(js=[], report_value=report)
+        def remove_summary(a, r, trace, log):
+            p = trace / 'query-41.jsonl'
+            p.write_text(''.join(line for line in p.read_text().splitlines(keepends=True)
+                                 if json.loads(line)['phase'] != 'QueryCommandSummary'))
+        self.rejects(js=[], report_value=self.infrastructure_report(), setup=remove_summary)
+        self.rejects(js=[], report_value=self.infrastructure_report(), native={})
+        self.rejects(js=[self.js()], report_value=self.infrastructure_report(), native={41: []})
+
     def test_no_failure_requires_source_bound_original_fixture(self):
         from unittest.mock import patch
         with patch.object(validator, 'FIELD_FIXTURE_SHA256', '0' * 64):

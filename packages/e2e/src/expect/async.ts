@@ -173,13 +173,15 @@ class AsyncExpectationImpl implements AsyncExpectation {
     const { engine } = this.internals.context;
     const api = this.api(spec.name);
     await this.internals.context.steps.run('assertion', api, this.label, async () => {
-      const deadline = engine.deadline(timeout ?? engine.assertionTimeout);
+      const budget = engine.assertionBudget(timeout ?? engine.assertionTimeout);
+      const { deadline } = budget;
       let lastSample: Sample = { count: 0, node: null, nodes: [] };
       const samples = new SampleHistory('expect', (text) => engine.redact(text));
       await samples.record(engine, () =>
         pollCondition({
           deadline,
-          signal: engine.signal,
+          signal: budget.signal,
+          ownsExpiredDeadline: budget.ownsExpiredDeadline,
           negated: this.negated,
           evaluate: async () => {
             const sample = await this.sample(spec, deadline);

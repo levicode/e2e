@@ -92,6 +92,14 @@ export function isOperationTimeout(cause: unknown): boolean {
   return engineError?.code === 'OPERATION_TIMEOUT';
 }
 
+/** A read timeout itself, or its exact runner translation; never an outer hard failure's cause. */
+function isAssertionReadTimeout(cause: unknown): boolean {
+  const engineError = asEngineError(cause);
+  if (engineError !== undefined) return engineError.code === 'OPERATION_TIMEOUT';
+  return isE2EError(cause) && cause.category === 'test' && cause.code === 'ACTION_FAILED' && cause.retryable === false
+    && asEngineError(cause.cause)?.code === 'OPERATION_TIMEOUT';
+}
+
 /** How long a negated assertion must hold before it passes. */
 export const NEGATION_GRACE_MS = 1000;
 
@@ -106,6 +114,14 @@ export interface PollConditionOptions {
    * keeps waiting and the negation grace window resets.
    */
   evaluate(): Promise<boolean | undefined>;
+  /**
+   * For an assertion whose reads use exactly `deadline`: true only while its
+   * original parent phase is current and live and its own earlier deadline
+   * has expired. A completed prior sample may then describe the failure even
+   * when the final read had more than one poll tick left. This evidence never
+   * extends the unseen interval on which a negation can pass.
+   */
+  readonly ownsExpiredDeadline?: () => boolean;
   /** Builds the poll's failure; `cause` is the read the deadline cut off, when one did. */
   onTimeout(cause?: unknown): Error | Promise<Error>;
 }
@@ -142,8 +158,11 @@ export async function pollCondition(options: PollConditionOptions): Promise<void
       value = await options.evaluate();
       sampled = true;
     } catch (cause) {
-      if (!sampled || !cutOffAtDeadline(cause, startedWithMs)) throw cause;
-      if (negated && holds(Math.min(Date.now(), deadline.endsAt))) return;
+      const cutOff = options.ownsExpiredDeadline === undefined
+        ? cutOffAtDeadline(cause, startedWithMs)
+        : isAssertionReadTimeout(cause) && options.ownsExpiredDeadline();
+      if (!sampled || !cutOff) throw cause;
+      if (negated && startedWithMs < POLL_INTERVAL_MS && holds(Math.min(Date.now(), deadline.endsAt))) return;
       throw await options.onTimeout(cause);
     }
     if (!negated) {

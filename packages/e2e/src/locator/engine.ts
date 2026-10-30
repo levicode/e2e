@@ -128,6 +128,28 @@ export class LocatorEngine {
     );
   }
 
+  /** A poll's immutable issuing phase and owned deadline, never a refreshed budget. */
+  assertionBudget(timeoutMs: number): {
+    readonly deadline: Deadline;
+    readonly signal: AbortSignal;
+    readonly ownsExpiredDeadline: () => boolean;
+  } {
+    const phaseDeadline = this.options.budget.deadline;
+    const signal = this.signal;
+    const own = new Deadline(timeoutMs);
+    const deadline = Deadline.min(own, phaseDeadline);
+    return {
+      deadline,
+      signal,
+      ownsExpiredDeadline: () => {
+        const now = Date.now();
+        return deadline === own && own.endsAt < phaseDeadline.endsAt
+          && this.options.budget.deadline === phaseDeadline && this.signal === signal
+          && !signal.aborted && !phaseDeadline.expired(now) && own.expired(now);
+      },
+    };
+  }
+
   /** An operation context bounded by a deadline a caller shares across steps, such as the swipes of one scroll. */
   operationWithin(deadline: Deadline): OperationContext {
     this.options.assertPhase?.();

@@ -683,6 +683,15 @@ Rules that apply across the matcher groups.
 | Unknown option | `INVALID_ARGUMENT`; see [Option validation](#option-validation) |
 | Failure code | `ASSERTION_FAILED`, exit code 1 |
 
+For locator matchers, a completed sample remains the failure diagnostic when
+a later read is cut off by the assertion’s own deadline while its original
+test or hook phase is still live. The failure reports that last observed
+value, with normal secret redaction; it does not claim the timed-out read saw
+the same value. An early read timeout, a failure before any sample, a parent
+phase deadline or cancellation, and an uncertain or other engine failure
+keep their original error. This does not extend the unseen interval on which
+a negated assertion can pass.
+
 ### Negation
 
 `.not` inverts a matcher. A negated matcher passes only once the negation
