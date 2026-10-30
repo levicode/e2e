@@ -41,7 +41,7 @@ class SpawnCustodyTests(unittest.TestCase):
                 put(pathlib.Path('evidence/tools/popup-trace.sh'), 'wrapper')
                 dump(pathlib.Path('scripts/ci/full-standard-runtime-pins.json'),
                      {'configured': True, 'ordinary': {'binarySha256': 'c' * 64}})
-                for i, name in enumerate(['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes', 'popup-swipe-pair'], 1):
+                for i, name in enumerate(['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes', 'popup-swipe-pair', 'popup-swipe-borrowed-pair', 'on-action-delayed'], 1):
                     trace = root / name / ('run-a/native-trace' if name == 'replaced-nodes' else 'runner/native-trace')
                     if name != 'replaced-nodes': dump(root / name / 'report.json', {})
                     for proxy in [i * 100 + 1, i * 100 + 2]:
@@ -57,7 +57,7 @@ class SpawnCustodyTests(unittest.TestCase):
                              dict(schemaVersion=1, kind='spawn-owned-daemon', proxyPID=proxy,
                                   daemonPID=daemon, nonce=receipt['nonce'], invocationSHA256=custody.digest(path)))
                         for kind in ['native', 'query']:
-                            dump(trace / f'{kind}-{proxy}.jsonl', dict(pid=daemon, record=0, phase='CaptureStarted'))
+                            dump(trace / f'{kind}-{proxy}.jsonl', dict(pid=daemon, record=0, phase='CaptureStarted', droppedBefore=0, suppressedBefore=0, overflow=False))
                 change(root)
                 try:
                     return True, custody.verify(root)
@@ -82,7 +82,7 @@ class SpawnCustodyTests(unittest.TestCase):
         ok, plan = self.capture()
         self.assertTrue(ok)
         self.assertEqual([p['fixture'] for p in plan],
-                         ['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes', 'popup-swipe-pair'])
+                         ['popup-init-order', 'popup-init-order-borrowed', 'replaced-nodes', 'popup-swipe-pair', 'popup-swipe-borrowed-pair', 'on-action-delayed'])
         for i, row in enumerate(plan, 1):
             self.assertEqual(row['pids'], [i * 100 + 1, i * 100 + 2])
             self.assertEqual(row['daemonPIDs'], [p * 9 + 13 for p in row['pids']])
@@ -122,6 +122,23 @@ class SpawnCustodyTests(unittest.TestCase):
                 p.unlink()
                 (p.parent / f'{kind}-101.jsonl').write_bytes((root / f'popup-init-order/runner/native-trace/{kind}-101.jsonl').read_bytes())
         self.rejects(swap_one)
+
+    def test_new_diagnostic_groups_require_all_reports_traces_and_custody(self):
+        import shutil
+        for name, proxy in [('popup-swipe-borrowed-pair', 501), ('on-action-delayed', 601)]:
+            self.rejects(lambda r, n=name: shutil.rmtree(r / n))
+            self.rejects(lambda r, n=name: (r / n / 'report.json').unlink())
+            for kind in ('native', 'query'):
+                self.rejects(lambda r, n=name, p=proxy, k=kind:
+                             (r / n / f'runner/native-trace/{k}-{p}.jsonl').unlink())
+            self.rejects(lambda r, p=proxy: (r / f'invocations/daemon-{p}.json').unlink())
+
+    def test_new_native_diagnostic_loss_never_counts_as_complete(self):
+        for name, proxy in [('popup-swipe-borrowed-pair', 501), ('on-action-delayed', 601)]:
+            for updates in [dict(droppedBefore=1), dict(suppressedBefore=1), dict(overflow=True),
+                            dict(record=2), dict(phase='TargetObservationLost')]:
+                self.rejects(lambda r, n=name, p=proxy, u=updates:
+                             mutate(r / n / f'runner/native-trace/native-{p}.jsonl', **u))
 
     def test_preexec_failure_cannot_reuse_prior_same_run_receipt(self):
         self.rejects(lambda r: put(r / 'test-e2e.log', 'NATIVE_INVOCATION_CUSTODY_FAILED\n'))

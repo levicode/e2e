@@ -22,6 +22,18 @@ const recordSchema = z.object({
   limit: z.literal(8).optional(), laterFailuresOmitted: z.literal(true).optional(),
 }).strict();
 const PREFIX = 'QUERY_READ_RESULT_DIAGNOSTIC ';
+const CLASS_PREFIX = 'CLASS_SAMPLE_DIAGNOSTIC ';
+const milliseconds = z.number().int().min(0).max(3_600_000);
+const classSampleSchema = z.object({
+  schemaVersion: z.literal(1), fixture: z.literal('web-platform-class300'), api: z.literal('toHaveClass'),
+  invocationOrdinal: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  outcome: z.enum(['passed', 'threw']), sampleCount: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), overflow: z.boolean(),
+  samples: z.array(z.object({
+    ordinal: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), priorSample: z.boolean(), priorMismatch: z.boolean(),
+    startRemainingMs: milliseconds, endRemainingMs: milliseconds, elapsedMs: milliseconds,
+    outcome: z.enum(['match', 'mismatch', 'unevaluable', 'threw']),
+  }).strict()).max(16),
+}).strict();
 
 /** Receives worker output even when quiet=true; emits only validated closed rows after run settles. */
 export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' | 'web-platform' | 'replaced-nodes', run: (onEvent: RunEventSink | undefined) => Promise<T>, capture?: (closedRows: string, captureNonce?: string) => void): Promise<T> {
@@ -36,8 +48,18 @@ export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' |
   const previous = process.env['E2E_QUERY_READ_DIAGNOSTIC'];
   process.env['E2E_QUERY_READ_DIAGNOSTIC'] = suite;
   const records: z.infer<typeof recordSchema>[] = [];
+  const classRecords: z.infer<typeof classSampleSchema>[] = [];
   let tail = ''; let skipping = false; let invalidRecords = 0; let lineOverflow = false; let recordOverflow = false;
   const accept = (line: string) => {
+    if (suite === 'web-platform' && line.startsWith(CLASS_PREFIX)) {
+      try {
+        const row = classSampleSchema.safeParse(JSON.parse(line.slice(CLASS_PREFIX.length)));
+        if (!row.success) { invalidRecords = Math.min(65, invalidRecords + 1); return; }
+        if (classRecords.length < 16) classRecords.push(row.data);
+        else { classRecords[15] = row.data; recordOverflow = true; }
+      } catch { invalidRecords = Math.min(65, invalidRecords + 1); }
+      return;
+    }
     if (!line.startsWith(PREFIX)) return;
     try {
       const parsed = recordSchema.safeParse(JSON.parse(line.slice(PREFIX.length)));
@@ -58,7 +80,7 @@ export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' |
     for (const char of event.text) {
       if (char === '\n') { if (!skipping) accept(tail); tail = ''; skipping = false; }
       else if (!skipping) {
-        if (tail.length === 2048) { tail = ''; skipping = true; lineOverflow = true; }
+        if (tail.length === (tail.startsWith(CLASS_PREFIX) ? 8192 : 2048)) { tail = ''; skipping = true; lineOverflow = true; }
         else tail += char;
       }
     }
@@ -74,7 +96,7 @@ export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' |
     // outer log. Worker rows are forwarded here exactly once before END.
     try {
       if (!skipping && tail !== '') accept(tail);
-      const rows = records.map(record => `${PREFIX}${JSON.stringify(record)}\n`);
+      const rows = [...records.map(record => `${PREFIX}${JSON.stringify(record)}\n`), ...classRecords.map(record => `${CLASS_PREFIX}${JSON.stringify(record)}\n`)];
       const custody = `QUERY_READ_DIAGNOSTIC_CUSTODY ${JSON.stringify({ suite, workerRecords: records.length, invalidRecords, lineOverflow, recordOverflow })}\n`;
       // Archive the same bounded closed worker facts, never raw stderr. A failed
       // archive callback cannot replace business outcomes or suppress forwarding.

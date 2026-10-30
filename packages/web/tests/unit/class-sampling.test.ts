@@ -126,3 +126,35 @@ describe('deadline-owned class samples', () => {
     expect(f.locate).not.toHaveBeenCalled(); expect(foreign.locate).not.toHaveBeenCalled(); expect(foreign.readFields).not.toHaveBeenCalled();
   });
 });
+
+
+describe('closed class sample diagnostics', () => {
+  it.each([false, true])('records prior completed sample without changing the thrown timeout (prior=%s)', async prior => {
+    const previous = process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
+    process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = 'web-platform-class300';
+    const output = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      let calls = 0;
+      const f = samplingFixture(async operation => {
+        if (prior && ++calls === 1) return [fields()];
+        await sleep(operation.timeoutMs);
+        throw new EngineError('OPERATION_TIMEOUT', 'settled deadline', { retryable: false });
+      });
+      // Diagnostic must preserve current behavior; this is not an assertion fix.
+      await expect(expectFixture(browser(f.context).browser).toHaveClass(f.target, 'card inactive', { timeout: 300 }))
+        .rejects.toMatchObject({ code: 'ACTION_FAILED', cause: expect.objectContaining({ code: 'OPERATION_TIMEOUT' }) });
+      const rows = output.mock.calls.map(call => String(call[0])).filter(line => line.startsWith('CLASS_SAMPLE_DIAGNOSTIC '));
+      expect(rows).toHaveLength(1);
+      const row = JSON.parse(rows[0]!.slice('CLASS_SAMPLE_DIAGNOSTIC '.length));
+      expect(row).toMatchObject({ schemaVersion: 1, fixture: 'web-platform-class300', api: 'toHaveClass', outcome: 'threw', overflow: false, sampleCount: prior ? 2 : 1 });
+      expect(row.samples.at(-1)).toMatchObject({ priorSample: prior, priorMismatch: prior, startRemainingMs: prior ? 200 : 300, endRemainingMs: 0, outcome: 'threw' });
+      expect(rows[0]).not.toContain('card');
+      expect(f.readFields).toHaveBeenCalledTimes(prior ? 2 : 1);
+      expect(f.locate).not.toHaveBeenCalled();
+    } finally {
+      output.mockRestore();
+      if (previous === undefined) delete process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
+      else process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = previous;
+    }
+  });
+});

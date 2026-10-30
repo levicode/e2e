@@ -9,7 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { nodeIdFor } from '../helpers/fake-loop-model.ts';
 import { createProject, resultByTitle, runExisting, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
-import { writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
 import { readEntries } from '../helpers/trace-cache.ts';
 import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
 import type { StepExecutor, StepExecutorContext } from '../../src/agent/executor.ts';
@@ -233,17 +235,37 @@ describe('agent.act onAction', () => {
   }, 240_000);
 
   it('waits for the screen the action left before calling the hook', async () => {
-    const { outcome, project } = await runProject(
-      { 'tests/delayed.e2e.ts': DELAYED_SUITE },
-      { appUrl: app.url, config: { tests: 'tests/**/*.e2e.ts', agents: { default: { executor: continueExecutor } } } },
-    );
+    const project = createProject({ 'tests/delayed.e2e.ts': DELAYED_SUITE });
+    let outcome: RunOutcome | undefined;
     try {
+      outcome = await runExisting(project, {
+        appUrl: app.url,
+        config: { tests: 'tests/**/*.e2e.ts', agents: { default: { executor: continueExecutor } } },
+        runOptions: popupEvalDiagnosticOptions(project.dir, app.url),
+      });
       const result = resultByTitle(outcome, 'the hook sees a change that lands after the tap');
       const diagnostic = closedFailureDiagnostic(result.attempts, outcome.report.run.errors);
       expect(result.status, diagnostic).toBe('passed');
       expect(screenshotLabels(outcome, 'the hook sees a change that lands after the tap'), diagnostic).toEqual(['arrived']);
     } finally {
-      project.cleanup();
+      try {
+        if (process.env['E2E_POPUP_EVAL_CAPTURE'] === '1') {
+          // Existing synthetic outcome and closed native witness; no new page reads.
+          const source = path.join(project.dir, '.e2e', 'native-trace');
+          if (!existsSync(source) || outcome === undefined) throw new Error('Missing onAction native diagnostic');
+          const output = path.resolve('.e2e/on-action-delayed');
+          mkdirSync(path.dirname(output), { recursive: true });
+          mkdirSync(output, { recursive: false });
+          writeFileSync(path.join(output, 'report.json'), JSON.stringify(outcome.report, null, 2));
+          mkdirSync(path.join(output, 'runner'));
+          cpSync(source, path.join(output, 'runner', 'native-trace'), { recursive: true, errorOnExist: true, force: false });
+        }
+      } catch {
+        // Missing capture is a custody failure, never a replacement test result.
+        process.stderr.write('ON_ACTION_CAPTURE_CUSTODY {"schemaVersion":1,"complete":false}\n');
+      } finally {
+        project.cleanup();
+      }
     }
   }, 120_000);
 

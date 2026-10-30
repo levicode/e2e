@@ -191,3 +191,19 @@ it('attempts END in finally despite a failed custody write and preserves origina
   expect(lines[0]).toContain('QUERY_READ_DIAGNOSTIC_BEGIN ');
   expect(lines.at(-1)).toBe(lines[0]!.replace('_BEGIN ', '_END '));
 });
+
+
+it('forwards closed class sample attribution and rejects extra user-content keys', async () => {
+  const lines = sink();
+  const sample = { ordinal: 1, priorSample: false, priorMismatch: false, startRemainingMs: 300, endRemainingMs: 0, elapsedMs: 300, outcome: 'threw' };
+  const record = { schemaVersion: 1, fixture: 'web-platform-class300', api: 'toHaveClass', invocationOrdinal: 1, outcome: 'threw', sampleCount: 1, overflow: false, samples: [sample] };
+  const closed = (value: unknown) => `CLASS_SAMPLE_DIAGNOSTIC ${JSON.stringify(value)}\n`;
+  await withShortReadDiagnostics('web-platform', async onEvent => {
+    for (const value of [record, { ...record, classValue: 'must-not-forward' }, { ...record, samples: [{ ...sample, selector: 'must-not-forward' }] }]) {
+      await onEvent!({ seq: 1, at: '2026-10-29T12:00:00.000Z', type: 'output', target: 'web', pair: undefined, stream: 'stderr', text: closed(value) });
+    }
+  });
+  expect(lines[0]).toBe(closed(record));
+  expect(lines[1]).toContain('"invalidRecords":2');
+  expect(lines.join('')).not.toContain('must-not-forward');
+});

@@ -58,11 +58,16 @@ test('deterministic queries and reads', async ({ app, screen, browser }) => {
 
 test('class assertions report the observed class on failure', async ({ app, browser }) => {
   await app.open();
+  const previousDiagnostic = process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
+  if (process.env['E2E_SHORT_READ_DIAGNOSTIC'] === '1') process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = 'web-platform-class300';
   try {
     await expect(browser).toHaveClass(browser.locator('#class-card'), 'card inactive', { timeout: 300 });
     throw new Error('toHaveClass unexpectedly passed');
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes('class "card active"')) throw error;
+  } finally {
+    if (previousDiagnostic === undefined) delete process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
+    else process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = previousDiagnostic;
   }
 });
 

@@ -60,7 +60,7 @@ def verify(root):
         assert re.fullmatch('p-[0-9a-f]{12}',source.parent.parent.name)
         groups.setdefault(str(source),set()).add(pid)
     used=set();plan=[]
-    for name in ['popup-init-order','popup-init-order-borrowed','replaced-nodes','popup-swipe-pair']:
+    for name in ['popup-init-order','popup-init-order-borrowed','replaced-nodes','popup-swipe-pair','popup-swipe-borrowed-pair','on-action-delayed']:
         d=root/name
         if name=='replaced-nodes':
             runs=[p for p in d.iterdir() if p.name!='query-capture-validation.json'];assert len(runs)==1 and runs[0].is_dir() and not runs[0].is_symlink() and runs[0].name.startswith('run-')
@@ -83,6 +83,11 @@ def verify(root):
                     row=json.loads(line,object_pairs_hook=unique)
                     assert type(row.get('pid')) is int and row['pid']==mapping_by_proxy[proxy], 'trace PID does not match spawned-daemon mapping'
                     if lines==0:assert row.get('phase')=='CaptureStarted' and type(row.get('record')) is int and row['record']==0
+                    if match[1]=='native' and name in ('popup-swipe-borrowed-pair', 'on-action-delayed'):
+                        assert row.get('record')==lines, 'native diagnostic record gap'
+                        assert all(type(row.get(k)) is int and row[k]==0 for k in ('droppedBefore','suppressedBefore')), 'native diagnostic loss'
+                        assert row.get('overflow') is False, 'native diagnostic overflow or missing flag'
+                        assert row.get('phase')!='TargetObservationLost', 'native attachment attribution lost'
                     lines+=1
             assert lines>0, 'missing native capture start'
         observed=ordinary|query;assert observed, f'no captured process for {name}'

@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node
 import path from 'node:path';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../../../web/tests/helpers/cdp-host.ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
 import { primitiveFixtureDocument } from '../fixtures/popup-swipe/primitive.ts';
 import { resultByTitle, createProject, runExisting, webTarget, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
@@ -117,7 +118,7 @@ describe('same-fixture borrowed popup and path-swipe diagnostic pair', () => {
     chrome = await launchRemoteChrome(executable);
     const endpoint = chrome.endpoint;
     project = createProject({ 'tests/popup-swipe.e2e.ts': readFileSync(new URL('cases.txt', fixture), 'utf8') });
-    outcome = await runExisting(project, { appUrl: origin, config: { workers: 1, targets: [webTarget('web', origin, { connect: { cdpEndpoint: () => endpoint } })] } });
+    outcome = await runExisting(project, { appUrl: origin, runOptions: popupEvalDiagnosticOptions(project.dir, origin), config: { workers: 1, targets: [webTarget('web', origin, { connect: { cdpEndpoint: () => endpoint } })] } });
   }, 120_000);
   afterAll(async () => {
     // Persist before deleting project. No browser read/command is issued after cancellation.

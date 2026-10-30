@@ -778,6 +778,8 @@ interface BrowserSample {
  * that stops answering ends the assertion at its own timeout, and the
  * failure reports the last read instead of reading a hung page again.
  */
+let classSampleDiagnosticOrdinal = 0;
+
 function createBrowserExpectation(deps: ExpectationDeps, negated = false): BrowserExpectation {
   const poll = async (
     api: string,
@@ -788,13 +790,39 @@ function createBrowserExpectation(deps: ExpectationDeps, negated = false): Brows
     const deadline = deps.deadlineFor(timeout);
     // pollCondition calls onTimeout only after a read completed, so a sample is always there.
     let last: BrowserSample | undefined;
+    // Diagnostic-only, scoped by the original synthetic test. Buffer metadata;
+    // never emit values, add reads, alter a deadline or rewrite the outcome.
+    const diagnose = api === 'toHaveClass' && process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] === 'web-platform-class300';
+    const invocationOrdinal = diagnose ? ++classSampleDiagnosticOrdinal : 0;
+    const samples: { ordinal: number; priorSample: boolean; priorMismatch: boolean; startRemainingMs: number; endRemainingMs: number; elapsedMs: number; outcome: 'match' | 'mismatch' | 'unevaluable' | 'threw' }[] = [];
+    let sampleOrdinal = 0;
+    let finished = false;
+    let overflow = false;
+    try {
     await pollCondition({
       deadline,
       signal: deps.context.signal,
       negated,
       evaluate: async () => {
-        last = await read(deadline);
-        return last.matches;
+        if (!diagnose) {
+          last = await read(deadline);
+          return last.matches;
+        }
+        const started = Date.now();
+        const row = { ordinal: ++sampleOrdinal, priorSample: last !== undefined, priorMismatch: last?.matches === false,
+          startRemainingMs: deadline.remaining(started), endRemainingMs: 0, elapsedMs: 0,
+          outcome: 'threw' as 'match' | 'mismatch' | 'unevaluable' | 'threw' };
+        try {
+          last = await read(deadline);
+          row.outcome = last.matches === undefined ? 'unevaluable' : last.matches ? 'match' : 'mismatch';
+          return last.matches;
+        } finally {
+          const ended = Date.now();
+          row.endRemainingMs = deadline.remaining(ended);
+          row.elapsedMs = Math.max(0, ended - started);
+          if (samples.length < 16) samples.push(row);
+          else { samples[15] = row; overflow = true; }
+        }
       },
       onTimeout: (cause) =>
         new TestError(
@@ -803,6 +831,13 @@ function createBrowserExpectation(deps: ExpectationDeps, negated = false): Brows
           cause === undefined ? undefined : { cause },
         ),
     });
+    finished = true;
+    } finally {
+      if (diagnose) {
+        try { process.stderr.write(`CLASS_SAMPLE_DIAGNOSTIC ${JSON.stringify({ schemaVersion: 1, fixture: 'web-platform-class300', api: 'toHaveClass', invocationOrdinal, outcome: finished ? 'passed' : 'threw', sampleCount: sampleOrdinal, overflow, samples })}\n`); }
+        catch { /* Diagnostics must not replace the assertion outcome. */ }
+      }
+    }
   };
   const validate = (api: string, options: object | undefined, keys: readonly string[] = ['timeout']): void =>
     rejectUnknownOptions(`expect.${negated ? 'not.' : ''}${api}`, options, keys);

@@ -1,25 +1,322 @@
 set -euo pipefail
 cat > evidence/tools/validate-vitest.py <<'HELPER_3'
-import json,pathlib,collections,sys
-p=pathlib.Path(sys.argv[1]);c=json.loads((p/'collection.json').read_text());r=json.loads((p/'results.json').read_text());assert isinstance(c,list) and c
-expected=collections.Counter((x['file'],x['name']) for x in c);actual=collections.Counter();optional=[];allrows=[]
-optional_file=(pathlib.Path.cwd()/'packages/web/tests/integration/crosscheck.test.ts').as_posix();optional_name='cross-check web-benchmark scenarios every scenario'
-for f in r['testResults']:
- for a in f['assertionResults']:
-  identity=(f['name'],' > '.join(a['ancestorTitles']+[a['title']]));allrows.append(a)
-  if f['name']==optional_file and a['fullName']==optional_name and a['status'] in ['pending','skipped']:
-   optional.append({'file':f['name'],'fullName':a['fullName'],'status':'optional-not-executed','reason':'existing formal external benchmark contract'})
-   if expected[identity]:expected[identity]-=1
-  else:actual[identity]+=1
-expected=+expected
-# Full ordinary Web must retain the optional declaration in its actual run report even though Vitest list omits static skips.
-if p.name=='ordinary' and p.parent.name=='web':assert len(optional)==1
-else:assert not optional
-out={'listedRequired':sum(expected.values()),'totalReported':len(allrows),'requiredExecutedReports':sum(actual.values()),'requiredPassed':sum(a['status']=='passed' for a in allrows),'optionalNotExecuted':optional,'missing':list((expected-actual).elements()),'extra':list((actual-expected).elements()),'counts':{k:r.get(k) for k in ['numTotalTests','numPassedTests','numFailedTests','numPendingTests','numTodoTests']},'commandExit':int((p/'command.exit').read_text())};(p/'coverage.json').write_text(json.dumps(out,indent=2)+'\n')
-assert expected==actual,'required collection/result identity mismatch'
-assert r['numTotalTests']==len(allrows) and r['numFailedTests']==0 and r['numPendingTests']==len(optional) and r.get('numTodoTests',0)==0
-assert out['requiredPassed']==sum(actual.values()) and out['commandExit']==0 and r.get('success') is True
+# Core platform applicability is a source-locked classification, never an allowed-skip list.
+import collections
+import hashlib
+import json
+import os
+import pathlib
+import re
+import stat
+import subprocess
+import sys
 
+COLLECT = 'packages/e2e/tests/unit/collect.test.ts'
+OBSERVER = 'packages/e2e/tests/helpers/collect-fs-applicability.ts'
+CONTAINER = 'scripts/ci/full-standard-helpers-2.sh'
+GENERATED = 'evidence/tools/validate-vitest.py'
+BASE_COLLECT_SHA256 = '7276a4dafbe8394330baf2edb3020981439b9b6d203bc15e237c392331ba63b5'
+OBSERVER_IMPORT = "import { recordCollectFsCapability } from '../helpers/collect-fs-applicability.ts';\n"
+OBSERVER_CALL = '  recordCollectFsCapability(root, caseInsensitiveFs, import.meta.url);\n'
+CASES = [
+    (('selectPositionals', 'follows on-disk casing for existing files and directories on a case-insensitive filesystem'), True, '!caseInsensitiveFs'),
+    (('selectPositionals', 'treats a differently cased path as unmatched on a case-sensitive filesystem'), False, 'caseInsensitiveFs'),
+    (('excludingEntry', 'compares an existing file in its on-disk casing on a case-insensitive filesystem'), True, '!caseInsensitiveFs'),
+]
+CONTEXT_KEYS = {'schemaVersion', 'kind', 'nonce', 'sourceCommit', 'sourceTree', 'sourceInventorySHA256',
+                'collectSourceSHA256', 'observerSourceSHA256', 'validatorSourceSHA256', 'consumerRun',
+                'consumerAttempt', 'job', 'nodeSelector', 'nodeVersion', 'invocationKind', 'collectionSHA256', 'tempRootRealpath'}
+CONTEXT_CONSTANTS = {'schemaVersion': 1, 'kind': 'collect-fs-context/v1', 'invocationKind': 'core-full-suite'}
+EXPECTED_KEYS = CONTEXT_KEYS - set(CONTEXT_CONSTANTS) - {'nonce'}
+RECEIPT_KEYS = {'schemaVersion', 'kind', 'contextSHA256', 'nonce', 'workerPid', 'moduleSourceSHA256',
+                'observerSourceSHA256', 'rootRealpath', 'originalCaseInsensitiveFs', 'validatedCaseInsensitiveFs',
+                'observation', 'recheckedObservation'}
+OBSERVATION_KEYS = {'root', 'tests', 'canonical', 'alternate', 'alternateLookupOutcome'}
+IDENTITY_KEYS = {'realpath', 'dev', 'ino', 'type', 'symlink'}
+EXCLUDED_INVENTORY = {'.github/workflows/full-standard-node-matrix.yml', '.github/workflows/s5-focused-original-core.yml', 'scripts/ci/full-standard-runtime-pins.json'}
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        assert key not in result, 'duplicate JSON key: ' + key
+        result[key] = value
+    return result
+
+def parsed(data):
+    return json.loads(data, object_pairs_hook=unique_object)
+
+def closed(value, keys, label):
+    assert type(value) is dict and set(value) == keys, label + ': unknown or missing fields'
+
+def regular_bytes(path, maximum):
+    path = pathlib.Path(path)
+    assert path.is_absolute() and path == path.resolve(), 'noncanonical or symlink evidence path'
+    before = path.lstat()
+    assert stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= maximum, 'nonregular, empty, linked or oversized evidence'
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(fd)
+        assert stat.S_ISREG(opened.st_mode) and (before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino), 'evidence changed during open'
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            data = stream.read(maximum + 1)
+        after = os.fstat(fd)
+        assert 0 < len(data) == opened.st_size <= maximum and after.st_nlink == 1
+        assert (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns), 'evidence changed during read'
+        return data
+    finally:
+        os.close(fd)
+
+def absolute_canonical(value):
+    assert type(value) is str and value and '\x00' not in value
+    p = pathlib.Path(value)
+    assert p.is_absolute() and str(p) == value and '..' not in p.parts, 'noncanonical absolute path'
+    return p
+
+def file_identity(value, root):
+    p = absolute_canonical(value)
+    assert p == p.resolve() and p.is_relative_to(root) and p != root, 'test file outside checkout or noncanonical'
+    return str(p)
+
+def census(collection, result, root):
+    assert type(collection) is list and collection, 'missing complete collection'
+    expected = collections.Counter()
+    for row in collection:
+        assert type(row) is dict and type(row.get('name')) is str and row['name'], 'invalid collection row'
+        expected[(file_identity(row['file'], root), row['name'])] += 1
+    assert type(result) is dict and type(result.get('testResults')) is list and result['testResults'], 'missing complete results'
+    actual, structural, rows = collections.Counter(), collections.Counter(), []
+    joined_paths = collections.defaultdict(set)
+    for suite in result['testResults']:
+        filename = file_identity(suite['name'], root)
+        assert type(suite['assertionResults']) is list, 'invalid assertion list'
+        assert suite.get('testExecError') is None and suite.get('status', 'passed') == 'passed' and suite.get('message', '') == '', 'suite execution error'
+        for assertion in suite['assertionResults']:
+            ancestors, title = assertion['ancestorTitles'], assertion['title']
+            assert type(ancestors) is list and all(type(x) is str and x for x in ancestors)
+            assert type(title) is str and title, 'invalid title path'
+            title_path = tuple(ancestors + [title])
+            assert assertion['fullName'] == ' '.join(title_path), 'fullName contradicts structural titlePath'
+            identity = (filename, title_path)
+            joined = (filename, ' > '.join(title_path))
+            actual[joined] += 1; structural[identity] += 1; joined_paths[joined].add(title_path)
+            rows.append({'file': filename, 'titlePath': title_path, 'fullName': assertion['fullName'], 'status': assertion['status']})
+    # Existing parameterized declarations may repeat a file/title identity. Preserve
+    # their complete Counter multiplicity; never deduplicate or claim unique task IDs.
+    assert all(len(paths) == 1 for paths in joined_paths.values()), 'ambiguous joined result titlePath'
+    assert expected == actual, 'complete collection/result identity multiplicity mismatch'
+    for title_path, _, _ in CASES:
+        assert expected[(str(root / COLLECT), ' > '.join(title_path))] == 1, 'conditional collection identity must occur exactly once'
+        assert structural[(str(root / COLLECT), title_path)] == 1, 'conditional result titlePath must occur exactly once'
+    return rows
+
+def verify_collect_source(data):
+    text = data.decode('utf-8')
+    assert text.count(OBSERVER_IMPORT) == text.count(OBSERVER_CALL) == 1, 'observer instrumentation missing/duplicated'
+    assert "import { afterAll, beforeAll, describe, expect, it } from 'vitest';\n" + OBSERVER_IMPORT in text
+    assert "  caseInsensitiveFs = existsSync(path.join(root, 'tests', 'Agent'));\n" + OBSERVER_CALL in text
+    original = text.replace(OBSERVER_IMPORT, '', 1).replace(OBSERVER_CALL, '', 1).encode('utf-8')
+    assert sha(original) == BASE_COLLECT_SHA256, 'original collect tests/probe/predicates changed'
+
+def extract_validator(data):
+    start = b"cat > evidence/tools/validate-vitest.py <<'HELPER_3'\n"
+    end = b'\nHELPER_3\n'
+    assert data.count(start) == 1, 'ambiguous validator helper'
+    rest = data.split(start, 1)[1]
+    assert end in rest, 'missing helper terminator'
+    return rest.split(end, 1)[0] + b'\n'
+
+def current_expected(root, p):
+    # These values come from the current checkout/environment, never from the context or receipt.
+    assert root == pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve()
+    assert p == root / 'evidence/e2e' and p == p.resolve()
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(root), *args], env={**os.environ, 'GIT_NO_LAZY_FETCH': '1'})
+    commit = git('rev-parse', 'HEAD').decode().strip()
+    tree = git('rev-parse', 'HEAD^{tree}').decode().strip()
+    assert os.environ['GITHUB_SHA'] == commit, 'GitHub/source commit mismatch'
+    assert git('status', '--porcelain', '--untracked-files=no') == b'', 'tracked source changed'
+    assert (root / 'evidence/source.commit').read_text().strip() == commit
+    assert (root / 'evidence/source.tree').read_text().strip() == tree
+    inventory = b''.join(line for line in git('ls-tree', '-r', 'HEAD').splitlines(keepends=True)
+                         if line.rstrip(b'\n').split(b'\t', 1)[1].decode() not in EXCLUDED_INVENTORY)
+    assert (root / 'evidence/source-inventory.txt').read_bytes() == inventory, 'current source inventory differs'
+    source = {}
+    for path in [COLLECT, OBSERVER, CONTAINER]:
+        actual = regular_bytes(root / path, 4 * 1024 * 1024)
+        assert actual == git('show', 'HEAD:' + path), 'current source bytes differ from Git: ' + path
+        source[path] = actual
+    verify_collect_source(source[COLLECT])
+    generated = regular_bytes(root / GENERATED, 4 * 1024 * 1024)
+    assert pathlib.Path(__file__).resolve() == root / GENERATED, 'unexpected validator execution path'
+    assert extract_validator(source[CONTAINER]) == generated, 'generated validator differs from current source helper'
+    node_version = subprocess.check_output(['node', '--version'], text=True).strip()
+    assert (root / 'evidence/node.version').read_text().strip() == node_version, 'current Node version differs'
+    temp_root = subprocess.check_output(['node', '-p', "require('node:fs').realpathSync(require('node:os').tmpdir())"], text=True).strip()
+    assert node_version == 'v' + os.environ['NODE_SELECTOR'], 'actual Node differs from selected exact version'
+    assert os.environ['LANE'] == 'core', 'wrong CI lane'
+    return {'sourceCommit': commit, 'sourceTree': tree, 'sourceInventorySHA256': sha(inventory),
+            'collectSourceSHA256': sha(source[COLLECT]), 'observerSourceSHA256': sha(source[OBSERVER]),
+            'validatorSourceSHA256': sha(generated), 'consumerRun': os.environ['GITHUB_RUN_ID'],
+            'consumerAttempt': os.environ['GITHUB_RUN_ATTEMPT'], 'job': os.environ['GITHUB_JOB'],
+            'nodeSelector': os.environ['NODE_SELECTOR'], 'nodeVersion': node_version,
+            'collectionSHA256': sha((p / 'collection.json').read_bytes()), 'tempRootRealpath': temp_root}
+
+def validate_context(context, expected):
+    closed(context, CONTEXT_KEYS, 'context')
+    closed(expected, EXPECTED_KEYS, 'trusted current identity')
+    for key, value in CONTEXT_CONSTANTS.items():
+        assert type(context[key]) is type(value) and context[key] == value, 'context schema/kind/invocation mismatch'
+    assert type(context['nonce']) is str and re.fullmatch('[0-9a-f]{64}', context['nonce']), 'invalid context nonce'
+    for key in ['sourceCommit', 'sourceTree']:
+        assert type(expected[key]) is str and re.fullmatch('[0-9a-f]{40}', expected[key]) and expected[key] != '0' * 40
+    for key in ['sourceInventorySHA256', 'collectSourceSHA256', 'observerSourceSHA256', 'validatorSourceSHA256', 'collectionSHA256']:
+        assert type(expected[key]) is str and re.fullmatch('[0-9a-f]{64}', expected[key])
+    for key in ['consumerRun', 'consumerAttempt']:
+        assert type(expected[key]) is str and re.fullmatch('[1-9][0-9]*', expected[key])
+    assert type(expected['job']) is str and re.fullmatch('[A-Za-z_][A-Za-z_0-9-]*', expected['job'])
+    assert type(expected['nodeSelector']) is str and re.fullmatch(r'[1-9][0-9]*\.[0-9]+\.[0-9]+', expected['nodeSelector'])
+    assert expected['nodeVersion'] == 'v' + expected['nodeSelector']
+    absolute_canonical(expected['tempRootRealpath'])
+    for key in EXPECTED_KEYS:
+        assert type(context[key]) is type(expected[key]) and context[key] == expected[key], 'context differs from independently current ' + key
+
+def directory_identity(value):
+    closed(value, IDENTITY_KEYS, 'directory identity')
+    assert value['type'] == 'directory' and value['symlink'] is False, 'non-directory/symlink observation'
+    absolute_canonical(value['realpath'])
+    assert type(value['dev']) is str and re.fullmatch('0|[1-9][0-9]*', value['dev'])
+    assert type(value['ino']) is str and re.fullmatch('[1-9][0-9]*', value['ino'])
+
+def validate_receipt(receipt, context, context_bytes, expected):
+    closed(receipt, RECEIPT_KEYS, 'receipt')
+    assert type(receipt['schemaVersion']) is int and receipt['schemaVersion'] == 1 and receipt['kind'] == 'collect-fixture-case-capability/v1'
+    assert receipt['contextSHA256'] == sha(context_bytes) and receipt['nonce'] == context['nonce'], 'stale/foreign context or nonce'
+    assert type(receipt['workerPid']) is int and receipt['workerPid'] > 0
+    assert receipt['moduleSourceSHA256'] == expected['collectSourceSHA256'] and receipt['observerSourceSHA256'] == expected['observerSourceSHA256'], 'foreign observer/module source'
+    original, validated = receipt['originalCaseInsensitiveFs'], receipt['validatedCaseInsensitiveFs']
+    assert type(original) is bool and type(validated) is bool and original == validated, 'unknown or contradictory capability'
+    observation = receipt['observation']
+    for observed in [observation, receipt['recheckedObservation']]:
+        closed(observed, OBSERVATION_KEYS, 'observation')
+        for key in ['root', 'tests', 'canonical']:
+            directory_identity(observed[key])
+        if original:
+            directory_identity(observed['alternate'])
+        else:
+            assert observed['alternate'] is None
+    assert observation == receipt['recheckedObservation'], 'observation race/disagreement'
+    fixture = absolute_canonical(receipt['rootRealpath'])
+    assert fixture.parent == pathlib.Path(expected['tempRootRealpath']) and re.fullmatch('e2e-collect-[A-Za-z0-9]+', fixture.name), 'wrong fixture temporary root'
+    assert observation['root']['realpath'] == str(fixture)
+    assert observation['tests']['realpath'] == str(fixture / 'tests')
+    assert observation['canonical']['realpath'] == str(fixture / 'tests/agent')
+    if original:
+        directory_identity(observation['alternate'])
+        assert observation['alternateLookupOutcome'] == 'same-directory' and observation['alternate'] == observation['canonical'], 'alternate is not the same accessible canonical directory'
+    else:
+        assert observation['alternate'] is None and observation['alternateLookupOutcome'] == 'absent-ENOENT', 'false capability requires explicit ENOENT, not access/IO/error'
+    return original
+
+def classify_core(root, collection, result, command_exit, context_bytes, receipt_bytes, expected):
+    # Complete identity census is deliberately first, before any applicability classification.
+    rows = census(collection, result, root)
+    context, receipt = parsed(context_bytes), parsed(receipt_bytes)
+    validate_context(context, expected)
+    capability = validate_receipt(receipt, context, context_bytes, expected)
+    conditional = {(str(root / COLLECT), title_path): (applicable, predicate) for title_path, applicable, predicate in CASES}
+    multiplicities = collections.Counter((row['file'], row['titlePath']) for row in rows)
+    assert all(multiplicities[identity] == 1 for identity in conditional), 'original conditional declaration missing, repeated or renamed'
+    inapplicable = {identity for identity, (applicable, _) in conditional.items() if applicable != capability}
+    assert len(inapplicable) == (1 if capability else 2)
+    not_applicable = []
+    for row in rows:
+        identity = (row['file'], row['titlePath'])
+        if identity in inapplicable:
+            assert row['status'] in ['pending', 'skipped'], 'inapplicable branch must retain its original raw skip, never synthetic PASS'
+            not_applicable.append({'file': row['file'], 'titlePath': list(row['titlePath']), 'fullName': row['fullName'],
+                                   'rawStatus': row['status'], 'originalSkipPredicate': conditional[identity][1],
+                                   'caseInsensitiveFs': capability, 'classification': 'notApplicable'})
+        else:
+            assert row['status'] == 'passed', 'applicable assertion not PASS (failed/pending/todo/cancelled/unknown)'
+    passed = sum(row['status'] == 'passed' for row in rows)
+    raw_counts = {'numTotalTests': len(rows), 'numPassedTests': passed, 'numFailedTests': 0,
+                  'numPendingTests': len(inapplicable), 'numTodoTests': 0}
+    for key, value in raw_counts.items():
+        assert type(result.get(key)) is int and result[key] == value, 'raw JSON counter differs from actual rows: ' + key
+    assert type(command_exit) is int and command_exit == 0 and result.get('success') is True, 'command/runtime failure'
+    assert result.get('numFailedTestSuites', 0) == 0 and result.get('numRuntimeErrorTestSuites', 0) == 0 and result.get('unhandledErrors', []) == []
+    assert passed == len(rows) - len(inapplicable)
+    return {'coverageComplete': True, 'coverageCompleteMeaning': 'All tests applicable on the measured temporary fixture filesystem executed and passed; other platform branches were not executed here.',
+            'declaredRequired': len(collection), 'reportedRequired': len(rows), 'applicableRequired': len(rows) - len(inapplicable),
+            'censusMeaning': 'Complete file/titlePath Counter multiplicity; only the three conditional identities are unique, not a unique-task-ID claim.',
+            'requiredPassed': passed, 'notApplicable': not_applicable, 'optionalNotExecuted': [], 'missing': [], 'extra': [],
+            'counts': raw_counts, 'commandExit': command_exit, 'sourceCommit': expected['sourceCommit'], 'sourceTree': expected['sourceTree'],
+            'applicability': {'caseInsensitiveFs': capability, 'contextSHA256': sha(context_bytes), 'receiptSHA256': sha(receipt_bytes),
+                              'nonce': context['nonce'], 'collectSourceSHA256': expected['collectSourceSHA256'],
+                              'observerSourceSHA256': expected['observerSourceSHA256'], 'validatorSourceSHA256': expected['validatorSourceSHA256'],
+                              'sourceInventorySHA256': expected['sourceInventorySHA256'], 'consumerRun': expected['consumerRun'],
+                              'consumerAttempt': expected['consumerAttempt'], 'job': expected['job'], 'nodeSelector': expected['nodeSelector'],
+                              'nodeVersion': expected['nodeVersion'], 'fixtureRoot': receipt['rootRealpath'],
+                              'trustBoundary': 'Reviewed current-job source and artifact integrity, not cryptographic host attestation'}}
+
+def load_receipts(directory):
+    assert directory == directory.resolve() and stat.S_ISDIR(directory.lstat().st_mode), 'invalid applicability directory'
+    assert {entry.name for entry in directory.iterdir()} == {'context.json', 'receipt.json'}, 'missing/duplicate/unexpected applicability file'
+    return regular_bytes(directory / 'context.json', 8192), regular_bytes(directory / 'receipt.json', 16384)
+
+def core_main(root, p):
+    report = {'coverageComplete': False, 'requiredPassed': None, 'notApplicable': [], 'error': None}
+    try:
+        collection_bytes = (p / 'collection.json').read_bytes(); result_bytes = (p / 'results.json').read_bytes()
+        command_bytes = (p / 'command.exit').read_bytes()
+        collection, result = parsed(collection_bytes), parsed(result_bytes)
+        census(collection, result, root)  # No context/receipt can exempt a missing declaration.
+        expected = current_expected(root, p)
+        context_bytes, receipt_bytes = load_receipts(p / 'platform-applicability')
+        assert re.fullmatch(b'0\n?', command_bytes), 'nonzero or malformed test command exit'
+        report = classify_core(root, collection, result, 0, context_bytes, receipt_bytes, expected)
+        report['captures'] = {'collectionSHA256': sha(collection_bytes), 'resultsSHA256': sha(result_bytes), 'commandExitSHA256': sha(command_bytes),
+                              'contextSHA256': sha(context_bytes), 'receiptSHA256': sha(receipt_bytes)}
+    except Exception as error:
+        report['coverageComplete'] = False
+        report['error'] = {'type': type(error).__name__, 'message': str(error)}
+        (p / 'coverage.json').write_text(json.dumps(report, indent=2) + '\n')
+        raise
+    (p / 'coverage.json').write_text(json.dumps(report, indent=2) + '\n')
+
+
+def legacy_validate():
+    import json,pathlib,collections,sys
+    p=pathlib.Path(sys.argv[1]);c=json.loads((p/'collection.json').read_text());r=json.loads((p/'results.json').read_text());assert isinstance(c,list) and c
+    expected=collections.Counter((x['file'],x['name']) for x in c);actual=collections.Counter();optional=[];allrows=[]
+    optional_file=(pathlib.Path.cwd()/'packages/web/tests/integration/crosscheck.test.ts').as_posix();optional_name='cross-check web-benchmark scenarios every scenario'
+    for f in r['testResults']:
+     for a in f['assertionResults']:
+      identity=(f['name'],' > '.join(a['ancestorTitles']+[a['title']]));allrows.append(a)
+      if f['name']==optional_file and a['fullName']==optional_name and a['status'] in ['pending','skipped']:
+       optional.append({'file':f['name'],'fullName':a['fullName'],'status':'optional-not-executed','reason':'existing formal external benchmark contract'})
+       if expected[identity]:expected[identity]-=1
+      else:actual[identity]+=1
+    expected=+expected
+    # Full ordinary Web must retain the optional declaration in its actual run report even though Vitest list omits static skips.
+    if p.name=='ordinary' and p.parent.name=='web':assert len(optional)==1
+    else:assert not optional
+    out={'listedRequired':sum(expected.values()),'totalReported':len(allrows),'requiredExecutedReports':sum(actual.values()),'requiredPassed':sum(a['status']=='passed' for a in allrows),'optionalNotExecuted':optional,'missing':list((expected-actual).elements()),'extra':list((actual-expected).elements()),'counts':{k:r.get(k) for k in ['numTotalTests','numPassedTests','numFailedTests','numPendingTests','numTodoTests']},'commandExit':int((p/'command.exit').read_text())};(p/'coverage.json').write_text(json.dumps(out,indent=2)+'\n')
+    assert expected==actual,'required collection/result identity mismatch'
+    assert r['numTotalTests']==len(allrows) and r['numFailedTests']==0 and r['numPendingTests']==len(optional) and r.get('numTodoTests',0)==0
+    assert out['requiredPassed']==sum(actual.values()) and out['commandExit']==0 and r.get('success') is True
+
+
+if __name__ == '__main__':
+    root = pathlib.Path.cwd().resolve()
+    p = pathlib.Path(sys.argv[1]).absolute()
+    if p == root / 'evidence/e2e' or p.resolve() == (root / 'evidence/e2e').resolve():
+        core_main(root, p)
+    else:
+        legacy_validate()
 HELPER_3
 cat > evidence/tools/validate-scripts.py <<'HELPER_4'
 import json,pathlib

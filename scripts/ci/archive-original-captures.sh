@@ -2,7 +2,7 @@
 set -euo pipefail
 root="$GITHUB_WORKSPACE/evidence/fixtures/$NODE_SELECTOR/core"
 mkdir -p "$root"
-for name in popup-swipe-borrowed-pair popup-init-order popup-init-order-borrowed replaced-nodes popup-swipe-pair; do
+for name in popup-swipe-borrowed-pair popup-init-order popup-init-order-borrowed replaced-nodes popup-swipe-pair on-action-delayed; do
  if test -d "packages/e2e/.e2e/$name"; then
   if test -e "$root/$name"; then test -d "$root/$name" && test ! -L "$root/$name" && test -z "$(ls -A "$root/$name")"; else mkdir "$root/$name"; fi
   cp -a "packages/e2e/.e2e/$name/." "$root/$name/"
