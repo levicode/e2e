@@ -1,6 +1,102 @@
 {
-  "configured": false,
-  "ordinary": null,
-  "fault": null,
-  "status": "S13_CURRENT_REAL_RECEIPTS_REQUIRED"
+  "configured": true,
+  "ordinary": {
+    "artifactId": 12988549426,
+    "artifactName": "ci-native-runtime-final source-pinned ordinary runtime producer-41079416808-1",
+    "artifactSize": 14454095,
+    "artifactDigest": "sha256:ca74ab283aeb03ccfbac953110b0c132ef89dcbc962f4d701d805813361f561f",
+    "manifestSha256": "b8e13bd4f3a046edad9ab9ad9e0e82dc361ff41564968cbd5cfdfb6d385498c1",
+    "binarySha256": "f4dd4076c9a781d164072d3ffb8a30772593daae5a00acaae56c9044ce96ae08",
+    "nativeSource": {
+      "commit": "a77e2800eeb9f380f3093aef77f76f5c0c5281f5",
+      "tree": "d005e5a0f58dd2987eab544c3476926bfff5bad1"
+    },
+    "expected": {
+      "source": {
+        "commit": "5a865938c609cd27602b194ce557fa710bfa2e0e",
+        "tree": "7d6f8c15bbaa971002bd0ffca3f5651e25e67ae9"
+      },
+      "repository": "levicode/e2e",
+      "runId": "41079416808",
+      "runAttempt": "1",
+      "platform": "linux",
+      "architecture": "x64",
+      "nativeCommit": "a77e2800eeb9f380f3093aef77f76f5c0c5281f5"
+    },
+    "producer": {
+      "workflowId": 400219961,
+      "workflowPath": ".github/workflows/final-ordinary-runtime.yml",
+      "runConclusion": "success",
+      "jobId": 124144217824,
+      "jobName": "build"
+    },
+    "compiler": {
+      "rustcSHA256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369",
+      "compilerSHA256": "e8ece4968ca25ef3b8933ecef66b96b189ca0189edc5e2f27860053e3290509a",
+      "rustcVersion": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "manifestPath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/Cargo.toml",
+      "sourcePath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/src/main.rs",
+      "executable": "/home/runner/work/_temp/ci-native-target/ci/agent-browser",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--message-format=json"
+      ]
+    }
+  },
+  "fault": {
+    "artifactId": 12988987646,
+    "artifactName": "ci-native-fault-runtime-build source-pinned test-only fault runtime-41079470325-1",
+    "artifactSize": 14430771,
+    "artifactDigest": "sha256:e0c8a06fb082e1a6e61513b3e4a7bfd12b6ffb158979a8d9add948b5d1af41fa",
+    "manifestSha256": "4f266b6e0f50ee0bdfd8944ca2db3f22bd10399cd6661f45b7e8acec065a86fa",
+    "binarySha256": "2e3db3591afaff504399c712747e20704a681979d89bdaf105fa1ddeb60fd6e5",
+    "nativeSource": {
+      "commit": "a77e2800eeb9f380f3093aef77f76f5c0c5281f5",
+      "tree": "d005e5a0f58dd2987eab544c3476926bfff5bad1"
+    },
+    "expected": {
+      "source": {
+        "commit": "5a865938c609cd27602b194ce557fa710bfa2e0e",
+        "tree": "7d6f8c15bbaa971002bd0ffca3f5651e25e67ae9"
+      },
+      "repository": "levicode/e2e",
+      "runId": "41079470325",
+      "runAttempt": "1",
+      "platform": "linux",
+      "architecture": "x64",
+      "nativeCommit": "a77e2800eeb9f380f3093aef77f76f5c0c5281f5"
+    },
+    "producer": {
+      "workflowId": 400219987,
+      "workflowPath": ".github/workflows/native-fault-runtime.yml",
+      "runConclusion": "success",
+      "jobId": 124144404434,
+      "jobName": "build"
+    },
+    "compiler": {
+      "rustcSHA256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369",
+      "compilerSHA256": "4ae312619825d49728939245d95ff9093e363d01db13651e9e735df9ba9a1482",
+      "rustcVersion": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "manifestPath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/Cargo.toml",
+      "sourcePath": "/home/runner/work/e2e/e2e/.artifacts/ci-native-source/cli/src/main.rs",
+      "executable": "/home/runner/work/_temp/ci-native-target/ci/agent-browser",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--profile",
+        "ci",
+        "--no-default-features",
+        "--features",
+        "acceptance-faults",
+        "--message-format=json"
+      ]
+    },
+    "testOnly": true
+  }
 }
