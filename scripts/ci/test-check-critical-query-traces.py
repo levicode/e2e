@@ -199,7 +199,7 @@ class QueryValidatorTests(unittest.TestCase):
 
     def test_eval_all_closed_enums_and_nulls(self):
         for stage in ('entry', 'wait', 'capture'):
-            for reason in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard', 'p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap'):
+            for reason in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard', 'p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap', 'p-c1s0', 'p-c1s1', 'p-c1s2', 'p-c1s3', 'p-c1sx', 'p-c2s0', 'p-c2s1', 'p-c2s2', 'p-c2s3', 'p-c2sx', 'p-c3s0', 'p-c3s1', 'p-c3s2', 'p-c3s3', 'p-c3sx', 'p-c4s0', 'p-c4s1', 'p-c4s2', 'p-c4s3', 'p-c4sx', 'p-c5s0', 'p-c5s1', 'p-c5s2', 'p-c5s3', 'p-c5sx', 'p-c6s0', 'p-c6s1', 'p-c6s2', 'p-c6s3', 'p-c6sx'):
                 for watermark in ('equal', 'behind', 'ahead', 'unk'):
                     value = dict(s=stage, c=reason, h=None, p=None, t=None, r=None, w=watermark, v=None, e=None)
                     self.assertTrue(validator.schema_valid(record('EvalAdmission', 1, generation=1, eval=value)))
@@ -218,7 +218,7 @@ class QueryValidatorTests(unittest.TestCase):
 
     def test_typed_preparation_refusals_preserve_closed_fields_and_512_byte_ceiling(self):
         safe = validator.SAFE_INTEGER
-        for reason in ('p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap'):
+        for reason in ('p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap', 'p-c1s0', 'p-c1s1', 'p-c1s2', 'p-c1s3', 'p-c1sx', 'p-c2s0', 'p-c2s1', 'p-c2s2', 'p-c2s3', 'p-c2sx', 'p-c3s0', 'p-c3s1', 'p-c3s2', 'p-c3s3', 'p-c3sx', 'p-c4s0', 'p-c4s1', 'p-c4s2', 'p-c4s3', 'p-c4sx', 'p-c5s0', 'p-c5s1', 'p-c5s2', 'p-c5s3', 'p-c5sx', 'p-c6s0', 'p-c6s1', 'p-c6s2', 'p-c6s3', 'p-c6sx'):
             value = dict(s='capture', c=reason, h=[65535,65535,7], p=[65535]*8,
                          t=[65535]*3, r=[False]*4, w='behind', v=safe, e=safe)
             row = record('EvalAdmission', safe, generation=safe, eval=value)
@@ -230,7 +230,7 @@ class QueryValidatorTests(unittest.TestCase):
     def test_eval_closed_types_and_bounds(self):
         import copy
         good = dict(s='entry', c='entry', h=[0,0,0], p=[0]*8, t=[0]*3, r=[True]*4, w='equal', v=0, e=0)
-        bad = [('s', 'raw'), ('s', []), ('c', {}), ('c', 'p-unknown'), ('c', 'PRIVATE'), ('w', 'payload'),
+        bad = [('s', 'raw'), ('s', []), ('c', {}), ('c', 'p-unknown'), ('c', 'p-c0s0'), ('c', 'p-c7s0'), ('c', 'p-c1s4'), ('c', 'p-c1sX'), ('c', 'p-c1sunknown'), ('c', 'PRIVATE'), ('w', 'payload'),
                ('p', [0]*7), ('p', [True]*8), ('p', [65536]*8), ('p', [-1]*8),
                ('t', [0]*4), ('t', [1.0]*3), ('r', [0]*4), ('r', [True]*3),
                ('v', True), ('e', -1), ('v', validator.SAFE_INTEGER+1), ('e', '123'), ('h', [0,0,8]), ('h', [0,0,True]), ('h', [65536,0,0]), ('h', [0,0]), ('h', [0,0,0,0])]
@@ -265,7 +265,7 @@ class FieldTimingValidatorTests(unittest.TestCase):
             row = record('QueryReadFailure', 1, generation=1,
                          queryReadStage='fresh-sample', readMs=[0, 1, 2, 3, 4, 5, 6, 65535, 0, 0, 0, 0, 0], **fields)
             self.assertTrue(validator.schema_valid(row))
-            result, summary = self.run_capture([record(), row])
+            result, summary = self.run_capture([record(), row, record('QueryCommandSummary', 2, generation=1, operationSeq=1, cmdSummary=[0, 0, 0])])
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(summary['completeEvidence'])
 
@@ -337,7 +337,13 @@ class FieldJoinTests(unittest.TestCase):
             native = native if native is not None else {41: [self.timed()]}
             for pid, rows in native.items():
                 (trace / f'native-{pid}.jsonl').write_text('ordinary\n')
-                (trace / f'query-{pid}.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in [dict(record(), pid=pid), *rows]))
+                # Synthetic S9 fixtures: close each timed anchor explicitly. Tests for
+                # missing evidence remove these rows after fixture creation.
+                last = max([r['record'] for r in rows] + [0])
+                summaries = [dict(record('QueryCommandSummary', last + i + 1, generation=r['generation'],
+                                        cmdSummary=[0, 0, 0]), pid=pid, operationSeq=r['operationSeq'])
+                             for i, r in enumerate(rows) if r.get('phase') == 'QueryReadFailure' and 'readMs' in r]
+                (trace / f'query-{pid}.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in [dict(record(), pid=pid), *rows, *summaries]))
             js = js if js is not None else [self.js()]
             custody = custody if custody is not None else [dict(suite='replaced-nodes', workerRecords=len(js), invalidRecords=0, lineOverflow=False, recordOverflow=False)]
             data = raw if raw is not None else ''.join(validator.JS_PREFIX + json.dumps(row) + '\n' for row in js) + ''.join(validator.CUSTODY_PREFIX + json.dumps(row) + '\n' for row in custody)
@@ -593,6 +599,199 @@ class NoFailureCaptureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(summary['fieldOnly']['joinedFailures'], 1)
         self.assertEqual(summary['fieldOnly']['failureWitnessOutcome'], 'observed')
+
+
+class CommandTimingTests(unittest.TestCase):
+    run_capture = QueryValidatorTests.run_capture
+
+    @staticmethod
+    def bundle(count=1, seen=None, flags=0):
+        rows = [record(), dict(failure(readMs=[0] * 13), operationSeq=7)]
+        for ordinal in range(count):
+            rows.append(record('QueryCommandTiming', ordinal + 2, generation=1, operationSeq=7,
+                               queryReadStage='fresh-sample', cmd=[ordinal, 6, 1], cmdMs=[1, 2, 3, 4, 5]))
+        rows.append(record('QueryCommandSummary', count + 2, generation=1, operationSeq=7,
+                           cmdSummary=[count if seen is None else seen, count, flags]))
+        return rows
+
+    def rejected(self, rows=None, raw=None):
+        result, summary = self.run_capture(rows, raw=raw)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(summary['completeEvidence'])
+        self.assertTrue(summary['errors'])
+        return summary
+
+    def test_all_closed_method_and_terminal_outcome_codes_and_stage_values(self):
+        for method in range(8):
+            for outcome in range(1, 7):
+                rows = self.bundle(); rows[2]['cmd'] = [0, method, outcome]
+                result, summary = self.run_capture(rows)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(summary['completeEvidence'])
+                self.assertTrue(summary['processes'][0]['commandTiming']['complete'])
+        for stage in validator.READ_STAGES:
+            row = self.bundle()[2]; row['queryReadStage'] = stage
+            self.assertTrue(validator.schema_valid(row))
+
+    def test_zero_and_exactly_24_commands_are_complete_bounded_captures(self):
+        for count in (0, 1, 24):
+            result, summary = self.run_capture(self.bundle(count))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(summary['completeEvidence'])
+            capture = summary['processes'][0]['commandTiming']
+            self.assertEqual((capture['requiredFailures'], capture['completeFailures'], capture['capturedCommands']), (1, 1, count))
+            self.assertEqual(capture['bundles'][0]['captured'], count)
+        rows = self.bundle(); rows[2]['cmdMs'] = [65535] * 5
+        result, summary = self.run_capture(rows)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])  # Exactly representable, not inferred saturation.
+
+    def test_terminal_deadline_or_drop_is_complete_but_active_row_is_not(self):
+        for outcome in (5, 6):
+            rows = self.bundle(); rows[2]['cmd'][2] = outcome
+            result, summary = self.run_capture(rows)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(summary['completeEvidence'])
+            self.assertEqual(summary['processes'][0]['commandTiming']['bundles'][0]['commands'][0]['cmdMs'], [1, 2, 3, 4, 5])
+        rows = self.bundle(flags=4); rows[2]['cmd'][2] = 0
+        self.rejected(rows)
+
+    def test_every_flag_and_unfinished_outcome_are_incomplete(self):
+        for flags in range(1, 16):
+            self.rejected(self.bundle(flags=flags))
+        rows = self.bundle(); rows[2]['cmd'][2] = 0
+        self.rejected(rows)
+        rows[-1]['cmdSummary'][2] = 4
+        self.rejected(rows)
+        self.rejected(self.bundle(24, seen=25, flags=1))
+        self.rejected(self.bundle(24, seen=65535, flags=1))
+
+    def test_closed_arrays_types_enums_and_private_fields_rejected(self):
+        good = self.bundle()[2]
+        for key, values in [('cmd', [[], [0, 1], [0, 1, 1, 1], [24, 1, 1], [0, 8, 1], [0, 1, 7],
+                                     [True, 1, 1], [0, False, 1], [0, 1, True], [-1, 1, 1], [0, 1.0, 1], 'PRIVATE']),
+                            ('cmdMs', [[], [0] * 4, [0] * 6, [65536] * 5, [-1] * 5, [True] * 5, [0.5] * 5, 'PRIVATE']),
+                            ('queryReadStage', ['PRIVATE', [], None])]:
+            for value in values:
+                row = dict(good); row[key] = value
+                self.assertFalse(validator.schema_valid(row), (key, value))
+        for key in ('url', 'args', 'selector', 'targetId', 'sessionId', 'method', 'errorMessage'):
+            self.assertFalse(validator.schema_valid(dict(good, **{key: 'PRIVATE'})))
+        for key in ('cmd', 'cmdMs', 'queryReadStage', 'generation'):
+            row = dict(good); del row[key]
+            self.assertFalse(validator.schema_valid(row))
+        summary = self.bundle()[-1]
+        for value in ([], [1, 1], [1, 1, 0, 0], [65536, 1, 0], [1, 25, 0], [1, 1, 16],
+                      [True, 1, 0], [1, True, 0], [1, 1, False], [-1, 1, 0], [1, 1, 0.0], 'PRIVATE'):
+            self.assertFalse(validator.schema_valid(dict(summary, cmdSummary=value)))
+        self.assertFalse(validator.schema_valid(dict(summary, queryReadStage='fresh-sample')))
+        self.assertFalse(validator.schema_valid(dict(summary, payload='PRIVATE')))
+
+    def test_missing_failure_rows_summary_and_old_timed_only_are_rejected(self):
+        rows = self.bundle()
+        for index in (1, 2, 3):
+            self.rejected([row for i, row in enumerate(rows) if i != index])
+        self.rejected(rows[:2])  # No legacy loose fallback in S9.
+        rows = self.bundle(0); rows.pop(1)
+        self.rejected(rows)
+        result, summary = self.run_capture([record(), failure()])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])  # Untimed non-field compatibility.
+
+    def test_duplicate_or_discontinuous_ordinals_counts_and_anchor_rejected(self):
+        for change in [lambda r: r[3]['cmd'].__setitem__(0, 0),
+                       lambda r: r[3]['cmd'].__setitem__(0, 2),
+                       lambda r: r[-1]['cmdSummary'].__setitem__(0, 1),
+                       lambda r: r[-1]['cmdSummary'].__setitem__(0, 3),
+                       lambda r: r[-1]['cmdSummary'].__setitem__(1, 1)]:
+            rows = self.bundle(2); change(rows); self.rejected(rows)
+        rows = self.bundle(); rows.append(dict(rows[-1], record=20)); self.rejected(rows)
+        rows = self.bundle(); rows.append(dict(rows[1], record=20)); self.rejected(rows)
+        rows = self.bundle(); rows.append(dict(failure(), record=20, operationSeq=7)); self.rejected(rows)
+
+    def test_record_order_cross_operation_generation_pid_and_foreign_file_rejected(self):
+        for index, key, value in [(2, 'record', 0), (3, 'record', 1),
+                                  (2, 'operationSeq', 8), (3, 'operationSeq', 8),
+                                  (2, 'generation', 2), (3, 'generation', 2),
+                                  (2, 'pid', 42), (3, 'pid', 42)]:
+            rows = self.bundle(); rows[index][key] = value; self.rejected(rows)
+        rows = self.bundle(2); rows[2]['record'], rows[3]['record'] = rows[3]['record'], rows[2]['record']
+        self.rejected(rows)
+        errors = []
+        validator.command_bundles(self.bundle()[:2], 'query-41.jsonl', errors)
+        validator.command_bundles(self.bundle()[2:], 'query-42.jsonl', errors)
+        self.assertTrue(errors)  # Same coordinates in another file never supply missing custody.
+
+    def test_physical_line_order_is_not_repaired_by_ordinal_or_record_sort(self):
+        from itertools import permutations
+        rows = self.bundle(2)
+        # Includes the reviewer's exact false-greens: summary before failure,
+        # command before failure, and reversed commands with unchanged record IDs.
+        for order in permutations(range(1, 5)):
+            if order == (1, 2, 3, 4):
+                continue
+            with self.subTest(order=order):
+                summary = self.rejected([rows[0], *(rows[i] for i in order)])
+                self.assertTrue(any('physical line order' in e or 'command ordinals' in e
+                                    for e in summary['errors']))
+        rows = self.bundle(0)
+        self.rejected([rows[0], rows[2], rows[1]])  # Zero commands still requires failure first.
+
+    def test_interleaving_distinct_operations_retains_each_continuous_bundle(self):
+        first = self.bundle()
+        second = [dict(r, operationSeq=8, record=r['record'] + 10) for r in self.bundle()[1:]]
+        rows = [first[0], first[1], second[0], first[2], second[1], first[3], second[2]]
+        result, summary = self.run_capture(rows)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        capture = summary['processes'][0]['commandTiming']
+        self.assertTrue(capture['complete'])
+        self.assertEqual(capture['completeFailures'], 2)
+
+    def test_existing_native_loss_and_capture_limit_remain_incomplete(self):
+        for change in [dict(droppedBefore=1), dict(suppressedBefore=1), dict(overflow=True)]:
+            rows = self.bundle(); rows[2].update(change)
+            result, summary = self.run_capture(rows)
+            self.assertFalse(summary['completeEvidence'])
+        rows = self.bundle(); rows.append(record('CaptureLimitReached', 30))
+        result, summary = self.run_capture(rows)
+        self.assertFalse(summary['completeEvidence'])
+
+    def test_maximum_closed_command_and_summary_rows_stay_within_512_bytes(self):
+        safe = validator.SAFE_INTEGER
+        for row in self.bundle()[2:]:
+            row.update(pid=(1 << 32) - 1, record=safe, operationSeq=safe, generation=safe,
+                       droppedBefore=safe, emittedBefore=safe, suppressedBefore=safe, overflow=False)
+            if row['phase'] == 'QueryCommandTiming':
+                row.update(queryReadStage=max(validator.READ_STAGES, key=len), cmd=[23, 7, 6], cmdMs=[65535] * 5)
+            else:
+                row['cmdSummary'] = [65535, 24, 15]
+            self.assertTrue(validator.schema_valid(row))
+            self.assertLessEqual(len(json.dumps(row, separators=(',', ':')).encode()) + 1, 512)
+        self.assertEqual((validator.COMMAND_BUDGET, validator.RECORD_BUDGET, validator.BYTE_BUDGET), (24, 128, 65536))
+
+    def test_command_128_record_64kib_512byte_and_duplicate_key_limits_preserved(self):
+        rows = self.bundle()
+        line = json.dumps(rows[2], separators=(',', ':'))
+        raw = ''.join(json.dumps(r) + '\n' for r in rows[:2]).encode()
+        suffix = (json.dumps(rows[3]) + '\n').encode()
+        result, summary = self.run_capture(raw=raw + line.encode() + b' ' * (512 - len(line) - 1) + b'\n' + suffix)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])
+        self.rejected(raw=raw + line.encode() + b' ' * (513 - len(line) - 1) + b'\n' + suffix)
+        self.rejected(raw=raw + line.replace('"cmd":', '"cmd":[0,6,1],"cmd":').encode() + b'\n' + suffix)
+        self.rejected(raw=raw + line.encode() + suffix)  # Missing newline.
+        self.rejected(rows + [dict(failure(i), operationSeq=1000+i) for i in range(4, 130)])
+
+    def test_no_target_pass_cannot_bypass_missing_command_detail(self):
+        def remove_summary(a, r, trace, log):
+            p = trace/'query-41.jsonl'
+            p.write_text(''.join(line for line in p.read_text().splitlines(keepends=True)
+                                 if json.loads(line)['phase'] != 'QueryCommandSummary'))
+        helper = NoFailureCaptureTests()
+        result, summary = helper.run_field(js=[], report_value=helper.report(), setup=remove_summary)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(summary['completeEvidence'])
+        self.assertTrue(any('command summary' in e for e in summary['errors']))
 
 if __name__ == '__main__':
     unittest.main()

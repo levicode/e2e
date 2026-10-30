@@ -6,6 +6,7 @@ import { explore } from '../../src/explore/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { createProject, runExisting, runProjectWithConfigFile, type FixtureProject } from '../helpers/run-project.ts';
 import { REFUSAL_EXPLANATION, refusedCopilotFailure, refusedCopilotModel } from '../helpers/unserved-copilot-model.ts';
+import { closedRunFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
 import { web } from '@e2e-dev/web';
 
 const JUDGE = `test('judges', async ({ app, agent }) => {
@@ -88,9 +89,10 @@ describe('a model the provider does not serve', () => {
       { appUrl: app.url, configSource: WORKERS_CONFIG },
     );
     try {
-      expect(outcome.exitCode).toBe(2);
-      expect(outcome.report.run.errors).toEqual(ONE_RUN_ERROR);
-      expect(outcome.report.run.results.filter((result) => result.status === 'passed')).toHaveLength(0);
+      const diagnostic = closedRunFailureDiagnostic(outcome.report.run);
+      expect(outcome.exitCode, diagnostic).toBe(2);
+      expect(outcome.report.run.errors, diagnostic).toEqual(ONE_RUN_ERROR);
+      expect(outcome.report.run.results.filter((result) => result.status === 'passed'), diagnostic).toHaveLength(0);
     } finally {
       project.cleanup();
     }

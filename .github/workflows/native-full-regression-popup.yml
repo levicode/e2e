@@ -8,15 +8,15 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: 6150faa8f813e396eff0ae736311d0e7da626593
-  NATIVE_SOURCE_TREE: ee5044a3e050b406e2598c4b655dbe2d98aba5f9
+  NATIVE_SOURCE_SHA: 9f838d80e124a71f21ac4f68ea27d0c53e0f7d50
+  NATIVE_SOURCE_TREE: e482582d384d96eeb5a68688878a5bc0c7c3ac47
   NEXT_TELEMETRY_DISABLED: '1'
   GIT_NO_LAZY_FETCH: '1'
   RUSTUP_TOOLCHAIN: 1.99.1
 'on':
   push:
     branches:
-    - ci/native-full-regression-s8-20261030
+    - ci/native-full-regression-s9-20261030
 jobs:
   original-four-compile-boundaries:
     runs-on: ubuntu-24.04
@@ -711,6 +711,38 @@ jobs:
       shell: bash
       run: python3 .github/native-full-regression/ci.py exact-results --gate fault
       if: ${{ !cancelled() && steps.new-native-exact.outcome != 'skipped' }}
+    - name: Rerun separate S9 21 exact controls on the same compiled fault harness (not extra coverage)
+      id: s9-native-exact
+      shell: bash
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        harness="$(cat evidence/harness.path)"
+
+        set +e
+
+        python3 scripts/ci/run-optional-observe-tests.py "$harness" evidence/s9-native-exact-inventory.json
+        evidence/s9-native-exact > evidence/s9-native-exact.log 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/s9-native-exact.exit
+
+        cat evidence/s9-native-exact.log
+
+        exit "$status"
+
+        '
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' && steps.required-controls.outcome == 'success'
+        }}
+    - name: Validate separate S9 exact raw logs against compiler provenance and full inventory
+      id: s9-native-exact-results
+      shell: bash
+      run: python3 .github/native-full-regression/ci.py s9-exact-results --gate fault
+      if: ${{ !cancelled() && steps.s9-native-exact.outcome != 'skipped' }}
     - name: Run exact optional observation producer inventory
       run: python3 scripts/ci/run-optional-observe-tests.py "$(cat evidence/harness.path)" scripts/ci/optional-observe-inventory.json
         evidence/native-focused

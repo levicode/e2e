@@ -139,21 +139,22 @@ class S6EvidenceTests(unittest.TestCase):
         self.binary = self.target / 'agent-browser-tests'; self.binary.write_text('synthetic non-executable harness bytes\n')
         self.new = ['native::new_control_' + str(i).zfill(2) for i in range(20)]
         self.retained = ['native::retained_control_' + str(i).zfill(2) for i in range(43)]
+        self.s9 = ['native::s9_control_' + str(i).zfill(2) for i in range(21)]
         self.names = ['attribute-only assertion samples pure control ' + str(i).zfill(2) for i in range(23)]
         self.test_file = 'packages/e2e/tests/unit/attribute-field-assertions.test.ts'
         self.pins = {'toolchain': '1.99.1', 'profile': 'ci', 'commit': 'a' * 40, 'tree': 'b' * 40,
-                     'requiredNewTests': self.new, 'retainedRequiredTests': self.retained,
+                     'requiredNewTests': self.new, 'retainedRequiredTests': self.retained, 's9RequiredTests': self.s9,
                      'pureProjection': {'file': self.test_file, 'testNames': self.names, 'nodeMajor': 24,
                                         'pnpmVersion': '12.3.4', 'vitestVersion': '5.0.5'},
                      'files': {}, 'producerFiles': [self.test_file]}
-        self.collection = {'allTests': sorted(self.new + self.retained + ['native::baseline_only']),
+        self.collection = {'allTests': sorted(self.new + self.retained + self.s9 + ['native::baseline_only']),
                            'ignoredTests': ['native::baseline_only']}
-        self.collection.update(total=64, ignored=1, nonignored=63)
+        self.collection.update(total=85, ignored=1, nonignored=84)
         for gate in ['default', 'fault']:
             expected = dict(self.collection, nativeCommit=self.pins['commit'], nativeTree=self.pins['tree'],
                             profile='ci', features=['acceptance-faults'] if gate == 'fault' else [])
             self.write_json(self.here / ('inventory-' + gate + '.json'), expected)
-        self.all_text = ''.join(name + ': test\n' for name in self.collection['allTests']) + '\n64 tests, 0 benchmarks\n'
+        self.all_text = ''.join(name + ': test\n' for name in self.collection['allTests']) + '\n85 tests, 0 benchmarks\n'
         self.ignored_text = 'native::baseline_only: test\n\n1 tests, 0 benchmarks\n'
         (self.ev / 'all-tests.list').write_text(self.all_text)
         (self.ev / 'ignored-tests.list').write_text(self.ignored_text)
@@ -165,6 +166,8 @@ class S6EvidenceTests(unittest.TestCase):
         self.here_patch.start(); self.addCleanup(self.here_patch.stop)
         self.write_json(self.ev / 'required-controls.json', ci.required_controls_report(self.ev, self.pins, 'fault'))
         self.write_json(self.ev / 'new-native-exact-inventory.json', {'selectors': self.new, 'count': 20})
+        self.write_json(self.ev / 's9-required-controls.json', ci.s9_required_controls_report(self.ev, self.pins, 'fault'))
+        self.write_json(self.ev / 's9-native-exact-inventory.json', {'selectors': self.s9, 'count': 21})
         self.profile = {'test': True, 'opt_level': '3', 'debug_assertions': False, 'overflow_checks': False}
         artifact = {'reason': 'compiler-artifact', 'target': {'name': 'agent-browser', 'kind': ['bin']},
                     'profile': self.profile, 'features': ['acceptance-faults'], 'fresh': False, 'executable': str(self.binary)}
@@ -178,7 +181,7 @@ class S6EvidenceTests(unittest.TestCase):
         (self.exact_dir / 'harness-list.log').write_text(self.all_text)
         self.rows = []
         for i, name in enumerate(self.new, 1):
-            log = f'\nrunning 1 test\ntest {name} ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.01s\n'
+            log = f'\nrunning 1 test\ntest {name} ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 84 filtered out; finished in 0.01s\n'
             path = self.exact_dir / f'test-{i:02d}.log'; path.write_text(log)
             (self.exact_dir / f'test-{i:02d}.cleanup.jsonl').write_text('')
             self.rows.append({'name': name, 'command': [str(self.binary), '--exact', name, '--nocapture', '--test-threads=1'],
@@ -272,7 +275,7 @@ class S6EvidenceTests(unittest.TestCase):
     def test_exact_duplicate_named_row(self):
         row = f'test {self.new[0]} ... ok\n'; self.edit_exact_log(row, row + row); self.reject_exact()
     def test_exact_zero_pass_summary(self): self.edit_exact_log('1 passed;', '0 passed;'); self.reject_exact()
-    def test_exact_wrong_filtered_count(self): self.edit_exact_log('63 filtered out', '0 filtered out'); self.reject_exact()
+    def test_exact_wrong_filtered_count(self): self.edit_exact_log('84 filtered out', '0 filtered out'); self.reject_exact()
     def test_exact_measured_summary(self): self.edit_exact_log('0 measured;', '1 measured;'); self.reject_exact()
     def test_exact_missing_cleanup_capture(self): (self.exact_dir / 'test-01.cleanup.jsonl').unlink(); self.reject_exact()
     def test_exact_command_log_tamper(self): (self.ev / 'new-native-exact.log').write_text(''); self.reject_exact()
@@ -346,6 +349,8 @@ class S6EvidenceTests(unittest.TestCase):
         self.assertFalse((self.ev / 'pure-projection-receipt.json').exists())
 
     def audit_fixture(self):
+        attach_s9_exact_fixture(self)
+        self.write_json(self.ev / 's9-native-exact-receipt.json', ci.s9_exact_results_report(self.ev, self.pins, self.target))
         attach_class_fixture(self)
         self.write_json(self.ev / 'class-projection-receipt.json', ci.class_results_report(self.root, self.ev, self.pins))
         self.write_json(self.ev / 'new-native-exact-receipt.json', self.exact_report())
@@ -367,7 +372,7 @@ class S6EvidenceTests(unittest.TestCase):
         self.assertTrue(report['newExactAccepted']); self.assertTrue(report['pureProjectionAccepted'])
         self.assertIn('new-native-exact/test-20.cleanup.jsonl', report['captures'])
     def test_audit_distrusts_accepted_exact_receipt_after_raw_tamper(self):
-        self.audit_fixture(); self.edit_exact_log('63 filtered out', '0 filtered out')
+        self.audit_fixture(); self.edit_exact_log('84 filtered out', '0 filtered out')
         with self.assertRaises(AssertionError): self.run_main('audit')
         report = json.loads((self.ev / 'custody-after.json').read_text())
         self.assertFalse(report['custodyAccepted']); self.assertFalse(report['newExactAccepted'])
@@ -493,6 +498,146 @@ class ClassProjectionTests(unittest.TestCase):
         # Parent binds this contract only after native identity/readback; no optional success.
         contract=pins['classProjection']
         self.assertEqual([len(g['testNames']) for g in contract['files']],[20,20])
+
+
+def attach_s9_exact_fixture(test):
+    """Synthetic text receipts only; no native harness is executed."""
+    test.s9_dir = test.ev / 's9-native-exact'; test.s9_dir.mkdir(exist_ok=True)
+    (test.s9_dir / 'harness-list.log').write_text(test.all_text)
+    (test.ev / 's9-native-exact.exit').write_text('0\n')
+    test.s9_rows = []
+    for i, name in enumerate(test.s9, 1):
+        log = f'\nrunning 1 test\ntest {name} ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 84 filtered out; finished in 0.01s\n'
+        path = test.s9_dir / f'test-{i:02d}.log'; path.write_text(log)
+        (test.s9_dir / f'test-{i:02d}.cleanup.jsonl').write_text('')
+        test.s9_rows.append({'name': name, 'command': [str(test.binary), '--exact', name, '--nocapture', '--test-threads=1'],
+            'exit': 0, 'timedOut': False, 'counts': [['1', '0', '0']], 'passed': True, 'logSha256': ci.digest(path)})
+    test.s9_exact = {'harnessSha256': ci.digest(test.binary), 'features': ['acceptance-faults'],
+                    'notFullAcceptance': True, 'expected': 21, 'results': test.s9_rows}
+    save_s9_exact(test)
+
+def save_s9_exact(test):
+    test.write_json(test.s9_dir / 'results.json', test.s9_exact)
+    (test.ev / 's9-native-exact.log').write_text(''.join(json.dumps(row) + '\n' for row in test.s9_exact['results']))
+
+class S9ExactTests(unittest.TestCase):
+    def setUp(self):
+        self.b = S6EvidenceTests(); self.b.setUp(); self.addCleanup(self.b.doCleanups)
+        attach_s9_exact_fixture(self.b)
+    def report(self): return ci.s9_exact_results_report(self.b.ev, self.b.pins, self.b.target)
+    def save(self): save_s9_exact(self.b)
+    def reject(self):
+        with self.assertRaises((AssertionError, KeyError, TypeError, FileNotFoundError, ValueError)): self.report()
+    def edit_log(self, old, new):
+        p=self.b.s9_dir/'test-01.log';p.write_text(p.read_text().replace(old,new));self.b.s9_rows[0]['logSha256']=ci.digest(p);self.save()
+    def test_valid_separate_twenty_one_same_harness(self):
+        r=self.report();self.assertTrue(r['accepted']);self.assertEqual(r['count'],21);self.assertEqual(r['binarySHA256'],ci.digest(self.b.binary));self.assertFalse(r['browserAcceptance']);self.assertIn('not additional coverage',r['coverage'])
+    def test_old_exact_twenty_unchanged_receipt_and_success(self):
+        before=self.b.exact_report();self.b.s9_exact['expected']=0;self.save();self.assertEqual(before,self.b.exact_report());self.assertEqual(before['count'],20)
+    def test_old_required_control_schema_unchanged(self):
+        r=ci.required_controls(self.b.pins,self.b.collection);self.assertEqual(set(r),{'accepted','requiredNewTests','retainedRequiredTests','newCount','retainedCount','coverage'})
+    def test_s9_required_both_default_and_fault(self):
+        for gate in ['default','fault']:
+            saved=json.loads((self.b.ev/'inventory.json').read_text());saved['features']=[] if gate=='default' else ['acceptance-faults'];self.b.write_json(self.b.ev/'inventory.json',saved)
+            r=ci.s9_required_controls_report(self.b.ev,self.b.pins,gate);self.assertEqual(r['s9Count'],21);self.assertEqual(r['gate'],gate)
+    def test_s9_missing_pin_fails(self): del self.b.pins['s9RequiredTests'];self.reject()
+    def test_s9_empty_pin_fails(self): self.b.pins['s9RequiredTests']=[];self.reject()
+    def test_s9_wrong_count_pin_fails(self): self.b.pins['s9RequiredTests']=self.b.s9[:20];self.reject()
+    def test_s9_duplicate_pin_fails(self): self.b.pins['s9RequiredTests'][0]=self.b.s9[1];self.reject()
+    def test_s9_nonexact_pin_fails(self): self.b.pins['s9RequiredTests'][0]='substring';self.reject()
+    def test_s9_overlaps_old_twenty_fails(self): self.b.pins['s9RequiredTests'][0]=self.b.new[0];self.reject()
+    def test_s9_overlaps_retained43_fails(self): self.b.pins['s9RequiredTests'][0]=self.b.retained[0];self.reject()
+    def test_s9_required_missing_from_full_inventory_fails(self):
+        c=copy.deepcopy(self.b.collection);c['allTests'].remove(self.b.s9[0])
+        with self.assertRaises(AssertionError): ci.s9_required_controls(self.b.pins,c)
+    def test_s9_required_ignored_fails(self):
+        c=copy.deepcopy(self.b.collection);c['ignoredTests']=sorted(c['ignoredTests']+[self.b.s9[0]])
+        with self.assertRaises(AssertionError): ci.s9_required_controls(self.b.pins,c)
+    def test_s9_preserves_old_required_guards(self): self.b.pins['requiredNewTests']=[];self.reject()
+    def test_s9_unbound_native_fails(self): self.b.pins['commit']=None;self.reject()
+    def test_s9_mismatched_native_tree_fails(self): self.b.pins['tree']='e'*40;self.reject()
+    def test_s9_selector_file_wrong_count(self): self.b.write_json(self.b.ev/'s9-native-exact-inventory.json',{'selectors':self.b.s9,'count':20});self.reject()
+    def test_s9_selector_file_missing(self): (self.b.ev/'s9-native-exact-inventory.json').unlink();self.reject()
+    def test_s9_selector_file_old_group(self): self.b.write_json(self.b.ev/'s9-native-exact-inventory.json',{'selectors':self.b.new,'count':20});self.reject()
+    def test_s9_required_receipt_old_group(self): self.b.write_json(self.b.ev/'s9-required-controls.json',json.loads((self.b.ev/'required-controls.json').read_text()));self.reject()
+    def test_s9_required_receipt_unknown(self): self.b.write_json(self.b.ev/'s9-required-controls.json',{'accepted':True});self.reject()
+    def test_s9_required_receipt_missing(self): (self.b.ev/'s9-required-controls.json').unlink();self.reject()
+    def test_s9_missing_results(self): (self.b.s9_dir/'results.json').unlink();self.reject()
+    def test_s9_empty_results(self): self.b.s9_exact['results']=[];self.save();self.reject()
+    def test_s9_expected_wrong_count(self): self.b.s9_exact['expected']=20;self.save();self.reject()
+    def test_s9_expected_bool(self): self.b.s9_exact['expected']=True;self.save();self.reject()
+    def test_s9_missing_row(self): self.b.s9_exact['results'].pop();self.save();self.reject()
+    def test_s9_duplicate_row(self): self.b.s9_exact['results'][0]=self.b.s9_exact['results'][1];self.save();self.reject()
+    def test_s9_reordered_rows(self): self.b.s9_rows[0],self.b.s9_rows[1]=self.b.s9_rows[1],self.b.s9_rows[0];self.save();self.reject()
+    def test_s9_wrong_features(self): self.b.s9_exact['features']=[];self.save();self.reject()
+    def test_s9_foreign_harness_hash(self): self.b.s9_exact['harnessSha256']='e'*64;self.save();self.reject()
+    def test_s9_claimed_full_acceptance_fails(self): self.b.s9_exact['notFullAcceptance']=False;self.save();self.reject()
+    def test_s9_command_log_missing(self): (self.b.ev/'s9-native-exact.log').unlink();self.reject()
+    def test_s9_command_log_tamper(self): (self.b.ev/'s9-native-exact.log').write_text('{}\n');self.reject()
+    def test_s9_nonzero_runner_exit(self): (self.b.ev/'s9-native-exact.exit').write_text('101');self.reject()
+    def test_s9_timeout_runner_exit(self): (self.b.ev/'s9-native-exact.exit').write_text('124');self.reject()
+    def test_s9_nonzero_row_exit(self): self.b.s9_rows[0]['exit']=101;self.save();self.reject()
+    def test_s9_boolean_row_exit(self): self.b.s9_rows[0]['exit']=False;self.save();self.reject()
+    def test_s9_timed_out_row(self): self.b.s9_rows[0]['timedOut']=True;self.save();self.reject()
+    def test_s9_false_pass_row(self): self.b.s9_rows[0]['passed']=False;self.save();self.reject()
+    def test_s9_wrong_counts_row(self): self.b.s9_rows[0]['counts']=[['0','0','1']];self.save();self.reject()
+    def test_s9_foreign_harness_argv(self): self.b.s9_rows[0]['command'][0]+='-foreign';self.save();self.reject()
+    def test_s9_nonexact_argv(self): self.b.s9_rows[0]['command'].remove('--exact');self.save();self.reject()
+    def test_s9_wrong_raw_hash(self): self.b.s9_rows[0]['logSha256']='e'*64;self.save();self.reject()
+    def test_s9_raw_failed(self): self.edit_log(' ... ok',' ... FAILED');self.reject()
+    def test_s9_raw_ignored(self): self.edit_log(' ... ok',' ... ignored');self.reject()
+    def test_s9_raw_wrong_name(self): self.edit_log(self.b.s9[0],'native::foreign');self.reject()
+    def test_s9_raw_duplicate_name(self):
+        row=f'test {self.b.s9[0]} ... ok\n';self.edit_log(row,row+row);self.reject()
+    def test_s9_raw_missing_name(self): self.edit_log(f'test {self.b.s9[0]} ... ok\n','');self.reject()
+    def test_s9_wrong_filtered_count(self): self.edit_log('84 filtered out','0 filtered out');self.reject()
+    def test_s9_wrong_pass_summary(self): self.edit_log('1 passed;','0 passed;');self.reject()
+    def test_s9_measured_summary(self): self.edit_log('0 measured;','1 measured;');self.reject()
+    def test_s9_duplicate_summary(self):
+        p=self.b.s9_dir/'test-01.log';s=p.read_text();p.write_text(s+s[s.index('test result:'):]);self.b.s9_rows[0]['logSha256']=ci.digest(p);self.save();self.reject()
+    def test_s9_missing_cleanup(self): (self.b.s9_dir/'test-01.cleanup.jsonl').unlink();self.reject()
+    def test_s9_missing_last_raw_log(self): (self.b.s9_dir/'test-21.log').unlink();self.reject()
+    def test_s9_different_harness_collection(self): (self.b.s9_dir/'harness-list.log').write_text('native::foreign: test\n1 tests, 0 benchmarks\n');self.reject()
+    def test_s9_changed_harness_bytes(self): self.b.binary.write_text('changed');self.reject()
+    def test_s9_changed_compiler_artifact(self): (self.b.ev/'harness.jsonl').write_text('{}\n');self.reject()
+    def test_s9_compiler_profile_mismatch(self):
+        meta=json.loads((self.b.ev/'test-binary.json').read_text());meta['profile']['opt_level']='0';self.b.write_json(self.b.ev/'test-binary.json',meta);self.reject()
+    def test_s9_harness_path_mismatch(self): (self.b.ev/'harness.path').write_text(str(self.b.binary)+'-foreign');self.reject()
+    def test_group_helper_rejects_foreign_prefix(self):
+        with self.assertRaises(AssertionError): ci.exact_group_results_report(self.b.ev,self.b.pins,self.b.target,self.b.collection,self.b.s9,'../escape')
+    def test_main_required_controls_separate_both_groups(self):
+        for name in ['required-controls.json','new-native-exact-inventory.json','s9-required-controls.json','s9-native-exact-inventory.json']: (self.b.ev/name).unlink()
+        self.b.run_main('required-controls');self.assertEqual(json.loads((self.b.ev/'new-native-exact-inventory.json').read_text())['count'],20);self.assertEqual(json.loads((self.b.ev/'s9-native-exact-inventory.json').read_text())['count'],21)
+    def test_main_failed_s9_retains_explicit_receipt(self):
+        self.b.s9_exact['expected']=0;self.save()
+        with self.assertRaises(AssertionError): self.b.run_main('s9-exact-results')
+        r=json.loads((self.b.ev/'s9-native-exact-receipt.json').read_text());self.assertFalse(r['accepted']);self.assertTrue(r['errors'])
+    def test_main_s9_cannot_use_default_gate(self):
+        with patch.object(sys,'argv',['ci.py','s9-exact-results','--gate','default']),patch.dict(os.environ,{'GITHUB_WORKSPACE':str(self.b.root),'REGRESSION_EVIDENCE':'evidence','REGRESSION_NATIVE':'native','CARGO_TARGET_DIR':str(self.b.target)}):
+            self.b.write_json(self.b.here/'pins.json',self.b.pins)
+            with self.assertRaises(AssertionError): ci.main()
+    def test_audit_requires_new_raw_even_saved_green(self):
+        self.b.audit_fixture();self.edit_log('84 filtered out','0 filtered out')
+        with self.assertRaises(AssertionError): self.b.run_main('audit')
+        r=json.loads((self.b.ev/'custody-after.json').read_text());self.assertFalse(r['s9ExactAccepted']);self.assertTrue(r['newExactAccepted']);self.assertFalse(r['custodyAccepted']);self.assertIn('s9-native-exact/test-21.cleanup.jsonl',r['captures'])
+    def test_audit_requires_s9_named_receipt(self):
+        self.b.audit_fixture();(self.b.ev/'s9-required-controls.json').unlink()
+        with self.assertRaises(AssertionError): self.b.run_main('audit')
+        r=json.loads((self.b.ev/'custody-after.json').read_text());self.assertFalse(r['s9RequiredControlsAccepted']);self.assertTrue(r['requiredControlsAccepted']);self.assertFalse(r['custodyAccepted'])
+    def test_audit_requires_s9_selector_receipt(self):
+        self.b.audit_fixture();self.b.write_json(self.b.ev/'s9-native-exact-inventory.json',{'selectors':self.b.new,'count':20})
+        with self.assertRaises(AssertionError): self.b.run_main('audit')
+        self.assertFalse(json.loads((self.b.ev/'custody-after.json').read_text())['s9RequiredControlsAccepted'])
+    def test_accept_requires_s9_boolean(self):
+        self.b.audit_fixture();self.b.run_main('audit');r=json.loads((self.b.ev/'custody-after.json').read_text());r['s9ExactAccepted']=False;self.b.write_json(self.b.ev/'custody-after.json',r)
+        with self.assertRaises(AssertionError): self.b.run_main('accept')
+    def test_accept_requires_s9_required_boolean(self):
+        self.b.audit_fixture();self.b.run_main('audit');r=json.loads((self.b.ev/'custody-after.json').read_text());r['s9RequiredControlsAccepted']=False;self.b.write_json(self.b.ev/'custody-after.json',r)
+        with self.assertRaises(AssertionError): self.b.run_main('accept')
+    def test_real_s9_pin_names_present_and_active_both_inventories(self):
+        pins=json.loads((HERE/'pins.json').read_text());self.assertEqual(len(pins['s9RequiredTests']),21)
+        for gate in ['default','fault']:
+            expected=json.loads((HERE/('inventory-'+gate+'.json')).read_text());names=ci.exact_names(pins['s9RequiredTests'],21,'S9 source expectations');self.assertTrue(set(names)<=set(expected['allTests']));self.assertFalse(set(names)&set(expected['ignoredTests']));self.assertFalse(set(names)&set(pins['requiredNewTests']+pins['retainedRequiredTests']))
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

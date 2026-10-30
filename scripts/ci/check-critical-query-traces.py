@@ -12,6 +12,7 @@ from urllib.parse import quote
 SAFE_INTEGER = (1 << 53) - 1
 BYTE_BUDGET = 64 * 1024
 RECORD_BUDGET = 128
+COMMAND_BUDGET = 24
 BASE_KEYS = {
     'schemaVersion', 'source', 'pid', 'record', 'operationSeq', 'phase',
     'droppedBefore', 'emittedBefore', 'suppressedBefore', 'overflow',
@@ -34,7 +35,7 @@ def eval_valid(value):
         return False
     if type(value['s']) is not str or value['s'] not in ('entry', 'wait', 'capture'):
         return False
-    if type(value['c']) is not str or value['c'] not in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard', 'p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap'):
+    if type(value['c']) is not str or value['c'] not in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard', 'p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap', 'p-c1s0', 'p-c1s1', 'p-c1s2', 'p-c1s3', 'p-c1sx', 'p-c2s0', 'p-c2s1', 'p-c2s2', 'p-c2s3', 'p-c2sx', 'p-c3s0', 'p-c3s1', 'p-c3s2', 'p-c3s3', 'p-c3sx', 'p-c4s0', 'p-c4s1', 'p-c4s2', 'p-c4s3', 'p-c4sx', 'p-c5s0', 'p-c5s1', 'p-c5s2', 'p-c5s3', 'p-c5sx', 'p-c6s0', 'p-c6s1', 'p-c6s2', 'p-c6s3', 'p-c6sx'):
         return False
     if type(value['w']) is not str or value['w'] not in ('equal', 'behind', 'ahead', 'unk'):
         return False
@@ -78,6 +79,22 @@ def schema_valid(record):
             timing = record['readMs']
             if type(timing) is not list or len(timing) != 13 or not all(uint(value, 65535) for value in timing):
                 return False
+    elif phase == 'QueryCommandTiming':
+        extra = {'generation', 'queryReadStage', 'cmd', 'cmdMs'}
+        if type(record.get('queryReadStage')) is not str or record['queryReadStage'] not in READ_STAGES:
+            return False
+        command, timing = record.get('cmd'), record.get('cmdMs')
+        # Closed integer codes: methods 0..7, outcomes 0..6; never CDP strings/args.
+        if (type(command) is not list or len(command) != 3
+                or not uint(command[0], COMMAND_BUDGET - 1) or not uint(command[1], 7) or not uint(command[2], 6)
+                or type(timing) is not list or len(timing) != 5 or not all(uint(x, 65535) for x in timing)):
+            return False
+    elif phase == 'QueryCommandSummary':
+        extra = {'generation', 'cmdSummary'}
+        value = record.get('cmdSummary')
+        if (type(value) is not list or len(value) != 3 or not uint(value[0], 65535)
+                or not uint(value[1], COMMAND_BUDGET) or not uint(value[2], 15)):
+            return False
     elif phase == 'EvalAdmission':
         extra = {'generation', 'eval'}
         if not eval_valid(record.get('eval')):
@@ -393,6 +410,65 @@ def join_fields(targets, native_index, summary, errors):
                                  'stage': row['queryReadStage'], 'readMs': row['readMs']})
         summary['joinedFailures'] += 1
 
+def command_bundles(records, filename, errors):
+    """Every timed field failure requires its complete same-file/PID/g/op bundle."""
+    initial_errors = len(errors)
+    groups = {}
+    for position, record in enumerate(records):
+        if record['phase'] in ('QueryReadFailure', 'QueryCommandTiming', 'QueryCommandSummary'):
+            key = (record['pid'], record['generation'], record['operationSeq'])
+            groups.setdefault(key, []).append((position, record))
+    result = {'requiredFailures': 0, 'completeFailures': 0, 'capturedCommands': 0, 'bundles': []}
+    for (pid, generation, operation), positioned_rows in sorted(groups.items()):
+        rows = [r for _, r in positioned_rows]
+        failures = [r for r in rows if r['phase'] == 'QueryReadFailure']
+        commands = [r for r in rows if r['phase'] == 'QueryCommandTiming']
+        summaries = [r for r in rows if r['phase'] == 'QueryCommandSummary']
+        timed = [r for r in failures if 'readMs' in r]
+        if not timed and not commands and not summaries:
+            continue  # Untimed, non-field read failures have no command capture.
+        prefix = f'{filename}: command bundle ({pid}, {generation}, {operation}): '
+        before = len(errors)
+        result['requiredFailures'] += len(timed)
+        if len(failures) != 1 or len(timed) != 1:
+            errors.append(prefix + 'expected one unique timed failure anchor')
+        if len(summaries) != 1:
+            errors.append(prefix + 'missing or duplicate command summary')
+            continue
+        summary = summaries[0]
+        seen, captured, flags = summary['cmdSummary']
+        # Keep original JSONL positions: sorting ordinals would hide a reordered capture.
+        input_order = [position for phase in ('QueryReadFailure', 'QueryCommandTiming', 'QueryCommandSummary')
+                       for position, r in positioned_rows if r['phase'] == phase]
+        if any(a >= b for a, b in zip(input_order, input_order[1:])):
+            errors.append(prefix + 'failure/command/summary physical line order invalid')
+        ordinals = [r['cmd'][0] for r in commands]
+        if len(commands) != captured or ordinals != list(range(captured)):
+            errors.append(prefix + 'missing, duplicate, or discontinuous command ordinals')
+        if seen < captured or (flags == 0 and seen != captured):
+            errors.append(prefix + 'seen/captured count mismatch')
+        if flags:
+            errors.append(prefix + 'command cap/loss/unfinished/saturation flags')
+        if any(r['cmd'][2] == 0 for r in commands):
+            errors.append(prefix + 'unfinished command outcome')
+        order = [r['record'] for r in commands]
+        if len(timed) == 1:
+            order = [timed[0]['record'], *order, summary['record']]
+            if any(a >= b for a, b in zip(order, order[1:])):
+                errors.append(prefix + 'failure/ordinal/summary record order invalid')
+        bundle = {'pid': pid, 'generation': generation, 'operationSeq': operation,
+                  'failureRecord': timed[0]['record'] if len(timed) == 1 else None,
+                  'summaryRecord': summary['record'], 'seen': seen, 'captured': captured, 'flags': flags,
+                  'commands': [{'record': r['record'], 'queryReadStage': r['queryReadStage'],
+                                'cmd': r['cmd'], 'cmdMs': r['cmdMs']} for r in commands],
+                  'complete': len(errors) == before}
+        result['bundles'].append(bundle)
+        result['capturedCommands'] += len(commands)
+        result['completeFailures'] += int(bundle['complete'])
+    result['complete'] = len(errors) == initial_errors
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('expected', type=int)
@@ -442,6 +518,7 @@ def main():
                     native_index.setdefault((record['generation'], record['operationSeq']), []).append((p.name, record))
             except (ValueError, TypeError):
                 invalid += 1
+        command_capture = command_bundles(records, p.name, errors)
         started = sum(x['phase'] == 'CaptureStarted' for x in records) == 1
         limited = any(x['phase'] == 'CaptureLimitReached' for x in records)
         row = {
@@ -449,6 +526,7 @@ def main():
             'sha256': hashlib.sha256(data).hexdigest() if byte_count <= BYTE_BUDGET else None,
             'bytes': byte_count, 'records': line_count, 'invalidLines': invalid,
             'captureStarted': started, 'captureLimitReached': limited,
+            'commandTiming': command_capture,
             'maxDroppedBefore': max([x['droppedBefore'] for x in records] + [0]),
             'maxSuppressedBefore': max([x['suppressedBefore'] for x in records] + [0]),
             'overflow': any(x['overflow'] for x in records),

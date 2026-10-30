@@ -151,22 +151,18 @@ def selected_harness(evidence, target):
     assert digest(binary) == metadata['sha256'], 'selected harness hash differs'
     return binary, metadata['sha256']
 
-def exact_results_report(evidence, pins, target):
-    collection = checked_inventory(evidence, pins, 'fault')
-    required = required_controls(pins, collection)
-    names = required['requiredNewTests']
-    assert json.loads((evidence / 'new-native-exact-inventory.json').read_text()) == {'selectors': names, 'count': len(names)}
-    assert json.loads((evidence / 'required-controls.json').read_text()) == required_controls_report(evidence, pins, 'fault')
+def exact_group_results_report(evidence, pins, target, collection, names, prefix):
+    assert prefix in ['new-native-exact', 's9-native-exact'], 'unknown exact evidence group'
     binary, binary_sha = selected_harness(evidence, target)
-    out = evidence / 'new-native-exact'
+    out = evidence / prefix
     assert listed((out / 'harness-list.log').read_text()) == collection['allTests'], 'exact runner collected another harness inventory'
-    assert (evidence / 'new-native-exact.exit').read_text().strip() == '0', 'exact runner failed/timed out'
+    assert (evidence / (prefix + '.exit')).read_text().strip() == '0', 'exact runner failed/timed out'
     value = json.loads((out / 'results.json').read_text())
     assert value['harnessSha256'] == binary_sha and value['features'] == ['acceptance-faults']
     assert value['notFullAcceptance'] is True and type(value['expected']) is int and value['expected'] == len(names)
     rows = value['results']
     assert type(rows) is list and len(rows) == len(names) and [row['name'] for row in rows] == names, 'exact results missing/duplicated/reordered'
-    assert [json.loads(line) for line in (evidence / 'new-native-exact.log').read_text().splitlines()] == rows, 'exact command log differs from result receipt'
+    assert [json.loads(line) for line in (evidence / (prefix + '.log')).read_text().splitlines()] == rows, 'exact command log differs from result receipt'
     captures = []
     for i, (name, row) in enumerate(zip(names, rows), 1):
         assert row['command'] == [str(binary), '--exact', name, '--nocapture', '--test-threads=1'], 'nonexact/foreign harness argv'
@@ -182,8 +178,44 @@ def exact_results_report(evidence, pins, target):
         captures.append({'name': name, 'logSHA256': digest(log_path), 'cleanupSHA256': digest(cleanup)})
     return {'accepted': True, 'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'profile': 'ci',
             'features': ['acceptance-faults'], 'binarySHA256': binary_sha, 'count': len(names), 'results': captures,
-            'runnerResultsSHA256': digest(out / 'results.json'), 'runnerLogSHA256': digest(evidence / 'new-native-exact.log'),
+            'runnerResultsSHA256': digest(out / 'results.json'), 'runnerLogSHA256': digest(evidence / (prefix + '.log')),
             'coverage': 'reruns of controls already contained in each complete inventory; not additional coverage', 'browserAcceptance': False}
+
+def exact_results_report(evidence, pins, target):
+    collection = checked_inventory(evidence, pins, 'fault')
+    required = required_controls(pins, collection)
+    names = required['requiredNewTests']
+    assert json.loads((evidence / 'new-native-exact-inventory.json').read_text()) == {'selectors': names, 'count': len(names)}
+    assert json.loads((evidence / 'required-controls.json').read_text()) == required_controls_report(evidence, pins, 'fault')
+    return exact_group_results_report(evidence, pins, target, collection, names, 'new-native-exact')
+
+# S9 is an additional exact group, never a replacement for the original 20/43.
+S9_REQUIRED_COUNT = 21
+
+def s9_required_controls(pins, collection):
+    bound_identity(pins)
+    original = required_controls(pins, collection)
+    names = exact_names(pins.get('s9RequiredTests'), S9_REQUIRED_COUNT, 'S9 controls')
+    assert not set(names) & set(original['requiredNewTests'] + original['retainedRequiredTests']), 'S9/original controls overlap'
+    assert set(names) <= set(collection['allTests']), 'S9 controls absent from full inventory'
+    assert not set(names) & set(collection['ignoredTests']), 'S9 controls must not be ignored'
+    return {'accepted': True, 's9RequiredTests': names, 's9Count': len(names),
+            'coverage': 'contained in full inventory; exact executions are reruns, not additional coverage'}
+
+def s9_required_controls_report(evidence, pins, gate):
+    report = s9_required_controls(pins, checked_inventory(evidence, pins, gate))
+    report.update({'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'profile': 'ci', 'gate': gate,
+                   'allListSHA256': digest(evidence / 'all-tests.list'), 'ignoredListSHA256': digest(evidence / 'ignored-tests.list')})
+    return report
+
+def s9_exact_results_report(evidence, pins, target):
+    collection = checked_inventory(evidence, pins, 'fault')
+    required = s9_required_controls(pins, collection)
+    names = required['s9RequiredTests']
+    assert json.loads((evidence / 's9-native-exact-inventory.json').read_text()) == {'selectors': names, 'count': len(names)}
+    assert json.loads((evidence / 's9-required-controls.json').read_text()) == s9_required_controls_report(evidence, pins, 'fault')
+    return exact_group_results_report(evidence, pins, target, collection, names, 's9-native-exact')
+
 
 def pure_results_report(root, evidence, pins):
     projection = pins['pureProjection']
@@ -330,7 +362,7 @@ def validation_receipt(fn):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['prepare', 'source', 'toolchain', 'binary', 'inventory', 'required-controls', 'results', 'exact-results', 'pure-results', 'class-results', 'audit', 'accept'])
+    parser.add_argument('command', choices=['prepare', 'source', 'toolchain', 'binary', 'inventory', 'required-controls', 'results', 'exact-results', 'pure-results', 'class-results', 's9-exact-results', 'audit', 'accept'])
     parser.add_argument('--gate', required=True, choices=['default', 'fault', 'boundaries'])
     args = parser.parse_args()
     root = Path(os.environ['GITHUB_WORKSPACE']).resolve()
@@ -405,11 +437,19 @@ def main():
         report = required_controls_report(evidence, pins, args.gate)
         dump('required-controls.json', report)
         dump('new-native-exact-inventory.json', {'selectors': report['requiredNewTests'], 'count': report['newCount']})
+        s9_report = s9_required_controls_report(evidence, pins, args.gate)
+        dump('s9-required-controls.json', s9_report)
+        dump('s9-native-exact-inventory.json', {'selectors': s9_report['s9RequiredTests'], 'count': s9_report['s9Count']})
     elif args.command == 'exact-results':
         assert args.gate == 'fault', 'same-build exact reruns are fault-only'
         report = validation_receipt(lambda: exact_results_report(evidence, pins, Path(os.environ['CARGO_TARGET_DIR'])))
         dump('new-native-exact-receipt.json', report)
         assert report['accepted'], 'new exact controls lack complete PASS evidence'
+    elif args.command == 's9-exact-results':
+        assert args.gate == 'fault', 'S9 same-build exact reruns are fault-only'
+        report = validation_receipt(lambda: s9_exact_results_report(evidence, pins, Path(os.environ['CARGO_TARGET_DIR'])))
+        dump('s9-native-exact-receipt.json', report)
+        assert report['accepted'], 'S9 exact controls lack complete PASS evidence'
     elif args.command == 'pure-results':
         assert args.gate == 'fault', 'pure projection controls run once on fault producer'
         report = validation_receipt(lambda: pure_results_report(root, evidence, pins))
@@ -487,6 +527,13 @@ def main():
             controls = attempt('required-controls-independent', lambda: required_controls_report(evidence, pins, args.gate))
             saved_controls = attempt('required-controls-receipt', lambda: json.loads((evidence / 'required-controls.json').read_text()))
             report['requiredControlsAccepted'] = bool(controls and controls == saved_controls)
+            required += ['s9-required-controls.json', 's9-native-exact-inventory.json']
+            s9_controls = attempt('s9-required-controls-independent', lambda: s9_required_controls_report(evidence, pins, args.gate))
+            saved_s9_controls = attempt('s9-required-controls-receipt', lambda: json.loads((evidence / 's9-required-controls.json').read_text()))
+            saved_s9_selectors = attempt('s9-exact-selectors', lambda: json.loads((evidence / 's9-native-exact-inventory.json').read_text()))
+            report['s9RequiredControlsAccepted'] = bool(s9_controls and s9_controls == saved_s9_controls and saved_s9_selectors == {'selectors': s9_controls['s9RequiredTests'], 'count': s9_controls['s9Count']})
+            if not report['s9RequiredControlsAccepted']:
+                report['errors'].append({'check': 's9-required-controls-match', 'detail': 'S9 required control evidence absent or differs'})
             if not report['requiredControlsAccepted']:
                 report['errors'].append({'check': 'required-controls-match', 'detail': 'required control evidence absent or differs'})
         if args.gate == 'fault':
@@ -498,6 +545,14 @@ def main():
             exact = attempt('new-exact-independent', lambda: exact_results_report(evidence, pins, Path(os.environ['CARGO_TARGET_DIR'])))
             saved_exact = attempt('new-exact-receipt', lambda: json.loads((evidence / 'new-native-exact-receipt.json').read_text()))
             report['newExactAccepted'] = bool(exact and exact == saved_exact)
+            required += ['s9-native-exact.exit', 's9-native-exact.log', 's9-native-exact-receipt.json',
+                         's9-native-exact/harness-list.log', 's9-native-exact/results.json']
+            required += [f's9-native-exact/test-{i:02d}' + suffix for i in range(1, S9_REQUIRED_COUNT + 1) for suffix in ['.log', '.cleanup.jsonl']]
+            s9_exact = attempt('s9-exact-independent', lambda: s9_exact_results_report(evidence, pins, Path(os.environ['CARGO_TARGET_DIR'])))
+            saved_s9_exact = attempt('s9-exact-receipt', lambda: json.loads((evidence / 's9-native-exact-receipt.json').read_text()))
+            report['s9ExactAccepted'] = bool(s9_exact and s9_exact == saved_s9_exact)
+            if not report['s9ExactAccepted']:
+                report['errors'].append({'check': 's9-exact-match', 'detail': 'raw S9 exact evidence absent or differs from validated receipt'})
             pure = attempt('pure-projection-independent', lambda: pure_results_report(root, evidence, pins))
             saved_pure = attempt('pure-projection-receipt', lambda: json.loads((evidence / 'pure-projection-receipt.json').read_text()))
             report['pureProjectionAccepted'] = bool(pure and pure == saved_pure)
@@ -528,8 +583,11 @@ def main():
         assert custody['custodyAccepted'] is True
         if args.gate != 'boundaries':
             assert custody['requiredControlsAccepted'] is True
+            assert custody['s9RequiredControlsAccepted'] is True
         if args.gate == 'fault':
             assert custody['newExactAccepted'] is True and custody['pureProjectionAccepted'] is True
+            assert custody['s9ExactAccepted'] is True
+            assert json.loads((evidence / 's9-native-exact-receipt.json').read_text())['accepted'] is True
             assert json.loads((evidence / 'new-native-exact-receipt.json').read_text())['accepted'] is True
             assert json.loads((evidence / 'pure-projection-receipt.json').read_text())['accepted'] is True
             assert custody['classProjectionAccepted'] is True

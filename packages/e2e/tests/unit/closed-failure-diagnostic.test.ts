@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
+import { closedFailureDiagnostic, closedRunFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
 
 describe('closed integration failure diagnostics', () => {
   it('retains the failing fixture line and exact native reason without raw content', () => {
@@ -30,6 +30,76 @@ describe('closed integration failure diagnostics', () => {
     expect(facts.runErrors).toHaveLength(8);
     expect(facts.attempts[0].error).toEqual({ code: 'other', phase: 'other' });
     expect(facts.attempts[0].cleanup).toBe('other');
+  });
+});
+
+describe('quiet worker run failure diagnostics', () => {
+  const refusal = { category: 'configuration', code: 'MODEL_UNAVAILABLE', phase: 'body', message: 'private model and account detail' };
+  const attempt = { error: refusal, cleanup: 'complete', secondaryErrors: [], steps: [] };
+
+  it.each(['WORKER_EXIT', 'WORKER_CRASH', 'WORKER_PROTOCOL', 'WORKER_ENTRY_MISSING', 'WORKER_INIT_FAILED', 'LAUNCH_TIMEOUT', 'CLEANUP_TIMEOUT', 'REPORT_WRITE_FAILED'])('keeps %s distinct from the provider refusal without changing the outcome', (code) => {
+    const infrastructure = { category: 'infrastructure', code, phase: 'cleanup', message: 'private path', stack: 'private stack' };
+    const run = {
+      exitCode: 3, status: 'error', errors: [refusal, infrastructure],
+      results: [
+        { status: 'interrupted', attempts: [attempt] },
+        { status: 'failed', attempts: [{ ...attempt, error: infrastructure, cleanup: 'failed', secondaryErrors: [infrastructure] }] },
+      ],
+    };
+    const before = JSON.stringify(run);
+    const diagnostic = closedRunFailureDiagnostic(run);
+    const facts = JSON.parse(diagnostic);
+    expect(facts.exitCode).toBe(3);
+    expect(facts.status).toBe('error');
+    expect(facts.runErrorCount).toBe(2);
+    expect(facts.runErrors).toEqual([
+      { category: 'configuration', code: 'MODEL_UNAVAILABLE', phase: 'body' },
+      { category: 'infrastructure', code, phase: 'cleanup' },
+    ]);
+    expect(facts.results.map((result: { index: number; status: string; attemptCount: number }) => [result.index, result.status, result.attemptCount])).toEqual([[0, 'interrupted', 1], [1, 'failed', 1]]);
+    expect(facts.results[1].attempts[0].secondaryErrors).toEqual([{ category: 'infrastructure', code, phase: 'cleanup' }]);
+    expect(diagnostic).not.toContain('private');
+    expect(JSON.stringify(run)).toBe(before);
+  });
+
+  it('does not deduplicate two refusals or invent a second result attempt', () => {
+    const facts = JSON.parse(closedRunFailureDiagnostic({ exitCode: 2, status: 'error', errors: [refusal, refusal], results: [
+      { status: 'interrupted', attempts: [attempt] }, { status: 'skipped', attempts: [] },
+    ] }));
+    expect(facts.runErrorCount).toBe(2);
+    expect(facts.runErrors).toHaveLength(2);
+    expect(facts.results[1]).toEqual({ index: 1, status: 'skipped', attemptCount: 0, attempts: [] });
+  });
+
+  it('bounds all worker collections and omits result names, unknown metadata, and messages', () => {
+    const raw = 'private-result-name-path-category-and-message';
+    const error = { category: raw, code: raw, phase: raw, message: raw, stack: raw };
+    const errors = Array.from({ length: 20 }, () => error);
+    const attempts = Array.from({ length: 20 }, () => ({ error, cleanup: raw, secondaryErrors: errors, steps: [] }));
+    const result = { status: raw, attempts, titlePath: [raw], file: raw };
+    const diagnostic = closedRunFailureDiagnostic({ exitCode: NaN, status: raw, errors, results: Array.from({ length: 20 }, () => result) });
+    const facts = JSON.parse(diagnostic);
+    expect(diagnostic).not.toContain(raw);
+    expect(facts.exitCode).toBe('other');
+    expect(facts.status).toBe('other');
+    expect(facts.runErrorCount).toBe(20);
+    expect(facts.resultCount).toBe(20);
+    expect(facts.runErrors).toHaveLength(8);
+    expect(facts.results).toHaveLength(8);
+    expect(facts.results[0].status).toBe('other');
+    expect(facts.results[0].attemptCount).toBe(20);
+    expect(facts.results[0].attempts).toHaveLength(8);
+    expect(facts.results[0].attempts[0].secondaryErrors).toHaveLength(8);
+    expect(facts.runErrors[0]).toEqual({ category: 'other', code: 'other', phase: 'other' });
+  });
+
+  it('identifies report-phase infrastructure errors while preserving the exact original exit code', () => {
+    const facts = JSON.parse(closedRunFailureDiagnostic({ exitCode: 3, status: 'error', errors: [
+      { category: 'infrastructure', code: 'REPORT_WRITE_FAILED', phase: 'report', message: 'private report path' },
+    ], results: [] }));
+    expect(facts.runErrors).toEqual([{ category: 'infrastructure', code: 'REPORT_WRITE_FAILED', phase: 'report' }]);
+    expect(facts.exitCode).toBe(3);
+    expect(facts.results).toEqual([]);
   });
 });
 
