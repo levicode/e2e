@@ -1,0 +1,148 @@
+{
+  "name": "R1 owned popup URL phase diagnostic (fault runtime; not acceptance)",
+  "on": {
+    "push": {
+      "branches": [
+        "ci/s9-r1-owned-popup-phase-diagnostic-20261030"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "r1-owned-popup-phase-diagnostic-${{ github.ref }}",
+    "cancel-in-progress": false
+  },
+  "env": {
+    "E2E_TELEMETRY_DISABLED": "1",
+    "E2E_UPDATE_CHECK_DISABLED": "1",
+    "NEXT_TELEMETRY_DISABLED": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "jobs": {
+    "diagnostic": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "defaults": {
+        "run": {
+          "shell": "bash",
+          "working-directory": "business"
+        }
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "ref": "${{ github.sha }}",
+            "path": "control",
+            "persist-credentials": false,
+            "fetch-depth": 2
+          }
+        },
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "ref": "37fb93624331ef832757daf4e7501dfd9d646f93",
+            "path": "business",
+            "persist-credentials": false,
+            "fetch-depth": 1
+          }
+        },
+        {
+          "name": "Exact business source and separate workflow-head provenance",
+          "id": "source",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\ntest \"$GITHUB_RUN_ATTEMPT\" = 1\npython3 - <<'CHECK'\nimport hashlib,json,pathlib,subprocess,os\nroot=pathlib.Path.cwd(); control=root.parent/'control'\ndef git(at,*a):return subprocess.check_output(['git','-C',str(at),*a],text=True).strip()\ncommit='37fb93624331ef832757daf4e7501dfd9d646f93';tree='57dea5c8f78a49ece84425a33a2f99806fff2f64'\nassert git(root,'rev-parse','HEAD')==commit and git(root,'rev-parse','HEAD^{tree}')==tree\nassert not git(root,'status','--porcelain') and not git(control,'status','--porcelain')\nassert git(control,'rev-parse','HEAD')==os.environ['GITHUB_SHA']\nassert git(control,'rev-list','--parents','-n','1','HEAD').split()==[os.environ['GITHUB_SHA'],commit]\nassert set(git(control,'diff','--name-only',commit,'HEAD').splitlines())=={'.github/workflows/s9-r1-owned-popup-phase-diagnostic.yml','scripts/ci/check-popup-url-phase-diagnostic.py'}\nfiles={'packages/e2e/tests/integration/web-popup-swipe-pair.test.ts':'7f884a2c52f75367d445747bfa51914c8b78e6f4','packages/e2e/tests/fixtures/popup-swipe/cases.txt':'d2a4ce33a0a154f5f1b6f7308bdb203fc5f21061','packages/e2e/tests/helpers/run-project.ts':'fbe3996c5be70ad6e582bbf7e480d6aafbf7e9ac'}\nfor path,want in files.items():assert git(root,'hash-object',path)==want\npins=json.loads((root/'scripts/ci/full-standard-runtime-pins.json').read_text());p=pins['fault']\nassert p['artifactId']==12959831145 and p['artifactSize']==14360667 and p['testOnly'] is True\nassert p['artifactDigest']=='sha256:1bef72cfbcf8a312521bbbcf859924fc6a450a3f32ab9cbcefb9600c8c06c8ea'\nassert p['manifestSha256']=='f78e2dfe3d3f83a36b2dfc589a3c0afd9f192fa3fc25743fa31261952b87bdf9'\nassert p['binarySha256']=='673111d22b84938960c5e90456b00acd0f100e283d7cc21702cf4957de60992e'\nassert p['nativeSource']=={'commit':'efa7b5507d75026bb7bd902d1be73fd11fe75d4b','tree':'7a64af16cbca3d936e3f9b034c0ad173efe865ad'}\nassert p['expected']['source']=={'commit':'c4e41148664273ff6947f05ff3911fd082c2cc65','tree':'5a3a4dec281931da5046ade8bbe3d54689ee23a2'}\nassert p['expected']['runId']=='41015684102' and p['expected']['runAttempt']=='1'\n(root/'evidence/tools').mkdir(parents=True)\nbinding={'workflowHead':os.environ['GITHUB_SHA'],'workflowRef':os.environ['GITHUB_WORKFLOW_REF'],'run':os.environ['GITHUB_RUN_ID'],'attempt':os.environ['GITHUB_RUN_ATTEMPT'],'businessCommit':commit,'businessTree':tree,'nativeSource':p['nativeSource'],'artifactId':p['artifactId'],'faultDiagnostic':True,'ordinaryAcceptance':False,'fixtures':files,'lockSHA256':hashlib.sha256((root/'pnpm-lock.yaml').read_bytes()).hexdigest(),'controlFiles':{s:git(control,'hash-object',s) for s in ['.github/workflows/s9-r1-owned-popup-phase-diagnostic.yml','scripts/ci/check-popup-url-phase-diagnostic.py']}}\n(root/'evidence/source-binding.json').write_text(json.dumps(binding,indent=2)+'\\n')\n(root/'evidence/runtime-pins.json').write_text(json.dumps(p,indent=2)+'\\n')\n(root/'evidence/source-inventory.txt').write_text(git(root,'ls-tree','-r','HEAD')+'\\n')\nCHECK\nbash -euo pipefail scripts/ci/full-standard-helpers-1.sh\n"
+        },
+        {
+          "uses": "pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1",
+          "with": {
+            "version": "12.3.4"
+          }
+        },
+        {
+          "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "with": {
+            "node-version": "24.22.1"
+          }
+        },
+        {
+          "name": "Exact Node and package-manager versions",
+          "id": "versions",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\ntest \"$(node --version)\" = v24.22.1\ntest \"$(pnpm --version)\" = 12.3.4\nnode --version > evidence/node.version\npnpm --version > evidence/pnpm.version\n"
+        },
+        {
+          "name": "Frozen-lockfile dependencies",
+          "id": "dependencies",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\npnpm install --frozen-lockfile 2>&1 | tee evidence/dependencies.log\n"
+        },
+        {
+          "name": "Build unchanged JavaScript business source; no native compilation",
+          "id": "build",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\npnpm run build 2>&1 | tee evidence/build.log\nNODE_SELECTOR=24.22.1 python3 evidence/tools/build-assets.py pack\n"
+        },
+        {
+          "name": "Reuse already verified R1 fault artifact only",
+          "id": "download_fault",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}",
+            "RUNTIME_KIND": "fault"
+          },
+          "run": "set -euo pipefail\npython3 evidence/tools/download-runtime.py\n"
+        },
+        {
+          "name": "Verify producer manifest compiler receipts and exact fault executable",
+          "id": "verify_fault",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\nnode --input-type=module - <<'VERIFY'\nimport assert from 'node:assert/strict';import {readFileSync,writeFileSync,appendFileSync,chmodSync} from 'node:fs';import path from 'node:path';import {createHash} from 'node:crypto';\nimport {verifyArtifact} from './scripts/ci/native-fault-runtime.ts';\nconst p=JSON.parse(readFileSync('scripts/ci/full-standard-runtime-pins.json','utf8')).fault;\nconst directory=path.join(process.env.RUNNER_TEMP,'ci-native-fault');\nconst executable=verifyArtifact(directory,p.manifestSha256,p.expected);\nconst manifest=JSON.parse(readFileSync(path.join(directory,'manifest.json'),'utf8'));\nassert.deepEqual(manifest.nativeSource,p.nativeSource);\nassert.equal(createHash('sha256').update(readFileSync(executable)).digest('hex'),p.binarySha256);\nchmodSync(executable,0o755);\nwriteFileSync('evidence/fault.manifest.json',JSON.stringify(manifest,null,2)+'\\n');\nappendFileSync(process.env.GITHUB_ENV,'E2E_AGENT_BROWSER_EXECUTABLE='+executable+'\\n');\nVERIFY\n"
+        },
+        {
+          "name": "Original browser installation and exact R1 identity checks",
+          "id": "browsers",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\n{\n \"$E2E_AGENT_BROWSER_EXECUTABLE\" install --with-deps\n if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then sudo apt-get update; sudo apt-get install -y ffmpeg; fi\n pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps\n} 2>&1 | tee evidence/browser-install.log\npython3 - <<'CHROME'\nimport pathlib,hashlib,subprocess,json,os\npaths=[p.resolve() for r in (pathlib.Path.home()/'.agent-browser/browsers').glob('chrome-*') for p in (r/'chrome',r/'chrome-linux64/chrome') if p.is_file()]\nrows=[{'path':str(p),'version':subprocess.check_output([str(p),'--version'],text=True).strip(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths]\npathlib.Path('evidence/native-browser-identities.json').write_text(json.dumps(rows,indent=2)+'\\n')\nmatching=[r for r in rows if r['version']=='Google Chrome for Testing 156.0.8078.80' and r['sha256']=='1bcad71ad1bff85955db13c6d8dd9f32374934d5a5cb079b526c46fb51f9bd97'];assert len(matching)==1\nwith open(os.environ['GITHUB_ENV'],'a') as f:f.write('E2E_CHROMIUM_EXECUTABLE='+matching[0]['path']+'\\n')\nCHROME\npnpm --filter @e2e-dev/web exec node --input-type=module - <<'PW'\nimport {chromium} from 'playwright-core';import {readFileSync,writeFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';\nconst path=chromium.executablePath();const row={path,version:execFileSync(path,['--version'],{encoding:'utf8'}).trim(),sha256:createHash('sha256').update(readFileSync(path)).digest('hex')};\nwriteFileSync(process.env.GITHUB_WORKSPACE+'/business/evidence/playwright-browser-identity.json',JSON.stringify(row,null,2)+'\\n');\nassert.equal(row.version,'Google Chrome for Testing 156.0.8078.4');assert.equal(row.sha256,'377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025');\nPW\n"
+        },
+        {
+          "name": "Collect both original tests and create existing-file phase sink",
+          "id": "collect",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\nmkdir -p evidence/popup-url\ntest ! -e evidence/popup-url/phases.jsonl\n(umask 077; : > evidence/popup-url/phases.jsonl)\npnpm --filter e2e exec vitest list tests/integration/web-popup-swipe-pair.test.ts --no-staticParse --json=\"$PWD/evidence/popup-url/collection.json\" 2>&1 | tee evidence/popup-url/collection.log\npython3 \"$GITHUB_WORKSPACE/control/scripts/ci/check-popup-url-phase-diagnostic.py\" collection \"$PWD\"\n"
+        },
+        {
+          "name": "One whole unchanged fixture invocation; preserve actual failure",
+          "id": "test",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\ntest -f \"$AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\" && test ! -L \"$AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\"\ntest ! -s \"$AGENT_BROWSER_ACCEPTANCE_PHASE_FILE\"\nprintf '%s  %s\\n' '673111d22b84938960c5e90456b00acd0f100e283d7cc21702cf4957de60992e' \"$E2E_AGENT_BROWSER_EXECUTABLE\" | sha256sum -c -\nset +e\npnpm --filter e2e run test tests/integration/web-popup-swipe-pair.test.ts --reporter=verbose --reporter=json --outputFile.json=\"$PWD/evidence/popup-url/results.json\" 2>&1 | tee evidence/popup-url/test.log\ns=${PIPESTATUS[0]}\nset -e\nprintf '%s\\n' \"$s\" > evidence/popup-url/command.exit\nexit \"$s\"\n",
+          "env": {
+            "AGENT_BROWSER_ACCEPTANCE_PHASE_FILE": "${{ github.workspace }}/business/evidence/popup-url/phases.jsonl",
+            "E2E_SCOPE_RETIREMENT_DIAGNOSTIC": "1"
+          }
+        },
+        {
+          "name": "Business source and native executable postcheck",
+          "id": "postcheck",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\ngit diff --exit-code HEAD --\nprintf '%s  %s\\n' '673111d22b84938960c5e90456b00acd0f100e283d7cc21702cf4957de60992e' \"$E2E_AGENT_BROWSER_EXECUTABLE\" | sha256sum -c -\nNODE_SELECTOR=24.22.1 EXPECTED_BUILD_MANIFEST_SHA256='${{ steps.build.outputs.manifest_sha }}' python3 evidence/tools/build-assets.py postcheck\n",
+          "if": "${{ always() && steps.verify_fault.outcome == 'success' }}"
+        },
+        {
+          "name": "Always preserve bounded text and diagnose without treating absence as proof",
+          "id": "archive",
+          "run": "set -euo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY E2E_MODEL\npython3 \"$GITHUB_WORKSPACE/control/scripts/ci/check-popup-url-phase-diagnostic.py\" archive \"$GITHUB_WORKSPACE/business\" \"$GITHUB_WORKSPACE/diagnostic-artifact\" \"$STEP_RESULTS\"\n",
+          "if": "${{ always() }}",
+          "working-directory": ".",
+          "env": {
+            "STEP_RESULTS": "${{ toJSON(steps) }}"
+          }
+        },
+        {
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "if": "${{ always() }}",
+          "with": {
+            "name": "r1-owned-popup-url-fault-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path": "diagnostic-artifact/",
+            "include-hidden-files": true,
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    }
+  }
+}
