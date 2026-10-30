@@ -1,5 +1,6 @@
 /** Opt-in only around the original synthetic short-read integration workloads. */
 import { z } from 'zod';
+import { randomBytes } from 'node:crypto';
 import type { RunEventSink } from '../../src/run/events.ts';
 
 // Closed native protocol values, not arbitrary error messages or user page text.
@@ -23,8 +24,15 @@ const recordSchema = z.object({
 const PREFIX = 'QUERY_READ_RESULT_DIAGNOSTIC ';
 
 /** Receives worker output even when quiet=true; emits only validated closed rows after run settles. */
-export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' | 'web-platform' | 'replaced-nodes', run: (onEvent: RunEventSink | undefined) => Promise<T>, capture?: (closedRows: string) => void): Promise<T> {
+export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' | 'web-platform' | 'replaced-nodes', run: (onEvent: RunEventSink | undefined) => Promise<T>, capture?: (closedRows: string, captureNonce?: string) => void): Promise<T> {
   if (process.env[suite === 'replaced-nodes' ? 'E2E_REPLACED_FIELD_CAPTURE' : 'E2E_SHORT_READ_DIAGNOSTIC'] !== '1') return run(undefined);
+  // Bind direct inline stderr to this fresh fixture invocation without replacing
+  // stderr or retroactively importing an unrelated outer log into its archive.
+  let captureNonce: string | undefined;
+  if (suite === 'replaced-nodes' && capture !== undefined) {
+    try { captureNonce = randomBytes(32).toString('hex'); } catch { /* Missing nonce fails capture, not the workload. */ }
+  }
+  const boundary = () => JSON.stringify({ schemaVersion: 1, suite, captureNonce });
   const previous = process.env['E2E_QUERY_READ_DIAGNOSTIC'];
   process.env['E2E_QUERY_READ_DIAGNOSTIC'] = suite;
   const records: z.infer<typeof recordSchema>[] = [];
@@ -55,21 +63,29 @@ export async function withShortReadDiagnostics<T>(suite: 'transformed-secrets' |
       }
     }
   };
+  if (captureNonce !== undefined) {
+    try { process.stderr.write(`QUERY_READ_DIAGNOSTIC_BEGIN ${boundary()}\n`); } catch { /* Missing boundary fails capture only. */ }
+  }
   try { return await run(onEvent); }
   finally {
     if (previous === undefined) delete process.env['E2E_QUERY_READ_DIAGNOSTIC'];
     else process.env['E2E_QUERY_READ_DIAGNOSTIC'] = previous;
-    // Inline runs have no RunnerOutput capture and already reach outer Vitest stderr.
-    // Worker rows would be lost by quiet=true, so forward these after the run, before cleanup.
+    // Inline rows are already in the bounded BEGIN/END region of the current
+    // outer log. Worker rows are forwarded here exactly once before END.
     try {
       if (!skipping && tail !== '') accept(tail);
       const rows = records.map(record => `${PREFIX}${JSON.stringify(record)}\n`);
       const custody = `QUERY_READ_DIAGNOSTIC_CUSTODY ${JSON.stringify({ suite, workerRecords: records.length, invalidRecords, lineOverflow, recordOverflow })}\n`;
       // Archive the same bounded closed worker facts, never raw stderr. A failed
       // archive callback cannot replace business outcomes or suppress forwarding.
-      try { capture?.(rows.join('') + custody); } catch { /* Missing archive fails acceptance. */ }
+      try { capture?.(rows.join('') + custody, captureNonce); } catch { /* Missing archive fails acceptance. */ }
       for (const row of rows) process.stderr.write(row);
       process.stderr.write(custody);
     } catch { /* Custody output must not replace the original outcome or cleanup failure. */ }
+    finally {
+      if (captureNonce !== undefined) {
+        try { process.stderr.write(`QUERY_READ_DIAGNOSTIC_END ${boundary()}\n`); } catch { /* Missing END remains incomplete evidence. */ }
+      }
+    }
   }
 }

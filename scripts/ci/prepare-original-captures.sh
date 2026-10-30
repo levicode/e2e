@@ -2,6 +2,7 @@
 # Opt in only the existing original popup/replaced-field wrappers.
 set -euo pipefail
 python3 scripts/ci/test-check-critical-query-traces.py
+python3 scripts/ci/test-original-capture-custody.py
 install -m 700 scripts/ci/native-trace-wrapper.sh evidence/tools/popup-trace.sh
 cmp scripts/ci/native-trace-wrapper.sh evidence/tools/popup-trace.sh
 for name in popup-init-order popup-init-order-borrowed replaced-nodes; do

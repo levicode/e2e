@@ -126,7 +126,10 @@ it('archives exactly the bounded closed forwarded rows and custody without raw w
     await onEvent!({ seq: 1, at: '2026-10-29T12:00:00.000Z', type: 'output', target: 'web', pair: undefined, stream: 'stderr', text: `PRIVATE RAW\n${line(joined)}` });
     return result;
   }, text => { captured.push(text); })).toBe(result);
-  expect(captured).toEqual([lines.join('')]);
+  expect(captured).toEqual([lines.slice(1, -1).join('')]);
+  const begin = JSON.parse(lines[0]!.slice('QUERY_READ_DIAGNOSTIC_BEGIN '.length));
+  expect(begin.captureNonce).toMatch(/^[0-9a-f]{64}$/);
+  expect(lines.at(-1)).toBe(`QUERY_READ_DIAGNOSTIC_END ${JSON.stringify(begin)}\n`);
   expect(captured[0]).not.toContain('PRIVATE');
   expect(captured[0]).toContain('QUERY_READ_DIAGNOSTIC_CUSTODY');
 });
@@ -144,4 +147,47 @@ it('disabled diagnostics never invoke the archive callback', async () => {
   const capture = vi.fn();
   expect(await withShortReadDiagnostics('replaced-nodes', async () => 'unchanged', capture)).toBe('unchanged');
   expect(capture).not.toHaveBeenCalled();
+});
+
+
+it('binds actual inline stderr to a fresh current fixture boundary without changing writes or results', async () => {
+  const lines = sink(); process.env['E2E_REPLACED_FIELD_CAPTURE'] = '1';
+  const joined = { ...row, suite: 'replaced-nodes', generation: 1, operationSeq: 165 };
+  const result = { status: 'failed', cleanup: 'complete' };
+  let archive = ''; let nonce: string | undefined;
+  expect(await withShortReadDiagnostics('replaced-nodes', async () => {
+    process.stderr.write(line(joined)); return result;
+  }, (text, current) => { archive = text; nonce = current; })).toBe(result);
+  expect(nonce).toMatch(/^[0-9a-f]{64}$/);
+  expect(lines).toHaveLength(4);
+  expect(lines[0]).toContain(`"captureNonce":"${nonce}"`);
+  expect(lines[1]).toBe(line(joined));
+  expect(archive).toContain('"workerRecords":0');
+  expect(archive).not.toContain('settled-failure');
+  expect(lines[3]).toBe(lines[0]!.replace('_BEGIN ', '_END '));
+});
+
+it('uses a distinct nonce for each run and closes the exact boundary on the original exception', async () => {
+  const lines = sink(); process.env['E2E_REPLACED_FIELD_CAPTURE'] = '1';
+  const nonces: (string | undefined)[] = [];
+  const failure = new Error('original workload failure');
+  for (let i = 0; i < 2; i++) {
+    await expect(withShortReadDiagnostics('replaced-nodes', async () => { throw failure; }, (_text, nonce) => { nonces.push(nonce); })).rejects.toBe(failure);
+  }
+  expect(new Set(nonces).size).toBe(2);
+  for (let i = 0; i < 2; i++) expect(lines[i * 3 + 2]).toBe(lines[i * 3]!.replace('_BEGIN ', '_END '));
+});
+
+it('attempts END in finally despite a failed custody write and preserves original exception', async () => {
+  process.env['E2E_REPLACED_FIELD_CAPTURE'] = '1';
+  const lines: string[] = [];
+  vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+    lines.push(String(chunk));
+    if (String(chunk).startsWith('QUERY_READ_DIAGNOSTIC_CUSTODY ')) throw new Error('broken custody sink');
+    return true;
+  });
+  const failure = new Error('original workload failure');
+  await expect(withShortReadDiagnostics('replaced-nodes', async () => { throw failure; }, () => {})).rejects.toBe(failure);
+  expect(lines[0]).toContain('QUERY_READ_DIAGNOSTIC_BEGIN ');
+  expect(lines.at(-1)).toBe(lines[0]!.replace('_BEGIN ', '_END '));
 });

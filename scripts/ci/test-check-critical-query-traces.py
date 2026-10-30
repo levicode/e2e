@@ -199,7 +199,7 @@ class QueryValidatorTests(unittest.TestCase):
 
     def test_eval_all_closed_enums_and_nulls(self):
         for stage in ('entry', 'wait', 'capture'):
-            for reason in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard'):
+            for reason in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard', 'p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap'):
                 for watermark in ('equal', 'behind', 'ahead', 'unk'):
                     value = dict(s=stage, c=reason, h=None, p=None, t=None, r=None, w=watermark, v=None, e=None)
                     self.assertTrue(validator.schema_valid(record('EvalAdmission', 1, generation=1, eval=value)))
@@ -215,10 +215,22 @@ class QueryValidatorTests(unittest.TestCase):
         self.assertLessEqual(len(encoded), 512)
         self.assertTrue(validator.schema_valid(worst))
 
+
+    def test_typed_preparation_refusals_preserve_closed_fields_and_512_byte_ceiling(self):
+        safe = validator.SAFE_INTEGER
+        for reason in ('p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap'):
+            value = dict(s='capture', c=reason, h=[65535,65535,7], p=[65535]*8,
+                         t=[65535]*3, r=[False]*4, w='behind', v=safe, e=safe)
+            row = record('EvalAdmission', safe, generation=safe, eval=value)
+            row.update(pid=(1 << 32)-1, droppedBefore=safe, emittedBefore=safe, suppressedBefore=safe)
+            self.assertTrue(validator.schema_valid(row))
+            self.assertLessEqual(len(json.dumps(row, separators=(',', ':')).encode()) + 1, 512)
+            self.assertFalse(validator.schema_valid(dict(row, arbitrary='PRIVATE')))
+
     def test_eval_closed_types_and_bounds(self):
         import copy
         good = dict(s='entry', c='entry', h=[0,0,0], p=[0]*8, t=[0]*3, r=[True]*4, w='equal', v=0, e=0)
-        bad = [('s', 'raw'), ('s', []), ('c', {}), ('w', 'payload'),
+        bad = [('s', 'raw'), ('s', []), ('c', {}), ('c', 'p-unknown'), ('c', 'PRIVATE'), ('w', 'payload'),
                ('p', [0]*7), ('p', [True]*8), ('p', [65536]*8), ('p', [-1]*8),
                ('t', [0]*4), ('t', [1.0]*3), ('r', [0]*4), ('r', [True]*3),
                ('v', True), ('e', -1), ('v', validator.SAFE_INTEGER+1), ('e', '123'), ('h', [0,0,8]), ('h', [0,0,True]), ('h', [65536,0,0]), ('h', [0,0]), ('h', [0,0,0,0])]
@@ -315,7 +327,7 @@ class FieldJoinTests(unittest.TestCase):
     def timed(pid=41, generation=4, sequence=1):
         return dict(failure(readMs=[0] * 13), pid=pid, generation=generation, operationSeq=sequence)
 
-    def run_field(self, native=None, js=None, custody=None, raw=None, setup=None, receipt=None):
+    def run_field(self, native=None, js=None, custody=None, raw=None, setup=None, receipt=None, inline=None):
         import hashlib
         with tempfile.TemporaryDirectory(prefix='field-validator-') as temp:
             archive = pathlib.Path(temp) / 'replaced-nodes'
@@ -332,10 +344,15 @@ class FieldJoinTests(unittest.TestCase):
             report = json.dumps({'run': {'errors': []}, 'tests': []})
             (run / 'report.json').write_text(report)
             (run / 'closed-js.jsonl').write_text(data)
-            proof = dict(schemaVersion=1, run=run.name, reportSHA256=hashlib.sha256(report.encode()).hexdigest(), closedJsSHA256=hashlib.sha256(data.encode()).hexdigest())
+            proof = dict(schemaVersion=2, run=run.name, captureNonce='a' * 64, reportSHA256=hashlib.sha256(report.encode()).hexdigest(), closedJsSHA256=hashlib.sha256(data.encode()).hexdigest())
             (run / 'custody.json').write_text(json.dumps(proof))
             log = pathlib.Path(temp) / 'test-e2e.log'
-            log.write_text('REPLACED_FIELD_CAPTURE_ARCHIVE ' + json.dumps(proof) + '\n' if receipt is None else receipt)
+            boundary = json.dumps(dict(schemaVersion=1, suite='replaced-nodes', captureNonce=proof['captureNonce']))
+            log_rows = ''.join(validator.JS_PREFIX + json.dumps(row) + '\n' for row in (inline or [])) + data
+            current_log = ('QUERY_READ_DIAGNOSTIC_BEGIN ' + boundary + '\n' + log_rows
+                           + 'QUERY_READ_DIAGNOSTIC_END ' + boundary + '\n'
+                           + 'REPLACED_FIELD_CAPTURE_ARCHIVE ' + json.dumps(proof) + '\n')
+            log.write_text(current_log if receipt is None else receipt)
             if setup:
                 setup(archive, run, trace, log)
             result = subprocess.run([sys.executable, str(SCRIPT), str(len(native)), str(archive), '--field-only', '--field-log', str(log)], capture_output=True, text=True)
@@ -422,6 +439,42 @@ class FieldJoinTests(unittest.TestCase):
         self.rejects(receipt='REPLACED_FIELD_CAPTURE_ARCHIVE {}\n')
         self.rejects(setup=lambda archive, run, trace, log: log.write_text(log.read_text() * 2))
         self.rejects(setup=lambda archive, run, trace, log: log.write_text(log.read_text() + 'REPLACED_FIELD_CAPTURE_CUSTODY_FAILED\n'))
+
+    def test_actual_inline_failure_joins_with_zero_worker_records(self):
+        result, summary = self.run_field(js=[], inline=[self.js()])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(summary['completeEvidence'])
+        self.assertEqual(summary['fieldOnly']['joinedFailures'], 1)
+
+    def test_inline_boundary_missing_replayed_cross_run_and_interleaved_rejected(self):
+        def rewrite(fn):
+            return lambda archive, run, trace, log: log.write_text(fn(log.read_text()))
+        changes = [
+            lambda text: '\n'.join(line for line in text.splitlines() if not line.startswith('QUERY_READ_DIAGNOSTIC_BEGIN ')) + '\n',
+            lambda text: '\n'.join(line for line in text.splitlines() if not line.startswith('QUERY_READ_DIAGNOSTIC_END ')) + '\n',
+            lambda text: text.replace('a' * 64, 'b' * 64, 1),
+            lambda text: text.splitlines(keepends=True)[0] + text,
+            lambda text: text + text,
+            lambda text: validator.JS_PREFIX + json.dumps(self.js()) + '\n' + text,
+            lambda text: text + validator.JS_PREFIX + json.dumps(self.js()) + '\n',
+            lambda text: text.replace('QUERY_READ_DIAGNOSTIC_END ', 'QUERY_READ_DIAGNOSTIC_BEGIN '),
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                self.rejects(js=[], inline=[self.js()], setup=rewrite(change))
+
+    def test_inline_missing_duplicate_lossy_or_malformed_witness_rejected(self):
+        self.rejects(js=[], inline=[])
+        self.rejects(js=[], inline=[self.js(), self.js()])
+        self.rejects(js=[], inline=[dict(self.js(), query='PRIVATE')])
+        self.rejects(js=[], inline=[dict(self.js(), phase='capture-limit-reached', limit=8, laterFailuresOmitted=True)])
+        self.rejects(js=[], inline=[dict(self.js(), operationSeq=2)])
+
+    def test_worker_archive_requires_matching_single_current_log_copy(self):
+        def missing(archive, run, trace, log):
+            log.write_text(''.join(line for line in log.read_text().splitlines(keepends=True)
+                                   if not line.startswith(validator.JS_PREFIX)))
+        self.rejects(setup=missing)
 
     def test_owned_capture_and_js_custody_cannot_be_symlinks(self):
         for name in ['report.json', 'closed-js.jsonl', 'custody.json']:

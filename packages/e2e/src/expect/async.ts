@@ -422,6 +422,7 @@ class AsyncExpectationImpl implements AsyncExpectation {
     return this.poll(
       {
         name: 'toHaveAttribute',
+        fields: ['attributes'],
         readsWithheld: true,
         predicate: (sample) => {
           if (sample.node === null) return false;

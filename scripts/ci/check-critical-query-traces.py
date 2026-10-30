@@ -32,7 +32,7 @@ def eval_valid(value):
         return False
     if type(value['s']) is not str or value['s'] not in ('entry', 'wait', 'capture'):
         return False
-    if type(value['c']) is not str or value['c'] not in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard'):
+    if type(value['c']) is not str or value['c'] not in ('entry', 'fence', 'pending', 'unresumed', 'retire', 'health', 'guard', 'p-empty', 'p-front', 'p-cap', 'p-rootent', 'p-rootid', 'p-active', 'p-roottgt', 'p-rootfrm', 'p-mement', 'p-memkind', 'p-memfrm', 'p-missing', 'p-owner', 'p-origin', 'p-binding', 'p-target', 'p-health', 'p-config', 'p-term', 'p-stage', 'p-custody', 'p-ready', 'p-confrev', 'p-fence', 'p-op', 'p-entryid', 'p-permit', 'p-ledger', 'p-eowner', 'p-stream', 'p-etarget', 'p-failed', 'p-index', 'p-snap'):
         return False
     if type(value['w']) is not str or value['w'] not in ('equal', 'behind', 'ahead', 'unk'):
         return False
@@ -162,13 +162,18 @@ def field_inputs(archive, log, errors):
         if any(not re.fullmatch(r'(native|query)-[0-9]+\.jsonl', p.name) for p in trace.iterdir()):
             raise ValueError('unexpected native trace input')
         custody = json.loads(read_regular(run / 'custody.json', 512), object_pairs_hook=unique_pairs)
-        if (not isinstance(custody, dict) or set(custody) != {'schemaVersion', 'run', 'reportSHA256', 'closedJsSHA256'}
-                or type(custody['schemaVersion']) is not int or custody['schemaVersion'] != 1
+        if (not isinstance(custody, dict) or set(custody) != {'schemaVersion', 'run', 'captureNonce', 'reportSHA256', 'closedJsSHA256'}
+                or type(custody['schemaVersion']) is not int or custody['schemaVersion'] != 2
+                or type(custody['captureNonce']) is not str or not re.fullmatch('[0-9a-f]{64}', custody['captureNonce'])
                 or custody['run'] != run.name):
             raise ValueError('invalid archive custody')
         if log is None:
             raise ValueError('current harness log required for archive custody')
         receipts = []
+        log_failures, log_custodies = [], []
+        boundary = {'schemaVersion': 1, 'suite': 'replaced-nodes', 'captureNonce': custody['captureNonce']}
+        active = False
+        began = ended = 0
         # Scan bounded lines without retaining or echoing unrelated/raw test output.
         if not regular(log):
             raise ValueError('harness log not regular')
@@ -176,6 +181,43 @@ def field_inputs(archive, log, errors):
             while line := stream.readline(1_048_577):
                 if len(line) > 1_048_576:
                     raise ValueError('harness log line bound exceeded')
+                for prefix, is_begin in [(b'QUERY_READ_DIAGNOSTIC_BEGIN ', True), (b'QUERY_READ_DIAGNOSTIC_END ', False)]:
+                    if line.startswith(prefix):
+                        if len(line) > 256 or not line.endswith(b'\n'):
+                            raise ValueError('invalid inline capture boundary')
+                        marker = json.loads(line[len(prefix):], object_pairs_hook=unique_pairs)
+                        if marker != boundary or type(marker.get('schemaVersion')) is not int:
+                            raise ValueError('cross-run or malformed inline capture boundary')
+                        if is_begin:
+                            if active or began or ended:
+                                raise ValueError('duplicate or interleaved inline capture BEGIN')
+                            active = True; began += 1
+                        else:
+                            if not active or ended:
+                                raise ValueError('missing or duplicate inline capture END')
+                            active = False; ended += 1
+                for prefix, terminal in [(JS_PREFIX.encode(), False), (CUSTODY_PREFIX.encode(), True)]:
+                    if not line.startswith(prefix):
+                        continue
+                    if len(line) > 2048 or not line.endswith(b'\n'):
+                        raise ValueError('inline closed JS line bound/termination invalid')
+                    row = json.loads(line[len(prefix):], object_pairs_hook=unique_pairs)
+                    if not isinstance(row, dict):
+                        raise ValueError('invalid inline closed JS record')
+                    if row.get('suite') != 'replaced-nodes':
+                        continue
+                    if not active:
+                        raise ValueError('target JS record outside its current capture boundary')
+                    if terminal:
+                        log_custodies.append(row)
+                        if len(log_custodies) > 1:
+                            raise ValueError('duplicate inline terminal custody')
+                    else:
+                        if log_custodies or not js_valid(row) or row['phase'] != 'settled-failure':
+                            raise ValueError('invalid, lossy, or post-terminal inline JS failure')
+                        log_failures.append(row)
+                        if len(log_failures) > 64:
+                            raise ValueError('inline closed JS record bound exceeded')
                 if b'REPLACED_FIELD_CAPTURE_CUSTODY_FAILED' in line:
                     raise ValueError('archive custody failure marker')
                 if line.startswith(b'REPLACED_FIELD_CAPTURE_ARCHIVE '):
@@ -184,6 +226,8 @@ def field_inputs(archive, log, errors):
                     receipts.append(json.loads(line[len(b'REPLACED_FIELD_CAPTURE_ARCHIVE '):], object_pairs_hook=unique_pairs))
                     if len(receipts) > 1:
                         raise ValueError('duplicate archive custody receipt')
+        if began != 1 or ended != 1 or active:
+            raise ValueError('missing inline capture boundary')
         if receipts != [custody]:
             raise ValueError('missing or mismatched current archive custody receipt')
         report = read_regular(run / 'report.json', 64 * 1024 * 1024)
@@ -224,7 +268,16 @@ def field_inputs(archive, log, errors):
         custody = custodies[0]
         if custody['workerRecords'] != len(failures) or custody['invalidRecords'] or custody['lineOverflow'] or custody['recordOverflow']:
             raise ValueError('JS custody loss/count mismatch')
-        targets = [row for row in failures if row['command'] == 'fixture.read-fields']
+        if log_custodies != [custody]:
+            raise ValueError('current inline/worker terminal custody mismatch')
+        # Archived worker records must occur exactly once in the current bounded
+        # log. Direct inline rows may legitimately have workerRecords == 0.
+        for row in failures:
+            if log_failures.count(row) != 1:
+                raise ValueError('missing or duplicate current worker failure')
+        if len({(r['generation'], r['operationSeq']) for r in log_failures}) != len(log_failures):
+            raise ValueError('duplicate current JS operation')
+        targets = [row for row in log_failures if row['command'] == 'fixture.read-fields']
         summary['targetedFailures'] = len(targets)
         if not targets:
             raise ValueError('missing targeted settled field failure')

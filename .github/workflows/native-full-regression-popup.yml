@@ -1,0 +1,793 @@
+name: Full native CI-profile regression and original compile boundaries
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: native-full-regression-popup-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 7504775f1e6bb96e6179709088a67c3d88977f18
+  NATIVE_SOURCE_TREE: f172732bc474e354ddc33804552b32cba7d4c961
+  NEXT_TELEMETRY_DISABLED: '1'
+  GIT_NO_LAZY_FETCH: '1'
+  RUSTUP_TOOLCHAIN: 1.99.1
+'on':
+  push:
+    branches:
+    - ci/native-full-regression-s6-20261030
+jobs:
+  original-four-compile-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '2'
+      REGRESSION_EVIDENCE: .artifacts/native-candidate
+      REGRESSION_NATIVE: .artifacts/native-source
+    steps:
+    - &id001
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Export fresh target and Cargo paths from runner shell
+      shell: bash
+      run: 'set -euo pipefail
+
+        printf ''CARGO_TARGET_DIR=%s/native-full-popup-boundaries-target\n'' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+        printf ''CARGO_HOME=%s/native-full-popup-boundaries-cargo\n'' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py prepare --gate boundaries
+      name: Reserve fresh target/cache and record producer identity
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: .artifacts/native-source
+        persist-credentials: false
+    - run: python3 .github/native-full-regression/ci.py source --gate boundaries
+      name: Validate exact native source, lock and file bytes
+    - name: Install and record exact Rust 1.99.1 toolchain
+      id: toolchain
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/$REGRESSION_EVIDENCE"
+
+        set +e
+
+        rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy > "$out/toolchain-install.log"
+        2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/toolchain-install.exit"
+
+        cat "$out/toolchain-install.log"
+
+        test "$status" -eq 0
+
+        rustc +1.99.1 -Vv > "$out/rustc-version.txt" 2>&1
+
+        cargo +1.99.1 -Vv > "$out/cargo-version.txt" 2>&1
+
+        python3 - <<''PY_PATHS''
+
+        import json,os,pathlib,subprocess
+
+        names=[''rustc'',''cargo'']+[''rustfmt'',''clippy-driver'']
+
+        paths={name:subprocess.check_output([''rustup'',''which'',''--toolchain'',''1.99.1'',name],text=True).strip()
+        for name in names}
+
+        (pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/os.environ[''REGRESSION_EVIDENCE'']/''toolchain-paths.json'').write_text(json.dumps(paths,indent=2)+''\n'')
+
+        PY_PATHS
+
+        python3 .github/native-full-regression/ci.py toolchain --gate boundaries
+
+        '
+    - name: Check all native compilation boundaries before browser execution
+      id: native-lint
+      working-directory: .artifacts/native-source/cli
+      env:
+        EXPECTED_NATIVE_SHA: ${{ env.NATIVE_SOURCE_SHA }}
+      run: "set -euo pipefail\nunset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        test \"$(git rev-parse HEAD)\" = \"$EXPECTED_NATIVE_SHA\"\ntest -z \"$(git status --porcelain)\"\n\
+        out=\"$GITHUB_WORKSPACE/.artifacts/native-candidate\"\nmkdir -p \"$out\"\nprintf '%s\\n' \"$EXPECTED_NATIVE_SHA\"\
+        \ > \"$out/native-compile-source.txt\"\nfailed=0\ncheck_boundary() {\n  local name=\"$1\" status=0\n\
+        \  shift\n  printf '%q ' \"$@\" >> \"$out/compiler-argv.txt\"\n  printf '\\n' >> \"$out/compiler-argv.txt\"\
+        \n  if \"$@\" > \"$out/$name.log\" 2>&1; then\n    status=0\n  else\n    status=$?\n    failed=1\n\
+        \  fi\n  printf '%s\\n' \"$status\" > \"$out/$name.exit\"\n  cat \"$out/$name.log\"\n}\ncheck_boundary\
+        \ native-format-check cargo fmt -- --check\ncheck_boundary native-default-clippy cargo clippy --locked\
+        \ --profile ci --no-default-features --all-targets -- -D warnings\ncheck_boundary native-feature-check\
+        \ cargo check --locked --profile ci --no-default-features --features acceptance-faults --tests\ncheck_boundary\
+        \ native-proxy-check cargo check --locked --profile ci --no-default-features --features acceptance-faults\
+        \ --test client-proxy-fixture\ntest \"$failed\" -eq 0\n"
+    - run: python3 .github/native-full-regression/ci.py audit --gate boundaries
+      name: Collect independent custody and explicit missing/loss evidence after every outcome
+      id: custody
+      if: ${{ always() }}
+    - run: python3 .github/native-full-regression/ci.py accept --gate boundaries
+      name: Accept only complete successful exact-source evidence
+      id: accept
+    - name: Preserve raw evidence including all failures and missing-capture reports
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: full-native-popup-boundaries-${{ github.run_id }}
+        path: .artifacts/native-candidate/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+  full-ci-default:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '1'
+      REGRESSION_EVIDENCE: evidence
+      REGRESSION_NATIVE: native
+    steps:
+    - *id001
+    - name: Export fresh target and Cargo paths from runner shell
+      shell: bash
+      run: 'set -euo pipefail
+
+        printf ''CARGO_TARGET_DIR=%s/native-full-popup-default-target\n'' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+        printf ''CARGO_HOME=%s/native-full-popup-default-cargo\n'' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py prepare --gate default
+      name: Reserve fresh target/cache and record producer identity
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - run: python3 .github/native-full-regression/ci.py source --gate default
+      name: Validate exact native source, lock and file bytes
+    - name: Install and record exact Rust 1.99.1 toolchain
+      id: toolchain
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/$REGRESSION_EVIDENCE"
+
+        set +e
+
+        rustup toolchain install 1.99.1 --profile minimal > "$out/toolchain-install.log" 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/toolchain-install.exit"
+
+        cat "$out/toolchain-install.log"
+
+        test "$status" -eq 0
+
+        rustc +1.99.1 -Vv > "$out/rustc-version.txt" 2>&1
+
+        cargo +1.99.1 -Vv > "$out/cargo-version.txt" 2>&1
+
+        python3 - <<''PY_PATHS''
+
+        import json,os,pathlib,subprocess
+
+        names=[''rustc'',''cargo'']
+
+        paths={name:subprocess.check_output([''rustup'',''which'',''--toolchain'',''1.99.1'',name],text=True).strip()
+        for name in names}
+
+        (pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/os.environ[''REGRESSION_EVIDENCE'']/''toolchain-paths.json'').write_text(json.dumps(paths,indent=2)+''\n'')
+
+        PY_PATHS
+
+        python3 .github/native-full-regression/ci.py toolchain --gate default
+
+        '
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Compile fresh exact ci-profile full test harness
+      id: compile
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/$REGRESSION_EVIDENCE"
+
+        cd native/cli
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        argv=(cargo +1.99.1 test --locked --profile ci --timings --no-default-features --bin agent-browser
+        -j1 --no-run --message-format=json)
+
+        printf ''%q '' "${argv[@]}" > "$out/compiler-argv.txt"
+
+        printf ''\n'' >> "$out/compiler-argv.txt"
+
+        set +e
+
+        "${argv[@]}" > "$out/harness.jsonl" 2> "$out/harness-build.log"
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/harness-build.exit"
+
+        cat "$out/harness-build.log"
+
+        exit "$status"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py binary --gate default
+      name: Select only compiler-proven fresh exact-profile executable
+      id: binary
+    - name: Retain exact binary provenance and Cargo timings
+      run: 'set -euo pipefail
+
+        harness="$(cat evidence/harness.path)"
+
+        mkdir native-harness
+
+        cp "$harness" native-harness/agent-browser-tests
+
+        printf ''%s\n'' "$NATIVE_SOURCE_SHA" > native-harness/native-source.sha
+
+        printf ''%s\n'' "$NATIVE_SOURCE_TREE" > native-harness/native-source.tree
+
+        printf ''%s\n'' default > native-harness/features.txt
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > native-harness/producer-run.id
+
+        (cd native-harness; sha256sum agent-browser-tests > SHA256SUMS)
+
+        mkdir evidence/cargo-timings
+
+        cp -a "$CARGO_TARGET_DIR/cargo-timings/." evidence/cargo-timings/
+
+        cp native-harness/SHA256SUMS evidence/copied-harness.SHA256SUMS
+
+        '
+    - name: Collect all tests and exact ignored set without filters
+      id: collect
+      run: 'set -euo pipefail
+
+        set +e
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list 2> evidence/all-tests.stderr.log
+
+        all_status=$?
+
+        printf ''%s\n'' "$all_status" > evidence/all-tests.exit
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list 2> evidence/ignored-tests.stderr.log
+
+        ignored_status=$?
+
+        printf ''%s\n'' "$ignored_status" > evidence/ignored-tests.exit
+
+        set -e
+
+        test "$all_status" -eq 0
+
+        test "$ignored_status" -eq 0
+
+        '
+    - run: python3 .github/native-full-regression/ci.py inventory --gate default
+      name: Require exact source-derived collection and reviewed ignored names
+      id: inventory
+    - name: Require original 43 and new 20 controls in the complete nonignored inventory
+      id: required-controls
+      shell: bash
+      run: python3 .github/native-full-regression/ci.py required-controls --gate default
+    - name: Run complete nonignored harness without filters
+      id: full
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests > evidence/full-suite.log
+        2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        cat evidence/full-suite.log
+
+        exit "$status"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py results --gate default
+      name: Validate every result, no missing, duplicate, filtered or new ignored tests
+      id: results
+      if: ${{ !cancelled() && steps.inventory.outcome == 'success' && steps.full.outcome != 'skipped' }}
+    - run: python3 .github/native-full-regression/ci.py audit --gate default
+      name: Collect independent custody and explicit missing/loss evidence after every outcome
+      id: custody
+      if: ${{ always() }}
+    - run: python3 .github/native-full-regression/ci.py accept --gate default
+      name: Accept only complete successful exact-source evidence
+      id: accept
+    - name: Preserve raw evidence including all failures and missing-capture reports
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: full-native-popup-default-${{ github.run_id }}
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+  full-ci-fault:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '1'
+      REGRESSION_EVIDENCE: evidence
+      REGRESSION_NATIVE: native
+    steps:
+    - *id001
+    - name: Export fresh target and Cargo paths from runner shell
+      shell: bash
+      run: 'set -euo pipefail
+
+        printf ''CARGO_TARGET_DIR=%s/native-full-popup-fault-target\n'' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+        printf ''CARGO_HOME=%s/native-full-popup-fault-cargo\n'' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py prepare --gate fault
+      name: Reserve fresh target/cache and record producer identity
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - run: python3 .github/native-full-regression/ci.py source --gate fault
+      name: Validate exact native source, lock and file bytes
+    - name: Install and record exact Rust 1.99.1 toolchain
+      id: toolchain
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/$REGRESSION_EVIDENCE"
+
+        set +e
+
+        rustup toolchain install 1.99.1 --profile minimal > "$out/toolchain-install.log" 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/toolchain-install.exit"
+
+        cat "$out/toolchain-install.log"
+
+        test "$status" -eq 0
+
+        rustc +1.99.1 -Vv > "$out/rustc-version.txt" 2>&1
+
+        cargo +1.99.1 -Vv > "$out/cargo-version.txt" 2>&1
+
+        python3 - <<''PY_PATHS''
+
+        import json,os,pathlib,subprocess
+
+        names=[''rustc'',''cargo'']
+
+        paths={name:subprocess.check_output([''rustup'',''which'',''--toolchain'',''1.99.1'',name],text=True).strip()
+        for name in names}
+
+        (pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/os.environ[''REGRESSION_EVIDENCE'']/''toolchain-paths.json'').write_text(json.dumps(paths,indent=2)+''\n'')
+
+        PY_PATHS
+
+        python3 .github/native-full-regression/ci.py toolchain --gate fault
+
+        '
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Install exact package manager for pure projection controls
+      id: projection-pnpm
+      uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      with:
+        version: 12.3.4
+        run_install: false
+    - name: Install frozen workspace dependencies and record pure tool versions
+      id: projection-install
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/evidence/attribute-projection"
+
+        mkdir "$out"
+
+        python3 - "$out" <<''PY_INSTALL''
+
+        import json,pathlib,sys
+
+        out=pathlib.Path(sys.argv[1])
+
+        (out/''install-command.json'').write_text(json.dumps([''pnpm'',''install'',''--frozen-lockfile''])+''\n'')
+
+        PY_INSTALL
+
+        set +e
+
+        pnpm install --frozen-lockfile > "$out/install.log" 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/install.exit"
+
+        cat "$out/install.log"
+
+        test "$status" -eq 0
+
+        node --version > "$out/node-version.txt"
+
+        pnpm --version > "$out/pnpm-version.txt"
+
+        pnpm --filter e2e exec vitest --version > "$out/vitest-version.txt"
+
+        python3 - "$out" <<''PY_VERSION''
+
+        import json,pathlib,sys
+
+        out=pathlib.Path(sys.argv[1])
+
+        versions={k:(out/(k+''-version.txt'')).read_text().strip() for k in [''node'',''pnpm'',''vitest'']}
+
+        (out/''versions.json'').write_text(json.dumps(versions,indent=2)+''\n'')
+
+        PY_VERSION
+
+        '
+    - name: Run only the 23 pure attribute projection controls with locked dependencies
+      id: projection-pure
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/evidence/attribute-projection"
+
+        python3 - "$out" <<''PY_COMMAND''
+
+        import json,pathlib,sys
+
+        out=pathlib.Path(sys.argv[1])
+
+        argv=[''pnpm'',''--filter'',''e2e'',''exec'',''vitest'',''run'',''tests/unit/attribute-field-assertions.test.ts'',''--project'',''unit'',''--reporter=json'',''--outputFile=''+str(out/''raw-result.json'')]
+
+        (out/''command.json'').write_text(json.dumps(argv)+''\n'')
+
+        PY_COMMAND
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/unit/attribute-field-assertions.test.ts --project unit --reporter=json
+        --outputFile="$out/raw-result.json" > "$out/raw.log" 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/run.exit"
+
+        cat "$out/raw.log"
+
+        exit "$status"
+
+        '
+    - name: Validate exact 23 named pure results without browser claims
+      id: projection-results
+      shell: bash
+      run: python3 .github/native-full-regression/ci.py pure-results --gate fault
+      if: ${{ !cancelled() && steps.projection-pure.outcome != 'skipped' }}
+    - name: Exact source JavaScript nine bounded negative and positive controls
+      run: node scripts/ci/check-selector-taxonomy.cjs native/cli/src/native/client_observation/selector_query.js
+    - name: Compile fresh exact ci-profile full test harness
+      id: compile
+      shell: bash
+      run: 'set -euo pipefail
+
+        out="$GITHUB_WORKSPACE/$REGRESSION_EVIDENCE"
+
+        cd native/cli
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        argv=(cargo +1.99.1 test --locked --profile ci --timings --no-default-features --features acceptance-faults
+        --bin agent-browser -j1 --no-run --message-format=json)
+
+        printf ''%q '' "${argv[@]}" > "$out/compiler-argv.txt"
+
+        printf ''\n'' >> "$out/compiler-argv.txt"
+
+        set +e
+
+        "${argv[@]}" > "$out/harness.jsonl" 2> "$out/harness-build.log"
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$out/harness-build.exit"
+
+        cat "$out/harness-build.log"
+
+        exit "$status"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py binary --gate fault
+      name: Select only compiler-proven fresh exact-profile executable
+      id: binary
+    - name: Retain exact binary provenance and Cargo timings
+      run: 'set -euo pipefail
+
+        harness="$(cat evidence/harness.path)"
+
+        mkdir native-harness
+
+        cp "$harness" native-harness/agent-browser-tests
+
+        printf ''%s\n'' "$NATIVE_SOURCE_SHA" > native-harness/native-source.sha
+
+        printf ''%s\n'' "$NATIVE_SOURCE_TREE" > native-harness/native-source.tree
+
+        printf ''%s\n'' acceptance-faults > native-harness/features.txt
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > native-harness/producer-run.id
+
+        (cd native-harness; sha256sum agent-browser-tests > SHA256SUMS)
+
+        mkdir evidence/cargo-timings
+
+        cp -a "$CARGO_TARGET_DIR/cargo-timings/." evidence/cargo-timings/
+
+        cp native-harness/SHA256SUMS evidence/copied-harness.SHA256SUMS
+
+        '
+    - name: Collect all tests and exact ignored set without filters
+      id: collect
+      run: 'set -euo pipefail
+
+        set +e
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list 2> evidence/all-tests.stderr.log
+
+        all_status=$?
+
+        printf ''%s\n'' "$all_status" > evidence/all-tests.exit
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list 2> evidence/ignored-tests.stderr.log
+
+        ignored_status=$?
+
+        printf ''%s\n'' "$ignored_status" > evidence/ignored-tests.exit
+
+        set -e
+
+        test "$all_status" -eq 0
+
+        test "$ignored_status" -eq 0
+
+        '
+    - run: python3 .github/native-full-regression/ci.py inventory --gate fault
+      name: Require exact source-derived collection and reviewed ignored names
+      id: inventory
+    - name: Require original 43 and new 20 controls in the complete nonignored inventory
+      id: required-controls
+      shell: bash
+      run: python3 .github/native-full-regression/ci.py required-controls --gate fault
+    - name: Run complete nonignored harness without filters
+      id: full
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests > evidence/full-suite.log
+        2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        cat evidence/full-suite.log
+
+        exit "$status"
+
+        '
+    - run: python3 .github/native-full-regression/ci.py results --gate fault
+      name: Validate every result, no missing, duplicate, filtered or new ignored tests
+      id: results
+      if: ${{ !cancelled() && steps.inventory.outcome == 'success' && steps.full.outcome != 'skipped' }}
+    - name: Rerun new 20 exact controls on the already compiled fault harness (not extra coverage)
+      id: new-native-exact
+      shell: bash
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        harness="$(cat evidence/harness.path)"
+
+        set +e
+
+        python3 scripts/ci/run-optional-observe-tests.py "$harness" evidence/new-native-exact-inventory.json
+        evidence/new-native-exact > evidence/new-native-exact.log 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/new-native-exact.exit
+
+        cat evidence/new-native-exact.log
+
+        exit "$status"
+
+        '
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' && steps.required-controls.outcome == 'success'
+        }}
+    - name: Validate new exact raw logs against compiler provenance and full inventory
+      id: new-native-exact-results
+      shell: bash
+      run: python3 .github/native-full-regression/ci.py exact-results --gate fault
+      if: ${{ !cancelled() && steps.new-native-exact.outcome != 'skipped' }}
+    - name: Run exact optional observation producer inventory
+      run: python3 scripts/ci/run-optional-observe-tests.py "$(cat evidence/harness.path)" scripts/ci/optional-observe-inventory.json
+        evidence/native-focused
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+    - name: Run owner-stop containment isolated reopen and worker error exact controls
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: python3 scripts/ci/run-owner-stop-exact.py
+    - name: Run six typed admission controls plus unchanged original swipe exact
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: python3 scripts/ci/run-typed-admission-exact.py candidate
+    - name: Run exact two selector syntax parser and expression controls
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: python3 scripts/ci/run-selector-taxonomy-exact.py
+    - name: Run three exact paused popup initialization wire controls
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: "python3 - <<'PY_POPUP_WIRE'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\n\
+        out=pathlib.Path('evidence/popup-init-wire');out.mkdir(parents=True,exist_ok=True)\nh=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['immediate_init_requires_exact_paused_attachment_receipt', 'immediate_init_is_explicit_and_installed_once_per_session',\
+        \ 'popup_runtime_ack_precedes_every_script_and_failure_never_resumes']\nresults=[]\nfor suffix in suffixes:\n\
+        \ names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+': test')];assert len(names)==1\n\
+        \ try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1\
+        \ and sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in\
+        \ results) else 1)\n\nPY_POPUP_WIRE\n"
+    - name: Run new 22 exact drop controls and original 18 pointer node-drag cleanup regressions
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: "python3 - <<'PY_SWIPE_EXACT'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\n\
+        out=pathlib.Path('evidence/swipe-drop-exact');out.mkdir(parents=True,exist_ok=True)\nh=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['exact_drag_foreign_payload_cannot_charge_or_mint_receipt', 'exact_drag_oversize_retains_receipt_but_never_returns_data',\
+        \ 'exact_drag_duplicate_overflow_retains_receipt_and_fails_closed', 'exact_drag_closed_without_event_never_mints_receipt',\
+        \ 'exact_drag_invalid_envelope_never_mints_cleanup_authority', 'exact_drag_route_outlives_helper_through_retained_receiver',\
+        \ 'exact_drag_final_seal_rejects_duplicate_after_first_receive', 'exact_drag_cleanup_seal_accepts_only_one_healthy_owned_payload',\
+        \ 'direct_point_html5_early_and_late_interception_wait_for_exact_drop_ack', 'direct_point_html5_rejected_drop_is_failure_and_cleans_own_drag_once',\
+        \ 'direct_point_existing_object_capacity_rejects_before_press_and_cleans_every_observer', 'direct_point_enable_error_ack_before_held_move_preserves_primary_and_cleans',\
+        \ 'direct_point_held_move_error_ack_without_drag_receipt_preserves_unknown', 'direct_point_held_move_error_ack_with_own_receipt_cleans_without_replay',\
+        \ 'snapshot_includes_same_process_and_oopif_but_not_popup', 'snapshot_changes_for_added_removed_parent_and_loader_frames',\
+        \ 'incomplete_or_unready_ownership_is_not_empty_success', 'unrelated_application_epoch_conservatively_rejects_equal_selected_bindings',\
+        \ 'frame_cap_is_bounded_before_remote_resources', 'sibling_realms_need_not_receive_the_mouse_move',\
+        \ 'degenerate_move_remains_pointer_only_but_missing_inventory_is_not_false', 'malformed_probe_result_does_not_become_no_drag',\
+        \ 'direct_point_original_tap_at_10_20', 'direct_point_original_double_tap_at_10_20', 'direct_point_original_secondary_tap_at_10_20',\
+        \ 'direct_point_original_long_press_at_10_20_holds_700_ms', 'direct_point_original_fractional_tap_and_swipe_round_to_css_pixels',\
+        \ 'direct_point_original_swipe_to_110_20_uses_midpoint', 'direct_point_original_swipe_to_70_20_paces_three_moves_over_48_ms',\
+        \ 'direct_point_original_swipe_to_70_20_cancel_after_first_move_releases_once', 'direct_point_uses_only_exact_input_and_late_ack_never_resumes_double_tap',\
+        \ 'live_drag_destination_revalidates_after_press_without_replay', 'managed_drag_cleanup_keeps_one_release_and_its_original_late_ack',\
+        \ 'live_drag_destination_can_follow_unique_replacement_after_press', 'node_drag_repeats_destination_move_before_its_only_release',\
+        \ 'observed_drag_destination_keeps_exact_identity_after_press', 'pointer_drag_keeps_exact_points_without_destination_resolution',\
+        \ 'action_success_cannot_hide_cleanup_integrity_and_primary_error_survives', 'shared_pointer_secondary_double_click_and_cleanup_preserve_state',\
+        \ 'pointer_state_survives_move_down_drag_wheel_up']\nresults=[]\nfor suffix in suffixes:\n names=[l[:-6]\
+        \ for l in listed.splitlines() if l.endswith('::'+suffix+': test')];assert len(names)==1\n try:\n \
+        \ r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1\
+        \ and sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in\
+        \ results) else 1)\n\nPY_SWIPE_EXACT\n"
+    - name: Run nine exact typed receipt rejection and cleanup controls
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: "python3 - <<'PY_SWIPE_EXACT'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\n\
+        out=pathlib.Path('evidence/swipe-receipt-exact');out.mkdir(parents=True,exist_ok=True)\nh=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['native::cdp::client::tests::point_drag_setup_preserves_only_typed_local_capacity_and_exact_cancellation',\
+        \ 'native::client_debt::tests::validated_rejected_input_reply_is_terminal_failure_not_release_proof',\
+        \ 'native::client_debt::tests::validated_error_reply_requires_exact_reader_envelope_not_unknown_or_success',\
+        \ 'native::client_debt::tests::point_drag_cleanup_proof_retires_only_its_exact_rejections_without_success_ack',\
+        \ 'native::client_debt::tests::point_drag_cleanup_proof_rejects_mixed_unknown_cleanup_and_wrong_scope_without_partial_retirement',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_submitted_finish_without_value_is_not_replayed',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_finish_timeout_preserves_unknown',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_negative_in_destroyed_realm_is_not_proof',\
+        \ 'native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_late_own_event_is_cancelled_once']\n\
+        results=[]\nfor suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l==suffix+': test'];assert\
+        \ len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix.rsplit('::',1)[-1]+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1\
+        \ and sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in\
+        \ results) else 1)\n\nPY_SWIPE_EXACT\n"
+    - name: Run exact unique realm destruction receipt validator
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: "python3 - <<'PY_SWIPE_EXACT'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\n\
+        out=pathlib.Path('evidence/exact-realm-validator');out.mkdir(parents=True,exist_ok=True)\nh=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['exact_realm_destroy_requires_matching_unique_receipt_before_marking_destroyed']\nresults=[]\n\
+        for suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+': test')];assert\
+        \ len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix.rsplit('::',1)[-1]+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1\
+        \ and sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in\
+        \ results) else 1)\n\nPY_SWIPE_EXACT\n"
+    - name: Run new reference issuance controls with exact one execution each
+      if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+      run: "python3 - <<'PY_POPUP_WIRE'\nimport json,pathlib,subprocess,re,hashlib,os,sys\nside='candidate'\n\
+        out=pathlib.Path('evidence/reference-issuance-exact');out.mkdir(parents=True,exist_ok=True)\nh=pathlib.Path('evidence/harness.path').read_text().strip();listed=subprocess.check_output([h,'--list','--format','terse'],text=True)\n\
+        suffixes=['current_owner_action_rejects_old_client_or_generation_with_colliding_id', 'disposable_trace_wire_refs_never_gain_action_authority',\
+        \ 'pixel_root_actions_refuse_before_resolution_even_with_valid_issuance', 'pixel_root_cannot_be_forged_into_semantic_correlation',\
+        \ 'colliding_current_owner_refs_refuse_old_client_issuance_in_correlation', 'pixel_root_identity_never_aliases_dom_or_css_pseudo_authority',\
+        \ 'wire_revision_is_exact_versioned_utf8_issuance_not_a_numeric_counter', 'fresh_client_colliding_ids_and_counters_cannot_rebind_old_wire_references']\n\
+        results=[]\nfor suffix in suffixes:\n names=[l[:-6] for l in listed.splitlines() if l.endswith('::'+suffix+':\
+        \ test')];assert len(names)==1\n try:\n  r=subprocess.run([h,'--exact',names[0],'--nocapture','--test-threads=1'],capture_output=True,text=True,timeout=120);text=r.stdout+r.stderr;code=r.returncode\n\
+        \ except subprocess.TimeoutExpired as error:\n  text=(error.stdout or b'').decode() if isinstance(error.stdout,bytes)\
+        \ else (error.stdout or '');text+='\\nOUTER_TIMEOUT\\n';code=124\n (out/(suffix+'.log')).write_text(text);counts=re.findall(r'test\
+        \ result: (?:ok|FAILED)\\. (\\d+) passed; (\\d+) failed; (\\d+) ignored;',text);valid=len(counts)==1\
+        \ and sum(map(int,counts[0][:2]))==1 and counts[0][2]=='0';results.append({'name':names[0],'exit':code,'counts':counts,'exactOneNoSkip':valid,'expectedCancellationMismatchObserved':side=='baseline'\
+        \ and valid and code!=0 and 'left: Err(BrowserFailure)' in text and 'right: Err(Cancelled)' in text});print(text)\n\
+        q={'source':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE'],'side':side,'results':results,'harnessSha256':hashlib.sha256(pathlib.Path(h).read_bytes()).hexdigest(),'doesNotEstablishHistoricalSwipeRootCause':True};(out/'result.json').write_text(json.dumps(q,indent=2));print(json.dumps(q));raise\
+        \ SystemExit(0 if len(results)==len(suffixes) and all(x['exit']==0 and x['exactOneNoSkip'] for x in\
+        \ results) else 1)\n\nPY_POPUP_WIRE\n"
+    - run: python3 .github/native-full-regression/ci.py audit --gate fault
+      name: Collect independent custody and explicit missing/loss evidence after every outcome
+      id: custody
+      if: ${{ always() }}
+    - run: python3 .github/native-full-regression/ci.py accept --gate fault
+      name: Accept only complete successful exact-source evidence
+      id: accept
+    - name: Preserve raw evidence including all failures and missing-capture reports
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: full-native-popup-fault-${{ github.run_id }}
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7

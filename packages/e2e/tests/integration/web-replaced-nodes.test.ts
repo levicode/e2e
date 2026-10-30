@@ -119,13 +119,13 @@ test('a field removed while it is being replaced reads as hidden', async ({ app,
 `;
 
 /** A new destination and mandatory owned inputs prevent stale capture reuse. */
-function archiveReplacedFieldCapture(projectDir: string | undefined, report: unknown, closedRows: string | undefined): void {
+function archiveReplacedFieldCapture(projectDir: string | undefined, report: unknown, closedRows: string | undefined, captureNonce: string | undefined): void {
   const parent = path.resolve('.e2e/replaced-nodes');
   mkdirSync(parent, { recursive: true });
   const parentInfo = lstatSync(parent);
   if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error('Invalid capture destination');
   const output = mkdtempSync(path.join(parent, 'run-'));
-  if (projectDir === undefined || report === undefined || closedRows === undefined) throw new Error('Missing capture inputs');
+  if (projectDir === undefined || report === undefined || closedRows === undefined || captureNonce === undefined || !/^[0-9a-f]{64}$/.test(captureNonce)) throw new Error('Missing capture inputs');
   const source = path.join(projectDir, '.e2e', 'native-trace');
   const sourceInfo = lstatSync(source);
   if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) throw new Error('Missing owned native trace');
@@ -143,7 +143,7 @@ function archiveReplacedFieldCapture(projectDir: string | undefined, report: unk
   writeFileSync(path.join(output, 'report.json'), reportText);
   writeFileSync(path.join(output, 'closed-js.jsonl'), closedRows);
   const custody = {
-    schemaVersion: 1, run: path.basename(output),
+    schemaVersion: 2, run: path.basename(output), captureNonce,
     reportSHA256: createHash('sha256').update(reportText).digest('hex'),
     closedJsSHA256: createHash('sha256').update(closedRows).digest('hex'),
   };
@@ -158,6 +158,7 @@ describe('reads of a node replaced every frame', () => {
   let outcome: RunOutcome;
   let project: FixtureProject;
   let closedRows: string | undefined;
+  let captureNonce: string | undefined;
 
   beforeAll(async () => {
     app = await startFixtureApp();
@@ -170,7 +171,7 @@ describe('reads of a node replaced every frame', () => {
       appUrl: app.url,
       runOptions: { ...popupEvalDiagnosticOptions(project.dir, app.url, 'E2E_REPLACED_FIELD_CAPTURE'), onEvent },
       config: { actionTimeout: 5_000, assertionTimeout: 4_000, timeout: 90_000 },
-    }), rows => { closedRows = rows; });
+    }), (rows, nonce) => { closedRows = rows; captureNonce = nonce; });
   }, 750_000);
 
   afterAll(async () => {
@@ -178,7 +179,7 @@ describe('reads of a node replaced every frame', () => {
     // removed. Never rerun/select the failing case or change its deadline.
     if (process.env['E2E_REPLACED_FIELD_CAPTURE'] === '1') {
       try {
-        archiveReplacedFieldCapture(project?.dir, outcome?.report, closedRows);
+        archiveReplacedFieldCapture(project?.dir, outcome?.report, closedRows, captureNonce);
       } catch {
         // A custody failure is not a new test outcome. The independent capture
         // validator must reject missing/incomplete evidence; never infer success.
