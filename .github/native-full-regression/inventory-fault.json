@@ -1395,6 +1395,8 @@
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::query_semantic_bounds_returns_before_exact_readonly_release_ack",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::readonly_frame_owner_held_ack_publishes_both_documents_within_eighty_ms",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::readonly_semantic_geometry_held_ack_publishes_complete_observe_within_eighty_ms",
+    "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::semantic_final_foreign_viewport_ack_never_publishes_optional_tree",
+    "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::semantic_final_matching_viewport_ack_preserves_optional_pixels",
     "native::client_browser::state_lifecycle_tests::observe_trace_timeout_tests::trace_semantic_bounds_returns_before_exact_readonly_release_ack_without_action_refs",
     "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::chromium_persistent_page_close_reopens_without_adopting_another_host_tab",
     "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::isolated_closed_page_dispatch_is_negotiated_and_preserves_context_owner",
@@ -1403,6 +1405,11 @@
     "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::navigation_page_fence_rechecks_real_target_after_captured_lease_wait",
     "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::navigation_page_fence_rejects_malformed_foreign_and_other_owner_before_dispatch",
     "native::client_browser::state_lifecycle_tests::persistent_page_reopen_tests::persistent_closed_page_dispatch_is_negotiated_and_refresh_precedes_results",
+    "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_foreign_inventory_acks_never_publish_values_or_refs",
+    "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_opaque_inventory_errors_do_not_forge_original_deadline",
+    "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_original_stop_survives_held_inventory_ack",
+    "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_valid_acks_publish_nonempty_value_without_refs",
+    "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_valid_async_cleanup_custody_does_not_require_release_ack",
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::acknowledged_clean_recording_start_refusal_preserves_public_stop_and_scope",
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_callback_retirement_notice_requires_exact_closed_identity_and_order",
     "native::client_browser::state_lifecycle_tests::recording_start_receipt_tests::recording_start_refusal_cancel_and_deadline_remain_unknown",
@@ -3782,11 +3789,11 @@
     "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
     "native::recording::tests::recording_sparse_frames_preserve_timestamps"
   ],
-  "nativeCommit": "3febd5169898bdb702929f8829b435249149d1c8",
-  "nativeTree": "5aa2273c1f47ed34d164bb6dbd88b3a92ca4390f",
-  "nonignored": 3290,
+  "nativeCommit": "af452d537b97dd4edaed618bd7d037467c80c8d2",
+  "nativeTree": "da3f84f418f9ed7f1ae0d8ff69086ff28ecd2a9e",
+  "nonignored": 3297,
   "profile": "ci",
   "schemaVersion": 1,
-  "sourceReviewSHA256": "7b7fe34016a55e39636e8dcbbc2f2374da6096b27cb4bf4d3122f35e0dfa385b",
-  "total": 3532
+  "sourceReviewSHA256": "8c1314d8255bb825d6e1963fe1767bf0599f184204b5d1ea82737e44845bd221",
+  "total": 3539
 }
