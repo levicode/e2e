@@ -42,7 +42,7 @@
     "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound",
     "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
   ],
-  "bindingStatus": "S9_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
+  "bindingStatus": "S9R1_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
   "capability": "browser.issuance-bound-references/1",
   "classProjection": {
     "configFile": ".github/native-full-regression/class-pure.config.ts",
@@ -115,7 +115,7 @@
     },
     "vitestVersion": "5.0.5"
   },
-  "commit": "9f838d80e124a71f21ac4f68ea27d0c53e0f7d50",
+  "commit": "efa7b5507d75026bb7bd902d1be73fd11fe75d4b",
   "expectedInventories": {
     "default": {
       "ignored": 242,
@@ -128,7 +128,7 @@
       "total": 3505
     }
   },
-  "externalPublicationGate": "Exact S9 native commit/source readback verified; bound11-file E2E manifest awaits root GO. Inherited S8 runtime pins remain historical only; no S9 CI/runtime/browser result yet.",
+  "externalPublicationGate": "Exact S9R1 native commit/source readback verified; bound4-file E2E manifest awaits root GO. S9 compile failure and inherited S8 runtime pins remain historical only; no S9R1 CI/runtime/browser result yet.",
   "features": [],
   "files": {
     "cli/Cargo.lock": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb",
@@ -161,11 +161,11 @@
     "cli/src/native/client_page_viewport_revision_tests.rs": "d6d26bf19b6207afed5537aeab5575c8f7da6306ee4e68aee6bf84635eae82a1",
     "cli/src/native/client_popup_interposition_test_helpers.rs": "ef02e8f192f795e8b6bed61b48e2493d57774f773c5f629bb12ba53e7f9b3809",
     "cli/src/native/client_popup_preparation_tests.rs": "bec829b2f8f0730f98891f1533584a0a353dfe84fe7be751e38784998ae18491",
-    "cli/src/native/client_popup_setup_diagnostic_tests.rs": "50000fad183c843f52685faa0aea6db8bea8f8584a3b42f51d71c8a304f27ea0",
+    "cli/src/native/client_popup_setup_diagnostic_tests.rs": "4a02c611de015e589a0063385f318173ee5e8f3d2e2fc765ae4fedabeae05cba",
     "cli/src/native/client_popup_setup_schema_tests.rs": "df7a5c6140375e53cd7995356600afe2e278cffa7053d00fd63a70a52339c127",
     "cli/src/native/client_popup_stage0_tests.rs": "159e6548be2fe911af0a11b4b6084307fb6a69366b347b31c6b6759d58117fd8",
     "cli/src/native/client_session.rs": "b2ede17cd17c7d0e93b6e8310c5f43d36e93e0f883ea479097636c4614cf638d",
-    "cli/src/native/client_settlement_trace.rs": "80b9d4fbf305009e287ac890b7bcf255a60241e023d74bccf51a96530e83bc94",
+    "cli/src/native/client_settlement_trace.rs": "c2ee93f56697d5dac5d9bd66aa9253ef84aad5855f96de73dab99076a8b325f5",
     "cli/src/native/client_targets.rs": "bd0c60313bee5697ce9b36c862dbab1b88355c61a3fa7c6e15e98b9b3327735f",
     "cli/src/native/client_tasks.rs": "032cd9465d6435913f81e1dd4117b2d2ad738a3a129fbcd022fed874e00c5467",
     "cli/src/native/client_trace_initial_inventory_tests.rs": "f0c3bce82baf272cdfc0ef38c42bc3cc6ced9e5fc36650b0634bd8cdbbdb4da9",
@@ -649,29 +649,20 @@
     "noRemovedTests": true,
     "reviewSHA256": "d1a87a071253e35f2d2739e925a5b7c130c09ddc9feb508f4409ba34dac6462e"
   },
-  "nativeCommitReadbackSHA256": "fdcfc882481e35bcbb11579179688f4877dbe585777dca9c31dbad8fe83606f9",
-  "nativePatchSHA256": "204ac04ed0a7dfab02d3bae2ea503e2bf690db6062260cbd864cddb63e8351e0",
-  "nativeReadbackSHA256": "de8cc83d24d0e1261e7a9c95af528800c0fcb7203406bbeffc54789da4d711e4",
+  "nativeCommitReadbackSHA256": "ab5f2995be72cabd2053a5f79689459e85a158eadcc092be0a32ad0cb715ce09",
+  "nativePatchSHA256": "4791b998852e144f7b893d6c0569e76b34f2cb5bc3e351a402848f209149a9fb",
+  "nativeReadbackSHA256": "7c0e2f8578fd41f279e93fbcdc26faae99114f7b683791df590b6a7d8a50d05d",
   "nextInventoryDerivation": {
-    "addedTests": 21,
-    "baseCommit": "6150faa8f813e396eff0ae736311d0e7da626593",
-    "baseTree": "ee5044a3e050b406e2598c4b655dbe2d98aba5f9",
+    "addedTests": 0,
+    "baseCommit": "9f838d80e124a71f21ac4f68ea27d0c53e0f7d50",
+    "baseTree": "e482582d384d96eeb5a68688878a5bc0c7c3ac47",
+    "baselineS9Collection": "NOT_RUN_COMPILE_FAILED",
     "ignoredExactlyPreserved": true,
-    "nativeManifestSHA256": "1a884f59b511b0aa22b60a2d1291db116b95a593d6e36618e33ee16cc756f44e",
+    "nativeManifestSHA256": "a18dcc38e5613480c32acbc78734cdf6912b53b5eec17cd71b47f6f1bee9cdaf",
     "noExistingFeatureOrIgnoreAttributeChanges": true,
     "noRemovedTests": true,
-    "requiredStrengthenedExistingTests": [
-      "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
-      "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
-    ],
-    "reviewSHA256": "35e68585eeda0309e941092d9623dd94c60afb2fa7d521a1bebb9e36e9293005",
-    "reviewedFixtureInitializationOnly": [
-      {
-        "change": "commands: None fixture initialization only",
-        "name": "native::client_observation::query_diagnostic::tests::disabled_witness_does_not_change_stage_timing_or_consume_protocol_failure",
-        "path": "cli/src/native/client_observation/query_diagnostic.rs"
-      }
-    ]
+    "originalS9SourceDerivedInventoriesRetained": true,
+    "reviewSHA256": "22fe69ee4c757ae710c887bda36e8793609a88c8d50478be1cba254f7b4caadb"
   },
   "producerFiles": [
     ".github/native-full-regression/ci.py",
@@ -717,8 +708,8 @@
     "scripts/ci/test-check-critical-query-traces.py",
     "scripts/ci/test-original-capture-custody.py"
   ],
-  "producerParent": "92ca04bdfa5a3ffb0040e9aaf16fc03d7f120ac5",
-  "producerParentTree": "950f0dd92cad5090196f453f325f7c945e109f02",
+  "producerParent": "0873cbaad79a8b482dbab6c0a1b31b980dae520c",
+  "producerParentTree": "1654e6c463a96b591acdb363d89ce80e2e228929",
   "profile": "ci",
   "pureProjection": {
     "file": "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
@@ -847,8 +838,8 @@
   ],
   "schemaVersion": 3,
   "scope": "Full unfiltered default and acceptance-faults native test harness plus original four compile boundaries. Exact Rust1.99.1/profileci. Not hosted browser/F4 acceptance. Historical ci-test-fast is not relabeled as ci.",
-  "sourceConsumerPreviewTree": "6402e4c7c95d39da707258948cac37cc2bdba422",
-  "sourceManifestSHA256": "1a884f59b511b0aa22b60a2d1291db116b95a593d6e36618e33ee16cc756f44e",
+  "sourceConsumerPreviewTree": "1654e6c463a96b591acdb363d89ce80e2e228929",
+  "sourceManifestSHA256": "a18dcc38e5613480c32acbc78734cdf6912b53b5eec17cd71b47f6f1bee9cdaf",
   "strengthenedExistingTests": [
     "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
     "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
@@ -871,5 +862,5 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "toolchain": "1.99.1",
-  "tree": "e482582d384d96eeb5a68688878a5bc0c7c3ac47"
+  "tree": "7a64af16cbca3d936e3f9b034c0ad173efe865ad"
 }
