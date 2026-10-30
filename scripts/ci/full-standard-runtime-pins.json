@@ -2,5 +2,5 @@
   "configured": false,
   "ordinary": null,
   "fault": null,
-  "status": "S7_CURRENT_REAL_RECEIPTS_REQUIRED"
+  "status": "S8_CURRENT_REAL_RECEIPTS_REQUIRED"
 }

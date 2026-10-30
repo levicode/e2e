@@ -2,7 +2,7 @@ name: build source-pinned test-only fault runtime
 permissions:
   contents: read
 env:
-  REVIEWED_NATIVE_SHA: 44db08d47314f585763d12339a1542b4cc55e332
+  REVIEWED_NATIVE_SHA: 6150faa8f813e396eff0ae736311d0e7da626593
   REVIEWED_RUST_TOOLCHAIN: 1.99.1
 jobs:
   build:
@@ -63,7 +63,7 @@ jobs:
     - id: pin
       run: node scripts/ci/native-runtime.ts pin
     - name: Require pin equals reviewed final native commit
-      run: test "${{ steps.pin.outputs.sha }}" = "44db08d47314f585763d12339a1542b4cc55e332"
+      run: test "${{ steps.pin.outputs.sha }}" = "6150faa8f813e396eff0ae736311d0e7da626593"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
@@ -73,9 +73,9 @@ jobs:
     - name: Require exact reviewed native checkout tree
       run: 'set -euo pipefail
 
-        test "$(git -C .artifacts/ci-native-source rev-parse HEAD)" = "44db08d47314f585763d12339a1542b4cc55e332"
+        test "$(git -C .artifacts/ci-native-source rev-parse HEAD)" = "6150faa8f813e396eff0ae736311d0e7da626593"
 
-        test "$(git -C .artifacts/ci-native-source rev-parse HEAD^{tree})" = "19c2fc0ef0a1dccc768b096fe897ed279752f292"'
+        test "$(git -C .artifacts/ci-native-source rev-parse HEAD^{tree})" = "ee5044a3e050b406e2598c4b655dbe2d98aba5f9"'
     - name: Install native build toolchain
       run: rustup toolchain install "$REVIEWED_RUST_TOOLCHAIN" --profile minimal
     - name: Build and seal the exact clean test-only fault runtime
@@ -111,4 +111,4 @@ jobs:
   workflow_dispatch: null
   push:
     branches:
-    - ci/s7-fault-runtime-20261030
+    - ci/s8-fault-runtime-20261030
