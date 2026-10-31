@@ -42,7 +42,7 @@
     "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound",
     "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
   ],
-  "bindingStatus": "S17_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
+  "bindingStatus": "S18_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
   "capability": "browser.issuance-bound-references/1",
   "classProjection": {
     "additionalDiagnosticTests": [
@@ -153,7 +153,7 @@
     },
     "vitestVersion": "5.0.5"
   },
-  "commit": "89463ff5401482c4767f4b3ebb28abf83591db0f",
+  "commit": "944597a2f6e08c1eb8fd89e14bb46ada56ce88ba",
   "expectedInventories": {
     "default": {
       "ignored": 242,
@@ -166,7 +166,7 @@
       "total": 3613
     }
   },
-  "externalPublicationGate": "Exact S17 native source/tree/parent readback verified. Seven gate paths await independent bound review and root exact publication GO. S17 repaired native tests not executed; historical S14 runtime pins are not future authority.",
+  "externalPublicationGate": "Exact S18 native source/tree/parent readback verified. Four gate paths await independent bound review and root exact publication GO. S18 repaired native tests not executed; historical S14 runtime pins are not future authority.",
   "features": [],
   "files": {
     "cli/Cargo.lock": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb",
@@ -188,7 +188,7 @@
     "cli/src/native/client_enrollment.rs": "ad85e47f381e9671aca2528ddd1d7bcabc96b0788b987ecfa326f91d94ada248",
     "cli/src/native/client_eval_network_watermark_tests.rs": "88833668b4b74dc844bcfdf668177ffeda0577db011d815929347d013af18ef2",
     "cli/src/native/client_eval_preparation_tests.rs": "42e25bf25eaf2fa1671f31bdc2fe4166388e48f7fc9420da517513ee0faef6d0",
-    "cli/src/native/client_geometry.rs": "74a83467606d588d7757e6696e2a37ec9081fd60ca3b63c6da44aff8c346a23d",
+    "cli/src/native/client_geometry.rs": "55007c03dab0b2601593b5b4b797e73dc63536e1143cf0c0e912216c402a90e4",
     "cli/src/native/client_interop_wire.rs": "332269f72dc4496d6a9a246652f2a0adbaa6b97151185cd4752c6b21564b8451",
     "cli/src/native/client_network.rs": "30036fc5d8ca5b24f9e4c0154ad0a471029101d0575a4249304460c89eacbd9f",
     "cli/src/native/client_network_child_retirement_tests.rs": "e3c6e2984d1ad61ed61857f6b067756fe5b96a9f068a8ad45c250fd43f2fd99d",
@@ -702,23 +702,28 @@
     "noRemovedTests": true,
     "reviewSHA256": "d1a87a071253e35f2d2739e925a5b7c130c09ddc9feb508f4409ba34dac6462e"
   },
-  "nativeCommitReadbackSHA256": "c27fb71381b67d7cea3c1e7574c6a270ff97daff2ee137c0b683185d4f7e2af6",
-  "nativePatchSHA256": "d02f425ca7fe27442d62f5b3ac0c2a201498647197cdd02f1a349f243c6afad7",
-  "nativeReadbackSHA256": "963ca9d4fea07285a6be63369ad18af05907c3065737e41f4a3927a29c8430d9",
+  "nativeCommitReadbackSHA256": "00567fa73db304ffe11ae9333f21af61d2a2890e7398eb193fd9c518f6870ba7",
+  "nativePatchSHA256": "4a5c254816f833a0252204232870fb10d68e86e4353ebe870edfa2549085080a",
+  "nativeReadbackSHA256": "d0dc5df5c60990aa8c0d73d7aacf55f05e8e0323e148be6d22f27141bc33429b",
   "nextInventoryDerivation": {
-    "addedDeclaredNames": 22,
-    "baseCommit": "55783ece749d3ff56be8de2b2a6555b6021161b0",
-    "baseTree": "7f616fbbc13fe698fe379bd0290b16d634d91b93",
-    "baselineActualFullGateCommit": "4306cbd40954099bcbfebbd74bd66465db04d400",
-    "baselineActualFullGateRun": 41156186520,
+    "addedDeclaredNames": 0,
+    "baseCommit": "89463ff5401482c4767f4b3ebb28abf83591db0f",
+    "baseTree": "78b3ed5911f51195aa3645ca176928587cfab3ed",
+    "baselineActualFullGateAccepted": false,
+    "baselineActualFullGateCommit": "218a45b6a9d8e0348f3953fe9ff42f59227d5c5f",
+    "baselineActualFullGateConclusion": "failure",
+    "baselineActualFullGateRun": 41167598488,
     "exactReviewedNameSubstitutions": {
       "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_extra_ready_worker_uses_full_inventory_without_resampling": "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_extra_ready_worker_preserves_single_renderer_proof_without_resampling",
       "native::client_settlement_trace::critical_query_stream_tests::critical_query_stream_contention_is_explicit_not_lossless": "native::client_settlement_trace::critical_query_stream_tests::critical_query_internal_owner_violation_is_terminal_not_complete"
     },
     "historicalEarlierFullGateRun": 41095815227,
+    "historicalS17AddedTests": 22,
     "ignoredExactlyPreserved": true,
-    "nativeManifestSHA256": "d2d1ffced45a774678c53745f16ca7674efd48b4b8c2dec5ee89f3984f18a5c5",
-    "netAddedTests": 22,
+    "lastSuccessfulHistoricalFullGateRun": 41156186520,
+    "lastSuccessfulHistoricalNativeCommit": "55783ece749d3ff56be8de2b2a6555b6021161b0",
+    "nativeManifestSHA256": "c5236a7a8ab4eb10abb2009520ebd33ac84c8e857ab0991119bb1278c2f480d5",
+    "netAddedTests": 0,
     "noOtherRemovedTests": true,
     "previousSubstitutionMappingsHistoricalOnly": true,
     "requiredFullInventorySubset": [
@@ -830,8 +835,8 @@
       "native::element::node_identity_negative_proof_tests::resolution_negative_requires_exact_by_value_boolean_envelope",
       "native::element::node_identity_negative_proof_tests::resolver_receipt_never_rebinds_original_node"
     ],
-    "requiredSubsetExecution": "Complete per-flavor original full suite; each expected name exactly once, zero failures/filtered, identical ignored set. S17 adds22 declared tests without removed names or changed existing test bodies; prior two semantic replacements remain historical mappings only.",
-    "reviewSHA256": "64fd212364f80835a302e853c369b48a3f8486c0c7112e79e537ae537629e34c",
+    "requiredSubsetExecution": "Complete per-flavor original full suite required anew. S18 compatibility repair changes no test names, bodies, attributes, ignored names or counts; S17 full suites did not execute due compilation failure. Historical semantic replacements are not new S18 changes.",
+    "reviewSHA256": "50d20c61b3ef8cb5b99f7a600114c11abf8a035b22ba069c3ab72654b74d5c3d",
     "s16IdentityPreservingRepair": {
       "addedNames": 0,
       "baseCommit": "6ff53e3dc9d9d85ced8b49a6dcf1cdae4d80f988",
@@ -841,7 +846,7 @@
       "sourceManifestSHA256": "81f2b7fdcd62a4bc09d122e3459579e4374a0e612909b8452925e2e9bb611617",
       "sourceOnlyNoExecutedTests": true
     },
-    "s17AddedTests": 22
+    "s18CompatibilityNoTestChanges": true
   },
   "producerFiles": [
     ".github/native-full-regression/ci.py",
@@ -894,8 +899,8 @@
     "scripts/ci/test-check-critical-query-traces.py",
     "scripts/ci/test-original-capture-custody.py"
   ],
-  "producerParent": "ad67f6c766c093800a04315ae5f05feb148cf28c",
-  "producerParentTree": "048e76bc9b8d22f132ee44501388ad528435f3b6",
+  "producerParent": "218a45b6a9d8e0348f3953fe9ff42f59227d5c5f",
+  "producerParentTree": "4215bc5b026952d670df8786e41b35ce28f49e1d",
   "profile": "ci",
   "pureProjection": {
     "file": "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
@@ -1024,8 +1029,8 @@
   ],
   "schemaVersion": 3,
   "scope": "Full unfiltered default and acceptance-faults native test harness plus original four compile boundaries. Exact Rust1.99.1/profileci. Not hosted browser/F4 acceptance. Historical ci-test-fast is not relabeled as ci.",
-  "sourceConsumerPreviewTree": "048e76bc9b8d22f132ee44501388ad528435f3b6",
-  "sourceManifestSHA256": "d2d1ffced45a774678c53745f16ca7674efd48b4b8c2dec5ee89f3984f18a5c5",
+  "sourceConsumerPreviewTree": "4215bc5b026952d670df8786e41b35ce28f49e1d",
+  "sourceManifestSHA256": "c5236a7a8ab4eb10abb2009520ebd33ac84c8e857ab0991119bb1278c2f480d5",
   "strengthenedExistingTests": [
     "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
     "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
@@ -1048,5 +1053,5 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "toolchain": "1.99.1",
-  "tree": "78b3ed5911f51195aa3645ca176928587cfab3ed"
+  "tree": "a21927ceaf73f8f96677346c443b9b5aab83852d"
 }
