@@ -1,6 +1,8 @@
 /** Runs only from the clean installed consumer project, never the monorepo graph. */
 import assert from 'node:assert/strict';
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { resolve as resolvePath } from 'node:path';
 import { openHost, run } from 'e2e/runner';
@@ -55,6 +57,7 @@ const server = createServer((request, response) => {
 await new Promise((ready, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', ready); });
 const url = `http://127.0.0.1:${server.address().port}`;
 let host; let session; let closed = false; let checks = 0;
+let encoderObserver; let sessionDeadline;
 const coverage = {};
 const operation = () => ({ signal: new AbortController().signal, timeoutMs: 15_000, runId: session.runId, attemptId: session.attemptId, origin: 'test' });
 async function readState(phase) {
@@ -78,6 +81,63 @@ async function pngPixels(browser, pngBytes) {
 }
 
 
+function atomicMarker(path, value) {
+  writeFileSync(`${path}.tmp`, JSON.stringify(value)); renameSync(`${path}.tmp`, path);
+}
+async function startEncoderObserver() {
+  const bindingPath = resolvePath('installed-encoder-binding.json');
+  const binding = JSON.parse(readFileSync(bindingPath, 'utf8'));
+  const window = resolvePath('installed-encoder-window'); mkdirSync(window);
+  const deadline = sessionDeadline;
+  atomicMarker(`${window}/arm.json`, { nonce: binding.nonce, fixturePid: process.pid, runId: session.runId, attemptId: session.attemptId, segmentPath: 'video/video.webm', armed: Date.now(), deadlineUnixMs: deadline });
+  const child = spawn('python3', [resolvePath('installed-encoder-proof.py'), bindingPath, window], { stdio: ['ignore', 'ignore', 'pipe'], shell: false });
+  let exit; let error; let diagnostics = '';
+  child.stderr.on('data', bytes => { if (diagnostics.length < 4096) diagnostics += bytes.toString().slice(0, 4096 - diagnostics.length); });
+  const ended = new Promise(resolve => {
+    child.once('error', failure => { error = failure; exit = -1; resolve(); });
+    child.once('exit', (code, signal) => { exit = code ?? signal; resolve(); });
+  });
+  encoderObserver = { child, ended, exitPath: `${window}/exit.json`, nonce: binding.nonce, get exit() { return exit; } };
+  const waitFor = async (path, waitDeadline = deadline) => {
+    while (!existsSync(path)) {
+      assert.equal(error, undefined, 'Owned encoder observer unavailable');
+      assert.equal(exit, undefined, `Owned encoder observer failed: ${diagnostics}`);
+      assert.ok(Date.now() < waitDeadline, 'Owned encoder observation exceeded original budget');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return JSON.parse(readFileSync(path, 'utf8'));
+  };
+  const ready = await waitFor(`${window}/ready.json`, Math.min(deadline, Date.now() + 15_000)); assert.equal(ready.nonce, binding.nonce);
+  return { bindingPath, window, binding, waitFor, ended, child, exitPath: `${window}/exit.json`, nonce: binding.nonce, get exit() { return exit; } };
+}
+async function observerExited(observer, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([observer.ended.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); })]);
+  } finally { clearTimeout(timer); }
+}
+function assertObserverExit(observer) {
+  assert.ok(existsSync(observer.exitPath), 'Owned observer exit was not confirmed');
+  const receipt = JSON.parse(readFileSync(observer.exitPath, 'utf8'));
+  assert.equal(receipt.schemaVersion, 1);
+  assert.equal(receipt.nonce, observer.nonce);
+  assert.equal(receipt.ownedChildrenReaped, true, 'Owned probe/helper cleanup was not confirmed');
+}
+async function stopEncoderObserver() {
+  if (!encoderObserver) return;
+  const observer = encoderObserver;
+  if (observer.exit === undefined) {
+    observer.child.kill('SIGTERM');
+    await observerExited(observer, 1_000);
+  }
+  if (observer.exit === undefined) {
+    observer.child.kill('SIGKILL');
+    await observerExited(observer, 1_000);
+  }
+  assert.notEqual(observer.exit, undefined, 'Owned encoder observer did not exit');
+  assertObserverExit(observer);
+}
+
 /** Retire resources with the existing cleanup-failure precedence. */
 async function cleanup() {
   const failures = [];
@@ -85,6 +145,7 @@ async function cleanup() {
     try { if (session) failures.push(...await session.close()); } catch (error) { failures.push(error); }
     try { if (host) failures.push(...await host.close()); } catch (error) { failures.push(error); }
   }
+  try { await stopEncoderObserver(); } catch (error) { failures.push(error); }
   server.closeAllConnections();
   await new Promise(done => server.close(done));
   if (failures.length) throw new AggregateError(failures, 'Installed consumer cleanup failed');
@@ -93,6 +154,7 @@ async function cleanup() {
 try {
   const engine = web({ viewport: { width: 640, height: 480 } });
   host = await openHost({ cwd: process.cwd(), config: { targets: [{ name: 'installed', engine, app: { url } }] } });
+  sessionDeadline = Date.now() + 120_000;
   session = await host.openSession({ name: 'installed candidate public browser contract', timeout: 120_000 });
   const { browser, screen, app } = session.fixtures;
   await app.open();
@@ -144,6 +206,7 @@ try {
   assert.equal(await browser.evaluate(() => document.querySelector('iframe').contentDocument.querySelector('input').value), 'synthetic-private-value');
   coverage.mask = { path: maskPath, observation: pixels, artifact: masked }; checks++;
 
+  const encoder = await startEncoderObserver();
   await engine.artifacts.startVideo(operation());
   await browser.evaluate(async () => {
     const started = performance.now();
@@ -177,7 +240,11 @@ try {
     } finally { videoElement.pause(); videoElement.removeAttribute('src'); videoElement.load(); URL.revokeObjectURL(objectURL); }
   }, [...video]);
   assert.equal(frame.width, 640); assert.equal(frame.height, 480); assert.ok(frame.padded < 0.01); assert.ok(frame.inked > 0.01);
-  coverage.media = { path: videoPath, bytes: video.length, frame }; checks++;
+  atomicMarker(`${encoder.window}/finished.json`, { nonce: encoder.binding.nonce, runId: session.runId, attemptId: session.attemptId, segmentPath: segment.path, startedAt: segment.startedAt, publicPath: videoPath, webmSha256: createHash('sha256').update(video).digest('hex'), nativeStopReturnedSuccessfully: true, decodedMediaPassed: true, finished: Date.now() });
+  await encoder.waitFor(`${encoder.window}/receipt.json`);
+  assert.ok(await observerExited(encoder, Math.max(1, Math.min(1_000, sessionDeadline - Date.now()))), 'Encoder observer failed to retire');
+  assert.equal(encoder.exit, 0); assertObserverExit(encoder); encoderObserver = undefined;
+  coverage.media = { path: videoPath, bytes: video.length, frame, runId: session.runId, attemptId: session.attemptId, startedAt: segment.startedAt, encoderReceiptPath: `${encoder.window}/receipt.json`, encoderBindingPath: encoder.bindingPath }; checks++;
 
   assert.deepEqual(await session.close(), []);
   assert.equal(page.isClosed(), true, 'Session cleanup must close the actual owned Page');

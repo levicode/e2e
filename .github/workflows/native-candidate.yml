@@ -3,7 +3,7 @@ name: native full public candidate (Linux, not release acceptance)
 # Opt-in only. No model credentials, private fixtures, publishing, caches or foundation artifact reuse.
 on:
   push:
-    branches: [implement/native-full-ci]
+    branches: [ci/s21-native-formal-20261031]
   workflow_dispatch:
     inputs:
       native_sha:

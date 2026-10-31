@@ -1,4 +1,4 @@
-import { validateInstalledPublicProof } from './installed-public-proof.ts';
+import { prepareInstalledEncoderProof, validateInstalledPublicProof } from './installed-public-proof.ts';
 /** Real clean-consumer gate. Run only in authorized Linux CI, never a unit test. */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -83,10 +83,11 @@ async function main(args: readonly string[]): Promise<void> {
     // The heldout verifier negotiates without launching a browser; it checks installed bytes.
     before = await verifyHeldoutCandidate(options);
     copyFileSync(fileURLToPath(new URL('fixtures/installed-candidate.mjs', import.meta.url)), join(project, 'installed-candidate.mjs'));
+  const encoderBinding = prepareInstalledEncoderProof(project, verified.executable, digest, manifest);
     run('public-consumer', process.execPath, ['installed-candidate.mjs']);
     publicProof = JSON.parse(readFileSync(join(project, 'installed-public-result.json'), 'utf8')) as unknown;
     const proof = publicProof as Record<string, unknown>;
-    validateInstalledPublicProof(publicProof, project, evidence);
+    validateInstalledPublicProof(publicProof, project, evidence, encoderBinding);
     after = await verifyHeldoutCandidate(options);
     if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('Candidate identity changed during execution');
     const lock = manager === 'npm' ? 'package-lock.json' : 'pnpm-lock.yaml';

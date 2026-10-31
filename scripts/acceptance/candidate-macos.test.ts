@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { candidateRevision } from './candidate-revision.ts';
 import { candidateWorkflowRecipe } from './candidate-producer.ts';
+import { validateInstalledPublicProof } from './installed-public-proof.ts';
 
 const lock = { schemaVersion: 1, repository: 'levicode/agent-browser', commit: 'a'.repeat(40), benchmarkSweep: false };
 const workflow = readFileSync(new URL('../../.github/workflows/native-macos-candidate.yml', import.meta.url), 'utf8');
@@ -65,7 +66,7 @@ test('producer hashes the actual allowlisted workflow, never caller-relative pat
 });
 
 test('macOS candidate requires real native hosts, read-only permissions and platform-specific artifact identity', () => {
-  assert.match(workflow, /branches: \[implement\/native-macos-ci\]/);
+  assert.match(workflow, /branches: \[ci\/s21-macos-installed-20261031\]/);
   assert.match(workflow, /runner: macos-15\n\s+arch: arm64\n\s+rust_host: aarch64-apple-darwin/);
   assert.match(workflow, /runner: macos-15-intel\n\s+arch: x64\n\s+rust_host: x86_64-apple-darwin/);
   assert.match(workflow, /permissions:\n  contents: read\n/);
@@ -77,7 +78,7 @@ test('macOS candidate requires real native hosts, read-only permissions and plat
   assert.match(workflow, /if: \$\{\{ !cancelled\(\) && steps.installed.outcome == 'success' \}\}/);
 });
 
-test('macOS isolation preserves existing tools, all four independent boundaries and the unmodified installed six-check gate', () => {
+test('macOS isolation preserves existing tools, all four independent boundaries and the installed eleven-check gate retaining its original six obligations', () => {
   assert.match(workflow, /rustup_home="\$\{RUSTUP_HOME:-\$HOME\/.rustup\}"/);
   assert.match(workflow, /dirname "\$executable" >> "\$GITHUB_PATH"/);
   assert.match(workflow, /echo "RUSTUP_HOME=\$rustup_home" >> "\$GITHUB_ENV"/);
@@ -96,7 +97,9 @@ test('macOS isolation preserves existing tools, all four independent boundaries 
   assert.match(workflow, /package-bundle.ts "\$RUNNER_TEMP\/native-candidate-bin\/production"/);
   assert.match(workflow, /candidate-installed.ts "\$RUNNER_TEMP\/native-candidate-bundle" "\$\{\{ steps.bundle.outputs.manifest_sha256 \}\}" "\$RUNNER_TEMP\/native-candidate-consumer"/);
   const installed = readFileSync(new URL('candidate-installed.ts', import.meta.url), 'utf8');
-  assert.match(installed, /proof.checks !== 6/);
+  assert.match(installed, /validateInstalledPublicProof\(publicProof, project, evidence, encoderBinding\)/);
+  const verifier = readFileSync(new URL('installed-public-proof.ts', import.meta.url), 'utf8');
+  assert.match(verifier, /assert.equal\(proof.checks, 11\)/);
   assert.match(installed, /delete env\['E2E_AGENT_BROWSER_EXECUTABLE'\]/);
 });
 
@@ -150,5 +153,49 @@ test('producer CLI enforces its recipe selector before reading evidence or invok
     const result = spawnSync(process.execPath, [script], { encoding: 'utf8', env: { ...process.env, CANDIDATE_WORKFLOW_FILE: recipe } });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Unapproved candidate workflow recipe/);
+  }
+});
+
+
+test('S21 exact opt-in refs reject near misses, alternate events and push overrides', () => {
+  const refs = ['refs/heads/ci/s21-native-formal-20261031', 'refs/heads/ci/s21-macos-installed-20261031'];
+  for (const ref of refs) {
+    assert.deepEqual(candidateRevision(lock, 'push', ref), { sha: lock.commit, benchmarkSweep: false });
+    for (const bad of [`${ref}-extra`, ref.replace('20261031', '20261101'), ref.replace('refs/heads/', 'refs/tags/'), ref.replace('refs/heads/', ''), `${ref}/*`]) assert.throws(() => candidateRevision(lock, 'push', bad), /opt-in branch/);
+    for (const event of ['pull_request', 'workflow_run', 'schedule', '']) assert.throws(() => candidateRevision(lock, event, ref), /only accepts/);
+    assert.throws(() => candidateRevision(lock, 'push', ref, 'b'.repeat(40)), /overrides/);
+    assert.throws(() => candidateRevision(lock, 'push', ref, '', 'true'), /overrides/);
+    assert.throws(() => candidateRevision({ ...lock, commit: 'main' }, 'push', ref), /immutable/);
+    assert.throws(() => candidateRevision({ ...lock, repository: 'other/repository' }, 'push', ref), /source lock/);
+  }
+  assert.deepEqual(candidateRevision(lock, 'workflow_dispatch', refs[0]!, 'b'.repeat(40), 'false'), { sha: 'b'.repeat(40), benchmarkSweep: false });
+});
+
+test('producer implementation keeps original nineteen and exact encoder eight as a closed union', () => {
+  const source = readFileSync(new URL('candidate-producer.ts', import.meta.url), 'utf8');
+  const recipes = JSON.parse(source.match(/const recipes = (\[[^\n]+\]);/)![1]!.replaceAll("'", '"')) as string[];
+  const original = ['candidate-video-manifest.ts', 'candidate-manifest.ts', 'candidate-revision.ts', 'candidate-native.ts', 'candidate-native-matrix-manifest.ts', 'candidate-native-matrix.ts', 'candidate-proxy-diagnostic.ts', 'candidate-producer.ts', 'candidate-web.ts', 'candidate-installed.ts', 'candidate-source.ts', 'candidate-receipt.ts', 'fixtures/installed-candidate.mjs', 'installed-chromium.ts', 'native-evidence.ts', 'probe-native.ts', 'package-bundle.ts', 'bundle-installer.ts', 'package-inventory.ts'];
+  const encoder = ['installed-encoder-proof.py', 'installed-encoder-proc.c', 'installed-encoder-proof.test.py', 'fixtures/installed-candidate.mjs', 'candidate-installed.ts', 'candidate-runtime-install.ts', 'installed-public-proof.ts', 'installed-public-proof.test.ts'];
+  const expected = [...original, ...encoder.filter(file => !original.includes(file))];
+  assert.equal(original.length, 19);
+  assert.equal(encoder.length, 8);
+  assert.equal(expected.length, 25);
+  assert.deepEqual(recipes, expected);
+  assert.equal(new Set(recipes).size, recipes.length);
+  const map = Object.fromEntries(recipes.map(file => [file, createHash('sha256').update(readFileSync(new URL(file, import.meta.url))).digest('hex')]));
+  assert.deepEqual(Object.keys(map), expected);
+  for (const file of encoder) assert.match(map[file]!, /^[a-f0-9]{64}$/);
+  assert.ok(source.includes('implementation: Object.fromEntries(recipes.map(file => [file, hashFile(fileURLToPath(new URL(file, import.meta.url)))]))'));
+});
+
+
+test('installed eleven-check verifier rejects wrong counts and each missing original obligation', () => {
+  const keys = ['runtimeOverrideAbsent', 'publicBrowserActionPassed', 'callbackPassed', 'cleanupConfirmed', 'surfaceOfPassed', 'locateTapPassed'];
+  const proof: Record<string, unknown> = { status: 'passed', checks: 11, ...Object.fromEntries(keys.map(key => [key, true])) };
+  for (const checks of [undefined, 0, 6, 10, 12]) assert.throws(() => validateInstalledPublicProof({ ...proof, checks }, '/not-read', '/not-written', {}));
+  for (const key of keys) {
+    const missing = { ...proof }; delete missing[key];
+    assert.throws(() => validateInstalledPublicProof(missing, '/not-read', '/not-written', {}), new RegExp(key));
+    assert.throws(() => validateInstalledPublicProof({ ...proof, [key]: false }, '/not-read', '/not-written', {}), new RegExp(key));
   }
 });

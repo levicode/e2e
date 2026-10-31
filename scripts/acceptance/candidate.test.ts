@@ -170,7 +170,7 @@ test('every failure, skip or missing independent gate prevents candidate success
 test('hosted workflow has narrow opt-in triggers, isolates features, preserves independent runtime gates and final guard', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/native-candidate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /push:\n    branches: \[implement\/native-full-ci\]/);
+  assert.match(workflow, /push:\n    branches: \[ci\/s21-native-formal-20261031\]/);
   assert.match(workflow, /node scripts\/acceptance\/candidate-revision.ts/);
   assert.doesNotMatch(workflow, /continue-on-error|secrets\.|actions\/cache|pull_request:|test:agent|canary:publish/);
   for (const id of CANDIDATE_GATES) assert.equal(workflow.split(`id: ${id}\n`).length - 1, 1, id);
@@ -554,13 +554,13 @@ test('P14 permanently retires its PGID after absence and never signals a recycle
 
 // Exact adjacent definition/use pair: no alternate base, callback or filename.
 function assertInstalledScreenshotRead(source: string): void {
-  assert.match(source, /const screenshotPath = resolve\(session\.artifactsDir, await app\.screenshot\('installed-candidate'\)\);\s*const capture = readFileSync\(screenshotPath\);/);
+  assert.match(source, /const screenshotPath = resolvePath\(session\.artifactsDir, await app\.screenshot\('installed-candidate'\)\);\s*const capture = readFileSync\(screenshotPath\);/);
 }
 test('installed screenshot oracle rejects wrong paths, producers, consumers and intervening reassignment', () => {
   const source = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
   assertInstalledScreenshotRead(source);
   for (const changed of [
-    source.replace('resolve(session.artifactsDir, await app.screenshot', 'resolve(otherDirectory, await app.screenshot'),
+    source.replace('resolvePath(session.artifactsDir, await app.screenshot', 'resolvePath(otherDirectory, await app.screenshot'),
     source.replace("app.screenshot('installed-candidate')", "app.screenshot('other')"),
     source.replace('readFileSync(screenshotPath)', 'readFileSync(otherPath)'),
     source.replace('const capture = readFileSync', "screenshotPath = otherPath; const capture = readFileSync"),

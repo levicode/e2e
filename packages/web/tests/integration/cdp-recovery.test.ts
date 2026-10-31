@@ -375,12 +375,12 @@ describe('CDP session recovery', () => {
   }
 
   /** Starts the engine's attempt against a host-provisioned browser. */
-  async function start(connect: WebConnectOptions | undefined, options: Omit<WebOptions, 'connect'> = {}, open = true): Promise<EngineHandle> {
+  async function start(connect: WebConnectOptions | undefined, options: Omit<WebOptions, 'connect'> = {}, open = true, captureEnv?: NodeJS.ProcessEnv): Promise<EngineHandle> {
     recoveryPhase('start', 'setup');
     const engine = webEngine({ ...options, ...(connect === undefined ? {} : { connect }) });
     activeEngines.add(engine);
     const info = { runId: 'run-recovery', targetName: 'web', projectRoot: process.cwd(),
-      app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
+      app: { site: new URL(app.url).hostname }, env: captureEnv ?? process.env, headed: false,
       signal: new AbortController().signal, log: () => undefined };
     const prepared = await engine.prepare!({ ...info, slots: 1 });
     await openingEngine.run(engine, () => engine.init!({ ...info, env: { ...prepared?.env, ...info.env }, workerSlot: 0 }));
@@ -838,7 +838,7 @@ describe('CDP session recovery', () => {
     }
   }), 60_000);
 
-  it('bounds a hung reconnect resolver and propagates cancellation to it', async () => {
+  it('bounds a hung reconnect resolver and propagates cancellation to it', async test => {
     const remote = await host();
     let signal: AbortSignal | undefined;
     let entered = false;
@@ -933,7 +933,7 @@ describe('CDP session recovery', () => {
       engine = await start({
         cdpEndpoint: () => remote.endpoint,
         reconnectEndpoint: (abort) => { entered = true; signal = abort; console.error('HUNG_RESOLVER_ENTER', JSON.stringify(state())); return new Promise<string>(() => undefined); },
-      });
+      }, {}, true, recoveryCaptures.get(test.task)?.env);
       phase = 'disconnect'; console.error('HUNG_PHASE', JSON.stringify({ phase, ...state() }));
       expect(native).toBeDefined();
       expect(native!.recoveryScope()).toBeUndefined();

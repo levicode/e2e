@@ -3,7 +3,7 @@
 name: native macOS installed candidate (not full acceptance or release)
 on:
   push:
-    branches: [implement/native-macos-ci]
+    branches: [ci/s21-macos-installed-20261031]
   workflow_dispatch:
     inputs:
       native_sha:

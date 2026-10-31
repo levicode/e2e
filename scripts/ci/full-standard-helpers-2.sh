@@ -431,7 +431,7 @@ HELPER_5
 cat > evidence/tools/web-partition.ts <<'HELPER_6'
 // CI capability partition, not a replacement test config or performance shard.
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,copyFileSync,chmodSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -450,6 +450,12 @@ assert.ok(o&&f,'both real negotiated capabilities/scope cleanup required');
 verifyCandidateRuntime(JSON.parse(readFileSync(ordinaryProof,'utf8')),hash(ordinary),false);verifyCandidateRuntime(JSON.parse(readFileSync(faultProof,'utf8')),hash(fault),true);
 const installer=verifyInstallerFixtureRuntime('web-browser',fault,faultProof,ordinary,hash(ordinary))!;
 const env=candidateInstallerEnvironment(process.env,installer);
+const wrapper=resolve('evidence/tools/web-native-trace.sh');
+try {
+ copyFileSync('scripts/ci/native-trace-wrapper.sh',wrapper);chmodSync(wrapper,0o700);assert.equal(hash(wrapper),hash('scripts/ci/native-trace-wrapper.sh'));
+ mkdirSync(resolve('evidence/fixture-invocations'),{mode:0o700});mkdirSync(resolve('evidence/web-case-native'),{mode:0o700});
+} catch { /* Missing capture is diagnosed after both unchanged partitions execute. */ }
+const ordinaryEnv={...env,E2E_WEB_THREE_CASE_NATIVE_CAPTURE:'1'};
 const common=['pnpm','--filter','@e2e-dev/web','exec','vitest'];
 let completed=false;
 try {
@@ -458,14 +464,15 @@ try {
  const faultFile=resolve('packages/web/tests/integration',CANDIDATE_FAULT_FILE);const faultRows=all.filter(x=>x.file===faultFile);const ordinaryRows=all.filter(x=>x.file!==faultFile);assert.equal(faultRows.length,5);assert.ok(ordinaryRows.length);
  for(const [name,rows] of [['ordinary',ordinaryRows],['fault',faultRows]] as const){mkdirSync(out+'/'+name);writeFileSync(out+'/'+name+'/collection.json',JSON.stringify(rows,null,2));}
  // Both commands run even when ordinary fails; no reporter/receipt failure can erase fault results.
- const ordinaryOK=run('ordinary-command',[...common,'run','--exclude',`tests/integration/${CANDIDATE_FAULT_FILE}`,'--reporter=verbose','--reporter=json',`--outputFile.json=${out}/ordinary/results.json`],env);
+ const ordinaryOK=run('ordinary-command',[...common,'run','--exclude',`tests/integration/${CANDIDATE_FAULT_FILE}`,'--reporter=verbose','--reporter=json',`--outputFile.json=${out}/ordinary/results.json`],ordinaryEnv);
  const faultEnv={...env,E2E_AGENT_BROWSER_EXECUTABLE:fault,E2E_INTEROP_EVIDENCE_DIR:resolve(env.E2E_INTEROP_EVIDENCE_DIR!,'..','fault')};
  const faultOK=run('fault-command',[...common,'run',`tests/integration/${CANDIDATE_FAULT_FILE}`,'--reporter=verbose','--reporter=json',`--outputFile.json=${out}/fault/results.json`],faultEnv);
+ const nativeCaptureOK=run('ordinary-native-capture',['python3','scripts/ci/check-web-case-native-custody.py',resolve('evidence')],ordinaryEnv);
  for(const name of ['ordinary','fault'])writeFileSync(out+'/'+name+'/command.exit',readFileSync(out+'/'+name+'-command.exit'));
  const v1=run('ordinary-coverage',['python3','evidence/tools/validate-vitest.py',out+'/ordinary']);const v2=run('fault-coverage',['python3','evidence/tools/validate-vitest.py',out+'/fault']);
  verifySemanticFaults(JSON.parse(readFileSync(out+'/fault/results.json','utf8')),[faultFile]);
  writeFileSync(out+'/partition.json',JSON.stringify({completeDiscovery:all,ordinary:ordinaryRows,fault:faultRows,ordinaryBinarySha256:hash(ordinary),faultBinarySha256:hash(fault),ordinaryOK,faultOK,coverageOK:v1&&v2},null,2));
- completed=ordinaryOK&&faultOK&&v1&&v2;
+ completed=ordinaryOK&&faultOK&&v1&&v2&&nativeCaptureOK;
 } finally {
  const receipt=verifyInstallerFixturePostRun(installer);writeFileSync(out+'/installer-postrun.json',JSON.stringify(receipt,null,2));assert.equal(receipt.postRunIdentityVerified,true);
 }

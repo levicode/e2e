@@ -1,3 +1,4 @@
+import { prepareWebCaseNativeCapture } from './case-cleanup-capture.ts';
 /** Real native/PW fixture; this helper never replaces a browser or wire method. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -56,6 +57,7 @@ export async function withNativeDialogFixture(
   kind: 'isolated' | 'persistent',
   run: (fixture: NativeDialogFixture) => Promise<void>,
 ): Promise<void> {
+  const capture = name === 'popup-replacement' ? prepareWebCaseNativeCapture('popup-replacement') : undefined;
   const lifetime = new AbortController();
   const deadline = performance.now() + 45000;
   const expiry = setTimeout(() => lifetime.abort(), 45000);
@@ -84,7 +86,7 @@ export async function withNativeDialogFixture(
       const address = server.address();
       if (address === null || typeof address === 'string') throw new Error('missing fixture address');
       const url = `http://127.0.0.1:${address.port}/`;
-      await engine.init!({ runId: `dialog-${name}`, targetName: 'web', projectRoot: process.cwd(), app: { site: '127.0.0.1' }, env: process.env, headed: false, workerSlot: 0, signal: lifetime.signal, log: () => undefined });
+      await engine.init!({ runId: `dialog-${name}`, targetName: 'web', projectRoot: process.cwd(), app: { site: '127.0.0.1' }, env: capture?.env ?? process.env, headed: false, workerSlot: 0, signal: lifetime.signal, log: () => undefined });
       await engine.startAttempt!({ attemptId: 'one', artifactsDir, signal: lifetime.signal, resolveSecret: noSecrets, ...ignoreTrace });
       const context: EngineFixtureContext = {
         targetName: 'web',
@@ -127,6 +129,7 @@ export async function withNativeDialogFixture(
       facts['serverClosed'] = !server.listening;
       assert.equal(facts['serverClosed'], true, 'Fixture server remained listening');
     } catch (cause) { failure ??= cause; facts['serverClosed'] = false; facts['primaryFailureSource'] ??= 'server-cleanup'; facts['primaryFailureCode'] ??= failureCode(cause); }
+    capture?.finish();
     const output = process.env['E2E_INTEROP_EVIDENCE_DIR'];
     if (output !== undefined) { mkdirSync(output, { recursive: true }); writeFileSync(path.join(output, `dialog-guard-${name}.json`), JSON.stringify(facts, null, 2)); }
     if (facts['cleanup'] === 'passed' && facts['serverClosed'] === true) rmSync(artifactsDir, { recursive: true, force: true });

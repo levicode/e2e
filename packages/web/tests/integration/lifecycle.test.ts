@@ -207,10 +207,11 @@ async function withAttempt(
   body: () => Promise<void>,
   evidence?: LifecycleEvidence,
   diagnostic?: LifecycleAttemptDiagnostic,
+  captureEnv?: NodeJS.ProcessEnv,
 ): Promise<void> {
   evidence?.phase('setup', 'init');
   diagnostic?.enter('init');
-  try { await boot(engine, app); diagnostic?.passed(); }
+  try { await boot(engine, app, captureEnv); diagnostic?.passed(); }
   catch (cause) { diagnostic?.failed(cause); evidence?.failed('setup', cause); evidence?.finish(); throw cause; }
   let started = false;
   try {
@@ -246,13 +247,13 @@ async function withAttempt(
   }
 }
 
-async function boot(engine: EngineHandle, app: FixtureApp): Promise<void> {
+async function boot(engine: EngineHandle, app: FixtureApp, captureEnv?: NodeJS.ProcessEnv): Promise<void> {
   await engine.init!({
     runId: 'run-pool',
     targetName: 'web',
     projectRoot: process.cwd(),
     app: { site: new URL(app.url).hostname },
-    env: process.env,
+    env: captureEnv ?? process.env,
     headed: false,
     workerSlot: 0,
     log: () => undefined,
@@ -1193,7 +1194,7 @@ describe('web engine lifecycle', () => {
     }
   });
 
-  it('cancels an in-flight native operation when its signal aborts', async () => withLifecycleOpenCancelDiagnostics(async () => {
+  it('cancels an in-flight native operation when its signal aborts', async () => withLifecycleOpenCancelDiagnostics(async captureEnv => {
     const evidence = new LifecycleEvidence('P32');
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 'h1', async () => {
@@ -1209,8 +1210,8 @@ describe('web engine lifecycle', () => {
       await evidence.assert(0, () => expect(pending).rejects.toMatchObject({ code: 'CANCELLED' }));
       evidence.phase('body', 'assertion');
       expect(Date.now() - started).toBeLessThan(3_000);
-    }, evidence);
-  }));
+    }, evidence, undefined, captureEnv);
+  }, true));
 
   it('round-trips persisted state through capture and restore, and reset drops it', async () => {
     const evidence = new LifecycleEvidence('P33');

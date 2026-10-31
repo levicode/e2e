@@ -27,3 +27,10 @@ it.each([undefined, '', '0'])('does not enable P32 diagnostics without explicit 
   delete process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC'];
   await withLifecycleOpenCancelDiagnostics(async () => { expect(process.env['E2E_LIFECYCLE_OPEN_CANCEL_DIAGNOSTIC']).toBeUndefined(); });
 });
+
+it('never creates case custody from worker opt-in alone', async () => {
+  const previous = process.env['E2E_WEB_THREE_CASE_NATIVE_CAPTURE'];
+  process.env['E2E_WEB_THREE_CASE_NATIVE_CAPTURE'] = '1';
+  try { await withLifecycleOpenCancelDiagnostics(async env => { expect(env).toBeUndefined(); }); }
+  finally { if (previous === undefined) delete process.env['E2E_WEB_THREE_CASE_NATIVE_CAPTURE']; else process.env['E2E_WEB_THREE_CASE_NATIVE_CAPTURE'] = previous; }
+});

@@ -1,4 +1,4 @@
-import { assertInstalledConsumerIsolation, outside, validateInstalledPublicProof } from './installed-public-proof.ts';
+import { prepareInstalledEncoderProof, assertInstalledConsumerIsolation, outside, validateInstalledPublicProof } from './installed-public-proof.ts';
 /** Bind the actual installed package graph and exercise its public runtime without an override. */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -30,13 +30,14 @@ try {
   const options = { bundle, expectedManifestHash: digest, installedCoreEntry: pathToFileURL(coreEntry).href, installedWebEntry: pathToFileURL(webEntry).href, nativeExecutable: join(bundle, manifest.native.path) };
   before = await verifyHeldoutCandidate(options);
   copyFileSync(fileURLToPath(new URL('fixtures/installed-candidate.mjs', import.meta.url)), join(project, 'installed-candidate.mjs'));
+  const encoderBinding = prepareInstalledEncoderProof(project, join(bundle, manifest.native.path), digest, manifest);
   const env: NodeJS.ProcessEnv = { ...process.env, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
   delete env['E2E_AGENT_BROWSER_EXECUTABLE']; delete env['NODE_PATH']; delete env['NODE_OPTIONS'];
   const result = spawnSync(process.execPath, ['installed-candidate.mjs'], { cwd: project, env, encoding: 'utf8', timeout: 300_000, maxBuffer: 16 * 1024 * 1024 });
   writeFileSync(join(evidence, 'installed-consumer.log'), result.stdout + result.stderr);
   if (result.status !== 0) throw new Error(`Installed public consumer failed: ${result.error?.message ?? result.signal ?? result.status}`);
   publicProof = JSON.parse(readFileSync(join(project, 'installed-public-result.json'), 'utf8')) as unknown;
-  validateInstalledPublicProof(publicProof, project, evidence);
+  validateInstalledPublicProof(publicProof, project, evidence, encoderBinding);
   assertInstalledConsumerIsolation(project, checkout, [coreEntry, webEntry, webCoreEntry]);
   after = await verifyHeldoutCandidate(options);
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('Installed candidate identity changed during browser execution');
