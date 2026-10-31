@@ -69,7 +69,7 @@
         {
           "name": "verify-runtime",
           "id": "verify_runtime",
-          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode evidence/tools/verify-runtimes.ts\n) 2>&1 | tee \"evidence/verify-runtime.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/verify-runtime.exit\"\nexit \"$s\"\n",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode evidence/tools/verify-runtimes.ts\n) 2>&1 | tee \"evidence/verify-runtime.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/verify-runtime.exit\"\n# Preserve the exact generated verifier as evidence, not as repository source.\nmv evidence/tools/verify-runtimes.ts evidence/tools/verify-runtimes.ts.txt || exit \"$?\"\nsha256sum evidence/tools/verify-runtimes.ts.txt > evidence/runtime-verifier-archived.sha256 || exit \"$?\"\nexit \"$s\"\n",
           "if": "${{ !cancelled() && steps.restore.outcome == 'success' }}",
           "env": {
             "NEED_FAULT": "0"

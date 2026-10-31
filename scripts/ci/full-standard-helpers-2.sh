@@ -13,8 +13,13 @@ import sys
 
 COLLECT = 'packages/e2e/tests/unit/collect.test.ts'
 OBSERVER = 'packages/e2e/tests/helpers/collect-fs-applicability.ts'
+LOADER = 'packages/e2e/tests/integration/typescript-loader.test.ts'
+LOADER_SOURCE_SHA256 = 'de83bc53e06c18c586ab507465e99af5de16cdd7f1211a24d1643832174fae5b'
+LOADER_TITLE = ('the TypeScript loader', 'compiles a .cts a loader earlier in the chain hands on without source, as Yarn PnP does')
+LOADER_PREDICATE = r'/^24\.(?:[89]|10)\.|^24\.11\.0$/.test(process.versions.node)'
 CONTAINER = 'scripts/ci/full-standard-helpers-2.sh'
 GENERATED = 'evidence/tools/validate-vitest.py'
+CORE_COLLECTOR = 'evidence/tools/collect-core.mjs'
 BASE_COLLECT_SHA256 = '7276a4dafbe8394330baf2edb3020981439b9b6d203bc15e237c392331ba63b5'
 OBSERVER_IMPORT = "import { recordCollectFsCapability } from '../helpers/collect-fs-applicability.ts';\n"
 OBSERVER_CALL = '  recordCollectFsCapability(root, caseInsensitiveFs, import.meta.url);\n'
@@ -110,6 +115,9 @@ def census(collection, result, root):
     for title_path, _, _ in CASES:
         assert expected[(str(root / COLLECT), ' > '.join(title_path))] == 1, 'conditional collection identity must occur exactly once'
         assert structural[(str(root / COLLECT), title_path)] == 1, 'conditional result titlePath must occur exactly once'
+    loader_identity = (str(root / LOADER), LOADER_TITLE)
+    assert expected[(loader_identity[0], ' > '.join(LOADER_TITLE))] == 1, 'original loader collection identity must occur exactly once'
+    assert structural[loader_identity] == 1, 'original loader result titlePath must occur exactly once'
     return rows
 
 def verify_collect_source(data):
@@ -128,6 +136,26 @@ def extract_validator(data):
     assert end in rest, 'missing helper terminator'
     return rest.split(end, 1)[0] + b'\n'
 
+def extract_core_collector(data):
+    start = b"cat > evidence/tools/collect-core.mjs <<'CORE_COLLECTION'\n"
+    end = b'\nCORE_COLLECTION\n'
+    assert data.count(start) == 1 and data.count(end) == 1, 'missing or ambiguous core collector heredoc'
+    rest = data.split(start, 1)[1]
+    assert end in rest, 'missing core collector terminator'
+    return rest.split(end, 1)[0] + b'\n'
+
+def verify_core_collector(root, container_bytes):
+    actual = regular_bytes(root / CORE_COLLECTOR, 1024 * 1024)
+    assert actual == extract_core_collector(container_bytes), 'generated core collector differs from current source helper'
+    return sha(actual)
+
+def collect_node_identity(requested, actual_version):
+    selector = re.fullmatch(r'(22|24|26)(?:\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2}))?', requested) if type(requested) is str else None
+    actual = re.fullmatch(r'v(22|24|26)\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})', actual_version) if type(actual_version) is str else None
+    assert selector is not None and actual is not None, 'canonical requested and actual Node versions'
+    assert selector[1] == actual[1] if selector[2] is None else actual_version == 'v' + requested, 'actual Node differs from requested selector'
+    return actual_version[1:]
+
 def current_expected(root, p):
     # These values come from the current checkout/environment, never from the context or receipt.
     assert root == pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve()
@@ -144,24 +172,26 @@ def current_expected(root, p):
                          if line.rstrip(b'\n').split(b'\t', 1)[1].decode() not in EXCLUDED_INVENTORY)
     assert (root / 'evidence/source-inventory.txt').read_bytes() == inventory, 'current source inventory differs'
     source = {}
-    for path in [COLLECT, OBSERVER, CONTAINER]:
+    for path in [COLLECT, OBSERVER, CONTAINER, LOADER]:
         actual = regular_bytes(root / path, 4 * 1024 * 1024)
         assert actual == git('show', 'HEAD:' + path), 'current source bytes differ from Git: ' + path
         source[path] = actual
     verify_collect_source(source[COLLECT])
+    verify_loader_source(source[LOADER])
     generated = regular_bytes(root / GENERATED, 4 * 1024 * 1024)
     assert pathlib.Path(__file__).resolve() == root / GENERATED, 'unexpected validator execution path'
     assert extract_validator(source[CONTAINER]) == generated, 'generated validator differs from current source helper'
+    verify_core_collector(root, source[CONTAINER])
     node_version = subprocess.check_output(['node', '--version'], text=True).strip()
     assert (root / 'evidence/node.version').read_text().strip() == node_version, 'current Node version differs'
     temp_root = subprocess.check_output(['node', '-p', "require('node:fs').realpathSync(require('node:os').tmpdir())"], text=True).strip()
-    assert node_version == 'v' + os.environ['NODE_SELECTOR'], 'actual Node differs from selected exact version'
+    node_selector = collect_node_identity(os.environ.get('NODE_SELECTOR'), node_version)
     assert os.environ['LANE'] == 'core', 'wrong CI lane'
     return {'sourceCommit': commit, 'sourceTree': tree, 'sourceInventorySHA256': sha(inventory),
             'collectSourceSHA256': sha(source[COLLECT]), 'observerSourceSHA256': sha(source[OBSERVER]),
             'validatorSourceSHA256': sha(generated), 'consumerRun': os.environ['GITHUB_RUN_ID'],
             'consumerAttempt': os.environ['GITHUB_RUN_ATTEMPT'], 'job': os.environ['GITHUB_JOB'],
-            'nodeSelector': os.environ['NODE_SELECTOR'], 'nodeVersion': node_version,
+            'nodeSelector': node_selector, 'nodeVersion': node_version,
             'collectionSHA256': sha((p / 'collection.json').read_bytes()), 'tempRootRealpath': temp_root}
 
 def validate_context(context, expected):
@@ -220,6 +250,14 @@ def validate_receipt(receipt, context, context_bytes, expected):
         assert observation['alternate'] is None and observation['alternateLookupOutcome'] == 'absent-ENOENT', 'false capability requires explicit ENOENT, not access/IO/error'
     return original
 
+def verify_loader_source(source):
+    assert sha(source) == LOADER_SOURCE_SHA256, 'original loader source/predicate/declaration changed'
+
+def loader_not_applicable(node_version):
+    # Mirror only the immutable original predicate, against the current full Node version.
+    assert type(node_version) is str and re.fullmatch(r'v(?:22|24|26)\.(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]{0,2})', node_version), 'canonical actual Node version required'
+    return re.search(r'^24\.(?:[89]|10)\.|^24\.11\.0$', node_version[1:]) is not None
+
 def classify_core(root, collection, result, command_exit, context_bytes, receipt_bytes, expected):
     # Complete identity census is deliberately first, before any applicability classification.
     rows = census(collection, result, root)
@@ -231,11 +269,22 @@ def classify_core(root, collection, result, command_exit, context_bytes, receipt
     assert all(multiplicities[identity] == 1 for identity in conditional), 'original conditional declaration missing, repeated or renamed'
     inapplicable = {identity for identity, (applicable, _) in conditional.items() if applicable != capability}
     assert len(inapplicable) == (1 if capability else 2)
+    verify_loader_source(regular_bytes(root / LOADER, 4 * 1024 * 1024))
+    loader_identity = (str(root / LOADER), LOADER_TITLE)
+    loader_skipped = loader_not_applicable(expected['nodeVersion'])
+    if loader_skipped:
+        inapplicable.add(loader_identity)
     not_applicable = []
     for row in rows:
         identity = (row['file'], row['titlePath'])
         if identity in inapplicable:
             assert row['status'] in ['pending', 'skipped'], 'inapplicable branch must retain its original raw skip, never synthetic PASS'
+            if identity == loader_identity:
+                not_applicable.append({'file': row['file'], 'titlePath': list(row['titlePath']), 'fullName': row['fullName'],
+                                       'rawStatus': row['status'], 'originalSkipPredicate': LOADER_PREDICATE,
+                                       'nodeVersion': expected['nodeVersion'], 'sourceSHA256': LOADER_SOURCE_SHA256,
+                                       'classification': 'notApplicable'})
+                continue
             not_applicable.append({'file': row['file'], 'titlePath': list(row['titlePath']), 'fullName': row['fullName'],
                                    'rawStatus': row['status'], 'originalSkipPredicate': conditional[identity][1],
                                    'caseInsensitiveFs': capability, 'classification': 'notApplicable'})
@@ -249,9 +298,9 @@ def classify_core(root, collection, result, command_exit, context_bytes, receipt
     assert type(command_exit) is int and command_exit == 0 and result.get('success') is True, 'command/runtime failure'
     assert result.get('numFailedTestSuites', 0) == 0 and result.get('numRuntimeErrorTestSuites', 0) == 0 and result.get('unhandledErrors', []) == []
     assert passed == len(rows) - len(inapplicable)
-    return {'coverageComplete': True, 'coverageCompleteMeaning': 'All tests applicable on the measured temporary fixture filesystem executed and passed; other platform branches were not executed here.',
+    return {'coverageComplete': True, 'coverageCompleteMeaning': 'All tests applicable on the measured temporary fixture filesystem and actual Node version executed and passed; original inapplicable branches were not executed here.',
             'declaredRequired': len(collection), 'reportedRequired': len(rows), 'applicableRequired': len(rows) - len(inapplicable),
-            'censusMeaning': 'Complete file/titlePath Counter multiplicity; only the three conditional identities are unique, not a unique-task-ID claim.',
+            'censusMeaning': 'Complete file/titlePath Counter multiplicity; only the four source-locked conditional identities are unique, not a unique-task-ID claim.',
             'requiredPassed': passed, 'notApplicable': not_applicable, 'optionalNotExecuted': [], 'missing': [], 'extra': [],
             'counts': raw_counts, 'commandExit': command_exit, 'sourceCommit': expected['sourceCommit'], 'sourceTree': expected['sourceTree'],
             'applicability': {'caseInsensitiveFs': capability, 'contextSHA256': sha(context_bytes), 'receiptSHA256': sha(receipt_bytes),
@@ -278,7 +327,8 @@ def core_main(root, p):
         context_bytes, receipt_bytes = load_receipts(p / 'platform-applicability')
         assert re.fullmatch(b'0\n?', command_bytes), 'nonzero or malformed test command exit'
         report = classify_core(root, collection, result, 0, context_bytes, receipt_bytes, expected)
-        report['captures'] = {'collectionSHA256': sha(collection_bytes), 'resultsSHA256': sha(result_bytes), 'commandExitSHA256': sha(command_bytes),
+        collector_sha = verify_core_collector(root, regular_bytes(root / CONTAINER, 4 * 1024 * 1024))
+        report['captures'] = {'collectorSHA256': collector_sha, 'collectionSHA256': sha(collection_bytes), 'resultsSHA256': sha(result_bytes), 'commandExitSHA256': sha(command_bytes),
                               'contextSHA256': sha(context_bytes), 'receiptSHA256': sha(receipt_bytes)}
     except Exception as error:
         report['coverageComplete'] = False
@@ -436,3 +486,60 @@ export default async function* report(events) {
 }
 
 HELPER_7
+
+cat > evidence/tools/collect-core.mjs <<'CORE_COLLECTION'
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+export function completeRows(testModules) {
+  assert.ok(Array.isArray(testModules) && testModules.length, 'missing collected modules');
+  const rows = [];
+  for (const file of testModules) {
+    for (const suite of [file, ...file.children.allSuites()]) {
+      assert.equal(suite.errors().length, 0, 'suite collection error');
+    }
+    for (const test of file.children.allTests()) {
+      assert.notEqual(test.result().state, 'failed', 'test collection error');
+      assert.equal(typeof test.fullName, 'string');
+      assert.ok(test.fullName.length);
+      const row = { name: test.fullName, file: test.module.moduleId };
+      if (test.project.name) row.projectName = test.project.name;
+      if (test.location) row.location = test.location;
+      rows.push(row);
+    }
+  }
+  assert.ok(rows.length, 'empty collection');
+  return rows;
+}
+
+export async function collectRows(createContext) {
+  const ctx = await createContext();
+  try {
+    const { testModules, unhandledErrors } = await ctx.collect([], { staticParse: false });
+    assert.equal(unhandledErrors.length, 0, 'unhandled collection error');
+    return completeRows(testModules);
+  } finally {
+    await ctx.close();
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  // Match vitest list --no-staticParse preparation, without its skipped-row filter.
+  // This is collection only: never call start/runTestSpecifications or run test bodies.
+  process.env.TEST = 'true';
+  process.env.VITEST = 'true';
+  process.env.NODE_ENV ??= 'test';
+  const workspace = process.cwd();
+  const root = path.resolve(workspace, 'packages/e2e');
+  process.chdir(root); // Match pnpm --filter e2e exec working directory as well as root.
+  const require = createRequire(path.join(root, 'package.json'));
+  const { createVitest } = await import(pathToFileURL(require.resolve('vitest/node')).href);
+  const rows = await collectRows(() => createVitest({ root, watch: false, run: true }));
+  const out = path.resolve(workspace, 'evidence/e2e/collection.json');
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, `${JSON.stringify(rows, null, 2)}\n`, { flag: 'wx' });
+}
+CORE_COLLECTION

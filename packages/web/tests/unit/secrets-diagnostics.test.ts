@@ -65,7 +65,7 @@ test('unknown code and private payload are never serialized; getters are not inv
   surface.emit(context, { kind: 'start', payload: canary } as never);
   surface.emit(context, Object.defineProperty({}, 'kind', { get() { reads++; return canary; } }) as never);
   assert.equal(reads, 0); assert.ok(!lines.join('').includes(canary));
-  const query = rows(lines).filter(row => row['kind'] === 'query'); assert.equal(query[0]?.['rawCode'], 'unknown');
+  const query = rows(lines).find(row => row['kind'] === 'query'); assert.equal(query?.['rawCode'], 'unknown');
 }));
 
 test('eight query failures and one overflow marker, no unbounded repeated rows', async () => controlled((m, lines) => {
@@ -95,7 +95,7 @@ test('bounded identities and changed invocation suppress stale context', async (
 
 test('forged context is inert and reentrant sink cannot recurse or replace assigned state', async () => controlled((m) => {
   const surface = m.createSecretsSurface()!; const context = surface.start()!;
-  const forged = { captureNonce: 'a'.repeat(64), workerToken: 'b'.repeat(64), surface: 99, attempt: 99 };
+  const forged = { suite: 'engine-secrets' as const, captureNonce: 'a'.repeat(64), workerToken: 'b'.repeat(64), surface: 99, attempt: 99 };
   assert.equal(m.withSecretsContext(forged, () => m.captureSecretsContext()), undefined);
   let state: unknown; const first = {}; let calls = 0;
   process.stderr.write = (() => {

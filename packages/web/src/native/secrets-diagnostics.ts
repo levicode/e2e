@@ -153,7 +153,7 @@ class SecretsSurface {
   loss(reason: 'owner-unjoined'): void { markLoss(reason, this.nonce); }
 }
 /** No randomness, identities or output is produced outside the exact fixture opt-in. */
-function createSecretsSurface(): SecretsSurface | undefined {
+function createSurface(): SecretsSurface | undefined {
   try {
     const nonce = enabledNonce();
     if (nonce === undefined || lost !== undefined) return undefined;
@@ -163,14 +163,14 @@ function createSecretsSurface(): SecretsSurface | undefined {
   } catch { return undefined; }
 }
 /** Preserve the operation's exact return/throw; only its private diagnostic context changes. */
-function withSecretsContext<T>(context: SecretsContext | undefined, run: () => T): T {
+function withContext<T>(context: SecretsContext | undefined, run: () => T): T {
   return context === undefined || !contexts.has(context) ? run() : storage.run(context, run);
 }
 /** Capture once at exchange entry, before any asynchronous settlement callback. */
-function captureSecretsContext(): SecretsContext | undefined { return storage.getStore(); }
+function captureContext(): SecretsContext | undefined { return storage.getStore(); }
 
 /** Project existing settlement facts, never query arguments, error text or a live budget. */
-function observeSecretsQuery(client: object, context: SecretsContext | undefined, command: 'fixture.query' | 'fixture.read-fields' | 'browser.query', raw: unknown, returned: unknown, wire: { readonly generation: unknown; readonly operationSeq: unknown; readonly transmittedTimeoutMs: unknown; readonly cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined; readonly timeoutRewritten: boolean; readonly cancelAckSeen: boolean }): void {
+function observeQuery(client: object, context: SecretsContext | undefined, command: 'fixture.query' | 'fixture.read-fields' | 'browser.query', raw: unknown, returned: unknown, wire: { readonly generation: unknown; readonly operationSeq: unknown; readonly transmittedTimeoutMs: unknown; readonly cancellation: 'CANCELLED' | 'OPERATION_TIMEOUT' | undefined; readonly timeoutRewritten: boolean; readonly cancelAckSeen: boolean }): void {
   try {
     if (stopped || context === undefined || !contexts.has(context)) return;
     if (enabledNonce() !== context.captureNonce) { markLoss('owner-unjoined', context.captureNonce); return; }
@@ -223,7 +223,7 @@ function close(client: object, context: SecretsContext | undefined, stage: Secre
     emit(context, { kind: 'close', client: record.ordinal, stage, outcome, closedFrameConfirmed, code: 'unknown', origin: 'unjoined' });
   } catch { /* No observation changes the original close result. */ }
 }
-return { createSecretsSurface, withSecretsContext, captureSecretsContext, observeSecretsQuery, close, admitProcess: (client: object, nonce: string) => admitClient(client, nonce) !== undefined, process: (client: object, context: SecretsContext) => { if (contexts.has(context) && enabledNonce() === context.captureNonce) clientRecord(client, context); }, unjoined: (nonce: string) => markLoss('owner-unjoined', nonce) };
+return { createSecretsSurface: createSurface, withSecretsContext: withContext, captureSecretsContext: captureContext, observeSecretsQuery: observeQuery, close, admitProcess: (client: object, nonce: string) => admitClient(client, nonce) !== undefined, process: (client: object, context: SecretsContext) => { if (contexts.has(context) && enabledNonce() === context.captureNonce) clientRecord(client, context); }, unjoined: (nonce: string) => markLoss('owner-unjoined', nonce) };
 }
 const observers = { 'engine-secrets': observer('engine-secrets'), 'unserved-model-two-workers': observer('unserved-model-two-workers') };
 function owner(context: SecretsContext | undefined) {

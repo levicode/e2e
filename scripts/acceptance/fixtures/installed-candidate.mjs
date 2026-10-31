@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { resolve } from 'node:path';
+import { resolve as resolvePath } from 'node:path';
 import { openHost, run } from 'e2e/runner';
 import { web, surfaceOf } from '@e2e-dev/web';
 
@@ -63,18 +63,18 @@ async function readState(phase) {
   return stateReports.get(phase);
 }
 // Decode the actual artifact bytes in the installed browser; no repo PNG helper or extra dependency.
-async function pngPixels(browser, bytes) {
+async function pngPixels(browser, pngBytes) {
   return browser.evaluate(async bytes => {
     const image = new Image();
-    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/png' }));
+    const objectURL = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/png' }));
     try {
-      image.src = url; await image.decode();
+      image.src = objectURL; await image.decode();
       const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
       const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0);
       const pixel = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data).slice(0, 3);
       return { width: image.width, height: image.height, protected: pixel(100, 40), public: pixel(100, 120), fresh: pixel(300, 180) };
-    } finally { URL.revokeObjectURL(url); }
-  }, [...bytes]);
+    } finally { URL.revokeObjectURL(objectURL); }
+  }, [...pngBytes]);
 }
 
 
@@ -113,7 +113,7 @@ try {
   assert.equal(await browser.evaluate(() => fetch('/callback').then(response => response.text())), 'installed callback'); checks++;
   await browser.setCookies([{ name: 'candidate', value: 'synthetic', url }]);
   assert.ok((await browser.cookies()).some(cookie => cookie.name === 'candidate' && cookie.value === 'synthetic')); checks++;
-  const screenshotPath = resolve(session.artifactsDir, await app.screenshot('installed-candidate'));
+  const screenshotPath = resolvePath(session.artifactsDir, await app.screenshot('installed-candidate'));
   const capture = readFileSync(screenshotPath);
   assert.equal(capture.subarray(0, 8).toString('hex'), '89504e470d0a1a0a'); checks++;
   // #28: preserve the six original checks; these five are additional installed-graph obligations.
@@ -127,7 +127,7 @@ try {
 
   const field = 'position:absolute;left:20px;width:160px;height:40px;border:0;padding:0;background:#f00;color:#f00';
   const content = `<body style="margin:0;background:blue"><input type="password" value="synthetic-private-value" style="${field};top:20px"><input aria-label="Public" value="plain" style="${field};top:100px"></body>`;
-  await browser.evaluate(content => { document.body.innerHTML = ''; const frame = document.createElement('iframe'); frame.srcdoc = content; frame.style.cssText = 'position:absolute;left:0;top:0;width:400px;height:240px;border:0'; document.body.append(frame); }, content);
+  await browser.evaluate(frameHTML => { document.body.innerHTML = ''; const frame = document.createElement('iframe'); frame.srcdoc = frameHTML; frame.style.cssText = 'position:absolute;left:0;top:0;width:400px;height:240px;border:0'; document.body.append(frame); }, content);
   const readyBy = Date.now() + 10_000;
   while (!await browser.evaluate(() => document.querySelector('iframe')?.contentDocument?.querySelector('input')?.value === 'synthetic-private-value')) { assert.ok(Date.now() < readyBy); await new Promise(done => setTimeout(done, 20)); }
   const observed = await engine.observe(operation(), { pixels: true });
@@ -137,7 +137,7 @@ try {
   assert.equal(pixels.width, 640); assert.equal(pixels.height, 480);
   assert.deepEqual(pixels.protected, [0, 0, 0]); assert.deepEqual(pixels.public, [255, 0, 0]);
   await browser.evaluate(() => { document.querySelector('iframe').contentDocument.body.style.background = '#00ff00'; });
-  const maskPath = resolve(session.artifactsDir, await app.screenshot('installed-mask'));
+  const maskPath = resolvePath(session.artifactsDir, await app.screenshot('installed-mask'));
   const masked = await pngPixels(browser, readFileSync(maskPath));
   assert.equal(masked.width, 640); assert.equal(masked.height, 480);
   assert.deepEqual(masked.protected, [0, 0, 0]); assert.deepEqual(masked.public, [255, 0, 0]); assert.deepEqual(masked.fresh, [0, 255, 0]);
@@ -158,23 +158,23 @@ try {
   assert.equal(segments.length, 1);
   const segment = segments[0]; assert.equal(segment.path, 'video/video.webm');
   assert.ok(Number.isFinite(Date.parse(segment.startedAt)));
-  const videoPath = resolve(session.artifactsDir, segment.path); const video = readFileSync(videoPath);
+  const videoPath = resolvePath(session.artifactsDir, segment.path); const video = readFileSync(videoPath);
   assert.ok(video.length > 0); assert.equal(video.subarray(0, 4).toString('hex'), '1a45dfa3');
   const frame = await browser.evaluate(async bytes => {
-    const video = document.createElement('video'); video.muted = true;
-    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'video/webm' }));
+    const videoElement = document.createElement('video'); videoElement.muted = true;
+    const objectURL = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'video/webm' }));
     try {
-      video.src = url;
-      await new Promise((resolve, reject) => { video.addEventListener('loadedmetadata', resolve, { once: true }); video.addEventListener('error', () => reject(new Error('Recording did not decode')), { once: true }); });
-      await video.play();
-      await new Promise(resolve => { video.addEventListener('ended', resolve, { once: true }); setTimeout(resolve, 5_000); });
-      const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-      const context = canvas.getContext('2d'); context.drawImage(video, 0, 0);
-      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      videoElement.src = objectURL;
+      await new Promise((resolve, reject) => { videoElement.addEventListener('loadedmetadata', resolve, { once: true }); videoElement.addEventListener('error', () => reject(new Error('Recording did not decode')), { once: true }); });
+      await videoElement.play();
+      await new Promise(resolve => { videoElement.addEventListener('ended', resolve, { once: true }); setTimeout(resolve, 5_000); });
+      const canvas = document.createElement('canvas'); canvas.width = videoElement.videoWidth; canvas.height = videoElement.videoHeight;
+      const canvasContext = canvas.getContext('2d'); canvasContext.drawImage(videoElement, 0, 0);
+      const { data } = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
       let padded = 0; let inked = 0;
       for (let i = 0; i < data.length; i += 4) { const [r, g, b] = data.slice(i, i + 3); if (r === g && g === b && r > 120 && r < 136) padded++; else if (r < 200 || g < 200 || b < 200) inked++; }
       return { width: canvas.width, height: canvas.height, padded: padded / (data.length / 4), inked: inked / (data.length / 4) };
-    } finally { video.pause(); video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); }
+    } finally { videoElement.pause(); videoElement.removeAttribute('src'); videoElement.load(); URL.revokeObjectURL(objectURL); }
   }, [...video]);
   assert.equal(frame.width, 640); assert.equal(frame.height, 480); assert.ok(frame.padded < 0.01); assert.ok(frame.inked > 0.01);
   coverage.media = { path: videoPath, bytes: video.length, frame }; checks++;
@@ -192,7 +192,7 @@ try {
   await cleanup();
 }
 
-async function installedCache(url) {
+async function installedCache(appURL) {
   mkdirSync('installed-cache-tests');
   writeFileSync('installed-cache-tests/cache.e2e.ts', `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
@@ -226,17 +226,17 @@ export default {
 `);
   writeFileSync('installed-cache.config.ts', `import { web } from '@e2e-dev/web';
 import model from './installed-cache-model.mjs';
-export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { model } }, cache: 'read-write', retries: 0, targets: [{ name: 'installed', engine: web(), app: { url: ${JSON.stringify(url)} } }] };
+export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { model } }, cache: 'read-write', retries: 0, targets: [{ name: 'installed', engine: web(), app: { url: ${JSON.stringify(appURL)} } }] };
 `);
   const record = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
   assert.equal(record.exitCode, 0); assert.equal(record.status, 'passed');
-  const steps = result => result.report.run.results.flatMap(result => result.attempts).flatMap(attempt => attempt.steps).filter(step => step.api === 'agent.act');
+  const steps = result => result.report.run.results.flatMap(testResult => testResult.attempts).flatMap(attempt => attempt.steps).filter(step => step.api === 'agent.act');
   const [miss] = steps(record); assert.equal(steps(record).length, 1);
   assert.equal(miss.cache.mode, 'missed'); assert.equal(miss.cache.reason, 'no-entry'); assert.ok(miss.metrics.modelCalls > 0);
   const modelCalls = readFileSync('installed-model-calls.log', 'utf8'); assert.ok(modelCalls.length > 0);
   const files = readdirSync('.e2e/cache').filter(file => file.endsWith('.json'));
   assert.equal(files.length, 1);
-  const cachePath = resolve('.e2e/cache', files[0]); const bytes = readFileSync(cachePath); const mtime = statSync(cachePath).mtimeMs;
+  const cachePath = resolvePath('.e2e/cache', files[0]); const bytes = readFileSync(cachePath); const mtime = statSync(cachePath).mtimeMs;
   const replay = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
   assert.equal(replay.exitCode, 0); assert.equal(replay.status, 'passed');
   assert.equal(readFileSync('installed-model-calls.log', 'utf8'), modelCalls);
@@ -249,34 +249,43 @@ export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { m
   return { cachePath, recordReport: 'installed-cache-record.report.json', replayReport: 'installed-cache-replay.report.json', recordedModelCalls: miss.metrics.modelCalls, replayedModelCalls: hit.metrics.modelCalls, replayedActions: hit.cache.replayedActions, entryUnchanged: true };
 }
 
-async function installedState(url) {
+async function installedState(appURL) {
   const engine = web();
-  let host; let session;
+  let stateHost; let stateSession;
+  let bodyFailed = false; let bodyFailure; let result;
   try {
-    host = await openHost({ cwd: process.cwd(), config: { targets: [{ name: 'installed-state', engine, app: { url } }] } });
-    session = await host.openSession({ name: 'installed persistent state', timeout: 60_000 });
-    const operation = () => ({ signal: new AbortController().signal, timeoutMs: 15_000, runId: session.runId, attemptId: session.attemptId, origin: 'test' });
-  await engine.session.reset(operation());
-  await engine.session.open(`${url}/?phase=seed`, operation());
+    stateHost = await openHost({ cwd: process.cwd(), config: { targets: [{ name: 'installed-state', engine, app: { url: appURL } }] } });
+    stateSession = await stateHost.openSession({ name: 'installed persistent state', timeout: 60_000 });
+    const stateOperation = () => ({ signal: new AbortController().signal, timeoutMs: 15_000, runId: stateSession.runId, attemptId: stateSession.attemptId, origin: 'test' });
+  await engine.session.reset(stateOperation());
+  await engine.session.open(`${appURL}/?phase=seed`, stateOperation());
   assert.ok(!Object.hasOwn(await readState('seed'), 'error'));
-  const state = await engine.state.capture(operation());
-  const statePath = resolve(session.artifactsDir, 'installed-state.json');
+  const state = await engine.state.capture(stateOperation());
+  const statePath = resolvePath(stateSession.artifactsDir, 'installed-state.json');
   writeFileSync(statePath, JSON.stringify(state));
-  await engine.session.reset(operation());
-  await engine.session.open(`${url}/?phase=empty`, operation());
+  await engine.session.reset(stateOperation());
+  await engine.session.open(`${appURL}/?phase=empty`, stateOperation());
   const empty = await readState('empty');
   assert.deepEqual(empty.first, { cookie: '', local: null }); assert.equal(empty.record, null);
   const beforeRestore = [...stateRequests];
-  await engine.state.restore(JSON.parse(readFileSync(statePath, 'utf8')), operation());
+  await engine.state.restore(JSON.parse(readFileSync(statePath, 'utf8')), stateOperation());
   assert.deepEqual(stateRequests, beforeRestore, 'State bootstrap must not make app requests');
-  await engine.session.open(`${url}/?phase=restored`, operation());
+  await engine.session.open(`${appURL}/?phase=restored`, stateOperation());
   const restored = await readState('restored');
   assert.deepEqual(restored, { phase: 'restored', first: { cookie: 'native-fixture=synthetic', local: 'stored' }, created: false, version: 3, indexes: ['byLabel'], record: { cycle: true, typedKind: 'Uint16Array', typed: [1, 65535], blob: 'fixture-payload', blobType: 'text/plain' } });
-  return { path: statePath, restored, bootstrapRequests: 0 };
-  } finally {
-    const failures = [];
-    try { if (session) failures.push(...await session.close()); } catch (error) { failures.push(error); }
-    try { if (host) failures.push(...await host.close()); } catch (error) { failures.push(error); }
-    if (failures.length) throw new AggregateError(failures, 'Installed state cleanup failed');
+  result = { path: statePath, restored, bootstrapRequests: 0 };
+  } catch (error) {
+    bodyFailed = true; bodyFailure = error;
   }
+  {
+    const failures = [];
+    try { if (stateSession) failures.push(...await stateSession.close()); } catch (error) { failures.push(error); }
+    try { if (stateHost) failures.push(...await stateHost.close()); } catch (error) { failures.push(error); }
+    if (failures.length) {
+      if (bodyFailed) failures.unshift(bodyFailure);
+      throw new AggregateError(failures, 'Installed state cleanup failed');
+    }
+  }
+  if (bodyFailed) throw bodyFailure;
+  return result;
 }

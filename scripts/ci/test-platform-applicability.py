@@ -49,7 +49,15 @@ class ClassifierControls(unittest.TestCase):
             self.rows.append({'ancestorTitles': list(title_path[:-1]), 'title': title_path[-1], 'fullName': ' '.join(title_path),
                               'status': 'pending' if applies is not None and applies != capability else 'passed'})
         self.collection = [{'file': filename, 'name': ' > '.join(a['ancestorTitles'] + [a['title']])} for a in self.rows]
-        self.result = {'testResults': [{'name': filename, 'assertionResults': self.rows}], 'success': True}
+        loader_file = str(self.root / validator.LOADER)
+        loader_source = self.root / validator.LOADER
+        loader_source.parent.mkdir(parents=True, exist_ok=True)
+        if not loader_source.exists(): shutil.copyfile(ROOT / validator.LOADER, loader_source)
+        self.loader_row = {'ancestorTitles': list(validator.LOADER_TITLE[:-1]), 'title': validator.LOADER_TITLE[-1],
+                           'fullName': ' '.join(validator.LOADER_TITLE), 'status': 'passed'}
+        self.collection.insert(-1, {'file': loader_file, 'name': ' > '.join(validator.LOADER_TITLE)})
+        self.result = {'testResults': [{'name': filename, 'assertionResults': self.rows},
+                                      {'name': loader_file, 'assertionResults': [self.loader_row]}], 'success': True}
         self.recount()
         self.expected = {'sourceCommit': 'a' * 40, 'sourceTree': 'b' * 40, 'sourceInventorySHA256': 'c' * 64,
                          'collectSourceSHA256': 'd' * 64, 'observerSourceSHA256': 'e' * 64, 'validatorSourceSHA256': 'f' * 64,
@@ -94,7 +102,7 @@ class ClassifierControls(unittest.TestCase):
     def test_false_exact_two_not_applicable_not_pass(self):
         before = copy.deepcopy(self.result)
         report = self.classify()
-        self.assertEqual((report['declaredRequired'], report['reportedRequired'], report['applicableRequired'], report['requiredPassed']), (4, 4, 2, 2))
+        self.assertEqual((report['declaredRequired'], report['reportedRequired'], report['applicableRequired'], report['requiredPassed']), (5, 5, 3, 3))
         self.assertEqual(len(report['notApplicable']), 2)
         self.assertEqual({x['originalSkipPredicate'] for x in report['notApplicable']}, {'!caseInsensitiveFs'})
         self.assertEqual(before, self.result)
@@ -102,7 +110,7 @@ class ClassifierControls(unittest.TestCase):
     def test_true_exact_one_not_applicable_not_pass(self):
         self.make(True)
         report = self.classify()
-        self.assertEqual((report['declaredRequired'], report['reportedRequired'], report['applicableRequired'], report['requiredPassed']), (4, 4, 3, 3))
+        self.assertEqual((report['declaredRequired'], report['reportedRequired'], report['applicableRequired'], report['requiredPassed']), (5, 5, 4, 4))
         self.assertEqual(len(report['notApplicable']), 1)
         self.assertEqual(report['notApplicable'][0]['originalSkipPredicate'], 'caseInsensitiveFs')
 
@@ -205,7 +213,7 @@ class ClassifierControls(unittest.TestCase):
     def test_ordinary_parameterized_multiplicities_preserved_without_deduplication(self):
         self.duplicate_ordinary(copies=2)
         report = self.classify()
-        self.assertEqual((report['declaredRequired'], report['reportedRequired'], report['requiredPassed']), (6, 6, 4))
+        self.assertEqual((report['declaredRequired'], report['reportedRequired'], report['requiredPassed']), (7, 7, 5))
         self.assertEqual(len(report['notApplicable']), 2)
         self.assertIn('not a unique-task-ID claim', report['censusMeaning'])
     def test_ordinary_duplicate_excess_result_rejected(self):
@@ -317,6 +325,134 @@ class FileAndPreservationControls(unittest.TestCase):
         self.assertEqual(validator.sha(legacy.encode()), LEGACY_NORMALIZED_SHA256)
 
 
+class NodeSelectorIdentityControls(unittest.TestCase):
+    # Synthetic versions prove the predicate, not an execution on Node26.
+    MATRIX = [['22', 'v22.23.4', True], ['24', 'v24.22.1', True], ['26', 'v26.0.0', True], ['22.22.3', 'v22.22.3', True], ['24.8.0', 'v24.8.0', True], ['22.23.4', 'v22.23.4', True], ['24.22.1', 'v24.22.1', True], ['26.1.2', 'v26.1.2', True], ['26', 'v26.999.999', True], ['26.999.999', 'v26.999.999', True], ['22', 'v24.22.1', False], ['24', 'v26.0.0', False], ['26', 'v22.23.4', False], ['22.22.3', 'v22.22.4', False], ['24.8.0', 'v24.8.1', False], ['26.1.2', 'v26.1.3', False], ['20', 'v20.1.0', False], ['25.1.0', 'v25.1.0', False], ['27', 'v27.0.0', False], ['026', 'v26.0.0', False], ['26.01.0', 'v26.01.0', False], ['26.0.00', 'v26.0.00', False], ['26.1000.0', 'v26.1000.0', False], ['26', 'v26.1000.0', False], ['v26.0.0', 'v26.0.0', False], ['26', '26.0.0', False], ['26.0', 'v26.0.0', False], ['26.0.0.0', 'v26.0.0.0', False], ['26\n', 'v26.0.0', False], ['26.0.0', 'v26.0.0\n', False], [' 26', 'v26.0.0', False], ['26 ', 'v26.0.0', False], ['../26', 'v26.0.0', False], ['/26', 'v26.0.0', False], ['26.0.0-beta', 'v26.0.0-beta', False], ['26.0.0+build', 'v26.0.0+build', False], [None, 'v24.22.1', False], ['24.22.1\n', 'v24.22.1', False], ['24', 'v24.01.0', False]]
+    def test_python_requested_selector_actual_full_matrix(self):
+        for requested, actual, accepted in self.MATRIX:
+            with self.subTest(requested=requested, actual=actual):
+                if accepted:self.assertEqual(validator.collect_node_identity(requested, actual), actual[1:])
+                else:
+                    with self.assertRaises(AssertionError):validator.collect_node_identity(requested, actual)
+    def test_real_ts_predicate_same_matrix_without_runtime_spoofing(self):
+        code = """
+import { pathToFileURL } from 'node:url';
+const { collectNodeIdentity } = await import(pathToFileURL(process.argv[2]).href);
+const matrix = JSON.parse(process.argv[3]);
+const results = matrix.map(([requested, actual]) => { try { return { accepted: true, full: collectNodeIdentity(requested, actual) }; } catch { return { accepted: false }; } });
+process.stdout.write(JSON.stringify(results));
+"""
+        result=subprocess.run(['node','--input-type=module','-e',code,'synthetic-pure-entry',str(ROOT/validator.OBSERVER),json.dumps(self.MATRIX)],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stderr)
+        expected=[dict(accepted=True,full=actual[1:]) if accepted else dict(accepted=False) for requested,actual,accepted in self.MATRIX]
+        self.assertEqual(json.loads(result.stdout),expected)
+
+
+class LoaderApplicabilityControls(unittest.TestCase):
+    # Reuse the full-core model, not duplicate the original test methods.
+    setUp = ClassifierControls.setUp
+    make = ClassifierControls.make
+    recount = ClassifierControls.recount
+    refresh_context_hash = ClassifierControls.refresh_context_hash
+    refresh_observation = ClassifierControls.refresh_observation
+    classify = ClassifierControls.classify
+    rejected = ClassifierControls.rejected
+    def select_version(self, version):
+        self.expected['nodeVersion'] = version
+        self.expected['nodeSelector'] = version[1:]
+        self.context.update(self.expected)
+        self.refresh_context_hash()
+    def test_original_node_range_only(self):
+        versions = [('v24.8.0', True), ('v24.8.99', True), ('v24.9.0', True), ('v24.10.99', True),
+                    ('v24.11.0', True), ('v24.7.99', False), ('v24.11.1', False), ('v24.22.1', False),
+                    ('v22.8.0', False), ('v26.8.0', False)]
+        for version, skipped in versions:
+            with self.subTest(version=version):
+                self.select_version(version)
+                self.loader_row['status'] = 'skipped' if skipped else 'passed'
+                self.recount()
+                report = self.classify()
+                self.assertEqual(len(report['notApplicable']), 3 if skipped else 2)
+                self.assertEqual(report['requiredPassed'], 2 if skipped else 3)
+                if skipped:
+                    row = next(r for r in report['notApplicable'] if r['file'].endswith(validator.LOADER))
+                    self.assertEqual(row['nodeVersion'], version)
+                    self.assertEqual(row['sourceSHA256'], validator.LOADER_SOURCE_SHA256)
+                    self.assertEqual(row['rawStatus'], 'skipped')
+    def test_raw_loader_pending_preserved(self):
+        self.select_version('v24.8.0'); self.loader_row['status'] = 'pending'; self.recount()
+        report=self.classify(); self.assertEqual(report['notApplicable'][-1]['rawStatus'], 'pending')
+    def test_node_alias_or_malformed_actual_rejected(self):
+        for value in ['24.8.0', 'v24', 'v024.8.0', 'v24.08.0', 'v24.8.0\n', 'v24.8.0-rc.1', '', None, 24]:
+            with self.subTest(value=value):
+                with self.assertRaises(AssertionError): validator.loader_not_applicable(value)
+    def test_loader_skip_wrong_version_rejected(self):
+        self.loader_row['status']='skipped'; self.recount(); self.rejected()
+    def test_loader_pass_in_inapplicable_version_rejected(self):
+        self.select_version('v24.8.0'); self.rejected()
+    def test_loader_failure_not_exempted(self):
+        self.select_version('v24.8.0')
+        for status in ['failed', 'todo', 'cancelled', 'unknown']:
+            with self.subTest(status=status): self.loader_row['status']=status; self.recount(); self.rejected()
+    def test_loader_missing_in_both_censuses_rejected(self):
+        self.collection = [r for r in self.collection if not r['file'].endswith(validator.LOADER)]
+        self.result['testResults'].pop(); self.recount(); self.rejected()
+    def test_loader_duplicate_in_both_censuses_rejected(self):
+        row=next(r for r in self.collection if r['file'].endswith(validator.LOADER))
+        self.collection.append(copy.deepcopy(row)); self.result['testResults'][-1]['assertionResults'].append(copy.deepcopy(self.loader_row))
+        self.recount(); self.rejected()
+    def test_loader_renamed_in_both_censuses_rejected(self):
+        row=next(r for r in self.collection if r['file'].endswith(validator.LOADER))
+        row['name']+='-renamed';self.loader_row['title']+='-renamed';self.loader_row['fullName']+='-renamed';self.rejected()
+    def test_loader_same_title_foreign_file_rejected(self):
+        row=next(r for r in self.collection if r['file'].endswith(validator.LOADER))
+        row['file']+='-foreign';self.result['testResults'][-1]['name']+='-foreign';self.rejected()
+    def test_loader_source_change_rejected(self):
+        p=self.root/validator.LOADER;p.write_bytes(p.read_bytes()+b'\n');self.rejected()
+    def test_loader_predicate_change_rejected(self):
+        p=self.root/validator.LOADER;source=p.read_bytes();changed=source.replace(b'^24\\.',b'^26\\.',1)
+        self.assertNotEqual(source,changed);p.write_bytes(changed);self.rejected()
+    def test_source_pinned_without_runtime_predicate_execution(self):
+        validator.verify_loader_source((ROOT/validator.LOADER).read_bytes())
+    def test_cli_list_omission_is_not_completed_from_result(self):
+        self.select_version('v24.8.0');self.loader_row['status']='skipped';self.recount()
+        self.collection=[r for r in self.collection if not r['file'].endswith(validator.LOADER)]
+        self.rejected()
+
+
+class CompleteCollectionControls(unittest.TestCase):
+    def test_collector_heredoc_missing_ambiguous_or_wrong_terminator_rejected(self):
+        start=b"cat > evidence/tools/collect-core.mjs <<'CORE_COLLECTION'\n"
+        end=b'\nCORE_COLLECTION\n'
+        for source in [SOURCE.replace(start,b'',1), SOURCE+start, SOURCE.replace(end,b'\nWRONG_END\n',1), SOURCE+end]:
+            with self.subTest(source_sha=validator.sha(source)):
+                with self.assertRaises(AssertionError): validator.extract_core_collector(source)
+
+    def test_actual_generated_collector_pure_mock_tree_and_errors(self):
+        body=SOURCE.split(b"<<'CORE_COLLECTION'\n",1)[1].split(b'\nCORE_COLLECTION\n',1)[0]+b'\n'
+        with tempfile.TemporaryDirectory(prefix='core-collection-pure-') as temp:
+            p=Path(temp)/'collector.mjs';p.write_bytes(body)
+            script=r"""
+import assert from 'node:assert/strict';
+const {completeRows,collectRows}=await import(process.argv[1]);
+const task=(name,state,project='unit')=>({fullName:name,result:()=>({state}),module:{moduleId:'/repo/example.test.ts'},project:{name:project}});
+const trees=(tasks, errors=[], childErrors=[])=>[{errors:()=>errors,children:{allSuites:()=>[{errors:()=>childErrors}],allTests:()=>tasks}}];
+const tasks=[task('suite > pass','pending'),task('suite > static','skipped'),task('suite > dynamic','skipped'),task('suite > repeated','pending'),task('suite > repeated','pending')];
+let rows=completeRows(trees(tasks)); assert.equal(rows.length,5);assert.equal(rows.filter(r=>r.name==='suite > repeated').length,2);
+assert.equal(rows[1].name,'suite > static'); assert.equal(rows[2].name,'suite > dynamic');
+assert.throws(()=>completeRows([]));assert.throws(()=>completeRows(trees([])));assert.throws(()=>completeRows(trees(tasks,['bad'])));assert.throws(()=>completeRows(trees(tasks,[],['bad'])));
+assert.throws(()=>completeRows(trees([task('failed','failed')])));assert.throws(()=>completeRows(trees([task('','pending')])));
+let close=0;const context={collect:async(filters,options)=>{assert.deepEqual(filters,[]);assert.deepEqual(options,{staticParse:false});return {testModules:trees(tasks),unhandledErrors:[]}},close:async()=>{close++}};
+rows=await collectRows(async()=>context);assert.equal(rows.length,5);assert.equal(close,1);
+await assert.rejects(collectRows(async()=>({...context,collect:async()=>({testModules:trees(tasks),unhandledErrors:['boom']})})));assert.equal(close,2);
+await assert.rejects(collectRows(async()=>({...context,collect:async()=>{throw new Error('collect rejected')}})));assert.equal(close,3);
+await assert.rejects(collectRows(async()=>({...context,close:async()=>{throw new Error('close rejected')}})));
+console.log('complete collection pure controls passed');
+"""
+            r=subprocess.run(['node','--input-type=module','-e',script,p.as_uri()],capture_output=True,text=True,timeout=30)
+            self.assertEqual(r.returncode,0,r.stdout+r.stderr)
+
+
 class CLIPureControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='platform-cli-'); self.addCleanup(self.temp.cleanup)
@@ -324,7 +460,8 @@ class CLIPureControls(unittest.TestCase):
         self.ev = self.root / 'evidence/e2e'; self.ev.mkdir(parents=True)
         (self.root / 'evidence/tools').mkdir()
         (self.root / validator.GENERATED).write_bytes(BODY)
-        for path in [validator.COLLECT, validator.OBSERVER, validator.CONTAINER]:
+        (self.root / validator.CORE_COLLECTOR).write_bytes(validator.extract_core_collector(SOURCE))
+        for path in [validator.COLLECT, validator.OBSERVER, validator.CONTAINER, validator.LOADER]:
             dest = self.root / path; dest.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(ROOT / path, dest)
         self.git('init', '-q'); self.git('add', 'packages', 'scripts'); self.git('-c', 'user.name=Synthetic Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Synthetic source integrity control, not publication')
         commit = self.git('rev-parse', 'HEAD').decode().strip(); tree = self.git('rev-parse', 'HEAD^{tree}').decode().strip()
@@ -361,6 +498,18 @@ class CLIPureControls(unittest.TestCase):
         if emit_receipt:
             directory = self.ev / 'platform-applicability'; directory.mkdir(exist_ok=True)
             (directory / 'context.json').write_bytes(encoded(self.model.context)); (directory / 'receipt.json').write_bytes(encoded(self.model.receipt))
+    def test_collector_missing_rejected(self):
+        (self.root / validator.CORE_COLLECTOR).unlink(); self.assert_failed()
+    def test_collector_changed_rejected(self):
+        p=self.root / validator.CORE_COLLECTOR;p.write_bytes(p.read_bytes()+b'\n');self.assert_failed()
+    def test_collector_symlink_rejected(self):
+        p=self.root / validator.CORE_COLLECTOR;target=p.with_name('collector-real.mjs');p.rename(target);p.symlink_to(target);self.assert_failed()
+    def test_collector_wrong_heredoc_body_rejected(self):
+        (self.root / validator.CORE_COLLECTOR).write_bytes(BODY);self.assert_failed()
+    def test_collector_hash_in_successful_coverage(self):
+        result=self.run_validator();self.assertEqual(result.returncode,0,result.stderr)
+        report=json.loads((self.ev/'coverage.json').read_text())
+        self.assertEqual(report['captures']['collectorSHA256'],validator.sha((self.root/validator.CORE_COLLECTOR).read_bytes()))
     def run_validator(self, path='evidence/e2e'):
         return subprocess.run([sys.executable, validator.GENERATED, path], cwd=self.root, env=self.env, text=True, capture_output=True, timeout=30)
     def assert_failed(self):
@@ -406,6 +555,33 @@ try {
         (self.ev / 'results.json').write_bytes(encoded(self.model.result))
         self.assertEqual({p.name: p.read_bytes() for p in capture.iterdir()}, before)
         self.assertEqual((self.ev / 'collection.json').read_bytes(), collection_before)
+    def test_ts_major_alias_prepare_observe_and_coverage_use_actual_full(self):
+        actual=self.env['NODE_SELECTOR'];requested=actual.split('.')[0];self.env['NODE_SELECTOR']=requested
+        prepared=self.prepare_ts();self.assertEqual(prepared.returncode,0,prepared.stderr)
+        context=json.loads((self.ev/'platform-applicability/context.json').read_text())
+        self.assertEqual(context['nodeSelector'],actual);self.assertEqual(context['nodeVersion'],'v'+actual)
+        self.assertEqual(self.env['NODE_SELECTOR'],requested)
+        recorded=self.record_ts();self.assertEqual(recorded.returncode,0,recorded.stderr)
+        self.adapt_only_synthetic_results(json.loads(recorded.stdout)['caseInsensitiveFs'])
+        result=self.run_validator();self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.env['NODE_SELECTOR'],requested)
+    def test_ts_same_major_wrong_exact_patch_refuses_prepare(self):
+        parts=self.env['NODE_SELECTOR'].split('.');parts[2]='1' if parts[2]!='1' else '2';self.env['NODE_SELECTOR']='.'.join(parts)
+        result=self.prepare_ts();self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.ev/'platform-applicability/context.json').exists())
+    def test_ts_request_changed_to_wrong_major_refuses_record(self):
+        prepared=self.prepare_ts();self.assertEqual(prepared.returncode,0,prepared.stderr)
+        self.env['NODE_SELECTOR']='22' if self.env['NODE_SELECTOR'].split('.')[0]!='22' else '24'
+        recorded=self.record_ts();self.assertNotEqual(recorded.returncode,0)
+        self.assertFalse((self.ev/'platform-applicability/receipt.json').exists())
+    def test_cli_major_alias_accepts_only_same_actual_node(self):
+        self.env['NODE_SELECTOR']=self.env['NODE_SELECTOR'].split('.')[0]
+        result=self.run_validator();self.assertEqual(result.returncode,0,result.stderr)
+        self.env['NODE_SELECTOR']='22' if self.env['NODE_SELECTOR']!='22' else '24';self.assert_failed()
+    def test_cli_alias_cannot_replace_actual_full_context_field(self):
+        alias=self.env['NODE_SELECTOR'].split('.')[0];self.env['NODE_SELECTOR']=alias
+        file=self.ev/'platform-applicability/context.json';context=json.loads(file.read_text());context['nodeSelector']=alias;file.write_bytes(encoded(context))
+        self.assert_failed()
     def test_ts_prepare_observe_measured_capability_schema_matches_python(self):
         prepared = self.prepare_ts(); self.assertEqual(prepared.returncode, 0, prepared.stderr)
         recorded = self.record_ts(); self.assertEqual(recorded.returncode, 0, recorded.stderr)
@@ -423,7 +599,7 @@ try {
         for capability in [True, False]:
             self.adapt_only_synthetic_results(capability)
             self.assertEqual(self.model.result['numPendingTests'], 1 if capability else 2)
-            self.assertEqual(self.model.result['numPassedTests'], 3 if capability else 2)
+            self.assertEqual(self.model.result['numPassedTests'], 4 if capability else 3)
     def test_ts_duplicate_prepare_rejected_without_clean_and_reuse(self):
         first = self.prepare_ts(); self.assertEqual(first.returncode, 0, first.stderr)
         original = (self.ev / 'platform-applicability/context.json').read_bytes()
@@ -454,7 +630,7 @@ assert.equal(existsSync('evidence/e2e/platform-applicability'), false);
         self.assertEqual(report['captures']['collectionSHA256'], validator.sha((self.ev / 'collection.json').read_bytes()))
     def test_cli_true_synthetic_capability_pass(self):
         self.make_receipts(True); result = self.run_validator(); self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads((self.ev / 'coverage.json').read_text()); self.assertEqual((len(report['notApplicable']), report['requiredPassed']), (1, 3))
+        report = json.loads((self.ev / 'coverage.json').read_text()); self.assertEqual((len(report['notApplicable']), report['requiredPassed']), (1, 4))
     def test_cli_foreign_github_sha(self): self.env['GITHUB_SHA'] = 'f' * 40; self.assert_failed()
     def test_cli_foreign_current_run(self): self.env['GITHUB_RUN_ID'] = '98766'; self.assert_failed()
     def test_cli_foreign_current_attempt(self): self.env['GITHUB_RUN_ATTEMPT'] = '2'; self.assert_failed()

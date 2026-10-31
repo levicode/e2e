@@ -169,4 +169,27 @@ class Controls(unittest.TestCase):
                 with patch.object(sys,'argv',['validator','--evidence',str(evidence)]),patch('builtins.print'):self.assertEqual(cli.main(),1)
             finally:os.chdir(previous)
             status=json.loads((evidence/'engine-secrets-capture-status.json').read_text());self.assertEqual(status['artifactEnvelope'],'accepted');self.assertEqual(status['diagnosticStatus'],'incomplete');self.assertEqual(status['nativeCustody']['processCustody'],'verified');self.assertEqual(status['nativeCustody']['traceCoverage'],'incomplete');self.assertEqual(status['originalPackageTestExit'],7);self.assertEqual((evidence/'test-e2e.exit').read_text(),'7\n')
+    def test_first_failure_fields_accept_only_native_closed_values_and_context(self):
+        schema=json.loads((HERE/'native-closed-trace-schema.json').read_text())
+        for field,phase,context in [
+            ('inventoryFirstLoss','InventorySnapshot',{'inventorySealed':True,'inventoryIntegrityLost':True}),
+            ('terminalProofRefusal','TerminalCleanupCheckpoint',{'terminalCleanupStage':'task-proof','terminalCleanupOk':False})]:
+            for reason in schema['fields'][field]['enum']:
+                with self.subTest(field=field,reason=reason),tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'E2E_ENGINE_SECRETS_CAPTURE':'1'}):
+                    root=pathlib.Path(d);archive,envelope=fixture(root);p=archive/'native-1001.jsonl';first=json.loads(p.read_text())
+                    row={**first,'record':1,'phase':phase,field:reason,**context}
+                    write(p,p.read_bytes()+(json.dumps(row,separators=(',',':'))+'\n').encode())
+                    proof=v.verify(root,envelope,EXPECTED,BINARY,WRAPPER)
+                    self.assertEqual(proof['processCustody'],'verified');self.assertFalse(proof['exhaustive'])
+    def test_first_failure_unknown_values_wrong_types_and_wrong_context_refused(self):
+        contexts=[('inventoryFirstLoss',{'phase':'InventorySnapshot','inventorySealed':True,'inventoryIntegrityLost':True},'resume-permit-dropped'),('terminalProofRefusal',{'phase':'TerminalCleanupCheckpoint','terminalCleanupStage':'task-proof','terminalCleanupOk':False},'object-debt')]
+        for field,context,reason in contexts:
+            edits=[{field:x} for x in ['PRIVATE_CANARY',None,False,1,[],{}]]
+            edits += [{'phase':'CaptureStarted'},{'extraFailureDetail':'PRIVATE_CANARY'}]
+            edits += [{'inventorySealed':False},{'inventoryIntegrityLost':False}] if field=='inventoryFirstLoss' else [{'terminalCleanupStage':'final-commit'},{'terminalCleanupOk':True}]
+            for edit in edits:
+                with self.subTest(field=field,edit=edit),tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'E2E_ENGINE_SECRETS_CAPTURE':'1'}):
+                    root=pathlib.Path(d);archive,envelope=fixture(root);p=archive/'native-1001.jsonl';first=json.loads(p.read_text());row={**first,'record':1,**context,field:reason,**edit}
+                    write(p,p.read_bytes()+(json.dumps(row,separators=(',',':'))+'\n').encode())
+                    with self.assertRaises(v.Invalid):v.verify(root,envelope,EXPECTED,BINARY,WRAPPER)
 if __name__=='__main__':unittest.main()

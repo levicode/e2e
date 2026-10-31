@@ -1,10 +1,10 @@
 /** Browser class ownership uses the real runner context and existing core proof. */
 import { describe, expect, it, vi } from 'vitest';
 import { EngineError, TestError, type EngineFixtureContext } from 'e2e/engine';
-import { expect as expectFixture } from '../../../e2e/src/expect/index.ts';
-import { sleep } from '../../../e2e/src/internal/time.ts';
-import { useFakeTime } from '../../../e2e/tests/helpers/fake-time.ts';
-import { fields, samplingFixture } from '../../../e2e/tests/helpers/fixture-attribute-sampling.ts';
+import { expect as expectFixture } from 'e2e';
+import { sleep } from '../../../e2e/dist/internal/time.js';
+import { useFakeTime } from '../helpers/class-sampling.ts';
+import { fields, samplingFixture } from '../helpers/class-sampling.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 import type { NativeWebSurface } from '../../src/native/browser-contract.ts';
 import { ErrorLatch } from '../../src/runtime-support.ts';

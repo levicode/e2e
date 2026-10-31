@@ -918,6 +918,47 @@
     "consumedBytes": {
       "int": 9007199254740991
     },
-    "seedKnown": "bool"
+    "seedKnown": "bool",
+    "inventoryFirstLoss": {
+      "enum": [
+        "resume-identity-mismatch",
+        "resume-permit-dropped",
+        "auxiliary-capacity",
+        "query-revision-exhausted",
+        "unknown-query-revision-exhausted",
+        "explicit-seal",
+        "invalid-retirement-authority",
+        "auxiliary-ack-mismatch",
+        "auxiliary-abandoned",
+        "creation-abandoned",
+        "retained-deadline-seal",
+        "retained-settlement-seal",
+        "retained-completion-seal"
+      ]
+    },
+    "terminalProofRefusal": {
+      "enum": [
+        "tasks-not-closing",
+        "unscoped-task-failure",
+        "task-operation-missing",
+        "task-owner-mismatch",
+        "ledger-owner-mismatch",
+        "registry-unavailable",
+        "result-not-fixed",
+        "producer-not-integrity-lost",
+        "integrity-reason-not-remote-eof",
+        "retention-local-producer-failed",
+        "retention-deadline",
+        "retention-owner-accounting-lost",
+        "retention-reason-missing",
+        "local-producers-unfinished",
+        "submission-not-revoked",
+        "mutation-dispatched",
+        "input-debt",
+        "object-debt",
+        "local-integrity-lost",
+        "no-owner-operations"
+      ]
+    }
   }
 }

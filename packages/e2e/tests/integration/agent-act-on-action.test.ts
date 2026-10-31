@@ -249,20 +249,27 @@ describe('agent.act onAction', () => {
       expect(screenshotLabels(outcome, 'the hook sees a change that lands after the tap'), diagnostic).toEqual(['arrived']);
     } finally {
       try {
-        if (process.env['E2E_POPUP_EVAL_CAPTURE'] === '1') {
-          // Existing synthetic outcome and closed native witness; no new page reads.
-          const source = path.join(project.dir, '.e2e', 'native-trace');
-          if (!existsSync(source) || outcome === undefined) throw new Error('Missing onAction native diagnostic');
-          const output = path.resolve('.e2e/on-action-delayed');
-          mkdirSync(path.dirname(output), { recursive: true });
-          mkdirSync(output, { recursive: false });
-          writeFileSync(path.join(output, 'report.json'), JSON.stringify(outcome.report, null, 2));
-          mkdirSync(path.join(output, 'runner'));
-          cpSync(source, path.join(output, 'runner', 'native-trace'), { recursive: true, errorOnExist: true, force: false });
+        let captureIncomplete = false;
+        try {
+          if (process.env['E2E_POPUP_EVAL_CAPTURE'] === '1') {
+            // Existing synthetic outcome and closed native witness; no new page reads.
+            const source = path.join(project.dir, '.e2e', 'native-trace');
+            if (!existsSync(source) || outcome === undefined) {
+              captureIncomplete = true;
+            } else {
+              const output = path.resolve('.e2e/on-action-delayed');
+              mkdirSync(path.dirname(output), { recursive: true });
+              mkdirSync(output, { recursive: false });
+              writeFileSync(path.join(output, 'report.json'), JSON.stringify(outcome.report, null, 2));
+              mkdirSync(path.join(output, 'runner'));
+              cpSync(source, path.join(output, 'runner', 'native-trace'), { recursive: true, errorOnExist: true, force: false });
+            }
+          }
+        } catch {
+          captureIncomplete = true;
         }
-      } catch {
         // Missing capture is a custody failure, never a replacement test result.
-        process.stderr.write('ON_ACTION_CAPTURE_CUSTODY {"schemaVersion":1,"complete":false}\n');
+        if (captureIncomplete) process.stderr.write('ON_ACTION_CAPTURE_CUSTODY {"schemaVersion":1,"complete":false}\n');
       } finally {
         project.cleanup();
       }

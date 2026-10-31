@@ -28,7 +28,7 @@ function parsed(bytes: Buffer): Record<string, unknown> {
   return value;
 }
 function exact(value: Record<string, unknown>, keys: readonly string[]): void {
-  if (Object.keys(value).sort().join('|') !== [...keys].sort().join('|')) throw new Error('unavailable');
+  if (Object.keys(value).toSorted().join('|') !== [...keys].toSorted().join('|')) throw new Error('unavailable');
 }
 function directory(file: string): void {
   const stat = lstatSync(file);
@@ -96,6 +96,11 @@ function valid(value: unknown, rule: Rule): boolean {
     && (rule.required ?? []).every(key => Object.hasOwn(value, key));
   return false;
 }
+function newFailureFields(row: Record<string, unknown>): boolean {
+  if (Object.hasOwn(row, 'inventoryFirstLoss') && !(row['phase'] === 'InventorySnapshot' && row['inventorySealed'] === true && row['inventoryIntegrityLost'] === true)) return false;
+  if (Object.hasOwn(row, 'terminalProofRefusal') && !(row['phase'] === 'TerminalCleanupCheckpoint' && row['terminalCleanupStage'] === 'task-proof' && row['terminalCleanupOk'] === false)) return false;
+  return true;
+}
 type Archive = { trace: string; output: string; invocations: string; nonce: string; identity: Identity; native: string; nativeHash: string; wrapperHash: string; schema: Record<string, unknown> };
 function archiveNativeSnapshot(config: Archive, rows: readonly Record<string, unknown>[]): boolean {
   try {
@@ -136,7 +141,7 @@ function archiveNativeSnapshot(config: Archive, rows: readonly Record<string, un
           if (Buffer.byteLength(line + '\n') > 512) return false;
           const row = parsed(Buffer.from(line));
           if (!valid(row, { object: config.schema['fields'] as Record<string, Rule>, required: config.schema['required'] as string[] })
-            || row['schemaVersion'] !== 2 || row['pid'] !== daemon || row['source'] !== 'native' || (i === 0 && (row['phase'] !== 'CaptureStarted' || row['record'] !== 0))) return false;
+            || !newFailureFields(row) || row['schemaVersion'] !== 2 || row['pid'] !== daemon || row['source'] !== 'native' || (i === 0 && (row['phase'] !== 'CaptureStarted' || row['record'] !== 0))) return false;
         }
         total += bytes.length; if (total > 10 * 1024 * 1024) return false; pending.push({ name, bytes });
       }
@@ -144,7 +149,7 @@ function archiveNativeSnapshot(config: Archive, rows: readonly Record<string, un
     // All records are closed-schema validated before any diagnostic content is copied.
     for (const file of pending) writeFileSync(path.join(config.output, file.name), file.bytes, { flag: 'wx', mode: 0o600 });
     writeFileSync(path.join(config.output, 'custody.json'), JSON.stringify({ schemaVersion: 1, suite: 'engine-secrets', captureNonce: config.nonce, traceDirectory: config.trace,
-      consumerRun: config.identity.consumerRun, consumerAttempt: config.identity.consumerAttempt, selector: config.identity.selector, nodeVersion: config.identity.nodeVersion, sourceCommit: config.identity.sourceCommit, sourceTree: config.identity.sourceTree, nativeSHA256: config.nativeHash, wrapperSHA256: config.wrapperHash, proxyPids: [...pids].sort((a, b) => a - b), coverage: 'observed-only', exhaustive: false }) + '\n', { flag: 'wx', mode: 0o600 });
+      consumerRun: config.identity.consumerRun, consumerAttempt: config.identity.consumerAttempt, selector: config.identity.selector, nodeVersion: config.identity.nodeVersion, sourceCommit: config.identity.sourceCommit, sourceTree: config.identity.sourceTree, nativeSHA256: config.nativeHash, wrapperSHA256: config.wrapperHash, proxyPids: [...pids].toSorted((a, b) => a - b), coverage: 'observed-only', exhaustive: false }) + '\n', { flag: 'wx', mode: 0o600 });
     return true;
   } catch { return false; }
 }

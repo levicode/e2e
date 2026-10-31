@@ -19,7 +19,7 @@ export type DirectoryIdentity = { realpath: string; dev: string; ino: string; ty
 export type FixtureObservation = { root: DirectoryIdentity; tests: DirectoryIdentity; canonical: DirectoryIdentity; alternate: DirectoryIdentity | null; alternateLookupOutcome: 'same-directory' | 'absent-ENOENT' };
 
 function exactKeys(value: Dictionary, keys: string[]): void {
-  assert.deepEqual(Object.keys(value).sort(), [...keys].sort(), 'closed evidence schema');
+  assert.deepEqual(Object.keys(value).toSorted(), [...keys].toSorted(), 'closed evidence schema');
 }
 function dictionary(value: unknown): asserts value is Dictionary {
   assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value), 'evidence object');
@@ -57,7 +57,7 @@ export function validateFixtureObservation(value: unknown, original: boolean, te
   }
 }
 /** Actual observation uses the SAME fixture root and the original existsSync boolean. */
-export function observeFixture(root: string, original: boolean): FixtureObservation {
+function observeFixture(root: string, original: boolean): FixtureObservation {
   const before = { root: directoryIdentity(root), tests: directoryIdentity(path.join(root, 'tests')), canonical: directoryIdentity(path.join(root, 'tests', 'agent')) };
   let alternate: DirectoryIdentity | null;
   let alternateLookupOutcome: FixtureObservation['alternateLookupOutcome'];
@@ -106,6 +106,15 @@ function workspaceRoot(): string {
   assert.ok(value && path.isAbsolute(value), 'explicit CI workspace required');
   return realpathSync.native(value);
 }
+/** Context binds the actual full version; the independent requested selector is never rewritten. */
+export function collectNodeIdentity(requested: string | undefined, actualVersion: string): string {
+  assert.ok(typeof requested === 'string');
+  const selector = /^(22|24|26)(?:\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2}))?$/.exec(requested);
+  const actual = /^v(22|24|26)\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/.exec(actualVersion);
+  assert.ok(selector && selector[0] === requested && actual && actual[0] === actualVersion, 'canonical requested and actual Node versions');
+  assert.ok(selector[2] === undefined ? selector[1] === actual[1] : actualVersion === 'v' + requested, 'actual Node differs from requested selector');
+  return actualVersion.slice(1);
+}
 function expectedContext(workspace: string): Dictionary {
   const git = (...args: string[]): string => execFileSync('git', args, { cwd: workspace, encoding: 'utf8', env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
   const sourceCommit = git('rev-parse', 'HEAD').trim(), sourceTree = git('rev-parse', 'HEAD^{tree}').trim();
@@ -127,7 +136,7 @@ function expectedContext(workspace: string): Dictionary {
   const pieces = container.toString().split(marker); assert.equal(pieces.length, 2);
   const end = pieces[1]!.indexOf('\nHELPER_3\n'); assert.ok(end >= 0);
   assert.equal(validator.toString(), pieces[1]!.slice(0, end) + '\n', 'generated validator source');
-  const consumerRun = process.env.GITHUB_RUN_ID, consumerAttempt = process.env.GITHUB_RUN_ATTEMPT, job = process.env.GITHUB_JOB, nodeSelector = process.env.NODE_SELECTOR;
+  const consumerRun = process.env.GITHUB_RUN_ID, consumerAttempt = process.env.GITHUB_RUN_ATTEMPT, job = process.env.GITHUB_JOB, nodeSelector = collectNodeIdentity(process.env.NODE_SELECTOR, process.version);
   assert.ok(consumerRun && /^[1-9][0-9]*$/.test(consumerRun)); assert.ok(consumerAttempt && /^[1-9][0-9]*$/.test(consumerAttempt));
   assert.ok(job && /^[A-Za-z_][A-Za-z_0-9-]*$/.test(job)); assert.ok(nodeSelector && /^[1-9][0-9]*\.[0-9]+\.[0-9]+$/.test(nodeSelector));
   assert.equal(process.version, 'v' + nodeSelector);
@@ -147,7 +156,7 @@ function writeExclusive(file: string, bytes: string, workspace: string): void {
   assert.deepEqual(directoryIdentity(path.dirname(file)), parent);
   assert.equal(readRegular(file, workspace, 16384).toString(), bytes);
 }
-export function prepareCapabilityContext(): void {
+function prepareCapabilityContext(): void {
   const workspace = workspaceRoot(), expected = expectedContext(workspace), dir = path.join(workspace, DIRECTORY);
   directoryChain(dir, workspace); mkdirSync(dir, { mode: 0o700 }); // EEXIST is failure: no cleanup or reuse.
   const context = { ...expected, nonce: randomBytes(32).toString('hex') };

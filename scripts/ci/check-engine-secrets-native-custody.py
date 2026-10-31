@@ -33,6 +33,10 @@ def rule(v,r):
     if 'oneOf'in r:return any(rule(v,x) for x in r['oneOf'])
     if 'object'in r:return type(v)is dict and set(v)<=set(r['object']) and set(r.get('required',[]))<=set(v) and all(rule(x,r['object'][k]) for k,x in v.items())
     return False
+def new_failure_fields(row):
+    if 'inventoryFirstLoss' in row and not (row.get('phase')=='InventorySnapshot' and row.get('inventorySealed') is True and row.get('inventoryIntegrityLost') is True):return False
+    if 'terminalProofRefusal' in row and not (row.get('phase')=='TerminalCleanupCheckpoint' and row.get('terminalCleanupStage')=='task-proof' and row.get('terminalCleanupOk') is False):return False
+    return True
 def load_script(name):
     file=pathlib.Path(__file__).with_name(name+'.py');spec=importlib.util.spec_from_file_location(name,file);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 
@@ -83,7 +87,7 @@ def verify(root,envelope,expected,binary_hash,wrapper_hash):
         for kind,maxrows,maxbytes in [('native',2048,256*1024),('query',128,64*1024)]:
             name=f'{kind}-{pid}.jsonl';data=read(directory/name,maxbytes);total+=len(data);need(total<=10*1024*1024,'native-total-cap');need(data.endswith(b'\n'),'partial-line');lines=data.splitlines(keepends=True);need(0<len(lines)<=maxrows,'native-row-cap')
             for i,line in enumerate(lines):
-                need(len(line)<=512 and line.endswith(b'\n'),'native-line-cap');row=parse(line);need(rule(row,fields) and row['schemaVersion']==2 and row['pid']==daemon and row['source']=='native','native-schema')
+                need(len(line)<=512 and line.endswith(b'\n'),'native-line-cap');row=parse(line);need(rule(row,fields) and new_failure_fields(row) and row['schemaVersion']==2 and row['pid']==daemon and row['source']=='native','native-schema')
                 if i==0:need(row['phase']=='CaptureStarted' and row['record']==0,'missing-start')
                 loss |= row['record']!=i or row['droppedBefore']!=0 or row['suppressedBefore']!=0 or row['overflow'] is not False or row['phase'] in ('CaptureLimitReached','TargetObservationLost')
                 rows_by_pid[pid].append(row)

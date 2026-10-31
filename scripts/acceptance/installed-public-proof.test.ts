@@ -61,13 +61,13 @@ test('generated installed-only files parse without executing fixture, browser, o
     const templates = [...source.matchAll(/writeFileSync\('(installed-cache[^']+)'\s*,\s*(String\.raw)?`([\s\S]*?)`\);/g)];
     assert.equal(templates.length, 3);
     for (const [, name, raw, body] of templates) {
-      const text = new Function('url', `return ${raw ? 'String.raw' : ''}\`${body}\`;`)('http://127.0.0.1:1234');
+      const text = new Function('appURL', `return ${raw ? 'String.raw' : ''}\`${body}\`;`)('http://127.0.0.1:1234');
       const p = join(root, name!.replaceAll('/', '-')); writeFileSync(p, text);
       const checked = spawnSync(process.execPath, ['--check', p], { encoding: 'utf8' }); assert.equal(checked.status, 0, checked.stderr);
     }
     assert.match(source, /from 'e2e\/runner'/); assert.match(source, /from '@e2e-dev\/web'/);
     assert.doesNotMatch(source, /from ['"][^'"]*(?:packages\/|\/src\/|helpers\/)/);
-    assert.match(source, /const screenshotPath = resolve\(session\.artifactsDir, await app\.screenshot\('installed-candidate'\)\);\s*const capture = readFileSync\(screenshotPath\);/);
+    assert.match(source, /const screenshotPath = resolvePath\(session\.artifactsDir, await app\.screenshot\('installed-candidate'\)\);\s*const capture = readFileSync\(screenshotPath\);/);
     assert.ok(source.indexOf('closed = true; checks++;') < source.indexOf('coverage.state = await installedState(url)'), 'State reset must not pre-close the original cleanup oracle page');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

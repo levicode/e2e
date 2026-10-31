@@ -160,7 +160,14 @@ export class NativeSurface implements NativeWebSurface {
     const check = () => { this.assertAttempt(attempt); this.assertCallback(); };
     return {
       latch,
-      latchCallbackFailure: (scope, error) => { if (this.callbackOwner.getStore()?.notRevoked() !== false && (this.attempt !== attempt || (attempt.scope === scope && this.callbackIsCurrent()))) latch.latch(error); },
+      latchCallbackFailure: (scope, error) => {
+        const disposition = client.callbackFailureDisposition(error);
+        if (disposition === 'retired') return;
+        // The captured original latch owns this error, even if a later proof
+        // revoked its callback before this catch. Never borrow a new attempt.
+        if (disposition === 'hard') { latch.latch(error); return; }
+        if (this.callbackOwner.getStore()?.notRevoked() !== false && (this.attempt !== attempt || (attempt.scope === scope && this.callbackIsCurrent()))) latch.latch(error);
+      },
       retainDownloadFile: () => { check(); return this.retainAttemptDownloadFile(attempt, latch); },
       get identityScope() { check(); return attempt.scope; },
       routeRegistryVersion: () => { check(); return this.routeRegistryVersion(); },

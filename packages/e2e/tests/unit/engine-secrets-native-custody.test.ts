@@ -25,11 +25,10 @@ const json = (value: unknown) => JSON.stringify(value) + '\n';
 const identity = { consumerRun: '12345', consumerAttempt: '2', selector: process.version.slice(1), nodeVersion: process.version, sourceCommit: '1'.repeat(40), sourceTree: '2'.repeat(40) };
 const nonce = 'a'.repeat(64); const invocationNonce = 'b'.repeat(64);
 function fixture(prepare = true, fixtureIdentity = identity) {
-  const identity = fixtureIdentity;
   const workspace = mkdtempSync(path.join(os.tmpdir(), 'secrets-native-pure-')); roots.push(workspace);
   const evidence = path.join(workspace, 'evidence'); const invocations = path.join(evidence, 'fixture-invocations');
   const tools = path.join(evidence, 'tools'); const scripts = path.join(workspace, 'scripts', 'ci');
-  const fixtureRoot = path.join(evidence, 'fixtures', identity.selector, 'core');
+  const fixtureRoot = path.join(evidence, 'fixtures', fixtureIdentity.selector, 'core');
   for (const directory of [invocations, tools, scripts, fixtureRoot]) mkdirSync(directory, { recursive: true, mode: 0o700 });
   const project = path.join(workspace, 'p-0123456789ab'); mkdirSync(project, { mode: 0o700 });
   const native = path.join(workspace, 'fake-native'); const wrapper = path.join(tools, 'popup-trace.sh');
@@ -38,15 +37,15 @@ function fixture(prepare = true, fixtureIdentity = identity) {
   writeFileSync(path.join(scripts, 'native-trace-wrapper.sh'), wrapperBytes, { mode: 0o700 });
   writeFileSync(path.join(scripts, 'native-closed-trace-schema.json'), readFileSync(new URL('../../../../scripts/ci/native-closed-trace-schema.json', import.meta.url)));
   const bindingFile = path.join(fixtureRoot, 'binding.json');
-  const binding = { run: identity.consumerRun, attempt: identity.consumerAttempt, selector: identity.selector, nodeVersion: identity.nodeVersion, sourceCommit: identity.sourceCommit, sourceTree: identity.sourceTree, lane: 'core', nativeSha256: { ordinary: sha(nativeBytes) } };
+  const binding = { run: fixtureIdentity.consumerRun, attempt: fixtureIdentity.consumerAttempt, selector: fixtureIdentity.selector, nodeVersion: fixtureIdentity.nodeVersion, sourceCommit: fixtureIdentity.sourceCommit, sourceTree: fixtureIdentity.sourceTree, lane: 'core', nativeSha256: { ordinary: sha(nativeBytes) } };
   writeFileSync(bindingFile, json(binding));
   process.env['GITHUB_WORKSPACE'] = workspace; process.env['E2E_AGENT_BROWSER_EXECUTABLE'] = native; process.env['E2E_DIAGNOSTIC_INVOCATIONS'] = invocations;
-  const create = () => prepareEngineSecretsNativeCustody(nonce, identity, project);
+  const create = () => prepareEngineSecretsNativeCustody(nonce, fixtureIdentity, project);
   const prepared = prepare ? create() : undefined;
   const trace = path.join(project, '.e2e', 'native-trace'); const output = path.join(evidence, 'engine-secrets-native', nonce);
   const row = (pid: number) => ({ schemaVersion: 2, source: 'native', pid, record: 0, operationSeq: 0, phase: 'CaptureStarted', droppedBefore: 0, emittedBefore: 0, suppressedBefore: 0, overflow: false });
   const seed = (proxyPid = 41001, daemonPid = 51001, token = invocationNonce) => {
-    const invocation = { schemaVersion: 2, pid: proxyPid, nonce: token, traceDirectory: trace, nativeExecutable: native, nativeSHA256: sha(nativeBytes), wrapperSHA256: sha(wrapperBytes), run: identity.consumerRun, attempt: identity.consumerAttempt, sourceCommit: identity.sourceCommit, sourceTree: identity.sourceTree };
+    const invocation = { schemaVersion: 2, pid: proxyPid, nonce: token, traceDirectory: trace, nativeExecutable: native, nativeSHA256: sha(nativeBytes), wrapperSHA256: sha(wrapperBytes), run: fixtureIdentity.consumerRun, attempt: fixtureIdentity.consumerAttempt, sourceCommit: fixtureIdentity.sourceCommit, sourceTree: fixtureIdentity.sourceTree };
     const bytes = json(invocation); writeFileSync(path.join(invocations, `invocation-${proxyPid}.json`), bytes, { mode: 0o600 });
     const mapping = { schemaVersion: 1, kind: 'spawn-owned-daemon', proxyPID: proxyPid, daemonPID: daemonPid, nonce: token, invocationSHA256: sha(bytes) };
     writeFileSync(path.join(invocations, `daemon-${proxyPid}.json`), json(mapping), { mode: 0o600 });
@@ -65,7 +64,7 @@ describe('original native invocation custody without executable launch', () => {
     expect(f.prepared!.env['E2E_DIAGNOSTIC_DIR']).toBe(f.trace);
     expect(process.env['E2E_AGENT_BROWSER_EXECUTABLE']).toBe(f.native);
     expect(f.prepared!.archive(f.rows())).toBe(true);
-    expect(readdirSync(f.output).sort()).toEqual(['custody.json', 'daemon-41001.json', 'invocation-41001.json', 'native-41001.jsonl', 'query-41001.jsonl']);
+    expect(readdirSync(f.output).toSorted()).toEqual(['custody.json', 'daemon-41001.json', 'invocation-41001.json', 'native-41001.jsonl', 'query-41001.jsonl']);
     const extra = fixture(false); const extendedIdentity = { ...identity, caseSchema: 'engine-secrets-five-v1', payload: 'PRIVATE_IDENTITY_CANARY' };
     const prepared = prepareEngineSecretsNativeCustody(nonce, extendedIdentity, extra.project); extra.seed();
     expect(prepared?.archive(extra.rows())).toBe(true);
@@ -169,5 +168,32 @@ describe('direct custody selector admission before path lookup', () => {
     const selected = { ...identity, selector: selector as string, nodeVersion: nodeVersion as string };
     const f = fixture(false, selected); const prepared = prepareEngineSecretsNativeCustody(nonce, selected, f.project);
     if (accepted) { expect(prepared).toBeDefined(); f.seed(); expect(prepared!.archive(f.rows())).toBe(true); const meta = JSON.parse(readFileSync(path.join(f.output, 'custody.json'), 'utf8')); expect(meta.selector).toBe(selector); expect(meta.nodeVersion).toBe(nodeVersion); } else expect(prepared).toBeUndefined();
+  });
+});
+
+describe('first-failure closed native fields', () => {
+  const contexts = [
+    { field: 'inventoryFirstLoss', reason: 'resume-permit-dropped', context: { phase: 'InventorySnapshot', inventorySealed: true, inventoryIntegrityLost: true } },
+    { field: 'terminalProofRefusal', reason: 'object-debt', context: { phase: 'TerminalCleanupCheckpoint', terminalCleanupStage: 'task-proof', terminalCleanupOk: false } },
+  ];
+  it.each(contexts)('accepts only declared closed values for $field', ({ field, context }) => {
+    const schema = JSON.parse(readFileSync(new URL('../../../../scripts/ci/native-closed-trace-schema.json', import.meta.url), 'utf8')) as { fields: Record<string, { enum: string[] }> };
+    for (const reason of schema.fields[field]!.enum) {
+      const f = fixture(); f.seed();
+      writeFileSync(path.join(f.trace, 'native-41001.jsonl'), json(f.row(51001)) + json({ ...f.row(51001), record: 1, ...context, [field]: reason }));
+      expect(f.prepared!.archive(f.rows())).toBe(true);
+    }
+  });
+  it.each(contexts)('rejects unknown or misplaced $field without copying bytes', ({ field, reason, context }) => {
+    const edits: Record<string, unknown>[] = ['PRIVATE_CANARY', null, false, 1, [], {}].map(value => ({ [field]: value }));
+    edits.push({ phase: 'CaptureStarted' }, { extraFailureDetail: 'PRIVATE_CANARY' });
+    if (field === 'inventoryFirstLoss') edits.push({ inventorySealed: false }, { inventoryIntegrityLost: false });
+    else edits.push({ terminalCleanupStage: 'final-commit' }, { terminalCleanupOk: true });
+    for (const edit of edits) {
+      const f = fixture(); f.seed();
+      writeFileSync(path.join(f.trace, 'native-41001.jsonl'), json(f.row(51001)) + json({ ...f.row(51001), record: 1, ...context, [field]: reason, ...edit }));
+      expect(f.prepared!.archive(f.rows())).toBe(false);
+      expect(readdirSync(f.output)).toEqual([]);
+    }
   });
 });

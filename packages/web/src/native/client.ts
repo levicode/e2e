@@ -26,7 +26,7 @@ export interface NativeChannel {
   dispose(): void;
   settle?(context: OperationContext): Promise<void>;
 }
-interface CallbackOwner { generation: number; identityScope: string | undefined; sequence: number; revoked: boolean; token: string; active: boolean; selected: boolean; expiresAt: number; epoch: number; timer?: ReturnType<typeof setTimeout> }
+interface CallbackOwner { readonly source: 'network-request' | 'other'; retiredAt?: number; retirementWaiter?: () => void; generation: number; identityScope: string | undefined; sequence: number; revoked: boolean; token: string; active: boolean; selected: boolean; expiresAt: number; epoch: number; timer?: ReturnType<typeof setTimeout> }
 interface Pending {
   readonly kind: 'hello' | 'request' | 'artifact' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
@@ -90,6 +90,7 @@ export class NativeClient {
   private publishingCommand: string | undefined;
   private readonly stagedEvents: { event: NativeEvent; bytes: number; arrived: number }[] = [];
   private readonly callbacks = new Set<CallbackOwner>();
+  private readonly decisionFailures = new WeakMap<Error, { readonly owner: CallbackOwner; readonly disposition: 'hard' | 'retired'; readonly nativeCode: string | undefined }>();
   private readonly retiredCallbackScopes = new Map<string, number>();
   private readonly pending = new Map<string, Pending>();
   private ready: NativeReady | undefined;
@@ -180,6 +181,13 @@ export class NativeClient {
     return () => ownsRecovery() && owner?.revoked !== true;
   }
 
+  /** Exact rejected error metadata; never authority to execute or select a decision. */
+  callbackFailureDisposition(error: unknown): 'hard' | 'retired' | undefined {
+    if (!(error instanceof Error)) return undefined;
+    const failure = this.decisionFailures.get(error);
+    return failure?.owner === this.callback.getStore() ? failure?.disposition : undefined;
+  }
+
   /** Keep handle cleanup through ordinary restart, but never across an EOF recovery. */
   recoveryRevocationGuard(): () => boolean {
     const sequence = this.recoveryRetirementSequence;
@@ -236,6 +244,7 @@ export class NativeClient {
     const transition = this.transition;
     this.transition = undefined;
     transition?.complete(retired);
+    for (const owner of this.callbacks) owner.retirementWaiter?.();
   }
 
   /** Captures only existing exact-scope cancellation proofs, never live work or a new request. */
@@ -303,12 +312,59 @@ export class NativeClient {
     // The original signal authorizes dispatch, not abandonment of its receipt.
     // Once written, retain the exact control ACK under the SAME time budget.
     const timeoutMs = this.timeout(context);
+    const decisionEndsAt = Math.min(performance.now() + timeoutMs, owner?.expiresAt ?? Infinity);
     const receipt: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs };
     const message = await this.exchange('decision', { type: 'decision', generation: this.ready!.generation, token, decision }, receipt, undefined, undefined, undefined, context.signal);
     if (message.type !== 'control-result') throw this.invalidate();
-    if (!message.accepted) throw rejectedDecision(new EngineError('ENGINE_FAILURE', 'The native browser rejected an expired or invalid decision', { retryable: false }));
+    if (!message.accepted) {
+      const error = rejectedDecision(new EngineError('ENGINE_FAILURE', 'The native browser rejected an expired or invalid decision', { retryable: false, cause: { nativeReason: message.error?.code } }));
+      if (owner !== undefined) {
+        const retired = owner.source === 'network-request' && message.error?.code === 'decision-missing' && owner.token === token
+          && await this.waitForNetworkRetirement(owner, decisionEndsAt, context.signal);
+        this.decisionFailures.set(error, { owner, disposition: retired ? 'retired' : 'hard', nativeCode: message.error?.code });
+      }
+      throw error;
+    }
     const callback = this.callback.getStore();
     if (callback?.token === token) callback.selected = true;
+  }
+
+  /** Wait only for original callback retirement, never for replacement publication. */
+  private waitForNetworkRetirement(owner: CallbackOwner, endsAt: number, signal: AbortSignal): Promise<boolean> {
+    const transition = this.transition;
+    const eligible = () => this.transition === transition && transition !== undefined
+      && (transition.command === 'scope.reset' || transition.command === 'state.restore')
+      && transition.scope === owner.identityScope && transition.epoch === owner.epoch
+      && this.ready?.generation === owner.generation && !owner.selected
+      && this.failure === undefined && !this.terminal && !this.closed && this.closing === undefined;
+    if (!eligible() || signal.aborted || owner.retirementWaiter !== undefined) return Promise.resolve(false);
+    const proof = () => owner.retiredAt !== undefined && owner.retiredAt < endsAt;
+    if (owner.retiredAt !== undefined) return Promise.resolve(proof());
+    if (!owner.active || endsAt <= performance.now()) return Promise.resolve(false);
+    return new Promise(resolve => {
+      let finished = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (retired: boolean) => {
+        if (finished) return;
+        finished = true;
+        if (timer !== undefined) clearTimeout(timer);
+        signal.removeEventListener('abort', wake);
+        if (owner.retirementWaiter === wake) delete owner.retirementWaiter;
+        resolve(retired);
+      };
+      const wake = () => {
+        if (!eligible() || signal.aborted) { finish(false); return; }
+        if (owner.retiredAt !== undefined) { finish(proof()); return; }
+        if (endsAt <= performance.now() || !owner.active) finish(false);
+      };
+      owner.retirementWaiter = wake;
+      signal.addEventListener('abort', wake, { once: true });
+      timer = setTimeout(() => finish(false), Math.max(0, endsAt - performance.now()));
+      timer.unref();
+      // Install and inspect without yielding: proof/failure cannot be lost
+      // between the initial check and this exact owner notification.
+      wake();
+    });
   }
 
   /** Requires explicit native scope closure; killing a proxy alone is not successful browser cleanup. */
@@ -715,6 +771,7 @@ export class NativeClient {
       if (owner.generation !== pending.generation || owner.token !== pending.callbackToken) continue;
       owner.revoked = true; owner.active = false;
       if (owner.timer !== undefined) clearTimeout(owner.timer);
+      owner.retirementWaiter?.();
     }
     this.publicationEpoch++;
     this.retirementHandler?.();
@@ -727,12 +784,15 @@ export class NativeClient {
       || Object.keys(payload).length !== 2 || !('identityScope' in payload) || !('throughEventSequence' in payload) || typeof payload['identityScope'] !== 'string' || payload['identityScope'].length === 0 || Buffer.byteLength(payload['identityScope']) > 128
       || !Number.isSafeInteger(payload['throughEventSequence']) || payload['throughEventSequence'] !== message.sequence - 1) throw new ReceiveFailure('callback-proof');
     const scope = payload['identityScope']; const through = message.sequence - 1;
+    const observedAt = performance.now();
     if (this.retiredCallbackScopes.has(scope) || this.retiredCallbackScopes.size >= 4096) throw new ReceiveFailure('callback-proof');
     this.retiredCallbackScopes.set(scope, through);
     for (const owner of this.callbacks) {
       if (owner.generation !== message.generation || owner.identityScope !== scope || owner.sequence > through) continue;
+      owner.retiredAt = observedAt;
       owner.revoked = true; owner.active = false;
       if (owner.timer !== undefined) clearTimeout(owner.timer);
+      owner.retirementWaiter?.();
     }
   }
 
@@ -758,7 +818,7 @@ export class NativeClient {
       if (message.sequence > this.retiredCallbackScopes.get(identityScope)!) this.fail('The native browser emitted a callback after terminal retirement');
       return;
     }
-    const callback: CallbackOwner | undefined = message.decision === undefined ? undefined : { generation: message.generation, identityScope, sequence: message.sequence, revoked: false, token: message.decision.token, active: true, selected: false, expiresAt: arrived + message.decision.timeoutMs, epoch: this.callbackEpoch };
+    const callback: CallbackOwner | undefined = message.decision === undefined ? undefined : { source: message.event === 'network.request' ? 'network-request' : 'other', generation: message.generation, identityScope, sequence: message.sequence, revoked: false, token: message.decision.token, active: true, selected: false, expiresAt: arrived + message.decision.timeoutMs, epoch: this.callbackEpoch };
     if (callback !== undefined) this.callbacks.add(callback);
     const callbackTimer = callback === undefined ? undefined : setTimeout(() => {
       if (!callback.active) return;
@@ -773,7 +833,10 @@ export class NativeClient {
         callback.active = false; this.fail('The native browser callback exceeded its operation budget', 'OPERATION_TIMEOUT'); return;
       }
       return callback === undefined ? this.onEvent(message) : this.callback.run(callback, () => this.onEvent(message));
-    }).catch(() => { if (ownsDelivery() && (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch))) this.fail('The native browser event handler failed'); }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
+    }).catch(cause => {
+      const hard = cause instanceof Error ? this.decisionFailures.get(cause) : undefined;
+      if ((hard?.owner === callback && hard?.disposition === 'hard') || (ownsDelivery() && (callback === undefined || (!callback.revoked && callback.epoch === this.callbackEpoch)))) this.fail('The native browser event handler failed');
+    }).finally(() => { if (callbackTimer !== undefined) clearTimeout(callbackTimer); if (callback !== undefined) { callback.active = false; this.callbacks.delete(callback); } this.activeEvents--; this.eventBytes -= bytes; });
   }
 
   private dispatchInteropReplacement(message: NativeEvent, bytes: number): void {

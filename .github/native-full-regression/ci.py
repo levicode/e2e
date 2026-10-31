@@ -276,6 +276,7 @@ CLASS_SOURCE_FILES = [
     'docs/reference/engine.mdx', 'packages/e2e/src/engine/index.ts',
     'packages/e2e/src/locator/engine.ts', 'packages/e2e/src/run/fixtures.ts',
     'packages/e2e/tests/helpers/fixture-attribute-sampling.ts',
+    'packages/web/tests/helpers/class-sampling.ts',
     *CLASS_TEST_FILES, 'packages/web/src/browser.ts',
     'packages/e2e/src/internal/time.ts', 'packages/e2e/src/run/budget.ts',
     'packages/e2e/src/expect/async.ts', 'packages/e2e/tests/helpers/fake-time.ts',

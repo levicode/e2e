@@ -136,8 +136,8 @@ it('archives exactly the bounded closed forwarded rows and custody without raw w
 
 it('a failed archive callback preserves forwarding and the exact business failure', async () => {
   const lines = sink();
-  const original = new Error('original failure');
-  await expect(withShortReadDiagnostics('web-platform', async () => { throw original; }, () => { throw new Error('archive failed'); })).rejects.toBe(original);
+  const businessFailure = new Error('original failure');
+  await expect(withShortReadDiagnostics('web-platform', async () => { throw businessFailure; }, () => { throw new Error('archive failed'); })).rejects.toBe(businessFailure);
   expect(lines).toHaveLength(1);
   expect(lines[0]).toContain('QUERY_READ_DIAGNOSTIC_CUSTODY');
 });
