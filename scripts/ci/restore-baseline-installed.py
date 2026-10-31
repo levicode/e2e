@@ -18,7 +18,7 @@ def members(data,pin):
   for x in xs:need(not x.is_dir() and stat.S_IFMT(x.external_attr>>16)in[0,stat.S_IFREG] and not x.flag_bits&1,'ZIP type')
   return {x.filename:z.read(x) for x in xs}
 def main():
- c=json.loads(Path('scripts/ci/baseline-installed-binding.json').read_bytes());need(c['purpose']=='baseline-installed-diagnostic' and c['acceptanceEvidence'] is False,'purpose');p=c['ordinary'];out=Path(os.environ['RUNNER_TEMP'])/'baseline-installed-runtime';e=Path('evidence');e.mkdir(exist_ok=True);token=os.environ['GH_TOKEN'];base='https://api.github.com/repos/levicode/e2e/actions';headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
+ c=json.loads(Path('scripts/ci/baseline-installed-binding.json').read_bytes());need(c['purpose']=='baseline-installed-diagnostic' and c['acceptanceEvidence'] is False,'purpose');p=c['ordinary'];out=Path(os.environ['RUNNER_TEMP'])/'baseline-installed-runtime';e=Path('.artifacts/baseline-installed-diagnostic');e.mkdir(exist_ok=True);token=os.environ['GH_TOKEN'];base='https://api.github.com/repos/levicode/e2e/actions';headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
  def api(path,name):
   with urllib.request.urlopen(urllib.request.Request(base+path,headers=headers),timeout=60) as q:b=q.read(5000001)
   need(len(b)<=5000000,'API cap');(e/name).write_bytes(b);return json.loads(b)

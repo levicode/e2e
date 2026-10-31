@@ -1,7 +1,7 @@
 name: S22 historical native baseline installed diagnostic only
 on:
   push:
-    branches: [ci/s22-baseline-installed-diagnostic-20261031]
+    branches: [ci/s22-baseline-installed-diagnostic-fix1-20261031]
 permissions:
   contents: read
   actions: read
@@ -29,11 +29,12 @@ jobs:
       - name: Fresh outside-checkout diagnostic paths, never the pending S23 source
         run: |
           set -euo pipefail
-          mkdir evidence "$RUNNER_TEMP/baseline-installed-home"
+          mkdir -p .artifacts
+          mkdir .artifacts/baseline-installed-diagnostic "$RUNNER_TEMP/baseline-installed-home"
           echo "HOME=$RUNNER_TEMP/baseline-installed-home" >> "$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/baseline-installed-playwright" >> "$GITHUB_ENV"
-          node --version > evidence/node.version
-          pnpm --version > evidence/pnpm.version
+          node --version > .artifacts/baseline-installed-diagnostic/node.version
+          pnpm --version > .artifacts/baseline-installed-diagnostic/pnpm.version
       - name: Original official locked dependencies and fresh public JS build
         run: |
           set -euo pipefail
@@ -53,21 +54,21 @@ jobs:
           pnpm --filter @e2e-dev/web exec playwright-core install chromium
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          ffmpeg -version > evidence/ffmpeg.version
-          ffprobe -version > evidence/ffprobe.version
-          chrome="$(node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" evidence/chromium-executable.json)"
+          ffmpeg -version > .artifacts/baseline-installed-diagnostic/ffmpeg.version
+          ffprobe -version > .artifacts/baseline-installed-diagnostic/ffprobe.version
+          chrome="$(node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" .artifacts/baseline-installed-diagnostic/chromium-executable.json)"
           echo "E2E_CHROMIUM_EXECUTABLE=$chrome" >> "$GITHUB_ENV"
-          "$chrome" --version > evidence/chrome.version
+          "$chrome" --version > .artifacts/baseline-installed-diagnostic/chrome.version
       - name: Original live production handshake with current built Web; never reuse old probe
         run: |
           set -euo pipefail
-          node --input-type=module -e "import { REQUIRED_CAPABILITIES } from './packages/web/dist/native/capabilities.js'; process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > evidence/required-capabilities.json
-          node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/baseline-installed-runtime/agent-browser" evidence/required-capabilities.json evidence/negotiation.json
+          node --input-type=module -e "import { REQUIRED_CAPABILITIES } from './packages/web/dist/native/capabilities.js'; process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > .artifacts/baseline-installed-diagnostic/required-capabilities.json
+          node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/baseline-installed-runtime/agent-browser" .artifacts/baseline-installed-diagnostic/required-capabilities.json .artifacts/baseline-installed-diagnostic/negotiation.json
       - name: Original public bundle assembly on this exact clean JS HEAD
         id: bundle
         run: |
           set -euo pipefail
-          node scripts/acceptance/package-bundle.ts "$RUNNER_TEMP/baseline-installed-runtime/agent-browser" evidence/diagnostic-producer.json evidence/negotiation.json "$RUNNER_TEMP/baseline-installed-bundle"
+          node scripts/acceptance/package-bundle.ts "$RUNNER_TEMP/baseline-installed-runtime/agent-browser" .artifacts/baseline-installed-diagnostic/diagnostic-producer.json .artifacts/baseline-installed-diagnostic/negotiation.json "$RUNNER_TEMP/baseline-installed-bundle"
           digest="$(sha256sum "$RUNNER_TEMP/baseline-installed-bundle/manifest.json" | cut -d ' ' -f 1)"
           echo "manifest_sha256=$digest" >> "$GITHUB_OUTPUT"
       - name: Original full outside-checkout installed sequence exactly once
@@ -76,9 +77,9 @@ jobs:
           EXPECTED_MANIFEST_SHA256: ${{ steps.bundle.outputs.manifest_sha256 }}
         run: |
           set +e
-          node scripts/acceptance/candidate-installed.ts "$RUNNER_TEMP/baseline-installed-bundle" "$EXPECTED_MANIFEST_SHA256" "$RUNNER_TEMP/baseline-installed-consumer" evidence > evidence/installed-command.stdout.log 2> evidence/installed-command.stderr.log
+          node scripts/acceptance/candidate-installed.ts "$RUNNER_TEMP/baseline-installed-bundle" "$EXPECTED_MANIFEST_SHA256" "$RUNNER_TEMP/baseline-installed-consumer" .artifacts/baseline-installed-diagnostic > .artifacts/baseline-installed-diagnostic/installed-command.stdout.log 2> .artifacts/baseline-installed-diagnostic/installed-command.stderr.log
           s=$?
-          printf '%s\n' "$s" > evidence/installed-command.exit
+          printf '%s\n' "$s" > .artifacts/baseline-installed-diagnostic/installed-command.exit
           exit "$s"
       - name: Retain bounded diagnostic facts without replacing business failure
         if: ${{ !cancelled() && steps.installed.outcome != 'skipped' }}
@@ -87,7 +88,7 @@ jobs:
         if: ${{ always() }}
         with:
           name: s22-baseline-installed-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
-          path: evidence/
+          path: .artifacts/baseline-installed-diagnostic/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7

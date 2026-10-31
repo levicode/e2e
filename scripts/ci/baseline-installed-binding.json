@@ -2,7 +2,7 @@
   "purpose": "baseline-installed-diagnostic",
   "baseCommit": "5bf78ee3fe1b7912a66791b765d0384d8caa2f19",
   "baseTree": "fdee4ce971076bee2bdf53a88e9c4ae3156eb66d",
-  "exactRef": "refs/heads/ci/s22-baseline-installed-diagnostic-20261031",
+  "exactRef": "refs/heads/ci/s22-baseline-installed-diagnostic-fix1-20261031",
   "allowedDelta": [
     ".github/workflows/s22-baseline-installed-diagnostic.yml",
     "scripts/acceptance/fixtures/installed-candidate.mjs",
