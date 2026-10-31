@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { validateInstalledSdkPrerequisite, INSTALLED_AI_VERSION, installedConsumerMetadata, inspectInstalledSdkPrerequisite, validateEncoderReceipt, validateInstalledPublicProof } from './installed-public-proof.ts';
+import { validateInstalledRunClosed, INSTALLED_RUN_DIAGNOSTIC_ENUMS, validateInstalledSdkPrerequisite, INSTALLED_AI_VERSION, installedConsumerMetadata, inspectInstalledSdkPrerequisite, validateEncoderReceipt, validateInstalledPublicProof } from './installed-public-proof.ts';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'installed-proof-pure-')); const project = join(root, 'consumer'); const evidence = join(root, 'evidence');
@@ -185,12 +185,12 @@ test('actual installed run failure diagnostic retains only closed facts before u
   const receipt = closed('record', value);
   assert.equal(receipt.exitCode, 2); assert.equal(receipt.stage, 'record'); assert.equal(receipt.resultCount, 1);
   assert.deepEqual(receipt.errors.map((item: any) => item.scope), ['run', 'attempt', 'secondary', 'step']);
-  assert.equal(receipt.errors[0].code, 'other'); assert.equal(receipt.errors[0].category, 'other'); assert.equal(receipt.errors[0].phase, 'other');
+  assert.equal(receipt.errors[0].code, 'other'); assert.equal(receipt.errors[0].category, 'unknown'); assert.equal(receipt.errors[0].phase, 'unknown');
   assert.equal(receipt.errors[1].code, 'MODEL_UNAVAILABLE');
-  assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE_MESSAGE_PATH_TOKEN|modelCalls|message|stack|explanation|source|details/);
+  assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE_MESSAGE_PATH_TOKEN|message|stack|explanation|source|details/);
   const overflow = closed('replay', { exitCode: 999, status: secret, report: { run: { errors: Array.from({ length: 100 }, () => ({ ...error })), results: Array.from({ length: 100 }, () => ({ attempts: Array.from({ length: 10 }, () => ({ error: { ...error } })) })) } } });
   assert.equal(overflow.errors.length, 32); assert.equal(overflow.resultCount, 16); assert.equal(overflow.truncated, true);
-  assert.equal(overflow.exitCode, null); assert.equal(overflow.status, 'other');
+  assert.equal(overflow.exitCode, null); assert.equal(overflow.status, 'unknown');
   assert.deepEqual(closed('record', {}).errors, []); assert.throws(() => closed(secret, {}), /Invalid installed run stage/);
   const cacheFunction = source.slice(source.indexOf('async function installedCache(appURL)'), source.indexOf('async function installedState(appURL)'));
   const lines: string[] = [];
@@ -201,7 +201,7 @@ test('actual installed run failure diagnostic retains only closed facts before u
   assert.deepEqual(JSON.parse(lines[0]!.slice('INSTALLED_RUN_CLOSED '.length)), receipt);
 
   for (const stage of ['record', 'replay']) {
-    assert.ok(source.indexOf(`installedRunClosed('${stage}', ${stage})`) < source.indexOf(`assert.equal(${stage}.exitCode, 0)`));
+    assert.ok(source.indexOf(`installedRunClosed('${stage}', ${stage}`) < source.indexOf(`assert.equal(${stage}.exitCode, 0)`));
     assert.ok(source.includes(`assert.equal(${stage}.exitCode, 0); assert.equal(${stage}.status, 'passed');`));
   }
 });
@@ -281,4 +281,132 @@ test('retained SDK prerequisite validator accepts failures as failures, rejects 
   }
   const wrong = sdkFixture(t); wrong.install(join(wrong.core, 'node_modules', 'ai'), '7.0.134');
   assert.equal(validateInstalledSdkPrerequisite(inspectInstalledSdkPrerequisite(wrong.project, wrong.entry)).reason, 'version-mismatch');
+});
+
+// Pure extraction of diagnostic functions only. Never imports or runs the installed SDK/fixture.
+function diagnosticFunctions() {
+  const source = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
+  const block = source.match(/\/\/ BEGIN installed run closed diagnostic[^\n]*\n([\s\S]*?)\/\/ END installed run closed diagnostic/)!;
+  const closed = new Function(`${block[1]}\nreturn installedRunClosed;`)() as (stage: string, value: any, files?: any) => any;
+  return { source, block: block[1]!, closed };
+}
+function sampleRun(events: any = [{ kind: 'engine', name: 'tap', code: 'ENGINE_FAILURE', status: 'failed', durationMs: 12 }]) {
+  return { exitCode: 3, status: 'error', report: { run: { results: [{ attempts: [{ error: { code: 'APP_UNREACHABLE', category: 'infrastructure', phase: 'body' }, steps: [{ api: 'app.open', status: 'passed' }, { api: 'agent.act', status: 'failed', durationMs: 21, cache: { mode: 'agent-concluded', reason: 'action-failed', replayedActions: 1, totalActions: 2 }, metrics: { modelCalls: 0 }, events }] }] }] } } };
+}
+
+test('v2 preserves final and underlying phase codes, public cache fields, ordinals and honest missing facts', () => {
+  const { closed } = diagnosticFunctions(); const projected = closed('replay', sampleRun());
+  validateInstalledRunClosed(projected);
+  assert.equal(projected.status, 'error'); assert.equal(projected.errors[0].code, 'APP_UNREACHABLE');
+  assert.equal(projected.steps[0].stepIndex, 1); assert.equal(projected.steps[0].events[0].code, 'ENGINE_FAILURE');
+  assert.equal(projected.steps[0].cache.reason, 'action-failed'); assert.equal(projected.steps[0].metrics.modelCalls, 0);
+  assert.equal(projected.files.calls.status, 'unknown'); assert.equal(projected.files.calls.delta, null);
+  const absent = closed('replay', sampleRun(null)); validateInstalledRunClosed(absent);
+  assert.equal(absent.steps[0].eventsState, 'unknown'); assert.deepEqual(absent.steps[0].events, []);
+  const empty = closed('replay', sampleRun([])); assert.equal(empty.steps[0].eventsState, 'recorded');
+  const unknown = closed('replay', {}); validateInstalledRunClosed(unknown); assert.equal(unknown.resultCount, null);
+});
+
+test('v2 closed enums include every declared code and scrub arbitrary event/error data', () => {
+  const { closed } = diagnosticFunctions();
+  for (const code of INSTALLED_RUN_DIAGNOSTIC_ENUMS.codes) {
+    const value = sampleRun([{ kind: 'engine', name: 'tap', code, status: 'cancelled', durationMs: 0 }]);
+    value.report.run.results[0]!.attempts[0]!.error.code = code;
+    const r = closed('replay', value); validateInstalledRunClosed(r); assert.equal(r.errors[0].code, code); assert.equal(r.steps[0].events[0].code, code);
+  }
+  const secret = 'PRIVATE_NAME_TOKEN_PATH';
+  const r = closed('replay', sampleRun([{ kind: secret, name: secret, code: secret, status: secret, durationMs: -1, message: secret, stack: secret, target: secret, URL: secret, detail: secret, metadata: { token: secret } }, {}]));
+  validateInstalledRunClosed(r); assert.doesNotMatch(JSON.stringify(r), /PRIVATE_NAME_TOKEN_PATH|message|stack|target|URL|detail|metadata/);
+  assert.equal(r.steps[0].events[0].name, 'other'); assert.equal(r.steps[0].events[0].code, 'other'); assert.equal(r.steps[0].events[1].code, 'unknown'); assert.equal(r.steps[0].events[0].durationMs, null);
+});
+
+test('v2 enforces total event cap, step/error caps and bounded malformed fallback', () => {
+  const { closed } = diagnosticFunctions(); const value = sampleRun(Array.from({ length: 60 }, () => ({ code: 'CANCELLED' })));
+  const attempt = value.report.run.results[0]!.attempts[0]!;
+  attempt.steps.push({ ...attempt.steps[1]!, events: Array.from({ length: 20 }, () => ({})) });
+  const r = closed('replay', value); validateInstalledRunClosed(r);
+  assert.equal(r.steps[0].events.length, 60); assert.equal(r.steps[1].events.length, 4); assert.equal(r.steps[1].eventsTruncated, true); assert.equal(r.truncated, true);
+  const hostile = { get report() { throw new Error('SECRET'); } };
+  const fallback = closed('replay', hostile); validateInstalledRunClosed(fallback); assert.equal(fallback.projection, 'failed'); assert.equal(fallback.exitCode, null);
+  const huge = sampleRun(); huge.report.run.results = Array.from({ length: 20 }, () => ({ attempts: Array.from({ length: 10 }, () => ({ ...attempt, steps: Array.from({ length: 70 }, () => attempt.steps[1]!) })) }));
+  const bounded = closed('replay', huge); validateInstalledRunClosed(bounded); assert.equal(bounded.resultCount, 16); assert.equal(bounded.steps.length, 16); assert.equal(bounded.errors.length, 32); assert.equal(bounded.truncated, true);
+});
+
+test('v2 validator rejects secret fields, unknown tokens, overflow and contradictory receipts', () => {
+  const { closed } = diagnosticFunctions();
+  const mutations: Array<(r: any) => void> = [
+    r => { r.message = 'SECRET'; }, r => { r.status = 'SECRET'; }, r => { r.errors[0].code = 'SECRET'; },
+    r => { r.errors[0].phase = 'SECRET'; }, r => { r.errors[0].resultIndex = 10; },
+    r => { r.steps[0].cache.entry = 'SECRET'; }, r => { r.steps[0].metrics.modelCalls = -1; },
+    r => { r.steps[0].events[0].name = 'SECRET'; }, r => { r.steps[0].events[0].code = 'SECRET'; },
+    r => { r.steps[0].events[0].detail = 'SECRET'; }, r => { r.steps[0].events[0].metadata = {}; },
+    r => { r.steps[0].events[0].eventIndex = 1; }, r => { r.steps[0].events[0].durationMs = Infinity; },
+    r => { r.steps[0].eventsState = 'unknown'; }, r => { r.steps[0].eventsTruncated = true; },
+    r => { r.steps[0].events = Array.from({ length: 65 }, (_, eventIndex) => ({ ...r.steps[0].events[0], eventIndex })); },
+    r => { r.steps.push(structuredClone(r.steps[0])); }, r => { r.files.calls.delta = 0; },
+    r => { r.files.calls = { status: 'verified', before: 2, after: 1, delta: -1 }; },
+    r => { r.projection = 'failed'; }, r => { r.exitCode = 99; }, r => { r.resultCount = 17; },
+    r => { r.steps[0].events = new Array(1); },
+  ];
+  for (const mutate of mutations) { const r = closed('replay', sampleRun()); mutate(r); assert.throws(() => validateInstalledRunClosed(r), { message: 'Invalid installed run closed diagnostic' }); }
+});
+
+test('bounded known-file diagnostics distinguish missing/invalid from zero and never expose contents or paths', async t => {
+  const fs = await import('node:fs'); const { block } = diagnosticFunctions();
+  const root = mkdtempSync(join(tmpdir(), 'installed-diagnostic-file-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const callsPath = join(root, 'calls'); const cachePath = join(root, 'cache'); const bytes = Buffer.from('PRIVATE_CACHE_BYTES');
+  writeFileSync(cachePath, bytes); const mtime = fs.statSync(cachePath).mtimeMs;
+  let retained: Buffer | undefined;
+  const bounded = new Function('openSync', 'constants', 'fstatSync', 'readSync', 'closeSync', `${block}\nreturn installedCacheFiles;`)(
+    (p: string, flags: number) => fs.openSync(p === 'installed-model-calls.log' ? callsPath : p, flags), fs.constants, fs.fstatSync,
+    (fd: number, b: Buffer, ...args: [number, number, null]) => { retained = b; return fs.readSync(fd, b, ...args); }, fs.closeSync,
+  ) as (before: string, path: string, bytes: Buffer, mtime: number) => any;
+  const missing = bounded('call\n', cachePath, bytes, mtime); assert.equal(missing.calls.status, 'unknown'); assert.equal(missing.calls.delta, null);
+  writeFileSync(callsPath, 'call\ncall\n'); const valid = bounded('call\n', cachePath, bytes, mtime);
+  assert.deepEqual(valid.calls, { status: 'verified', before: 1, after: 2, delta: 1 }); assert.deepEqual(valid.cache, { status: 'verified', bytesEqual: true, mtimeEqual: true });
+  assert.ok(retained!.every(byte => byte === 0)); assert.equal(bytes.toString(), 'PRIVATE_CACHE_BYTES');
+  assert.doesNotMatch(JSON.stringify(valid), /PRIVATE_CACHE_BYTES|installed-diagnostic-file|callsPath|cachePath/);
+  for (const invalid of ['SECRET', 'call\n\n', 'call', 'call\n\0', '']) {
+    writeFileSync(callsPath, invalid); assert.equal(bounded('call\n', cachePath, bytes, mtime).calls.status, 'unknown');
+  }
+  writeFileSync(callsPath, ''); assert.equal(bounded('', cachePath, bytes, mtime).calls.delta, 0);
+  writeFileSync(callsPath, 'x'.repeat(1_048_577)); assert.equal(bounded('', cachePath, bytes, mtime).calls.status, 'unknown');
+  fs.rmSync(callsPath); fs.symlinkSync(cachePath, callsPath); assert.equal(bounded('', cachePath, bytes, mtime).calls.status, 'unknown');
+  fs.rmSync(callsPath);
+  const fifo = spawnSync('mkfifo', [callsPath], { encoding: 'utf8', timeout: 2_000 }); assert.equal(fifo.status, 0, 'mkfifo required for safe FIFO control');
+  // Child hard deadline makes a regression to blocking open a bounded test failure.
+  const fifoControl = `const fs = require('node:fs'); const realOpen = fs.openSync; const openSync = (p, flags) => realOpen(p === 'installed-model-calls.log' ? ${JSON.stringify(callsPath)} : p, flags); const { constants, fstatSync, readSync, closeSync } = fs; ${block}; const r = installedCacheFiles('call\\n', ${JSON.stringify(callsPath)}, Buffer.from('cache'), 0); if (r.calls.status !== 'unknown' || r.cache.status !== 'unknown') process.exit(2);`;
+  const checkedFifo = spawnSync(process.execPath, ['-e', fifoControl], { encoding: 'utf8', timeout: 2_000 });
+  assert.equal(checkedFifo.error, undefined, 'known FIFO must not block diagnostic open'); assert.equal(checkedFifo.status, 0, checkedFifo.stderr);
+  const blockingMutation = spawnSync(process.execPath, ['-e', fifoControl.replace(' | constants.O_NONBLOCK', '')], { encoding: 'utf8', timeout: 250, killSignal: 'SIGKILL' });
+  assert.equal((blockingMutation.error as NodeJS.ErrnoException | undefined)?.code, 'ETIMEDOUT', 'negative mutation must expose the former blocking open');
+
+  writeFileSync(cachePath, 'different'); const changed = bounded('', cachePath, bytes, mtime); assert.equal(changed.cache.bytesEqual, false);
+  const { closed } = diagnosticFunctions(); validateInstalledRunClosed(closed('replay', sampleRun(), valid));
+  let statCalls = 0;
+  const changing = new Function('openSync', 'constants', 'fstatSync', 'readSync', 'closeSync', `${block}\nreturn installedCacheFiles;`)(
+    (p: string, flags: number) => fs.openSync(p === 'installed-model-calls.log' ? cachePath : p, flags), fs.constants,
+    (fd: number) => { const stat = fs.fstatSync(fd); if (++statCalls % 2 === 0) stat.mtimeMs += 1; return stat; }, fs.readSync, fs.closeSync,
+  );
+  const unstable = changing('call\n', cachePath, bytes, mtime); assert.equal(unstable.calls.status, 'unknown'); assert.equal(unstable.cache.status, 'unknown');
+
+});
+
+test('actual extracted installedCache keeps original replay assertion primary even if stdout fails', async () => {
+  const { source, closed } = diagnosticFunctions();
+  const cacheFunction = source.slice(source.indexOf('async function installedCache(appURL)'), source.indexOf('async function installedState(appURL)'));
+  const record: any = sampleRun([]); record.exitCode = 0; record.status = 'passed';
+  record.report.run.results[0].attempts[0].steps[1] = { api: 'agent.act', status: 'passed', cache: { mode: 'missed', reason: 'no-entry' }, metrics: { modelCalls: 2 } };
+  const replay = sampleRun(); const bytes = Buffer.from('opaque cache');
+  for (const throwStdout of [false, true]) {
+    let runs = 0; const lines: string[] = [];
+    const actual = new Function('mkdirSync', 'writeFileSync', 'run', 'assert', 'console', 'installedRunClosed', 'installedCacheFiles', 'readFileSync', 'readdirSync', 'resolvePath', 'statSync', `${cacheFunction}\nreturn installedCache;`)(
+      () => {}, () => {}, async () => ++runs === 1 ? record : replay, assert,
+      { log: (line: string) => { if (throwStdout) throw new Error('DIAGNOSTIC_OUTPUT_ONLY'); lines.push(line); } }, closed,
+      () => ({ calls: { status: 'unknown', before: null, after: null, delta: null }, cache: { status: 'unknown', bytesEqual: null, mtimeEqual: null } }),
+      (path: string) => path === 'installed-model-calls.log' ? 'call\n' : bytes, () => ['entry.json'], (...parts: string[]) => parts.join('/'), () => ({ mtimeMs: 10 }),
+    );
+    await assert.rejects(actual('http://127.0.0.1:1234'), /3 !== 0/); assert.equal(runs, 2);
+    if (!throwStdout) { assert.equal(lines.length, 2); for (const line of lines) validateInstalledRunClosed(JSON.parse(line.slice('INSTALLED_RUN_CLOSED '.length))); }
+  }
 });

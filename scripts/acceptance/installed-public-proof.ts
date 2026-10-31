@@ -257,3 +257,235 @@ export function validateInstalledSdkPrerequisite(value: unknown): ReturnType<typ
   if ((r['reason'] === 'version-mismatch') !== (r['version'] !== null && r['version'] !== INSTALLED_AI_VERSION)) return fail();
   return value as ReturnType<typeof inspectInstalledSdkPrerequisite>;
 }
+
+export const INSTALLED_RUN_DIAGNOSTIC_ENUMS = {
+  "codes": [
+    "ACTION_FAILED",
+    "ACTION_MAY_HAVE_COMMITTED",
+    "APP_ALREADY_RUNNING",
+    "APP_NOT_OPEN",
+    "APP_UNREACHABLE",
+    "ASSERTION_FAILED",
+    "ASSERTION_INCONCLUSIVE",
+    "AUTHENTICATION_FAILED",
+    "AUTH_CREDENTIAL_INVALID",
+    "AUTH_CREDENTIAL_UNAVAILABLE",
+    "AUTOMATION_UNSUPPORTED",
+    "CANCELLED",
+    "CLEANUP_TIMEOUT",
+    "COLLECTION_ERROR",
+    "COLLECTION_FAILED",
+    "CONFIG_AMBIGUOUS",
+    "CONFIG_LOAD_FAILED",
+    "CONFIG_NOT_FOUND",
+    "CONTEXT_OVERFLOW",
+    "ENGINE_FAILURE",
+    "ENVIRONMENT_UNAVAILABLE",
+    "ERROR",
+    "FRAME_AMBIGUOUS",
+    "FRAME_NOT_FOUND",
+    "INTERRUPTED",
+    "INVALID_ARGUMENT",
+    "INVALID_CONFIG",
+    "INVALID_GLOB",
+    "INVALID_STATE",
+    "LAUNCH_TIMEOUT",
+    "LOCATOR_AMBIGUOUS",
+    "LOCATOR_NOT_FOUND",
+    "MODEL_OUTPUT_INVALID",
+    "MODEL_PROVIDER_FAILED",
+    "MODEL_REFUSED",
+    "MODEL_UNAVAILABLE",
+    "NODE_STALE",
+    "NOT_ACTIONABLE",
+    "NO_TESTS",
+    "NO_TESTS_FOUND",
+    "OPERATION_TIMEOUT",
+    "POLICY_DENIED",
+    "REPLAY_STALE",
+    "REPORT_WRITE_FAILED",
+    "RUNNER_BUSY",
+    "SECRET_UNAVAILABLE",
+    "SEED_DATA_MISSING",
+    "SESSION_CONTRACT",
+    "STEP_BUDGET_EXHAUSTED",
+    "STEP_NO_CONCLUSION",
+    "STEP_TIMEOUT",
+    "TEST_SETUP_FAILED",
+    "TEST_TIMEOUT",
+    "UNHANDLED_REJECTION",
+    "UNSUPPORTED_CAPABILITY"
+  ],
+  "categories": [
+    "test",
+    "configuration",
+    "infrastructure",
+    "internal",
+    "interrupted"
+  ],
+  "phases": [
+    "config",
+    "collection",
+    "filter",
+    "launch",
+    "beforeAll",
+    "beforeEach",
+    "body",
+    "afterEach",
+    "afterAll",
+    "cleanup",
+    "report"
+  ],
+  "runStatuses": [
+    "passed",
+    "failed",
+    "blocked",
+    "error",
+    "interrupted"
+  ],
+  "stepStatuses": [
+    "passed",
+    "failed",
+    "blocked",
+    "timed-out",
+    "cancelled"
+  ],
+  "cacheModes": [
+    "self-finalized",
+    "agent-concluded",
+    "missed"
+  ],
+  "cacheReasons": [
+    "retry",
+    "no-entry",
+    "invalid-entry",
+    "truncated",
+    "wrong-context",
+    "gap",
+    "target-not-found",
+    "target-ambiguous",
+    "viewport-changed",
+    "action-failed",
+    "action-uncertain",
+    "end-mismatch"
+  ],
+  "eventKinds": [
+    "poll",
+    "observation",
+    "model",
+    "policy",
+    "engine",
+    "schema",
+    "navigation"
+  ],
+  "eventNames": [
+    "back",
+    "check",
+    "dismissKeyboard",
+    "doubleTap",
+    "dragTo",
+    "hover",
+    "hoverAt",
+    "longPress",
+    "navigate",
+    "press",
+    "pressKey",
+    "scroll",
+    "scrollIntoView",
+    "scrollUntil",
+    "secondaryTap",
+    "selectOption",
+    "setInputFiles",
+    "tap",
+    "tapAt",
+    "type",
+    "typeSecret",
+    "typeText",
+    "uncheck",
+    "vision.pixels",
+    "secret.registered",
+    "secret.sink",
+    "secret.purpose",
+    "secret.fill",
+    "relocate",
+    "page",
+    "waitFor",
+    "upload.path"
+  ],
+  "eventStatuses": [
+    "passed",
+    "failed",
+    "cancelled"
+  ]
+} as const;
+
+/** Closed partial diagnostic only. This never grants installed acceptance. */
+export function validateInstalledRunClosed(value: unknown): Record<string, any> {
+  const fail = (): never => { throw new Error('Invalid installed run closed diagnostic'); };
+  const object = (v: unknown, keys: string[]): Record<string, any> => {
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) return fail();
+    const actual = Object.keys(v).sort();
+    if (JSON.stringify(actual) !== JSON.stringify([...keys].sort())) return fail();
+    return v as Record<string, any>;
+  };
+  const member = (v: unknown, values: readonly unknown[]) => { if (!values.includes(v)) fail(); };
+  const count = (v: unknown, max: number, nullable = true) => {
+    if (nullable && v === null) return;
+    if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0 || v > max) fail();
+  };
+  const duration = (v: unknown) => { if (v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 86_400_000)) fail(); };
+  const array = (v: unknown, max: number): any[] => { if (!Array.isArray(v) || v.length > max || Object.keys(v).length !== v.length || !Array.from({ length: v.length }, (_, i) => Object.hasOwn(v, i)).every(Boolean)) return fail(); return v; };
+  const e = INSTALLED_RUN_DIAGNOSTIC_ENUMS;
+  try {
+    const r = object(value, ['schemaVersion', 'evidence', 'stage', 'projection', 'exitCode', 'status', 'resultCount', 'truncated', 'errors', 'steps', 'files']);
+    if (r.schemaVersion !== 2 || r.evidence !== 'partial-diagnostic-not-acceptance') fail();
+    member(r.stage, ['record', 'replay']); member(r.projection, ['complete', 'failed']);
+    member(r.exitCode, [0, 1, 2, 3, 4, 130, null]); member(r.status, [...e.runStatuses, 'unknown']);
+    count(r.resultCount, 16); member(r.truncated, [true, false]);
+    for (const raw of array(r.errors, 32)) {
+      const item = object(raw, ['scope', 'resultIndex', 'attemptIndex', 'stepIndex', 'code', 'category', 'phase']);
+      member(item.scope, ['run', 'attempt', 'secondary', 'step']);
+      member(item.code, [...e.codes, 'other']); member(item.category, [...e.categories, 'unknown']); member(item.phase, [...e.phases, 'unknown']);
+      if (item.scope === 'run') { if (item.resultIndex !== null || item.attemptIndex !== null || item.stepIndex !== null) fail(); }
+      else {
+        count(item.resultIndex, 15, false); count(item.attemptIndex, 3, false);
+        if (r.resultCount === null || item.resultIndex >= r.resultCount) fail();
+        if (item.scope === 'step') count(item.stepIndex, 63, false); else if (item.stepIndex !== null) fail();
+      }
+    }
+    let totalEvents = 0; const identities = new Set<string>();
+    for (const raw of array(r.steps, 16)) {
+      const step = object(raw, ['resultIndex', 'attemptIndex', 'stepIndex', 'api', 'status', 'durationMs', 'cache', 'metrics', 'eventsState', 'eventsTruncated', 'events']);
+      count(step.resultIndex, 15, false); count(step.attemptIndex, 3, false); count(step.stepIndex, 63, false);
+      if (r.resultCount === null || step.resultIndex >= r.resultCount || step.api !== 'agent.act') fail();
+      const identity = `${step.resultIndex}:${step.attemptIndex}:${step.stepIndex}`;
+      if (identities.has(identity)) fail(); identities.add(identity);
+      member(step.status, [...e.stepStatuses, 'unknown']); duration(step.durationMs);
+      const cache = object(step.cache, ['mode', 'reason', 'replayedActions', 'totalActions']);
+      member(cache.mode, [...e.cacheModes, 'unknown']); member(cache.reason, [...e.cacheReasons, 'unknown']); count(cache.replayedActions, 1_000_000); count(cache.totalActions, 1_000_000);
+      const metrics = object(step.metrics, ['modelCalls']); count(metrics.modelCalls, 1_000_000);
+      member(step.eventsState, ['recorded', 'unknown']); member(step.eventsTruncated, [true, false]);
+      const events = array(step.events, 64);
+      if (step.eventsState === 'unknown' && (events.length !== 0 || step.eventsTruncated)) fail();
+      if (step.eventsTruncated && !r.truncated) fail();
+      totalEvents += events.length; if (totalEvents > 64) fail();
+      events.forEach((rawEvent, index) => {
+        const event = object(rawEvent, ['eventIndex', 'kind', 'name', 'code', 'status', 'durationMs']);
+        if (event.eventIndex !== index) fail();
+        member(event.kind, [...e.eventKinds, 'unknown']); member(event.name, [...e.eventNames, 'other', 'unknown']);
+        member(event.code, [...e.codes, 'other', 'unknown']); member(event.status, [...e.eventStatuses, 'unknown']); duration(event.durationMs);
+      });
+    }
+    const files = object(r.files, ['calls', 'cache']);
+    const calls = object(files.calls, ['status', 'before', 'after', 'delta']);
+    member(calls.status, ['verified', 'unknown']);
+    if (calls.status === 'unknown') { if (calls.before !== null || calls.after !== null || calls.delta !== null) fail(); }
+    else { count(calls.before, 209_715, false); count(calls.after, 209_715, false); count(calls.delta, 209_715, false); if (calls.after - calls.before !== calls.delta) fail(); }
+    const cache = object(files.cache, ['status', 'bytesEqual', 'mtimeEqual']); member(cache.status, ['verified', 'unknown']);
+    if (cache.status === 'unknown') { if (cache.bytesEqual !== null || cache.mtimeEqual !== null) fail(); }
+    else { member(cache.bytesEqual, [true, false]); member(cache.mtimeEqual, [true, false]); }
+    if (r.stage === 'record' && (calls.status !== 'unknown' || cache.status !== 'unknown')) fail();
+    if (r.projection === 'failed' && (r.exitCode !== null || r.status !== 'unknown' || r.resultCount !== null || r.truncated || r.errors.length || r.steps.length || calls.status !== 'unknown' || cache.status !== 'unknown')) fail();
+    return r;
+  } catch { return fail(); }
+}

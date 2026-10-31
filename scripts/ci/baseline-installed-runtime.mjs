@@ -6,7 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {verifyArtifact} from './native-runtime.ts';
-import {validateInstalledSdkPrerequisite} from '../acceptance/installed-public-proof.ts';
+import {validateInstalledSdkPrerequisite,validateInstalledRunClosed} from '../acceptance/installed-public-proof.ts';
 const H=b=>createHash('sha256').update(b).digest('hex');
 const read=p=>JSON.parse(readFileSync(p,'utf8'));
 export function closedRecords(text){
@@ -15,6 +15,7 @@ export function closedRecords(text){
  const codes=['other','INVALID_CONFIG','CONFIG_NOT_FOUND','CONFIG_AMBIGUOUS','CONFIG_LOAD_FAILED','INVALID_GLOB','NO_TESTS','NO_TESTS_FOUND','COLLECTION_FAILED','MODEL_UNAVAILABLE','RUNNER_BUSY','UNSUPPORTED_CAPABILITY','TEST_SETUP_FAILED','POLICY_DENIED','REPLAY_STALE','REPORT_WRITE_FAILED'];
  const phases=['other','config','collection','filter','launch','beforeAll','beforeEach','body','afterEach','afterAll','cleanup','report'];
  for(const [index,x] of rows.entries()){
+  if(x.schemaVersion===2){validateInstalledRunClosed(x);assert.equal(x.stage,index===0?'record':'replay');assert.ok(!seen.has(x.stage));seen.add(x.stage);continue;}
   assert.deepEqual(Object.keys(x).sort(),['schemaVersion','evidence','stage','exitCode','status','resultCount','truncated','errors'].sort());assert.equal(x.schemaVersion,1);assert.equal(x.evidence,'partial-diagnostic-not-acceptance');assert.equal(x.stage,index===0?'record':'replay');assert.ok(!seen.has(x.stage));seen.add(x.stage);assert.ok([0,1,2,3,4,130,null].includes(x.exitCode));assert.ok(['passed','failed','blocked','interrupted','other'].includes(x.status));assert.ok(Number.isInteger(x.resultCount)&&x.resultCount>=0&&x.resultCount<=16);assert.equal(typeof x.truncated,'boolean');assert.ok(Array.isArray(x.errors)&&x.errors.length<=32);
   for(const e of x.errors){assert.deepEqual(Object.keys(e).sort(),['scope','resultIndex','attemptIndex','stepIndex','code','category','phase'].sort());assert.ok(['run','attempt','secondary','step'].includes(e.scope));for(const [key,max]of [['resultIndex',15],['attemptIndex',3],['stepIndex',63]])assert.ok(Number.isInteger(e[key])&&e[key]>=-1&&e[key]<=max);assert.ok(codes.includes(e.code));assert.ok(['other','test','configuration','infrastructure','internal','interrupted'].includes(e.category));assert.ok(phases.includes(e.phase));if(e.scope==='run')assert.ok(e.resultIndex===-1&&e.attemptIndex===-1&&e.stepIndex===-1);else {assert.ok(e.resultIndex>=0&&e.resultIndex<x.resultCount&&e.attemptIndex>=0);assert.ok(e.scope==='step'?e.stepIndex>=0:e.stepIndex===-1);}}
  }

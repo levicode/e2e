@@ -1,6 +1,6 @@
 /** Runs only from the clean installed consumer project, never the monorepo graph. */
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -259,29 +259,71 @@ try {
   await cleanup();
 }
 
-// BEGIN installed run closed diagnostic: no prose, paths, model output, or arbitrary codes.
-function installedRunClosed(stage, result) {
+// BEGIN installed run closed diagnostic: only bounded public facts, never acceptance proof.
+function installedRunClosed(stage, result, files) {
   if (!['record', 'replay'].includes(stage)) throw new Error('Invalid installed run stage');
-  const pick = (value, allowed) => allowed.includes(value) ? value : 'other';
-  const codes = ['INVALID_CONFIG', 'CONFIG_NOT_FOUND', 'CONFIG_AMBIGUOUS', 'CONFIG_LOAD_FAILED', 'INVALID_GLOB', 'NO_TESTS', 'NO_TESTS_FOUND', 'COLLECTION_FAILED', 'MODEL_UNAVAILABLE', 'RUNNER_BUSY', 'UNSUPPORTED_CAPABILITY', 'TEST_SETUP_FAILED', 'POLICY_DENIED', 'REPLAY_STALE', 'REPORT_WRITE_FAILED'];
-  const categories = ['test', 'configuration', 'infrastructure', 'internal', 'interrupted'];
-  const phases = ['config', 'collection', 'filter', 'launch', 'beforeAll', 'beforeEach', 'body', 'afterEach', 'afterAll', 'cleanup', 'report'];
-  const list = value => Array.isArray(value) ? value : [];
-  const errors = []; let truncated = false;
-  const keep = (error, scope, resultIndex = -1, attemptIndex = -1, stepIndex = -1) => {
-    if (!error || typeof error !== 'object') return;
-    if (errors.length >= 32) { truncated = true; return; }
-    errors.push({ scope, resultIndex, attemptIndex, stepIndex, code: pick(error.code, codes), category: pick(error.category, categories), phase: pick(error.phase, phases) });
+  const enums = {"codes": ["ACTION_FAILED", "ACTION_MAY_HAVE_COMMITTED", "APP_ALREADY_RUNNING", "APP_NOT_OPEN", "APP_UNREACHABLE", "ASSERTION_FAILED", "ASSERTION_INCONCLUSIVE", "AUTHENTICATION_FAILED", "AUTH_CREDENTIAL_INVALID", "AUTH_CREDENTIAL_UNAVAILABLE", "AUTOMATION_UNSUPPORTED", "CANCELLED", "CLEANUP_TIMEOUT", "COLLECTION_ERROR", "COLLECTION_FAILED", "CONFIG_AMBIGUOUS", "CONFIG_LOAD_FAILED", "CONFIG_NOT_FOUND", "CONTEXT_OVERFLOW", "ENGINE_FAILURE", "ENVIRONMENT_UNAVAILABLE", "ERROR", "FRAME_AMBIGUOUS", "FRAME_NOT_FOUND", "INTERRUPTED", "INVALID_ARGUMENT", "INVALID_CONFIG", "INVALID_GLOB", "INVALID_STATE", "LAUNCH_TIMEOUT", "LOCATOR_AMBIGUOUS", "LOCATOR_NOT_FOUND", "MODEL_OUTPUT_INVALID", "MODEL_PROVIDER_FAILED", "MODEL_REFUSED", "MODEL_UNAVAILABLE", "NODE_STALE", "NOT_ACTIONABLE", "NO_TESTS", "NO_TESTS_FOUND", "OPERATION_TIMEOUT", "POLICY_DENIED", "REPLAY_STALE", "REPORT_WRITE_FAILED", "RUNNER_BUSY", "SECRET_UNAVAILABLE", "SEED_DATA_MISSING", "SESSION_CONTRACT", "STEP_BUDGET_EXHAUSTED", "STEP_NO_CONCLUSION", "STEP_TIMEOUT", "TEST_SETUP_FAILED", "TEST_TIMEOUT", "UNHANDLED_REJECTION", "UNSUPPORTED_CAPABILITY"], "categories": ["test", "configuration", "infrastructure", "internal", "interrupted"], "phases": ["config", "collection", "filter", "launch", "beforeAll", "beforeEach", "body", "afterEach", "afterAll", "cleanup", "report"], "runStatuses": ["passed", "failed", "blocked", "error", "interrupted"], "stepStatuses": ["passed", "failed", "blocked", "timed-out", "cancelled"], "cacheModes": ["self-finalized", "agent-concluded", "missed"], "cacheReasons": ["retry", "no-entry", "invalid-entry", "truncated", "wrong-context", "gap", "target-not-found", "target-ambiguous", "viewport-changed", "action-failed", "action-uncertain", "end-mismatch"], "eventKinds": ["poll", "observation", "model", "policy", "engine", "schema", "navigation"], "eventNames": ["back", "check", "dismissKeyboard", "doubleTap", "dragTo", "hover", "hoverAt", "longPress", "navigate", "press", "pressKey", "scroll", "scrollIntoView", "scrollUntil", "secondaryTap", "selectOption", "setInputFiles", "tap", "tapAt", "type", "typeSecret", "typeText", "uncheck", "vision.pixels", "secret.registered", "secret.sink", "secret.purpose", "secret.fill", "relocate", "page", "waitFor", "upload.path"], "eventStatuses": ["passed", "failed", "cancelled"]};
+  const pick = (value, allowed, fallback = 'unknown') => allowed.includes(value) ? value : fallback;
+  const number = (value, limit = 1_000_000) => Number.isSafeInteger(value) && value >= 0 && value <= limit ? value : null;
+  const duration = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 86_400_000 ? value : null;
+  const unknownFiles = () => ({ calls: { status: 'unknown', before: null, after: null, delta: null }, cache: { status: 'unknown', bytesEqual: null, mtimeEqual: null } });
+  const empty = () => ({ schemaVersion: 2, evidence: 'partial-diagnostic-not-acceptance', stage, projection: 'failed', exitCode: null, status: 'unknown', resultCount: null, truncated: false, errors: [], steps: [], files: unknownFiles() });
+  try {
+    let truncated = false; let eventCount = 0;
+    const errors = []; const steps = [];
+    const list = value => Array.isArray(value) ? value : [];
+    const bound = (value, limit) => { const values = list(value); if (values.length > limit) truncated = true; return values.slice(0, limit); };
+    const keep = (error, scope, resultIndex = null, attemptIndex = null, stepIndex = null) => {
+      if (!error || typeof error !== 'object') return;
+      if (errors.length >= 32) { truncated = true; return; }
+      errors.push({ scope, resultIndex, attemptIndex, stepIndex, code: pick(error.code, enums.codes, 'other'), category: pick(error.category, enums.categories), phase: pick(error.phase, enums.phases) });
+    };
+    for (const error of bound(result?.report?.run?.errors, 32)) keep(error, 'run');
+    const results = result?.report?.run?.results;
+    bound(results, 16).forEach((row, r) => bound(row?.attempts, 4).forEach((attempt, a) => {
+      keep(attempt?.error, 'attempt', r, a);
+      for (const error of bound(attempt?.secondaryErrors, 8)) keep(error, 'secondary', r, a);
+      bound(attempt?.steps, 64).forEach((step, s) => {
+        keep(step?.error, 'step', r, a, s);
+        if (step?.api !== 'agent.act') return;
+        if (steps.length >= 16) { truncated = true; return; }
+        const eventsState = Array.isArray(step.events) ? 'recorded' : 'unknown';
+        const rawEvents = list(step.events); const available = Math.max(0, 64 - eventCount);
+        const eventsTruncated = rawEvents.length > available;
+        if (eventsTruncated) truncated = true;
+        const events = Array.from(rawEvents.slice(0, available)).map((event, eventIndex) => ({ eventIndex, kind: pick(event?.kind, enums.eventKinds), name: event?.name === undefined ? 'unknown' : pick(event.name, enums.eventNames, 'other'), code: event?.code === undefined ? 'unknown' : pick(event.code, enums.codes, 'other'), status: pick(event?.status, enums.eventStatuses), durationMs: duration(event?.durationMs) }));
+        eventCount += events.length;
+        steps.push({ resultIndex: r, attemptIndex: a, stepIndex: s, api: 'agent.act', status: pick(step.status, enums.stepStatuses), durationMs: duration(step.durationMs), cache: { mode: pick(step.cache?.mode, enums.cacheModes), reason: pick(step.cache?.reason, enums.cacheReasons), replayedActions: number(step.cache?.replayedActions), totalActions: number(step.cache?.totalActions) }, metrics: { modelCalls: number(step.metrics?.modelCalls) }, eventsState, eventsTruncated, events });
+      });
+    }));
+    return { schemaVersion: 2, evidence: 'partial-diagnostic-not-acceptance', stage, projection: 'complete', exitCode: pick(result?.exitCode, [0, 1, 2, 3, 4, 130], null), status: pick(result?.status, enums.runStatuses), resultCount: Array.isArray(results) ? Math.min(results.length, 16) : null, truncated, errors, steps, files: files ?? unknownFiles() };
+  } catch { return empty(); }
+}
+function installedCacheFiles(modelCalls, cachePath, bytes, mtime) {
+  const files = { calls: { status: 'unknown', before: null, after: null, delta: null }, cache: { status: 'unknown', bytesEqual: null, mtimeEqual: null } };
+  const boundedRead = (path, consume) => {
+    let fd; let buffer;
+    try {
+      fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const before = fstatSync(fd);
+      if (!before.isFile() || before.size > 1_048_576) return;
+      buffer = Buffer.alloc(1_048_577); let length = 0;
+      while (length < buffer.length) { const n = readSync(fd, buffer, length, buffer.length - length, null); if (n === 0) break; length += n; }
+      const after = fstatSync(fd);
+      if (length !== before.size || length > 1_048_576 || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) return;
+      consume(buffer.subarray(0, length), after);
+    } catch { /* Missing, changed or invalid evidence is unknown, never zero. */ }
+    finally { if (buffer) buffer.fill(0); if (fd !== undefined) closeSync(fd); }
   };
-  const bounded = (value, limit) => { const values = list(value); if (values.length > limit) truncated = true; return values.slice(0, limit); };
-  for (const error of bounded(result?.report?.run?.errors, 32)) keep(error, 'run');
-  const results = list(result?.report?.run?.results);
-  bounded(results, 16).forEach((row, r) => bounded(row?.attempts, 4).forEach((attempt, a) => {
-    keep(attempt?.error, 'attempt', r, a);
-    for (const error of bounded(attempt?.secondaryErrors, 8)) keep(error, 'secondary', r, a);
-    bounded(attempt?.steps, 64).forEach((step, s) => keep(step?.error, 'step', r, a, s));
-  }));
-  return { schemaVersion: 1, evidence: 'partial-diagnostic-not-acceptance', stage, exitCode: [0, 1, 2, 3, 4, 130].includes(result?.exitCode) ? result.exitCode : null, status: pick(result?.status, ['passed', 'failed', 'blocked', 'interrupted']), resultCount: Math.min(results.length, 16), truncated, errors };
+  try {
+    boundedRead('installed-model-calls.log', after => {
+      const valid = text => typeof text === 'string' && text.length <= 1_048_576 && text.length % 5 === 0 && /^(?:call\n)*$/.test(text);
+      const text = after.toString('utf8');
+      if (valid(modelCalls) && valid(text) && text.length >= modelCalls.length) files.calls = { status: 'verified', before: modelCalls.length / 5, after: text.length / 5, delta: (text.length - modelCalls.length) / 5 };
+    });
+    if (Buffer.isBuffer(bytes) && bytes.length <= 1_048_576 && typeof cachePath === 'string' && Number.isFinite(mtime)) boundedRead(cachePath, (after, stat) => { files.cache = { status: 'verified', bytesEqual: after.equals(bytes), mtimeEqual: stat.mtimeMs === mtime }; });
+  } catch { /* A diagnostic read cannot replace the original run failure. */ }
+  return files;
 }
 // END installed run closed diagnostic.
 
@@ -322,7 +364,7 @@ import model from './installed-cache-model.mjs';
 export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { model } }, cache: 'read-write', retries: 0, targets: [{ name: 'installed', engine: web(), app: { url: ${JSON.stringify(appURL)} } }] };
 `);
   const record = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
-  console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('record', record)));
+  try { console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('record', record))); } catch { /* Keep the original assertion primary. */ }
   assert.equal(record.exitCode, 0); assert.equal(record.status, 'passed');
   const steps = result => result.report.run.results.flatMap(testResult => testResult.attempts).flatMap(attempt => attempt.steps).filter(step => step.api === 'agent.act');
   const [miss] = steps(record); assert.equal(steps(record).length, 1);
@@ -332,7 +374,7 @@ export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { m
   assert.equal(files.length, 1);
   const cachePath = resolvePath('.e2e/cache', files[0]); const bytes = readFileSync(cachePath); const mtime = statSync(cachePath).mtimeMs;
   const replay = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
-  console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('replay', replay)));
+  try { console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('replay', replay, installedCacheFiles(modelCalls, cachePath, bytes, mtime)))); } catch { /* Keep the original assertion primary. */ }
   assert.equal(replay.exitCode, 0); assert.equal(replay.status, 'passed');
   assert.equal(readFileSync('installed-model-calls.log', 'utf8'), modelCalls);
   const [hit] = steps(replay); assert.equal(steps(replay).length, 1);
