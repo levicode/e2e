@@ -1,1245 +1,363 @@
-name: Current product standard Node consumer matrix (not protected spec gate)
-'on':
-  push:
-    branches:
-    - ci/current-standard-node-matrix
-permissions:
-  contents: read
-  actions: read
-concurrency:
-  group: current-standard-node-${{ github.ref }}
-  cancel-in-progress: false
-env:
-  E2E_TELEMETRY_DISABLED: '1'
-  E2E_UPDATE_CHECK_DISABLED: '1'
-  NEXT_TELEMETRY_DISABLED: '1'
-  NATIVE_SOURCE_SHA: ef81a637abb7bd63aa877f1790949d0a2a5d9e71
-  NATIVE_SOURCE_TREE: 3822bc7dcc16bcfdfc6c6d3f81296edc832b1ea4
-jobs:
-  check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        fetch-depth: 0
-    - name: Require clean source before evidence and record exact identity
-      run: 'set -euo pipefail
-
-        test -z "$(git status --porcelain)"
-
-        mkdir -p evidence
-
-        git rev-parse HEAD > evidence/e2e-source.sha
-
-        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
-
-        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
-
-        '
-    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-      with:
-        node-version: 26
-        check-latest: true
-        cache: pnpm
-    - name: Record actual Node and package-manager versions
-      run: 'node --version > evidence/node.version
-
-        pnpm --version > evidence/pnpm.version
-
-        npm --version > evidence/npm.version
-
-        '
-    - name: dependencies
-      id: dependencies
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm install --frozen-lockfile
-
-        ) 2>&1 | tee "evidence/dependencies.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/dependencies.exit"
-
-        exit "$s"
-
-        '
-    - name: Restore immutable current ordinary with producer ZIP metadata verification
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: 'set -euo pipefail
-
-        python3 scripts/ci/download-browser-recovery-runtime.py
-
-        '
-      id: restore
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: verify-runtime
-      id: verify_runtime
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
-
-        ) 2>&1 | tee "evidence/verify-runtime.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/verify-runtime.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
-    - name: native-browser-codecs
-      id: native_browser_codecs
-      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
-        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
-        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
-        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
-        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
-        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
-        \nexit \"$s\"\n"
-      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
-    - name: complete-build
-      id: complete_build
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm run build
-
-        ) 2>&1 | tee "evidence/complete-build.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/complete-build.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: lint
-      id: lint
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm lint
-
-        ) 2>&1 | tee "evidence/lint.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/lint.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: dead-code
-      id: dead_code
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm check:dead-code
-
-        ) 2>&1 | tee "evidence/dead-code.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/dead-code.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: typecheck
-      id: typecheck
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm typecheck
-
-        ) 2>&1 | tee "evidence/typecheck.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/typecheck.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: error-code-reference
-      id: error_code_reference
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm docs:check-errors
-
-        ) 2>&1 | tee "evidence/error-code-reference.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/error-code-reference.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: peer-ranges
-      id: peer_ranges
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm check:peer-ranges
-
-        ) 2>&1 | tee "evidence/peer-ranges.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/peer-ranges.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: changeset-bumps
-      id: changeset_bumps
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm check:changeset-bumps
-
-        ) 2>&1 | tee "evidence/changeset-bumps.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/changeset-bumps.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: no-install-scripts
-      id: no_install_scripts
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm check:install-scripts
-
-        ) 2>&1 | tee "evidence/no-install-scripts.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/no-install-scripts.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: plugin-sources
-      id: plugin_sources
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm plugins:check
-
-        ) 2>&1 | tee "evidence/plugin-sources.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/plugin-sources.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: mcp-registry-source
-      id: mcp_registry_source
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm mcp-server:check
-
-        ) 2>&1 | tee "evidence/mcp-registry-source.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/mcp-registry-source.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: babysit-types
-      id: babysit_types
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm exec tsc -p .dev/skills/babysit/scripts
-
-        ) 2>&1 | tee "evidence/babysit-types.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/babysit-types.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: babysit-tests
-      id: babysit_tests
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        node --test .dev/skills/babysit/scripts/pr-status.test.ts
-
-        ) 2>&1 | tee "evidence/babysit-tests.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/babysit-tests.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - uses: ./.github/actions/mcp-publisher
-      id: publisher_tool
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: publisher-validate
-      id: publisher_validate
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        "$RUNNER_TEMP/mcp-publisher" validate packages/e2e/server.json
-
-        ) 2>&1 | tee "evidence/publisher-validate.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/publisher-validate.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.publisher_tool.outcome == 'success' }}
-    - name: public-browser-install
-      id: public_browser_install
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        node packages/web/dist/bin.js install chromium --with-deps
-
-        ) 2>&1 | tee "evidence/public-browser-install.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/public-browser-install.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome
-        == 'success' }}
-    - name: testbed-full-no-model-key
-      id: testbed_full_no_model_key
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/testbed test
-
-        ) 2>&1 | tee "evidence/testbed-full-no-model-key.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/testbed-full-no-model-key.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.public_browser_install.outcome
-        == 'success' }}
-    - name: Require every independent command outcome; no skipped execution passes
-      if: ${{ always() }}
-      env:
-        COMMAND_STEPS: ${{ toJSON(steps) }}
-      run: 'python3 - <<''PY_RESULT''
-
-        import json,os,pathlib
-
-        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
-
-        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
-        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
-
-        failed={k:v for k,v in out.items() if v!=''success''}
-
-        assert not failed,failed
-
-        PY_RESULT
-
-        '
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      if: ${{ always() }}
-      with:
-        name: standard-node26-check-evidence
-        path: evidence/
-        include-hidden-files: true
-        if-no-files-found: error
-        retention-days: 7
-  test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        node:
-        - 22
-        - 24
-        - 26
-        - 22.22.3
-        - 24.8.0
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        fetch-depth: 1
-    - name: Require clean source before evidence and record exact identity
-      run: 'set -euo pipefail
-
-        test -z "$(git status --porcelain)"
-
-        mkdir -p evidence
-
-        git rev-parse HEAD > evidence/e2e-source.sha
-
-        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
-
-        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
-
-        '
-    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-      with:
-        node-version: ${{ matrix.node }}
-        check-latest: true
-        cache: pnpm
-    - name: Record actual Node and package-manager versions
-      run: 'node --version > evidence/node.version
-
-        pnpm --version > evidence/pnpm.version
-
-        npm --version > evidence/npm.version
-
-        '
-    - name: dependencies
-      id: dependencies
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm install --frozen-lockfile
-
-        ) 2>&1 | tee "evidence/dependencies.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/dependencies.exit"
-
-        exit "$s"
-
-        '
-    - name: Restore immutable current ordinary with producer ZIP metadata verification
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: 'set -euo pipefail
-
-        python3 scripts/ci/download-browser-recovery-runtime.py
-
-        '
-      id: restore
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: verify-runtime
-      id: verify_runtime
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
-
-        ) 2>&1 | tee "evidence/verify-runtime.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/verify-runtime.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
-    - name: native-browser-codecs
-      id: native_browser_codecs
-      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
-        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
-        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
-        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
-        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
-        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
-        \nexit \"$s\"\n"
-      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
-    - name: playwright-browser-install
-      id: playwright_browser_install
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
-
-        ) 2>&1 | tee "evidence/playwright-browser-install.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/playwright-browser-install.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.native_browser_codecs.outcome == 'success' }}
-    - name: complete-build
-      id: complete_build
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm run build
-
-        ) 2>&1 | tee "evidence/complete-build.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/complete-build.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: package-e2e
-      id: package_e2e
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter e2e run test --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/e2e.json"
-
-        ) 2>&1 | tee "evidence/package-e2e.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-e2e.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-web
-      id: package_web
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/web run test --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/web.json"
-
-        ) 2>&1 | tee "evidence/package-web.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-web.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-mobile
-      id: package_mobile
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/mobile run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/mobile.json"
-
-        ) 2>&1 | tee "evidence/package-mobile.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-mobile.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-github
-      id: package_github
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/github run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/github.json"
-
-        ) 2>&1 | tee "evidence/package-github.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-github.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-kernel
-      id: package_kernel
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/kernel run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/kernel.json"
-
-        ) 2>&1 | tee "evidence/package-kernel.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-kernel.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-lightpanda
-      id: package_lightpanda
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/lightpanda run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/lightpanda.json"
-
-        ) 2>&1 | tee "evidence/package-lightpanda.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-lightpanda.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-eas
-      id: package_eas
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/eas run test --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/eas.json"
-
-        ) 2>&1 | tee "evidence/package-eas.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-eas.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-smol
-      id: package_smol
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/smol run test --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/smol.json"
-
-        ) 2>&1 | tee "evidence/package-smol.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-smol.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-limrun
-      id: package_limrun
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/limrun run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/limrun.json"
-
-        ) 2>&1 | tee "evidence/package-limrun.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-limrun.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: package-decision
-      id: package_decision
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/decision run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/decision.json"
-
-        ) 2>&1 | tee "evidence/package-decision.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-decision.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: scripts-tests
-      id: scripts_tests
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm run test:scripts
-
-        ) 2>&1 | tee "evidence/scripts-tests.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/scripts-tests.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' }}
-    - name: package-testmu
-      id: package_testmu
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm --filter @e2e-dev/testmu run test --reporter=verbose --reporter=json
-        --outputFile.json="$GITHUB_WORKSPACE/evidence/testmu.json"
-
-        ) 2>&1 | tee "evidence/package-testmu.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/package-testmu.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.playwright_browser_install.outcome
-        == 'success' }}
-    - name: Require every independent command outcome; no skipped execution passes
-      if: ${{ always() }}
-      env:
-        COMMAND_STEPS: ${{ toJSON(steps) }}
-      run: 'python3 - <<''PY_RESULT''
-
-        import json,os,pathlib
-
-        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
-
-        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
-        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
-
-        failed={k:v for k,v in out.items() if v!=''success''}
-
-        assert not failed,failed
-
-        PY_RESULT
-
-        '
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      if: ${{ always() }}
-      with:
-        name: standard-node-${{ matrix.node }}-test-evidence
-        path: evidence/
-        include-hidden-files: true
-        if-no-files-found: error
-        retention-days: 7
-  install:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        pnpm:
-        - 11
-        - 12
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        fetch-depth: 1
-    - name: Require clean source before evidence and record exact identity
-      run: 'set -euo pipefail
-
-        test -z "$(git status --porcelain)"
-
-        mkdir -p evidence
-
-        git rev-parse HEAD > evidence/e2e-source.sha
-
-        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
-
-        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
-
-        '
-    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-      with:
-        node-version: 26
-        check-latest: true
-        cache: pnpm
-    - name: Record actual Node and package-manager versions
-      run: 'node --version > evidence/node.version
-
-        pnpm --version > evidence/pnpm.version
-
-        npm --version > evidence/npm.version
-
-        '
-    - name: dependencies
-      id: dependencies
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm install --frozen-lockfile
-
-        ) 2>&1 | tee "evidence/dependencies.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/dependencies.exit"
-
-        exit "$s"
-
-        '
-    - name: complete-build
-      id: complete_build
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm run build
-
-        ) 2>&1 | tee "evidence/complete-build.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/complete-build.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: fresh-install
-      id: fresh_install
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        node scripts/install-smoke.ts ${{ matrix.pnpm }}
-
-        ) 2>&1 | tee "evidence/fresh-install.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/fresh-install.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' }}
-    - name: Require every independent command outcome; no skipped execution passes
-      if: ${{ always() }}
-      env:
-        COMMAND_STEPS: ${{ toJSON(steps) }}
-      run: 'python3 - <<''PY_RESULT''
-
-        import json,os,pathlib
-
-        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
-
-        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
-        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
-
-        failed={k:v for k,v in out.items() if v!=''success''}
-
-        assert not failed,failed
-
-        PY_RESULT
-
-        '
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      if: ${{ always() }}
-      with:
-        name: standard-pnpm-${{ matrix.pnpm }}-install-evidence
-        path: evidence/
-        include-hidden-files: true
-        if-no-files-found: error
-        retention-days: 7
-  docs:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        fetch-depth: 1
-    - name: Require clean source before evidence and record exact identity
-      run: 'set -euo pipefail
-
-        test -z "$(git status --porcelain)"
-
-        mkdir -p evidence
-
-        git rev-parse HEAD > evidence/e2e-source.sha
-
-        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
-
-        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
-
-        '
-    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-      with:
-        node-version: 26
-        check-latest: true
-        cache: pnpm
-    - name: Record actual Node and package-manager versions
-      run: 'node --version > evidence/node.version
-
-        pnpm --version > evidence/pnpm.version
-
-        npm --version > evidence/npm.version
-
-        '
-    - name: dependencies
-      id: dependencies
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm install --frozen-lockfile
-
-        ) 2>&1 | tee "evidence/dependencies.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/dependencies.exit"
-
-        exit "$s"
-
-        '
-    - name: root-docs-check
-      id: root_docs_check
-      run: 'set -uo pipefail
-
-        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
-        ANTHROPIC_API_KEY
-
-        set +e
-
-        ( set -e
-
-        pnpm docs:check
-
-        ) 2>&1 | tee "evidence/root-docs-check.log"
-
-        s=${PIPESTATUS[0]}
-
-        printf "%s\n" "$s" > "evidence/root-docs-check.exit"
-
-        exit "$s"
-
-        '
-      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-    - name: Require every independent command outcome; no skipped execution passes
-      if: ${{ always() }}
-      env:
-        COMMAND_STEPS: ${{ toJSON(steps) }}
-      run: 'python3 - <<''PY_RESULT''
-
-        import json,os,pathlib
-
-        p=pathlib.Path(''evidence'');p.mkdir(exist_ok=True)
-
-        s=json.loads(os.environ[''COMMAND_STEPS'']);out={k:v.get(''outcome'') for
-        k,v in s.items()};(p/''steps.json'').write_text(json.dumps(out,indent=2)+''\n'')
-
-        failed={k:v for k,v in out.items() if v!=''success''}
-
-        assert not failed,failed
-
-        PY_RESULT
-
-        '
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      if: ${{ always() }}
-      with:
-        name: standard-root-docs-check-evidence
-        path: evidence/
-        include-hidden-files: true
-        if-no-files-found: error
-        retention-days: 7
-  consumer-matrix-gate:
-    name: Equivalent consumer matrix result (not protected spec gate)
-    needs:
-    - check
-    - test
-    - install
-    - docs
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-    - env:
-        RESULTS: ${{ toJSON(needs) }}
-      run: 'python3 - <<''PY_GATE''
-
-        import os,json
-
-        r=json.loads(os.environ[''RESULTS'']);assert all(v[''result'']==''success''
-        for v in r.values()),r
-
-        PY_GATE
-
-        '
+{
+  "name": "S20 original independent standard checks",
+  "on": {
+    "push": {
+      "branches": [
+        "ci/s20-independent-standard-20261031"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "s20-independent-standard-${{ github.ref }}",
+    "cancel-in-progress": false
+  },
+  "env": {
+    "E2E_TELEMETRY_DISABLED": "1",
+    "E2E_UPDATE_CHECK_DISABLED": "1",
+    "NEXT_TELEMETRY_DISABLED": "1"
+  },
+  "jobs": {
+    "check": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 15,
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 0
+          }
+        },
+        {
+          "name": "Require clean source before evidence and record exact identity",
+          "run": "set -euo pipefail\ntest -z \"$(git status --porcelain)\"\ntest \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\nmkdir -p evidence\ngit rev-parse HEAD > evidence/e2e-source.sha\ngit rev-parse HEAD^{tree} > evidence/e2e-source.tree\ngit ls-tree -r HEAD > evidence/source-tree-listing.txt\ngit ls-tree -r HEAD | grep -vF $'\\t.github/workflows/full-standard-node-matrix.yml' | grep -vF $'\\t.github/workflows/s5-focused-original-core.yml' | grep -vF $'\\tscripts/ci/full-standard-runtime-pins.json' > evidence/source-inventory.txt\nsha256sum evidence/source-tree-listing.txt evidence/source-inventory.txt > evidence/source-evidence.sha256\nsha256sum pnpm-lock.yaml .github/native-candidate.json scripts/ci/full-standard-runtime-pins.json > evidence/source-pins.sha256\n"
+        },
+        {
+          "uses": "pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1"
+        },
+        {
+          "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "with": {
+            "node-version": 26,
+            "check-latest": true,
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Record actual Node and package-manager versions",
+          "run": "node --version > evidence/node.version\npnpm --version > evidence/pnpm.version\nnpm --version > evidence/npm.version\n"
+        },
+        {
+          "name": "dependencies",
+          "id": "dependencies",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm install --frozen-lockfile\n) 2>&1 | tee \"evidence/dependencies.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/dependencies.exit\"\nexit \"$s\"\n"
+        },
+        {
+          "name": "Restore reviewed S20 ordinary producer with unchanged source-bound verifier",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}",
+            "RUNTIME_KIND": "ordinary"
+          },
+          "run": "set -euo pipefail\nmkdir -p evidence/tools\nbash -euo pipefail scripts/ci/full-standard-helpers-1.sh\nsha256sum scripts/ci/full-standard-helpers-1.sh scripts/ci/native-runtime.ts evidence/tools/download-runtime.py evidence/tools/verify-runtimes.ts > evidence/runtime-verifier-source.sha256\npython3 evidence/tools/download-runtime.py\n",
+          "id": "restore",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "verify-runtime",
+          "id": "verify_runtime",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode evidence/tools/verify-runtimes.ts\n) 2>&1 | tee \"evidence/verify-runtime.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/verify-runtime.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.restore.outcome == 'success' }}",
+          "env": {
+            "NEED_FAULT": "0"
+          }
+        },
+        {
+          "name": "native-browser-codecs",
+          "id": "native_browser_codecs",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\" install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\nfi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}"
+        },
+        {
+          "name": "complete-build",
+          "id": "complete_build",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm run build\n) 2>&1 | tee \"evidence/complete-build.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/complete-build.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "lint",
+          "id": "lint",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm lint\n) 2>&1 | tee \"evidence/lint.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/lint.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "dead-code",
+          "id": "dead_code",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm check:dead-code\n) 2>&1 | tee \"evidence/dead-code.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/dead-code.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "typecheck",
+          "id": "typecheck",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm typecheck\n) 2>&1 | tee \"evidence/typecheck.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/typecheck.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "error-code-reference",
+          "id": "error_code_reference",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm docs:check-errors\n) 2>&1 | tee \"evidence/error-code-reference.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/error-code-reference.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "peer-ranges",
+          "id": "peer_ranges",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm check:peer-ranges\n) 2>&1 | tee \"evidence/peer-ranges.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/peer-ranges.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "changeset-bumps",
+          "id": "changeset_bumps",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm check:changeset-bumps\n) 2>&1 | tee \"evidence/changeset-bumps.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/changeset-bumps.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "no-install-scripts",
+          "id": "no_install_scripts",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm check:install-scripts\n) 2>&1 | tee \"evidence/no-install-scripts.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/no-install-scripts.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "plugin-sources",
+          "id": "plugin_sources",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm plugins:check\n) 2>&1 | tee \"evidence/plugin-sources.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/plugin-sources.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "mcp-registry-source",
+          "id": "mcp_registry_source",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm mcp-server:check\n) 2>&1 | tee \"evidence/mcp-registry-source.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/mcp-registry-source.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "babysit-types",
+          "id": "babysit_types",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm exec tsc -p .dev/skills/babysit/scripts\n) 2>&1 | tee \"evidence/babysit-types.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/babysit-types.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "babysit-tests",
+          "id": "babysit_tests",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode --test .dev/skills/babysit/scripts/pr-status.test.ts\n) 2>&1 | tee \"evidence/babysit-tests.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/babysit-tests.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "uses": "./.github/actions/mcp-publisher",
+          "id": "publisher_tool",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "publisher-validate",
+          "id": "publisher_validate",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$RUNNER_TEMP/mcp-publisher\" validate packages/e2e/server.json\n) 2>&1 | tee \"evidence/publisher-validate.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/publisher-validate.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.publisher_tool.outcome == 'success' }}"
+        },
+        {
+          "name": "public-browser-install",
+          "id": "public_browser_install",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode packages/web/dist/bin.js install chromium --with-deps\n) 2>&1 | tee \"evidence/public-browser-install.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/public-browser-install.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome == 'success' }}"
+        },
+        {
+          "name": "testbed-full-no-model-key",
+          "id": "testbed_full_no_model_key",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm --filter @e2e-dev/testbed test\n) 2>&1 | tee \"evidence/testbed-full-no-model-key.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/testbed-full-no-model-key.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.public_browser_install.outcome == 'success' }}"
+        },
+        {
+          "name": "Require every independent command outcome; no skipped execution passes",
+          "if": "${{ always() }}",
+          "env": {
+            "COMMAND_STEPS": "${{ toJSON(steps) }}"
+          },
+          "run": "python3 - <<'PY_RESULT'\nimport json,os,pathlib\np=pathlib.Path('evidence');p.mkdir(exist_ok=True)\ns=json.loads(os.environ['COMMAND_STEPS']);out={k:v.get('outcome') for k,v in s.items()};(p/'steps.json').write_text(json.dumps(out,indent=2)+'\\n')\nfailed={k:v for k,v in out.items() if v!='success'}\nassert not failed,failed\nPY_RESULT\n"
+        },
+        {
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "if": "${{ always() }}",
+          "with": {
+            "name": "standard-node26-check-evidence",
+            "path": "evidence/",
+            "include-hidden-files": true,
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ],
+      "env": {
+        "NODE_SELECTOR": "26",
+        "NEED_FAULT": "0"
+      }
+    },
+    "install": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 15,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "pnpm": [
+            11,
+            12
+          ]
+        }
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 1
+          }
+        },
+        {
+          "name": "Require clean source before evidence and record exact identity",
+          "run": "set -euo pipefail\ntest -z \"$(git status --porcelain)\"\ntest \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\nmkdir -p evidence\ngit rev-parse HEAD > evidence/e2e-source.sha\ngit rev-parse HEAD^{tree} > evidence/e2e-source.tree\ngit ls-tree -r HEAD > evidence/source-tree-listing.txt\ngit ls-tree -r HEAD | grep -vF $'\\t.github/workflows/full-standard-node-matrix.yml' | grep -vF $'\\t.github/workflows/s5-focused-original-core.yml' | grep -vF $'\\tscripts/ci/full-standard-runtime-pins.json' > evidence/source-inventory.txt\nsha256sum evidence/source-tree-listing.txt evidence/source-inventory.txt > evidence/source-evidence.sha256\nsha256sum pnpm-lock.yaml .github/native-candidate.json scripts/ci/full-standard-runtime-pins.json > evidence/source-pins.sha256\n"
+        },
+        {
+          "uses": "pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1"
+        },
+        {
+          "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "with": {
+            "node-version": 26,
+            "check-latest": true,
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Record actual Node and package-manager versions",
+          "run": "node --version > evidence/node.version\npnpm --version > evidence/pnpm.version\nnpm --version > evidence/npm.version\n"
+        },
+        {
+          "name": "dependencies",
+          "id": "dependencies",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm install --frozen-lockfile\n) 2>&1 | tee \"evidence/dependencies.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/dependencies.exit\"\nexit \"$s\"\n"
+        },
+        {
+          "name": "complete-build",
+          "id": "complete_build",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm run build\n) 2>&1 | tee \"evidence/complete-build.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/complete-build.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "fresh-install",
+          "id": "fresh_install",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\nnode scripts/install-smoke.ts ${{ matrix.pnpm }}\n) 2>&1 | tee \"evidence/fresh-install.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/fresh-install.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.complete_build.outcome == 'success' }}"
+        },
+        {
+          "name": "Require every independent command outcome; no skipped execution passes",
+          "if": "${{ always() }}",
+          "env": {
+            "COMMAND_STEPS": "${{ toJSON(steps) }}"
+          },
+          "run": "python3 - <<'PY_RESULT'\nimport json,os,pathlib\np=pathlib.Path('evidence');p.mkdir(exist_ok=True)\ns=json.loads(os.environ['COMMAND_STEPS']);out={k:v.get('outcome') for k,v in s.items()};(p/'steps.json').write_text(json.dumps(out,indent=2)+'\\n')\nfailed={k:v for k,v in out.items() if v!='success'}\nassert not failed,failed\nPY_RESULT\n"
+        },
+        {
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "if": "${{ always() }}",
+          "with": {
+            "name": "standard-pnpm-${{ matrix.pnpm }}-install-evidence",
+            "path": "evidence/",
+            "include-hidden-files": true,
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
+    "docs": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 15,
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 1
+          }
+        },
+        {
+          "name": "Require clean source before evidence and record exact identity",
+          "run": "set -euo pipefail\ntest -z \"$(git status --porcelain)\"\ntest \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\nmkdir -p evidence\ngit rev-parse HEAD > evidence/e2e-source.sha\ngit rev-parse HEAD^{tree} > evidence/e2e-source.tree\ngit ls-tree -r HEAD > evidence/source-tree-listing.txt\ngit ls-tree -r HEAD | grep -vF $'\\t.github/workflows/full-standard-node-matrix.yml' | grep -vF $'\\t.github/workflows/s5-focused-original-core.yml' | grep -vF $'\\tscripts/ci/full-standard-runtime-pins.json' > evidence/source-inventory.txt\nsha256sum evidence/source-tree-listing.txt evidence/source-inventory.txt > evidence/source-evidence.sha256\nsha256sum pnpm-lock.yaml .github/native-candidate.json scripts/ci/full-standard-runtime-pins.json > evidence/source-pins.sha256\n"
+        },
+        {
+          "uses": "pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1"
+        },
+        {
+          "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "with": {
+            "node-version": 26,
+            "check-latest": true,
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Record actual Node and package-manager versions",
+          "run": "node --version > evidence/node.version\npnpm --version > evidence/pnpm.version\nnpm --version > evidence/npm.version\n"
+        },
+        {
+          "name": "dependencies",
+          "id": "dependencies",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm install --frozen-lockfile\n) 2>&1 | tee \"evidence/dependencies.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/dependencies.exit\"\nexit \"$s\"\n"
+        },
+        {
+          "name": "root-docs-check",
+          "id": "root_docs_check",
+          "run": "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\npnpm docs:check\n) 2>&1 | tee \"evidence/root-docs-check.log\"\ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/root-docs-check.exit\"\nexit \"$s\"\n",
+          "if": "${{ !cancelled() && steps.dependencies.outcome == 'success' }}"
+        },
+        {
+          "name": "Require every independent command outcome; no skipped execution passes",
+          "if": "${{ always() }}",
+          "env": {
+            "COMMAND_STEPS": "${{ toJSON(steps) }}"
+          },
+          "run": "python3 - <<'PY_RESULT'\nimport json,os,pathlib\np=pathlib.Path('evidence');p.mkdir(exist_ok=True)\ns=json.loads(os.environ['COMMAND_STEPS']);out={k:v.get('outcome') for k,v in s.items()};(p/'steps.json').write_text(json.dumps(out,indent=2)+'\\n')\nfailed={k:v for k,v in out.items() if v!='success'}\nassert not failed,failed\nPY_RESULT\n"
+        },
+        {
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "if": "${{ always() }}",
+          "with": {
+            "name": "standard-root-docs-check-evidence",
+            "path": "evidence/",
+            "include-hidden-files": true,
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    },
+    "consumer-matrix-gate": {
+      "name": "Original independent check install docs result (not full matrix or formal acceptance)",
+      "needs": [
+        "check",
+        "install",
+        "docs"
+      ],
+      "if": "${{ always() }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "steps": [
+        {
+          "env": {
+            "RESULTS": "${{ toJSON(needs) }}"
+          },
+          "run": "python3 - <<'PY_GATE'\nimport os,json\nr=json.loads(os.environ['RESULTS']);assert all(v['result']=='success' for v in r.values()),r\nPY_GATE\n"
+        }
+      ]
+    }
+  }
+}
