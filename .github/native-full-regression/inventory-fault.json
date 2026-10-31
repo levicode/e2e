@@ -3873,11 +3873,11 @@
     "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
     "native::recording::tests::recording_sparse_frames_preserve_timestamps"
   ],
-  "nativeCommit": "0435b0057049c0f3b8c23dfdb17bd2971a8f0b13",
-  "nativeTree": "c4bdcdfd75ee5f2337e4bc881088563756dcdc16",
+  "nativeCommit": "0ed1685ef889fa7bba4b5f47af6ba6be4610a6ef",
+  "nativeTree": "24dfe179624f49a888b2a87147bcb311aab7817b",
   "nonignored": 3381,
   "profile": "ci",
   "schemaVersion": 1,
-  "sourceReviewSHA256": "c11de0bf771f109bdd6117671c37d553644a119d302e9d907376ee47dbf0c1dd",
+  "sourceReviewSHA256": "fdb32c0aa49c2c6ae3246b2a862dcc69772cb8abd733e2e11951a3d76050eb09",
   "total": 3623
 }
