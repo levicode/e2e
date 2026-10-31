@@ -16,7 +16,7 @@ env:
 'on':
   push:
     branches:
-    - ci/native-full-regression-s21-fix1-20261031
+    - ci/native-full-regression-s21-stdio-20261031
 jobs:
   original-four-compile-boundaries:
     runs-on: ubuntu-24.04
@@ -299,7 +299,7 @@ jobs:
         set +e
 
         timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests > evidence/full-suite.log
-        2>&1
+        2> evidence/full-suite.stderr.log
 
         status=$?
 
@@ -662,7 +662,7 @@ jobs:
         set +e
 
         timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests > evidence/full-suite.log
-        2>&1
+        2> evidence/full-suite.stderr.log
 
         status=$?
 

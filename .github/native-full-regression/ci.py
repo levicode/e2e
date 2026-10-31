@@ -69,6 +69,18 @@ def results(text, code, expected):
     report['accepted'] = not report['errors']
     return report
 
+def full_suite_capture_metadata(evidence):
+    """The parser consumes raw stdout only; stderr remains independent mandatory evidence."""
+    stdout = evidence / 'full-suite.log'
+    stderr = evidence / 'full-suite.stderr.log'
+    return {'logStream': 'stdout', 'logSHA256': digest(stdout), 'logBytes': stdout.stat().st_size,
+            'stderrStream': 'stderr', 'stderrSHA256': digest(stderr), 'stderrBytes': stderr.stat().st_size}
+
+def checked_full_suite_capture(evidence, report):
+    actual = full_suite_capture_metadata(evidence)
+    assert all(report.get(key) == value for key, value in actual.items()), 'full-suite raw stream receipt differs'
+    return actual
+
 # S6 adds evidence checks only: the existing compiler-selected harness is reused.
 REQUIRED_NEW_COUNT = 20
 RETAINED_REQUIRED_COUNT = 43
@@ -486,7 +498,7 @@ def main():
         report = results((evidence / 'full-suite.log').read_text(), int((evidence / 'full-suite.exit').read_text()), expected)
         report.update({'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'profile': 'ci', 'features': features,
                        'binarySHA256': json.loads((evidence / 'test-binary.json').read_text())['sha256'],
-                       'logSHA256': digest(evidence / 'full-suite.log'), 'logBytes': (evidence / 'full-suite.log').stat().st_size,
+                       **full_suite_capture_metadata(evidence),
                        'browserAcceptance': False})
         dump('result.json', report)
         assert report['accepted'], 'full suite did not produce complete all-PASS evidence'
@@ -542,7 +554,7 @@ def main():
                 actual = attempt('toolchain-' + key, lambda value=value: digest(Path(value['path'])))
                 report['toolchain'][key] = {'expected': value['sha256'], 'actual': actual, 'matches': actual == value['sha256']}
         required = ['producer.json', 'source-before.json', 'toolchain-install.log', 'toolchain-install.exit', 'rustc-version.txt', 'cargo-version.txt', 'toolchain.json', 'compiler-argv.txt']
-        required += [p + suffix for p in BOUNDARIES for suffix in ['.log', '.exit']] if args.gate == 'boundaries' else ['harness.jsonl', 'harness-build.log', 'harness-build.exit', 'test-binary.json', 'all-tests.list', 'all-tests.stderr.log', 'all-tests.exit', 'ignored-tests.list', 'ignored-tests.stderr.log', 'ignored-tests.exit', 'inventory.json', 'full-suite.log', 'full-suite.exit', 'result.json']
+        required += [p + suffix for p in BOUNDARIES for suffix in ['.log', '.exit']] if args.gate == 'boundaries' else ['harness.jsonl', 'harness-build.log', 'harness-build.exit', 'test-binary.json', 'all-tests.list', 'all-tests.stderr.log', 'all-tests.exit', 'ignored-tests.list', 'ignored-tests.stderr.log', 'ignored-tests.exit', 'inventory.json', 'full-suite.log', 'full-suite.stderr.log', 'full-suite.exit', 'result.json']
         if args.gate != 'boundaries':
             required += ['required-controls.json', 'new-native-exact-inventory.json']
             controls = attempt('required-controls-independent', lambda: required_controls_report(evidence, pins, args.gate))
@@ -592,6 +604,8 @@ def main():
             report['captures'][name] = item
         if args.gate != 'boundaries':
             result = attempt('full-suite-result', lambda: metadata_file('result.json', {'accepted': bool, 'captureLoss': bool}))
+            if result:
+                attempt('full-suite-stream-custody', lambda: checked_full_suite_capture(evidence, result))
             report['fullSuiteAccepted'] = bool(result and result.get('accepted'))
             report['captures']['full-suite.log']['captureLoss'] = result.get('captureLoss') if result else None
         report['missingCaptures'] = [n for n, v in report['captures'].items() if v['captureMissing']]
