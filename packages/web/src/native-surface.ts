@@ -35,6 +35,7 @@ import { connectNativeProcess } from './native/process.ts';
 import type { NativeEvent } from './native/protocol.ts';
 import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
 import { resolveNativeExecutable } from './native/runtime.ts';
+import { createSecretsSurface, withSecretsContext, type SecretsContext, type SecretsRetirementStage, type SecretsAdmissionStage } from './native/secrets-diagnostics.ts';
 
 import { isNativeProcessCleanupUnresolved } from './native/process-cleanup.ts';
 import { ISOLATED_PAGE_REOPEN_CAPABILITY, PAGE_IDENTITY_FENCE_CAPABILITY, PERSISTENT_PAGE_REOPEN_CAPABILITY, REQUIRED_CAPABILITIES } from './native/capabilities.ts';
@@ -100,6 +101,24 @@ interface Attempt {
 
 /** Not exported as a Playwright surface and never supplies raw native/CDP commands to users. */
 export class NativeSurface implements NativeWebSurface {
+  private secretsDiagnostics = createSecretsSurface();
+  private readonly secretsAttempts = new WeakMap<EngineAttemptContext, SecretsContext>();
+
+  /** Diagnostic identities never participate in ownership or business admission. */
+  private secretsContext(attempt: Attempt | undefined): SecretsContext | undefined {
+    return attempt === undefined ? undefined : this.secretsAttempts.get(attempt.context);
+  }
+
+  /** Observe only a completed original assignment, never before a reentrant sink. */
+  private observeSecretsRetirement(attempt: Attempt | undefined, before: unknown, stage: SecretsRetirementStage): void {
+    const after = this.retirementFailure;
+    if ((before !== undefined && before !== null) || after === undefined || before === after) return;
+    const context = this.secretsContext(attempt);
+    if (context === undefined) { this.secretsDiagnostics?.loss('owner-unjoined'); return; }
+    this.secretsDiagnostics?.emit(context, { kind: 'retirement', stage,
+      before: before === undefined ? 'undefined' : 'null', after: after === null ? 'null' : 'value' });
+  }
+
   latch = new ErrorLatch();
   private scripts: ConfiguredInitScripts;
   private readonly leases: LeasedBrowsers | undefined;
@@ -173,7 +192,11 @@ export class NativeSurface implements NativeWebSurface {
           const failure = cause instanceof Error ? cause : invalidState('Download file cleanup failed');
           attempt.downloadFileFailure ??= failure; attempt.resourceCleanupFailure ??= failure;
           latch.latch(failure);
-          if (this.attempt === attempt || this.retiringAttempt === attempt) this.retirementFailure ??= failure;
+          if (this.attempt === attempt || this.retiringAttempt === attempt) {
+            const diagnosticBefore = this.retirementFailure;
+            this.retirementFailure ??= failure;
+            this.observeSecretsRetirement(attempt, diagnosticBefore, 'download-file');
+          }
         }).then(finish);
         latch.track('download file cleanup', retained);
       },
@@ -214,6 +237,7 @@ export class NativeSurface implements NativeWebSurface {
       if (!this.workerRestartable) throw invalidState('Native worker cleanup has not been confirmed');
       this.workerRetirement = new AbortController(); this.workerRestartable = false;
       this.retirementFailure = undefined;
+      this.secretsDiagnostics = createSecretsSurface();
       this.openedBefore = false; this.workerSourceLost = false; this.workerEndpoint = undefined;
     }
     // An older initialization keeps its retired authority across every await.
@@ -236,11 +260,19 @@ export class NativeSurface implements NativeWebSurface {
     }
   }
   async startAttempt(context: EngineAttemptContext): Promise<void> {
+    const diagnostic = this.secretsDiagnostics?.start();
+    if (diagnostic !== undefined) this.secretsAttempts.set(context, diagnostic);
     const retirement = this.endingAttempt;
     if (!this.workerRetirement.signal.aborted && this.retirementFailure === undefined && retirement !== undefined) {
       await raceAbort(() => retirement, context.signal, 'waiting for native attempt retirement');
     }
-    if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
+    if (this.workerRetirement.signal.aborted || this.workerCleanupUnconfirmed || this.retirementFailure !== undefined || this.attempt !== undefined || this.retiringAttempt !== undefined || this.connecting !== undefined) {
+      if (diagnostic !== undefined) this.secretsDiagnostics?.emit(diagnostic, { kind: 'guard',
+        workerRetired: this.workerRetirement.signal.aborted, workerCleanupUnconfirmed: this.workerCleanupUnconfirmed,
+        retirementFailurePresent: this.retirementFailure !== undefined, attemptPresent: this.attempt !== undefined,
+        retiringAttemptPresent: this.retiringAttempt !== undefined, connectingPresent: this.connecting !== undefined });
+      throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
+    }
     const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), resourceCleanup: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), downloadFiles: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
@@ -384,12 +416,15 @@ export class NativeSurface implements NativeWebSurface {
     // Publish the existing owner before provider code can synchronously re-enter cleanup.
     this.endingAttempt = owned;
     void owned.catch(() => {});
+    const diagnosticAttempt = this.attempt ?? this.retiringAttempt;
     const deadline = cleanupDeadline(context);
     void this.closeAttempt(deadline).finally(deadline.dispose).then(() => {
       if (this.endingAttempt === owned) this.endingAttempt = undefined;
       resolve();
     }, cause => {
+      const diagnosticBefore = this.retirementFailure;
       this.retirementFailure ??= cause;
+      this.observeSecretsRetirement(diagnosticAttempt, diagnosticBefore, 'retire-attempt');
       if (this.endingAttempt === owned) this.endingAttempt = undefined;
       reject(this.retirementFailure);
     });
@@ -417,32 +452,34 @@ export class NativeSurface implements NativeWebSurface {
     let peerRetirement: Promise<unknown> | undefined;
     let scopeEnded = false;
     let failure: unknown = this.retirementFailure ?? attempt?.resourceCleanupFailure;
-    const failed = (cause: unknown, departed = false) => {
+    const failed = (cause: unknown, departed = false, stage: SecretsRetirementStage = 'unknown') => {
       // A departed waiter is not a failed exact-owner cleanup receipt.
       if (departed && (isLocalBudgetDeparture(cause) || isClosedFrameCancellation(cause))) return;
       // Synthetic closed-frame cancellation is not settlement: the mandatory
       // close/transport/provider receipts below must still prove retirement.
       failure ??= cause;
+      const diagnosticBefore = this.retirementFailure;
       this.retirementFailure ??= cause;
+      this.observeSecretsRetirement(attempt, diagnosticBefore, stage);
     };
     // Observe exact receipts when they settle. Joining them in teardown order
     // must not reorder the first real failure after the caller has departed.
-    const receipt = <T>(work: Promise<T>, departed = false): Promise<T> => {
-      void work.catch(cause => { failed(cause, departed); });
+    const receipt = <T>(work: Promise<T>, departed = false, stage: SecretsRetirementStage = 'unknown'): Promise<T> => {
+      void work.catch(cause => { failed(cause, departed, stage); });
       return work;
     };
-    this.leases?.retireWorkerAcquisition(cleanup, 'attempt', cause => { failed(cause); });
-    if (finalizedCleanup !== undefined) receipt(finalizedCleanup);
-    for (const stopping of recordingStops) receipt(stopping);
-    if (attempt !== undefined) for (const stopping of attempt.lateRecordingStops.values()) receipt(stopping);
+    this.leases?.retireWorkerAcquisition(cleanup, 'attempt', cause => { failed(cause, false, 'worker-acquisition-cleanup'); });
+    if (finalizedCleanup !== undefined) receipt(finalizedCleanup, false, 'finalized-video');
+    for (const stopping of recordingStops) receipt(stopping, false, 'recording-stop');
+    if (attempt !== undefined) for (const stopping of attempt.lateRecordingStops.values()) receipt(stopping, false, 'late-recording-stop');
     if (attempt !== undefined) {
       // New rollback receipts can arrive after this retirement has started.
       // Observe their actual failure, not the later body-cancellation chain.
-      attempt.observeLateRecordingFailure = failed;
-      if (attempt.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure);
+      attempt.observeLateRecordingFailure = cause => { failed(cause, false, 'late-recording-stop'); };
+      if (attempt.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure, false, 'late-recording-stop');
     }
     if (connecting !== undefined) {
-      const observed = () => { if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure); };
+      const observed = () => { if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure, false, 'connection-cleanup'); };
       void connecting.work.then(observed, observed);
     }
     this.attempt = undefined; this.retiringAttempt = attempt; this.listeners.clear(); attempt?.channel?.dispose();
@@ -460,7 +497,7 @@ export class NativeSurface implements NativeWebSurface {
       // The captured work records failed publication before its receipt settles.
       // Normal retirement cancellation still needs terminal Close, not a second
       // callback transition, but is not a failed cleanup receipt.
-      if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
+      if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error, false, 'publication');
       if (connecting !== undefined) {
         await raceAbort(() => connecting.work.catch(() => undefined), cleanup.signal, 'retiring native connection');
         remaining();
@@ -472,20 +509,20 @@ export class NativeSurface implements NativeWebSurface {
       }
       if (attempt !== undefined) for (const recording of attempt.lateRecordings) {
         remaining();
-        const stopping = receipt(this.stopLateProviderRecording(attempt, recording, cleanup.signal)); recordingStops.add(stopping);
+        const stopping = receipt(this.stopLateProviderRecording(attempt, recording, cleanup.signal), false, 'late-recording-stop'); recordingStops.add(stopping);
         await raceAbort(() => stopping, cleanup.signal, 'retiring late provider recording');
         remaining();
       }
       if (attempt?.recording !== undefined) {
         remaining();
-        const stopping = receipt(this.stopProviderVideo(attempt, cleanup.signal)); recordingStops.add(stopping);
+        const stopping = receipt(this.stopProviderVideo(attempt, cleanup.signal), false, 'recording-stop'); recordingStops.add(stopping);
         await raceAbort(() => stopping, cleanup.signal, 'retiring provider recording');
         remaining();
       }
       if (client?.isTerminal() !== true && client?.recoveryScope() === undefined && attempt !== undefined) {
         for (const batch of attempt.videoBlobBatches) {
           const budget = remaining();
-          const retiring = receipt(batch.retire(this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId)), true);
+          const retiring = receipt(batch.retire(this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId)), true, 'native-video-retire');
           videoRetirements.add(retiring);
           await raceAbort(() => retiring, cleanup.signal, 'retiring unread native video handles');
         }
@@ -494,18 +531,18 @@ export class NativeSurface implements NativeWebSurface {
         const callbackEpoch = client!.callbackCheckpoint();
         if (attempt.rawBinding?.kind === 'isolated') {
           const budget = remaining();
-          peerRetirement = receipt(engine.command('scope.interop.retire', { identityScope: attempt.scope, contextId: attempt.rawBinding.contextId }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId)), true);
+          peerRetirement = receipt(engine.command('scope.interop.retire', { identityScope: attempt.scope, contextId: attempt.rawBinding.contextId }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId)), true, 'interop-retire');
           await raceAbort(() => peerRetirement!, cleanup.signal, 'draining native ownership before Playwright retirement');
           remaining();
           // PW owns this wrapper: successful public close emits its close event
           // and removes it from browser.contexts(), unlike native-only disposal.
           attempt.rawClosing ??= attempt.rawBinding.context.close();
-          receipt(attempt.rawClosing);
+          receipt(attempt.rawClosing, false, 'playwright-close');
           await raceAbort(() => attempt.rawClosing!, cleanup.signal, 'closing the exact Playwright context');
         }
         const budget = remaining();
         scopeEnd = engine.command('scope.end', { identityScope: attempt.scope }, this.operation(budget.signal, budget.timeoutMs, attempt.context.attemptId), callbackEpoch);
-        receipt(scopeEnd, true);
+        receipt(scopeEnd, true, 'scope-end');
         await raceAbort(() => scopeEnd!, cleanup.signal, 'ending native scope');
         scopeEnded = true; client!.retireCallbacks(callbackEpoch, 'scope-ended');
       }
@@ -514,12 +551,12 @@ export class NativeSurface implements NativeWebSurface {
     // NativeClient.close retains its existing independent terminal-safety budget.
     // Give it only the caller's remaining wait before independent lease release.
     const needsClose = client !== undefined && ((attempt !== undefined && !scopeEnded) || this.persistent || this.workerSourceLost || failure !== undefined || cleanup.signal.aborted);
-    const closing = receipt(needsClose ? this.closeClient(cleanup, client) : Promise.resolve());
+    const closing = receipt(needsClose ? this.closeClient(cleanup, client) : Promise.resolve(), false, 'native-close');
     try { await raceAbort(() => closing, cleanup.signal, 'waiting for native close'); }
     catch (cause) { failed(cleanup.signal.aborted ? connectionWaitDeparture(cleanup.signal, 'waiting for native close') : cause, true); }
     // Release billing with the original signal, even if expired. Its actual
     // receipt remains owned; a later cleanup caller cannot reissue release.
-    const releasing = receipt(this.leases?.endAttempt(cleanup) ?? Promise.resolve());
+    const releasing = receipt(this.leases?.endAttempt(cleanup) ?? Promise.resolve(), false, 'provider-release');
     let nativeRetired = !needsClose && (scopeEnded || attempt === undefined || client === undefined);
     let finalizedCleanupProven = finalizedCleanup === undefined;
     let released = false;
@@ -534,18 +571,18 @@ export class NativeSurface implements NativeWebSurface {
       // Native retirement can settle a failed read; only its own later close/
       // unlink receipt retires the local file. Never join user event handlers.
       if (attempt !== undefined) while (attempt.downloadFiles.size > 0) await Promise.all([...attempt.downloadFiles].map(file => file.settled));
-      if (attempt?.resourceCleanupFailure !== undefined) failed(attempt.resourceCleanupFailure);
-      if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error);
+      if (attempt?.resourceCleanupFailure !== undefined) failed(attempt.resourceCleanupFailure, false, 'native-resource-cleanup');
+      if (attempt?.recoveryFailure?.publication === true && attempt.recoveryFailure.provisional !== true) failed(attempt.recoveryFailure.error, false, 'publication');
       if (connecting !== undefined) {
         await connecting.work.catch(() => undefined);
-        if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure);
+        if (connecting.cleanupFailure !== undefined) failed(connecting.cleanupFailure, false, 'connection-cleanup');
       }
       await Promise.allSettled(recordingStarts);
       for (const stopping of recordingStops) try { await stopping; } catch (cause) { failed(cause); }
       for (const retiring of videoRetirements) try { await retiring; } catch (cause) { failed(cause, true); }
       // Only confirmed original native retirement consumes unresolved remote custody.
       if (nativeRetired) attempt?.videoBlobBatches.clear();
-      if (attempt?.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure);
+      if (attempt?.lateRecordingFailure !== undefined && attempt.lateRecordings.size > 0) failed(attempt.lateRecordingFailure, false, 'late-recording-stop');
       if (finalizedCleanup !== undefined) {
         try { await finalizedCleanup; finalizedCleanupProven = true; }
         catch (cause) { this.workerCleanupUnconfirmed = true; failed(cause); }
@@ -553,11 +590,18 @@ export class NativeSurface implements NativeWebSurface {
       try { await releasing; released = true; }
       catch (cause) { this.workerCleanupUnconfirmed = true; failed(cause); }
       const recordingsRetired = attempt === undefined || (attempt.recording === undefined && attempt.recordingStarts.size === 0 && attempt.lateRecordings.size === 0 && attempt.videoBlobBatches.size === 0 && attempt.downloadFiles.size === 0);
+      const diagnosticReceiptFailed = failure !== undefined;
       if (nativeRetired && finalizedCleanupProven && recordingsRetired && released && connecting?.cleanupFailure === undefined) {
         attempt?.downloads.clear();
         if (attempt !== undefined) delete attempt.observationHighWater;
         this.retiringAttempt = undefined;
       } else failure ??= invalidState('Native attempt cleanup remains unresolved');
+      const diagnostic = this.secretsContext(attempt);
+      if (diagnostic !== undefined) this.secretsDiagnostics?.emit(diagnostic, { kind: 'cleanup',
+        nativeRetired, finalizedCleanupProven, recordingsRetired, released,
+        connectingCleanupFailurePresent: connecting?.cleanupFailure !== undefined,
+        retiringAttemptCleared: this.retiringAttempt === undefined,
+        reason: diagnosticReceiptFailed ? 'receipt-failed' : this.retiringAttempt === undefined ? 'complete' : 'unresolved-custody', dirty: 'unknown' });
     } finally {
       cleanup.signal.removeEventListener('abort', cancelResourceCleanup);
       attempt?.resourceCleanup.abort();
@@ -612,15 +656,19 @@ export class NativeSurface implements NativeWebSurface {
     const attempt = this.attempt ?? this.retiringAttempt;
     const rawOpening = attempt?.rawOpening;
     let failure: unknown;
-    const failed = (cause: unknown) => {
+    const failed = (cause: unknown, stage: SecretsRetirementStage) => {
       failure ??= cause;
       // Register the actual receipt when it arrives, before joining later
       // opening/rollback work. Those later failures cannot reorder first error.
-      if (this.client === client && (attempt === undefined || this.attempt === attempt || this.retiringAttempt === attempt)) this.retirementFailure ??= cause;
+      if (this.client === client && (attempt === undefined || this.attempt === attempt || this.retiringAttempt === attempt)) {
+        const diagnosticBefore = this.retirementFailure;
+        this.retirementFailure ??= cause;
+        this.observeSecretsRetirement(attempt, diagnosticBefore, stage);
+      }
     };
     let nativeClosed = false;
     try { await client?.close(this.operation(context.signal, context.timeoutMs)); nativeClosed = true; }
-    catch (cause) { failed(cause); }
+    catch (cause) { failed(cause, 'native-close'); }
     const closePublishedRaw = async () => {
       if (this.client !== client) return;
       const raw = this.playwrightClient;
@@ -630,7 +678,7 @@ export class NativeSurface implements NativeWebSurface {
         await closing;
         if (this.playwrightClient === raw) this.playwrightClient = undefined;
         if (this.playwrightClosing === closing) this.playwrightClosing = undefined;
-      } catch (cause) { failed(cause); }
+      } catch (cause) { failed(cause, 'playwright-close'); }
     };
     // An already-published client owns any context/identity work still opening.
     // Disconnect it BEFORE joining that work: its receipt may require detach.
@@ -650,22 +698,23 @@ export class NativeSurface implements NativeWebSurface {
     if (failure !== undefined) { this.workerCleanupUnconfirmed = true; throw failure; }
   }
   private async closeWorker(cleanup: EngineCleanupContext): Promise<void> {
+    const diagnosticAttempt = this.attempt ?? this.retiringAttempt;
     let failure: unknown;
-    const receipt = <T>(work: Promise<T>): Promise<T> => {
-      void work.catch(cause => { failure ??= cause; this.retirementFailure ??= cause; });
+    const receipt = <T>(work: Promise<T>, stage: SecretsRetirementStage): Promise<T> => {
+      void work.catch(cause => { failure ??= cause; const diagnosticBefore = this.retirementFailure; this.retirementFailure ??= cause; this.observeSecretsRetirement(diagnosticAttempt, diagnosticBefore, stage); });
       return work;
     };
-    this.leases?.retireWorkerAcquisition(cleanup, undefined, cause => { failure ??= cause; this.retirementFailure ??= cause; });
-    const attempt = receipt(this.retireAttempt(cleanup));
+    this.leases?.retireWorkerAcquisition(cleanup, undefined, cause => { failure ??= cause; const diagnosticBefore = this.retirementFailure; this.retirementFailure ??= cause; this.observeSecretsRetirement(diagnosticAttempt, diagnosticBefore, 'worker-acquisition-cleanup'); });
+    const attempt = receipt(this.retireAttempt(cleanup), 'retire-attempt');
     try { await raceAbort(() => attempt, cleanup.signal, 'waiting for native attempt cleanup'); }
     catch (cause) { if (!cleanup.signal.aborted) failure ??= cause; }
     // A hanging retained recorder/artifact owner must not keep a billed worker alive.
-    const closing = receipt(this.closeClient(cleanup));
+    const closing = receipt(this.closeClient(cleanup), 'native-close');
     try { await raceAbort(() => closing, cleanup.signal, 'waiting for native worker close'); }
     catch (cause) { if (!cleanup.signal.aborted) failure ??= cause; }
-    const releasing = receipt((this.leases?.dispose(cleanup, cause => { failure ??= cause; this.retirementFailure ??= cause; }) ?? Promise.resolve()).catch(cause => { this.workerCleanupUnconfirmed = true; throw cause; }));
+    const releasing = receipt((this.leases?.dispose(cleanup, cause => { failure ??= cause; const diagnosticBefore = this.retirementFailure; this.retirementFailure ??= cause; this.observeSecretsRetirement(diagnosticAttempt, diagnosticBefore, 'worker-release'); }) ?? Promise.resolve()).catch(cause => { this.workerCleanupUnconfirmed = true; throw cause; }), 'worker-release');
     for (const work of [attempt, closing, releasing]) {
-      try { await work; } catch (cause) { failure ??= cause; this.retirementFailure ??= cause; }
+      try { await work; } catch (cause) { failure ??= cause; const diagnosticBefore = this.retirementFailure; this.retirementFailure ??= cause; this.observeSecretsRetirement(diagnosticAttempt, diagnosticBefore, 'unknown'); }
     }
     if (failure !== undefined) throw this.retirementFailure ?? failure;
   }
@@ -735,7 +784,11 @@ export class NativeSurface implements NativeWebSurface {
           // Preserve an earlier callback error at the event latch. Its actual
           // cleanup failure remains sticky even if publication retires that callback.
           if (callback === undefined) latch.latch(cause); else callback.cleanupFailure ??= cause;
-          if (this.attempt === attempt || this.retiringAttempt === attempt) this.retirementFailure ??= cause;
+          if (this.attempt === attempt || this.retiringAttempt === attempt) {
+            const diagnosticBefore = this.retirementFailure;
+            this.retirementFailure ??= cause;
+            this.observeSecretsRetirement(attempt, diagnosticBefore, 'native-resource-cleanup');
+          }
         }).then(() => undefined);
         attempt.wireRequests.add(settled);
         void settled.then(() => attempt.wireRequests.delete(settled));
@@ -860,32 +913,45 @@ export class NativeSurface implements NativeWebSurface {
   }
 
   /** Capture the caller's attempt before yielding; a later attempt is never a retry target. */
-  private async admit(operation: OperationContext, startupAttempt?: Attempt): Promise<{ attempt: Attempt; scope: string; operation: OperationContext }> {
-    this.assertCallback();
-    const attempt = startupAttempt ?? this.requireAttempt();
-    this.assertAttempt(attempt);
-    this.latch.throwPending();
-    if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
-    const endsAt = performance.now() + operation.timeoutMs;
-    const current = { ...operation, get timeoutMs() {
-      const remaining = endsAt - performance.now();
-      if (remaining <= 0) throw connectionDeadline('Native operation exhausted its deadline before dispatch');
-      return remaining;
-    } };
-    // Only failed/unpublished local files fence later ordinary admission. A
-    // native callback may be needed to settle the original read, so it keeps
-    // the existing callback/control lane rather than waiting on itself here.
-    const ready = this.captureDownloadReadiness(attempt);
-    for (;;) {
-      const retiring = ready?.();
-      if (retiring === undefined) break;
-      await withConnectionBudget(current, 'retiring unpublished download files', () => retiring);
+  private async admit(operation: OperationContext, startupAttempt?: Attempt, diagnostic?: SecretsContext): Promise<{ attempt: Attempt; scope: string; operation: OperationContext }> {
+    let diagnosticStage: SecretsAdmissionStage = 'callback-check';
+    try {
+      this.assertCallback();
+      diagnosticStage = 'require-attempt';
+      const attempt = startupAttempt ?? this.requireAttempt();
+      diagnosticStage = 'owner-check';
+      this.assertAttempt(attempt);
+      diagnosticStage = 'pending-latch';
+      this.latch.throwPending();
+      diagnosticStage = 'caller-aborted';
+      if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
+      const endsAt = performance.now() + operation.timeoutMs;
+      const current = { ...operation, get timeoutMs() {
+        const remaining = endsAt - performance.now();
+        if (remaining <= 0) throw connectionDeadline('Native operation exhausted its deadline before dispatch');
+        return remaining;
+      } };
+      // Only failed/unpublished local files fence later ordinary admission. A
+      // native callback may be needed to settle the original read, so it keeps
+      // the existing callback/control lane rather than waiting on itself here.
+      diagnosticStage = 'download-readiness';
+      const ready = this.captureDownloadReadiness(attempt);
+      for (;;) {
+        const retiring = ready?.();
+        if (retiring === undefined) break;
+        await withConnectionBudget(current, 'retiring unpublished download files', () => retiring);
+      }
+      diagnosticStage = 'ensure-connected';
+      await this.ensureConnected(current, attempt);
+      diagnosticStage = 'final-owner-check';
+      this.assertAttempt(attempt);
+      if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
+      if (endsAt - performance.now() <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native browser recovery exhausted the operation budget', { retryable: false });
+      return { attempt, scope: attempt.scope, operation: current };
+    } catch (cause) {
+      if (diagnostic !== undefined) this.secretsDiagnostics?.emit(diagnostic, { kind: 'admission', stage: diagnosticStage, wire: 'absent', origin: 'unjoined' });
+      throw cause;
     }
-    await this.ensureConnected(current, attempt);
-    this.assertAttempt(attempt);
-    if (operation.signal.aborted) throw new EngineError('CANCELLED', 'Native operation was cancelled', { retryable: false });
-    if (endsAt - performance.now() <= 0) throw new EngineError('OPERATION_TIMEOUT', 'Native browser recovery exhausted the operation budget', { retryable: false });
-    return { attempt, scope: attempt.scope, operation: current };
   }
 
   private async ensureConnected(operation: OperationContext, attempt: Attempt): Promise<void> {
@@ -1237,9 +1303,10 @@ export class NativeSurface implements NativeWebSurface {
     finally { clearTimeout(timer); cutoff.abort(); }
   }
   async locate(expression: LocatorExpression, operation: OperationContext, options?: EngineLocateOptions): Promise<readonly SemanticNode[]> {
-    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
+    const diagnostic = this.secretsContext(this.attempt);
+    const admitted = await this.admit(operation, undefined, diagnostic); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const scope = this.identityScope; const client = this.requireClient(); const publication = client.publicationCheckpoint(); const pageEpoch = admitted.attempt.epoch;
-    const result = await this.engineCommand(options?.purpose === 'fixture' ? 'fixture.query' : 'browser.query', { identityScope: scope, expression, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
+    const result = await withSecretsContext(diagnostic, () => this.engineCommand(options?.purpose === 'fixture' ? 'fixture.query' : 'browser.query', { identityScope: scope, expression, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation));
     if (result.identityScope !== scope) throw this.invalidate();
     this.assertPublication(client, publication);
     this.assertObservationOwner(admitted.attempt, scope, pageEpoch, client);
@@ -1342,7 +1409,11 @@ export class NativeSurface implements NativeWebSurface {
     }
     // Never permanently latch a waiter timeout or synthetic closed-frame cancel.
     // Its retained actual work can still succeed or supply the first real error.
-    if (!provisional && (this.attempt === attempt || this.retiringAttempt === attempt)) this.retirementFailure ??= error;
+    if (!provisional && (this.attempt === attempt || this.retiringAttempt === attempt)) {
+      const diagnosticBefore = this.retirementFailure;
+      this.retirementFailure ??= error;
+      this.observeSecretsRetirement(attempt, diagnosticBefore, 'publication');
+    }
   }
 
   async restart(operation: OperationContext): Promise<void> {

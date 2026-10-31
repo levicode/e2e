@@ -14,6 +14,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { withEngineSecretsDiagnostics } from '../helpers/engine-secrets-diagnostics.ts';
 import { web } from '@e2e-dev/web';
 import type { E2EConfig } from '../../src/index.ts';
 import type { RunOutcome } from '../../src/run/runner.ts';
@@ -80,10 +81,10 @@ describe('a secret in an engine option', () => {
 
   beforeAll(async () => {
     app = await startFixtureApp();
-    ({ outcome, project } = await runProjectWithConfigFile(
+    ({ outcome, project } = await withEngineSecretsDiagnostics(onEvent => runProjectWithConfigFile(
       { 'tests/basic-auth.e2e.ts': SUITE },
-      { appUrl: app.url, configSource: CONFIG },
-    ));
+      { appUrl: app.url, configSource: CONFIG, runOptions: onEvent === undefined ? {} : { onEvent } },
+    )));
   }, 120_000);
 
   afterAll(async () => {

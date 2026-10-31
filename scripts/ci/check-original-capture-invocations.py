@@ -140,6 +140,18 @@ def main():
         # Malformed evidence and unexpected coordinator failures are also RED.
         summary['custodyFailure']=type(exc).__name__+': '+str(exc);status=1
     finally:
+        # Independent closed projection validation still runs if an older capture group failed.
+        # Its diagnostic outcome never replaces the original package-test exit/result.
+        if os.environ.get('E2E_ENGINE_SECRETS_CAPTURE')=='1':
+            try:
+                secrets_code=subprocess.run([sys.executable,'scripts/ci/check-engine-secrets-envelope.py','--evidence','evidence'],check=False).returncode
+                summary['engineSecretsCapture']={'validatorExit':secrets_code,'statusFile':'engine-secrets-capture-status.json','coverage':'observed-only','businessGateUnchanged':True}
+                status=int(bool(status or secrets_code))
+            except Exception:
+                summary['engineSecretsCapture']={'validatorExit':None,'error':'validator-invocation-failed','coverage':'observed-only','businessGateUnchanged':True}
+                status=1
+        else:
+            summary['engineSecretsCapture']={'status':'not-enabled','businessGateUnchanged':True}
         summary['diagnosticGateExit']=status
         summary['behaviorAndDiagnosticGatesAreSeparate']=True
         pathlib.Path('evidence/original-capture-status.json').write_text(json.dumps(summary,indent=2)+'\n')

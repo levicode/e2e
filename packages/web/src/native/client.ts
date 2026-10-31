@@ -1,3 +1,4 @@
+import { captureSecretsContext, observeSecretsQuery } from './secrets-diagnostics.ts';
 import { DISCONNECTED_RECOVERY_CAPABILITY, TERMINAL_RECORDING_CAPABILITY } from './capabilities.ts';
 import { collectFinalizedRecording, type FinalizedRecordingIdentity, type FinalizedVideoBytes, type FinalizedVideoSnapshot, type FinalizedRecordingCommand } from './finalized-recording.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -487,6 +488,7 @@ export class NativeClient {
   }
 
   private exchange(kind: Pending['kind'], message: Readonly<Record<string, unknown>>, context: OperationContext, operationSeq?: number, callbackTransition?: number, cancelTarget?: number, dispatchSignal?: AbortSignal): Promise<ServerMessage> {
+    const secretsContext = captureSecretsContext();
     const trace = this.channel.acceptanceTrace;
     const target = operationSeq ?? cancelTarget;
     // Artifact controls reuse request framing; diagnostics describe the wire kind.
@@ -537,6 +539,7 @@ export class NativeClient {
         }
         if (pageUrlFailure !== undefined && settled.type === 'result') this.observePageUrlFailure(pageUrlFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
         if (queryReadCommand !== undefined && queryReadFailure !== undefined && settled.type === 'result') this.observeQueryReadFailure(queryReadCommand, queryReadFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged, message['generation'], message['operationSeq']);
+        if (queryReadCommand !== undefined && queryReadFailure !== undefined && settled.type === 'result') observeSecretsQuery(this, secretsContext, queryReadCommand, queryReadFailure, settled, { generation: message['generation'], operationSeq: message['operationSeq'], transmittedTimeoutMs: message['timeoutMs'], cancellation, timeoutRewritten, cancelAckSeen: cancelAcknowledged });
         if (lifecycleOpenCancelCommand !== undefined && lifecycleOpenCancelFailure !== undefined && settled.type === 'result') this.observeLifecycleOpenCancelFailure(lifecycleOpenCancelCommand, lifecycleOpenCancelFailure, settled, message['timeoutMs'], cancellation, timeoutRewritten, cancelAcknowledged);
         resolve(settled);
       };
