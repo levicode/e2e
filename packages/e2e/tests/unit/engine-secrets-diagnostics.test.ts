@@ -241,10 +241,15 @@ describe('bounded engine secret evidence', () => {
     const missing = { ...process.env }; delete missing[field]; expect(projectEngineSecretsIdentity(missing, process.version)).toBeUndefined();
     expect(projectEngineSecretsIdentity({ ...process.env, [field]: 'CANARY\nINJECT' }, process.version)).toBeUndefined();
   });
-  it('refuses unsupported, mismatched, padded and unbounded consumer identities', () => {
-    for (const selector of ['20.19.0', '24.1000.1', 'v24.19.0', '24.19.0\n']) expect(projectEngineSecretsIdentity({ ...process.env, NODE_SELECTOR: selector }, `v${selector}`)).toBeUndefined();
-    expect(projectEngineSecretsIdentity(process.env, 'v22.23.4')).toBeUndefined();
-    for (const run of ['0', '01', '1'.repeat(21)]) expect(projectEngineSecretsIdentity({ ...process.env, GITHUB_RUN_ID: run }, process.version)).toBeUndefined();
+  it.each([
+    ['22.23.4', 'v24.22.1'],
+    ['24.22.1', 'v22.23.4'],
+  ])('refuses invalid identities independently of the host runtime: %s', (selector, mismatchedVersion) => {
+    const identity = { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2', NODE_SELECTOR: selector, E2E_CAPTURE_SOURCE_COMMIT: 'd'.repeat(40), E2E_CAPTURE_SOURCE_TREE: 'e'.repeat(40) };
+    expect(projectEngineSecretsIdentity(identity, `v${selector}`)).toEqual({ consumerRun: '123', consumerAttempt: '2', selector, nodeVersion: `v${selector}`, sourceCommit: 'd'.repeat(40), sourceTree: 'e'.repeat(40), caseSchema: 'engine-secrets-five-v1' });
+    for (const invalidSelector of ['20.19.0', '24.1000.1', 'v24.19.0', '24.19.0\n']) expect(projectEngineSecretsIdentity({ ...identity, NODE_SELECTOR: invalidSelector }, `v${invalidSelector}`)).toBeUndefined();
+    expect(projectEngineSecretsIdentity(identity, mismatchedVersion)).toBeUndefined();
+    for (const run of ['0', '01', '1'.repeat(21)]) expect(projectEngineSecretsIdentity({ ...identity, GITHUB_RUN_ID: run }, `v${selector}`)).toBeUndefined();
   });
   it('binds BEGIN and END to actual consumer identity and labels base source separately', async () => {
     vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '1'); const written: string[] = [];
@@ -256,13 +261,31 @@ describe('bounded engine secret evidence', () => {
     expect(written.join('')).toContain('"baseConsumer":"ad67f6c766c093800a04315ae5f05feb148cf28c"'); expect(written.join('')).not.toContain('"sourceConsumer"');
   });
   it('makes missing identity explicitly unavailable without changing result, error or runtime env', async () => {
-    vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '1'); vi.stubEnv('NODE_SELECTOR', 'CANARY'); vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', 'prior');
+    vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '1'); vi.stubEnv('NODE_SELECTOR', 'CANARY'); vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', '0');
     const written: string[] = []; vi.spyOn(process.stderr, 'write').mockImplementation(text => { written.push(String(text)); return true; });
     const value = { outcome: { report: report() } }; let sink: RunEventSink | undefined;
     await expect(withEngineSecretsDiagnostics(async onEvent => { sink = onEvent; return value; })).resolves.toBe(value);
     const failure = new Error('BUSINESS'); await expect(withEngineSecretsDiagnostics(async () => { throw failure; })).rejects.toBe(failure);
-    expect(sink).toBeUndefined(); expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('prior');
+    expect(sink).toBeUndefined(); expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('0');
     expect(written.every(line => line.startsWith('ENGINE_SECRETS_DIAGNOSTIC_UNAVAILABLE '))).toBe(true); expect(written.join('')).not.toContain('CANARY'); expect(written.join('')).not.toContain('BUSINESS');
+  });
+  it.each(['1', 'prior'])('isolates conflicting active diagnostics without altering the business result: %s', async active => {
+    vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '1'); vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', active);
+    vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE_NONCE', 'a'.repeat(64)); vi.stubEnv('E2E_NATIVE_DIAGNOSTIC_SUITE', 'unserved-model-two-workers');
+    const written: string[] = []; vi.spyOn(process.stderr, 'write').mockImplementation(text => { written.push(String(text)); return true; });
+    const value = { outcome: { report: report() } };
+    await expect(withEngineSecretsDiagnostics(async onEvent => { expect(onEvent).toBeUndefined(); expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('0'); return value; })).resolves.toBe(value);
+    const failure = new Error('BUSINESS_CANARY'); await expect(withEngineSecretsDiagnostics(async () => { expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('0'); throw failure; })).rejects.toBe(failure);
+    expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe(active); expect(process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE']).toBe('a'.repeat(64)); expect(process.env['E2E_NATIVE_DIAGNOSTIC_SUITE']).toBe('unserved-model-two-workers');
+    expect(written.filter(line => line.startsWith('NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT '))).toHaveLength(2);
+    expect(written.every(line => line.startsWith('NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT ') || line.startsWith('ENGINE_SECRETS_DIAGNOSTIC_UNAVAILABLE '))).toBe(true);
+    expect(written.join('')).not.toContain('BUSINESS_CANARY'); expect(written.join('')).not.toContain('a'.repeat(64));
+  });
+  it('does not default an unknown suite to secrets', async () => {
+    vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '1'); vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', '0'); vi.stubEnv('E2E_NATIVE_DIAGNOSTIC_SUITE', 'PRIVATE_SUITE_CANARY');
+    const written: string[] = []; vi.spyOn(process.stderr, 'write').mockImplementation(text => { written.push(String(text)); return true; });
+    await withEngineSecretsDiagnostics(async onEvent => { expect(onEvent).toBeUndefined(); return { outcome: { report: report() } }; });
+    expect(written.some(line => line.startsWith('NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT '))).toBe(true); expect(written.join('')).not.toContain('PRIVATE_SUITE_CANARY');
   });
   it('is inert without exact opt-in', async () => {
     vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '0'); let sink: RunEventSink | undefined;

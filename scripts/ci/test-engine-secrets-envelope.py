@@ -4,7 +4,7 @@ from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('validator',pathlib.Path(__file__).with_name('check-engine-secrets-envelope.py'));v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
 EXPECTED={'consumerRun':'123','consumerAttempt':'1','selector':'24.22.1','nodeVersion':'v24.22.1','sourceCommit':'a'*40,'sourceTree':'b'*40,'caseSchema':'engine-secrets-five-v1'}
 def fixture():
-    env={'schemaVersion':1,'suite':'engine-secrets','captureNonce':'c'*64,**EXPECTED};rows=[]
+    env={'schemaVersion':1,'suite':'engine-secrets','captureNonce':'c'*64,'diagnosticContract':'secrets-native-custody-v2','nativeCapture':'ready',**EXPECTED};rows=[]
     for n in range(1,6):
         base={'v':1,'workerOrdinal':1 if n%2 else 2,'caseOrdinal':n,'surface':1,'attempt':n}
         rows.append({**base,'kind':'start'});rows.append({**base,'kind':'cleanup',**{k:True for k in v.CLEAN},'connectingCleanupFailurePresent':False,'reason':'complete','dirty':'unknown'})
@@ -12,7 +12,7 @@ def fixture():
         failed=n in {2,3};row={'v':1,'kind':'case','caseOrdinal':n,'status':'failed' if failed else 'passed','attemptCount':1,'attemptStatus':'failed' if failed else 'passed','phase':'body' if failed else 'not-present','errorCode':'ASSERTION_FAILED' if failed else 'not-present','cleanup':'complete','secondaryErrorCount':0,'secondaryErrors':[]}
         if n==1:row.update(runErrorCount=0,runErrors=[])
         rows.append(row)
-    custody={'schemaVersion':1,'suite':'engine-secrets','baseConsumer':v.BASE,'projection':'complete','lifecycle':'observed','coverage':'observed-only','exhaustive':False,'noAbsenceInference':True,'invalidRecords':0,'overflow':False,'rows':15,'workerBindings':2,'surfaceBindings':2,'attemptBindings':5,'nativeOrigin':'unknown','began':True}
+    custody={'schemaVersion':1,'suite':'engine-secrets','baseConsumer':v.BASE,'projection':'complete','lifecycle':'observed','coverage':'observed-only','exhaustive':False,'noAbsenceInference':True,'invalidRecords':0,'overflow':False,'rows':15,'workerBindings':2,'surfaceBindings':2,'attemptBindings':5,'nativeOrigin':'unknown','began':True,'nativeArchive':'copied'}
     return env,rows,custody
 def line(kind,row):return (v.P+kind+' '+json.dumps(row,separators=(',',':'))+'\n').encode()
 def encode(env,rows,custody):return b'original unrelated log\n'+line('_BEGIN',env)+b''.join(line('',r) for r in rows)+line('_CUSTODY',custody)+line('_END',env)
@@ -72,7 +72,10 @@ class Controls(unittest.TestCase):
                     with patch.dict(os.environ,{'E2E_ENGINE_SECRETS_CAPTURE':'1'}),verify,patch.object(module.subprocess,'run',return_value=types.SimpleNamespace(returncode=new_code)) as run,patch.object(sys,'argv',['check','unused']):
                         with self.assertRaises(SystemExit) as stopped:module.main()
                     self.assertEqual(stopped.exception.code,int(old_failure or bool(new_code)))
-                    run.assert_called_once_with([sys.executable,'scripts/ci/check-engine-secrets-envelope.py','--evidence','evidence'],check=False)
+                    self.assertEqual(run.call_count,2)
+                    self.assertEqual(run.call_args_list[0].args[0],[sys.executable,'scripts/ci/check-engine-secrets-envelope.py','--evidence','evidence'])
+                    self.assertEqual(run.call_args_list[1].args[0],[sys.executable,'scripts/ci/check-unserved-model-envelope.py','--evidence','evidence'])
+                    self.assertTrue(all(call.kwargs=={'check':False} for call in run.call_args_list))
                     result=json.loads((root/'original-capture-status.json').read_text());self.assertEqual(result['originalPackageTestExit'],business)
                     self.assertEqual((root/'test-e2e.exit').read_text(),business+'\n');self.assertTrue(result['behaviorAndDiagnosticGatesAreSeparate'])
                 finally:os.chdir(previous)
@@ -88,17 +91,33 @@ class Controls(unittest.TestCase):
                 self.assertEqual(stopped.exception.code,0);run.assert_not_called()
                 result=json.loads(pathlib.Path('evidence/original-capture-status.json').read_text());self.assertEqual(result['engineSecretsCapture']['status'],'not-enabled')
             finally:os.chdir(previous)
+    def test_each_finally_validator_runs_even_if_the_other_throws(self):
+        path=pathlib.Path(__file__).with_name('check-original-capture-invocations.py');spec=importlib.util.spec_from_file_location('parallel_status',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        for responses in [[RuntimeError('controlled'),types.SimpleNamespace(returncode=0)],[types.SimpleNamespace(returncode=0),RuntimeError('controlled')]]:
+            with tempfile.TemporaryDirectory() as directory:
+                previous=os.getcwd();os.chdir(directory)
+                try:
+                    pathlib.Path('evidence').mkdir();pathlib.Path('evidence/test-e2e.exit').write_text('7\n')
+                    with patch.dict(os.environ,{'E2E_ENGINE_SECRETS_CAPTURE':'1'}),patch.object(module,'verify',return_value=[]),patch.object(module.subprocess,'run',side_effect=responses) as run,patch.object(sys,'argv',['check','unused']):
+                        with self.assertRaises(SystemExit) as stopped:module.main()
+                    self.assertEqual(stopped.exception.code,1);self.assertEqual(run.call_count,2)
+                    status=json.loads(pathlib.Path('evidence/original-capture-status.json').read_text());self.assertIn('engineSecretsCapture',status);self.assertIn('unservedModelCapture',status);self.assertEqual(status['originalPackageTestExit'],'7');self.assertEqual(pathlib.Path('evidence/test-e2e.exit').read_text(),'7\n')
+                finally:os.chdir(previous)
     def test_failure_digest_is_explicitly_only_read_prefix(self):
         result=check(b'ENGINE_SECRETS_DIAGNOSTIC_BEGIN invalid\nremaining original log\n')
         self.assertFalse(result['logReadComplete']);self.assertIn('readPrefixSha256',result);self.assertNotIn('originalLogSha256',result)
     def test_cli_status_separates_valid_failed_business_from_diagnostic_acceptance(self):
+        helper_spec=importlib.util.spec_from_file_location('native_fixture',pathlib.Path(__file__).with_name('test-engine-secrets-native-custody.py'));helper=importlib.util.module_from_spec(helper_spec);helper_spec.loader.exec_module(helper)
         with tempfile.TemporaryDirectory() as directory:
-            root=pathlib.Path(directory);log=root/'fixtures'/'24.22.1'/'core';log.mkdir(parents=True);(log/'test-e2e.log').write_bytes(encode(*fixture()))
-            for filename,value in [('source.commit',EXPECTED['sourceCommit']),('source.tree',EXPECTED['sourceTree']),('node.version',EXPECTED['nodeVersion']),('test-e2e.exit','7')]: (root/filename).write_text(value+'\n')
-            with patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','NODE_SELECTOR':'24.22.1'}),patch.object(sys,'argv',['validator','--evidence',str(root)]),patch('builtins.print'):
+            workspace=pathlib.Path(directory);root=helper.cli_fixture(workspace)
+            with patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','NODE_SELECTOR':'24.22.1','E2E_ENGINE_SECRETS_CAPTURE':'1'}),patch.object(sys,'argv',['validator','--evidence',str(root)]),patch.object(v,'__file__',str(workspace/'scripts/ci/check-engine-secrets-envelope.py')),patch('builtins.print'):
                 self.assertEqual(v.main(),0)
-            status=json.loads((root/'engine-secrets-capture-status.json').read_text());self.assertEqual(status['originalPackageTestExit'],7);self.assertEqual(status['artifactEnvelope'],'accepted');self.assertEqual((root/'test-e2e.exit').read_text(),'7\n')
+            status=json.loads((root/'engine-secrets-capture-status.json').read_text());self.assertEqual(status['originalPackageTestExit'],7);self.assertEqual(status['artifactEnvelope'],'accepted');self.assertEqual(status['nativeCustody']['processCustody'],'verified');self.assertEqual((root/'test-e2e.exit').read_text(),'7\n')
     def test_invalid_retirement_and_cleanup_conjunction(self):
         env,rows,c=fixture();rows[1]['released']=False;self.assertEqual(check(encode(env,rows,c))['artifactEnvelope'],'incomplete')
         env,rows,c=fixture();owner={k:rows[0][k] for k in ['v','workerOrdinal','caseOrdinal','surface','attempt']};rows.insert(1,{**owner,'kind':'retirement','stage':'publication','before':'value','after':'value'});c['rows']=16;self.assertEqual(check(encode(env,rows,c))['artifactEnvelope'],'incomplete')
+    def test_new_native_contract_and_conflict_are_strict(self):
+        env,rows,c=fixture();valid=encode(env,rows,c)
+        for data in [valid+b'NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT {"schemaVersion":1,"status":"incomplete"}\n',valid.replace(b'secrets-native-custody-v2',b'v1'),valid.replace(b'"nativeArchive":"copied"',b'"nativeArchive":"incomplete"'),valid.replace(b'"nativeCapture":"ready"',b'"nativeCapture":"unavailable"')]:
+            self.assertEqual(check(data)['artifactEnvelope'],'incomplete')
 if __name__=='__main__':unittest.main()

@@ -35,7 +35,8 @@ def identity(row):
     need(row['nodeVersion']=='v'+row['selector'] and row['caseSchema']=='engine-secrets-five-v1','invalid-identity')
     for k in ['sourceCommit','sourceTree']: need(type(row[k]) is str and re.fullmatch('[a-f0-9]{40}',row[k]),'invalid-identity')
 def envelope(row,expected):
-    exact(row,IDENTITY|{'schemaVersion','suite','captureNonce'})
+    exact(row,IDENTITY|{'schemaVersion','suite','captureNonce','diagnosticContract','nativeCapture'})
+    need(row['diagnosticContract']=='secrets-native-custody-v2' and row['nativeCapture']=='ready','native-contract-unavailable')
     need(type(row['schemaVersion']) is int and row['schemaVersion']==1 and row['suite']=='engine-secrets','invalid-envelope')
     need(type(row['captureNonce']) is str and re.fullmatch('[a-f0-9]{64}',row['captureNonce']),'invalid-nonce')
     actual={k:row[k] for k in IDENTITY};identity(actual);need(actual==expected,'identity-mismatch')
@@ -64,7 +65,7 @@ def validate_rows(rows,custody):
             if 'workerOrdinal' in row: need(integer(row['workerOrdinal'],1,8),'invalid-worker')
             else: need(row['worker']=='unjoined','invalid-worker')
             lost=True;continue
-        extras={'start':set(),'guard':GUARD,'admission':{'stage','origin','wire'},'retirement':{'stage','before','after'},'cleanup':CLEAN|{'reason','dirty'},'overflow':{'limit'},'query':set('client generation operationSeq command transmittedTimeoutMs selectedLocalCancel rawCode rawEffects rawScopeState returnedCode timeoutRewritten cancelAckSeen'.split())}
+        extras={'start':set(),'guard':GUARD,'admission':{'stage','origin','wire'},'retirement':{'stage','before','after'},'cleanup':CLEAN|{'reason','dirty'},'overflow':{'limit'},'process-binding':{'client','proxyPid'},'close':{'client','stage','outcome','closedFrameConfirmed','code','origin'},'query':set('client generation operationSeq command transmittedTimeoutMs selectedLocalCancel rawCode rawEffects rawScopeState returnedCode timeoutRewritten cancelAckSeen'.split())}
         need(type(kind) is str and kind in extras,'invalid-kind');exact(row,common|extras[kind])
         for k,hi in [('workerOrdinal',8),('caseOrdinal',5),('surface',16),('attempt',16)]: need(integer(row[k],1,hi),'invalid-owner')
         owner=(row['workerOrdinal'],row['surface'],row['attempt']);surface=owner[:2]
@@ -79,6 +80,11 @@ def validate_rows(rows,custody):
             owners[owner]['terminal']=True
         elif kind=='admission':
             member(row['stage'],ADMISSION);need(row['wire']=='absent' and row['origin']=='unjoined','invalid-admission');witness.add(row['caseOrdinal'])
+        elif kind=='process-binding':
+            need(integer(row['client'],1,16) and integer(row['proxyPid'],1,2**32-1),'invalid-process-binding')
+        elif kind=='close':
+            need(integer(row['client'],1,16) and type(row['closedFrameConfirmed']) is bool and row['code']=='unknown' and row['origin']=='unjoined','invalid-close')
+            member(row['stage'],{'preconditions','decision-receipts','close-exchange','channel-settle','post-settle','existing-client-failure','reuse-existing-close'});member(row['outcome'],{'observed','completed','failed'})
         elif kind=='retirement':
             member(row['stage'],RETIRE);member(row['before'],{'undefined','null'});member(row['after'],{'null','value'});need(row['before']!=row['after'],'invalid-retirement-transition')
             if row['after']!='undefined': retired.add(surface)
@@ -99,8 +105,8 @@ def validate_rows(rows,custody):
         if row['errorCode']=='ACTION_MAY_HAVE_COMMITTED':need(n in witness,'missing-uncertainty-witness')
         if row['cleanup'] in {'failed','forced'}:need(any(x.get('kind')=='retirement' and x.get('caseOrdinal')==n for x in rows) or lost,'missing-cleanup-witness')
     if cases[1]['runErrorCount']:need(bool(retired) or lost,'missing-run-error-witness')
-    keys=set('schemaVersion suite baseConsumer projection lifecycle coverage exhaustive noAbsenceInference invalidRecords overflow rows workerBindings surfaceBindings attemptBindings nativeOrigin began'.split())
-    exact(custody,keys);need(type(custody['schemaVersion']) is int and custody['schemaVersion']==1 and custody['suite']=='engine-secrets' and custody['baseConsumer']==BASE,'invalid-custody')
+    keys=set('schemaVersion suite baseConsumer projection lifecycle coverage exhaustive noAbsenceInference invalidRecords overflow rows workerBindings surfaceBindings attemptBindings nativeOrigin began nativeArchive'.split())
+    exact(custody,keys);need(custody['nativeArchive']=='copied','native-archive-incomplete');need(type(custody['schemaVersion']) is int and custody['schemaVersion']==1 and custody['suite']=='engine-secrets' and custody['baseConsumer']==BASE,'invalid-custody')
     need(custody['coverage']=='observed-only' and custody['exhaustive'] is False and custody['noAbsenceInference'] is True and custody['nativeOrigin']=='unknown' and custody['began'] is True,'invalid-semantics')
     member(custody['projection'],{'complete','incomplete'});member(custody['lifecycle'],{'observed','incomplete'});need(type(custody['overflow']) is bool and integer(custody['invalidRecords'],0,65),'invalid-custody')
     for key,value in [('rows',len(rows)),('workerBindings',len(workers)),('surfaceBindings',len(surfaces)),('attemptBindings',len(owners))]:need(type(custody[key]) is int and custody[key]==value,'custody-count-mismatch')
@@ -115,6 +121,7 @@ def verify_log(stream,expected):
             line=stream.readline(1048577)
             if not line:read_complete=True;break
             digest.update(line);size+=len(line);need(len(line)<=1048576,'original-log-line-cap');need(size<=512*1024*1024,'original-log-size-cap')
+            if line.startswith(b'NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT '):raise Invalid('capture-conflict')
             if not line.startswith(P.encode()):continue
             need(len(line)<=2048 and line.endswith(b'\n'),'diagnostic-line-cap')
             head,sep,data=line.partition(b' ');need(bool(sep),'invalid-prefix');head=head.decode('ascii');row=parse(data)
@@ -124,7 +131,7 @@ def verify_log(stream,expected):
             elif head==P:need(begin is not None and not ended and custody is None,'row-outside-region');rows.append(row);need(len(rows)<=64,'row-cap')
             elif head==P+'_UNAVAILABLE':raise Invalid('identity-unavailable')
             else:raise Invalid('unknown-prefix')
-        need(begin is not None and ended,'missing-envelope');result['cases']=validate_rows(rows,custody);result['artifactEnvelope']='accepted';result['identity']=expected;result['rows']=len(rows)
+        need(begin is not None and ended,'missing-envelope');result['cases']=validate_rows(rows,custody);result['artifactEnvelope']='accepted';result['identity']=expected;result['rows']=len(rows);result['captureNonce']=begin['captureNonce'];result['diagnosticContract']=begin['diagnosticContract'];result['workerBindings']=custody['workerBindings'];result['processBindings']=[row for row in rows if row['kind']=='process-binding'];result['nativeJoinRows']=[row for row in rows if row['kind'] in ('query','close')]
     except Invalid as exc: result['errors']=[str(exc)]
     except Exception: result['errors']=['validator-internal-error']
     result['readPrefixSha256']=digest.hexdigest();result['logBytesRead']=size;result['logReadComplete']=read_complete
@@ -143,11 +150,19 @@ def main():
         need(all(not p.is_symlink() for p in [path,*list(path.parents)[:3]]) and path.is_file(),'original-log-invalid')
         with path.open('rb') as stream:result=verify_log(stream,expected)
         outcome=small(root/'test-e2e.exit');need(re.fullmatch('[0-9]{1,3}',outcome) is not None,'original-test-exit-invalid');result['originalPackageTestExit']=int(outcome)
+        if result.get('artifactEnvelope')=='accepted':
+            import importlib.util
+            native_path=pathlib.Path(__file__).with_name('check-engine-secrets-native-custody.py')
+            spec=importlib.util.spec_from_file_location('engine_secrets_native_custody',native_path);native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+            try:result['nativeCustody']=native.verify_from_evidence(path.parent)
+            except native.Invalid as exc:raise Invalid('native-'+str(exc)) from None
     except Invalid as exc:result['artifactEnvelope']='incomplete';result['errors']=[str(exc)]
     except Exception:result['artifactEnvelope']='incomplete';result['errors']=['validator-internal-error']
+    result['diagnosticStatus']='accepted' if result.get('artifactEnvelope')=='accepted' and result.get('nativeCustody',{}).get('traceCoverage')=='observed' else 'incomplete'
+    if result.get('artifactEnvelope')=='accepted' and result['diagnosticStatus']=='incomplete':result['errors'].append('native-trace-loss')
     output=root/'engine-secrets-capture-status.json'
     need(root.is_dir() and not root.is_symlink() and not output.is_symlink(),'status-path-invalid')
     output.write_text(json.dumps(result,indent=2)+'\n')
-    print('engine-secrets envelope: '+result['artifactEnvelope'])
-    return 0 if result['artifactEnvelope']=='accepted' else 1
+    print('engine-secrets envelope: '+result['artifactEnvelope']+'; diagnostics: '+result['diagnosticStatus'])
+    return 0 if result['diagnosticStatus']=='accepted' else 1
 if __name__=='__main__':raise SystemExit(main())

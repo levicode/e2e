@@ -4,6 +4,8 @@ set -euo pipefail
 python3 scripts/ci/test-check-critical-query-traces.py
 python3 scripts/ci/test-original-capture-custody.py
 python3 scripts/ci/test-engine-secrets-envelope.py
+python3 scripts/ci/test-engine-secrets-native-custody.py
+python3 scripts/ci/test-unserved-model-envelope.py
 install -m 700 scripts/ci/native-trace-wrapper.sh evidence/tools/popup-trace.sh
 cmp scripts/ci/native-trace-wrapper.sh evidence/tools/popup-trace.sh
 for name in popup-init-order popup-init-order-borrowed replaced-nodes popup-swipe-pair popup-swipe-borrowed-pair on-action-delayed; do

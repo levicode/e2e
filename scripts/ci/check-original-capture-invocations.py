@@ -98,6 +98,16 @@ def verify(root):
         key=matching[0];assert key not in used;used.add(key)
         expected=groups[key];assert ordinary==query==expected, f'missing/extra process trace for {name}'
         plan.append({'fixture':name,'expected':len(expected),'pids':sorted(expected),'daemonPIDs':sorted(mapping_by_proxy[p] for p in expected),'traceDirectory':key})
+    if set(groups)-used:
+        # An additional group has no ownership until the independent v2 native
+        # checker proves its original envelope, complete PID census and custody.
+        import importlib.util
+        checker_path=pathlib.Path(__file__).with_name('check-engine-secrets-native-custody.py')
+        spec=importlib.util.spec_from_file_location('secrets_native_custody',checker_path);checker=importlib.util.module_from_spec(spec);spec.loader.exec_module(checker)
+        proof=checker.verify_from_evidence(root)
+        key=proof['traceDirectory']
+        assert proof['processCustody']=='verified' and key in set(groups)-used and groups[key]==set(proof['proxyPids']), 'unassigned secrets custody group'
+        used.add(key)
     assert used==set(groups),'unassigned invocation group'
     (root/'expected-processes.json').write_text(json.dumps(plan,indent=2)+'\n')
     return plan
@@ -152,6 +162,17 @@ def main():
                 status=1
         else:
             summary['engineSecretsCapture']={'status':'not-enabled','businessGateUnchanged':True}
+        # A separate suite never borrows secrets ownership, failure or acceptance.
+        if os.environ.get('E2E_ENGINE_SECRETS_CAPTURE')=='1':
+            try:
+                unserved_code=subprocess.run([sys.executable,'scripts/ci/check-unserved-model-envelope.py','--evidence','evidence'],check=False).returncode
+                summary['unservedModelCapture']={'validatorExit':unserved_code,'statusFile':'unserved-model-capture-status.json','coverage':'observed-only','businessGateUnchanged':True}
+                status=int(bool(status or unserved_code))
+            except Exception:
+                summary['unservedModelCapture']={'validatorExit':None,'error':'validator-invocation-failed','coverage':'observed-only','businessGateUnchanged':True}
+                status=1
+        else:
+            summary['unservedModelCapture']={'status':'not-enabled','businessGateUnchanged':True}
         summary['diagnosticGateExit']=status
         summary['behaviorAndDiagnosticGatesAreSeparate']=True
         pathlib.Path('evidence/original-capture-status.json').write_text(json.dumps(summary,indent=2)+'\n')

@@ -1,3 +1,4 @@
+import { prepareEngineSecretsNativeCustody } from './engine-secrets-native-custody.ts';
 /** Closed, opt-in evidence for the unchanged two-worker synthetic secret suite. */
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -11,6 +12,8 @@ const state = z.enum(['undefined', 'null', 'value']);
 const nativeCode = z.enum(['frame-not-found', 'frame-ambiguous', 'invalid-frame', 'unsupported-protocol', 'unsupported-capability', 'stale-generation', 'scope-unavailable', 'sequence-reused', 'invalid-sequence', 'invalid-timeout', 'capacity-exceeded', 'operation-missing', 'content-length-mismatch', 'redirect-body-unavailable', 'unsupported-command', 'deadline-exceeded', 'cancelled', 'invalid-arguments', 'invalid-locator', 'browser-failure', 'stale-scope', 'cleanup-failed', 'stale-reference', 'policy-denied', 'not-actionable', 'intercepted-pointer', 'checked-state-unchanged', 'checked-control-replaced', 'fill-unsupported-target', 'no-editable-focus', 'tap-target-replaced-before-press', 'locator-not-found', 'decision-missing', 'decision-expired', 'decision-kind-mismatch', 'registry-missing', 'registry-in-use', 'identifier-exhausted', 'unknown']);
 const runtimeRow = z.discriminatedUnion('kind', [
   z.object({ ...base, kind: z.literal('start') }).strict(),
+  z.object({ ...base, kind: z.literal('process-binding'), client: integer, proxyPid: integer }).strict(),
+  z.object({ ...base, kind: z.literal('close'), client: integer, stage: z.enum(['preconditions', 'decision-receipts', 'close-exchange', 'channel-settle', 'post-settle', 'existing-client-failure', 'reuse-existing-close']), outcome: z.enum(['observed', 'completed', 'failed']), closedFrameConfirmed: z.boolean(), code: z.literal('unknown'), origin: z.literal('unjoined') }).strict(),
   z.object({ ...base, kind: z.literal('guard'), workerRetired: z.boolean(), workerCleanupUnconfirmed: z.boolean(), retirementFailurePresent: z.boolean(), attemptPresent: z.boolean(), retiringAttemptPresent: z.boolean(), connectingPresent: z.boolean() }).strict(),
   z.object({ ...base, kind: z.literal('admission'), stage: z.enum(['callback-check', 'require-attempt', 'owner-check', 'pending-latch', 'caller-aborted', 'download-readiness', 'ensure-connected', 'final-owner-check']), origin: z.literal('unjoined'), wire: z.literal('absent') }).strict(),
   z.object({ ...base, kind: z.literal('query'), client: integer, generation: integer, operationSeq: integer, command: z.enum(['fixture.read-fields', 'fixture.query', 'browser.query']), transmittedTimeoutMs: z.number().int().min(1).max(3_600_000), selectedLocalCancel: z.enum(['none', 'abort', 'deadline']), rawCode: nativeCode, rawEffects: z.enum(['not-dispatched', 'completed', 'unknown']), rawScopeState: z.enum(['usable', 'quarantined', 'closed', 'unknown']), returnedCode: nativeCode, timeoutRewritten: z.boolean(), cancelAckSeen: z.boolean() }).strict(),
@@ -54,6 +57,7 @@ export function createEngineSecretsCapture(captureNonce: string) {
   const bad = () => { invalid = Math.min(65, invalid + 1); };
   if (!hex.safeParse(captureNonce).success) bad();
   const accept = (line: string, pair: Pair | undefined) => {
+    if (line.startsWith('NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT ')) { bad(); return; }
     if (!line.startsWith(PREFIX)) return;
     if (line.length > 2048) { overflow = true; return; }
     let row: RuntimeRow;
@@ -202,8 +206,19 @@ export function projectEngineSecretsIdentity(env: Readonly<Record<string, string
 }
 
 /** Capture cannot change the original nested run's return value or thrown object. */
-export async function withEngineSecretsDiagnostics<T extends { outcome: { report: unknown } }>(run: (onEvent: RunEventSink | undefined) => Promise<T>): Promise<T> {
+export async function withEngineSecretsDiagnostics<T extends { outcome: { report: unknown } }>(run: (onEvent: RunEventSink | undefined, env?: NodeJS.ProcessEnv) => Promise<T>, projectDir?: string): Promise<T> {
   if (process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1') return run(undefined);
+  const selectedSuite = process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'];
+  if ((process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== undefined && process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== '0')
+    || (selectedSuite !== undefined && selectedSuite !== 'engine-secrets' && selectedSuite !== 'unserved-model-two-workers')) {
+    const previous = process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'];
+    try {
+      process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] = '0';
+      try { process.stderr.write('NATIVE_DIAGNOSTIC_CAPTURE_CONFLICT {"schemaVersion":1,"status":"incomplete"}\n'); } catch { /* No business effect. */ }
+      try { process.stderr.write('ENGINE_SECRETS_DIAGNOSTIC_UNAVAILABLE {"schemaVersion":1,"suite":"engine-secrets","status":"incomplete","reason":"capture-conflict"}\n'); } catch { /* No business effect. */ }
+      return await run(undefined);
+    } finally { if (previous === undefined) delete process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']; else process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] = previous; }
+  }
   const identity = projectEngineSecretsIdentity(process.env, process.version);
   if (identity === undefined) {
     try { process.stderr.write('ENGINE_SECRETS_DIAGNOSTIC_UNAVAILABLE {"schemaVersion":1,"suite":"engine-secrets","status":"incomplete","reason":"identity-unavailable"}\n'); } catch { /* Missing evidence cannot replace the workload. */ }
@@ -213,21 +228,25 @@ export async function withEngineSecretsDiagnostics<T extends { outcome: { report
   try { nonce = randomBytes(32).toString('hex'); } catch { return run(undefined); }
   const capture = createEngineSecretsCapture(nonce);
   const previous = process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']; const previousNonce = process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'];
-  process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] = '1'; process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'] = nonce;
-  const envelope = JSON.stringify({ schemaVersion: 1, suite: 'engine-secrets', captureNonce: nonce, ...identity });
+  const previousSuite = process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'];
+  process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] = '1'; process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'] = nonce; process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'] = 'engine-secrets';
+  const nativeCapture = prepareEngineSecretsNativeCustody(nonce, identity, projectDir);
+  const envelope = JSON.stringify({ schemaVersion: 1, suite: 'engine-secrets', diagnosticContract: 'secrets-native-custody-v2', nativeCapture: nativeCapture === undefined ? 'unavailable' : 'ready', captureNonce: nonce, ...identity });
   let report: unknown; let began = false;
   try {
     try { process.stderr.write(`ENGINE_SECRETS_DIAGNOSTIC_BEGIN ${envelope}\n`); began = true; } catch { /* Missing boundary makes evidence incomplete. */ }
-    const result = await run(capture.onEvent);
+    const result = await run(capture.onEvent, nativeCapture?.env);
     try { report = result.outcome.report; } catch { /* Invalid projection cannot replace a successful run. */ }
     return result;
   } finally {
     if (previous === undefined) delete process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']; else process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] = previous;
     if (previousNonce === undefined) delete process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE']; else process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'] = previousNonce;
+    if (previousSuite === undefined) delete process.env['E2E_NATIVE_DIAGNOSTIC_SUITE']; else process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'] = previousSuite;
     try {
       const result = capture.finish(report);
+      const nativeArchive = nativeCapture?.archive(result.rows) === true ? 'copied' : 'incomplete';
       for (const row of result.rows) process.stderr.write(`${PREFIX}${JSON.stringify(row)}\n`);
-      process.stderr.write(`ENGINE_SECRETS_DIAGNOSTIC_CUSTODY ${JSON.stringify({ ...result.custody, began })}\n`);
+      process.stderr.write(`ENGINE_SECRETS_DIAGNOSTIC_CUSTODY ${JSON.stringify({ ...result.custody, began, nativeArchive })}\n`);
     } catch { /* Never replace business failure or cleanup. */ }
     finally { try { process.stderr.write(`ENGINE_SECRETS_DIAGNOSTIC_END ${envelope}\n`); } catch { /* Missing end remains incomplete. */ } }
   }

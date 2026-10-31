@@ -22,7 +22,7 @@ import { secrets } from '../../src/secrets.ts';
 import { createFakeEngine, FAKE_APP, FAKE_APP_URL } from '../helpers/fake-engine.ts';
 import { fakeCalls, installFakeModel, judgment } from '../helpers/fake-model.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
-import { contentsUnder, resultByTitle, runProject, runProjectWithConfigFile, type FixtureProject } from '../helpers/run-project.ts';
+import { contentsUnder, resultByTitle, runProject, createProject, runExistingWithConfigFile, type FixtureProject } from '../helpers/run-project.ts';
 
 const PASSWORD = 'basic-Pa55-7Qz';
 /** What the `Authorization: Basic` header carries for ada and the password, which the page echoes. */
@@ -81,10 +81,10 @@ describe('a secret in an engine option', () => {
 
   beforeAll(async () => {
     app = await startFixtureApp();
-    ({ outcome, project } = await withEngineSecretsDiagnostics(onEvent => runProjectWithConfigFile(
-      { 'tests/basic-auth.e2e.ts': SUITE },
-      { appUrl: app.url, configSource: CONFIG, runOptions: onEvent === undefined ? {} : { onEvent } },
-    )));
+    project = createProject({ 'tests/basic-auth.e2e.ts': SUITE, 'e2e.config.ts': CONFIG });
+    ({ outcome } = await withEngineSecretsDiagnostics(async (onEvent, captureEnv) => ({ outcome: await runExistingWithConfigFile(project,
+      { appUrl: app.url, runOptions: { ...(onEvent === undefined ? {} : { onEvent }), ...(captureEnv === undefined ? {} : { env: { ...captureEnv, CI: '', APP_URL: app.url } }) } },
+    ), project }), project.dir));
   }, 120_000);
 
   afterAll(async () => {

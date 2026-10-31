@@ -14,3 +14,9 @@ cp -p evidence/test-e2e.log "$root/test-e2e.log"
 test -d evidence/fixture-invocations && test ! -L evidence/fixture-invocations
 test ! -e "$root/invocations"
 cp -a evidence/fixture-invocations "$root/invocations"
+# Only the bounded, schema-validated snapshot; never the secret fixture project.
+if test -d evidence/engine-secrets-native; then
+ test ! -L evidence/engine-secrets-native
+ test ! -e "$root/engine-secrets-native"
+ cp -a evidence/engine-secrets-native "$root/engine-secrets-native"
+fi

@@ -667,7 +667,7 @@ export class NativeSurface implements NativeWebSurface {
       }
     };
     let nativeClosed = false;
-    try { await client?.close(this.operation(context.signal, context.timeoutMs)); nativeClosed = true; }
+    try { await withSecretsContext(this.secretsContext(attempt), () => client?.close(this.operation(context.signal, context.timeoutMs))); nativeClosed = true; }
     catch (cause) { failed(cause, 'native-close'); }
     const closePublishedRaw = async () => {
       if (this.client !== client) return;
@@ -728,7 +728,7 @@ export class NativeSurface implements NativeWebSurface {
     const pending: PendingConnection = { work: Promise.resolve() };
     this.connecting = pending;
     pending.work = (async () => {
-      const client = await connectNativeProcess({ executable: this.executable!, cwd: info.projectRoot, env: info.env, capabilities: [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ...(this.persistent ? [] : [ISOLATED_PAGE_REOPEN_CAPABILITY])] }, operation, event => tenure === this.clientTenure ? this.onEvent(event) : undefined);
+      const client = await withSecretsContext(this.secretsContext(this.attempt), () => connectNativeProcess({ executable: this.executable!, cwd: info.projectRoot, env: info.env, capabilities: [...REQUIRED_CAPABILITIES, PAGE_IDENTITY_FENCE_CAPABILITY, ...(this.persistent ? [] : [ISOLATED_PAGE_REOPEN_CAPABILITY])] }, operation, event => tenure === this.clientTenure ? this.onEvent(event) : undefined));
       if (tenure !== this.clientTenure || operation.signal.aborted || (attempt !== undefined && this.attempt !== attempt)) {
         try { await client.close(this.operation(AbortSignal.timeout(1000), 1000)); }
         catch (cause) { pending.cleanupFailure = cause; throw cause; }

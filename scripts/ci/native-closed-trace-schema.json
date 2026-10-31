@@ -1,0 +1,923 @@
+{
+  "schemaVersion": 1,
+  "nativeCommit": "944597a2f6e08c1eb8fd89e14bb46ada56ce88ba",
+  "required": [
+    "schemaVersion",
+    "source",
+    "pid",
+    "record",
+    "operationSeq",
+    "phase",
+    "droppedBefore",
+    "emittedBefore",
+    "suppressedBefore",
+    "overflow"
+  ],
+  "fields": {
+    "schemaVersion": {
+      "enum": [
+        2
+      ]
+    },
+    "source": {
+      "enum": [
+        "native",
+        "proxy"
+      ]
+    },
+    "pid": {
+      "int": 4294967295
+    },
+    "record": {
+      "int": 9007199254740991
+    },
+    "operationSeq": {
+      "int": 9007199254740991
+    },
+    "phase": {
+      "enum": [
+        "CleanupStarted",
+        "CleanupFirstFailure",
+        "CleanupResult",
+        "RestartPostCreateRefused",
+        "ScopeReplacementRefused",
+        "InventorySnapshot",
+        "TargetAttribution",
+        "TargetLifecycle",
+        "TargetInventory",
+        "TargetInventorySummary",
+        "TargetObservationLost",
+        "ScreenshotFirstFailure",
+        "ProtectedCaptureFailure",
+        "ObservationPixelResult",
+        "FrameInventoryRejection",
+        "ReadonlyPrepareFailure",
+        "QueryScopeRefusal",
+        "QueryReadFailure",
+        "QueryCommandTiming",
+        "QueryCommandSummary",
+        "EvalAdmission",
+        "UploadPreflightRefusal",
+        "TerminalCleanupCheckpoint",
+        "ServiceWorkerAdmission",
+        "CaptureStarted",
+        "CaptureLimitReached"
+      ]
+    },
+    "droppedBefore": {
+      "int": 9007199254740991
+    },
+    "emittedBefore": {
+      "int": 9007199254740991
+    },
+    "suppressedBefore": {
+      "int": 9007199254740991
+    },
+    "overflow": "bool",
+    "eval": {
+      "object": {
+        "s": {
+          "enum": [
+            "entry",
+            "wait",
+            "capture"
+          ]
+        },
+        "c": {
+          "enum": [
+            "entry",
+            "fence",
+            "pending",
+            "unresumed",
+            "retire",
+            "health",
+            "guard",
+            "p-op",
+            "p-entryid",
+            "p-permit",
+            "p-ledger",
+            "p-eowner",
+            "p-stream",
+            "p-etarget",
+            "p-failed",
+            "p-index",
+            "p-snap",
+            "p-empty",
+            "p-front",
+            "p-cap",
+            "p-rootent",
+            "p-rootid",
+            "p-active",
+            "p-roottgt",
+            "p-rootfrm",
+            "p-mement",
+            "p-memkind",
+            "p-memfrm",
+            "p-missing",
+            "p-owner",
+            "p-origin",
+            "p-binding",
+            "p-target",
+            "p-health",
+            "p-config",
+            "p-term",
+            "p-stage",
+            "p-custody",
+            "p-ready",
+            "p-confrev",
+            "p-fence",
+            "p-c1s0",
+            "p-c1s1",
+            "p-c1s2",
+            "p-c1s3",
+            "p-c1sx",
+            "p-c2s0",
+            "p-c2s1",
+            "p-c2s2",
+            "p-c2s3",
+            "p-c2sx",
+            "p-c3s0",
+            "p-c3s1",
+            "p-c3s2",
+            "p-c3s3",
+            "p-c3sx",
+            "p-c4s0",
+            "p-c4s1",
+            "p-c4s2",
+            "p-c4s3",
+            "p-c4sx",
+            "p-c5s0",
+            "p-c5s1",
+            "p-c5s2",
+            "p-c5s3",
+            "p-c5sx",
+            "p-c6s0",
+            "p-c6s1",
+            "p-c6s2",
+            "p-c6s3",
+            "p-c6sx"
+          ]
+        },
+        "h": {
+          "nullable": {
+            "tuple": [
+              {
+                "int": 65535
+              },
+              {
+                "int": 65535
+              },
+              {
+                "int": 255
+              }
+            ]
+          }
+        },
+        "p": {
+          "nullable": {
+            "array": {
+              "int": 65535
+            },
+            "length": 8
+          }
+        },
+        "t": {
+          "nullable": {
+            "array": {
+              "int": 65535
+            },
+            "length": 3
+          }
+        },
+        "r": {
+          "nullable": {
+            "array": "bool",
+            "length": 4
+          }
+        },
+        "w": {
+          "enum": [
+            "equal",
+            "behind",
+            "ahead",
+            "unk"
+          ]
+        },
+        "v": {
+          "nullable": {
+            "int": 9007199254740991
+          }
+        },
+        "e": {
+          "nullable": {
+            "int": 9007199254740991
+          }
+        }
+      },
+      "required": [
+        "s",
+        "c",
+        "h",
+        "p",
+        "t",
+        "r",
+        "w",
+        "v",
+        "e"
+      ]
+    },
+    "queryScopeStage": {
+      "enum": [
+        "warm-worlds",
+        "initial-frames",
+        "initial-frames-entry",
+        "initial-frames-exit",
+        "protected-frames",
+        "final-frames",
+        "classification",
+        "acquire",
+        "recheck",
+        "barrier-acquire",
+        "barrier-check",
+        "publication"
+      ]
+    },
+    "queryReadStage": {
+      "enum": [
+        "read-admission",
+        "read-ui",
+        "read-frames-before",
+        "fresh-inventory",
+        "fresh-world",
+        "fresh-resolve",
+        "fresh-sample",
+        "fresh-cleanup",
+        "fresh-roots-final",
+        "read-frames-after",
+        "read-publish",
+        "frame-entry",
+        "fresh-fields",
+        "ax",
+        "dom",
+        "candidate-plan",
+        "security",
+        "metadata",
+        "query-world",
+        "candidate-plan-roots",
+        "candidate-plan-dom-backend",
+        "candidate-plan-attributes",
+        "candidate-plan-duplicate-dom",
+        "candidate-plan-ax-rows",
+        "candidate-plan-ax-decode",
+        "candidate-plan-duplicate-ax",
+        "candidate-plan-author-ids",
+        "candidate-plan-missing-record",
+        "candidate-plan-ax-child",
+        "candidate-plan-dom-object",
+        "candidate-plan-fallback",
+        "query-resolve",
+        "query-match",
+        "candidate-confirm",
+        "security-confirm",
+        "metadata-confirm",
+        "projection",
+        "cleanup",
+        "frame-final",
+        "lease-final"
+      ]
+    },
+    "queryReadError": {
+      "enum": [
+        "invalid-arguments",
+        "invalid-locator",
+        "frame-not-found",
+        "frame-ambiguous",
+        "unsupported-capability",
+        "stale-reference",
+        "superseded",
+        "cancelled",
+        "deadline-exceeded",
+        "backend-failure",
+        "policy-denied",
+        "resource-limit",
+        "cleanup-failed"
+      ]
+    },
+    "readMs": {
+      "array": {
+        "int": 65535
+      },
+      "length": 13
+    },
+    "cmd": {
+      "array": {
+        "int": 65535
+      },
+      "length": 3
+    },
+    "cmdMs": {
+      "array": {
+        "int": 65535
+      },
+      "length": 5
+    },
+    "cmdSummary": {
+      "array": {
+        "int": 65535
+      },
+      "length": 3
+    },
+    "queryScopeReason": {
+      "enum": [
+        "owner-health",
+        "owner-identity",
+        "index-health",
+        "pending-classification",
+        "subscription-changed",
+        "watermark-pending",
+        "attribution-changed",
+        "attribution-invalid",
+        "registry-health",
+        "creation-debt",
+        "unclaimed-auxiliary",
+        "guard-mismatch",
+        "already-protected",
+        "selected-not-ready",
+        "foreign-owner",
+        "unclassified-purpose",
+        "unknown-lineage",
+        "related-not-ready",
+        "unretained-unrelated",
+        "target-set-changed",
+        "selected-target-missing",
+        "dependency-revision-changed",
+        "dependency-set-changed",
+        "dependency-identity-changed",
+        "target-revision-changed",
+        "unknown-revision-changed",
+        "target-count-changed",
+        "target-identity-changed",
+        "target-lineage-changed",
+        "enrollment-target-set-changed",
+        "original-budget"
+      ]
+    },
+    "uploadRefusal": {
+      "enum": [
+        "unknown",
+        "target-resolution",
+        "label",
+        "text-node",
+        "not-file-input",
+        "disabled",
+        "directory-mismatch",
+        "multiple-mismatch"
+      ]
+    },
+    "terminalCleanupStage": {
+      "enum": [
+        "task-proof",
+        "owner-preconditions",
+        "runtime-release",
+        "persistent-probe",
+        "enrollment-proof",
+        "ledger-commands-present",
+        "physical-close",
+        "ordinary-close",
+        "shutdown-joins",
+        "final-commit"
+      ]
+    },
+    "terminalCleanupOk": "bool",
+    "restartPostCreateStage": {
+      "enum": [
+        "validate-replacement",
+        "cleanup-uploads",
+        "bind-owner",
+        "publish-identity",
+        "recording-ready",
+        "publish-result"
+      ]
+    },
+    "scopeReplacementStage": {
+      "enum": [
+        "accepted-state",
+        "stop-owner",
+        "stop-connection-watch",
+        "begin-transition",
+        "drain-operations",
+        "drain-tasks",
+        "validate-old-scope",
+        "begin-peer-replacement",
+        "retire-peer-rendezvous",
+        "confirm-peer-retirement",
+        "contain-release",
+        "retire-references",
+        "replacement-inventory",
+        "adopt-peer-replacement",
+        "create-native-replacement",
+        "initialize-runtime",
+        "restore-state",
+        "recording-ready",
+        "publish-initialization",
+        "publish-result",
+        "create-peer-rendezvous"
+      ]
+    },
+    "attachmentOrdinal": {
+      "int": 9007199254740991
+    },
+    "inventoryOrdinal": {
+      "int": 9007199254740991
+    },
+    "targetOrdinal": {
+      "int": 9007199254740991
+    },
+    "targetKind": {
+      "enum": [
+        "unrecognized",
+        "cdp-other",
+        "page",
+        "iframe",
+        "worker",
+        "shared-worker",
+        "service-worker",
+        "browser",
+        "browser-ui",
+        "tab",
+        "webview",
+        "background-page"
+      ]
+    },
+    "targetOrigin": {
+      "enum": [
+        "unclassified",
+        "initial-discovery",
+        "auto-attach"
+      ]
+    },
+    "parentAttachmentOrdinal": {
+      "int": 9007199254740991
+    },
+    "rootAttachmentOrdinal": {
+      "int": 9007199254740991
+    },
+    "targetStage": {
+      "enum": [
+        "registered",
+        "configure-started",
+        "configure-ack",
+        "configure-failed",
+        "init-immediate-enter",
+        "init-future-enter",
+        "init-script-ack",
+        "resume-enter",
+        "resume-ack",
+        "resumed",
+        "detached",
+        "restart-retiring",
+        "purpose-assigned"
+      ]
+    },
+    "targetPurpose": {
+      "enum": [
+        "unclassified",
+        "application",
+        "state-bootstrap"
+      ]
+    },
+    "targetClassification": {
+      "enum": [
+        "pending-reservation",
+        "unreserved-application",
+        "reserved-application",
+        "reserved-bootstrap",
+        "reservation-remainder"
+      ]
+    },
+    "targetConfigured": "bool",
+    "targetResumed": "bool",
+    "targetCount": {
+      "int": 9007199254740991
+    },
+    "targetSampled": {
+      "int": 9007199254740991
+    },
+    "targetObserved": "bool",
+    "generation": {
+      "int": 9007199254740991
+    },
+    "workerOrdinal": {
+      "int": 255
+    },
+    "admissionStep": {
+      "enum": [
+        "owned-attachment",
+        "auxiliary-classification",
+        "register",
+        "purpose",
+        "config-gate",
+        "network-enable",
+        "network-bypass",
+        "fetch-enable",
+        "runtime-enable",
+        "recursive-autoattach",
+        "configured",
+        "resume-permit",
+        "resume-debugger",
+        "configuration-committed"
+      ]
+    },
+    "admissionState": {
+      "enum": [
+        "enter",
+        "done",
+        "failed"
+      ]
+    },
+    "waitingForDebugger": {
+      "enum": [
+        true,
+        false,
+        "unknown"
+      ]
+    },
+    "inventoryPoint": {
+      "enum": [
+        "restart-begin",
+        "restart-ready",
+        "settlement-refused"
+      ]
+    },
+    "inventoryObserved": "bool",
+    "inventorySealed": "bool",
+    "inventoryIntegrityLost": "bool",
+    "inventoryReservations": {
+      "int": 9007199254740991
+    },
+    "inventoryUnconfigured": {
+      "int": 9007199254740991
+    },
+    "screenshotStage": {
+      "enum": [
+        "prepare-scope",
+        "prepare-permit",
+        "prepare-policy",
+        "prepare-owner",
+        "prepare-fence",
+        "run-scope",
+        "debt-admission",
+        "ui-admission",
+        "publication-admission",
+        "producer-reservation",
+        "initial-frames",
+        "frame-inventory-fence",
+        "protected-barrier",
+        "animation-stabilization",
+        "protected-frames",
+        "geometry",
+        "trace-metadata",
+        "semantic-viewport",
+        "semantic-metadata",
+        "semantic-frame-geometry",
+        "semantic-node-geometry",
+        "semantic-document-root",
+        "semantic-final-viewport",
+        "capture",
+        "restoration",
+        "final-geometry",
+        "final-barrier",
+        "final-scope",
+        "final-frames",
+        "final-viewport",
+        "blob-publication",
+        "publication"
+      ]
+    },
+    "readError": {
+      "oneOf": [
+        {
+          "object": {
+            "observation": {
+              "enum": [
+                "invalid-arguments",
+                "invalid-locator",
+                "frame-not-found",
+                "frame-ambiguous",
+                "unsupported-capability",
+                "stale-reference",
+                "superseded",
+                "cancelled",
+                "deadline-exceeded",
+                "backend-failure",
+                "policy-denied",
+                "resource-limit",
+                "cleanup-failed"
+              ]
+            }
+          },
+          "required": [
+            "observation"
+          ]
+        },
+        {
+          "object": {
+            "geometry": {
+              "enum": [
+                "invalid-geometry",
+                "incomplete-inventory",
+                "stale-identity",
+                "cancelled",
+                "superseded",
+                "deadline-exceeded",
+                "backend-failure",
+                "cleanup-failed",
+                "node-reference-binding",
+                "node-frame-binding",
+                "node-resolve-negative",
+                "node-resolve-binding-negative",
+                "node-resolve-proof-invalid",
+                "node-resolve-other",
+                "node-box-read",
+                "node-box-negative",
+                "node-box-proof-invalid",
+                "node-mixed-hard",
+                "node-mixed-negative"
+              ]
+            }
+          },
+          "required": [
+            "geometry"
+          ]
+        }
+      ]
+    },
+    "readDirty": "bool",
+    "pass": {
+      "enum": [
+        "initial",
+        "protected",
+        "final"
+      ]
+    },
+    "sealed": "bool",
+    "revisionMismatch": "bool",
+    "reservations": "bool",
+    "delta": {
+      "int": 65535
+    },
+    "events": {
+      "array": {
+        "int": 65535
+      },
+      "length": 7
+    },
+    "exact": "bool",
+    "lastEvent": {
+      "enum": [
+        "attach",
+        "detach",
+        "info",
+        "navigate",
+        "same-document",
+        "frame-detach",
+        "unknown",
+        "none"
+      ]
+    },
+    "lastTarget": {
+      "enum": [
+        "same",
+        "other",
+        "unknown"
+      ]
+    },
+    "capturePhase": {
+      "enum": [
+        "not-entered",
+        "admission",
+        "independent-coverage",
+        "source-protection",
+        "raw-capture",
+        "post-capture-validation"
+      ]
+    },
+    "protectedCapturePhase": {
+      "enum": [
+        "admission",
+        "independent-coverage",
+        "source-protection",
+        "raw-capture",
+        "post-capture-validation"
+      ]
+    },
+    "protectedCaptureReason": {
+      "enum": [
+        "cancelled",
+        "superseded",
+        "deadline",
+        "stale-scope",
+        "incomplete-frames",
+        "unsafe-geometry",
+        "uninspectable-content",
+        "masking-unproven",
+        "browser-failure",
+        "bounds-exceeded",
+        "cleanup-failed"
+      ]
+    },
+    "captureBudgetMs": {
+      "int": 9007199254740991
+    },
+    "pixelsAvailable": "bool",
+    "earlySemantic": "bool",
+    "inventoryAfterFailure": {
+      "enum": [
+        "not-sampled",
+        "unavailable",
+        "unchanged",
+        "changed"
+      ]
+    },
+    "entryUs": {
+      "int": 9007199254740991
+    },
+    "ackUs": {
+      "int": 9007199254740991
+    },
+    "ack": {
+      "enum": [
+        "none",
+        "current",
+        "retired"
+      ]
+    },
+    "wakeUs": {
+      "int": 9007199254740991
+    },
+    "failUs": {
+      "int": 9007199254740991
+    },
+    "window": {
+      "enum": [
+        "not-entered",
+        "entered"
+      ]
+    },
+    "deadline": "bool",
+    "zeroInput": "bool",
+    "cleanup": {
+      "enum": [
+        "failure-observed",
+        "not-observed"
+      ]
+    },
+    "cleanupOwner": {
+      "int": 9007199254740991
+    },
+    "cleanupAttempt": {
+      "int": 9007199254740991
+    },
+    "cleanupLifecycle": {
+      "enum": [
+        "scope-end",
+        "restart"
+      ]
+    },
+    "cleanupComponent": {
+      "enum": [
+        "dialog",
+        "interception",
+        "script",
+        "detach",
+        "recording",
+        "upload",
+        "containment",
+        "release",
+        "input",
+        "download",
+        "blob",
+        "enrollment-fallback",
+        "retained-task-fallback",
+        "owner-fallback"
+      ]
+    },
+    "cleanupResult": {
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "effects": {
+      "enum": [
+        "not-dispatched",
+        "completed",
+        "unknown"
+      ]
+    },
+    "scopeState": {
+      "enum": [
+        "usable",
+        "quarantined",
+        "closed"
+      ]
+    },
+    "error": {
+      "enum": [
+        "invalid-frame",
+        "unsupported-protocol",
+        "unsupported-capability",
+        "stale-generation",
+        "scope-unavailable",
+        "sequence-reused",
+        "invalid-sequence",
+        "invalid-timeout",
+        "capacity-exceeded",
+        "operation-missing",
+        "decision-missing",
+        "decision-expired",
+        "decision-kind-mismatch",
+        "registry-missing",
+        "registry-in-use",
+        "identifier-exhausted",
+        "unsupported-command",
+        "deadline-exceeded",
+        "cancelled",
+        "invalid-arguments",
+        "invalid-locator",
+        "browser-failure",
+        "stale-scope",
+        "cleanup-failed",
+        "stale-reference",
+        "policy-denied",
+        "not-actionable",
+        "locator-not-found",
+        "content-length-mismatch",
+        "redirect-body-unavailable",
+        "intercepted-pointer",
+        "checked-state-unchanged",
+        "checked-control-replaced",
+        "fill-unsupported-target",
+        "no-editable-focus",
+        "tap-target-replaced-before-press",
+        "frame-not-found",
+        "frame-ambiguous"
+      ]
+    },
+    "accepted": "bool",
+    "daemonPid": {
+      "int": 4294967295
+    },
+    "leg": {
+      "enum": [
+        "to-native",
+        "from-native"
+      ]
+    },
+    "io": {
+      "enum": [
+        "ok",
+        "eof",
+        "interrupted",
+        "would-block",
+        "broken-pipe",
+        "connection-reset",
+        "connection-aborted",
+        "not-connected",
+        "timed-out",
+        "unexpected-eof",
+        "write-zero",
+        "other"
+      ]
+    },
+    "length": {
+      "int": 9007199254740991
+    },
+    "total": {
+      "int": 9007199254740991
+    },
+    "calls": {
+      "int": 9007199254740991
+    },
+    "pendingBytes": {
+      "int": 9007199254740991
+    },
+    "outstanding": "bool",
+    "messageKind": {
+      "enum": [
+        "hello",
+        "request",
+        "cancel",
+        "decision",
+        "close"
+      ]
+    },
+    "frameBytes": {
+      "int": 9007199254740991
+    },
+    "consumedBytes": {
+      "int": 9007199254740991
+    },
+    "seedKnown": "bool"
+  }
+}

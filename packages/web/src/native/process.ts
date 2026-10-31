@@ -1,3 +1,4 @@
+import { bindSecretsClientProcess, captureSecretsContext, captureSecretsProcessContext } from './secrets-diagnostics.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -23,6 +24,8 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
   onEvent: (event: NativeEvent) => void | Promise<void>): Promise<NativeClient> {
   if (!path.isAbsolute(options.executable)) throw new EngineError('INVALID_STATE', 'The native browser executable must be an absolute verified path', { retryable: false });
   if (operation.signal.aborted) throw new EngineError('CANCELLED', 'The native browser startup was cancelled', { retryable: false });
+  const diagnostic = captureSecretsContext();
+  const diagnosticProcess = captureSecretsProcessContext();
   let child: ChildProcessWithoutNullStreams;
   try {
     child = spawn(options.executable, ['--session', `e2e-${randomUUID()}`, 'session', 'connect', '--json'], {
@@ -85,7 +88,9 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
     if (context.signal.aborted) abort();
   });
   try {
-    return await NativeClient.connect({ readable: child.stdout, writable: child.stdin, dispose, settle, ...(trace === undefined ? {} : { acceptanceTrace: trace }) }, options.capabilities, operation, onEvent);
+    const client = await NativeClient.connect({ readable: child.stdout, writable: child.stdin, dispose, settle, ...(trace === undefined ? {} : { acceptanceTrace: trace }) }, options.capabilities, operation, onEvent);
+    bindSecretsClientProcess(client, child.pid, diagnosticProcess, diagnostic);
+    return client;
   } catch (error) {
     dispose();
     if (!(await disposal!)) {

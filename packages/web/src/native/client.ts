@@ -1,4 +1,4 @@
-import { captureSecretsContext, observeSecretsQuery } from './secrets-diagnostics.ts';
+import { captureSecretsContext, observeSecretsQuery, observeSecretsClose, type SecretsContext, type SecretsCloseStage } from './secrets-diagnostics.ts';
 import { DISCONNECTED_RECOVERY_CAPABILITY, TERMINAL_RECORDING_CAPABILITY } from './capabilities.ts';
 import { collectFinalizedRecording, type FinalizedRecordingIdentity, type FinalizedVideoBytes, type FinalizedVideoSnapshot, type FinalizedRecordingCommand } from './finalized-recording.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -315,16 +315,16 @@ export class NativeClient {
   close(context: OperationContext): Promise<void> {
     // Explicit close never waits for artifacts or permits another frozen read.
     this.explicitClose = true;
-    return this.startClose(context, this.terminalCleanupStarted ?? performance.now());
+    return this.startClose(context, this.terminalCleanupStarted ?? performance.now(), captureSecretsContext());
   }
 
-  private startClose(context: OperationContext, started: number): Promise<void> {
-    if (this.closing !== undefined) return this.closing;
-    if (this.failure !== undefined) return Promise.reject(this.failure);
+  private startClose(context: OperationContext, started: number, diagnostic?: SecretsContext): Promise<void> {
+    if (this.closing !== undefined) { observeSecretsClose(this, diagnostic, 'reuse-existing-close', 'observed', false); return this.closing; }
+    if (this.failure !== undefined) { observeSecretsClose(this, diagnostic, 'existing-client-failure', 'failed', false); return Promise.reject(this.failure); }
     // Mandatory retirement has independent authority and a single fixed budget.
     // Never spread an operation context: its deadline getter may already throw.
     const cleanup: OperationContext = { runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: new AbortController().signal, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) };
-    this.closing = this.finishClose(cleanup, started);
+    this.closing = this.finishClose(cleanup, started, diagnostic);
     void this.closing.catch(() => {});
     return this.closing;
   }
@@ -332,13 +332,16 @@ export class NativeClient {
   /** Validated terminal state revokes commands, but retains exact cleanup authority. */
   isTerminal(): boolean { return this.terminal; }
 
-  private async finishClose(context: OperationContext, started: number): Promise<void> {
+  private async finishClose(context: OperationContext, started: number, diagnostic?: SecretsContext): Promise<void> {
+    let diagnosticStage: SecretsCloseStage = 'preconditions';
+    let closedFrameConfirmed = false;
     try {
       if (this.ready === undefined) throw this.fail('The native browser session is not available');
       // A closed frame cannot stand in for an already-dispatched decision ACK.
       // Join only existing control receipts, never arbitrary user callback work.
       const receipts = [...this.pending.values()].filter(pending => pending.decisionReceipt === 'ordinary').map(pending => pending.settlement);
       if (receipts.length > 0) {
+        diagnosticStage = 'decision-receipts';
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([Promise.all(receipts), new Promise<never>((_resolve, reject) => {
@@ -347,11 +350,17 @@ export class NativeClient {
         } finally { if (timer !== undefined) clearTimeout(timer); }
         if (this.failure !== undefined) throw this.failure;
       }
+      diagnosticStage = 'close-exchange';
       const message = await this.exchange('close', { type: 'close', generation: this.ready.generation }, { ...context, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
       if (message.type !== 'closed') throw this.fail('The native browser did not confirm scope closure');
+      closedFrameConfirmed = true;
+      diagnosticStage = 'channel-settle';
       await this.channel.settle?.({ runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: context.signal, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
+      diagnosticStage = 'post-settle';
       if (this.failure !== undefined) throw this.failure;
+      observeSecretsClose(this, diagnostic, diagnosticStage, 'completed', closedFrameConfirmed);
     } catch (cause) {
+      observeSecretsClose(this, diagnostic, diagnosticStage, 'failed', closedFrameConfirmed);
       throw this.failure ?? this.fail(cause instanceof EngineError ? cause.message : 'The native browser proxy did not finish acknowledged cleanup');
     } finally { this.dispose(); }
   }
