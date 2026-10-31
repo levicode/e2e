@@ -8,15 +8,15 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: a3c319199c01895ef1036b5ec7b805cff2b41618
-  NATIVE_SOURCE_TREE: 24e447e640731f6830f8b47ad5b7a92f34cdf4bf
+  NATIVE_SOURCE_SHA: d6d7d5d9fd837c8eac609dd333f25843ada7a73f
+  NATIVE_SOURCE_TREE: b03b054c3706945ba883c245d9c0e04bc6f3341e
   NEXT_TELEMETRY_DISABLED: '1'
   GIT_NO_LAZY_FETCH: '1'
   RUSTUP_TOOLCHAIN: 1.99.1
 'on':
   push:
     branches:
-    - ci/native-full-regression-s21-stdio-20261031
+    - ci/native-full-regression-s22-repair-20261031
 jobs:
   original-four-compile-boundaries:
     runs-on: ubuntu-24.04

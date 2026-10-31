@@ -53,6 +53,10 @@ export const CANDIDATE_NATIVE_CONTRACTS = [
 
 /** Not passes or waivers: ingress and controlled-window diagnostics stay outside acceptance. */
 export const CANDIDATE_NATIVE_DIAGNOSTICS = [
+  // Explicit baseline-only refusal witnesses; not candidate acceptance passes.
+  'native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_resume_ack_before_complete_retained',
+  'native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_complete_retained_before_network_commit',
+
   'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
   'native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable',
   'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline',

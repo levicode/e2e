@@ -983,6 +983,9 @@
     "native::cdp::chrome::tests::test_stderr_drained_after_port_readiness",
     "native::cdp::chrome::tests::test_write_xauth_file_wildcard_cookie_record",
     "native::cdp::chrome::tests::test_xvfb_applicable_tracks_effective_headed_mode",
+    "native::cdp::client::activation_facts_tests::facts_preserve_false_and_unknown_without_inferring_a_cause",
+    "native::cdp::client::activation_facts_tests::interruption_projection_is_closed_and_never_emits_arbitrary_text",
+    "native::cdp::client::activation_facts_tests::old_rows_gain_no_fields_and_cancel_deadline_facts_are_independent",
     "native::cdp::client::owner_lifecycle_tests::acquisition_ack_binds_context_target_and_session_before_continuation",
     "native::cdp::client::owner_lifecycle_tests::acquisition_reservation_cannot_be_laundered_into_runtime_evaluation",
     "native::cdp::client::owner_lifecycle_tests::borrowed_owner_rejects_context_ownership_and_cleanup_uses_only_its_exact_budget",
@@ -3903,11 +3906,11 @@
     "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
     "native::recording::tests::recording_sparse_frames_preserve_timestamps"
   ],
-  "nativeCommit": "a3c319199c01895ef1036b5ec7b805cff2b41618",
-  "nativeTree": "24e447e640731f6830f8b47ad5b7a92f34cdf4bf",
-  "nonignored": 3411,
+  "nativeCommit": "d6d7d5d9fd837c8eac609dd333f25843ada7a73f",
+  "nativeTree": "b03b054c3706945ba883c245d9c0e04bc6f3341e",
+  "nonignored": 3414,
   "profile": "ci",
   "schemaVersion": 1,
-  "sourceReviewSHA256": "4fed0916251dc724abd43d7f2d0d718f9450b4f888db9e8bbb5c3d1a8cdaba08",
-  "total": 3653
+  "sourceReviewSHA256": "bc3d2c65365860b0b160c544373205b3bf9a8c8eb38c9fd90cd3e39ddc370192",
+  "total": 3656
 }

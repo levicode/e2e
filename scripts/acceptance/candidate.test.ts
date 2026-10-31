@@ -566,3 +566,15 @@ test('installed screenshot oracle rejects wrong paths, producers, consumers and 
     source.replace('const capture = readFileSync', "screenshotPath = otherPath; const capture = readFileSync"),
   ]) assert.throws(() => assertInstalledScreenshotRead(changed));
 });
+
+test('baseline-only popup refusal witnesses are exact diagnostics, never mandatory passes', () => {
+  const names = ['native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_resume_ack_before_complete_retained', 'native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_complete_retained_before_network_commit'];
+  const list = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS].map(name => `${name}: test`).join('\n');
+  assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46); assert.equal(REQUIRED_ENCODER_CONTRACTS.length, 21);
+  for (const name of names) {
+    assert.ok((CANDIDATE_NATIVE_DIAGNOSTICS as readonly string[]).includes(name));
+    assert.ok(!(CANDIDATE_NATIVE_CONTRACTS as readonly string[]).includes(name));
+    assert.equal(verifyNativeInventory(`${list}\n${name}: test`).length, 68);
+    assert.throws(() => verifyNativeInventory(`${list}\n${name}_unreviewed: test`), /Unclassified/);
+  }
+});

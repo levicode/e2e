@@ -6,8 +6,7 @@ import type { OperationContext } from 'e2e/engine';
 
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn }));
-// Use the exact source engine contract, not an unrelated installed dist build.
-vi.mock('e2e/engine', async () => import('../../../e2e/src/engine/index.ts'));
+// Use the same public built engine instance as the production native client.
 const ENV = ['E2E_ENGINE_SECRETS_CAPTURE', 'E2E_ENGINE_SECRETS_DIAGNOSTIC', 'E2E_ENGINE_SECRETS_CAPTURE_NONCE', 'E2E_NATIVE_DIAGNOSTIC_SUITE'] as const;
 let saved: (string | undefined)[];
 let lines: string[];

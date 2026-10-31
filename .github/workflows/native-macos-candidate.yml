@@ -3,7 +3,7 @@
 name: native macOS installed candidate (not full acceptance or release)
 on:
   push:
-    branches: [ci/s21-macos-installed-20261031]
+    branches: [ci/s22-repair-macos-installed-20261031]
   workflow_dispatch:
     inputs:
       native_sha:
@@ -113,7 +113,32 @@ jobs:
           printf 'HOME=%s\nCARGO_HOME=%s\nRUSTUP_HOME=%s\n' "$HOME" "$CARGO_HOME" "$RUSTUP_HOME" > .artifacts/native-candidate/isolated-tool-homes.txt
       - name: Verify bundled-only native installation and launcher selection
         working-directory: .artifacts/native-source
-        run: node --test test/launcher.test.mjs test/postinstall.test.mjs
+        run: |
+          set -euo pipefail
+          canonical_tmp="$(node -p 'require("node:fs").realpathSync(require("node:os").tmpdir())')"
+          # Prove the default and canonical namespaces are the same owned physical directory.
+          node - "$canonical_tmp" "$GITHUB_WORKSPACE/.artifacts/native-candidate/tempdir-alias.json" <<'TEMPDIR_ALIAS_PROOF'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const original = require('node:os').tmpdir();
+          const canonical = process.argv[2];
+          assert.equal(fs.realpathSync(original), canonical, 'canonical temp directory must resolve the original default');
+          const identity = p => { const s = fs.statSync(p, { bigint: true }); return { dev: String(s.dev), ino: String(s.ino), uid: String(s.uid), directory: s.isDirectory() }; };
+          assert.deepEqual(identity(original), identity(canonical));
+          assert.equal(identity(original).directory, true);
+          const probe = fs.mkdtempSync(path.join(original, 'native-temp-alias-proof-'));
+          try {
+            const aliasFile = path.join(probe, 'owned-probe');
+            const canonicalFile = path.join(canonical, path.basename(probe), 'owned-probe');
+            fs.writeFileSync(aliasFile, 'same-physical-owned-file', { flag: 'wx', mode: 0o600 });
+            assert.equal(fs.readFileSync(canonicalFile, 'utf8'), 'same-physical-owned-file');
+            assert.deepEqual(identity(aliasFile), identity(canonicalFile));
+            const proof = { schemaVersion: 1, original, canonical, directoryIdentity: identity(original), ownedProbeIdentity: identity(aliasFile), samePhysicalDirectory: true, samePhysicalOwnedFile: true, nativeSourceModified: false };
+            fs.writeFileSync(process.argv[3], JSON.stringify(proof, null, 2) + '\n', { flag: 'wx' });
+          } finally { fs.rmSync(probe, { recursive: true, force: true }); }
+          TEMPDIR_ALIAS_PROOF
+          TMPDIR="$canonical_tmp" node --test test/launcher.test.mjs test/postinstall.test.mjs
       - name: Check all compilation boundaries independently
         working-directory: .artifacts/native-source/cli
         env:

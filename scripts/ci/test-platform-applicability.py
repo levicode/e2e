@@ -33,6 +33,20 @@ def encoded(value):
     return (json.dumps(value, indent=2) + '\n').encode()
 
 
+def synthetic_loader_skipped(node_version):
+    """Independent numeric fixture oracle; never substitutes the running Node identity."""
+    assert isinstance(node_version, str) and re.fullmatch(r'v(?:22|24|26)\.(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]{0,2})', node_version)
+    major, minor, patch = map(int, node_version[1:].split('.'))
+    return major == 24 and (8 <= minor <= 10 or (minor == 11 and patch == 0))
+
+def adapt_synthetic_loader(model, node_version):
+    model.loader_row['status'] = 'skipped' if synthetic_loader_skipped(node_version) else 'passed'
+    model.recount()
+
+def synthetic_expected_counts(capability, node_version):
+    skipped = int(synthetic_loader_skipped(node_version))
+    return (1 if capability else 2) + skipped, (4 if capability else 3) - skipped
+
 class ClassifierControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='platform-classifier-')
@@ -335,14 +349,7 @@ class NodeSelectorIdentityControls(unittest.TestCase):
                 else:
                     with self.assertRaises(AssertionError):validator.collect_node_identity(requested, actual)
     def test_real_ts_predicate_same_matrix_without_runtime_spoofing(self):
-        code = """
-import { pathToFileURL } from 'node:url';
-const { collectNodeIdentity } = await import(pathToFileURL(process.argv[2]).href);
-const matrix = JSON.parse(process.argv[3]);
-const results = matrix.map(([requested, actual]) => { try { return { accepted: true, full: collectNodeIdentity(requested, actual) }; } catch { return { accepted: false }; } });
-process.stdout.write(JSON.stringify(results));
-"""
-        result=subprocess.run(['node','--input-type=module','-e',code,'synthetic-pure-entry',str(ROOT/validator.OBSERVER),json.dumps(self.MATRIX)],capture_output=True,text=True,timeout=30)
+        result=subprocess.run(['node',str(ROOT/'scripts/ci/collect-node-identity-control.mjs'),json.dumps(self.MATRIX)],capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stderr)
         expected=[dict(accepted=True,full=actual[1:]) if accepted else dict(accepted=False) for requested,actual,accepted in self.MATRIX]
         self.assertEqual(json.loads(result.stdout),expected)
@@ -379,6 +386,24 @@ class LoaderApplicabilityControls(unittest.TestCase):
                     self.assertEqual(row['nodeVersion'], version)
                     self.assertEqual(row['sourceSHA256'], validator.LOADER_SOURCE_SHA256)
                     self.assertEqual(row['rawStatus'], 'skipped')
+    def test_synthetic_fixture_oracle_both_capabilities_and_versions(self):
+        # Explicit expectations, not values obtained from the validator under test.
+        versions = [('v22.23.4', False), ('v24.7.99', False), ('v24.8.0', True), ('v24.8.99', True),
+                    ('v24.9.0', True), ('v24.10.99', True), ('v24.11.0', True), ('v24.11.1', False), ('v26.13.0', False)]
+        for version, skipped in versions:
+            for capability in [False, True]:
+                with self.subTest(version=version, capability=capability):
+                    self.make(capability); self.select_version(version)
+                    self.assertEqual(synthetic_loader_skipped(version), skipped)
+                    adapt_synthetic_loader(self, version)
+                    self.assertEqual(self.loader_row['status'], 'skipped' if skipped else 'passed')
+                    report = self.classify()
+                    expected = ((1 if capability else 2) + int(skipped), (4 if capability else 3) - int(skipped))
+                    self.assertEqual(synthetic_expected_counts(capability, version), expected)
+                    self.assertEqual((len(report['notApplicable']), report['requiredPassed']), expected)
+                    # Wrong synthetic raw status remains rejected in either direction.
+                    self.loader_row['status'] = 'passed' if skipped else 'skipped'; self.recount(); self.rejected()
+
     def test_raw_loader_pending_preserved(self):
         self.select_version('v24.8.0'); self.loader_row['status'] = 'pending'; self.recount()
         report=self.classify(); self.assertEqual(report['notApplicable'][-1]['rawStatus'], 'pending')
@@ -485,6 +510,7 @@ class CLIPureControls(unittest.TestCase):
         return subprocess.check_output(['git', '-C', str(self.root), '-c', 'core.hooksPath=/dev/null', *args], stderr=subprocess.PIPE, env=env)
     def make_receipts(self, capability, emit_receipt=True):
         expected = dict(self.model.expected); self.model.make(capability); self.model.expected.update(expected)
+        adapt_synthetic_loader(self.model, expected['nodeVersion'])
         self.model.expected['collectionSHA256'] = validator.sha(encoded(self.model.collection))
         self.model.context.update(self.model.expected)
         fixture = str(Path(expected['tempRootRealpath']) / 'e2e-collect-SyntheticFixture1')
@@ -498,6 +524,24 @@ class CLIPureControls(unittest.TestCase):
         if emit_receipt:
             directory = self.ev / 'platform-applicability'; directory.mkdir(exist_ok=True)
             (directory / 'context.json').write_bytes(encoded(self.model.context)); (directory / 'receipt.json').write_bytes(encoded(self.model.receipt))
+    def test_cli_fixture_model_skips_are_not_runtime_identity_claims(self):
+        actual_version = (self.root / 'evidence/node.version').read_bytes()
+        actual_selector = self.env['NODE_SELECTOR']
+        versions = [('v24.8.0', True), ('v24.11.0', True), ('v24.11.1', False), ('v26.13.0', False)]
+        for version, skipped in versions:
+            for capability in [False, True]:
+                with self.subTest(modelVersion=version, capability=capability):
+                    self.model.expected.update(nodeVersion=version, nodeSelector=version[1:])
+                    self.make_receipts(capability)
+                    self.assertEqual(self.model.loader_row['status'], 'skipped' if skipped else 'passed')
+                    report = self.model.classify()
+                    expected = ((1 if capability else 2) + int(skipped), (4 if capability else 3) - int(skipped))
+                    self.assertEqual((len(report['notApplicable']), report['requiredPassed']), expected)
+                    self.assertEqual((self.root / 'evidence/node.version').read_bytes(), actual_version)
+                    self.assertEqual(self.env['NODE_SELECTOR'], actual_selector)
+                    # A model receipt for another version must not pass the real CLI identity guard.
+                    if version != actual_version.decode().strip(): self.assert_failed()
+
     def test_collector_missing_rejected(self):
         (self.root / validator.CORE_COLLECTOR).unlink(); self.assert_failed()
     def test_collector_changed_rejected(self):
@@ -551,7 +595,7 @@ try {
         for row in self.model.rows:
             title_path = tuple(row['ancestorTitles'] + [row['title']])
             row['status'] = 'pending' if title_path in applies and applies[title_path] != capability else 'passed'
-        self.model.recount()
+        adapt_synthetic_loader(self.model, self.model.expected['nodeVersion'])
         (self.ev / 'results.json').write_bytes(encoded(self.model.result))
         self.assertEqual({p.name: p.read_bytes() for p in capture.iterdir()}, before)
         self.assertEqual((self.ev / 'collection.json').read_bytes(), collection_before)
@@ -591,15 +635,15 @@ try {
         self.adapt_only_synthetic_results(capability)
         result = self.run_validator(); self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads((self.ev / 'coverage.json').read_text())
-        self.assertEqual(len(report['notApplicable']), 1 if capability else 2)
+        self.assertEqual(len(report['notApplicable']), synthetic_expected_counts(capability, self.model.expected['nodeVersion'])[0])
         self.assertEqual(report['applicability']['caseInsensitiveFs'], capability)
     def test_ts_synthetic_result_adapter_both_capabilities_preserves_receipts(self):
         # Opposite-capability branch here is PURE SYNTHETIC, not a Mac/live-alias claim.
         self.make_receipts(False)
         for capability in [True, False]:
             self.adapt_only_synthetic_results(capability)
-            self.assertEqual(self.model.result['numPendingTests'], 1 if capability else 2)
-            self.assertEqual(self.model.result['numPassedTests'], 4 if capability else 3)
+            self.assertEqual(self.model.result['numPendingTests'], synthetic_expected_counts(capability, self.model.expected['nodeVersion'])[0])
+            self.assertEqual(self.model.result['numPassedTests'], synthetic_expected_counts(capability, self.model.expected['nodeVersion'])[1])
     def test_ts_duplicate_prepare_rejected_without_clean_and_reuse(self):
         first = self.prepare_ts(); self.assertEqual(first.returncode, 0, first.stderr)
         original = (self.ev / 'platform-applicability/context.json').read_bytes()
@@ -626,11 +670,11 @@ assert.equal(existsSync('evidence/e2e/platform-applicability'), false);
         self.assertFalse((self.ev / 'platform-applicability').exists())
     def test_cli_false_current_git_source_and_environment_pass(self):
         result = self.run_validator(); self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads((self.ev / 'coverage.json').read_text()); self.assertEqual(len(report['notApplicable']), 2)
+        report = json.loads((self.ev / 'coverage.json').read_text()); self.assertEqual(len(report['notApplicable']), synthetic_expected_counts(False, self.model.expected['nodeVersion'])[0])
         self.assertEqual(report['captures']['collectionSHA256'], validator.sha((self.ev / 'collection.json').read_bytes()))
     def test_cli_true_synthetic_capability_pass(self):
         self.make_receipts(True); result = self.run_validator(); self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads((self.ev / 'coverage.json').read_text()); self.assertEqual((len(report['notApplicable']), report['requiredPassed']), (1, 4))
+        report = json.loads((self.ev / 'coverage.json').read_text()); self.assertEqual((len(report['notApplicable']), report['requiredPassed']), synthetic_expected_counts(True, self.model.expected['nodeVersion']))
     def test_cli_foreign_github_sha(self): self.env['GITHUB_SHA'] = 'f' * 40; self.assert_failed()
     def test_cli_foreign_current_run(self): self.env['GITHUB_RUN_ID'] = '98766'; self.assert_failed()
     def test_cli_foreign_current_attempt(self): self.env['GITHUB_RUN_ATTEMPT'] = '2'; self.assert_failed()
@@ -677,7 +721,7 @@ assert.equal(existsSync('evidence/e2e/platform-applicability'), false);
 
 
 # Exact retained helper bytes and normalized original validator source, not a copy of new policy.
-OTHER_HELPER_SHA256 = {'HELPER_4': 'b3209c04d9bd6cb4e367ee55e8ff7c6014bd91d1c4d5baa8cb8909349d23e091', 'HELPER_5': '8a79a4c52e8c5415e69f9eaa92132e01ccbc25aceb18bdc9bed77e884d40829b', 'HELPER_6': '59e7d7145041acdb875b63926edb57f3a6419065c66666effc26cd47a4c80bf8', 'HELPER_7': '5f6cb3ee27c612ec015c91b13a3304d0176215dd014f1c2f7deea9407e3fc89c'}
+OTHER_HELPER_SHA256 = {'HELPER_4': 'b3209c04d9bd6cb4e367ee55e8ff7c6014bd91d1c4d5baa8cb8909349d23e091', 'HELPER_5': '8a79a4c52e8c5415e69f9eaa92132e01ccbc25aceb18bdc9bed77e884d40829b', 'HELPER_6': '6be83edd427e2c86a482e8e4b9dae6716a8130b1625ed67e144c6734f656286f', 'HELPER_7': '5f6cb3ee27c612ec015c91b13a3304d0176215dd014f1c2f7deea9407e3fc89c'}
 LEGACY_NORMALIZED_SHA256 = '882e7b73b96e19c52f7bf830fd20e097bb4c9e1796a9f41b87f49a681fc6124e'
 
 if __name__ == '__main__':

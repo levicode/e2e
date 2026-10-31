@@ -60,6 +60,7 @@ let holdScopeEnd = false;
 let holdClose = false;
 let releaseClose: (() => void) | undefined;
 let holdDecision = false;
+let heldDecisionError: 'decision-missing' | 'invalid-arguments' | 'decision-expired' = 'decision-missing';
 let rejectHeldDecision: (() => void) | undefined;
 let screenshotDelay = 0;
 let repeatContextIdentity = false;
@@ -78,7 +79,7 @@ beforeEach(() => {
   continueExactOwner = false; environmentBrowser = 'Synthetic Chromium'; environmentUserAgent = 'synthetic-agent';
   interceptRequest = undefined; cancellationObserved = undefined;
   holdObservation = false; observationHeld = undefined; settleObservation = undefined; acknowledgeCancel = undefined;
-  downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectStartup = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
+  downloadBasename = 'download-id_1'; recordingMissing = undefined; queryNodes = []; holdDecision = false; heldDecisionError = 'decision-missing'; rejectHeldDecision = undefined; coalescedTransitionEvent = false; preserveRestartScope = false; frames = []; screenshotDelay = 0; recordingSegments = []; currentScope = ''; repeatContextIdentity = false; rejectStartup = undefined; holdScopeEnd = false; releaseScopeEnd = undefined; let scopes = 0; let sequence = 0;
   const resourcesByEndpoint = new Map<string, NativeInteropResources>();
   vi.spyOn(chromium, 'connectOverCDP').mockReset().mockImplementation(endpoint => {
     if (typeof endpoint !== 'string' || !resourcesByEndpoint.has(endpoint)) throw new Error('Unexpected synthetic PW endpoint');
@@ -124,7 +125,7 @@ beforeEach(() => {
         if (replacement !== undefined) {
           replacementDecisions.delete(token); replacement(frame['decision'] as Record<string, JsonValue>);
         } else if (token.startsWith('replacement-interop-')) throw new Error('Unknown or consumed replacement decision token');
-        if (holdDecision) rejectHeldDecision = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: false, error: { code: 'invalid-arguments' }, scopeState: 'usable' });
+        if (holdDecision) rejectHeldDecision = () => send({ type: 'control-result', id: frame['id'], generation: 1, accepted: false, error: { code: heldDecisionError }, scopeState: 'usable' });
         else send({ type: 'control-result', id: frame['id'], generation: 1, accepted: true, scopeState: 'usable' });
       }
       else {
@@ -1912,6 +1913,23 @@ describe('native surface ownership and fixed policy binding', () => {
     expect(surface.latch.hasPending()).toBe(false);
     await sendEvent('scope.disconnected', { identityScope: scope, reason: 'browser-connection-closed' });
     await expect(surface.command('page.title', {}, operation())).resolves.toEqual({ title: 'Synthetic page' });
+    await surface.dispose(cleanup());
+  });
+
+  it.each(['invalid-arguments', 'decision-expired'] as const)('keeps a hard %s decision rejection despite prior callback retirement', async code => {
+    const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
+    await start(surface); const scope = currentScope; const fixture = surface.fixtureSurface();
+    holdDecision = true; heldDecisionError = code;
+    surface.subscribe('network.request', async event => {
+      try { await fixture.decide(event.token, { kind: 'continue', overrides: {} }, operation()); }
+      catch (cause) { fixture.latchCallbackFailure(scope, cause instanceof Error ? cause : new Error('decision rejected')); }
+    });
+    await sendEvent('network.request', { identityScope: scope, version: 1, registrationIds: [], request: { url: 'http://fixture.test/data', method: 'GET', headers: {} } }, { token: 'pending-hard-decision', timeoutMs: 1000 });
+    expect(rejectHeldDecision).toBeDefined();
+    await sendEvent('scope.callbacks-retired', { identityScope: scope, throughEventSequence: 1 });
+    rejectHeldDecision!(); await new Promise(resolve => setImmediate(resolve));
+    expect(surface.latch.hasPending()).toBe(true);
+    expect(() => surface.latch.throwPending()).toThrow(expect.objectContaining({ code: 'ENGINE_FAILURE', cause: { nativeReason: code } }));
     await surface.dispose(cleanup());
   });
 

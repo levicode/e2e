@@ -3,7 +3,7 @@
   "on": {
     "push": {
       "branches": [
-        "ci/s21-independent-standard-20261031"
+        "ci/s22-repair-independent-standard-20261031"
       ]
     }
   },
@@ -12,7 +12,7 @@
     "actions": "read"
   },
   "concurrency": {
-    "group": "s21-independent-standard-${{ github.ref }}",
+    "group": "s22-repair-independent-standard-${{ github.ref }}",
     "cancel-in-progress": false
   },
   "env": {

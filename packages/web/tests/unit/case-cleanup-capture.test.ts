@@ -74,7 +74,12 @@ it.each(['hung-recovery', 'lifecycle-open-cancel', 'popup-replacement'] as const
   expect(capture!.env['E2E_AGENT_BROWSER_EXECUTABLE']).toBe(f.wrapper); expect(capture!.env['E2E_DIAGNOSTIC_NATIVE_EXECUTABLE']).toBe(f.native);
   const root = join(f.evidence, 'web-case-native', caseId); const header = JSON.parse(readFileSync(join(root, 'case.json'), 'utf8'));
   expect(header).toMatchObject({ caseId, nativeExecutable: f.native, run: '123', sourceCommit: 'a'.repeat(40) }); expect(header.nonce).toMatch(/^[a-f0-9]{64}$/);
-  expect(readdirSync(join(root, 'trace'))).toEqual([]); capture!.finish(); capture!.finish();
+  const project = join(root, `p-${String(header.nonce).slice(0, 12)}`); const privateRoot = join(project, '.e2e'); const trace = join(privateRoot, 'native-trace');
+  expect(header.traceDirectory).toBe(trace); expect(capture!.env['E2E_DIAGNOSTIC_DIR']).toBe(trace);
+  expect(readdirSync(root).toSorted()).toEqual(['case.json', `p-${String(header.nonce).slice(0, 12)}`].toSorted());
+  for (const path of [project, privateRoot, trace]) expect(statSync(path).mode & 0o777).toBe(0o700);
+  expect(readdirSync(project)).toEqual(['.e2e']); expect(readdirSync(privateRoot)).toEqual(['native-trace']);
+  expect(readdirSync(trace)).toEqual([]); capture!.finish(); capture!.finish();
   expect(JSON.parse(readFileSync(join(root, 'finished.json'), 'utf8'))).toEqual({ schemaVersion: 1, caseId, nonce: header.nonce, state: 'scope-finished' });
   expect(prepareWebCaseNativeCapture(caseId, f.env)).toBeUndefined();
 });

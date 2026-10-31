@@ -3,7 +3,7 @@ name: native full public candidate (Linux, not release acceptance)
 # Opt-in only. No model credentials, private fixtures, publishing, caches or foundation artifact reuse.
 on:
   push:
-    branches: [ci/s21-native-formal-20261031]
+    branches: [ci/s22-repair-native-formal-20261031]
   workflow_dispatch:
     inputs:
       native_sha:
@@ -75,7 +75,15 @@ jobs:
       - name: Test the fail-closed acceptance scripts
         id: acceptance-scripts
         if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
-        run: node --test 'scripts/acceptance/*.test.ts'
+        run: |
+          mkdir -p .artifacts/native-candidate
+          git status --porcelain -uall > .artifacts/native-candidate/source-before-pure-controls.txt
+          status=0
+          node --test 'scripts/acceptance/*.test.ts' || status=$?
+          git status --porcelain -uall > .artifacts/native-candidate/source-after-pure-controls.txt
+          test "$status" -eq 0
+          test ! -s .artifacts/native-candidate/source-before-pure-controls.txt
+          test ! -s .artifacts/native-candidate/source-after-pure-controls.txt
       - name: Check complete package and test source types
         id: types
         if: ${{ !cancelled() && steps.packages.outcome == 'success' }}

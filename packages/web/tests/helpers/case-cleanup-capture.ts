@@ -93,7 +93,10 @@ export function prepareWebCaseNativeCapture(caseId: WebNativeCaptureCase, env: N
     exactDirectory(invocations); exactDirectory(root);
     const directory = join(root, caseId); mkdirSync(directory, { mode: 0o700 }); exactDirectory(directory);
     const nonce = randomBytes(32).toString('hex');
-    const trace = join(directory, 'trace'); mkdirSync(trace, { mode: 0o700 }); exactDirectory(trace);
+    // The native custody carrier accepts this private layout; this is not the business projectRoot.
+    const project = join(directory, `p-${nonce.slice(0, 12)}`); mkdirSync(project, { mode: 0o700 }); exactDirectory(project);
+    const privateRoot = join(project, '.e2e'); mkdirSync(privateRoot, { mode: 0o700 }); exactDirectory(privateRoot);
+    const trace = join(privateRoot, 'native-trace'); mkdirSync(trace, { mode: 0o700 }); exactDirectory(trace);
     const header = { schemaVersion: 1, caseId, nonce, traceDirectory: trace, run, attempt, selector, nodeVersion, sourceCommit, sourceTree, nativeExecutable: native, nativeSHA256: nativeHash, wrapperSHA256: wrapperHash };
     writeFileSync(join(directory, 'case.json'), JSON.stringify(header) + '\n', { flag: 'wx', mode: 0o600 });
     let finished = false;

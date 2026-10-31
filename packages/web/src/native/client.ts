@@ -337,9 +337,14 @@ export class NativeClient {
       && transition.scope === owner.identityScope && transition.epoch === owner.epoch
       && this.ready?.generation === owner.generation && !owner.selected
       && this.failure === undefined && !this.terminal && !this.closed && this.closing === undefined;
-    if (!eligible() || signal.aborted || owner.retirementWaiter !== undefined) return Promise.resolve(false);
+    if (signal.aborted || owner.selected || this.ready?.generation !== owner.generation || owner.retirementWaiter !== undefined) return Promise.resolve(false);
     const proof = () => owner.retiredAt !== undefined && owner.retiredAt < endsAt;
-    if (owner.retiredAt !== undefined) return Promise.resolve(proof());
+    // A covering native retirement notice already revoked this exact callback.
+    // EOF retirement precedes any reconnect transaction; requiring an ordinary
+    // reset/restore here would misclassify its pending decision-missing ACK.
+    // This does not authorize waiting for a future proof without a transition.
+    if (owner.retiredAt !== undefined) return Promise.resolve(proof() && (transition === undefined || eligible()));
+    if (!eligible()) return Promise.resolve(false);
     if (!owner.active || endsAt <= performance.now()) return Promise.resolve(false);
     return new Promise(resolve => {
       let finished = false;

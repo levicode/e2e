@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "entry": [
+    "scripts/ci/collect-node-identity-control.mjs",
     ".github/native-full-regression/class-pure.config.ts",
     "packages/web/tests/helpers/native-process-owner.ts",
     "apps/testbed/e2e.config.ts",

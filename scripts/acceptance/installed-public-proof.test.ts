@@ -145,8 +145,31 @@ for (const [name, mutate] of Object.entries(encoderNegatives)) test(`encoder rej
   const f = fixture(); try { mutate(f); assert.throws(() => validateEncoderReceipt(f.receipt, f.binding, f.proof.coverage.media, f.receipt.media.webmSha256 === 'f'.repeat(64) ? 'e'.repeat(64) : createHash('sha256').update(readFileSync(f.proof.coverage.media.path)).digest('hex'))); } finally { f.close(); }
 });
 
+const encoderControlArgs = (path: string) => ['-B', path];
+
 test('owned encoder observer and actual C parser pass synthetic controls without process observation', () => {
-  const result = spawnSync('python3', [fileURLToPath(new URL('installed-encoder-proof.test.py', import.meta.url))], { encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024, shell: false });
+  const result = spawnSync('python3', encoderControlArgs(fileURLToPath(new URL('installed-encoder-proof.test.py', import.meta.url))), { encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024, shell: false });
   assert.equal(result.error, undefined, 'Python/host C compiler required for acceptance pure controls');
   assert.equal(result.status, 0, result.stderr);
+});
+
+// Exercise the actual launcher policy in a clean disposable source checkout, not the caller's repository.
+test('encoder pure controls leave committed source clean, including untracked bytecode', t => {
+  const root = mkdtempSync(join(tmpdir(), 'encoder-clean-source-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const name of ['installed-encoder-proof.test.py', 'installed-encoder-proof.py', 'installed-encoder-proc.c']) {
+    writeFileSync(join(root, name), readFileSync(new URL(name, import.meta.url)));
+  }
+  const env = { ...process.env };
+  delete env.PYTHONDONTWRITEBYTECODE; delete env.PYTHONPYCACHEPREFIX;
+  for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key];
+  const git = (...args: string[]) => {
+    const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.allow=never', '-c', 'user.name=Pure Fixture', '-c', 'user.email=fixture@example.invalid', ...args], { cwd: root, env, encoding: 'utf8', timeout: 10_000 });
+    assert.equal(result.status, 0, result.stderr); return result.stdout;
+  };
+  git('init', '-q'); git('add', '.'); git('commit', '-qm', 'synthetic source');
+  assert.equal(git('status', '--porcelain', '-uall'), '');
+  const result = spawnSync('python3', encoderControlArgs(join(root, 'installed-encoder-proof.test.py')), { cwd: root, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024, shell: false });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(git('status', '--porcelain', '-uall'), '', 'pure controls must not dirty tracked or untracked source');
 });

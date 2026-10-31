@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,4 +198,24 @@ test('installed eleven-check verifier rejects wrong counts and each missing orig
     assert.throws(() => validateInstalledPublicProof(missing, '/not-read', '/not-written', {}), new RegExp(key));
     assert.throws(() => validateInstalledPublicProof({ ...proof, [key]: false }, '/not-read', '/not-written', {}), new RegExp(key));
   }
+});
+
+test('macOS temp namespace proof checks real physical alias identity before unchanged native tests', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'temp-alias-control-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const physical = join(root, 'physical'); const alias = join(root, 'alias'); const foreign = join(root, 'foreign');
+  mkdirSync(physical); mkdirSync(foreign); symlinkSync(physical, alias, 'dir');
+  const match = workflow.match(/<<'TEMPDIR_ALIAS_PROOF'\n([\s\S]*?)          TEMPDIR_ALIAS_PROOF/);
+  assert.ok(match, 'execute the actual workflow proof, not a copied implementation');
+  const script = match[1]!.split('\n').map(line => line.replace(/^          /, '')).join('\n');
+  const run = (canonical: string, receipt: string) => spawnSync(process.execPath, ['-', canonical, receipt], { input: script, env: { ...process.env, TMPDIR: alias }, encoding: 'utf8', timeout: 10_000 });
+  const receipt = join(root, 'proof.json');
+  const ok = run(physical, receipt); assert.equal(ok.status, 0, ok.stderr);
+  const proof = JSON.parse(readFileSync(receipt, 'utf8'));
+  assert.equal(proof.original, alias); assert.equal(proof.canonical, physical);
+  assert.equal(proof.samePhysicalDirectory, true); assert.equal(proof.samePhysicalOwnedFile, true);
+  assert.equal(proof.nativeSourceModified, false);
+  assert.notEqual(run(foreign, join(root, 'wrong.json')).status, 0, 'different physical directory must not normalize away a mismatch');
+  assert.notEqual(run(alias, join(root, 'not-canonical.json')).status, 0, 'unresolved alias is not canonical');
+  assert.match(workflow, /TMPDIR="\$canonical_tmp" node --test test\/launcher\.test\.mjs test\/postinstall\.test\.mjs/);
 });

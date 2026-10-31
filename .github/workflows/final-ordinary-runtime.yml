@@ -49,4 +49,4 @@ jobs:
 'on':
   push:
     branches:
-    - ci/s21-ordinary-runtime-20261031
+    - ci/s22-repair-ordinary-runtime-20261031

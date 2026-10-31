@@ -30,14 +30,17 @@ def verify(evidence):
  for case,(file,title) in CASES.items():
   hits=[test for suite in results.get('testResults',[]) if suite.get('name')==str(workspace/'packages/web/tests/integration'/file) for test in suite.get('assertionResults',[]) if test.get('title')==title]
   v.need(len(hits)==1 and hits[0].get('status') in ['passed','failed'],'case-result')
-  root=capture/case;directory(root);v.need({p.name for p in root.iterdir()}=={'case.json','finished.json','trace'},'case-files')
+  root=capture/case;directory(root)
   header=v.parse(v.read(root/'case.json',4096));v.exact(header,{'schemaVersion','caseId','nonce','traceDirectory','run','attempt','selector','nodeVersion','sourceCommit','sourceTree','nativeExecutable','nativeSHA256','wrapperSHA256'})
   v.need(header['schemaVersion']==1 and header['caseId']==case and type(header['nonce'])is str and re.fullmatch('[a-f0-9]{64}',header['nonce']) and all(header[k]==value for k,value in expected.items()),'case-header')
   v.need(header['nonce'] not in case_nonces,'reused-case-nonce');case_nonces.add(header['nonce'])
   v.need(header['nativeSHA256']==native_hash and header['wrapperSHA256']==wrapper_hash,'case-runtime')
   native=pathlib.Path(header['nativeExecutable']);v.need(native.is_absolute() and native.resolve()==native and v.sha(v.read(native,128*1024*1024))==native_hash,'native-unchanged')
   finish=v.parse(v.read(root/'finished.json',1024));v.exact(finish,{'schemaVersion','caseId','nonce','state'});v.need(finish=={'schemaVersion':1,'caseId':case,'nonce':header['nonce'],'state':'scope-finished'},'finish')
-  trace=root/'trace';directory(trace);v.need(header['traceDirectory']==str(trace),'case-trace')
+  project_name='p-'+header['nonce'][:12];v.need({p.name for p in root.iterdir()}=={'case.json','finished.json',project_name},'case-files')
+  project=root/project_name;directory(project);v.need({p.name for p in project.iterdir()}=={'.e2e'},'project-files')
+  private=project/'.e2e';directory(private);v.need({p.name for p in private.iterdir()}=={'native-trace'},'private-files')
+  trace=private/'native-trace';directory(trace);v.need(header['traceDirectory']==str(trace),'case-trace')
   names={p.name for p in trace.iterdir()};native_names=[name for name in names if re.fullmatch(r'native-[1-9][0-9]*\.jsonl',name)];v.need(len(native_names)==1,'proxy-census');pid=int(native_names[0][7:-6]);v.need(0<pid<=2**32-1 and names=={f'native-{pid}.jsonl',f'query-{pid}.jsonl'},'trace-census')
   invname=f'invocation-{pid}.json';mapname=f'daemon-{pid}.json';v.need(invname not in used,'reused-proxy');used|={invname,mapname}
   raw=v.read(invroot/invname,4096);inv=v.parse(raw);v.exact(inv,{'schemaVersion','pid','nonce','traceDirectory','nativeExecutable','nativeSHA256','wrapperSHA256','run','attempt','sourceCommit','sourceTree'})
