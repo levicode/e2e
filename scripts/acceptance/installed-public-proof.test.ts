@@ -410,3 +410,58 @@ test('actual extracted installedCache keeps original replay assertion primary ev
     if (!throwStdout) { assert.equal(lines.length, 2); for (const line of lines) validateInstalledRunClosed(JSON.parse(line.slice('INSTALLED_RUN_CLOSED '.length))); }
   }
 });
+
+test('generated cache-run output is isolated from hosted evidence while default-output mutation loses evidence', async () => {
+  const fs = await import('node:fs'); const path = await import('node:path');
+  const { source, closed } = diagnosticFunctions();
+  const cacheFunction = source.slice(source.indexOf('async function installedCache(appURL)'), source.indexOf('async function installedState(appURL)'));
+  for (const defaultOutputMutation of [false, true]) {
+    const f = fixture();
+    try {
+      const hostRoot = join(f.project, '.e2e/results/host'); mkdirSync(hostRoot, { recursive: true });
+      const screenshot = join(hostRoot, 'original.png'); fs.renameSync(f.proof.screenshotPath, screenshot); f.proof.screenshotPath = screenshot;
+      const originalScreenshot = readFileSync(screenshot);
+      const cacheRoot = join(f.project, '.e2e/cache'); mkdirSync(cacheRoot, { recursive: true });
+      const entry = join(cacheRoot, 'entry.json'); writeFileSync(entry, JSON.stringify({ schemaVersion: 'trace-1' }));
+      const originalCache = readFileSync(entry); const originalMtime = fs.statSync(entry).mtimeMs;
+      writeFileSync(join(f.project, 'installed-model-calls.log'), 'call\ncall\n');
+      const report = (replay: boolean) => ({ run: { status: 'passed', results: [{ attempts: [{ steps: [{ api: 'agent.act', status: 'passed', cache: replay ? { mode: 'self-finalized', replayedActions: 2, totalActions: 2 } : { mode: 'missed', reason: 'no-entry' }, metrics: { modelCalls: replay ? 0 : 2 }, explanation: 'zero-turn' }] }] }] } });
+      let runs = 0;
+      // Evaluate only the actual generated configuration expression with inert model/engine values.
+      // The SDK, browser, generated test and model implementation are never imported or executed.
+      const fakeRun = async () => {
+        const text = readFileSync(join(f.project, 'installed-cache.config.ts'), 'utf8');
+        const config = new Function('web', 'model', text.replace(/^import[^\n]*\n/gm, '').replace('export default ', 'return '))(() => ({}), {});
+        assert.equal(config.cache, 'read-write'); assert.equal(config.retries, 0);
+        assert.equal(config.output, '.e2e/installed-cache-output'); assert.equal(config.tests, 'installed-cache-tests/*.e2e.ts');
+        const output = path.resolve(f.project, defaultOutputMutation ? '.e2e' : config.output);
+        const rel = path.relative(f.project, output); assert.ok(rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+        const clearedResults = join(output, 'results');
+        if (!defaultOutputMutation) {
+          const hostFromResults = path.relative(clearedResults, hostRoot); const resultsFromHost = path.relative(hostRoot, clearedResults);
+          assert.ok(hostFromResults.startsWith('..') && resultsFromHost.startsWith('..'), 'neither result tree contains the other');
+        }
+        // Same rm primitive/target shape as runner.ts; simulated cleanup, not a real run.
+        rmSync(clearedResults, { recursive: true, force: true });
+        const replay = runs++ === 1; return { exitCode: 0, status: 'passed', report: report(replay) };
+      };
+      const actualCache = new Function('mkdirSync', 'writeFileSync', 'run', 'assert', 'console', 'installedRunClosed', 'installedCacheFiles', 'readFileSync', 'readdirSync', 'resolvePath', 'statSync', `${cacheFunction}\nreturn installedCache;`)(
+        (p: string) => mkdirSync(join(f.project, p)), (p: string, bytes: any) => writeFileSync(join(f.project, p), bytes), fakeRun, assert, { log: () => {} }, closed,
+        () => ({ calls: { status: 'unknown', before: null, after: null, delta: null }, cache: { status: 'unknown', bytesEqual: null, mtimeEqual: null } }),
+        (p: string, encoding?: any) => readFileSync(path.resolve(f.project, p), encoding), (p: string) => fs.readdirSync(join(f.project, p)), (...p: string[]) => path.resolve(f.project, ...p), (p: string) => fs.statSync(path.resolve(f.project, p)),
+      );
+      f.proof.coverage.cache = await actualCache('http://127.0.0.1:1234');
+      assert.equal(runs, 2); assert.deepEqual(readFileSync(entry), originalCache); assert.equal(fs.statSync(entry).mtimeMs, originalMtime);
+      if (defaultOutputMutation) {
+        assert.equal(existsSync(hostRoot), false);
+        assert.throws(() => validateInstalledPublicProof(f.proof, f.project, f.evidence, f.binding), { code: 'ENOENT' });
+      } else {
+        assert.deepEqual(readFileSync(screenshot), originalScreenshot);
+        validateInstalledPublicProof(f.proof, f.project, f.evidence, f.binding);
+        assert.equal(Object.keys(JSON.parse(readFileSync(join(f.evidence, 'installed-coverage-files.json'), 'utf8'))).length, 12);
+        rmSync(hostRoot, { recursive: true });
+        assert.throws(() => validateInstalledPublicProof(f.proof, f.project, f.evidence, f.binding), { code: 'ENOENT' }, 'missing host proof remains fatal even with isolated output');
+      }
+    } finally { f.close(); }
+  }
+});

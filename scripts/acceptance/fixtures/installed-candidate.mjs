@@ -361,7 +361,7 @@ export default {
 `);
   writeFileSync('installed-cache.config.ts', `import { web } from '@e2e-dev/web';
 import model from './installed-cache-model.mjs';
-export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { model } }, cache: 'read-write', retries: 0, targets: [{ name: 'installed', engine: web(), app: { url: ${JSON.stringify(appURL)} } }] };
+export default { output: '.e2e/installed-cache-output', tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { model } }, cache: 'read-write', retries: 0, targets: [{ name: 'installed', engine: web(), app: { url: ${JSON.stringify(appURL)} } }] };
 `);
   const record = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
   try { console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('record', record))); } catch { /* Keep the original assertion primary. */ }
