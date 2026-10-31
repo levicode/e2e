@@ -170,7 +170,7 @@ test('every failure, skip or missing independent gate prevents candidate success
 test('hosted workflow has narrow opt-in triggers, isolates features, preserves independent runtime gates and final guard', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/native-candidate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /push:\n    branches: \[ci\/s21-native-formal-20261031\]/);
+  assert.match(workflow, /push:\n    branches: \[ci\/s22-repair-native-formal-20261031\]/);
   assert.match(workflow, /node scripts\/acceptance\/candidate-revision.ts/);
   assert.doesNotMatch(workflow, /continue-on-error|secrets\.|actions\/cache|pull_request:|test:agent|canary:publish/);
   for (const id of CANDIDATE_GATES) assert.equal(workflow.split(`id: ${id}\n`).length - 1, 1, id);

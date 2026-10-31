@@ -66,7 +66,7 @@ test('producer hashes the actual allowlisted workflow, never caller-relative pat
 });
 
 test('macOS candidate requires real native hosts, read-only permissions and platform-specific artifact identity', () => {
-  assert.match(workflow, /branches: \[ci\/s21-macos-installed-20261031\]/);
+  assert.match(workflow, /branches: \[ci\/s22-repair-macos-installed-20261031\]/);
   assert.match(workflow, /runner: macos-15\n\s+arch: arm64\n\s+rust_host: aarch64-apple-darwin/);
   assert.match(workflow, /runner: macos-15-intel\n\s+arch: x64\n\s+rust_host: x86_64-apple-darwin/);
   assert.match(workflow, /permissions:\n  contents: read\n/);
@@ -159,6 +159,20 @@ test('producer CLI enforces its recipe selector before reading evidence or invok
 
 test('S21 exact opt-in refs reject near misses, alternate events and push overrides', () => {
   const refs = ['refs/heads/ci/s21-native-formal-20261031', 'refs/heads/ci/s21-macos-installed-20261031'];
+  for (const ref of refs) {
+    assert.deepEqual(candidateRevision(lock, 'push', ref), { sha: lock.commit, benchmarkSweep: false });
+    for (const bad of [`${ref}-extra`, ref.replace('20261031', '20261101'), ref.replace('refs/heads/', 'refs/tags/'), ref.replace('refs/heads/', ''), `${ref}/*`]) assert.throws(() => candidateRevision(lock, 'push', bad), /opt-in branch/);
+    for (const event of ['pull_request', 'workflow_run', 'schedule', '']) assert.throws(() => candidateRevision(lock, event, ref), /only accepts/);
+    assert.throws(() => candidateRevision(lock, 'push', ref, 'b'.repeat(40)), /overrides/);
+    assert.throws(() => candidateRevision(lock, 'push', ref, '', 'true'), /overrides/);
+    assert.throws(() => candidateRevision({ ...lock, commit: 'main' }, 'push', ref), /immutable/);
+    assert.throws(() => candidateRevision({ ...lock, repository: 'other/repository' }, 'push', ref), /source lock/);
+  }
+  assert.deepEqual(candidateRevision(lock, 'workflow_dispatch', refs[0]!, 'b'.repeat(40), 'false'), { sha: 'b'.repeat(40), benchmarkSweep: false });
+});
+
+test('S22 exact opt-in refs reject near misses, alternate events and push overrides', () => {
+  const refs = ['refs/heads/ci/s22-repair-native-formal-20261031', 'refs/heads/ci/s22-repair-macos-installed-20261031'];
   for (const ref of refs) {
     assert.deepEqual(candidateRevision(lock, 'push', ref), { sha: lock.commit, benchmarkSweep: false });
     for (const bad of [`${ref}-extra`, ref.replace('20261031', '20261101'), ref.replace('refs/heads/', 'refs/tags/'), ref.replace('refs/heads/', ''), `${ref}/*`]) assert.throws(() => candidateRevision(lock, 'push', bad), /opt-in branch/);
