@@ -227,6 +227,17 @@ export interface EngineFixtureContext {
   readonly signal: AbortSignal;
   /** Per-call operation budget: the action timeout (or an explicit one) plus the attempt signal. */
   operation(timeoutMs?: number): OperationContext;
+  /**
+   * An immutable assertion budget from the issuing phase. Only use its expiry
+   * proof with reads pinned to the returned deadline and signal (for example
+   * sampleAttribute). Older harnesses may omit this capability; do not infer
+   * ownership from a remaining-time value or a later phase's budget.
+   */
+  assertionBudget?(timeoutMs: number): {
+    readonly deadline: Deadline;
+    readonly signal: AbortSignal;
+    readonly ownsExpiredDeadline: () => boolean;
+  };
   /** Registers a file the current step produced under the attempt artifact directory. */
   attachArtifact(
     kind: 'screenshot' | 'video' | 'download' | 'log',

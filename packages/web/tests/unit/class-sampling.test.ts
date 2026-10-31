@@ -129,7 +129,7 @@ describe('deadline-owned class samples', () => {
 
 
 describe('closed class sample diagnostics', () => {
-  it.each([false, true])('records prior completed sample without changing the thrown timeout (prior=%s)', async prior => {
+  it.each([false, true])('records the same sample history with assertion-owned timeout attribution (prior=%s)', async prior => {
     const previous = process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
     process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = 'web-platform-class300';
     const output = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -140,9 +140,9 @@ describe('closed class sample diagnostics', () => {
         await sleep(operation.timeoutMs);
         throw new EngineError('OPERATION_TIMEOUT', 'settled deadline', { retryable: false });
       });
-      // Diagnostic must preserve current behavior; this is not an assertion fix.
+      // Diagnostics retain the same history; only core-owned attribution changes.
       await expect(expectFixture(browser(f.context).browser).toHaveClass(f.target, 'card inactive', { timeout: 300 }))
-        .rejects.toMatchObject({ code: 'ACTION_FAILED', cause: expect.objectContaining({ code: 'OPERATION_TIMEOUT' }) });
+        .rejects.toMatchObject({ code: prior ? 'ASSERTION_FAILED' : 'ACTION_FAILED' });
       const rows = output.mock.calls.map(call => String(call[0])).filter(line => line.startsWith('CLASS_SAMPLE_DIAGNOSTIC '));
       expect(rows).toHaveLength(1);
       const row = JSON.parse(rows[0]!.slice('CLASS_SAMPLE_DIAGNOSTIC '.length));

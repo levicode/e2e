@@ -345,6 +345,7 @@ function fixtureContext(
       return engine.signal;
     },
     operation: (timeoutMs) => engine.operation(timeoutMs),
+    assertionBudget: (timeoutMs) => engine.assertionBudget(timeoutMs),
     attachArtifact: (kind, relativePath) =>
       steps.attachArtifact(environment.artifacts.register(kind, relativePath)),
     attachViewport: (viewport) => steps.attachViewport(viewport),

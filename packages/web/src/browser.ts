@@ -787,7 +787,12 @@ function createBrowserExpectation(deps: ExpectationDeps, negated = false): Brows
     read: (deadline: Deadline) => Promise<BrowserSample>,
     timeout: number | undefined,
   ): Promise<void> => {
-    const deadline = deps.deadlineFor(timeout);
+    // Only the declared class sampler pins every read to its issuing phase.
+    // Reuse core's ownership proof; legacy getters and URL/title retain their
+    // existing timeout contract rather than claiming an unproven owned read.
+    const budget = api === 'toHaveClass' && deps.context.sampleAttribute !== undefined
+      ? deps.context.assertionBudget?.(timeout ?? deps.context.timeouts.assertion) : undefined;
+    const deadline = budget?.deadline ?? deps.deadlineFor(timeout);
     // pollCondition calls onTimeout only after a read completed, so a sample is always there.
     let last: BrowserSample | undefined;
     // Diagnostic-only, scoped by the original synthetic test. Buffer metadata;
@@ -801,7 +806,8 @@ function createBrowserExpectation(deps: ExpectationDeps, negated = false): Brows
     try {
     await pollCondition({
       deadline,
-      signal: deps.context.signal,
+      signal: budget?.signal ?? deps.context.signal,
+      ...(budget === undefined ? {} : { ownsExpiredDeadline: budget.ownsExpiredDeadline }),
       negated,
       evaluate: async () => {
         if (!diagnose) {
