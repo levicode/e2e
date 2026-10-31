@@ -1,4 +1,4 @@
-import { prepareInstalledEncoderProof, assertInstalledConsumerIsolation, outside, validateInstalledPublicProof } from './installed-public-proof.ts';
+import { validateInstalledSdkPrerequisite, installedConsumerMetadata, inspectInstalledSdkPrerequisite, prepareInstalledEncoderProof, assertInstalledConsumerIsolation, outside, validateInstalledPublicProof } from './installed-public-proof.ts';
 /** Bind the actual installed package graph and exercise its public runtime without an override. */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -21,12 +21,16 @@ try {
   if (!outside(checkout, project)) throw new Error('Installed consumer must be outside checkout');
   mkdirSync(project);
   assertInstalledConsumerIsolation(project, checkout);
-  writeFileSync(join(project, 'package.json'), '{"name":"native-candidate-installed-consumer","private":true,"type":"module"}\n');
+  writeFileSync(join(project, 'package.json'), JSON.stringify(installedConsumerMetadata()) + '\n');
   await installBundle(bundle, digest, project);
   const require = createRequire(join(project, 'package.json'));
   const coreEntry = require.resolve('e2e/runner'); const webEntry = require.resolve('@e2e-dev/web');
   const webCoreEntry = createRequire(webEntry).resolve('e2e/engine');
   assertInstalledConsumerIsolation(project, checkout, [coreEntry, webEntry, webCoreEntry]);
+  const sdkPrerequisite = inspectInstalledSdkPrerequisite(project, coreEntry);
+  writeFileSync(join(evidence, 'installed-sdk-prerequisite.json'), JSON.stringify(sdkPrerequisite, null, 2));
+  validateInstalledSdkPrerequisite(sdkPrerequisite);
+  if (sdkPrerequisite.status !== 'verified') throw new Error('Installed SDK prerequisite failed; consumer unrun');
   const options = { bundle, expectedManifestHash: digest, installedCoreEntry: pathToFileURL(coreEntry).href, installedWebEntry: pathToFileURL(webEntry).href, nativeExecutable: join(bundle, manifest.native.path) };
   before = await verifyHeldoutCandidate(options);
   copyFileSync(fileURLToPath(new URL('fixtures/installed-candidate.mjs', import.meta.url)), join(project, 'installed-candidate.mjs'));

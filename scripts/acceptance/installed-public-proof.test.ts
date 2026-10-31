@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync as sdkSymlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { validateEncoderReceipt, validateInstalledPublicProof } from './installed-public-proof.ts';
+import { validateInstalledSdkPrerequisite, INSTALLED_AI_VERSION, installedConsumerMetadata, inspectInstalledSdkPrerequisite, validateEncoderReceipt, validateInstalledPublicProof } from './installed-public-proof.ts';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'installed-proof-pure-')); const project = join(root, 'consumer'); const evidence = join(root, 'evidence');
@@ -204,4 +204,81 @@ test('actual installed run failure diagnostic retains only closed facts before u
     assert.ok(source.indexOf(`installedRunClosed('${stage}', ${stage})`) < source.indexOf(`assert.equal(${stage}.exitCode, 0)`));
     assert.ok(source.includes(`assert.equal(${stage}.exitCode, 0); assert.equal(${stage}.status, 'passed');`));
   }
+});
+
+function sdkFixture(t: { after(fn: () => void): void }) {
+  const root = mkdtempSync(join(tmpdir(), 'installed-sdk-pure-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const project = join(root, 'consumer'); const core = join(project, 'node_modules', 'e2e'); mkdirSync(core, { recursive: true });
+  writeFileSync(join(core, 'package.json'), JSON.stringify({ name: 'e2e', type: 'module' }));
+  const entry = join(core, 'runner.js'); writeFileSync(entry, 'throw new Error("must not execute core");');
+  const marker = join(root, 'executed');
+  const install = (directory: string, version: string, name = 'ai') => {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'package.json'), JSON.stringify({ name, version, main: 'index.js' }));
+    writeFileSync(join(directory, 'index.js'), `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'); throw new Error('must not execute SDK');`);
+  };
+  return { root, project, core, entry, marker, install };
+}
+
+test('SDK prerequisite uses exact locked consumer peer metadata, not a product dependency change', () => {
+  assert.equal(INSTALLED_AI_VERSION, '7.0.153');
+  const product = JSON.parse(readFileSync(new URL('../../packages/e2e/package.json', import.meta.url), 'utf8'));
+  assert.equal(product.devDependencies.ai, INSTALLED_AI_VERSION); assert.equal(product.peerDependencies.ai, '^7.0.0'); assert.equal(product.peerDependenciesMeta.ai.optional, true);
+  assert.ok(readFileSync(new URL('../../pnpm-lock.yaml', import.meta.url), 'utf8').includes(`  ai@${INSTALLED_AI_VERSION}:`));
+  assert.deepEqual(installedConsumerMetadata(), { name: 'native-candidate-installed-consumer', private: true, type: 'module', dependencies: { ai: '7.0.153' } });
+  const source = readFileSync(new URL('candidate-installed.ts', import.meta.url), 'utf8');
+  assert.equal((source.match(/await installBundle\(/g) ?? []).length, 1);
+  assert.ok(source.indexOf('JSON.stringify(installedConsumerMetadata())') < source.indexOf('await installBundle('));
+  const saved = source.indexOf("writeFileSync(join(evidence, 'installed-sdk-prerequisite.json')");
+  assert.ok(saved > source.indexOf('inspectInstalledSdkPrerequisite(project, coreEntry)'));
+  assert.ok(saved < source.indexOf("if (sdkPrerequisite.status !== 'verified')"));
+  assert.ok(saved < source.indexOf('before = await verifyHeldoutCandidate(options)'));
+  assert.ok(source.includes("spawnSync(process.execPath, ['installed-candidate.mjs']"));
+});
+
+test('SDK prerequisite resolves from actual core context without executing either package', t => {
+  const f = sdkFixture(t);
+  f.install(join(f.project, 'node_modules', 'ai'), '9.9.9');
+  f.install(join(f.core, 'node_modules', 'ai'), INSTALLED_AI_VERSION);
+  const receipt = inspectInstalledSdkPrerequisite(f.project, f.entry);
+  assert.equal(receipt.status, 'verified'); assert.equal(receipt.version, '7.0.153');
+  assert.equal(receipt.coreInsideConsumer, true); assert.equal(receipt.resolvedFromCore, true); assert.equal(receipt.sdkInsideConsumer, true); assert.equal(receipt.metadataInsideConsumer, true);
+  assert.equal(receipt.consumerRun, 'unrun-at-prerequisite-check'); assert.equal(receipt.evidence, 'sdk-prerequisite-not-acceptance');
+  assert.equal(existsSync(f.marker), false);
+  assert.ok(!JSON.stringify(receipt).includes(f.root));
+});
+
+test('SDK prerequisite rejects core-visible wrong version even if project peer is correct', t => {
+  const f = sdkFixture(t); f.install(join(f.project, 'node_modules', 'ai'), INSTALLED_AI_VERSION); f.install(join(f.core, 'node_modules', 'ai'), '7.0.134');
+  const receipt = inspectInstalledSdkPrerequisite(f.project, f.entry);
+  assert.equal(receipt.status, 'failed'); assert.equal(receipt.reason, 'version-mismatch'); assert.equal(receipt.version, '7.0.134'); assert.equal(existsSync(f.marker), false);
+});
+
+test('SDK prerequisite fails closed for absent peer, external resolution and invalid metadata without secret output', t => {
+  const f = sdkFixture(t);
+  assert.equal(inspectInstalledSdkPrerequisite(f.project, f.entry).reason, 'sdk-unresolved');
+  const external = join(f.root, 'PRIVATE_EXTERNAL_SECRET'); f.install(external, INSTALLED_AI_VERSION);
+  const sdk = join(f.core, 'node_modules', 'ai'); mkdirSync(join(f.core, 'node_modules')); sdkSymlinkSync(external, sdk, 'dir');
+  const outsideReceipt = inspectInstalledSdkPrerequisite(f.project, f.entry);
+  assert.equal(outsideReceipt.reason, 'sdk-outside-consumer'); assert.equal(outsideReceipt.status, 'failed'); assert.equal(outsideReceipt.sdkInsideConsumer, false);
+  assert.doesNotMatch(JSON.stringify(outsideReceipt), /PRIVATE_EXTERNAL_SECRET|must not execute|index.js/);
+  const invalidFixture = sdkFixture(t); invalidFixture.install(join(invalidFixture.core, 'node_modules', 'ai'), 'PRIVATE_VERSION_SECRET');
+  const invalid = inspectInstalledSdkPrerequisite(invalidFixture.project, invalidFixture.entry);
+  assert.equal(invalid.status, 'failed'); assert.equal(invalid.reason, 'metadata-invalid'); assert.equal(invalid.version, null); assert.doesNotMatch(JSON.stringify(invalid), /PRIVATE_VERSION_SECRET/);
+  assert.equal(inspectInstalledSdkPrerequisite(f.project, join(external, 'index.js')).reason, 'core-outside-consumer');
+  assert.equal(existsSync(f.marker), false);
+});
+
+test('retained SDK prerequisite validator accepts failures as failures, rejects spoofed success and unsafe fields', t => {
+  const f = sdkFixture(t);
+  const missing = inspectInstalledSdkPrerequisite(f.project, f.entry);
+  assert.equal(validateInstalledSdkPrerequisite(missing).status, 'failed');
+  f.install(join(f.core, 'node_modules', 'ai'), INSTALLED_AI_VERSION);
+  const valid = inspectInstalledSdkPrerequisite(f.project, f.entry);
+  assert.equal(validateInstalledSdkPrerequisite(valid).status, 'verified');
+  for (const value of [undefined, { ...valid, message: 'PRIVATE_SECRET' }, { ...valid, version: 'PRIVATE_SECRET' }, { ...valid, reason: 'PRIVATE_SECRET' }, { ...valid, resolvedFromCore: false }, { ...valid, metadataInsideConsumer: false }, { ...valid, consumerRun: 'passed' }, { ...missing, status: 'verified' }, { ...valid, expectedVersion: '7.0.134' }]) {
+    assert.throws(() => validateInstalledSdkPrerequisite(value), { message: 'Invalid installed SDK prerequisite receipt' });
+  }
+  const wrong = sdkFixture(t); wrong.install(join(wrong.core, 'node_modules', 'ai'), '7.0.134');
+  assert.equal(validateInstalledSdkPrerequisite(inspectInstalledSdkPrerequisite(wrong.project, wrong.entry)).reason, 'version-mismatch');
 });

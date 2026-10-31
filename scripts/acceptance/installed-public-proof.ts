@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { copyFileSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { closeSync, constants, copyFileSync, fstatSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export function validateInstalledPublicProof(value: unknown, project: string, evidence: string, encoderBinding: Record<string, unknown>): void {
   const proof = value as Record<string, any>;
@@ -180,4 +181,79 @@ export function validateEncoderReceipt(value: unknown, binding: Record<string, u
   assert.equal(receipt.media.nonce, binding['nonce']); assert.equal(receipt.media.segmentPath, 'video/video.webm');
   assert.equal(receipt.media.publicPath, media.path); assert.equal(receipt.media.webmSha256, webmSha256);
   assert.equal(receipt.media.runId, media.runId); assert.equal(receipt.media.attemptId, media.attemptId); assert.equal(receipt.media.startedAt, media.startedAt);
+}
+
+/** Acceptance environment prerequisite, not a product dependency or acceptance verdict. */
+export const INSTALLED_AI_VERSION = '7.0.153';
+export function installedConsumerMetadata() {
+  return { name: 'native-candidate-installed-consumer', private: true, type: 'module', dependencies: { ai: INSTALLED_AI_VERSION } };
+}
+
+/** Resolve from the actual installed core, never import/execute the SDK or consult checkout helpers. */
+export function inspectInstalledSdkPrerequisite(project: string, coreEntry: string) {
+  const receipt = {
+    schemaVersion: 1, evidence: 'sdk-prerequisite-not-acceptance', resolver: 'node-createRequire-core-entry',
+    expectedVersion: INSTALLED_AI_VERSION, version: null as string | null,
+    coreInsideConsumer: false, resolvedFromCore: false, sdkInsideConsumer: false, metadataInsideConsumer: false,
+    versionMatches: false, consumerRun: 'unrun-at-prerequisite-check', status: 'failed', reason: 'core-unavailable',
+  };
+  try {
+    const root = realpathSync(project); const core = realpathSync(coreEntry);
+    receipt.coreInsideConsumer = core !== root && !outside(root, core);
+    if (!receipt.coreInsideConsumer) { receipt.reason = 'core-outside-consumer'; return receipt; }
+    receipt.reason = 'sdk-unresolved';
+    const entry = realpathSync(createRequire(core).resolve('ai'));
+    receipt.resolvedFromCore = true;
+    receipt.sdkInsideConsumer = entry !== root && !outside(root, entry);
+    if (!receipt.sdkInsideConsumer) { receipt.reason = 'sdk-outside-consumer'; return receipt; }
+    receipt.reason = 'metadata-unavailable';
+    let directory = dirname(entry);
+    for (let depth = 0; depth < 16 && directory !== root && !outside(root, directory); depth++, directory = dirname(directory)) {
+      const metadata = join(directory, 'package.json');
+      let fd: number;
+      try { fd = openSync(metadata, constants.O_RDONLY | constants.O_NOFOLLOW); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; receipt.reason = 'metadata-invalid'; return receipt; }
+      receipt.reason = 'metadata-invalid';
+      const bytes = Buffer.alloc(65_537);
+      try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile() || stat.size > 65_536) { receipt.reason = 'metadata-invalid'; return receipt; }
+        const canonical = realpathSync(metadata);
+        if (outside(root, canonical)) { receipt.reason = 'metadata-outside-consumer'; return receipt; }
+        receipt.metadataInsideConsumer = true;
+        const length = readSync(fd, bytes, 0, bytes.length, 0);
+        if (length > 65_536) { receipt.reason = 'metadata-invalid'; return receipt; }
+        const value: unknown = JSON.parse(bytes.subarray(0, length).toString('utf8'));
+        if (!value || typeof value !== 'object' || !('name' in value) || value.name !== 'ai' || !('version' in value) || typeof value.version !== 'string' || !/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/.test(value.version)) { receipt.reason = 'metadata-invalid'; return receipt; }
+        receipt.version = value.version;
+        receipt.versionMatches = value.version === INSTALLED_AI_VERSION;
+        receipt.status = receipt.versionMatches ? 'verified' : 'failed';
+        receipt.reason = receipt.versionMatches ? 'exact-peer-visible-from-core' : 'version-mismatch';
+        return receipt;
+      } finally { bytes.fill(0); closeSync(fd); }
+    }
+  } catch { /* Preserve only the closed stage reason; never serialize a path or arbitrary error. */ }
+  return receipt;
+}
+
+/** Validate a retained prerequisite receipt without accepting it as browser/encoder evidence. */
+export function validateInstalledSdkPrerequisite(value: unknown): ReturnType<typeof inspectInstalledSdkPrerequisite> {
+  const fail = (): never => { throw new Error('Invalid installed SDK prerequisite receipt'); };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
+  const r = value as Record<string, unknown>;
+  const keys = ['schemaVersion', 'evidence', 'resolver', 'expectedVersion', 'version', 'coreInsideConsumer', 'resolvedFromCore', 'sdkInsideConsumer', 'metadataInsideConsumer', 'versionMatches', 'consumerRun', 'status', 'reason'];
+  if (Object.keys(r).length !== keys.length || keys.some(key => !Object.hasOwn(r, key))) return fail();
+  if (r['schemaVersion'] !== 1 || r['evidence'] !== 'sdk-prerequisite-not-acceptance' || r['resolver'] !== 'node-createRequire-core-entry' || r['expectedVersion'] !== INSTALLED_AI_VERSION || r['consumerRun'] !== 'unrun-at-prerequisite-check') return fail();
+  const flags = ['coreInsideConsumer', 'resolvedFromCore', 'sdkInsideConsumer', 'metadataInsideConsumer', 'versionMatches'];
+  if (flags.some(key => typeof r[key] !== 'boolean')) return fail();
+  if (r['version'] !== null && (typeof r['version'] !== 'string' || !/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/.test(r['version']))) return fail();
+  const reasons = ['core-unavailable', 'core-outside-consumer', 'sdk-unresolved', 'sdk-outside-consumer', 'metadata-unavailable', 'metadata-invalid', 'metadata-outside-consumer', 'version-mismatch', 'exact-peer-visible-from-core'];
+  if (typeof r['reason'] !== 'string' || !reasons.includes(r['reason']) || !['verified', 'failed'].includes(r['status'] as string)) return fail();
+  if ((r['resolvedFromCore'] && !r['coreInsideConsumer']) || (r['sdkInsideConsumer'] && !r['resolvedFromCore']) || (r['metadataInsideConsumer'] && !r['sdkInsideConsumer'])) return fail();
+  if (r['version'] !== null && !r['metadataInsideConsumer']) return fail();
+  if (r['versionMatches'] !== (r['version'] === INSTALLED_AI_VERSION)) return fail();
+  const verified = flags.every(key => r[key] === true) && r['version'] === INSTALLED_AI_VERSION;
+  if ((r['status'] === 'verified') !== verified || (r['reason'] === 'exact-peer-visible-from-core') !== verified) return fail();
+  if ((r['reason'] === 'version-mismatch') !== (r['version'] !== null && r['version'] !== INSTALLED_AI_VERSION)) return fail();
+  return value as ReturnType<typeof inspectInstalledSdkPrerequisite>;
 }

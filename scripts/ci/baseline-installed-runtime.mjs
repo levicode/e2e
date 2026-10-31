@@ -1,11 +1,12 @@
 /** Historical runtime + current JS diagnostic binding, never a fabricated native gate. */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync,writeFileSync,realpathSync} from 'node:fs';
+import {readFileSync,writeFileSync,realpathSync,existsSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {verifyArtifact} from './native-runtime.ts';
+import {validateInstalledSdkPrerequisite} from '../acceptance/installed-public-proof.ts';
 const H=b=>createHash('sha256').update(b).digest('hex');
 const read=p=>JSON.parse(readFileSync(p,'utf8'));
 export function closedRecords(text){
@@ -24,6 +25,17 @@ export function deriveProducer(c,m){
  assert.deepEqual(m.source,p.expected.source);assert.deepEqual(m.nativeSource,p.nativeSource);assert.equal(m.binarySha256,p.binarySha256);assert.equal(m.runId,p.expected.runId);assert.equal(m.runAttempt,p.expected.runAttempt);assert.equal(m.acceptanceEvidence,false);assert.equal(m.kind,'source-built-ci-runtime');assert.deepEqual(m.compilation.features,[]);assert.equal(m.platform,p.expected.platform);assert.equal(m.architecture,p.expected.architecture);
  return {schemaVersion:1,kind:'diagnostic-historical-native-provenance',purpose:c.purpose,acceptanceEvidence:false,releaseEligible:false,source:m.nativeSource,binary:{sha256:m.binarySha256},producer:{platform:m.platform,architecture:m.architecture,repository:m.repository,runId:m.runId,runAttempt:m.runAttempt,workflowSha:m.source.commit},originalRuntime:{manifestSHA256:p.manifestSha256,artifactId:p.artifactId,artifactDigest:p.artifactDigest,source:m.source,compilerSHA256:m.compilerSha256,rustcSHA256:m.rustcSha256},historicalPairSealSHA256:c.historicalPairSealSHA256,notClaimed:['current-run compilation','hosted contract pass','encoder gate pass','full candidate acceptance'],originalFormalBinarySHA256:c.originalFormalBinarySHA256};
 }
+/** The peer receipt is a pre-fixture snapshot, never final installed acceptance. */
+export function collectSdkObservation(installed,peerValue,log){
+ assert.ok(installed && ['passed','failed'].includes(installed.status));
+ const peer=peerValue===undefined?null:validateInstalledSdkPrerequisite(peerValue);
+ const hasLog=typeof log==='string';assert.ok(log===undefined||hasLog);
+ if(hasLog)assert.ok(Buffer.byteLength(log)<=16*1024*1024);
+ if(peer?.status==='failed'){assert.equal(installed.status,'failed');assert.equal(hasLog,false,'SDK prerequisite failure must stop before consumer fixture');}
+ const rows=hasLog?closedRecords(log):[];
+ if(installed.status==='passed'){assert.equal(peer?.status,'verified');assert.equal(hasLog,true);assert.equal(rows.length,2,'Successful installed fixture must retain both original closed records');assert.ok(rows.every(x=>x.exitCode===0&&x.status==='passed'));}
+ return {sdkPrerequisite:peer??{status:'incomplete',reason:'missing-receipt'},sdkPrerequisiteVerified:peer?.status==='verified',consumerExecution:hasLog?'consumer-log-retained':peer?.status==='failed'?'unrun-sdk-prerequisite-failed':'incomplete-no-consumer-log',closedRecords:rows};
+}
 function main(mode){
  const c=read('scripts/ci/baseline-installed-binding.json');const git=(...a)=>execFileSync('git',a,{encoding:'utf8'}).trim();
  assert.equal(process.env.GITHUB_REF,c.exactRef);assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');assert.equal(process.env.GITHUB_REPOSITORY,'levicode/e2e');assert.equal(process.version,'v24.22.1');assert.equal(git('status','--porcelain'),'');assert.equal(git('rev-parse','HEAD'),process.env.GITHUB_SHA);
@@ -34,8 +46,8 @@ function main(mode){
  if(mode==='bind'){
   writeFileSync('.artifacts/baseline-installed-diagnostic/diagnostic-producer.json',JSON.stringify(deriveProducer(c,m),null,2)+'\n',{flag:'wx'});writeFileSync('.artifacts/baseline-installed-diagnostic/current-js-source.json',JSON.stringify({source,purpose:c.purpose,acceptanceEvidence:false,originalRuntimeSource:m.source},null,2)+'\n',{flag:'wx'});
  }else if(mode==='collect'){
-  const installed=read('.artifacts/baseline-installed-diagnostic/installed.result.json');const log=readFileSync('.artifacts/baseline-installed-diagnostic/installed-consumer.log','utf8');assert.ok(Buffer.byteLength(log)<=16*1024*1024);const rows=closedRecords(log);if(installed.status==='passed')assert.equal(rows.length,2,'Successful installed fixture must retain both original closed records');const code=Number(readFileSync('.artifacts/baseline-installed-diagnostic/installed-command.exit','utf8').trim());assert.ok(Number.isInteger(code)&&code>=0&&code<=255);assert.deepEqual(read('.artifacts/baseline-installed-diagnostic/current-js-source.json').source,source);
-  writeFileSync('.artifacts/baseline-installed-diagnostic/baseline-installed-diagnostic.json',JSON.stringify({purpose:c.purpose,acceptanceEvidence:false,source,nativeSource:m.nativeSource,binarySHA256:m.binarySha256,originalRuntimeSource:m.source,originalInstalledExit:code,installedStatus:installed.status,closedRecords:rows,observation:rows.length?'bounded-facts-observed':'incomplete-before-first-record',replayObserved:rows.length===2,fullCandidateAccepted:false,releaseEligible:false},null,2)+'\n',{flag:'wx'});
+  const installed=read('.artifacts/baseline-installed-diagnostic/installed.result.json');const peerPath='.artifacts/baseline-installed-diagnostic/installed-sdk-prerequisite.json';const logPath='.artifacts/baseline-installed-diagnostic/installed-consumer.log';const observation=collectSdkObservation(installed,existsSync(peerPath)?read(peerPath):undefined,existsSync(logPath)?readFileSync(logPath,'utf8'):undefined);const rows=observation.closedRecords;const code=Number(readFileSync('.artifacts/baseline-installed-diagnostic/installed-command.exit','utf8').trim());assert.ok(Number.isInteger(code)&&code>=0&&code<=255);assert.deepEqual(read('.artifacts/baseline-installed-diagnostic/current-js-source.json').source,source);
+  writeFileSync('.artifacts/baseline-installed-diagnostic/baseline-installed-diagnostic.json',JSON.stringify({purpose:c.purpose,acceptanceEvidence:false,source,nativeSource:m.nativeSource,binarySHA256:m.binarySha256,originalRuntimeSource:m.source,originalInstalledExit:code,installedStatus:installed.status,...observation,observation:rows.length?'bounded-facts-observed':'incomplete-before-first-record',replayObserved:rows.length===2,fullCandidateAccepted:false,releaseEligible:false},null,2)+'\n',{flag:'wx'});
  }else assert.fail('bind or collect only');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){assert.equal(process.argv.length,3);main(process.argv[2]);}
