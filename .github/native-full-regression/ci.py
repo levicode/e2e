@@ -281,6 +281,8 @@ CLASS_CAPTURE_NAMES = ['raw-result.json', 'raw.log', 'run.exit', 'command.json',
                        'versions.json', 'node-version.txt', 'pnpm-version.txt', 'vitest-version.txt']
 CLASS_SHARED_INSTALL_NAMES = ['install.log', 'install.exit', 'install-command.json']
 
+CLASS_ADDITIONAL_DIAGNOSTIC_NAMES = ['closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=false)', 'closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=true)']
+
 def class_results_report(root, evidence, pins):
     bound_identity(pins)
     projection = pins['classProjection']
@@ -292,6 +294,13 @@ def class_results_report(root, evidence, pins):
     names_by_file = {group['file']: exact_names(group.get('testNames'), 20, 'class controls', rust=False) for group in groups}
     all_names = [name for names in names_by_file.values() for name in names]
     assert len(set(all_names)) == 40, 'class names overlap between files'
+    original_names = list(all_names)
+    diagnostics = projection['additionalDiagnosticTests']
+    assert diagnostics == CLASS_ADDITIONAL_DIAGNOSTIC_NAMES, 'wrong additional class diagnostic identities'
+    assert not set(diagnostics) & set(original_names), 'diagnostics overlap original class40'
+    names_by_file[CLASS_TEST_FILES[1]] = names_by_file[CLASS_TEST_FILES[1]] + diagnostics
+    all_names = original_names + diagnostics
+    assert len(set(all_names)) == 42 and set(original_names) <= set(all_names), 'class40 plus diagnostic2 inventory differs'
     assert type(projection['sourceFiles']) is dict and set(projection['sourceFiles']) == set(CLASS_SOURCE_FILES), 'class reviewed source set differs'
     out, install = evidence / 'class-projection', evidence / 'attribute-projection'
     assert all((out / name).is_file() for name in CLASS_CAPTURE_NAMES), 'missing class capture'
@@ -313,7 +322,7 @@ def class_results_report(root, evidence, pins):
     raw = json.loads((out / 'raw-result.json').read_text())
     assert raw['success'] is True
     for key in ['numTotalTests', 'numPassedTests']:
-        assert type(raw[key]) is int and raw[key] == 40, 'wrong class count'
+        assert type(raw[key]) is int and raw[key] == 42, 'wrong class40 plus diagnostic2 count'
     for key in ['numFailedTests', 'numPendingTests', 'numTodoTests', 'numFailedTestSuites', 'numPendingTestSuites']:
         assert type(raw[key]) is int and raw[key] == 0, 'class failure/skip/todo'
     assert type(raw['numTotalTestSuites']) is int and raw['numTotalTestSuites'] > 0
@@ -329,7 +338,7 @@ def class_results_report(root, evidence, pins):
         observed_files.append(path)
         assert suite['status'] == 'passed' and suite.get('message', '') == '' and suite.get('testExecError') is None
         assertions = suite['assertionResults']
-        assert type(assertions) is list and len(assertions) == 20, 'class per-file count differs'
+        assert type(assertions) is list and len(assertions) == len(names_by_file[expected_paths[path]]), 'class per-file count differs'
         assert Counter(row['fullName'] for row in assertions) == Counter(names_by_file[expected_paths[path]]), 'class exact names differ/duplicate'
         assert all(row['status'] == 'passed' and row['failureMessages'] == [] for row in assertions), 'class assertion skipped or failed'
     producer = json.loads((evidence / 'producer.json').read_text())
@@ -346,7 +355,9 @@ def class_results_report(root, evidence, pins):
         actual = digest(root / path)
         assert actual == expected == producer['files'][path], 'class source/config bytes differ from reviewed producer source'
     return {'accepted': True, 'producerCommit': producer['commit'], 'producerTree': producer['tree'],
-            'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'count': 40,
+            'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'count': 42,
+            'originalCount': 40, 'additionalDiagnosticCount': 2,
+            'originalNames': original_names, 'additionalDiagnosticNames': diagnostics,
             'files': groups, 'sourceFiles': source_hashes, 'versions': versions,
             'captures': {name: digest(out / name) for name in CLASS_CAPTURE_NAMES},
             'sharedFrozenInstall': {name: digest(install / name) for name in CLASS_SHARED_INSTALL_NAMES},

@@ -8,15 +8,15 @@ concurrency:
 env:
   E2E_TELEMETRY_DISABLED: '1'
   E2E_UPDATE_CHECK_DISABLED: '1'
-  NATIVE_SOURCE_SHA: e5f2c0252d591d0a52476bde46fb17ba932e0e57
-  NATIVE_SOURCE_TREE: ca16e146b3b1bd7606f931c2a9e38a311b965edc
+  NATIVE_SOURCE_SHA: 6ff53e3dc9d9d85ced8b49a6dcf1cdae4d80f988
+  NATIVE_SOURCE_TREE: c1ffdd773033721b7d85c1b000563764195dd301
   NEXT_TELEMETRY_DISABLED: '1'
   GIT_NO_LAZY_FETCH: '1'
   RUSTUP_TOOLCHAIN: 1.99.1
 'on':
   push:
     branches:
-    - ci/native-full-regression-s14-20261030
+    - ci/native-full-regression-s15-20261031
 jobs:
   original-four-compile-boundaries:
     runs-on: ubuntu-24.04
@@ -502,7 +502,7 @@ jobs:
       shell: bash
       run: python3 .github/native-full-regression/ci.py pure-results --gate fault
       if: ${{ !cancelled() && steps.projection-pure.outcome != 'skipped' }}
-    - name: Run only the separate 40 cross-package class pure controls
+    - name: Run the original 40 cross-package class controls plus two closed diagnostics
       id: class-pure
       shell: bash
       if: ${{ !cancelled() && steps.projection-install.outcome == 'success' }}
@@ -552,7 +552,7 @@ jobs:
         exit "$status"
 
         '
-    - name: Validate separate class 40 exact names and raw evidence
+    - name: Validate original class40 plus two diagnostic exact names and raw evidence
       id: class-results
       shell: bash
       if: ${{ !cancelled() && steps.class-pure.outcome != 'skipped' }}

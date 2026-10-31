@@ -397,16 +397,19 @@ def attach_class_fixture(test):
                'testNames': ['class group ' + str(i) + ' control ' + str(n).zfill(2) for n in range(20)]}
               for i, path in enumerate(ci.CLASS_TEST_FILES)]
     test.pins['classProjection'] = {'configFile': ci.CLASS_CONFIG_FILE, 'configSHA256': source_hashes[ci.CLASS_CONFIG_FILE],
-        'files': groups, 'sourceFiles': {name: source_hashes[name] for name in ci.CLASS_SOURCE_FILES},
+        'files': groups, 'additionalDiagnosticTests': list(ci.CLASS_ADDITIONAL_DIAGNOSTIC_NAMES), 'sourceFiles': {name: source_hashes[name] for name in ci.CLASS_SOURCE_FILES},
         'nodeMajor': 24, 'pnpmVersion': '12.3.4', 'vitestVersion': '5.0.5'}
     test.pins['producerFiles'] = sorted(set(test.pins['producerFiles']) | set(source_hashes))
     test.producer['files'].update(source_hashes)
     test.write_json(test.ev / 'producer.json', test.producer)
-    test.class_raw = {'success': True, 'numTotalTests': 40, 'numPassedTests': 40, 'numFailedTests': 0,
+    test.class_raw = {'success': True, 'numTotalTests': 42, 'numPassedTests': 42, 'numFailedTests': 0,
         'numPendingTests': 0, 'numTodoTests': 0, 'numTotalTestSuites': 4, 'numPassedTestSuites': 4,
         'numFailedTestSuites': 0, 'numPendingTestSuites': 0,
         'testResults': [{'name': str(test.root / group['file']), 'status': 'passed', 'message': '',
             'assertionResults': [{'fullName': name, 'status': 'passed', 'failureMessages': []} for name in group['testNames']]} for group in groups]}
+    test.class_raw['testResults'][1]['assertionResults'] += [
+        {'fullName': name, 'status': 'passed', 'failureMessages': []}
+        for name in ci.CLASS_ADDITIONAL_DIAGNOSTIC_NAMES]
     test.write_json(test.class_dir / 'raw-result.json', test.class_raw)
     test.write_json(test.class_dir / 'command.json', ['pnpm', '--filter', 'e2e', 'exec', 'vitest', 'run', '--config',
         '../../' + ci.CLASS_CONFIG_FILE, '--reporter=json', '--outputFile=' + str(test.class_dir / 'raw-result.json')])
@@ -424,8 +427,26 @@ class ClassProjectionTests(unittest.TestCase):
     def save(self): self.b.write_json(self.b.class_dir / 'raw-result.json', self.b.class_raw)
     def reject(self):
         with self.assertRaises((AssertionError, KeyError, TypeError, FileNotFoundError, ValueError)): self.report()
-    def test_two_files_twenty_each_success(self):
-        r=self.report(); self.assertTrue(r['accepted']);self.assertEqual(r['count'],40);self.assertFalse(r['browserAcceptance'])
+    def test_original_twenty_each_plus_two_diagnostics_success(self):
+        r=self.report(); self.assertTrue(r['accepted']);self.assertEqual(r['count'],42);self.assertEqual(r['originalCount'],40);self.assertEqual(r['additionalDiagnosticCount'],2);self.assertFalse(r['browserAcceptance'])
+    def test_missing_diagnostic_contract_rejected(self):
+        del self.b.pins['classProjection']['additionalDiagnosticTests'];self.reject()
+    def test_substituted_diagnostic_name_rejected(self):
+        self.b.pins['classProjection']['additionalDiagnosticTests'][0]='other diagnostic';self.reject()
+    def test_duplicate_diagnostic_name_rejected(self):
+        self.b.pins['classProjection']['additionalDiagnosticTests'][1]=ci.CLASS_ADDITIONAL_DIAGNOSTIC_NAMES[0];self.reject()
+    def test_original40_only_result_rejected(self):
+        self.b.class_raw['testResults'][1]['assertionResults']=self.b.class_raw['testResults'][1]['assertionResults'][:-2]
+        self.b.class_raw['numTotalTests']=40;self.b.class_raw['numPassedTests']=40;self.save();self.reject()
+    def test_missing_original_name_even_with_42_total_rejected(self):
+        self.b.class_raw['testResults'][0]['assertionResults'][0]['fullName']='foreign replacement';self.save();self.reject()
+    def test_diagnostic_wrong_file_rejected(self):
+        row=self.b.class_raw['testResults'][1]['assertionResults'].pop()
+        self.b.class_raw['testResults'][0]['assertionResults'].append(row);self.save();self.reject()
+    def test_diagnostic_skipped_rejected(self):
+        self.b.class_raw['testResults'][1]['assertionResults'][-1]['status']='skipped';self.save();self.reject()
+    def test_diagnostic_failed_rejected(self):
+        self.b.class_raw['testResults'][1]['assertionResults'][-1]['status']='failed';self.save();self.reject()
     def test_original_attribute23_receipt_independent(self):
         before=self.b.pure_report();self.b.class_raw['numTodoTests']=1;self.save();self.assertEqual(before,self.b.pure_report())
     def test_missing_class_contract(self): del self.b.pins['classProjection'];self.reject()
