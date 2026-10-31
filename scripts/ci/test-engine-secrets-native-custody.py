@@ -49,6 +49,30 @@ def original_checker(workspace):
     target=workspace/'scripts/ci/check-original-capture-invocations.py';shutil.copyfile(HERE/'check-original-capture-invocations.py',target)
     spec=importlib.util.spec_from_file_location('original_six',target);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 class Controls(unittest.TestCase):
+    def test_direct_selector_matrix(self):
+        for selector,node_version,accepted in [['22', 'v22.23.4', True], ['24', 'v24.22.1', True], ['26', 'v26.0.0', True], ['22.22.3', 'v22.22.3', True], ['24.8.0', 'v24.8.0', True], ['22.23.4', 'v22.23.4', True], ['24.22.1', 'v24.22.1', True], ['26.1.2', 'v26.1.2', True], ['26', 'v26.999.999', True], ['26.999.999', 'v26.999.999', True], ['22', 'v24.22.1', False], ['24', 'v26.0.0', False], ['26', 'v22.23.4', False], ['22.22.3', 'v22.22.4', False], ['24.8.0', 'v24.8.1', False], ['26.1.2', 'v26.1.3', False], ['20', 'v20.1.0', False], ['25.1.0', 'v25.1.0', False], ['27', 'v27.0.0', False], ['026', 'v26.0.0', False], ['26.01.0', 'v26.01.0', False], ['26.0.00', 'v26.0.00', False], ['26.1000.0', 'v26.1000.0', False], ['26', 'v26.1000.0', False], ['v26.0.0', 'v26.0.0', False], ['26', '26.0.0', False], ['26.0', 'v26.0.0', False], ['26.0.0.0', 'v26.0.0.0', False], ['26\n', 'v26.0.0', False], ['26.0.0', 'v26.0.0\n', False], [' 26', 'v26.0.0', False], ['26 ', 'v26.0.0', False], ['../26', 'v26.0.0', False], ['/26', 'v26.0.0', False], ['26.0.0-beta', 'v26.0.0-beta', False], ['26.0.0+build', 'v26.0.0+build', False]]:
+            with self.subTest(selector=selector,nodeVersion=node_version),tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'E2E_ENGINE_SECRETS_CAPTURE':'1'}):
+                root=pathlib.Path(d);a,e=fixture(root);expected=dict(EXPECTED,selector=selector,nodeVersion=node_version);e['identity']=expected
+                meta=json.loads((a/'custody.json').read_text());meta.update(selector=selector,nodeVersion=node_version);write(a/'custody.json',meta)
+                if accepted:self.assertEqual(v.verify(root,e,expected,BINARY,WRAPPER)['processCustody'],'verified')
+                else:
+                    with self.assertRaises(v.Invalid):v.verify(root,e,expected,BINARY,WRAPPER)
+    def test_cli_selector_directory_and_native_custody_stay_bound(self):
+        for selector,node_version,accepted in [['22', 'v22.23.4', True], ['24', 'v24.22.1', True], ['26', 'v26.0.0', True], ['22.22.3', 'v22.22.3', True], ['24.8.0', 'v24.8.0', True], ['22.23.4', 'v22.23.4', True], ['24.22.1', 'v24.22.1', True], ['26.1.2', 'v26.1.2', True], ['26', 'v26.999.999', True], ['26.999.999', 'v26.999.999', True], ['26', 'v24.22.1', False], ['24.8.0', 'v24.8.1', False]]:
+            with self.subTest(selector=selector,nodeVersion=node_version),tempfile.TemporaryDirectory() as d:
+                workspace=pathlib.Path(d);evidence=cli_fixture(workspace);old=evidence/'fixtures'/'24.22.1'/'core';core=evidence/'fixtures'/selector/'core'
+                if core!=old:core.parent.mkdir(parents=True,exist_ok=True);old.rename(core)
+                write(evidence/'node.version',(node_version+'\n').encode());meta=json.loads((core/'engine-secrets-native'/NONCE/'custody.json').read_text());meta.update(selector=selector,nodeVersion=node_version);write(core/'engine-secrets-native'/NONCE/'custody.json',meta)
+                lines=[]
+                for raw in (core/'test-e2e.log').read_text().splitlines():
+                    if raw.startswith('ENGINE_SECRETS_DIAGNOSTIC_BEGIN ') or raw.startswith('ENGINE_SECRETS_DIAGNOSTIC_END '):
+                        prefix,payload=raw.split(' ',1);row=json.loads(payload);row.update(selector=selector,nodeVersion=node_version);raw=prefix+' '+json.dumps(row,separators=(',',':'))
+                    lines.append(raw)
+                write(core/'test-e2e.log',('\n'.join(lines)+'\n').encode())
+                env=dict(os.environ,GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',NODE_SELECTOR=selector,E2E_ENGINE_SECRETS_CAPTURE='1')
+                result=subprocess.run([sys.executable,str(workspace/'scripts/ci/check-engine-secrets-envelope.py'),'--evidence',str(evidence)],env=env,capture_output=True,check=False)
+                self.assertEqual(result.returncode,0 if accepted else 1);status=json.loads((evidence/'engine-secrets-capture-status.json').read_text());self.assertEqual((evidence/'test-e2e.exit').read_text(),'7\n')
+                if accepted:self.assertEqual(status['identity']['selector'],selector);self.assertEqual(status['identity']['nodeVersion'],node_version);self.assertEqual(status['nativeCustody']['processCustody'],'verified')
     def test_owned_two_processes_same_operation_ids_join_only_by_pid(self):
         with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'E2E_ENGINE_SECRETS_CAPTURE':'1'}):
             root=pathlib.Path(d);a,e=fixture(root);proof=v.verify(root,e,EXPECTED,BINARY,WRAPPER)

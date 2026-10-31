@@ -36,9 +36,17 @@ function directory(file: string): void {
 }
 function digest(bytes: Buffer): string { return createHash('sha256').update(bytes).digest('hex'); }
 
+function matchesNodeSelector(selector: string | undefined, nodeVersion: string): boolean {
+  if (selector === undefined) return false;
+  const requested = /^(22|24|26)(?:\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2}))?$/.exec(selector);
+  const actual = /^v(22|24|26)\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/.exec(nodeVersion);
+  return requested !== null && requested[0] === selector && actual !== null && actual[0] === nodeVersion
+    && (requested[2] === undefined ? requested[1] === actual[1] : nodeVersion === `v${selector}`);
+}
+
 export function prepareEngineSecretsNativeCustody(nonce: string, identity: Identity, projectDir: string | undefined): { env: NodeJS.ProcessEnv; archive: (rows: readonly Record<string, unknown>[]) => boolean } | undefined {
   try {
-    if (!/^[a-f0-9]{64}$/.test(nonce)) return undefined;
+    if (!/^[a-f0-9]{64}$/.test(nonce) || !matchesNodeSelector(identity.selector, identity.nodeVersion)) return undefined;
     const workspace = process.env['GITHUB_WORKSPACE'];
     if (workspace === undefined || !path.isAbsolute(workspace)) return undefined;
     directory(workspace);

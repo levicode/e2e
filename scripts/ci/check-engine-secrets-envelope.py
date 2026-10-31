@@ -31,8 +31,10 @@ def error(row):
 def identity(row):
     exact(row,IDENTITY)
     for k in ['consumerRun','consumerAttempt']: need(type(row[k]) is str and re.fullmatch('[1-9][0-9]{0,19}',row[k]),'invalid-identity')
-    need(type(row['selector']) is str and re.fullmatch(r'(22|24)\.[0-9]{1,3}\.[0-9]{1,3}',row['selector']),'invalid-identity')
-    need(row['nodeVersion']=='v'+row['selector'] and row['caseSchema']=='engine-secrets-five-v1','invalid-identity')
+    requested=re.fullmatch(r'(22|24|26)(?:\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2}))?',row['selector']) if type(row['selector']) is str else None
+    actual=re.fullmatch(r'v(22|24|26)\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})',row['nodeVersion']) if type(row['nodeVersion']) is str else None
+    need(requested is not None and actual is not None and (requested[1]==actual[1] if requested[2] is None else row['nodeVersion']=='v'+row['selector']),'invalid-identity')
+    need(row['caseSchema']=='engine-secrets-five-v1','invalid-identity')
     for k in ['sourceCommit','sourceTree']: need(type(row[k]) is str and re.fullmatch('[a-f0-9]{40}',row[k]),'invalid-identity')
 def envelope(row,expected):
     exact(row,IDENTITY|{'schemaVersion','suite','captureNonce','diagnosticContract','nativeCapture'})

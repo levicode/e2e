@@ -134,3 +134,12 @@ describe('dedicated observed-only unavailable-model capture', () => {
     expect(projectUnservedModelIdentity(process.env, process.version)?.caseSchema).toBe('unserved-model-two-v1'); expect(projectUnservedModelIdentity(process.env, 'v1.0.0')).toBeUndefined();
   });
 });
+
+// Explicit synthetic identities; these do not claim Node26 execution.
+describe('declared fullmatrix selector identity', () => {
+  it.each([["22", "v22.23.4", true], ["24", "v24.22.1", true], ["26", "v26.0.0", true], ["22.22.3", "v22.22.3", true], ["24.8.0", "v24.8.0", true], ["22.23.4", "v22.23.4", true], ["24.22.1", "v24.22.1", true], ["26.1.2", "v26.1.2", true], ["26", "v26.999.999", true], ["26.999.999", "v26.999.999", true], ["22", "v24.22.1", false], ["24", "v26.0.0", false], ["26", "v22.23.4", false], ["22.22.3", "v22.22.4", false], ["24.8.0", "v24.8.1", false], ["26.1.2", "v26.1.3", false], ["20", "v20.1.0", false], ["25.1.0", "v25.1.0", false], ["27", "v27.0.0", false], ["026", "v26.0.0", false], ["26.01.0", "v26.01.0", false], ["26.0.00", "v26.0.00", false], ["26.1000.0", "v26.1000.0", false], ["26", "v26.1000.0", false], ["v26.0.0", "v26.0.0", false], ["26", "26.0.0", false], ["26.0", "v26.0.0", false], ["26.0.0.0", "v26.0.0.0", false], ["26\n", "v26.0.0", false], ["26.0.0", "v26.0.0\n", false], [" 26", "v26.0.0", false], ["26 ", "v26.0.0", false], ["../26", "v26.0.0", false], ["/26", "v26.0.0", false], ["26.0.0-beta", "v26.0.0-beta", false], ["26.0.0+build", "v26.0.0+build", false]]) ('binds requested %s to actual %s with acceptance %s', (selector, nodeVersion, accepted) => {
+    const env = { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', NODE_SELECTOR: selector as string, E2E_CAPTURE_SOURCE_COMMIT: 'a'.repeat(40), E2E_CAPTURE_SOURCE_TREE: 'b'.repeat(40) };
+    const result = projectUnservedModelIdentity(env, nodeVersion as string);
+    if (accepted) expect(result).toMatchObject({ selector, nodeVersion }); else expect(result).toBeUndefined();
+  });
+});

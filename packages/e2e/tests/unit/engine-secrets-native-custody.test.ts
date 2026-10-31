@@ -24,7 +24,8 @@ const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).diges
 const json = (value: unknown) => JSON.stringify(value) + '\n';
 const identity = { consumerRun: '12345', consumerAttempt: '2', selector: process.version.slice(1), nodeVersion: process.version, sourceCommit: '1'.repeat(40), sourceTree: '2'.repeat(40) };
 const nonce = 'a'.repeat(64); const invocationNonce = 'b'.repeat(64);
-function fixture(prepare = true) {
+function fixture(prepare = true, fixtureIdentity = identity) {
+  const identity = fixtureIdentity;
   const workspace = mkdtempSync(path.join(os.tmpdir(), 'secrets-native-pure-')); roots.push(workspace);
   const evidence = path.join(workspace, 'evidence'); const invocations = path.join(evidence, 'fixture-invocations');
   const tools = path.join(evidence, 'tools'); const scripts = path.join(workspace, 'scripts', 'ci');
@@ -161,4 +162,12 @@ describe('original native invocation custody without executable launch', () => {
 it.each(['uid', 'mode', 'nlink', 'ctimeMs', 'mtimeMs'] as const)('rejects a changed %s after the bounded descriptor read', field => {
   const f = fixture(); f.seed(); statControl.calls = 0; statControl.field = field;
   expect(f.prepared!.archive(f.rows())).toBe(false); expect(readdirSync(f.output)).toEqual([]);
+});
+
+describe('direct custody selector admission before path lookup', () => {
+  it.each([["22", "v22.23.4", true], ["24", "v24.22.1", true], ["26", "v26.0.0", true], ["22.22.3", "v22.22.3", true], ["24.8.0", "v24.8.0", true], ["22.23.4", "v22.23.4", true], ["24.22.1", "v24.22.1", true], ["26.1.2", "v26.1.2", true], ["26", "v26.999.999", true], ["26.999.999", "v26.999.999", true], ["22", "v24.22.1", false], ["24", "v26.0.0", false], ["26", "v22.23.4", false], ["22.22.3", "v22.22.4", false], ["24.8.0", "v24.8.1", false], ["26.1.2", "v26.1.3", false], ["20", "v20.1.0", false], ["25.1.0", "v25.1.0", false], ["27", "v27.0.0", false], ["026", "v26.0.0", false], ["26.01.0", "v26.01.0", false], ["26.0.00", "v26.0.00", false], ["26.1000.0", "v26.1000.0", false], ["26", "v26.1000.0", false], ["v26.0.0", "v26.0.0", false], ["26", "26.0.0", false], ["26.0", "v26.0.0", false], ["26.0.0.0", "v26.0.0.0", false], ["26\n", "v26.0.0", false], ["26.0.0", "v26.0.0\n", false], [" 26", "v26.0.0", false], ["26 ", "v26.0.0", false], ["../26", "v26.0.0", false], ["/26", "v26.0.0", false], ["26.0.0-beta", "v26.0.0-beta", false], ["26.0.0+build", "v26.0.0+build", false]]) ('binds %s to %s with acceptance %s', (selector, nodeVersion, accepted) => {
+    const selected = { ...identity, selector: selector as string, nodeVersion: nodeVersion as string };
+    const f = fixture(false, selected); const prepared = prepareEngineSecretsNativeCustody(nonce, selected, f.project);
+    if (accepted) { expect(prepared).toBeDefined(); f.seed(); expect(prepared!.archive(f.rows())).toBe(true); const meta = JSON.parse(readFileSync(path.join(f.output, 'custody.json'), 'utf8')); expect(meta.selector).toBe(selector); expect(meta.nodeVersion).toBe(nodeVersion); } else expect(prepared).toBeUndefined();
+  });
 });

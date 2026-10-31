@@ -1,3 +1,4 @@
+import { validateInstalledPublicProof } from './installed-public-proof.ts';
 /** Real clean-consumer gate. Run only in authorized Linux CI, never a unit test. */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -85,7 +86,7 @@ async function main(args: readonly string[]): Promise<void> {
     run('public-consumer', process.execPath, ['installed-candidate.mjs']);
     publicProof = JSON.parse(readFileSync(join(project, 'installed-public-result.json'), 'utf8')) as unknown;
     const proof = publicProof as Record<string, unknown>;
-    if (proof['status'] !== 'passed' || proof['checks'] !== 6 || !proof['runtimeOverrideAbsent'] || !proof['publicBrowserActionPassed'] || !proof['callbackPassed'] || !proof['cleanupConfirmed'] || !proof['surfaceOfPassed'] || !proof['locateTapPassed']) throw new Error('Installed public browser proof is incomplete');
+    validateInstalledPublicProof(publicProof, project, evidence);
     after = await verifyHeldoutCandidate(options);
     if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('Candidate identity changed during execution');
     const lock = manager === 'npm' ? 'package-lock.json' : 'pnpm-lock.yaml';

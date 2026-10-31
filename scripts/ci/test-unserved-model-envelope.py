@@ -22,6 +22,13 @@ def log(rows=None,custody=None):
     return line('_BEGIN',ENV)+b''.join(line('',r) for r in rows)+line('_CUSTODY',custody)+line('_END',ENV)
 def result(data):return v.verify_log(io.BytesIO(data),ID)
 class Controls(unittest.TestCase):
+    def test_declared_selector_matrix(self):
+        for selector,node_version,accepted in [['22', 'v22.23.4', True], ['24', 'v24.22.1', True], ['26', 'v26.0.0', True], ['22.22.3', 'v22.22.3', True], ['24.8.0', 'v24.8.0', True], ['22.23.4', 'v22.23.4', True], ['24.22.1', 'v24.22.1', True], ['26.1.2', 'v26.1.2', True], ['26', 'v26.999.999', True], ['26.999.999', 'v26.999.999', True], ['22', 'v24.22.1', False], ['24', 'v26.0.0', False], ['26', 'v22.23.4', False], ['22.22.3', 'v22.22.4', False], ['24.8.0', 'v24.8.1', False], ['26.1.2', 'v26.1.3', False], ['20', 'v20.1.0', False], ['25.1.0', 'v25.1.0', False], ['27', 'v27.0.0', False], ['026', 'v26.0.0', False], ['26.01.0', 'v26.01.0', False], ['26.0.00', 'v26.0.00', False], ['26.1000.0', 'v26.1000.0', False], ['26', 'v26.1000.0', False], ['v26.0.0', 'v26.0.0', False], ['26', '26.0.0', False], ['26.0', 'v26.0.0', False], ['26.0.0.0', 'v26.0.0.0', False], ['26\n', 'v26.0.0', False], ['26.0.0', 'v26.0.0\n', False], [' 26', 'v26.0.0', False], ['26 ', 'v26.0.0', False], ['../26', 'v26.0.0', False], ['/26', 'v26.0.0', False], ['26.0.0-beta', 'v26.0.0-beta', False], ['26.0.0+build', 'v26.0.0+build', False]]:
+            with self.subTest(selector=selector,nodeVersion=node_version):
+                expected=dict(ID,selector=selector,nodeVersion=node_version)
+                rows,c=fixture();env=dict(ENV,**expected);data=line('_BEGIN',env)+b''.join(line('',r) for r in rows)+line('_CUSTODY',c)+line('_END',env);result=v.verify_log(io.BytesIO(data),expected)
+                self.assertEqual(result['artifactEnvelope'],'accepted' if accepted else 'incomplete')
+                if accepted:self.assertEqual(result['identity'],expected)
     def reject(self,data):self.assertEqual(result(data)['artifactEnvelope'],'incomplete')
     def test_two_owners_one_worker_is_valid(self):
         r=result(log());self.assertEqual(r['artifactEnvelope'],'accepted');self.assertFalse(r['exhaustive']);self.assertTrue(r['noAbsenceInference'])
@@ -93,6 +100,17 @@ class Controls(unittest.TestCase):
     def test_other_suite_region_does_not_count_or_join(self):
         foreign=b'ENGINE_SECRETS_DIAGNOSTIC_BEGIN {}\nENGINE_SECRETS_DIAGNOSTIC_END {}\n'
         self.reject(foreign);self.assertEqual(result(foreign+log())['artifactEnvelope'],'accepted')
+    def test_cli_preserves_requested_selector_and_actual_version(self):
+        for selector,node_version,accepted in [['22', 'v22.23.4', True], ['24', 'v24.22.1', True], ['26', 'v26.0.0', True], ['22.22.3', 'v22.22.3', True], ['24.8.0', 'v24.8.0', True], ['22.23.4', 'v22.23.4', True], ['24.22.1', 'v24.22.1', True], ['26.1.2', 'v26.1.2', True], ['26', 'v26.999.999', True], ['26.999.999', 'v26.999.999', True], ['26', 'v24.22.1', False], ['24.8.0', 'v24.8.1', False]]:
+            with self.subTest(selector=selector,nodeVersion=node_version),tempfile.TemporaryDirectory() as d:
+                root=pathlib.Path(d);directory=root/'fixtures'/selector/'core';directory.mkdir(parents=True)
+                rows,c=fixture();envrow=dict(ENV,selector=selector,nodeVersion=node_version)
+                data=line('_BEGIN',envrow)+b''.join(line('',r) for r in rows)+line('_CUSTODY',c)+line('_END',envrow);(directory/'test-e2e.log').write_bytes(data)
+                for name,value in [('node.version',node_version),('source.commit','a'*40),('source.tree','b'*40),('test-e2e.exit','7')]: (root/name).write_text(value+'\n')
+                env=dict(os.environ,GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',NODE_SELECTOR=selector)
+                result=subprocess.run([sys.executable,str(pathlib.Path(__file__).with_name('check-unserved-model-envelope.py')),'--evidence',d],env=env,capture_output=True,check=False)
+                self.assertEqual(result.returncode,0 if accepted else 1);status=json.loads((root/'unserved-model-capture-status.json').read_text());self.assertEqual((root/'test-e2e.exit').read_text(),'7\n')
+                if accepted:self.assertEqual(status['identity']['selector'],selector);self.assertEqual(status['identity']['nodeVersion'],node_version)
     def test_cli_route_with_original_log_and_identity_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root=pathlib.Path(directory);logdir=root/'fixtures'/'24.19.0'/'core';logdir.mkdir(parents=True)

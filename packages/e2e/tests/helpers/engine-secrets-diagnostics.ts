@@ -193,13 +193,21 @@ export function createEngineSecretsCapture(captureNonce: string) {
 }
 
 /** Closed identity comes from the actual consumer process, never the base source constant. */
+function matchesNodeSelector(selector: string | undefined, nodeVersion: string): boolean {
+  if (selector === undefined) return false;
+  const requested = /^(22|24|26)(?:\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2}))?$/.exec(selector);
+  const actual = /^v(22|24|26)\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/.exec(nodeVersion);
+  return requested !== null && requested[0] === selector && actual !== null && actual[0] === nodeVersion
+    && (requested[2] === undefined ? requested[1] === actual[1] : nodeVersion === `v${selector}`);
+}
+
 export function projectEngineSecretsIdentity(env: Readonly<Record<string, string | undefined>>, nodeVersion: string) {
   try {
     const consumerRun = env['GITHUB_RUN_ID']; const consumerAttempt = env['GITHUB_RUN_ATTEMPT'];
     const selector = env['NODE_SELECTOR']; const sourceCommit = env['E2E_CAPTURE_SOURCE_COMMIT']; const sourceTree = env['E2E_CAPTURE_SOURCE_TREE'];
     const decimal = /^[1-9][0-9]{0,19}$/; const source = /^[a-f0-9]{40}$/;
     if (consumerRun === undefined || !decimal.test(consumerRun) || consumerAttempt === undefined || !decimal.test(consumerAttempt)
-      || selector === undefined || !/^(22|24)\.[0-9]{1,3}\.[0-9]{1,3}$/.test(selector) || nodeVersion !== `v${selector}`
+      || selector === undefined || !matchesNodeSelector(selector, nodeVersion)
       || sourceCommit === undefined || !source.test(sourceCommit) || sourceTree === undefined || !source.test(sourceTree)) return undefined;
     return { consumerRun, consumerAttempt, selector, nodeVersion, sourceCommit, sourceTree, caseSchema: 'engine-secrets-five-v1' as const };
   } catch { return undefined; }

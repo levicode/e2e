@@ -39,6 +39,8 @@ def load_script(name):
 def verify(root,envelope,expected,binary_hash,wrapper_hash):
     root=pathlib.Path(root);need(os.environ.get('E2E_ENGINE_SECRETS_CAPTURE')=='1','not-enabled')
     need(envelope.get('artifactEnvelope')=='accepted' and envelope.get('diagnosticContract')=='secrets-native-custody-v2' and envelope.get('identity')==expected,'invalid-envelope')
+    try:load_script('check-engine-secrets-envelope').identity(expected)
+    except Exception:raise Invalid('invalid-identity')
     nonce=envelope.get('captureNonce');need(type(nonce)is str and re.fullmatch('[a-f0-9]{64}',nonce),'invalid-nonce')
     directory=root/'engine-secrets-native'/nonce;need(directory.is_dir() and not directory.is_symlink(),'missing-native-archive')
     children=list((root/'engine-secrets-native').iterdir());need(len(children)==1 and children[0]==directory,'extra-native-region')
