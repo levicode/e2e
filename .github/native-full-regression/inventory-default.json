@@ -3776,8 +3776,8 @@
     "native::recording::tests::encoder_failure_joins_without_minting_successful_output_proof",
     "native::recording::tests::recording_sparse_frames_preserve_timestamps"
   ],
-  "nativeCommit": "6ff53e3dc9d9d85ced8b49a6dcf1cdae4d80f988",
-  "nativeTree": "c1ffdd773033721b7d85c1b000563764195dd301",
+  "nativeCommit": "55783ece749d3ff56be8de2b2a6555b6021161b0",
+  "nativeTree": "7f616fbbc13fe698fe379bd0290b16d634d91b93",
   "nonignored": 3286,
   "profile": "ci",
   "schemaVersion": 1,
