@@ -19,7 +19,7 @@ jobs:
     - id: pin
       run: node scripts/ci/native-runtime.ts pin
     - name: Require pin equals reviewed final native commit
-      run: test "${{ steps.pin.outputs.sha }}" = "944597a2f6e08c1eb8fd89e14bb46ada56ce88ba"
+      run: test "${{ steps.pin.outputs.sha }}" = "0ed1685ef889fa7bba4b5f47af6ba6be4610a6ef"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: levicode/agent-browser
@@ -29,9 +29,9 @@ jobs:
     - name: Require exact reviewed native checkout tree
       run: 'set -euo pipefail
 
-        test "$(git -C .artifacts/ci-native-source rev-parse HEAD)" = "944597a2f6e08c1eb8fd89e14bb46ada56ce88ba"
+        test "$(git -C .artifacts/ci-native-source rev-parse HEAD)" = "0ed1685ef889fa7bba4b5f47af6ba6be4610a6ef"
 
-        test "$(git -C .artifacts/ci-native-source rev-parse HEAD^{tree})" = "a21927ceaf73f8f96677346c443b9b5aab83852d"'
+        test "$(git -C .artifacts/ci-native-source rev-parse HEAD^{tree})" = "24dfe179624f49a888b2a87147bcb311aab7817b"'
     - name: Install native build toolchain
       run: rustup toolchain install 1.99.1 --profile minimal
     - name: Build and seal the exact clean production runtime
@@ -49,4 +49,4 @@ jobs:
 'on':
   push:
     branches:
-    - ci/s18-ordinary-runtime-20261031
+    - ci/s20-ordinary-runtime-20261031
