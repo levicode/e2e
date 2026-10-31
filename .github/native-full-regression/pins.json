@@ -42,15 +42,15 @@
     "native::client_settlement_trace::query_read_schema_tests::timed_field_failure_fits_unchanged_record_bound",
     "native::client_targets::eval_diagnostic_target_tests::eval_diagnostic_target_lock_contention_is_unknown_and_never_mutates"
   ],
-  "bindingStatus": "S16_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
+  "bindingStatus": "S17_BOUND_TO_ACTUAL_READBACK_PENDING_ROOT_GO",
   "capability": "browser.issuance-bound-references/1",
   "classProjection": {
     "additionalDiagnosticTests": [
-      "closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=false)",
-      "closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=true)"
+      "closed class sample diagnostics records the same sample history with assertion-owned timeout attribution (prior=false)",
+      "closed class sample diagnostics records the same sample history with assertion-owned timeout attribution (prior=true)"
     ],
     "configFile": ".github/native-full-regression/class-pure.config.ts",
-    "configSHA256": "c4f999bef7dd4aec2aa74efc17e8812ea92cbaebe3b827f7e19dad8187092b87",
+    "configSHA256": "dd2a053499b90c666be68ff2359bb2c3b0455278412b6efc9a13b35d7fb0c80b",
     "files": [
       {
         "file": "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts",
@@ -80,7 +80,7 @@
       },
       {
         "file": "packages/web/tests/unit/class-sampling.test.ts",
-        "sourceSHA256": "429c78b846d832802ac173b91fb03c35f61481e56bc77ec07e325a3030a96ab5",
+        "sourceSHA256": "239790b74c165c1487f171bb288582a086adda8d52665209a2a1d12bdf8ff8af",
         "testNames": [
           "deadline-owned class samples keeps the original 300ms mismatch and observed raw-class diagnostic with no count/getter work",
           "deadline-owned class samples preserves class-list whitespace normalization, exact and regex predicates",
@@ -103,36 +103,70 @@
           "deadline-owned class samples never falls back from a declared sampler refusal: CANCELLED",
           "deadline-owned class samples never retries a foreign locator through the legacy path"
         ]
+      },
+      {
+        "file": "packages/web/tests/unit/class-owned-deadline.test.ts",
+        "sourceSHA256": "1f1c4134e98da54a0081950e4e95ed5c4ef8a9ac3f8fe5194a49fba11d3b1ef3",
+        "testNames": [
+          "browser class assertion-owned deadline retains an actual mismatch when the final read starts with 99 ms",
+          "browser class assertion-owned deadline retains an actual mismatch when the final read starts with 100 ms",
+          "browser class assertion-owned deadline retains an actual mismatch when the final read starts with 135 ms",
+          "browser class assertion-owned deadline retains an actual mismatch when the final read starts with 200 ms",
+          "browser class assertion-owned deadline does not invent a prior mismatch when the first read times out",
+          "browser class assertion-owned deadline does not rewrite an early read timeout before its own deadline",
+          "browser class assertion-owned deadline preserves an earlier or equal parent deadline of 250 ms",
+          "browser class assertion-owned deadline preserves an earlier or equal parent deadline of 300 ms",
+          "browser class assertion-owned deadline preserves failure once the original parent also expired during settlement",
+          "browser class assertion-owned deadline does not borrow a replacement phase for a pending old-phase timeout",
+          "browser class assertion-owned deadline keeps parent cancellation selected after a prior mismatch",
+          "browser class assertion-owned deadline preserves ACTION_MAY_HAVE_COMMITTED rather than converting it to a mismatch",
+          "browser class assertion-owned deadline preserves CANCELLED rather than converting it to a mismatch",
+          "browser class assertion-owned deadline preserves ENGINE_FAILURE rather than converting it to a mismatch",
+          "browser class assertion-owned deadline preserves an outer policy refusal with a nested timeout",
+          "browser class assertion-owned deadline does not turn an unseen 100ms negation tail into a pass",
+          "browser class assertion-owned deadline retains the existing short-tail negation grace without another read",
+          "browser class assertion-owned deadline retains the older context fallback without claiming ownership",
+          "browser class assertion-owned deadline does not consult the new proof for a legacy getter without the sampler"
+        ]
       }
     ],
     "nodeMajor": 24,
     "pnpmVersion": "12.3.4",
+    "replacedDiagnosticTests": [
+      "closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=false)",
+      "closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=true)"
+    ],
     "sourceFiles": {
       "docs/reference/engine.mdx": "ae4ba41f683c28a9b0576fafe3b955f4612583e7270848cd80aa4f7cbb345342",
-      "packages/e2e/src/engine/index.ts": "183b36fbe12c506a1c2be20ab6b76ebffda15e35e7d95a9581ecd88d80dd4c43",
+      "packages/e2e/src/engine/index.ts": "031a2e5da42ec16e019357bff4a1412eb6e0e71c9ca9ba1225792f105a6e16d7",
+      "packages/e2e/src/expect/async.ts": "f6ce4d53bc74b39485950b554c4e274946cf3b06ae5d773aa2186a64f2cb5dc8",
+      "packages/e2e/src/internal/time.ts": "158cc79506720db8b17fa939ca3d1cda2a84a83ba5795db23435da6430c148d4",
       "packages/e2e/src/locator/engine.ts": "e3f6eef692d626b5cb1e1d08b777e6b688067992d09a67effff8e1845fa010d4",
-      "packages/e2e/src/run/fixtures.ts": "a632168e40ac6e48da3f0d8aacb98b042ebe8a2a294ca88e320d6da3d7b62c38",
+      "packages/e2e/src/run/budget.ts": "3406d698e7f0c8cdb9a9014c2d28157c27809c9ff2bc2571f4cb99c315356682",
+      "packages/e2e/src/run/fixtures.ts": "797051429431c173e79325bf7dd2d8ee7824d17792ce4fbfb3fd9f64f87844be",
+      "packages/e2e/tests/helpers/fake-time.ts": "92d206e018fa83b53436f9214ffe572c3b03aa6a95e83b40050dfcff87e2cd5d",
       "packages/e2e/tests/helpers/fixture-attribute-sampling.ts": "7334e5c985c65457e6725675f34618f701ba5fdea5dd71e3aecc08731351c3cf",
       "packages/e2e/tests/unit/fixture-attribute-sampling.test.ts": "027ea4d3e5e9ca5958336bafb606f5ddf7a7aeb77ca5900819ea8bbae93e7dcb",
-      "packages/web/src/browser.ts": "a466b260a6cb39876654973c2060f85a42f9112d3435ff93803ae142fa3f1fa9",
-      "packages/web/tests/unit/class-sampling.test.ts": "429c78b846d832802ac173b91fb03c35f61481e56bc77ec07e325a3030a96ab5"
+      "packages/web/src/browser.ts": "b1d4efb669201722886ce7264b4527d99a12c474fc73bc4db9357ea8dd906baa",
+      "packages/web/tests/unit/class-owned-deadline.test.ts": "1f1c4134e98da54a0081950e4e95ed5c4ef8a9ac3f8fe5194a49fba11d3b1ef3",
+      "packages/web/tests/unit/class-sampling.test.ts": "239790b74c165c1487f171bb288582a086adda8d52665209a2a1d12bdf8ff8af"
     },
     "vitestVersion": "5.0.5"
   },
-  "commit": "55783ece749d3ff56be8de2b2a6555b6021161b0",
+  "commit": "89463ff5401482c4767f4b3ebb28abf83591db0f",
   "expectedInventories": {
     "default": {
       "ignored": 242,
-      "nonignored": 3286,
-      "total": 3528
+      "nonignored": 3308,
+      "total": 3550
     },
     "fault": {
       "ignored": 242,
-      "nonignored": 3349,
-      "total": 3591
+      "nonignored": 3371,
+      "total": 3613
     }
   },
-  "externalPublicationGate": "Exact S16 native source/tree/parent readback verified. Five gate paths await independent bound review and root exact publication GO. S16 repaired native tests not executed; historical S14 runtime pins are not future authority.",
+  "externalPublicationGate": "Exact S17 native source/tree/parent readback verified. Seven gate paths await independent bound review and root exact publication GO. S17 repaired native tests not executed; historical S14 runtime pins are not future authority.",
   "features": [],
   "files": {
     "cli/Cargo.lock": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb",
@@ -150,15 +184,16 @@
     "cli/src/native/client_browser_restart_transport_tests.rs": "ac94d0670a92b24eeb0d76c9c06759a6498d35339dffa7c1837812f97c481816",
     "cli/src/native/client_browser_state_tests.rs": "5180871812d4ca07c559e865176d7c57f7a59f4dd8aadc85f4583deef407711f",
     "cli/src/native/client_cleanup_diagnostic_tests.rs": "3055cbcf5391b0ed9d037c51775033abade7984ac429e0d78425b161f2feb0b0",
-    "cli/src/native/client_debt.rs": "ce9fdd748002475d8211d174428458b528b0c999a08ba9a688d5df388ef9d527",
+    "cli/src/native/client_debt.rs": "e6f09ec17fa3d88c57af465c7d3f82a3de1e81c7b3dfd0c4f9ca46500bc161bb",
     "cli/src/native/client_enrollment.rs": "ad85e47f381e9671aca2528ddd1d7bcabc96b0788b987ecfa326f91d94ada248",
     "cli/src/native/client_eval_network_watermark_tests.rs": "88833668b4b74dc844bcfdf668177ffeda0577db011d815929347d013af18ef2",
     "cli/src/native/client_eval_preparation_tests.rs": "42e25bf25eaf2fa1671f31bdc2fe4166388e48f7fc9420da517513ee0faef6d0",
+    "cli/src/native/client_geometry.rs": "74a83467606d588d7757e6696e2a37ec9081fd60ca3b63c6da44aff8c346a23d",
     "cli/src/native/client_interop_wire.rs": "332269f72dc4496d6a9a246652f2a0adbaa6b97151185cd4752c6b21564b8451",
     "cli/src/native/client_network.rs": "30036fc5d8ca5b24f9e4c0154ad0a471029101d0575a4249304460c89eacbd9f",
     "cli/src/native/client_network_child_retirement_tests.rs": "e3c6e2984d1ad61ed61857f6b067756fe5b96a9f068a8ad45c250fd43f2fd99d",
     "cli/src/native/client_network_retirement_receipt_tests.rs": "c83fe14a820cd13d7aacd62341d79fe13b3c46215e0f9af17ab502414c9b626b",
-    "cli/src/native/client_observation.rs": "cf56bd666049e6c1661edf43441fb1bcde76851e7083f02c37bc7e48d4160c98",
+    "cli/src/native/client_observation.rs": "5d382df687015610858793cd1c2a4edfbed77fef7a27770b34974647d2d252ea",
     "cli/src/native/client_observation/frame_dom_validation_tests.rs": "805a88697d01baa49e2a0c78e4297a0e53eb070cbd81a33f68a72b2bf240fcf0",
     "cli/src/native/client_observation/fresh_query.rs": "657284c8725417b74b9daa4a4eee7cd3d474a58029909a39ef80eca853e67c17",
     "cli/src/native/client_observation/fresh_query_submission_tests.rs": "e5e460c916a443ddbdcc3df2550b7a3dcc4f28ffb6d7ab87c6c932c69b765733",
@@ -166,9 +201,10 @@
     "cli/src/native/client_observation/query_diagnostic.rs": "fa5b20af3f7a3c388edbee4930617b3793b67b374b2bbee9a4599fb3818e4a29",
     "cli/src/native/client_observation/single_root_fields.rs": "9a9611e06c6e55585d516ad2e4fac2c7d9c8e457da6fa76bc59d93360c945d29",
     "cli/src/native/client_observation/single_root_fields_tests.rs": "646a0929f2461b9e3ec9d3b4edbcd9a1a27f22da308b8fd8df05ffefb23b4a48",
-    "cli/src/native/client_observation_dispatch.rs": "bc430e5bc9a57c582e06bfef4841504e0d36a9fb319016d0c0d13438f0df8e74",
+    "cli/src/native/client_observation_dispatch.rs": "9bb5c87cbf1ded3fe160fb9b2511d8da97fa238ffc4f2f5a1f5d8ad6a11b2a04",
     "cli/src/native/client_observation_dispatch_renderer_inventory_tests.rs": "e1f4b2d252ceb082389fd2c11a869ab52974734332640d0e0fba704c70e08fa0",
     "cli/src/native/client_observe_initial_inventory_tests.rs": "7994489c93415bbf7583e10dedd30cf649d89ed5c3b8061b4d398644e0b8853b",
+    "cli/src/native/client_observe_node_identity_chain_tests.rs": "c28a8f650cdc7e1f335840efcb54d6ad564cdb5dd094b04b01786e6107da3b0e",
     "cli/src/native/client_operation_state.rs": "c9aa23cfa10180b6870420fab66f29255897a7a4fcf0a0e73c1783fb7f98e870",
     "cli/src/native/client_page.rs": "102d0365a30d5739079deb2d708edef18d361b0deea23ac909b85e0b19aa4bd1",
     "cli/src/native/client_page_viewport_revision_tests.rs": "d6d26bf19b6207afed5537aeab5575c8f7da6306ee4e68aee6bf84635eae82a1",
@@ -181,10 +217,11 @@
     "cli/src/native/client_popup_setup_schema_tests.rs": "df7a5c6140375e53cd7995356600afe2e278cffa7053d00fd63a70a52339c127",
     "cli/src/native/client_popup_stage0_tests.rs": "122480ae1ec47ca799793bd81f4b2e3e48a5e56bea2b004f2819c3db5056e4dc",
     "cli/src/native/client_session.rs": "b2ede17cd17c7d0e93b6e8310c5f43d36e93e0f883ea479097636c4614cf638d",
-    "cli/src/native/client_settlement_trace.rs": "aa4e834cbbf2137711065071b41db581562b87d0dcab0d093850d752581028ae",
+    "cli/src/native/client_settlement_trace.rs": "725b3e8dd3983055e1533eb28e4b52e0b43f056b38560d0fda9469e7a047f1f9",
     "cli/src/native/client_targets.rs": "de3bd92f6d8d7078218d056253185fae35e60d443af97f09cfbcdd6c641b5a74",
     "cli/src/native/client_tasks.rs": "032cd9465d6435913f81e1dd4117b2d2ad738a3a129fbcd022fed874e00c5467",
     "cli/src/native/client_trace_initial_inventory_tests.rs": "f0c3bce82baf272cdfc0ef38c42bc3cc6ced9e5fc36650b0634bd8cdbbdb4da9",
+    "cli/src/native/element.rs": "291cafc316a2e6bd11750a257c9d45b2b1539b2ca3fc9ef3174bb1bebe8b3f75",
     "cli/src/native/mod.rs": "5e97e9f2ffe92e7191dc14825b1c3927cb9d5d34d3beb56741f38a551559bfaa"
   },
   "helperBlobs": {
@@ -665,22 +702,25 @@
     "noRemovedTests": true,
     "reviewSHA256": "d1a87a071253e35f2d2739e925a5b7c130c09ddc9feb508f4409ba34dac6462e"
   },
-  "nativeCommitReadbackSHA256": "0c3eec967b1afac830c7ca90be1de2bf0a555bc9282e481678d04a52b7cb63e0",
-  "nativePatchSHA256": "9d20143d9e26c26e613f306fb7af0a0d59ce0ac887d2ae65f4f6e702f839413a",
-  "nativeReadbackSHA256": "f998262ac13b1579a76857aadfc24edf595d053689e7d3ba01bed4e0646ac3a3",
+  "nativeCommitReadbackSHA256": "c27fb71381b67d7cea3c1e7574c6a270ff97daff2ee137c0b683185d4f7e2af6",
+  "nativePatchSHA256": "d02f425ca7fe27442d62f5b3ac0c2a201498647197cdd02f1a349f243c6afad7",
+  "nativeReadbackSHA256": "963ca9d4fea07285a6be63369ad18af05907c3065737e41f4a3927a29c8430d9",
   "nextInventoryDerivation": {
-    "addedDeclaredNames": 26,
-    "baseCommit": "e5f2c0252d591d0a52476bde46fb17ba932e0e57",
-    "baseTree": "ca16e146b3b1bd7606f931c2a9e38a311b965edc",
-    "baselineActualFullGateRun": 41095815227,
+    "addedDeclaredNames": 22,
+    "baseCommit": "55783ece749d3ff56be8de2b2a6555b6021161b0",
+    "baseTree": "7f616fbbc13fe698fe379bd0290b16d634d91b93",
+    "baselineActualFullGateCommit": "4306cbd40954099bcbfebbd74bd66465db04d400",
+    "baselineActualFullGateRun": 41156186520,
     "exactReviewedNameSubstitutions": {
       "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_extra_ready_worker_uses_full_inventory_without_resampling": "native::client_browser::state_lifecycle_tests::read_fields_tests::public_read_fields_extra_ready_worker_preserves_single_renderer_proof_without_resampling",
       "native::client_settlement_trace::critical_query_stream_tests::critical_query_stream_contention_is_explicit_not_lossless": "native::client_settlement_trace::critical_query_stream_tests::critical_query_internal_owner_violation_is_terminal_not_complete"
     },
+    "historicalEarlierFullGateRun": 41095815227,
     "ignoredExactlyPreserved": true,
-    "nativeManifestSHA256": "d2c7bb497bfc81439ce0ef3f94793aa4310e757fd9ad38d6c57c381d9c81ebf5",
-    "netAddedTests": 24,
+    "nativeManifestSHA256": "d2d1ffced45a774678c53745f16ca7674efd48b4b8c2dec5ee89f3984f18a5c5",
+    "netAddedTests": 22,
     "noOtherRemovedTests": true,
+    "previousSubstitutionMappingsHistoricalOnly": true,
     "requiredFullInventorySubset": [
       "native::cdp::client::tests::observation_read_later_stop_does_not_relabel_remote_error_transport_or_success",
       "native::cdp::client::tests::observation_read_stop_evidence_rejects_foreign_operation_bindings",
@@ -704,6 +744,8 @@
       "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_navigation_aba",
       "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_rejects_new_popup_cohort",
       "native::client_browser::state_lifecycle_tests::restart_transport_tests::popup_interposition_tests::stage0_tests::configuration_proof_tests::framed_popup_configuration_proof_waits_then_dispatches_once",
+      "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_refuses_retired_integrity_lost_and_poisoned_owner",
+      "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_requires_exact_operation_release_and_disposition",
       "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_captured_deadline_cannot_become_later_owner_stop",
       "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_captured_owner_stop_precedes_expiry_and_later_deadline",
       "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_captured_requested_cannot_become_later_owner_stop",
@@ -711,6 +753,7 @@
       "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_hard_errors_cannot_borrow_later_owner_stop",
       "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_owner_stop_releases_supervisor_custody_without_poison",
       "native::client_enrollment::tests::configuration_proof_stop_tests::popup_configuration_guard_requested_stop_remains_supervisor_failure",
+      "native::client_geometry::node_identity_box_proof_tests::box_negative_requires_exact_plain_by_value_object_envelope",
       "native::client_network::child_retirement_tests::changed_network_tenure_cannot_excuse_hard_error_ack",
       "native::client_network::child_retirement_tests::child_detach_before_enrollment_keeps_root_url_usable",
       "native::client_network::child_retirement_tests::exact_root_detach_preserves_browser_failure",
@@ -737,10 +780,27 @@
       "native::client_observation::frame_dom_validation_tests::stateless_root_describe_errors_stay_opaque_and_foreign_ack_keeps_debt",
       "native::client_observation::frame_dom_validation_tests::stateless_root_keeps_zero_frontend_ids_and_full_shadow_security_inventory",
       "native::client_observation::frame_dom_validation_tests::stateless_root_rejects_malformed_seed_and_deep_document_identity",
+      "native::client_observation::node_identity_resample_merge_tests::all_negative_bindings_are_retained_not_only_first",
+      "native::client_observation::node_identity_resample_merge_tests::cleanup_dominates_hard_and_negative_across_more_than_one_buffer",
+      "native::client_observation::node_identity_resample_merge_tests::every_hard_refusal_dominates_node_negative_in_both_orders",
+      "native::client_observation::node_identity_resample_merge_tests::ordinary_stale_reference_has_no_positive_node_proof",
       "native::client_observation::single_root_fields_tests::callback_and_unsupported_fields_decline_single_root_optimization",
       "native::client_observation::single_root_fields_tests::singleton_topology_declines_children_but_rejects_malformed_evidence",
       "native::client_observation::tests::nonretained_object_projection_keeps_late_success_and_opaque_failure",
       "native::client_observation::tests::nonretained_typed_stop_projection_does_not_consult_later_signal",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_cancel_and_retirement_cross_real_frame_read_await",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_concurrent_backend_refusal_dominates_positive_node_negative",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_every_negative_frame_must_survive_revalidation",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_failed_readonly_release_is_never_not_dispatched_retry",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_malformed_envelopes_and_document_negative_do_not_mint_node_retry",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_pending_cleanup_handoff_and_later_rejection_keep_original_custody",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_positive_node_proofs_require_same_document_and_clean_settlement",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_rejected_cleanup_arriving_during_recheck_blocks_node_retry",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::frozen_input_layered_strict_geometry_consumers_keep_old_hard_refusal",
+      "native::client_observation_dispatch::node_identity_layered_chain_tests::layered_peer_echoes_exact_session_for_success_and_error",
+      "native::client_observation_dispatch::node_identity_resample_fence_tests::every_negative_must_match_its_original_frame",
+      "native::client_observation_dispatch::node_identity_resample_fence_tests::full_inventory_proof_refuses_every_changed_binding_or_owner",
+      "native::client_observation_dispatch::node_identity_resample_fence_tests::origin_diagnostic_is_closed_and_does_not_export_identity",
       "native::client_observation_dispatch::renderer_inventory_tests::extra_page_or_iframe_requires_the_original_full_inventory",
       "native::client_observation_dispatch::renderer_inventory_tests::non_renderer_churn_still_invalidates_the_complete_phase_revision",
       "native::client_observation_dispatch::renderer_inventory_tests::ready_non_renderers_keep_one_renderer_but_duplicate_sessions_refuse",
@@ -766,10 +826,12 @@
       "native::client_settlement_trace::retained_capture_tests::retained_payload_memory_is_fixed_and_reported",
       "native::client_settlement_trace::retained_capture_tests::terminal_failure_scan_and_late_publisher_count_each_cell_once",
       "native::client_targets::popup_configuration_proof_unit_tests::popup_configuration_proof_is_one_shot_not_rebased_after_revision_or_frontier_change",
-      "native::client_targets::popup_configuration_proof_unit_tests::popup_configuration_proof_requires_same_revision_and_observed_frontier"
+      "native::client_targets::popup_configuration_proof_unit_tests::popup_configuration_proof_requires_same_revision_and_observed_frontier",
+      "native::element::node_identity_negative_proof_tests::resolution_negative_requires_exact_by_value_boolean_envelope",
+      "native::element::node_identity_negative_proof_tests::resolver_receipt_never_rebinds_original_node"
     ],
-    "requiredSubsetExecution": "Complete per-flavor original full suite; each expected name exactly once, zero failures/filtered, identical ignored set. Two explicit reviewed semantic replacements only.",
-    "reviewSHA256": "34ee6b1660ff8483fb349d51c96cafc2f16e6d56a52ea10c5996e9d7ca29796e",
+    "requiredSubsetExecution": "Complete per-flavor original full suite; each expected name exactly once, zero failures/filtered, identical ignored set. S17 adds22 declared tests without removed names or changed existing test bodies; prior two semantic replacements remain historical mappings only.",
+    "reviewSHA256": "64fd212364f80835a302e853c369b48a3f8486c0c7112e79e537ae537629e34c",
     "s16IdentityPreservingRepair": {
       "addedNames": 0,
       "baseCommit": "6ff53e3dc9d9d85ced8b49a6dcf1cdae4d80f988",
@@ -778,7 +840,8 @@
       "removedNames": 0,
       "sourceManifestSHA256": "81f2b7fdcd62a4bc09d122e3459579e4374a0e612909b8452925e2e9bb611617",
       "sourceOnlyNoExecutedTests": true
-    }
+    },
+    "s17AddedTests": 22
   },
   "producerFiles": [
     ".github/native-full-regression/ci.py",
@@ -796,6 +859,7 @@
     "packages/e2e/src/expect/async.ts",
     "packages/e2e/src/internal/time.ts",
     "packages/e2e/src/locator/engine.ts",
+    "packages/e2e/src/run/budget.ts",
     "packages/e2e/src/run/fixtures.ts",
     "packages/e2e/tests/helpers/closed-failure-diagnostic.ts",
     "packages/e2e/tests/helpers/fake-time.ts",
@@ -812,6 +876,7 @@
     "packages/e2e/tests/unit/short-read-diagnostics.test.ts",
     "packages/e2e/vitest.config.ts",
     "packages/web/src/browser.ts",
+    "packages/web/tests/unit/class-owned-deadline.test.ts",
     "packages/web/tests/unit/class-sampling.test.ts",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -829,8 +894,8 @@
     "scripts/ci/test-check-critical-query-traces.py",
     "scripts/ci/test-original-capture-custody.py"
   ],
-  "producerParent": "1c172732facda09167e96acde1a53cabcbdcc823",
-  "producerParentTree": "f8ee6f30816f24c5a37c5d9aab5652babab0596f",
+  "producerParent": "ad67f6c766c093800a04315ae5f05feb148cf28c",
+  "producerParentTree": "048e76bc9b8d22f132ee44501388ad528435f3b6",
   "profile": "ci",
   "pureProjection": {
     "file": "packages/e2e/tests/unit/attribute-field-assertions.test.ts",
@@ -959,8 +1024,8 @@
   ],
   "schemaVersion": 3,
   "scope": "Full unfiltered default and acceptance-faults native test harness plus original four compile boundaries. Exact Rust1.99.1/profileci. Not hosted browser/F4 acceptance. Historical ci-test-fast is not relabeled as ci.",
-  "sourceConsumerPreviewTree": "f8ee6f30816f24c5a37c5d9aab5652babab0596f",
-  "sourceManifestSHA256": "81f2b7fdcd62a4bc09d122e3459579e4374a0e612909b8452925e2e9bb611617",
+  "sourceConsumerPreviewTree": "048e76bc9b8d22f132ee44501388ad528435f3b6",
+  "sourceManifestSHA256": "d2d1ffced45a774678c53745f16ca7674efd48b4b8c2dec5ee89f3984f18a5c5",
   "strengthenedExistingTests": [
     "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
     "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof"
@@ -983,5 +1048,5 @@
     "native::daemon::tests::client_session_negotiation_preserves_legacy_and_excludes_mutation"
   ],
   "toolchain": "1.99.1",
-  "tree": "7f616fbbc13fe698fe379bd0290b16d634d91b93"
+  "tree": "78b3ed5911f51195aa3645ca176928587cfab3ed"
 }

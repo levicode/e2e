@@ -17,6 +17,7 @@ export default {
     include: [
       'packages/e2e/tests/unit/fixture-attribute-sampling.test.ts',
       'packages/web/tests/unit/class-sampling.test.ts',
+      'packages/web/tests/unit/class-owned-deadline.test.ts',
     ],
   },
 };

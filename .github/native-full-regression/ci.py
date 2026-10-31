@@ -270,18 +270,23 @@ def pure_results_report(root, evidence, pins):
 # Separate S7 pure group: the original attribute23 validator/schema is unchanged.
 CLASS_CONFIG_FILE = '.github/native-full-regression/class-pure.config.ts'
 CLASS_TEST_FILES = ['packages/e2e/tests/unit/fixture-attribute-sampling.test.ts',
-                    'packages/web/tests/unit/class-sampling.test.ts']
+                    'packages/web/tests/unit/class-sampling.test.ts',
+                    'packages/web/tests/unit/class-owned-deadline.test.ts']
 CLASS_SOURCE_FILES = [
     'docs/reference/engine.mdx', 'packages/e2e/src/engine/index.ts',
     'packages/e2e/src/locator/engine.ts', 'packages/e2e/src/run/fixtures.ts',
     'packages/e2e/tests/helpers/fixture-attribute-sampling.ts',
     *CLASS_TEST_FILES, 'packages/web/src/browser.ts',
+    'packages/e2e/src/internal/time.ts', 'packages/e2e/src/run/budget.ts',
+    'packages/e2e/src/expect/async.ts', 'packages/e2e/tests/helpers/fake-time.ts',
 ]
 CLASS_CAPTURE_NAMES = ['raw-result.json', 'raw.log', 'run.exit', 'command.json',
                        'versions.json', 'node-version.txt', 'pnpm-version.txt', 'vitest-version.txt']
 CLASS_SHARED_INSTALL_NAMES = ['install.log', 'install.exit', 'install-command.json']
 
-CLASS_ADDITIONAL_DIAGNOSTIC_NAMES = ['closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=false)', 'closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=true)']
+CLASS_REPLACED_DIAGNOSTIC_NAMES = ['closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=false)', 'closed class sample diagnostics records prior completed sample without changing the thrown timeout (prior=true)']
+CLASS_ADDITIONAL_DIAGNOSTIC_NAMES = ['closed class sample diagnostics records the same sample history with assertion-owned timeout attribution (prior=false)', 'closed class sample diagnostics records the same sample history with assertion-owned timeout attribution (prior=true)']
+CLASS_OWNED_DEADLINE_NAMES = ['browser class assertion-owned deadline retains an actual mismatch when the final read starts with 99 ms', 'browser class assertion-owned deadline retains an actual mismatch when the final read starts with 100 ms', 'browser class assertion-owned deadline retains an actual mismatch when the final read starts with 135 ms', 'browser class assertion-owned deadline retains an actual mismatch when the final read starts with 200 ms', 'browser class assertion-owned deadline does not invent a prior mismatch when the first read times out', 'browser class assertion-owned deadline does not rewrite an early read timeout before its own deadline', 'browser class assertion-owned deadline preserves an earlier or equal parent deadline of 250 ms', 'browser class assertion-owned deadline preserves an earlier or equal parent deadline of 300 ms', 'browser class assertion-owned deadline preserves failure once the original parent also expired during settlement', 'browser class assertion-owned deadline does not borrow a replacement phase for a pending old-phase timeout', 'browser class assertion-owned deadline keeps parent cancellation selected after a prior mismatch', 'browser class assertion-owned deadline preserves ACTION_MAY_HAVE_COMMITTED rather than converting it to a mismatch', 'browser class assertion-owned deadline preserves CANCELLED rather than converting it to a mismatch', 'browser class assertion-owned deadline preserves ENGINE_FAILURE rather than converting it to a mismatch', 'browser class assertion-owned deadline preserves an outer policy refusal with a nested timeout', 'browser class assertion-owned deadline does not turn an unseen 100ms negation tail into a pass', 'browser class assertion-owned deadline retains the existing short-tail negation grace without another read', 'browser class assertion-owned deadline retains the older context fallback without claiming ownership', 'browser class assertion-owned deadline does not consult the new proof for a legacy getter without the sampler']
 
 def class_results_report(root, evidence, pins):
     bound_identity(pins)
@@ -289,18 +294,21 @@ def class_results_report(root, evidence, pins):
     assert projection['configFile'] == CLASS_CONFIG_FILE, 'wrong class config path'
     assert projection['nodeMajor'] == 24 and projection['pnpmVersion'] == '12.3.4' and projection['vitestVersion'] == '5.0.5'
     groups = projection['files']
-    assert type(groups) is list and len(groups) == 2, 'missing/extra class source groups'
+    assert type(groups) is list and len(groups) == 3, 'missing/extra class source groups'
     assert [group['file'] for group in groups] == CLASS_TEST_FILES, 'wrong/duplicate class test files'
-    names_by_file = {group['file']: exact_names(group.get('testNames'), 20, 'class controls', rust=False) for group in groups}
-    all_names = [name for names in names_by_file.values() for name in names]
+    names_by_file = {group['file']: exact_names(group.get('testNames'), 20 if i < 2 else 19, 'class controls', rust=False) for i, group in enumerate(groups)}
+    assert names_by_file[CLASS_TEST_FILES[2]] == CLASS_OWNED_DEADLINE_NAMES, 'wrong owned deadline identities'
+    all_names = [name for path in CLASS_TEST_FILES[:2] for name in names_by_file[path]]
     assert len(set(all_names)) == 40, 'class names overlap between files'
     original_names = list(all_names)
+    assert projection['replacedDiagnosticTests'] == CLASS_REPLACED_DIAGNOSTIC_NAMES, 'wrong diagnostic replacement source identities'
     diagnostics = projection['additionalDiagnosticTests']
     assert diagnostics == CLASS_ADDITIONAL_DIAGNOSTIC_NAMES, 'wrong additional class diagnostic identities'
     assert not set(diagnostics) & set(original_names), 'diagnostics overlap original class40'
     names_by_file[CLASS_TEST_FILES[1]] = names_by_file[CLASS_TEST_FILES[1]] + diagnostics
-    all_names = original_names + diagnostics
-    assert len(set(all_names)) == 42 and set(original_names) <= set(all_names), 'class40 plus diagnostic2 inventory differs'
+    all_names = original_names + diagnostics + names_by_file[CLASS_TEST_FILES[2]]
+    assert not set(CLASS_REPLACED_DIAGNOSTIC_NAMES) & set(all_names), 'old diagnostic semantics not replaced'
+    assert len(set(all_names)) == 61 and set(original_names) <= set(all_names), 'class40 plus attribution2 plus owned19 inventory differs'
     assert type(projection['sourceFiles']) is dict and set(projection['sourceFiles']) == set(CLASS_SOURCE_FILES), 'class reviewed source set differs'
     out, install = evidence / 'class-projection', evidence / 'attribute-projection'
     assert all((out / name).is_file() for name in CLASS_CAPTURE_NAMES), 'missing class capture'
@@ -322,13 +330,13 @@ def class_results_report(root, evidence, pins):
     raw = json.loads((out / 'raw-result.json').read_text())
     assert raw['success'] is True
     for key in ['numTotalTests', 'numPassedTests']:
-        assert type(raw[key]) is int and raw[key] == 42, 'wrong class40 plus diagnostic2 count'
+        assert type(raw[key]) is int and raw[key] == 61, 'wrong class40 plus attribution2 plus owned19 count'
     for key in ['numFailedTests', 'numPendingTests', 'numTodoTests', 'numFailedTestSuites', 'numPendingTestSuites']:
         assert type(raw[key]) is int and raw[key] == 0, 'class failure/skip/todo'
     assert type(raw['numTotalTestSuites']) is int and raw['numTotalTestSuites'] > 0
     assert type(raw['numPassedTestSuites']) is int and raw['numPassedTestSuites'] == raw['numTotalTestSuites']
     assert raw.get('numRuntimeErrorTestSuites', 0) == 0 and raw.get('unhandledErrors', []) == [] and raw.get('testExecError') is None
-    assert type(raw['testResults']) is list and len(raw['testResults']) == 2, 'wrong class result file count'
+    assert type(raw['testResults']) is list and len(raw['testResults']) == 3, 'wrong class result file count'
     expected_paths = {(root / path).resolve(strict=True): path for path in CLASS_TEST_FILES}
     observed_files = []
     for suite in raw['testResults']:
@@ -355,8 +363,9 @@ def class_results_report(root, evidence, pins):
         actual = digest(root / path)
         assert actual == expected == producer['files'][path], 'class source/config bytes differ from reviewed producer source'
     return {'accepted': True, 'producerCommit': producer['commit'], 'producerTree': producer['tree'],
-            'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'count': 42,
-            'originalCount': 40, 'additionalDiagnosticCount': 2,
+            'nativeCommit': pins['commit'], 'nativeTree': pins['tree'], 'count': 61,
+            'originalCount': 40, 'additionalDiagnosticCount': 2, 'ownedDeadlineCount': 19,
+            'replacedDiagnosticNames': CLASS_REPLACED_DIAGNOSTIC_NAMES, 'ownedDeadlineNames': CLASS_OWNED_DEADLINE_NAMES,
             'originalNames': original_names, 'additionalDiagnosticNames': diagnostics,
             'files': groups, 'sourceFiles': source_hashes, 'versions': versions,
             'captures': {name: digest(out / name) for name in CLASS_CAPTURE_NAMES},

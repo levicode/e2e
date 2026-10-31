@@ -394,15 +394,15 @@ def attach_class_fixture(test):
         path.write_text('// synthetic class source: ' + name + '\n')
         source_hashes[name] = ci.digest(path)
     groups = [{'file': path, 'sourceSHA256': source_hashes[path],
-               'testNames': ['class group ' + str(i) + ' control ' + str(n).zfill(2) for n in range(20)]}
+               'testNames': (['class group ' + str(i) + ' control ' + str(n).zfill(2) for n in range(20)] if i < 2 else list(ci.CLASS_OWNED_DEADLINE_NAMES))}
               for i, path in enumerate(ci.CLASS_TEST_FILES)]
     test.pins['classProjection'] = {'configFile': ci.CLASS_CONFIG_FILE, 'configSHA256': source_hashes[ci.CLASS_CONFIG_FILE],
-        'files': groups, 'additionalDiagnosticTests': list(ci.CLASS_ADDITIONAL_DIAGNOSTIC_NAMES), 'sourceFiles': {name: source_hashes[name] for name in ci.CLASS_SOURCE_FILES},
+        'files': groups, 'replacedDiagnosticTests': list(ci.CLASS_REPLACED_DIAGNOSTIC_NAMES), 'additionalDiagnosticTests': list(ci.CLASS_ADDITIONAL_DIAGNOSTIC_NAMES), 'sourceFiles': {name: source_hashes[name] for name in ci.CLASS_SOURCE_FILES},
         'nodeMajor': 24, 'pnpmVersion': '12.3.4', 'vitestVersion': '5.0.5'}
     test.pins['producerFiles'] = sorted(set(test.pins['producerFiles']) | set(source_hashes))
     test.producer['files'].update(source_hashes)
     test.write_json(test.ev / 'producer.json', test.producer)
-    test.class_raw = {'success': True, 'numTotalTests': 42, 'numPassedTests': 42, 'numFailedTests': 0,
+    test.class_raw = {'success': True, 'numTotalTests': 61, 'numPassedTests': 61, 'numFailedTests': 0,
         'numPendingTests': 0, 'numTodoTests': 0, 'numTotalTestSuites': 4, 'numPassedTestSuites': 4,
         'numFailedTestSuites': 0, 'numPendingTestSuites': 0,
         'testResults': [{'name': str(test.root / group['file']), 'status': 'passed', 'message': '',
@@ -428,7 +428,7 @@ class ClassProjectionTests(unittest.TestCase):
     def reject(self):
         with self.assertRaises((AssertionError, KeyError, TypeError, FileNotFoundError, ValueError)): self.report()
     def test_original_twenty_each_plus_two_diagnostics_success(self):
-        r=self.report(); self.assertTrue(r['accepted']);self.assertEqual(r['count'],42);self.assertEqual(r['originalCount'],40);self.assertEqual(r['additionalDiagnosticCount'],2);self.assertFalse(r['browserAcceptance'])
+        r=self.report(); self.assertTrue(r['accepted']);self.assertEqual(r['count'],61);self.assertEqual(r['ownedDeadlineCount'],19);self.assertEqual(r['originalCount'],40);self.assertEqual(r['additionalDiagnosticCount'],2);self.assertFalse(r['browserAcceptance'])
     def test_missing_diagnostic_contract_rejected(self):
         del self.b.pins['classProjection']['additionalDiagnosticTests'];self.reject()
     def test_substituted_diagnostic_name_rejected(self):
@@ -518,8 +518,40 @@ class ClassProjectionTests(unittest.TestCase):
         pins=json.loads((HERE/'pins.json').read_text())
         # Parent binds this contract only after native identity/readback; no optional success.
         contract=pins['classProjection']
-        self.assertEqual([len(g['testNames']) for g in contract['files']],[20,20])
+        self.assertEqual([len(g['testNames']) for g in contract['files']],[20,20,19]);self.assertEqual(contract['files'][2]['testNames'],ci.CLASS_OWNED_DEADLINE_NAMES)
 
+
+class OwnedDeadlineProjectionTests(unittest.TestCase):
+    setUp = ClassProjectionTests.setUp
+    report = ClassProjectionTests.report
+    save = ClassProjectionTests.save
+    reject = ClassProjectionTests.reject
+    def test_missing_explicit_replacement_contract(self):
+        del self.b.pins['classProjection']['replacedDiagnosticTests']; self.reject()
+    def test_foreign_replaced_diagnostic_identity(self):
+        self.b.pins['classProjection']['replacedDiagnosticTests'][0]='foreign'; self.reject()
+    def test_old_diagnostic_pair_cannot_stand_in_for_attribution(self):
+        self.b.pins['classProjection']['additionalDiagnosticTests']=list(ci.CLASS_REPLACED_DIAGNOSTIC_NAMES); self.reject()
+    def test_missing_owned_source_identity(self):
+        self.b.pins['classProjection']['sourceFiles'].pop(ci.CLASS_TEST_FILES[2]); self.reject()
+    def test_missing_core_ownership_source_identity(self):
+        self.b.pins['classProjection']['sourceFiles'].pop('packages/e2e/src/internal/time.ts'); self.reject()
+    def test_owned_names_substituted_even_with_same_count(self):
+        self.b.pins['classProjection']['files'][2]['testNames'][0]='foreign'; self.reject()
+    def test_owned_name_duplicate(self):
+        names=self.b.pins['classProjection']['files'][2]['testNames']; names[0]=names[1]; self.reject()
+    def test_owned_raw_missing_with_original42_present(self):
+        self.b.class_raw['testResults'].pop(); self.b.class_raw['numTotalTests']=42; self.b.class_raw['numPassedTests']=42; self.save(); self.reject()
+    def test_owned_raw_wrong_file(self):
+        row=self.b.class_raw['testResults'][2]['assertionResults'].pop(); self.b.class_raw['testResults'][1]['assertionResults'].append(row); self.save(); self.reject()
+    def test_owned_raw_skip(self):
+        self.b.class_raw['testResults'][2]['assertionResults'][0]['status']='pending'; self.save(); self.reject()
+    def test_owned_raw_failure(self):
+        self.b.class_raw['testResults'][2]['assertionResults'][0]['status']='failed'; self.save(); self.reject()
+    def test_owned_raw_foreign_same_count(self):
+        self.b.class_raw['testResults'][2]['assertionResults'][0]['fullName']='foreign'; self.save(); self.reject()
+    def test_owned_source_tamper(self):
+        (self.b.root/ci.CLASS_TEST_FILES[2]).write_text('// changed'); self.reject()
 
 def attach_s9_exact_fixture(test):
     """Synthetic text receipts only; no native harness is executed."""
