@@ -10,6 +10,7 @@ import { verifyControlledPreparationReceipt } from './candidate-controlled-prepa
 import { verifyBundle } from './bundle.ts';
 import { verifySemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { candidateDistInventory, verifyCandidateRuntime } from './candidate-web.ts';
+import { verifyInteropArchive } from './candidate-interop-evidence.ts';
 import { REPO_ROOT } from '../public-packages.ts';
 import { SYNTHETIC_BATCH_ENV, validSyntheticBinding } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 import { validInstallerRuntimeBinding, type InstallerRuntimeBinding, type InstallerRuntimeReceipt } from '../../packages/web/tests/helpers/installer-fixture.ts';
@@ -70,6 +71,11 @@ function main(args: string[]): void {
       if (proof.sourceRevision !== undefined && (proof.sourceRevision !== source || JSON.stringify(proof.runtimeBuild) !== JSON.stringify(runtimeBuild))) throw new Error(`Public suite used different source/build: ${file}`);
       if (suites.some(suite => suite.id !== 'semantic-faults' && suite.id !== 'package-imports' && `${suite.id}.result.json` === file) && proof.binarySha256 !== manifest.native.sha256) throw new Error(`Public suite used a different native binary: ${file}`);
     }
+    const web = JSON.parse(readFileSync(join(output, 'web-browser.result.json'), 'utf8')) as { interopEvidence?: unknown; sourceTree?: string; nativeSourceRevision?: string; nativeSourceTree?: string };
+    if (web.sourceTree !== execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim()
+      || web.nativeSourceRevision !== manifest.nativeSource.commit || web.nativeSourceTree !== manifest.nativeSource.tree) throw new Error('Interop source/native identity differs from the candidate');
+    const webSuite = CANDIDATE_WEB_SUITES.find(suite => suite.id === 'web-browser')!;
+    verifyInteropArchive(output, web.interopEvidence, join(REPO_ROOT, 'packages', webSuite.package, webSuite.directory));
     const fault = JSON.parse(readFileSync(join(output, 'semantic-faults.result.json'), 'utf8')) as { binarySha256: string; diagnostics: unknown };
     verifySemanticTraceEvidence(output, fault.diagnostics);
     const faultProbe = JSON.parse(readFileSync(join(output, 'fault-negotiation.json'), 'utf8')) as { binarySha256: string };

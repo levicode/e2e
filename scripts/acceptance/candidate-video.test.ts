@@ -14,7 +14,7 @@ const ignored = [...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, .
 const defaults = [...ignored, ...REQUIRED_VIDEO_NORMAL_TESTS];
 test('failed-video delivery keeps all existing browser, feature and preparation gates plus the required real encoder cases', () => {
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46);
-  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 61);
+  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 63);
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8);
   assert.equal(MANAGED_ENCODER_CONTRACTS.length, 15);
   assert.equal(LEGACY_COMPONENT_ENCODER_CONTRACTS.length, 5);

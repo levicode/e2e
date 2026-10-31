@@ -9,13 +9,13 @@ import { verifyNativeInventory } from './candidate-native.ts';
 import { verifyFeatureDelta } from './candidate-native-matrix.ts';
 const listing = (names: readonly string[]) => names.map(name => `${name}: test`).join('\n');
 
-// Independent fixed seals of the reviewed exact-name sets (61/46/21), not
+// Independent fixed seals of the reviewed exact-name sets (63/46/21), not
 // counts derived from the implementation. Renames or same-size substitutions fail.
 test('reviewed Linux inventory identities remain exact, not merely equal-sized', () => {
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46);
   assert.equal(createHash('sha256').update(JSON.stringify(CANDIDATE_NATIVE_CONTRACTS.toSorted())).digest('hex'), 'b066d0b5cd870febe05a5c942dc68bd2727f3f6bef4f9afbe09a0f15c17732b8');
-  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 61);
-  assert.equal(createHash('sha256').update(JSON.stringify(REQUIRED_NATIVE_FEATURE_TESTS.toSorted())).digest('hex'), '90f97b3e1a84b58fdf11f0d18b3a7b082a0387763b833168b58a7af4effe178c');
+  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 63);
+  assert.equal(createHash('sha256').update(JSON.stringify(REQUIRED_NATIVE_FEATURE_TESTS.toSorted())).digest('hex'), 'c83f1e02205c02ebec363192fb4bca1adf110164fe5cc9c40baa779bfe4b2dd3');
   assert.equal(REQUIRED_ENCODER_CONTRACTS.length, 21);
   assert.equal(createHash('sha256').update(JSON.stringify(REQUIRED_ENCODER_CONTRACTS.toSorted())).digest('hex'), '8bc5077e24e4b6874949a8bc1e18820c6ff9987759275c7860f1aeea39c00930');
 });

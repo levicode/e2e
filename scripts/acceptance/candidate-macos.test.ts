@@ -185,15 +185,15 @@ test('S22 exact opt-in refs reject near misses, alternate events and push overri
   assert.deepEqual(candidateRevision(lock, 'workflow_dispatch', refs[0]!, 'b'.repeat(40), 'false'), { sha: 'b'.repeat(40), benchmarkSweep: false });
 });
 
-test('producer implementation keeps original nineteen and exact encoder eight as a closed union', () => {
+test('producer implementation keeps original nineteen, exact encoder eight and interop archive helper as a closed union', () => {
   const source = readFileSync(new URL('candidate-producer.ts', import.meta.url), 'utf8');
   const recipes = JSON.parse(source.match(/const recipes = (\[[^\n]+\]);/)![1]!.replaceAll("'", '"')) as string[];
   const original = ['candidate-video-manifest.ts', 'candidate-manifest.ts', 'candidate-revision.ts', 'candidate-native.ts', 'candidate-native-matrix-manifest.ts', 'candidate-native-matrix.ts', 'candidate-proxy-diagnostic.ts', 'candidate-producer.ts', 'candidate-web.ts', 'candidate-installed.ts', 'candidate-source.ts', 'candidate-receipt.ts', 'fixtures/installed-candidate.mjs', 'installed-chromium.ts', 'native-evidence.ts', 'probe-native.ts', 'package-bundle.ts', 'bundle-installer.ts', 'package-inventory.ts'];
   const encoder = ['installed-encoder-proof.py', 'installed-encoder-proc.c', 'installed-encoder-proof.test.py', 'fixtures/installed-candidate.mjs', 'candidate-installed.ts', 'candidate-runtime-install.ts', 'installed-public-proof.ts', 'installed-public-proof.test.ts'];
-  const expected = [...original, ...encoder.filter(file => !original.includes(file))];
+  const expected = [...original, ...encoder.filter(file => !original.includes(file)), 'candidate-interop-evidence.ts'];
   assert.equal(original.length, 19);
   assert.equal(encoder.length, 8);
-  assert.equal(expected.length, 25);
+  assert.equal(expected.length, 26);
   assert.deepEqual(recipes, expected);
   assert.equal(new Set(recipes).size, recipes.length);
   const map = Object.fromEntries(recipes.map(file => [file, createHash('sha256').update(readFileSync(new URL(file, import.meta.url))).digest('hex')]));

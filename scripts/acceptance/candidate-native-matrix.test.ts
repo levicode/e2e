@@ -11,7 +11,7 @@ import { CANDIDATE_NATIVE_CONTRACTS, CANDIDATE_NATIVE_DIAGNOSTICS, CANDIDATE_SEM
 import { hashFile, sourceIdentity, verifyNativeInventory } from './candidate-native.ts';
 import { CANDIDATE_GATES, requireCandidateGates } from './candidate-receipt.ts';
 import { FEATURE_TEST_CFG_SOURCES, PREPARATION_SETTLEMENT_TESTS, REQUIRED_NATIVE_FEATURE_TESTS } from './candidate-native-matrix-manifest.ts';
-import { assessExactTest, closedListing, closedTest, compilerProof, inventoryProof, panicSite, exactListing, featureCompileArgs, finalizeMatrixReceipt, matrixCompilerHarness, matrixInventory, matrixTestArgs, verifyFeatureDelta, verifyFeatureMatrixReceipt, verifyPreparationMatrixReceipt, type MatrixExecution, type MatrixMode, type ProcessFacts } from './candidate-native-matrix.ts';
+import { assessExactTest, closedListing, closedTest, compilerProof, inventoryProof, nativeNameCensus, panicSite, exactListing, featureCompileArgs, finalizeMatrixReceipt, matrixCompilerHarness, matrixInventory, matrixTestArgs, verifyFeatureDelta, verifyFeatureMatrixReceipt, verifyPreparationMatrixReceipt, type MatrixExecution, type MatrixMode, type ProcessFacts } from './candidate-native-matrix.ts';
 import type { runProxyCommand } from './candidate-proxy-diagnostic.ts';
 
 const completed: ProcessFacts = { status: 0, signal: null, termination: 'completed', cleanupConfirmed: true, groupRetired: true };
@@ -51,14 +51,16 @@ function compiledFixture(root: string) {
 
 test('the two exact matrices preserve historical contracts and restore eight preparation regressions without exemptions', () => {
   assert.equal(PREPARATION_SETTLEMENT_TESTS.length, 8); assert.equal(new Set(PREPARATION_SETTLEMENT_TESTS).size, 8);
-  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 61); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 61);
+  assert.equal(REQUIRED_NATIVE_FEATURE_TESTS.length, 63); assert.equal(new Set(REQUIRED_NATIVE_FEATURE_TESTS).size, 63);
   assert.equal(CANDIDATE_NATIVE_CONTRACTS.length, 46); assert.equal(CANDIDATE_SEMANTIC_FAULT_ASSERTIONS.length, 5);
   assert.deepEqual(CANDIDATE_NATIVE_DIAGNOSTICS, [
+    'native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_resume_ack_before_complete_retained',
+    'native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_complete_retained_before_network_commit',
     'native::client_enrollment::tests::diagnostic_external_direct_url_ingress_precedes_enrollment',
     'native::client_actions::tests::preparation_controlled_inside_window_acked_refusal_is_completed_and_reusable',
     'native::client_actions::tests::preparation_controlled_below_floor_unknown_retires_before_original_deadline',
   ]);
-  assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 61);
+  assert.equal(FEATURE_TEST_CFG_SOURCES.reduce((n, item) => n + item.count, 0), 63);
   const inventory = listing([...CANDIDATE_NATIVE_CONTRACTS, ...REQUIRED_ENCODER_CONTRACTS, ...CANDIDATE_NATIVE_DIAGNOSTICS]);
   verifyNativeInventory(inventory);
   assert.throws(() => verifyNativeInventory(`${inventory}\n${PREPARATION_SETTLEMENT_TESTS[0]}_unreviewed: test`), /Unclassified/);
@@ -148,7 +150,7 @@ test('both receipts always enumerate every exact unique row, with missing execut
   for (const mode of ['preparation', 'feature'] as const) {
     const result = finalizeMatrixReceipt(mode, {});
     assert.equal(result.status, 'unknown'); assert.equal(result.complete, false);
-    assert.equal(result.results.length, mode === 'feature' ? 61 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
+    assert.equal(result.results.length, mode === 'feature' ? 63 : 8); assert.equal(new Set(result.results.map(row => row.name)).size, result.results.length);
     assert.ok(result.results.every(row => row.status === 'unknown' && row.testStatus === 'unknown' && row.execution === null));
     assert.equal(result.releaseEligible, false); assert.equal(result.acceptanceEvidence, true);
   }
@@ -164,12 +166,12 @@ test('any preparation failures remain failed mandatory evidence with all eight o
   assert.equal(finalizeMatrixReceipt('preparation', successfulSteps, matrix('preparation')).status, 'passed');
 });
 
-test('feature compilation failure preserves bounded error summary and all 61 unexecuted unknown rows', () => {
+test('feature compilation failure preserves bounded error summary and all 63 unexecuted unknown rows', () => {
   const result = finalizeMatrixReceipt('feature', { ...successfulSteps, 'native-feature': { outcome: 'failure' } });
   const execution = { ...matrix('feature'), stage: 'compile', status: 'failed' as const, results: result.results,
     compile: compilerProof(JSON.stringify({ reason: 'compiler-message', message: { level: 'error', code: { code: 'E0308' }, rendered: 'private path' } }), 'private stderr', { ...completed, status: 101 }, null) };
   const failed = finalizeMatrixReceipt('feature', { ...successfulSteps, 'native-feature': { outcome: 'failure' } }, execution);
-  assert.equal(failed.status, 'failed'); assert.equal(failed.complete, false); assert.equal(failed.results.length, 61); assert.ok(failed.results.every(row => row.testStatus === 'unknown'));
+  assert.equal(failed.status, 'failed'); assert.equal(failed.complete, false); assert.equal(failed.results.length, 63); assert.ok(failed.results.every(row => row.testStatus === 'unknown'));
   assert.deepEqual(failed.compile?.errorCodes, ['E0308']); assert.doesNotMatch(JSON.stringify(failed), /private path|private stderr/);
 });
 
@@ -302,6 +304,26 @@ test('foreign inventory names affect counts and verification but never enter clo
   assert.equal(proof.verified, false); assert.equal(proof.delta?.unexpectedAddedCount, 1); assert.equal(proof.delta?.addedCount, REQUIRED_NATIVE_FEATURE_TESTS.length + 1); assert.equal(proof.feature?.entries, defaults.length + REQUIRED_NATIVE_FEATURE_TESTS.length + 1);
   assert.equal(proof.feature?.stdout.sha256, sha256(Buffer.from(full))); assert.equal(proof.feature?.stdout.bytes, Buffer.byteLength(full));
   writeFileSync(join(output, 'inventory.json'), JSON.stringify(proof)); assert.doesNotMatch(readFileSync(join(output, 'inventory.json'), 'utf8'), /SENTINEL/);
+});
+
+test('diagnostic census retains bounded exact names and source identity without accepting unknown deltas', () => {
+  const binding = matrix('feature').binding!; const defaults = ['historical_test'];
+  const foreign = 'native::new_module::unreviewed_test';
+  const normal = processResult(listing(defaults));
+  const feature = processResult(listing([...defaults, ...REQUIRED_NATIVE_FEATURE_TESTS, foreign]), 'PRIVATE_STDERR');
+  const ignored = processResult('');
+  const census = nativeNameCensus('feature', binding, normal, feature, ignored);
+  assert.deepEqual(census.default.names, defaults); assert.equal(census.feature!.names.at(-1), foreign);
+  assert.deepEqual(census.binding, binding); assert.notEqual(census.binding, binding);
+  assert.equal(census.acceptanceEvidence, false); assert.equal(census.releaseEligible, false);
+  assert.doesNotMatch(JSON.stringify(census), /PRIVATE_STDERR/);
+  assert.equal(inventoryProof('feature', normal, feature, ignored).verified, false);
+  for (const raw of ['duplicate: test\nduplicate: test', 'payload with spaces: test', `${'x'.repeat(513)}: test`, `${'x'.repeat(1024 * 1024 + 1)}`]) {
+    assert.throws(() => nativeNameCensus('feature', binding, processResult(raw), feature, ignored));
+  }
+  assert.throws(() => nativeNameCensus('feature', { ...binding, sourceRevision: 'bad' }, normal, feature, ignored));
+  assert.throws(() => nativeNameCensus('feature', { ...binding, harness: null }, normal, feature, ignored));
+  assert.throws(() => nativeNameCensus('feature', binding, normal, null, ignored));
 });
 
 test('panic location is first-only, owning-file, canonical, tracked and bounded, with no assertion payload', t => {

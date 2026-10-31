@@ -12,6 +12,7 @@ import { collectSemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { REPO_ROOT } from '../public-packages.ts';
 import { cleanInstallerEnvironment, INSTALLER_EXECUTABLE_ENV, INSTALLER_BINDING_ENV, type InstallerRuntimeBinding, type InstallerRuntimeReceipt } from '../../packages/web/tests/helpers/installer-fixture.ts';
 import { cleanCleanupEnvironment, prepareCleanupCapture, collectCleanupCapture, type CleanupCapture } from './candidate-cleanup-diagnostics.ts';
+import { prepareInteropCapture, interopEnvironment, archiveInteropCapture, type InteropCapture } from './candidate-interop-evidence.ts';
 import { SYNTHETIC_BATCH_ENV } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
 import { cleanSyntheticEnvironment, collectSyntheticEvidence, prepareSyntheticCapture, type SyntheticCapture } from './candidate-synthetic-evidence.ts';
 
@@ -157,11 +158,18 @@ function main(args: string[]): void {
   delete phaseEnvironment[CALLBACK_SCREENSHOT_ENV];
   let capturePrepared = suite.id !== 'semantic-faults';
   try { phaseEnvironment = candidatePhaseEnvironment(suite.id, cleanCleanupEnvironment(cleanSyntheticEnvironment(process.env)), output); capturePrepared = true; } catch { /* Capture setup must not change the functional suite outcome. */ }
+  let vitestExecution: { status: number | null; signal: string | null; error: string | undefined } | undefined;
+  let interopProblem: string | undefined;
+  let interopCapture: InteropCapture | undefined;
+  let interopEvidence: ReturnType<typeof archiveInteropCapture> | undefined;
+  let nativeSourceRevision: string | undefined; let nativeSourceTree: string | undefined;
+  let sourceTree: string | undefined;
   let installerRuntime: VerifiedInstallerRuntime | undefined; let installerFixtureRuntime: InstallerRuntimeReceipt | undefined;
   let files: string[] = []; let testSourceDigest: string | undefined;
   let status = 'failed'; let problem: string | undefined; let assertions = 0; let binarySha256: string | undefined; let runtimeBuild: ReturnType<typeof candidateDistInventory> | undefined;
   try {
-    if (sourceState()) throw new Error('Candidate suites require clean committed sources');
+    if (sourceState() || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim() !== sourceRevision) throw new Error('Candidate suites require unchanged clean committed sources');
+    sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     runtimeBuild = candidateDistInventory(REPO_ROOT);
     if (suite.id !== 'package-imports') {
       binarySha256 = sha256(readFileSync(binary));
@@ -173,6 +181,13 @@ function main(args: string[]): void {
     const directory = join(cwd, suite.directory);
     const discovered = readdirSync(directory, { recursive: true, encoding: 'utf8' }).filter(name => name.endsWith('.test.ts')).map(name => join(directory, name)).toSorted();
     files = candidateFiles(suite, directory, discovered); testSourceDigest = fingerprint(files);
+    if (suite.id === 'web-browser') {
+      const nativeSource = join(REPO_ROOT, '.artifacts/native-source');
+      nativeSourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: nativeSource, encoding: 'utf8' }).trim();
+      nativeSourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: nativeSource, encoding: 'utf8' }).trim();
+      if (execFileSync('git', ['status', '--porcelain'], { cwd: nativeSource, encoding: 'utf8' }).trim()) throw new Error('Interop native source must be pristine');
+      interopCapture = prepareInteropCapture(directory);
+    }
     if (syntheticRequested && binarySha256 !== undefined && (suite.id === 'web-browser' || suite.id === 'public-callbacks')) {
       try {
         syntheticCapture = prepareSyntheticCapture(REPO_ROOT, suite.id, { sourceRevision, testSourceDigest, binarySha256 }, phaseEnvironment, installerRuntime?.binding);
@@ -190,7 +205,7 @@ function main(args: string[]): void {
       } catch { /* Missing diagnostic setup is unknown and cannot alter original suite behavior. */ }
     }
     try { phaseEnvironment = candidateScreenshotEnvironment(suite.id, syntheticCapture !== undefined, phaseEnvironment, output); } catch { delete phaseEnvironment[CALLBACK_SCREENSHOT_ENV]; }
-    const env: NodeJS.ProcessEnv = { ...candidateInstallerEnvironment(phaseEnvironment, installerRuntime), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
+    const env: NodeJS.ProcessEnv = { ...interopEnvironment(candidateInstallerEnvironment(phaseEnvironment, installerRuntime), interopCapture), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
     if (suite.id === 'crosscheck-benchmark') {
       if (env['CROSSCHECK_BENCHMARK_URL'] !== 'http://127.0.0.1:4280') throw new Error('Optional benchmark must be the explicitly served local synthetic app');
     } else delete env['CROSSCHECK_BENCHMARK_URL'];
@@ -198,6 +213,7 @@ function main(args: string[]): void {
       cwd, stdio: 'inherit', timeout: 1_800_000,
       env,
     });
+    vitestExecution = { status: result.status, signal: result.signal, error: result.error?.message };
     if (result.status !== 0) throw new Error(`Vitest failed: ${result.error?.message ?? result.signal ?? result.status}`);
     const report = JSON.parse(readFileSync(rawReport, 'utf8')) as TestReport;
     assertions = suite.id === 'crosscheck-fixtures' ? verifyCrosscheckFixtures(report, files) : suite.id === 'semantic-faults' ? verifySemanticFaults(report, files) : verifyReport(report, files);
@@ -206,6 +222,24 @@ function main(args: string[]): void {
     status = 'passed';
   } catch (error) { problem = String(error); process.stderr.write(`${problem}\n`); }
   finally {
+    if (interopCapture) {
+      let identityUnchanged = false;
+      try {
+        const nativeSource = join(REPO_ROOT, '.artifacts/native-source');
+        identityUnchanged = sourceState() === '' && fingerprint(files) === testSourceDigest
+          && execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim() === sourceRevision
+          && execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim() === sourceTree
+          && JSON.stringify(candidateDistInventory(REPO_ROOT)) === JSON.stringify(runtimeBuild)
+          && sha256(readFileSync(binary)) === binarySha256
+          && execFileSync('git', ['rev-parse', 'HEAD'], { cwd: nativeSource, encoding: 'utf8' }).trim() === nativeSourceRevision
+          && execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: nativeSource, encoding: 'utf8' }).trim() === nativeSourceTree
+          && execFileSync('git', ['status', '--porcelain'], { cwd: nativeSource, encoding: 'utf8' }).trim() === '';
+      } catch { /* Failed or unavailable reads cannot establish unchanged source/build identity. */ }
+      try {
+        interopEvidence = archiveInteropCapture(interopCapture, output, identityUnchanged);
+        if (interopEvidence.status !== 'captured') throw new Error('Interop evidence is missing, unsafe or source/build identity changed');
+      } catch (error) { status = 'failed'; interopProblem = String(error); problem ??= interopProblem; }
+    }
     if (installerRuntime) {
       installerFixtureRuntime = verifyInstallerFixturePostRun(installerRuntime);
       if (!installerFixtureRuntime.postRunIdentityVerified) { status = 'failed'; problem ??= 'Installer fixture runtime/proof changed or could not be verified after execution'; }
@@ -227,7 +261,7 @@ function main(args: string[]): void {
   const diagnostics = suite.id === 'semantic-faults' ? collectSemanticTraceEvidence(output, capturePrepared) : undefined;
   const syntheticDiagnostics = syntheticRequested ? collectSyntheticEvidence(output, syntheticCapture) : undefined;
   const syntheticBinding = syntheticCapture?.configuration.binding;
-  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, diagnostics, cleanupDiagnostics, syntheticDiagnostics, syntheticBinding, installerFixtureRuntime, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
+  writeFileSync(join(output, `${suite.id}.result.json`), JSON.stringify({ schemaVersion: 1, vitestExecution, interopProblem, interopEvidence, sourceTree, nativeSourceRevision, nativeSourceTree, diagnostics, cleanupDiagnostics, syntheticDiagnostics, syntheticBinding, installerFixtureRuntime, suite: suite.id, status, evidence: suite.evidence, sourceRevision, binarySha256, runtimeBuild, files, testSourceDigest, assertions, problem, releaseEligible: false }, null, 2));
   if (status !== 'passed') process.exitCode = 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main(process.argv.slice(2));

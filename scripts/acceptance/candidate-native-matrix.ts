@@ -1,4 +1,4 @@
-/** Raw compiler/harness output is parsed in memory. New artifacts contain closed facts only. */
+/** Acceptance proofs remain closed facts. A separately labelled source-bound census retains only bounded Rust test names. */
 import { execFileSync } from 'node:child_process';
 import { accessSync, constants, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -110,6 +110,19 @@ export function verifyFeatureDelta(defaults: readonly string[], features: readon
   if (ignored.some(name => !features.includes(name))) throw new Error('Ignored inventory contains an undiscovered test');
   if (REQUIRED_NATIVE_FEATURE_TESTS.some(name => ignored.includes(name))) throw new Error('A mandatory feature test is ignored');
   return { added, removed };
+}
+/** Diagnostic census only: unrecognized legal names remain visible, never accepted as required coverage. */
+export function nativeNameCensus(mode: MatrixMode, binding: ObjectValue, normal: ProcessResult, feature: ProcessResult | null, ignored: ProcessResult) {
+  if (!validBinding(binding, mode) || binding['harness'] === null) throw new Error('Census requires exact source/compiler/harness binding');
+  const census = (result: ProcessResult) => {
+    const found = inventoryNames(result.stdout);
+    if (found.length > 20_000 || new Set(found).size !== found.length || found.some(name => name.length > 512 || !/^[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$/.test(name))) throw new Error('Invalid bounded Rust test-name census');
+    return { process: facts(result), stdout: digest(result.stdout), stderr: digest(result.stderr), names: found };
+  };
+  if ((mode === 'feature') !== (feature !== null)) throw new Error('Census feature mode mismatch');
+  return { schemaVersion: 1, kind: 'diagnostic-native-test-name-census', mode, binding: structuredClone(binding),
+    default: census(normal), feature: feature === null ? null : census(feature), ignored: census(ignored),
+    acceptanceEvidence: false, releaseEligible: false };
 }
 export function exactListing(listing: string, name: string) { try { return JSON.stringify(matrixInventory(listing)) === JSON.stringify([name]); } catch { return false; } }
 const streamInventory = (result: ProcessResult): StreamInventory => { const found = inventoryNames(result.stdout); return { process: facts(result), stdout: digest(result.stdout), stderr: digest(result.stderr), entries: found.length, duplicates: found.length - new Set(found).size, knownNames: allNames.filter(name => found.includes(name)) }; };
@@ -309,7 +322,11 @@ async function runMatrix(mode: MatrixMode, args: string[]): Promise<void> {
     checkpoint('inventory');
     const normal = await run(defaultHarness, ['--list', '--format=terse'], 30_000); const ignored = await run(selected, ['--ignored', '--list', '--format=terse'], 30_000); const feature = mode === 'feature' ? await run(selected, ['--list', '--format=terse'], 30_000) : null;
     const inventory = inventoryProof(mode, normal, feature, ignored); execution.inventory = persistProof(output, `${stem(mode)}-inventory.proof.json`, inventory);
-    if (!inventory.verified) { execution.status = [normal, ignored, ...(feature === null ? [] : [feature])].every(value => completed(facts(value))) ? 'failed' : 'unknown'; throw new Error('Inventory not verified'); }
+    // Freeze the original classification before optional diagnostics; census failures must not alter it.
+    if (!inventory.verified) execution.status = [normal, ignored, ...(feature === null ? [] : [feature])].every(value => completed(facts(value))) ? 'failed' : 'unknown';
+    try { persistProof(output, `${stem(mode)}-names.diagnostic.json`, nativeNameCensus(mode, execution.binding!, normal, feature, ignored)); }
+    catch { /* Diagnostic-only census may be unavailable; preserve original execution and classification. */ }
+    if (!inventory.verified) throw new Error('Inventory not verified');
     checkpoint('execute');
     for (const row of execution.results) {
       if (controller.signal.aborted) break;

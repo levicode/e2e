@@ -28,6 +28,11 @@ test('manual source selection requires an immutable nonzero lowercase SHA', () =
 test('dedicated push is source-locked; manual selection needs an explicit immutable public revision', () => {
   const lock = { schemaVersion: 1, repository: 'levicode/agent-browser', commit: 'a'.repeat(40), benchmarkSweep: false };
   assert.deepEqual(candidateRevision(lock, 'push', 'refs/heads/implement/native-full-ci', '', ''), { sha: lock.commit, benchmarkSweep: false });
+  const newFormal = 'refs/heads/ci/s24-formal-preflight-20261031';
+  assert.deepEqual(candidateRevision(lock, 'push', newFormal, '', ''), { sha: lock.commit, benchmarkSweep: false });
+  for (const ref of [newFormal + '-other', newFormal.toUpperCase(), 'refs/heads/ci/s24-formal-preflight', 'refs/tags/ci/s24-formal-preflight-20261031']) assert.throws(() => candidateRevision(lock, 'push', ref), /opt-in branch/);
+  assert.throws(() => candidateRevision(lock, 'push', newFormal, 'b'.repeat(40)), /overrides/);
+  assert.throws(() => candidateRevision(lock, 'push', newFormal, '', 'true'), /overrides/);
   assert.deepEqual(candidateRevision(lock, 'workflow_dispatch', 'refs/heads/review', 'b'.repeat(40), 'true'), { sha: 'b'.repeat(40), benchmarkSweep: true });
   assert.throws(() => candidateRevision({ ...lock, commit: null }, 'push', 'refs/heads/implement/native-full-ci'), /immutable/);
   assert.throws(() => candidateRevision(lock, 'push', 'refs/heads/main'), /opt-in branch/);
@@ -170,7 +175,7 @@ test('every failure, skip or missing independent gate prevents candidate success
 test('hosted workflow has narrow opt-in triggers, isolates features, preserves independent runtime gates and final guard', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/native-candidate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /push:\n    branches: \[ci\/s22-repair-native-formal-20261031\]/);
+  assert.match(workflow, /push:\n    branches: \[ci\/s24-formal-preflight-20261031\]/);
   assert.match(workflow, /node scripts\/acceptance\/candidate-revision.ts/);
   assert.doesNotMatch(workflow, /continue-on-error|secrets\.|actions\/cache|pull_request:|test:agent|canary:publish/);
   for (const id of CANDIDATE_GATES) assert.equal(workflow.split(`id: ${id}\n`).length - 1, 1, id);
