@@ -259,6 +259,32 @@ try {
   await cleanup();
 }
 
+// BEGIN installed run closed diagnostic: no prose, paths, model output, or arbitrary codes.
+function installedRunClosed(stage, result) {
+  if (!['record', 'replay'].includes(stage)) throw new Error('Invalid installed run stage');
+  const pick = (value, allowed) => allowed.includes(value) ? value : 'other';
+  const codes = ['INVALID_CONFIG', 'CONFIG_NOT_FOUND', 'CONFIG_AMBIGUOUS', 'CONFIG_LOAD_FAILED', 'INVALID_GLOB', 'NO_TESTS', 'NO_TESTS_FOUND', 'COLLECTION_FAILED', 'MODEL_UNAVAILABLE', 'RUNNER_BUSY', 'UNSUPPORTED_CAPABILITY', 'TEST_SETUP_FAILED', 'POLICY_DENIED', 'REPLAY_STALE', 'REPORT_WRITE_FAILED'];
+  const categories = ['test', 'configuration', 'infrastructure', 'internal', 'interrupted'];
+  const phases = ['config', 'collection', 'filter', 'launch', 'beforeAll', 'beforeEach', 'body', 'afterEach', 'afterAll', 'cleanup', 'report'];
+  const list = value => Array.isArray(value) ? value : [];
+  const errors = []; let truncated = false;
+  const keep = (error, scope, resultIndex = -1, attemptIndex = -1, stepIndex = -1) => {
+    if (!error || typeof error !== 'object') return;
+    if (errors.length >= 32) { truncated = true; return; }
+    errors.push({ scope, resultIndex, attemptIndex, stepIndex, code: pick(error.code, codes), category: pick(error.category, categories), phase: pick(error.phase, phases) });
+  };
+  const bounded = (value, limit) => { const values = list(value); if (values.length > limit) truncated = true; return values.slice(0, limit); };
+  for (const error of bounded(result?.report?.run?.errors, 32)) keep(error, 'run');
+  const results = list(result?.report?.run?.results);
+  bounded(results, 16).forEach((row, r) => bounded(row?.attempts, 4).forEach((attempt, a) => {
+    keep(attempt?.error, 'attempt', r, a);
+    for (const error of bounded(attempt?.secondaryErrors, 8)) keep(error, 'secondary', r, a);
+    bounded(attempt?.steps, 64).forEach((step, s) => keep(step?.error, 'step', r, a, s));
+  }));
+  return { schemaVersion: 1, evidence: 'partial-diagnostic-not-acceptance', stage, exitCode: [0, 1, 2, 3, 4, 130].includes(result?.exitCode) ? result.exitCode : null, status: pick(result?.status, ['passed', 'failed', 'blocked', 'interrupted']), resultCount: Math.min(results.length, 16), truncated, errors };
+}
+// END installed run closed diagnostic.
+
 async function installedCache(appURL) {
   mkdirSync('installed-cache-tests');
   writeFileSync('installed-cache-tests/cache.e2e.ts', `import { test } from '@e2e-dev/web';
@@ -296,6 +322,7 @@ import model from './installed-cache-model.mjs';
 export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { model } }, cache: 'read-write', retries: 0, targets: [{ name: 'installed', engine: web(), app: { url: ${JSON.stringify(appURL)} } }] };
 `);
   const record = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
+  console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('record', record)));
   assert.equal(record.exitCode, 0); assert.equal(record.status, 'passed');
   const steps = result => result.report.run.results.flatMap(testResult => testResult.attempts).flatMap(attempt => attempt.steps).filter(step => step.api === 'agent.act');
   const [miss] = steps(record); assert.equal(steps(record).length, 1);
@@ -305,6 +332,7 @@ export default { tests: 'installed-cache-tests/*.e2e.ts', agents: { default: { m
   assert.equal(files.length, 1);
   const cachePath = resolvePath('.e2e/cache', files[0]); const bytes = readFileSync(cachePath); const mtime = statSync(cachePath).mtimeMs;
   const replay = await run({ cwd: process.cwd(), config: 'installed-cache.config.ts' });
+  console.log('INSTALLED_RUN_CLOSED ' + JSON.stringify(installedRunClosed('replay', replay)));
   assert.equal(replay.exitCode, 0); assert.equal(replay.status, 'passed');
   assert.equal(readFileSync('installed-model-calls.log', 'utf8'), modelCalls);
   const [hit] = steps(replay); assert.equal(steps(replay).length, 1);

@@ -173,3 +173,35 @@ test('encoder pure controls leave committed source clean, including untracked by
   assert.equal(result.status, 0, result.stderr);
   assert.equal(git('status', '--porcelain', '-uall'), '', 'pure controls must not dirty tracked or untracked source');
 });
+
+test('actual installed run failure diagnostic retains only closed facts before unchanged assertions', async () => {
+  const source = readFileSync(new URL('fixtures/installed-candidate.mjs', import.meta.url), 'utf8');
+  const match = source.match(/\/\/ BEGIN installed run closed diagnostic[^\n]*\n([\s\S]*?)\/\/ END installed run closed diagnostic/);
+  assert.ok(match);
+  const closed = new Function(`${match[1]}\nreturn installedRunClosed;`)() as (stage: string, result: unknown) => any;
+  const secret = 'PRIVATE_MESSAGE_PATH_TOKEN';
+  const error = { code: 'MODEL_UNAVAILABLE', category: 'configuration', phase: 'body', message: secret, stack: secret, source: { file: secret }, details: { token: secret } };
+  const value = { exitCode: 2, status: 'blocked', report: { run: { errors: [{ ...error, code: secret, category: secret, phase: secret }], results: [{ name: secret, attempts: [{ error, secondaryErrors: [error], steps: [{ error, explanation: secret, metrics: { modelCalls: 123 } }] }] }] } } };
+  const receipt = closed('record', value);
+  assert.equal(receipt.exitCode, 2); assert.equal(receipt.stage, 'record'); assert.equal(receipt.resultCount, 1);
+  assert.deepEqual(receipt.errors.map((item: any) => item.scope), ['run', 'attempt', 'secondary', 'step']);
+  assert.equal(receipt.errors[0].code, 'other'); assert.equal(receipt.errors[0].category, 'other'); assert.equal(receipt.errors[0].phase, 'other');
+  assert.equal(receipt.errors[1].code, 'MODEL_UNAVAILABLE');
+  assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE_MESSAGE_PATH_TOKEN|modelCalls|message|stack|explanation|source|details/);
+  const overflow = closed('replay', { exitCode: 999, status: secret, report: { run: { errors: Array.from({ length: 100 }, () => ({ ...error })), results: Array.from({ length: 100 }, () => ({ attempts: Array.from({ length: 10 }, () => ({ error: { ...error } })) })) } } });
+  assert.equal(overflow.errors.length, 32); assert.equal(overflow.resultCount, 16); assert.equal(overflow.truncated, true);
+  assert.equal(overflow.exitCode, null); assert.equal(overflow.status, 'other');
+  assert.deepEqual(closed('record', {}).errors, []); assert.throws(() => closed(secret, {}), /Invalid installed run stage/);
+  const cacheFunction = source.slice(source.indexOf('async function installedCache(appURL)'), source.indexOf('async function installedState(appURL)'));
+  const lines: string[] = [];
+  const actualCache = new Function('mkdirSync', 'writeFileSync', 'run', 'assert', 'console', 'installedRunClosed', `${cacheFunction}\nreturn installedCache;`)(() => {}, () => {}, async () => value, assert, { log: (line: string) => lines.push(line) }, closed) as (url: string) => Promise<unknown>;
+  await assert.rejects(actualCache('http://127.0.0.1:1234'), /2 !== 0/);
+  assert.equal(lines.length, 1, 'actual first-record failure must emit once before original assertion throws');
+  assert.ok(lines[0]!.startsWith('INSTALLED_RUN_CLOSED '));
+  assert.deepEqual(JSON.parse(lines[0]!.slice('INSTALLED_RUN_CLOSED '.length)), receipt);
+
+  for (const stage of ['record', 'replay']) {
+    assert.ok(source.indexOf(`installedRunClosed('${stage}', ${stage})`) < source.indexOf(`assert.equal(${stage}.exitCode, 0)`));
+    assert.ok(source.includes(`assert.equal(${stage}.exitCode, 0); assert.equal(${stage}.status, 'passed');`));
+  }
+});
