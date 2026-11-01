@@ -109,8 +109,69 @@ jobs:
           run-attempt: ${{ needs.native-runtime.outputs.run-attempt }}
       - name: Install browsers
         run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+      - name: Bind installed Chromium and isolated synthetic fixture evidence
+        run: |
+          set -euo pipefail
+          pnpm --filter @e2e-dev/web exec node --input-type=module <<'FIXTURES'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { createHash } from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+          import { chromium } from 'playwright-core';
+          const installed = chromium.executablePath();
+          assert.ok(path.isAbsolute(installed));
+          const executable = fs.realpathSync(installed);
+          assert.ok(fs.lstatSync(executable).isFile());
+          fs.accessSync(executable, fs.constants.X_OK);
+          const temp = fs.realpathSync(process.env.RUNNER_TEMP);
+          const root = fs.mkdtempSync(path.join(temp, 'spec-fixtures-'));
+          fs.chmodSync(root, 0o700);
+          const owned = directory => {
+            const info = fs.lstatSync(directory);
+            assert.ok(info.isDirectory() && !info.isSymbolicLink());
+            assert.equal(fs.realpathSync(directory), directory);
+            assert.equal(info.uid, process.getuid());
+            assert.equal(info.mode & 0o777, 0o700);
+          };
+          owned(root);
+          for (const name of ['chains', 'interop']) {
+            const directory = path.join(root, name);
+            fs.mkdirSync(directory, { mode: 0o700 });
+            owned(directory);
+          }
+          const values = {
+            E2E_SPEC_EVIDENCE_DIR: root,
+            E2E_CHAIN_CHROME_EXECUTABLE: executable,
+            E2E_POPUP_SWIPE_CHROME_EXECUTABLE: executable,
+            E2E_CHAIN_EVIDENCE_DIR: path.join(root, 'chains'),
+            E2E_INTEROP_EVIDENCE_DIR: path.join(root, 'interop'),
+            E2E_INTEROP_FILE_SCOPED_EVIDENCE: '1',
+          };
+          for (const value of Object.values(values)) assert.ok(!/[\r\n]/.test(value));
+          fs.writeFileSync(path.join(root, 'binding.json'), JSON.stringify({
+            sourceCommit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+            attempt: process.env.GITHUB_RUN_ATTEMPT, node: process.version,
+            installed, executable,
+            chromeVersion: execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(),
+            chromeSha256: createHash('sha256').update(fs.readFileSync(executable)).digest('hex'),
+          }, null, 2), { flag: 'wx', mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
+          FIXTURES
       - name: Unit and integration tests
         run: pnpm test
+      - name: Retain synthetic fixture evidence, including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: spec-fixtures-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            ${{ env.E2E_SPEC_EVIDENCE_DIR || format('{0}/spec-fixtures-not-created', runner.temp) }}
+            packages/e2e/.e2e/popup-init-order-borrowed
+            packages/e2e/.e2e/popup-swipe-borrowed-pair
 
   # A new user's first install of the packed packages, which pnpm 11 and
   # later fail on any dependency build script (scripts/install-smoke.ts).
