@@ -66,7 +66,7 @@ test('producer hashes the actual allowlisted workflow, never caller-relative pat
 });
 
 test('macOS candidate requires real native hosts, read-only permissions and platform-specific artifact identity', () => {
-  assert.match(workflow, /branches: \[ci\/s22-repair-macos-installed-20261031\]/);
+  assert.match(workflow, /branches: \[ci\/s25-macos-usable-preview-20261101\]/);
   assert.match(workflow, /runner: macos-15\n\s+arch: arm64\n\s+rust_host: aarch64-apple-darwin/);
   assert.match(workflow, /runner: macos-15-intel\n\s+arch: x64\n\s+rust_host: x86_64-apple-darwin/);
   assert.match(workflow, /permissions:\n  contents: read\n/);
@@ -232,4 +232,15 @@ test('macOS temp namespace proof checks real physical alias identity before unch
   assert.notEqual(run(foreign, join(root, 'wrong.json')).status, 0, 'different physical directory must not normalize away a mismatch');
   assert.notEqual(run(alias, join(root, 'not-canonical.json')).status, 0, 'unresolved alias is not canonical');
   assert.match(workflow, /TMPDIR="\$canonical_tmp" node --test test\/launcher\.test\.mjs test\/postinstall\.test\.mjs/);
+});
+
+// Exact preview source selection; no platform acceptance is inferred by this pure test.
+test('usable Mac preview exact branch selects only its committed native source', () => {
+  const ref = 'refs/heads/ci/s25-macos-usable-preview-20261101';
+  const native = { ...lock, commit: '0537c6550dfa9a32e4f6e80ba9d3872169cc5663' };
+  assert.deepEqual(candidateRevision(native, 'push', ref, '', ''), { sha: native.commit, benchmarkSweep: false });
+  for (const wrong of [ref + '-other', ref + '/', ref.toUpperCase(), ref.replace('refs/heads/', 'refs/tags/'), ref.replace('refs/heads/', '')]) assert.throws(() => candidateRevision(native, 'push', wrong), /opt-in branch/);
+  assert.throws(() => candidateRevision(native, 'push', ref, 'b'.repeat(40)), /overrides/);
+  assert.throws(() => candidateRevision(native, 'push', ref, '', 'true'), /overrides/);
+  assert.throws(() => candidateRevision({ ...native, commit: 'main' }, 'push', ref), /immutable/);
 });

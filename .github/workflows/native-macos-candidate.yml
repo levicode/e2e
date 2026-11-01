@@ -3,7 +3,7 @@
 name: native macOS installed candidate (not full acceptance or release)
 on:
   push:
-    branches: [ci/s22-repair-macos-installed-20261031]
+    branches: [ci/s25-macos-usable-preview-20261101]
   workflow_dispatch:
     inputs:
       native_sha:
