@@ -2,8 +2,8 @@
   "purpose": "linux-preview-core-diagnostic",
   "acceptanceEvidence": false,
   "branch": "ci/s25-linux-preview-core-20261101",
-  "baseCommit": "7bbf41cae82a45bace3ad631795f2cda9befadee",
-  "baseTree": "f36657b4a57445e0b69f425992e31d23a3f2fbbc",
+  "baseCommit": "c4464f708b795e147a0b5d4c00f6b2ccf9c4550d",
+  "baseTree": "637e4531fa7e71570821a167e87e9c3d4961b9e8",
   "bundleArtifactId": 13065867783,
   "bundleSource": {
     "commit": "7bbf41cae82a45bace3ad631795f2cda9befadee",
@@ -3390,16 +3390,14 @@
     ".github/workflows/full-standard-node-matrix.yml",
     "scripts/ci/preview-core-binding.json"
   ],
-  "sourceSealSHA256": "36dbd89410bb274fbb180066e7892d915846fb4fc86ca89b0ecb98a1cccd88cc",
+  "sourceSealSHA256": "4d4b607d9987d05e169068dd68a4ba4d6b255133ed616284a2349518eaf7aff6",
   "allowedDelta": [
     ".github/workflows/full-standard-node-matrix.yml",
     ".github/workflows/linux-preview-core.yml",
-    "scripts/acceptance/fixtures/preview-core.mjs",
     "scripts/acceptance/preview-core-proof.mjs",
     "scripts/acceptance/preview-core-proof.test.mjs",
     "scripts/acceptance/preview-core.mjs",
-    "scripts/ci/preview-core-binding.json",
-    "scripts/ci/restore-preview-core.py"
+    "scripts/ci/preview-core-binding.json"
   ],
   "futureOrchestratorCommit": null,
   "futureOrchestratorRun": null,

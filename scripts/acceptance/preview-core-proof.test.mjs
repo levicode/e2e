@@ -7,7 +7,13 @@ import { FORMS, TOKEN, NOTE, ECHO_HTML, CONFIG, CORE_TEST, SECRET_TEST } from '.
 function crc32(bytes){let c=-1;for(const b of bytes){c^=b;for(let n=0;n<8;n++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^-1)>>>0;}
 function chunk(type,data){const t=Buffer.from(type),b=Buffer.alloc(data.length+12);b.writeUInt32BE(data.length);t.copy(b,4);data.copy(b,8);b.writeUInt32BE(crc32(Buffer.concat([t,data])),data.length+8);return b;}
 function png(w,h,pixel,channels=3){const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(w);ihdr.writeUInt32BE(h,4);ihdr[8]=8;ihdr[9]=channels===4?6:2;const raw=Buffer.alloc((w*channels+1)*h);for(let y=0;y<h;y++)for(let x=0;x<w;x++)Buffer.from(pixel(x,y)).copy(raw,y*(w*channels+1)+1+x*channels);return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);}
-function report(secret=false){const titles=secret?['fails on the plain echo','fails on the upper echo','fails on the lower echo','fails on the note-echo echo','observes the echoes','matches the transformed text']:['preview core public flow'];return{schemaVersion:'report-1',run:{exitCode:secret?1:0,errors:[],environment:{runtime:'node v24.22.1'},status:secret?'failed':'passed',summary:{executed:secret?6:1,passed:secret?2:1,failed:secret?4:0,skipped:0,interrupted:0,flaky:0},results:titles.map((title,index)=>{const status=secret&&index<4?'failed':'passed';return{titlePath:[title],selected:true,status,attempts:[{status,...(status==='failed'?{error:{code:'ASSERTION_FAILED',category:'test',phase:'body',message:'expect.toHaveText expected something else received '+(index===3?'<secret:note>':'<secret:token>')},steps:[{api:'app.open',status:'passed'},{api:'locator.fill',status:'passed'},{api:'locator.fill',status:'passed'},{kind:'assertion',api:'expect.toHaveText',status:'failed',error:{code:'ASSERTION_FAILED',category:'test'},source:{file:'tests/secret.e2e.ts'}}]}:{steps:['app.open','locator.fill','agent.act','expect.toHaveScreenshot','app.screenshot'].map(api=>({api,status:'passed'}))})}]};})}};}
+function report(secret=false){
+ const core=['preview core public flow'], secrets=['fails on the plain echo','fails on the upper echo','fails on the lower echo','fails on the note-echo echo','observes the echoes','matches the transformed text'];
+ const selected=secret?secrets:core,filtered=secret?core:secrets;
+ const base=title=>({titlePath:[title],file:title===core[0]?'tests/core.e2e.ts':'tests/secret.e2e.ts',kind:'test',targetId:'preview',repeat:0});
+ const active=selected.map((title,index)=>{const status=secret&&index<4?'failed':'passed';return{...base(title),selected:true,status,attempts:[{status,...(status==='failed'?{error:{code:'ASSERTION_FAILED',category:'test',phase:'body',message:'expect.toHaveText expected something else received '+(index===3?'<secret:note>':'<secret:token>')},steps:[{api:'app.open',status:'passed'},{api:'locator.fill',status:'passed'},{api:'locator.fill',status:'passed'},{kind:'assertion',api:'expect.toHaveText',status:'failed',error:{code:'ASSERTION_FAILED',category:'test'},source:{file:'tests/secret.e2e.ts'}}]}:{steps:['app.open','locator.fill','agent.act','expect.toHaveScreenshot','app.screenshot'].map(api=>({api,status:'passed'}))})}]};});
+ return{schemaVersion:'report-1',run:{exitCode:secret?1:0,errors:[],environment:{runtime:'node v24.22.1'},status:secret?'failed':'passed',summary:{discovered:7,selected:secret?6:1,executed:secret?6:1,passed:secret?2:1,failed:secret?4:0,skipped:0,interrupted:0,flaky:0},results:[...active,...filtered.map(title=>({...base(title),selected:false,status:'skipped',skip:{cause:'filtered',reason:'file not selected by a positional argument'},attempts:[]}))]}};
+}
 test('fixed object oracle accepts exact red/blue pixels',()=>assert.equal(verifyObjectPng(png(160,80,x=>x<80?[255,0,0]:[0,0,255])).greenSurroundingPixels,0));
 test('object oracle rejects uncropped viewport, wrong dimensions, and green contamination',()=>{for(const bytes of [png(640,480,()=>[0,255,0]),png(161,80,x=>x<80?[255,0,0]:[0,0,255]),png(160,80,(x,y)=>x===1&&y===1?[0,255,0]:x<80?[255,0,0]:[0,0,255])])assert.throws(()=>verifyObjectPng(bytes));});
 test('viewport verifies dimensions and independent colored regions',()=>assert.equal(verifyViewportPng(png(640,480,(x,y)=>x===32&&y===32?[255,0,0]:x===160&&y===32?[0,0,255]:[0,255,0])).syntheticRegionsVerified,true));
@@ -47,4 +53,36 @@ test('artifact replay binds hashes and rejects forged acceptance flags or change
   await assert.rejects(verifyEvidence(root,'d'.repeat(64)));assert.equal((await verifyEvidence(root,identity.manifestSha256)).status,'PASS_LIMITED_PREVIEW_CORE_ARTIFACT_REPLAY');
   writeFileSync(path.join(root,'repeat-core-witness.json'),'{}');await assert.rejects(verifyEvidence(root,identity.manifestSha256));
  } finally {rmSync(root,{recursive:true,force:true});}
+});
+
+test('synthetic seven-case census reproduces legacy length rejection and accepts only exact filtered complement',()=>{
+ // Constructed from the pure factory: no captured report or execution metadata.
+ const synthetic=report();
+ assert.equal(synthetic.run.results.length,7);
+ assert.throws(()=>assert.equal(synthetic.run.results.length,1));
+ assert.equal(verifyReport(synthetic,'baseline').passed,1);
+ for(const mutate of [r=>r.run.results.pop(),r=>r.run.results[1].skip.cause='skip',r=>r.run.results[1].selected=true,r=>r.run.results[1].attempts=[{status:'passed'}],r=>r.run.results[1].titlePath=['unexpected'],r=>r.run.results[1].error={code:'ENGINE_FAILURE'},r=>r.run.summary.skipped=6,r=>r.run.summary.selected=7,r=>r.run.results[1]=structuredClone(r.run.results[2])]){const changed=structuredClone(synthetic);mutate(changed);assert.throws(()=>verifyReport(changed,'baseline'));}
+});
+
+test('fixed-directory retention copies owned files and rejects symlink escape and oversized files',async()=>{
+ const fs=await import('node:fs'),path=await import('node:path'),os=await import('node:os');const {retainEvidenceDirectory}=await import('./preview-core-proof.mjs');const root=fs.mkdtempSync(path.join(os.tmpdir(),'preview-retain-pure-'));
+ try{const source=path.join(root,'source');fs.mkdirSync(source);fs.writeFileSync(path.join(source,'report.json'),'{}');const copied=path.join(root,'copied');await retainEvidenceDirectory(source,copied,root);assert.equal(fs.readFileSync(path.join(copied,'report.json'),'utf8'),'{}');
+ fs.symlinkSync(path.join(source,'report.json'),path.join(source,'link'));await assert.rejects(retainEvidenceDirectory(source,path.join(root,'symlink-rejected'),root));fs.unlinkSync(path.join(source,'link'));
+ await assert.rejects(retainEvidenceDirectory(source,path.join(root,'outside-rejected'),path.join(root,'copied')));
+ const fd=fs.openSync(path.join(source,'oversize'),'w');fs.ftruncateSync(fd,32*1024*1024+1);fs.closeSync(fd);await assert.rejects(retainEvidenceDirectory(source,path.join(root,'oversize-rejected'),root));
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('retention rejects real FIFO replacement and parent-swap hooks before publishing bytes',async()=>{
+ const {default:fs}=await import('node:fs'),path=await import('node:path'),os=await import('node:os');const {syncBuiltinESMExports}=await import('node:module');const {spawnSync}=await import('node:child_process');const {retainEvidenceDirectory}=await import('./preview-core-proof.mjs');
+ for(const mode of ['fifo','parent-symlink','parent-directory']){
+  const t=fs.mkdtempSync(path.join(os.tmpdir(),'preview-race-pure-')),root=path.join(t,'owned'),external=path.join(t,'external'),output=path.join(t,'output');fs.mkdirSync(root);fs.mkdirSync(external);const file=path.join(root,'fact');fs.writeFileSync(file,'ORIGINAL');fs.linkSync(file,path.join(external,'fact'));const original=fs.openSync;let triggered=false;
+  fs.openSync=function(p,flags,...rest){if(p===file&&!triggered){triggered=true;if(mode==='fifo'){fs.renameSync(file,file+'-old');const result=spawnSync('mkfifo',[file],{timeout:1000});assert.equal(result.status,0);assert.ok(fs.lstatSync(file).isFIFO());assert.ok(flags&fs.constants.O_NONBLOCK,'FIFO must never be opened in blocking mode');}else{fs.renameSync(root,root+'-old');if(mode==='parent-symlink')fs.symlinkSync(external,root,'dir');else{fs.mkdirSync(root);fs.linkSync(path.join(external,'fact'),file);}fs.writeFileSync(path.join(external,'fact'),'MUTATED!');}}return original.call(fs,p,flags,...rest);};syncBuiltinESMExports();
+  try{await assert.rejects(retainEvidenceDirectory(root,output,t));assert.equal(triggered,true);assert.equal(fs.existsSync(path.join(output,'fact')),false);}finally{fs.openSync=original;syncBuiltinESMExports();fs.rmSync(t,{recursive:true,force:true});}
+ }
+});
+test('retention rejects same-size content mutation during read using fd mtime/ctime fence',async()=>{
+ const {default:fs}=await import('node:fs'),path=await import('node:path'),os=await import('node:os');const {syncBuiltinESMExports}=await import('node:module');const {retainEvidenceDirectory}=await import('./preview-core-proof.mjs');const t=fs.mkdtempSync(path.join(os.tmpdir(),'preview-read-race-')),root=path.join(t,'owned'),output=path.join(t,'output');fs.mkdirSync(root);const file=path.join(root,'fact');fs.writeFileSync(file,'ORIGINAL');const original=fs.readSync;let changed=false;
+ fs.readSync=function(...args){const n=original.apply(fs,args);if(!changed){changed=true;fs.writeFileSync(file,'MUTATED!');}return n;};syncBuiltinESMExports();
+ try{await assert.rejects(retainEvidenceDirectory(root,output,t));assert.equal(changed,true);assert.equal(fs.existsSync(path.join(output,'fact')),false);}finally{fs.readSync=original;syncBuiltinESMExports();fs.rmSync(t,{recursive:true,force:true});}
 });

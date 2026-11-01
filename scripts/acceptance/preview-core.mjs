@@ -4,11 +4,11 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync, realpathSync, existsSync, cpSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync, realpathSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CORE_HTML, ECHO_HTML, CONFIG, CORE_TEST, SECRET_TEST } from './fixtures/preview-core.mjs';
-import { shaSafeIdentity, noSecrets, verifyReport, verifyWitness, verifyObjectPng, verifyViewportPng, verifyExit } from './preview-core-proof.mjs';
+import { shaSafeIdentity, noSecrets, verifyReport, verifyWitness, verifyObjectPng, verifyViewportPng, verifyExit, retainEvidenceDirectory } from './preview-core-proof.mjs';
 const [bundleArg, digest, projectArg, evidenceArg, ...extra] = process.argv.slice(2);
 if (!bundleArg || !projectArg || !evidenceArg || extra.length || !/^[a-f0-9]{64}$/.test(digest ?? '')) throw new Error('usage: preview-core.mjs BUNDLE EXTERNALLY_TRUSTED_MANIFEST_SHA NEW_PROJECT NEW_EVIDENCE');
 const bundle=realpathSync(bundleArg), project=path.resolve(projectArg), evidence=path.resolve(evidenceArg);
@@ -80,10 +80,11 @@ try {
   const output=path.join(project,'.e2e','preview-'+stage);const witness=path.join(evidence,stage+'-core-witness.json'),screen=path.join(evidence,stage+'-screen-witness.json'),secret=path.join(evidence,'secret-observation.json');
   const args=['exec','e2e','run',test,'--output',output,'--reporter','json,markdown,junit','--video','off','--trace','off',...(update?['--update-snapshots']:[])];
   const result=await command(stage,'pnpm',args,240_000,{PREVIEW_CORE_WITNESS:witness,PREVIEW_SCREENSHOT_WITNESS:screen,PREVIEW_SECRET_WITNESS:secret});
+  if(existsSync(output))await retainEvidenceDirectory(output,path.join(evidence,stage+'-output'),project);
+  if(stage!=='secret'&&existsSync(snapshots))await retainEvidenceDirectory(snapshots,path.join(evidence,stage+'-snapshots'),project);
   verifyExit(result,stage!=='secret');const report=json(path.join(output,'report.json'));const counts=verifyReport(report,stage);
   for(const file of files(output)) {assert.ok(lstatSync(file).size<=32*1024*1024);noSecrets(readFileSync(file));}
   assert.ok(files(output).some(file=>file.endsWith('.md')));assert.ok(files(output).some(file=>file.endsWith('.xml')));
-  cpSync(output,path.join(evidence,stage+'-output'),{recursive:true});
   return {output,witness,screen,report,counts};
  }
  const baseline=await cli('baseline','tests/core.e2e.ts',true);

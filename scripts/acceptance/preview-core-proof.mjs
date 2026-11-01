@@ -21,9 +21,19 @@ export function verifyReport(report, stage) {
   ['fails on the plain echo', 'failed'], ['fails on the upper echo', 'failed'], ['fails on the lower echo', 'failed'], ['fails on the note-echo echo', 'failed'],
   ['observes the echoes', 'passed'], ['matches the transformed text', 'passed'],
  ]) : new Map([['preview core public flow', 'passed']]);
- assert.equal(run.results.length, expected.size);
+ const allTitles=['preview core public flow','fails on the plain echo','fails on the upper echo','fails on the lower echo','fails on the note-echo echo','observes the echoes','matches the transformed text'];
+ const remaining=new Set(allTitles);const selectedCount=expected.size;assert.equal(run.results.length,allTitles.length);
+ assert.equal(run.summary.discovered,7);assert.equal(run.summary.selected,selectedCount);
  for (const result of run.results) {
-  const title = result.titlePath.join(' '); assert.ok(expected.has(title), 'Unexpected result');
+  assert.equal(result.titlePath.length,1);const title=result.titlePath[0];assert.ok(remaining.delete(title),'Unknown or duplicate discovered result');
+  assert.equal(result.kind,'test');assert.equal(result.targetId,'preview');assert.equal(result.repeat,0);
+  assert.equal(result.file,title==='preview core public flow'?'tests/core.e2e.ts':'tests/secret.e2e.ts');
+  if(!expected.has(title)) {
+   assert.equal(result.selected,false);assert.equal(result.status,'skipped');assert.deepEqual(result.attempts,[]);
+   assert.deepEqual(result.skip,{cause:'filtered',reason:'file not selected by a positional argument'});assert.equal(result.error,undefined);if(result.secondaryErrors!==undefined)assert.deepEqual(result.secondaryErrors,[]);
+   continue;
+  }
+  assert.equal(result.skip,undefined);
   const status = expected.get(title); expected.delete(title);
   for(const row of [result,...result.attempts]) {if(row.secondaryErrors!==undefined)assert.deepEqual(row.secondaryErrors,[]);}
   if(result.error!==undefined){assert.equal(status,'failed');for(const key of ['code','category','phase','message'])assert.equal(result.error[key],result.attempts[0].error?.[key]);}
@@ -43,7 +53,7 @@ export function verifyReport(report, stage) {
    if(stage!=='secret')for(const api of ['app.open','locator.fill','agent.act','expect.toHaveScreenshot','app.screenshot'])assert.ok(steps.some(step=>step.api===api),'Core public API step missing');
   }
  }
- assert.equal(expected.size, 0); assert.equal(run.status, stage === 'secret' ? 'failed' : 'passed'); assert.equal(run.exitCode,stage==='secret'?1:0);
+ assert.equal(remaining.size,0);assert.equal(expected.size, 0); assert.equal(run.status, stage === 'secret' ? 'failed' : 'passed'); assert.equal(run.exitCode,stage==='secret'?1:0);
  assert.equal(run.summary.executed, stage === 'secret' ? 6 : 1);
  assert.equal(run.summary.passed, stage === 'secret' ? 2 : 1);
  assert.equal(run.summary.failed, stage === 'secret' ? 4 : 0);
@@ -96,6 +106,27 @@ export function verifyViewportPng(bytes) {
 export function verifyExit(result, expectedSuccess) {
  assert.equal(result.signal,null); assert.equal(result.error,null); assert.equal(result.timedOut,false); assert.equal(result.overflow,false);
  assert.ok(Number.isInteger(result.code)); if(expectedSuccess) assert.equal(result.code,0); else assert.equal(result.code,1);
+}
+
+/** Bounded no-follow retention of a fixed owned output directory; never follows report-supplied paths. */
+export async function retainEvidenceDirectory(source,destination,allowedParent) {
+ const fs=await import('node:fs'),path=await import('node:path');const parent=fs.realpathSync(allowedParent),root=path.resolve(source),target=path.resolve(destination);
+ const directoryFact=file=>{const stat=fs.lstatSync(file,{bigint:true});assert.ok(stat.isDirectory()&&!stat.isSymbolicLink());assert.equal(fs.realpathSync(file),file);return{file,dev:stat.dev,ino:stat.ino};};
+ const fence=facts=>{for(const old of facts){const current=directoryFact(old.file);assert.equal(current.dev,old.dev);assert.equal(current.ino,old.ino);}};
+ assert.ok(root.startsWith(parent+path.sep));const rootFacts=[directoryFact(parent)];let at=parent;for(const segment of path.relative(parent,root).split(path.sep)){at=path.join(at,segment);rootFacts.push(directoryFact(at));}
+ const destinationParent=directoryFact(path.dirname(target));assert.ok(!fs.existsSync(target));fs.mkdirSync(target);const targetFacts=[destinationParent,directoryFact(target)];
+ let total=0,count=0;const maxFile=32*1024*1024,maxTotal=64*1024*1024;
+ const sameFile=(a,b)=>{assert.ok(b.isFile());for(const key of ['dev','ino','size','mtimeNs','ctimeNs'])assert.equal(b[key],a[key],'Evidence identity or content metadata changed');};
+ function visit(directory,relative='',depth=0,parents=rootFacts,destinations=targetFacts){assert.ok(depth<=24);fence(parents);fence(destinations);for(const name of fs.readdirSync(directory)){fence(parents);const file=path.join(directory,name),rel=path.join(relative,name),to=path.join(target,rel);const stat=fs.lstatSync(file,{bigint:true});assert.ok(!stat.isSymbolicLink(),'Evidence symlink rejected');assert.equal(fs.realpathSync(file),file);assert.ok(++count<=2048);
+  if(stat.isDirectory()){fence(destinations);fs.mkdirSync(to);visit(file,rel,depth+1,[...parents,directoryFact(file)],[...destinations,directoryFact(to)]);continue;}
+  assert.ok(stat.isFile()&&stat.size<=BigInt(maxFile));total+=Number(stat.size);assert.ok(total<=maxTotal);fence(parents);
+  // NONBLOCK prevents a regular-file-to-FIFO race from hanging before fstat can reject it.
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+  try {fence(parents);sameFile(stat,fs.fstatSync(fd,{bigint:true}));
+   const bytes=Buffer.alloc(Number(stat.size)+1);let length=0;while(length<bytes.length){const n=fs.readSync(fd,bytes,length,bytes.length-length,null);if(n===0)break;length+=n;}assert.equal(length,Number(stat.size),'Evidence changed during read');
+   sameFile(stat,fs.fstatSync(fd,{bigint:true}));fence(parents);fence(destinations);fs.writeFileSync(to,bytes.subarray(0,length),{flag:'wx'});fence(destinations);
+  }finally{fs.closeSync(fd);}
+ }fence(parents);}visit(root);fence(rootFacts);return{files:count,bytes:total};
 }
 
 /** Artifact-only replay: hash inventory first, then original report/pixel/witness checks. */
