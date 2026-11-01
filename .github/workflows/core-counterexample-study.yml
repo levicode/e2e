@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: eb2702e09464b9d13dd45d1b722eea9e623c5069
+          ref: 2de0e826f8126af3fe4ef4da1fbfca04fa8ede78
           path: subject
           persist-credentials: false
           fetch-depth: 0
@@ -49,8 +49,8 @@ jobs:
           const values={STUDY_ROOT:root,HOME:path.join(root,'home'),TMPDIR:path.join(root,'tmp'),RUSTUP_HOME:process.env.RUSTUP_HOME||path.join(process.env.HOME,'.rustup'),CARGO_HOME:process.env.CARGO_HOME||path.join(process.env.HOME,'.cargo')};for(const v of Object.values(values))assert.ok(!/[\r\n]/.test(v));fs.appendFileSync(process.env.GITHUB_ENV,Object.entries(values).map(([k,v])=>k+'='+v+'\n').join(''));
           ROOT
           test "$(git -C tooling rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git -C subject rev-parse HEAD)" = eb2702e09464b9d13dd45d1b722eea9e623c5069
-          test "$(git -C subject rev-parse 'HEAD^{tree}')" = 8f31e3c028ba336eb9df3e73dbba8d0b4088a13c
+          test "$(git -C subject rev-parse HEAD)" = 2de0e826f8126af3fe4ef4da1fbfca04fa8ede78
+          test "$(git -C subject rev-parse 'HEAD^{tree}')" = 38b1d86369f5ea429e4cc3f9fdf03e53494ec0ab
           test -z "$(git -C tooling status --porcelain)"
           test -z "$(git -C subject status --porcelain)"
       - name: Documented fresh setup on frozen subject (not tooling checkout)
@@ -61,7 +61,7 @@ jobs:
           node scripts/setup-source-native.mjs "$STUDY_ROOT/build" "$STUDY_ROOT/user-project" > "$STUDY_ROOT/metadata/setup.stdout.log" 2> "$STUDY_ROOT/metadata/setup.stderr.log" || s=$?
           printf '%s\n' "$s" > "$STUDY_ROOT/metadata/setup.exit"
           exit "$s"
-      - name: Source-matched default harness and all 6 new plus 9 original controls
+      - name: Source-matched default harness and all 6 new plus 9 original plus 3 legacy controls
         timeout-minutes: 75
         run: |
           set -euo pipefail
@@ -86,8 +86,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C tooling rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git -C subject rev-parse HEAD)" = eb2702e09464b9d13dd45d1b722eea9e623c5069
-          test "$(git -C subject rev-parse 'HEAD^{tree}')" = 8f31e3c028ba336eb9df3e73dbba8d0b4088a13c
+          test "$(git -C subject rev-parse HEAD)" = 2de0e826f8126af3fe4ef4da1fbfca04fa8ede78
+          test "$(git -C subject rev-parse 'HEAD^{tree}')" = 38b1d86369f5ea429e4cc3f9fdf03e53494ec0ab
           test -z "$(git -C tooling status --porcelain)"
           test -z "$(git -C subject status --porcelain)"
           node --input-type=module <<'CHECK'
