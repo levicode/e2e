@@ -7,7 +7,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { verifyArtifact, verifyCompiler } from './native-runtime.ts';
 
-export const HUNG_BASE = '7bbf41cae82a45bace3ad631795f2cda9befadee';
+export const HUNG_BASE = '5beee2b8d1ffa4fc258d23649386633be1565e80';
 export const HUNG_NATIVE = { commit: '0537c6550dfa9a32e4f6e80ba9d3872169cc5663', tree: 'b5a280386db11396fc45e1d68471806b2fa91ee8' };
 export const HUNG_FILE = 'tests/integration/cdp-recovery.test.ts';
 export const HUNG_TITLE = 'bounds a hung reconnect resolver and propagates cancellation to it';
@@ -15,14 +15,7 @@ export const HUNG_FULL_NAME = 'CDP session recovery ' + HUNG_TITLE;
 const CHANGES = [
   '.github/workflows/full-standard-node-matrix.yml',
   '.github/workflows/hung-enrollment-diagnostic.yml',
-  'packages/web/tests/helpers/case-cleanup-capture.ts',
-  'scripts/acceptance/candidate-cleanup-diagnostics.test.ts',
-  'scripts/acceptance/candidate-cleanup-diagnostics.ts',
-  'scripts/ci/check-web-case-native-custody.py',
   'scripts/ci/hung-enrollment-diagnostic.ts',
-  'scripts/ci/native-closed-trace-schema.json',
-  'scripts/ci/native-trace-wrapper.sh',
-  'scripts/ci/test-web-case-native-custody.py',
 ].sort();
 const hash = (file: string): string => createHash('sha256').update(readFileSync(file)).digest('hex');
 function command(command: string, args: string[], cwd = process.cwd()): string {

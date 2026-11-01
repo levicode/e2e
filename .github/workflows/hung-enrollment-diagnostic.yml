@@ -17,6 +17,8 @@ jobs:
       E2E_TELEMETRY_DISABLED: '1'
       E2E_UPDATE_CHECK_DISABLED: '1'
       NEXT_TELEMETRY_DISABLED: '1'
+      # Project imports are read-only; never dirty the pristine source with .pyc.
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -69,6 +71,7 @@ jobs:
           # not the separate fullmatrix 45-file suite or its coverage claim.
           node --test 'scripts/acceptance/*.test.ts' 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/acceptance-tests.log"
           python3 scripts/ci/test-web-case-native-custody.py 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/custody-controls.log"
+          git status --porcelain --untracked-files=all | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/post-pure-source-status.txt"
           test -z "$(git status --porcelain)"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
