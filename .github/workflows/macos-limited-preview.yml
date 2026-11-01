@@ -1,0 +1,365 @@
+name: Independent ARM64 limited preview; full native gate remains failed
+'on':
+  push:
+    branches:
+    - ci/s25-macos-arm64-limited-preview-20261101
+permissions:
+  contents: read
+concurrency:
+  group: macos-arm64-limited-preview-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  limited_preview:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '1'
+      RUSTUP_TOOLCHAIN: stable
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24.22.1
+        architecture: arm64
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - name: Freeze actual ARM source; independent qualification, not failed full gate
+      id: source
+      env:
+        EXPECTED_ARCH: arm64
+      run: "set -euo pipefail\nmkdir -p .artifacts\nmkdir .artifacts/macos-limited-preview \"$RUNNER_TEMP/native-candidate-home\"\
+        \ \"$RUNNER_TEMP/native-candidate-bin\"\nsw_vers > .artifacts/macos-limited-preview/macos-version.txt\nuname -a >\
+        \ .artifacts/macos-limited-preview/macos-host.txt\ndate -u > .artifacts/macos-limited-preview/started-at-utc.txt\n\
+        sysctl hw.memsize hw.logicalcpu > .artifacts/macos-limited-preview/macos-resources.txt\ndf -h \"$RUNNER_TEMP\" > .artifacts/macos-limited-preview/runner-disk.txt\n\
+        node -p 'JSON.stringify({platform:process.platform,architecture:process.arch,version:process.version})' > .artifacts/macos-limited-preview/node-host.json\n\
+        test \"$RUNNER_OS\" = macOS\ntest \"$(node -p 'process.platform')\" = darwin\ntest \"$(node -p 'process.arch')\" =\
+        \ \"$EXPECTED_ARCH\"\ntranslated=\"$(sysctl -in sysctl.proc_translated 2>/dev/null || true)\"\ntest \"$translated\"\
+        \ != 1\nif test \"$EXPECTED_ARCH\" = arm64; then test \"$(uname -m)\" = arm64; else test \"$(uname -m)\" = x86_64;\
+        \ fi\nnode scripts/ci/macos-limited-preview.mjs source\ntest \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\ntest -z\
+        \ \"$(git status --porcelain)\"\ngit rev-parse HEAD HEAD^{tree} > .artifacts/macos-limited-preview/e2e-source.txt\n\
+        shasum -a 256 .github/workflows/macos-limited-preview.yml > .artifacts/macos-limited-preview/workflow-sha256.txt\n\
+        # Keep the runner's installed rustup toolchains and absolute proxy paths across HOME isolation.\nrustup_home=\"${RUSTUP_HOME:-$HOME/.rustup}\"\
+        \ntest -d \"$rustup_home\"\ncase \"$rustup_home\" in /*) ;; *) exit 1 ;; esac\nfor tool in rustup cargo rustc pnpm;\
+        \ do\n  executable=\"$(command -v \"$tool\")\"\n  test -x \"$executable\"\n  dirname \"$executable\" >> \"$GITHUB_PATH\"\
+        \n  printf '%s=%s\\n' \"$tool\" \"$executable\"\ndone > .artifacts/macos-limited-preview/runner-tool-paths.txt\necho\
+        \ \"CARGO_TARGET_DIR=$RUNNER_TEMP/native-candidate-target\" >> \"$GITHUB_ENV\"\necho \"CARGO_HOME=$RUNNER_TEMP/native-candidate-cargo\"\
+        \ >> \"$GITHUB_ENV\"\necho \"RUSTUP_HOME=$rustup_home\" >> \"$GITHUB_ENV\"\necho \"HOME=$RUNNER_TEMP/native-candidate-home\"\
+        \ >> \"$GITHUB_ENV\"\necho \"PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/native-candidate-playwright\" >> \"$GITHUB_ENV\"\
+        \n\nnode --version > .artifacts/macos-limited-preview/node.version\npnpm --version > .artifacts/macos-limited-preview/pnpm.version\n\
+        test \"$(node --version)\" = v24.22.1\ntest \"$(pnpm --version)\" = 12.3.4\n"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ steps.source.outputs.sha }}
+        path: .artifacts/native-source
+        persist-credentials: false
+    - name: Original Formal frozen-lockfile dependencies
+      id: dependencies
+      if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ install --frozen-lockfile\n) > .artifacts/macos-limited-preview/dependencies.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\"\
+        \ > .artifacts/macos-limited-preview/dependencies.exit\ncat .artifacts/macos-limited-preview/dependencies.log\nexit\
+        \ \"$s\"\n"
+    - name: Original Formal complete public package build
+      id: packages
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ run build\n) > .artifacts/macos-limited-preview/packages.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/macos-limited-preview/packages.exit\n\
+        cat .artifacts/macos-limited-preview/packages.log\nexit \"$s\"\n"
+    - name: Require actual locked TypeScript 7.0.2
+      id: typescript
+      if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ exec tsc --version | tee .artifacts/macos-limited-preview/typescript.version\ngrep -Fx 'Version 7.0.2' .artifacts/macos-limited-preview/typescript.version\n\
+        node --input-type=module - <<'TS'\nimport fs from 'node:fs';import {createRequire} from 'node:module';import assert\
+        \ from 'node:assert/strict';import {createHash} from 'node:crypto';\nconst r=createRequire(process.cwd()+'/package.json'),p=r.resolve('typescript/package.json'),b=fs.readFileSync(p),v=JSON.parse(b);assert.equal(v.version,'7.0.2');fs.writeFileSync('.artifacts/macos-limited-preview/typescript-package.json',JSON.stringify({version:v.version,sha256:createHash('sha256').update(b).digest('hex')}));\n\
+        TS\n) > .artifacts/macos-limited-preview/typescript.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/macos-limited-preview/typescript.exit\n\
+        cat .artifacts/macos-limited-preview/typescript.log\nexit \"$s\"\n"
+    - name: Original Formal complete e2e types
+      id: core_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ --filter e2e run typecheck\n) > .artifacts/macos-limited-preview/core_types.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\"\
+        \ > .artifacts/macos-limited-preview/core_types.exit\ncat .artifacts/macos-limited-preview/core_types.log\nexit \"\
+        $s\"\n"
+    - name: Original Formal complete Web types
+      id: web_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ --filter @e2e-dev/web run typecheck\n) > .artifacts/macos-limited-preview/web_types.log 2>&1\ns=$?\nprintf '%s\\\
+        n' \"$s\" > .artifacts/macos-limited-preview/web_types.exit\ncat .artifacts/macos-limited-preview/web_types.log\n\
+        exit \"$s\"\n"
+    - name: Original Formal complete scripts types
+      id: script_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ exec tsc --project scripts\n) > .artifacts/macos-limited-preview/script_types.log 2>&1\ns=$?\nprintf '%s\\n' \"\
+        $s\" > .artifacts/macos-limited-preview/script_types.exit\ncat .artifacts/macos-limited-preview/script_types.log\n\
+        exit \"$s\"\n"
+    - name: Original Formal full acceptance-scripts collection
+      id: scripts
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\ngit\
+        \ status --porcelain -uall > .artifacts/macos-limited-preview/source-before-pure-controls.txt\nstatus=0\nnode --test\
+        \ 'scripts/acceptance/*.test.ts' || status=$?\ngit status --porcelain -uall > .artifacts/macos-limited-preview/source-after-pure-controls.txt\n\
+        test \"$status\" -eq 0\ntest ! -s .artifacts/macos-limited-preview/source-before-pure-controls.txt\ntest ! -s .artifacts/macos-limited-preview/source-after-pure-controls.txt\n\
+        ) > .artifacts/macos-limited-preview/scripts.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/macos-limited-preview/scripts.exit\n\
+        cat .artifacts/macos-limited-preview/scripts.log\nexit \"$s\"\n"
+    - name: Require every actual step record and census; never full acceptance
+      id: summary
+      if: ${{ always() }}
+      env:
+        CHECK_STEPS: ${{ toJSON(steps) }}
+      run: "python3 - <<'SUMMARY'\nimport pathlib,json,os,re,hashlib,subprocess\nout=pathlib.Path('.artifacts/macos-limited-preview');out.mkdir(parents=True,exist_ok=True)\n\
+        steps=json.loads(os.environ['CHECK_STEPS']);required=['source','dependencies','packages','typescript','core_types','web_types','script_types','scripts'];errors=[];outcomes={k:steps.get(k,{}).get('outcome','missing')\
+        \ for k in required};records={}\nfor k in required:\n if outcomes[k]!='success':errors.append(k+':'+outcomes[k])\n\
+        \ if k=='source':continue\n p=out/(k+'.exit');log=out/(k+'.log')\n if not p.is_file() or not log.is_file():errors.append(k+':missing-record');continue\n\
+        \ text=p.read_text().strip()\n if not re.fullmatch(r'\\d{1,3}',text) or not 0<=int(text)<=255:errors.append(k+':invalid-exit');continue\n\
+        \ code=int(text);records[k]={'exitCode':code,'logSHA256':hashlib.sha256(log.read_bytes()).hexdigest()}\n if code:errors.append(k+':nonzero-exit')\n\
+        counts={};p=out/'scripts.log'\nif p.is_file():\n raw=re.sub(r'\\x1b\\[[0-9;]*m','',p.read_text())\n for key in ['tests','suites','pass','fail','cancelled','skipped','todo']:\n\
+        \  found=re.findall(r'^(?:\u2139|#) '+key+r' (\\d+)\\s*$',raw,re.M)\n  if len(found)!=1:errors.append('scripts:census-'+key)\n\
+        \  else:counts[key]=int(found[0])\n if len(counts)==7:\n  if counts['tests']<=0 or sum(counts[k] for k in ['pass','fail','cancelled','skipped','todo'])!=counts['tests']:errors.append('scripts:inconsistent-census')\n\
+        \  if any(counts[k] for k in ['fail','cancelled','skipped','todo']):errors.append('scripts:nonpassing-or-unrun-tests')\n\
+        \ durations=re.findall(r'^(?:\u2139|#) duration_ms (\\d+(?:[.]\\d+)?)\\s*$',raw,re.M)\n if len(durations)!=1:errors.append('scripts:missing-or-duplicate-terminal-duration')\n\
+        else:errors.append('scripts:missing-log')\nfor name in ['source.commit','source.tree','full-tree.txt','sealed-source.txt','source-pins.sha256','node.version','pnpm.version','typescript.version','typescript-package.json','acceptance-files.txt','whole-scripts-files.txt']:\n\
+        \ if not (out/name).is_file():errors.append('identity:missing-'+name)\ntry:\n if subprocess.check_output(['git','status','--porcelain'],text=True).strip():errors.append('identity:dirty-source')\n\
+        \ head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip();tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()\n\
+        \ if head!=os.environ['GITHUB_SHA'] or (out/'source.commit').read_text().strip()!=head or (out/'source.tree').read_text().strip()!=tree:errors.append('identity:source-mismatch')\n\
+        \ if (out/'full-tree.txt').read_bytes()!=subprocess.check_output(['git','ls-tree','-r','HEAD']):errors.append('identity:tree-list-mismatch')\n\
+        \ for name,expected in [('node.version','v24.22.1'),('pnpm.version','12.3.4'),('typescript.version','Version 7.0.2')]:\n\
+        \  if (out/name).read_text().strip()!=expected:errors.append('identity:version-'+name)\n if json.loads((out/'typescript-package.json').read_text())['version']!='7.0.2':errors.append('identity:typescript-package-version')\n\
+        except (OSError,KeyError,ValueError,subprocess.CalledProcessError):errors.append('identity:unverifiable')\nsummary={'purpose':'focused-installed-types-scripts-preflight','status':'failed'\
+        \ if errors else 'passed','outcomes':outcomes,'records':records,'actualScriptCensus':counts,'errors':errors,'fullFormalAccepted':False,'nativeAccepted':False,'installedAccepted':False,'releaseEligible':False}\n\
+        (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\\n');print(json.dumps(summary));raise SystemExit(bool(errors))\n\
+        SUMMARY\n"
+    - name: New private provenance controls and exact reviewed preview controls
+      run: node --test scripts/ci/macos-limited-preview.test.mjs scripts/acceptance/preview-core-proof.test.mjs
+    - name: Require the native host toolchain after HOME isolation
+      env:
+        EXPECTED_RUST_HOST: aarch64-apple-darwin
+      run: 'set -euo pipefail
+
+        rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+
+        test "$(rustc -Vv | sed -n ''s/^host: //p'')" = "$EXPECTED_RUST_HOST"
+
+        rustc -Vv > .artifacts/macos-limited-preview/native-rustc-version.txt
+
+        cargo -Vv > .artifacts/macos-limited-preview/native-cargo-version.txt
+
+        pnpm --version > .artifacts/macos-limited-preview/pnpm-version.txt
+
+        printf ''HOME=%s\nCARGO_HOME=%s\nRUSTUP_HOME=%s\n'' "$HOME" "$CARGO_HOME" "$RUSTUP_HOME" > .artifacts/macos-limited-preview/isolated-tool-homes.txt
+
+        '
+    - name: Verify bundled-only native installation and launcher selection
+      working-directory: .artifacts/native-source
+      run: "set -euo pipefail\ncanonical_tmp=\"$(node -p 'require(\"node:fs\").realpathSync(require(\"node:os\").tmpdir())')\"\
+        \n# Prove the default and canonical namespaces are the same owned physical directory.\nnode - \"$canonical_tmp\" \"\
+        $GITHUB_WORKSPACE/.artifacts/macos-limited-preview/tempdir-alias.json\" <<'TEMPDIR_ALIAS_PROOF'\nconst assert = require('node:assert/strict');\n\
+        const fs = require('node:fs');\nconst path = require('node:path');\nconst original = require('node:os').tmpdir();\n\
+        const canonical = process.argv[2];\nassert.equal(fs.realpathSync(original), canonical, 'canonical temp directory must\
+        \ resolve the original default');\nconst identity = p => { const s = fs.statSync(p, { bigint: true }); return { dev:\
+        \ String(s.dev), ino: String(s.ino), uid: String(s.uid), directory: s.isDirectory() }; };\nassert.deepEqual(identity(original),\
+        \ identity(canonical));\nassert.equal(identity(original).directory, true);\nconst probe = fs.mkdtempSync(path.join(original,\
+        \ 'native-temp-alias-proof-'));\ntry {\n  const aliasFile = path.join(probe, 'owned-probe');\n  const canonicalFile\
+        \ = path.join(canonical, path.basename(probe), 'owned-probe');\n  fs.writeFileSync(aliasFile, 'same-physical-owned-file',\
+        \ { flag: 'wx', mode: 0o600 });\n  assert.equal(fs.readFileSync(canonicalFile, 'utf8'), 'same-physical-owned-file');\n\
+        \  assert.deepEqual(identity(aliasFile), identity(canonicalFile));\n  const proof = { schemaVersion: 1, original,\
+        \ canonical, directoryIdentity: identity(original), ownedProbeIdentity: identity(aliasFile), samePhysicalDirectory:\
+        \ true, samePhysicalOwnedFile: true, nativeSourceModified: false };\n  fs.writeFileSync(process.argv[3], JSON.stringify(proof,\
+        \ null, 2) + '\\n', { flag: 'wx' });\n} finally { fs.rmSync(probe, { recursive: true, force: true }); }\nTEMPDIR_ALIAS_PROOF\n\
+        TMPDIR=\"$canonical_tmp\" node --test test/launcher.test.mjs test/postinstall.test.mjs\n"
+    - name: Fresh production-only build; no harness/full-gate acceptance
+      working-directory: .artifacts/native-source/cli
+      env:
+        EXPECTED_MACHO_ARCH: arm64
+        EXPECTED_NATIVE_SHA: ${{ steps.source.outputs.sha }}
+      run: 'set -euo pipefail
+
+        unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+
+        test "$(git rev-parse HEAD)" = "$EXPECTED_NATIVE_SHA"
+
+        test -z "$(git status --porcelain)"
+
+        out="$GITHUB_WORKSPACE/.artifacts/macos-limited-preview"
+
+        cargo build --locked --profile ci --no-default-features --message-format=json > "$out/production-compiler.jsonl" 2>
+        "$out/production-build.stderr.log"
+
+        # Select the exact successful production artifact before compiling any test harness.
+
+        node --input-type=module <<''NODE''
+
+        import assert from ''node:assert/strict'';
+
+        import { copyFileSync, readFileSync } from ''node:fs'';
+
+        import { join } from ''node:path'';
+
+        const rows = readFileSync(join(process.env.GITHUB_WORKSPACE, ''.artifacts/macos-limited-preview/production-compiler.jsonl''),
+        ''utf8'').trim().split(''\n'').map(line => JSON.parse(line));
+
+        const completed = rows.filter(row => row.reason === ''build-finished'');
+
+        assert.equal(completed.length, 1); assert.equal(completed[0].success, true);
+
+        const binaries = rows.filter(row => row.reason === ''compiler-artifact'' && row.target?.name === ''agent-browser''
+        && row.profile?.test === false);
+
+        assert.equal(binaries.length, 1);
+
+        const binary = binaries[0];
+
+        assert.deepEqual(binary.features, []); assert.deepEqual(binary.target.kind, [''bin'']);
+
+        assert.equal(binary.manifest_path, join(process.cwd(), ''Cargo.toml'')); assert.equal(binary.target.src_path, join(process.cwd(),
+        ''src/main.rs''));
+
+        assert.equal(binary.executable, join(process.env.CARGO_TARGET_DIR, ''ci/agent-browser''));
+
+        copyFileSync(binary.executable, join(process.env.RUNNER_TEMP, ''native-candidate-bin/production''));
+
+        NODE
+
+        file "$RUNNER_TEMP/native-candidate-bin/production" > "$GITHUB_WORKSPACE/.artifacts/macos-limited-preview/production-file.txt"
+
+        test "$(lipo -archs "$RUNNER_TEMP/native-candidate-bin/production")" = "$EXPECTED_MACHO_ARCH"
+
+        shasum -a 256 "$RUNNER_TEMP/native-candidate-bin/production" > "$GITHUB_WORKSPACE/.artifacts/macos-limited-preview/production-sha256.txt"
+
+        cmp "$CARGO_TARGET_DIR/ci/agent-browser" "$RUNNER_TEMP/native-candidate-bin/production"
+
+        '
+    - name: Seal actual production provenance with false acceptance
+      run: node scripts/ci/macos-limited-preview.mjs seal
+    - name: Install and identify the exact official Chromium and recording codecs
+      env:
+        EXPECTED_MACHO_ARCH: arm64
+      run: 'set -euo pipefail
+
+        if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
+
+        ffmpeg -version > .artifacts/macos-limited-preview/ffmpeg-version.txt
+
+        ffprobe -version > .artifacts/macos-limited-preview/ffprobe-version.txt
+
+        "$RUNNER_TEMP/native-candidate-bin/production" install
+
+        chrome="$(node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" .artifacts/macos-limited-preview/chromium-executable.json)"
+
+        file "$chrome" > .artifacts/macos-limited-preview/chromium-file.txt
+
+        test "$(lipo -archs "$chrome")" = "$EXPECTED_MACHO_ARCH"
+
+        "$chrome" --version > .artifacts/macos-limited-preview/chromium-version.txt
+
+        echo "E2E_CHROMIUM_EXECUTABLE=$chrome" >> "$GITHUB_ENV"
+
+        '
+    - name: Negotiate all required production capabilities
+      run: 'node --input-type=module -e "import { REQUIRED_CAPABILITIES } from ''./packages/web/dist/native/capabilities.js'';
+        process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > .artifacts/macos-limited-preview/required-capabilities.json
+
+        node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/macos-limited-preview/required-capabilities.json
+        .artifacts/macos-limited-preview/negotiation.json
+
+        '
+    - name: Assemble an unpublished same-architecture candidate bundle
+      id: bundle
+      run: 'set -euo pipefail
+
+        node scripts/acceptance/package-bundle.ts "$RUNNER_TEMP/native-candidate-bin/production" .artifacts/macos-limited-preview/producer.json
+        .artifacts/macos-limited-preview/negotiation.json "$RUNNER_TEMP/native-candidate-bundle"
+
+        digest="$(node --input-type=module -e "import {readFileSync} from ''node:fs'';import{createHash}from''node:crypto'';console.log(createHash(''sha256'').update(readFileSync(process.argv[1])).digest(''hex''))"
+        "$RUNNER_TEMP/native-candidate-bundle/manifest.json")"
+
+        printf ''%s\n'' "$digest" > .artifacts/macos-limited-preview/trusted-manifest-sha256.txt
+
+        echo "manifest_sha256=$digest" >> "$GITHUB_OUTPUT"
+
+        '
+    - name: Verify real installed consumer without runtime overrides
+      id: installed
+      run: node scripts/acceptance/candidate-installed.ts "$RUNNER_TEMP/native-candidate-bundle" "${{ steps.bundle.outputs.manifest_sha256
+        }}" "$RUNNER_TEMP/native-candidate-consumer" .artifacts/macos-limited-preview
+    - name: Original complete preview-core on separate clean installed consumer
+      id: core
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN NODE_PATH NODE_OPTIONS E2E_AGENT_BROWSER_EXECUTABLE E2E_CHROMIUM_EXECUTABLE
+
+        set +e
+
+        node scripts/acceptance/preview-core.mjs "$RUNNER_TEMP/native-candidate-bundle" "${{ steps.bundle.outputs.manifest_sha256
+        }}" "$RUNNER_TEMP/macos-preview-core-consumer" "$RUNNER_TEMP/macos-preview-core-evidence" > .artifacts/macos-limited-preview/core.stdout.log
+        2> .artifacts/macos-limited-preview/core.stderr.log
+
+        s=$?
+
+        printf ''%s\n'' "$s" > .artifacts/macos-limited-preview/core.exit
+
+        cat .artifacts/macos-limited-preview/core.stderr.log >&2
+
+        exit "$s"
+
+        '
+    - name: Independent core evidence proof; failure cannot become acceptance
+      if: ${{ !cancelled() && steps.core.outcome != 'skipped' }}
+      run: 'set -uo pipefail
+
+        set +e
+
+        node scripts/acceptance/preview-core-proof.mjs "$RUNNER_TEMP/macos-preview-core-evidence" "${{ steps.bundle.outputs.manifest_sha256
+        }}" > .artifacts/macos-limited-preview/core-proof.stdout.log 2> .artifacts/macos-limited-preview/core-proof.stderr.log
+
+        s=$?
+
+        printf ''%s\n'' "$s" > .artifacts/macos-limited-preview/core-proof.exit
+
+        cat .artifacts/macos-limited-preview/core-proof.stderr.log >&2
+
+        exit "$s"
+
+        '
+    - name: Require original installed11 and independent core; keep full gate failed
+      id: qualification
+      run: node scripts/ci/macos-limited-preview.mjs qualify
+    - name: Final actual HEAD and pristine guard
+      if: ${{ always() }}
+      run: 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+        test -z "$(git status --porcelain)"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: macos-arm64-limited-preview-evidence-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: '.artifacts/macos-limited-preview/
+
+          ${{ runner.temp }}/macos-preview-core-evidence/'
+        include-hidden-files: true
+        if-no-files-found: error
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ !cancelled() && steps.qualification.outcome == 'success' }}
+      with:
+        name: macos-arm64-limited-preview-bundle-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/native-candidate-bundle/
+        if-no-files-found: error
+        retention-days: 7
