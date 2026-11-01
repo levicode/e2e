@@ -290,8 +290,18 @@ function diagnosticFunctions() {
   const closed = new Function(`${block[1]}\nreturn installedRunClosed;`)() as (stage: string, value: any, files?: any) => any;
   return { source, block: block[1]!, closed };
 }
-function sampleRun(events: any = [{ kind: 'engine', name: 'tap', code: 'ENGINE_FAILURE', status: 'failed', durationMs: 12 }]) {
-  return { exitCode: 3, status: 'error', report: { run: { results: [{ attempts: [{ error: { code: 'APP_UNREACHABLE', category: 'infrastructure', phase: 'body' }, steps: [{ api: 'app.open', status: 'passed' }, { api: 'agent.act', status: 'failed', durationMs: 21, cache: { mode: 'agent-concluded', reason: 'action-failed', replayedActions: 1, totalActions: 2 }, metrics: { modelCalls: 0 }, events }] }] }] } } };
+/** Synthetic public-step shape: events intentionally accepts malformed input for projection controls. */
+interface DiagnosticSampleStep {
+  api: string;
+  status: string;
+  durationMs?: number;
+  cache?: { mode: string; reason: string; replayedActions: number; totalActions: number };
+  metrics?: { modelCalls: number };
+  events?: unknown;
+}
+function sampleRun(events: unknown = [{ kind: 'engine', name: 'tap', code: 'ENGINE_FAILURE', status: 'failed', durationMs: 12 }]) {
+  const steps: DiagnosticSampleStep[] = [{ api: 'app.open', status: 'passed' }, { api: 'agent.act', status: 'failed', durationMs: 21, cache: { mode: 'agent-concluded', reason: 'action-failed', replayedActions: 1, totalActions: 2 }, metrics: { modelCalls: 0 }, events }];
+  return { exitCode: 3, status: 'error', report: { run: { results: [{ attempts: [{ error: { code: 'APP_UNREACHABLE', category: 'infrastructure', phase: 'body' }, steps }] }] } } };
 }
 
 test('v2 preserves final and underlying phase codes, public cache fields, ordinals and honest missing facts', () => {

@@ -1,0 +1,140 @@
+name: Formal types and scripts fast preflight; not full native acceptance
+'on':
+  push:
+    branches:
+    - ci/s24-formal-types-scripts-20261031
+permissions:
+  contents: read
+concurrency:
+  group: formal-types-scripts-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24.22.1
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - name: Bind exact source and unchanged locked toolchain inputs
+      id: identity
+      run: "set -euo pipefail\ntest \"$GITHUB_REPOSITORY\" = levicode/e2e\ntest \"$GITHUB_REF\" = refs/heads/ci/s24-formal-types-scripts-20261031\n\
+        test \"$GITHUB_RUN_ATTEMPT\" = 1\ntest -z \"$(git status --porcelain)\"\ntest \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\
+        \ntest \"$(git rev-parse HEAD^)\" = dd1752da92f430c7c4dc649f7bae315e26cd485c\nmkdir -p .artifacts\nmkdir .artifacts/formal-types-scripts\n\
+        git rev-parse HEAD > .artifacts/formal-types-scripts/source.commit\ngit rev-parse HEAD^{tree} > .artifacts/formal-types-scripts/source.tree\n\
+        git ls-tree -r HEAD > .artifacts/formal-types-scripts/full-tree.txt\npython3 - <<'IDENTITY'\nimport hashlib,subprocess,pathlib\n\
+        out=pathlib.Path('.artifacts/formal-types-scripts')\nexpected=['.github/workflows/formal-types-scripts-preflight.yml', '.github/workflows/full-standard-node-matrix.yml', 'packages/web/tests/integration/app-log.test.ts', 'scripts/acceptance/candidate-interop-evidence.test.ts', 'scripts/acceptance/candidate-interop-evidence.ts', 'scripts/acceptance/installed-public-proof.test.ts']\nactual=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD^','HEAD'],text=True).splitlines()\n\
+        assert sorted(actual)==expected,actual\nrows=(out/'full-tree.txt').read_bytes().splitlines(keepends=True)\nexcluded={b'.github/workflows/formal-types-scripts-preflight.yml',b'.github/workflows/full-standard-node-matrix.yml'}\n\
+        seal=b''.join(row for row in rows if row.rstrip(b'\\n').split(b'\\t',1)[1] not in excluded)\nassert hashlib.sha256(seal).hexdigest()=='e2a961baaa9f725f8b266366399adb7bccb2a892ef909419760414b64b3d1649'\n\
+        (out/'sealed-source.txt').write_bytes(seal)\nnames=[row.rstrip(b'\\n').split(b'\\t',1)[1].decode() for row in rows]\n\
+        for name,selected,expectedHash,count in [('acceptance',[p for p in names if p.startswith('scripts/acceptance/') and\
+        \ p.count('/')==2 and p.endswith('.test.ts')],'fd02305bea91d2004dd22d5af6bf1c0f7892e352db11e139a4fcf4ba63ebc3dd',32),('whole-scripts',[p for p in names if p.startswith('scripts/')\
+        \ and p.endswith('.test.ts')],'fe7259f1c2cbe611d735634331b2fc7d7618b9fb57bddb3bfd449114924c10a0',45)]:\n data=('\\n'.join(selected)+'\\n').encode();assert len(selected)==count\
+        \ and hashlib.sha256(data).hexdigest()==expectedHash;(out/(name+'-files.txt')).write_bytes(data)\nIDENTITY\nsha256sum\
+        \ pnpm-lock.yaml package.json .github/native-candidate.json > .artifacts/formal-types-scripts/source-pins.sha256\n\
+        node --version | tee .artifacts/formal-types-scripts/node.version\npnpm --version | tee .artifacts/formal-types-scripts/pnpm.version\n\
+        test \"$(cat .artifacts/formal-types-scripts/node.version)\" = v24.22.1\ntest \"$(cat .artifacts/formal-types-scripts/pnpm.version)\"\
+        \ = 12.3.4\n"
+    - name: Original Formal frozen-lockfile dependencies
+      id: dependencies
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ install --frozen-lockfile\n) > .artifacts/formal-types-scripts/dependencies.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\"\
+        \ > .artifacts/formal-types-scripts/dependencies.exit\ncat .artifacts/formal-types-scripts/dependencies.log\nexit\
+        \ \"$s\"\n"
+    - name: Original Formal complete public package build
+      id: packages
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ run build\n) > .artifacts/formal-types-scripts/packages.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/formal-types-scripts/packages.exit\n\
+        cat .artifacts/formal-types-scripts/packages.log\nexit \"$s\"\n"
+    - name: Require actual locked TypeScript 7.0.2
+      id: typescript
+      if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ exec tsc --version | tee .artifacts/formal-types-scripts/typescript.version\ngrep -Fx 'Version 7.0.2' .artifacts/formal-types-scripts/typescript.version\n\
+        node --input-type=module - <<'TS'\nimport fs from 'node:fs';import {createRequire} from 'node:module';import assert\
+        \ from 'node:assert/strict';import {createHash} from 'node:crypto';\nconst r=createRequire(process.cwd()+'/package.json'),p=r.resolve('typescript/package.json'),b=fs.readFileSync(p),v=JSON.parse(b);assert.equal(v.version,'7.0.2');fs.writeFileSync('.artifacts/formal-types-scripts/typescript-package.json',JSON.stringify({version:v.version,sha256:createHash('sha256').update(b).digest('hex')}));\n\
+        TS\n) > .artifacts/formal-types-scripts/typescript.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/formal-types-scripts/typescript.exit\n\
+        cat .artifacts/formal-types-scripts/typescript.log\nexit \"$s\"\n"
+    - name: Original Formal complete e2e types
+      id: core_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ --filter e2e run typecheck\n) > .artifacts/formal-types-scripts/core_types.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\"\
+        \ > .artifacts/formal-types-scripts/core_types.exit\ncat .artifacts/formal-types-scripts/core_types.log\nexit \"$s\"\
+        \n"
+    - name: Original Formal complete Web types
+      id: web_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ --filter @e2e-dev/web run typecheck\n) > .artifacts/formal-types-scripts/web_types.log 2>&1\ns=$?\nprintf '%s\\\
+        n' \"$s\" > .artifacts/formal-types-scripts/web_types.exit\ncat .artifacts/formal-types-scripts/web_types.log\nexit\
+        \ \"$s\"\n"
+    - name: Original Formal complete scripts types
+      id: script_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ exec tsc --project scripts\n) > .artifacts/formal-types-scripts/script_types.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\"\
+        \ > .artifacts/formal-types-scripts/script_types.exit\ncat .artifacts/formal-types-scripts/script_types.log\nexit\
+        \ \"$s\"\n"
+    - name: Original Formal full acceptance-scripts collection
+      id: scripts
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\ngit\
+        \ status --porcelain -uall > .artifacts/formal-types-scripts/source-before-pure-controls.txt\nstatus=0\nnode --test\
+        \ 'scripts/acceptance/*.test.ts' || status=$?\ngit status --porcelain -uall > .artifacts/formal-types-scripts/source-after-pure-controls.txt\n\
+        test \"$status\" -eq 0\ntest ! -s .artifacts/formal-types-scripts/source-before-pure-controls.txt\ntest ! -s .artifacts/formal-types-scripts/source-after-pure-controls.txt\n\
+        ) > .artifacts/formal-types-scripts/scripts.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/formal-types-scripts/scripts.exit\n\
+        cat .artifacts/formal-types-scripts/scripts.log\nexit \"$s\"\n"
+    - name: Require every actual step record and census; never full acceptance
+      id: summary
+      if: ${{ always() }}
+      env:
+        CHECK_STEPS: ${{ toJSON(steps) }}
+      run: "python3 - <<'SUMMARY'\nimport pathlib,json,os,re,hashlib,subprocess\nout=pathlib.Path('.artifacts/formal-types-scripts');out.mkdir(parents=True,exist_ok=True)\n\
+        steps=json.loads(os.environ['CHECK_STEPS']);required=['identity','dependencies','packages','typescript','core_types','web_types','script_types','scripts'];errors=[];outcomes={k:steps.get(k,{}).get('outcome','missing')\
+        \ for k in required};records={}\nfor k in required:\n if outcomes[k]!='success':errors.append(k+':'+outcomes[k])\n\
+        \ if k=='identity':continue\n p=out/(k+'.exit');log=out/(k+'.log')\n if not p.is_file() or not log.is_file():errors.append(k+':missing-record');continue\n\
+        \ text=p.read_text().strip()\n if not re.fullmatch(r'\\d{1,3}',text) or not 0<=int(text)<=255:errors.append(k+':invalid-exit');continue\n\
+        \ code=int(text);records[k]={'exitCode':code,'logSHA256':hashlib.sha256(log.read_bytes()).hexdigest()}\n if code:errors.append(k+':nonzero-exit')\n\
+        counts={};p=out/'scripts.log'\nif p.is_file():\n raw=re.sub(r'\\x1b\\[[0-9;]*m','',p.read_text())\n for key in ['tests','suites','pass','fail','cancelled','skipped','todo']:\n\
+        \  found=re.findall(r'^(?:\u2139|#) '+key+r' (\\d+)\\s*$',raw,re.M)\n  if len(found)!=1:errors.append('scripts:census-'+key)\n\
+        \  else:counts[key]=int(found[0])\n if len(counts)==7:\n  if counts['tests']<=0 or sum(counts[k] for k in ['pass','fail','cancelled','skipped','todo'])!=counts['tests']:errors.append('scripts:inconsistent-census')\n\
+        \  if any(counts[k] for k in ['fail','cancelled','skipped','todo']):errors.append('scripts:nonpassing-or-unrun-tests')\n\
+        \ durations=re.findall(r'^(?:\u2139|#) duration_ms (\\d+(?:[.]\\d+)?)\\s*$',raw,re.M)\n if len(durations)!=1:errors.append('scripts:missing-or-duplicate-terminal-duration')\n\
+        else:errors.append('scripts:missing-log')\nfor name in ['source.commit','source.tree','full-tree.txt','sealed-source.txt','source-pins.sha256','node.version','pnpm.version','typescript.version','typescript-package.json','acceptance-files.txt','whole-scripts-files.txt']:\n\
+        \ if not (out/name).is_file():errors.append('identity:missing-'+name)\ntry:\n if subprocess.check_output(['git','status','--porcelain'],text=True).strip():errors.append('identity:dirty-source')\n\
+        \ head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip();tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()\n\
+        \ if head!=os.environ['GITHUB_SHA'] or (out/'source.commit').read_text().strip()!=head or (out/'source.tree').read_text().strip()!=tree:errors.append('identity:source-mismatch')\n\
+        \ if (out/'full-tree.txt').read_bytes()!=subprocess.check_output(['git','ls-tree','-r','HEAD']):errors.append('identity:tree-list-mismatch')\n\
+        \ for name,expected in [('node.version','v24.22.1'),('pnpm.version','12.3.4'),('typescript.version','Version 7.0.2')]:\n\
+        \  if (out/name).read_text().strip()!=expected:errors.append('identity:version-'+name)\n if json.loads((out/'typescript-package.json').read_text())['version']!='7.0.2':errors.append('identity:typescript-package-version')\n\
+        except (OSError,KeyError,ValueError,subprocess.CalledProcessError):errors.append('identity:unverifiable')\nsummary={'purpose':'formal-types-scripts-preflight','status':'failed'\
+        \ if errors else 'passed','outcomes':outcomes,'records':records,'actualScriptCensus':counts,'errors':errors,'fullFormalAccepted':False,'nativeAccepted':False,'installedAccepted':False,'releaseEligible':False}\n\
+        (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\\n');print(json.dumps(summary));raise SystemExit(bool(errors))\n\
+        SUMMARY\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: formal-types-scripts-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .artifacts/formal-types-scripts/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7

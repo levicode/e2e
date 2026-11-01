@@ -182,7 +182,11 @@ describe('app log', () => {
           await surface.perform(help!.ref, { kind: 'tap' }, operation());
           releaseMovingNavigation();
           const navigations = () => [...went];
-          await expect.poll(navigations, { timeout: 5_000 }).toContain(`navigated to ${url}/next`);
+          await expect.poll(navigations, { timeout: 5_000 }).toEqual(expect.arrayContaining([
+            `navigated to ${url}/next`,
+            `frame "pay" loaded ${url}/embed`,
+            `the app opened a new tab at ${url}/tab; the test stays on its page`,
+          ]));
           expect(navigations()).toEqual(expect.arrayContaining([
             `frame "pay" loaded ${url}/embed`,
             `the app opened a new tab at ${url}/tab; the test stays on its page`,
