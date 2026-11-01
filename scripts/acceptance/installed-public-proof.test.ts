@@ -538,3 +538,13 @@ for (const redirect of ['symlink', 'directory', 'same-leaf-inode'] as const) {
     }
   });
 }
+
+
+test('baseline installed collector pure controls remain executable from normal scripts tests', () => {
+  const controls = fileURLToPath(new URL('../ci/test-baseline-installed.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [controls], { encoding: 'utf8', timeout: 30_000 });
+  assert.ifError(result.error);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /NEW V2 collector: 7 positive \/ 30 negative controls/);
+});

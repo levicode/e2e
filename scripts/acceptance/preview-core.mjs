@@ -46,7 +46,7 @@ function beginNativeDiagnostic(stage) {
   assert.equal(size,held.size);const after=fstatSync(fd);
   for(const key of ['dev','ino','size','mtimeMs','ctimeMs'])assert.equal(after[key],held[key]);
   const leaf=lstatSync(file);for(const key of ['dev','ino','size','mtimeMs','ctimeMs'])assert.equal(leaf[key],held[key]);
-  for(const [directory,owner] of [[project,parent],[evidence,destination]]){const stat=lstatSync(directory);assert.ok(stat.isDirectory()&&!stat.isSymbolicLink());for(const key of ['dev','ino'])assert.equal(stat[key],owner[key]);assert.equal(realpathSync(directory),directory);}
+  for(const [directory,directoryOwner] of [[project,parent],[evidence,destination]]){const stat=lstatSync(directory);assert.ok(stat.isDirectory()&&!stat.isSymbolicLink());for(const key of ['dev','ino'])assert.equal(stat[key],directoryOwner[key]);assert.equal(realpathSync(directory),directory);}
   assert.equal(realpathSync(evidence),evidence);assert.ok(!lstatSync(evidence).isSymbolicLink());
   writeFileSync(path.join(evidence,path.basename(file)),content,{flag:'wx',mode:0o600});
   return {file:path.basename(file),bytes:size,sha256:sha(content),status:size===0?'empty-unknown':'captured',acceptanceEvidence:false};
