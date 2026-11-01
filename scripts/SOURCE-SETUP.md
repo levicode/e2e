@@ -1,6 +1,8 @@
+> Diagnostic branch only: this checkout intentionally changes the native source pin from frozen main-integration subject `55d4fc460c8d75945948c695d1de4db7e5db1026`. It is not the same source as that subject and is not approved for merge or full product acceptance. The native change adds bounded initial-inventory failure evidence; it does not claim to fix the recorded counterexample. Fresh production build, original live probe and public installation are still required. Separate CI compiles the default test harness and runs all 6 new diagnostic controls plus the 9 unchanged initial-inventory guards before the unchanged N30 study. Rust results remain UNRUN until actual CI; previous native artifacts or earlier passes do not certify this pin.
+
 # Run from a verified source checkout
 
-This is a source-build entry, not a prebuilt/offline archive download. It builds the current committed JavaScript checkout and the pinned native source `d6d7d5d9fd837c8eac609dd333f25843ada7a73f`. No runtime from a previous CI run is reused.
+This is a source-build entry, not a prebuilt/offline archive download. It builds the current committed JavaScript checkout and the pinned native source `ea2fd7b0c393cbe1c1fddc591db3c14f9fd3919d`. No runtime from a previous CI run is reused.
 
 Prerequisites: a clean checkout, a writable HOME owned by the current user, Git, Node **24.22.1**, pnpm **12.3.4**, and Rust/cargo with the host platform toolchain. Supported source setup hosts are Linux/macOS, x64/ARM64. Building and public Chromium installation require network access; Linux Chromium system dependencies may require the normal installer privileges. Choose canonical absolute paths whose parents already exist. Both new directories must not exist, must be outside the checkout, and must be separate.
 
