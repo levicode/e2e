@@ -1,0 +1,74 @@
+name: Native read refusal contracts (unit-only diagnostic)
+'on':
+  push:
+    branches: [ci/read-refusal-contracts-20261101]
+permissions:
+  contents: read
+concurrency:
+  group: native-read-refusal-contracts-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: tooling
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - name: Exact binding, safe controls and owned output root
+        id: binding
+        working-directory: tooling
+        run: |
+          set -euo pipefail
+          node --test scripts/diagnostic/native-read-refusal-contracts.test.mjs
+          node --input-type=module <<'BIND'
+          import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {execFileSync} from 'node:child_process';
+          import {boundNative,requiredControls,identity,toolingBinding,initialResult} from './scripts/diagnostic/native-read-refusal-contracts.mjs';
+          const native=boundNative(),required=requiredControls();const cwd=fs.realpathSync('.');toolingBinding(identity(cwd),execFileSync('git',['show','-s','--format=%P','HEAD'],{encoding:'utf8'}).trim().split(' '),process.env.GITHUB_SHA,process.env.GITHUB_REF);
+          const root=fs.mkdtempSync(path.join(fs.realpathSync('/tmp'),'nr.'));fs.chmodSync(root,0o700);const stat=fs.lstatSync(root);assert.equal(stat.uid,process.getuid());assert.equal(fs.realpathSync(root),root);
+          for(const name of ['home','tmp','metadata'])fs.mkdirSync(path.join(root,name),{mode:0o700});fs.writeFileSync(path.join(root,'metadata','root.json'),JSON.stringify({dev:stat.dev,ino:stat.ino,uid:stat.uid,source:identity(cwd),native,purpose:'native-test-only',publicCLI:false,acceptanceEvidence:false})+'\n',{flag:'wx'});
+          fs.writeFileSync(path.join(root,'metadata','pre-execution-plan.json'),JSON.stringify(initialResult(required,native),null,2)+'\n',{flag:'wx'});
+          const values={CONTRACT_ROOT:root,HOME:path.join(root,'home'),TMPDIR:path.join(root,'tmp'),RUSTUP_HOME:process.env.RUSTUP_HOME||path.join(process.env.HOME,'.rustup'),CARGO_HOME:process.env.CARGO_HOME||path.join(process.env.HOME,'.cargo')};for(const value of Object.values(values))assert.ok(!/[\r\n]/.test(value));fs.appendFileSync(process.env.GITHUB_ENV,Object.entries(values).map(([key,value])=>key+'='+value+'\n').join(''));fs.appendFileSync(process.env.GITHUB_OUTPUT,'native='+native.commit+'\n');
+          BIND
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: ${{ steps.binding.outputs.native }}
+          path: native
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fresh default test harness and exact contract tests once
+        timeout-minutes: 75
+        run: |
+          set -uo pipefail
+          s=0
+          node tooling/scripts/diagnostic/native-read-refusal-contracts.mjs "$GITHUB_WORKSPACE/native" "$CONTRACT_ROOT/build" > "$CONTRACT_ROOT/metadata/runner.stdout.log" 2> "$CONTRACT_ROOT/metadata/runner.stderr.log" || s=$?
+          printf '%s\n' "$s" > "$CONTRACT_ROOT/metadata/runner.exit"
+          cat "$CONTRACT_ROOT/metadata/runner.stdout.log"
+          cat "$CONTRACT_ROOT/metadata/runner.stderr.log" >&2
+          exit "$s"
+      - name: Final original identities and owned evidence root
+        if: always() && steps.binding.outcome == 'success'
+        run: |
+          set -euo pipefail
+          test "$(git -C tooling rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git -C tooling status --porcelain)"
+          node --input-type=module <<'FINAL'
+          import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {boundNative,identity} from './tooling/scripts/diagnostic/native-read-refusal-contracts.mjs';
+          const root=process.env.CONTRACT_ROOT,original=JSON.parse(fs.readFileSync(path.join(root,'metadata/root.json'))),stat=fs.lstatSync(root);assert.equal(fs.realpathSync(root),root);for(const key of ['dev','ino','uid'])assert.equal(stat[key],original[key]);assert.deepEqual(identity(fs.realpathSync('native')),boundNative());
+          FINAL
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.binding.outcome == 'success'
+        with:
+          name: native-read-refusal-contracts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.CONTRACT_ROOT }}/metadata/
+            ${{ env.CONTRACT_ROOT }}/build/evidence/
+          if-no-files-found: error
