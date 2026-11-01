@@ -1,0 +1,98 @@
+name: Exact installed Linux preview core; not full acceptance
+on:
+  push:
+    branches: [ci/s25-linux-preview-core-20261101]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: linux-preview-core-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  preview_core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      - name: Preserve actual orchestrator identity and versions
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = levicode/e2e
+          test "$GITHUB_REF" = refs/heads/ci/s25-linux-preview-core-20261101
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 7bbf41cae82a45bace3ad631795f2cda9befadee
+          test -z "$(git status --porcelain)"
+          mkdir -p .artifacts
+          mkdir .artifacts/linux-preview-core
+          node --version > .artifacts/linux-preview-core/node.version
+          pnpm --version > .artifacts/linux-preview-core/pnpm.version
+          grep -Fx v24.22.1 .artifacts/linux-preview-core/node.version
+          grep -Fx 12.3.4 .artifacts/linux-preview-core/pnpm.version
+          git rev-parse HEAD HEAD^{tree} > .artifacts/linux-preview-core/orchestrator-source.txt
+          git ls-tree -r HEAD > .artifacts/linux-preview-core/source-inventory.txt
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci/restore-preview-core.py source
+      - name: Explicit new mjs pure controls, never pretend TypeScript glob covers them
+        run: |
+          set +e
+          node --test scripts/acceptance/preview-core-proof.test.mjs > .artifacts/linux-preview-core/pure.stdout.log 2> .artifacts/linux-preview-core/pure.stderr.log
+          s=$?
+          printf '%s\n' "$s" > .artifacts/linux-preview-core/pure.exit
+          cat .artifacts/linux-preview-core/pure.stdout.log
+          cat .artifacts/linux-preview-core/pure.stderr.log >&2
+          exit "$s"
+      - name: Restore original bundle with complete API and all-member integrity before installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci/restore-preview-core.py > .artifacts/linux-preview-core/restore.stdout.log 2> .artifacts/linux-preview-core/restore.stderr.log
+          s=$?
+          printf '%s\n' "$s" > .artifacts/linux-preview-core/restore.exit
+          cat .artifacts/linux-preview-core/restore.stderr.log >&2
+          exit "$s"
+      - name: Original public install and CLI preview core exactly once
+        id: core
+        run: |
+          set -uo pipefail
+          unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN NODE_PATH NODE_OPTIONS E2E_AGENT_BROWSER_EXECUTABLE E2E_CHROMIUM_EXECUTABLE
+          test -z "$(git status --porcelain)" || exit 1
+          set +e
+          node scripts/acceptance/preview-core.mjs "$RUNNER_TEMP/preview-core-bundle" 013aabd00645bb73fdab03cabbf04c6b34148a2da453aef2734210064ae86af0 "$RUNNER_TEMP/preview-core-consumer" "$RUNNER_TEMP/preview-core-evidence" > .artifacts/linux-preview-core/core.stdout.log 2> .artifacts/linux-preview-core/core.stderr.log
+          s=$?
+          printf '%s\n' "$s" > .artifacts/linux-preview-core/core.exit
+          cat .artifacts/linux-preview-core/core.stderr.log >&2
+          exit "$s"
+      - name: Independent evidence replay with external original bundle digest
+        if: ${{ !cancelled() && steps.core.outcome != 'skipped' }}
+        run: |
+          set +e
+          node scripts/acceptance/preview-core-proof.mjs "$RUNNER_TEMP/preview-core-evidence" 013aabd00645bb73fdab03cabbf04c6b34148a2da453aef2734210064ae86af0 > .artifacts/linux-preview-core/replay.stdout.log 2> .artifacts/linux-preview-core/replay.stderr.log
+          s=$?
+          printf '%s\n' "$s" > .artifacts/linux-preview-core/replay.exit
+          cat .artifacts/linux-preview-core/replay.stdout.log
+          cat .artifacts/linux-preview-core/replay.stderr.log >&2
+          exit "$s"
+      - name: Final immutable source check
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: linux-preview-core-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/linux-preview-core/
+            ${{ runner.temp }}/preview-core-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
