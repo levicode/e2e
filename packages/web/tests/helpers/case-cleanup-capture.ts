@@ -72,7 +72,9 @@ export function prepareWebCaseNativeCapture(caseId: WebNativeCaptureCase, env: N
       } finally { closeSync(fd); }
     };
     const hash = (value: Buffer) => createHash('sha256').update(value).digest('hex');
-    const evidence = join(workspace, 'evidence');
+    const diagnosticRoot = env['E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT'];
+    if (diagnosticRoot !== undefined && (caseId !== 'hung-recovery' || diagnosticRoot !== join(workspace, '.artifacts', 'hung-enrollment-diagnostic', 'evidence'))) return undefined;
+    const evidence = diagnosticRoot ?? join(workspace, 'evidence');
     const binding = JSON.parse(bytes(join(evidence, 'fixtures', selector, 'web', 'binding.json'), 65536).toString('utf8')) as Record<string, unknown>;
     const sourceCommit = bytes(join(evidence, 'source.commit'), 128).toString().trim();
     const sourceTree = bytes(join(evidence, 'source.tree'), 128).toString().trim();

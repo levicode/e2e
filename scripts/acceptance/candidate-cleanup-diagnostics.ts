@@ -15,7 +15,42 @@ const frameFields = ['generation', 'pass', 'sealed', 'revisionMismatch', 'reserv
 const revisionEvents = ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'];
 const workerFields = ['generation', 'workerOrdinal', 'admissionStep', 'admissionState', 'waitingForDebugger'];
 const workerSteps = new Set(['owned-attachment', 'auxiliary-classification', 'register', 'purpose', 'config-gate', 'network-enable', 'network-bypass', 'fetch-enable', 'runtime-enable', 'recursive-autoattach', 'configured', 'resume-permit', 'resume-debugger', 'configuration-committed']);
-const terminalStages = new Set(['task-proof', 'owner-preconditions', 'runtime-release', 'persistent-probe', 'enrollment-proof', 'ledger-commands-present', 'physical-close', 'ordinary-close', 'shutdown-joins', 'final-commit']);
+// Closed native TerminalCleanupStage vocabulary; checkpoints never certify cleanup.
+const terminalStages = new Set([
+  'task-proof',
+  'owner-preconditions',
+  'runtime-release',
+  'persistent-probe',
+  'enrollment-proof',
+  'enrollment-eligibility',
+  'enrollment-connection-proof',
+  'enrollment-received-frontier',
+  'enrollment-root-lock',
+  'enrollment-index-lock',
+  'enrollment-index-failure',
+  'enrollment-index-unreconciled',
+  'enrollment-index-frontier',
+  'enrollment-pending-enrollment',
+  'enrollment-pending-realms',
+  'enrollment-realm-tickets',
+  'enrollment-pending-restart',
+  'enrollment-pending-blank',
+  'enrollment-retiring-pages',
+  'enrollment-session-state',
+  'enrollment-original-root',
+  'enrollment-ancestry',
+  'enrollment-missing-ledger',
+  'enrollment-cleanup-owner',
+  'enrollment-ledger-owner',
+  'enrollment-targets-owner',
+  'enrollment-target-final-state',
+  'enrollment-ledger-final-state',
+  'ledger-commands-present',
+  'physical-close',
+  'ordinary-close',
+  'shutdown-joins',
+  'final-commit',
+]);
 const readonlyFields = ['generation', 'entryUs', 'ack', 'window', 'deadline', 'zeroInput', 'cleanup', 'error'];
 // Native restart diagnostics use process-local bounded ordinals, never native IDs.
 const targetFields: Record<string, readonly string[]> = {

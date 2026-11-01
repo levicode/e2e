@@ -10,7 +10,15 @@ if [[ -n "${E2E_DIAGNOSTIC_INVOCATIONS:-}" ]]; then
 if python3 - "$$" "$0" <<'INVOCATION'
 import hashlib,json,os,pathlib,secrets,stat,sys
 root=pathlib.Path(os.environ['E2E_DIAGNOSTIC_INVOCATIONS'])
-assert root.is_absolute() and root == pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'evidence/fixture-invocations'
+workspace=pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+diagnostic=os.environ.get('E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT')
+if diagnostic is not None:
+ assert os.environ.get('E2E_WEB_THREE_CASE_NATIVE_CAPTURE')=='1'
+ assert diagnostic==str(workspace/'.artifacts/hung-enrollment-diagnostic/evidence')
+ evidence=pathlib.Path(diagnostic)
+else:
+ evidence=workspace/'evidence'
+assert root.is_absolute() and root == evidence/'fixture-invocations'
 assert root.is_dir() and not root.is_symlink() and stat.S_IMODE(root.stat().st_mode)==0o700
 assert root.stat().st_uid==os.geteuid()
 for part in [root,*root.parents]:assert not part.is_symlink()

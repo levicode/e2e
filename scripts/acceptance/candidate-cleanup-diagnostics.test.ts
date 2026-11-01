@@ -6,6 +6,10 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLEANUP_ENV, CLEANUP_BYTES, cleanCleanupEnvironment, collectCleanupCapture, inspectCleanupBytes, prepareCleanupCapture, validCleanupRecord } from './candidate-cleanup-diagnostics.ts';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { hungArguments, hungExit, hungPaths, HUNG_FULL_NAME, HUNG_TITLE, verifyHungCollection, verifyHungResults, verifyHungStages } from '../ci/hung-enrollment-diagnostic.ts';
+import { prepareWebCaseNativeCapture } from '../../packages/web/tests/helpers/case-cleanup-capture.ts';
 const binding = { sourceRevision: 'a'.repeat(40), nativeSourceRevision: 'b'.repeat(40), testSourceDigest: 'c'.repeat(64), binarySha256: 'd'.repeat(64), collectorSha256: 'e'.repeat(64) };
 function record(phase: string, ordinal: number, facts = {}) { return { schemaVersion: 2, source: 'native', pid: 42, record: ordinal, operationSeq: phase.startsWith('Capture') ? 0 : 7, phase, droppedBefore: 0, emittedBefore: ordinal, suppressedBefore: 0, overflow: false, ...(phase.startsWith('Cleanup') ? { generation: 1, cleanupOwner: 1, cleanupAttempt: 1, cleanupLifecycle: 'scope-end' } : {}), ...facts }; }
 const lines = (...records: unknown[]) => Buffer.from(records.map(value => JSON.stringify(value) + '\n').join(''));
@@ -402,10 +406,49 @@ test('missing, mixed or over-budget worker observations remain unknown', () => {
 
 test('terminal cleanup checkpoints are closed metadata and cannot prove cleanup', () => {
   const point = (ordinal: number, facts = {}) => record('TerminalCleanupCheckpoint', ordinal, { operationSeq: 0, terminalCleanupStage: 'final-commit', terminalCleanupOk: true, ...facts });
-  for (const terminalCleanupStage of ['task-proof', 'owner-preconditions', 'runtime-release', 'persistent-probe', 'enrollment-proof', 'ledger-commands-present', 'physical-close', 'ordinary-close', 'shutdown-joins', 'final-commit']) {
+  const stages = [
+  'task-proof',
+  'owner-preconditions',
+  'runtime-release',
+  'persistent-probe',
+  'enrollment-proof',
+  'enrollment-eligibility',
+  'enrollment-connection-proof',
+  'enrollment-received-frontier',
+  'enrollment-root-lock',
+  'enrollment-index-lock',
+  'enrollment-index-failure',
+  'enrollment-index-unreconciled',
+  'enrollment-index-frontier',
+  'enrollment-pending-enrollment',
+  'enrollment-pending-realms',
+  'enrollment-realm-tickets',
+  'enrollment-pending-restart',
+  'enrollment-pending-blank',
+  'enrollment-retiring-pages',
+  'enrollment-session-state',
+  'enrollment-original-root',
+  'enrollment-ancestry',
+  'enrollment-missing-ledger',
+  'enrollment-cleanup-owner',
+  'enrollment-ledger-owner',
+  'enrollment-targets-owner',
+  'enrollment-target-final-state',
+  'enrollment-ledger-final-state',
+  'ledger-commands-present',
+  'physical-close',
+  'ordinary-close',
+  'shutdown-joins',
+  'final-commit',
+];
+  assert.equal(stages.length, 33);
+  assert.equal(new Set(stages).size, 33);
+  const schema = JSON.parse(readFileSync(new URL('../ci/native-closed-trace-schema.json', import.meta.url), 'utf8')) as { fields: { terminalCleanupStage: { enum: string[] } } };
+  assert.deepEqual(schema.fields.terminalCleanupStage.enum, stages);
+  for (const terminalCleanupStage of stages) {
     for (const terminalCleanupOk of [false, true]) assert.equal(validCleanupRecord(point(1, { terminalCleanupStage, terminalCleanupOk })), true);
   }
-  for (const facts of [{ operationSeq: 1 }, { terminalCleanupStage: 'private' }, { terminalCleanupOk: 'true' }, { url: 'private' }, { generation: 1 }, { error: 'cleanup-failed' }]) assert.equal(validCleanupRecord(point(1, facts)), false);
+  for (const facts of [{ operationSeq: 1 }, { terminalCleanupStage: 'private' }, { terminalCleanupStage: 'enrollment-unknown' }, { terminalCleanupStage: ['enrollment-index-frontier'] }, { terminalCleanupOk: 'true' }, { url: 'private' }, { generation: 1 }, { error: 'cleanup-failed' }]) assert.equal(validCleanupRecord(point(1, facts)), false);
   for (const key of ['terminalCleanupStage', 'terminalCleanupOk']) { const value: Record<string, unknown> = point(1); delete value[key]; assert.equal(validCleanupRecord(value), false); }
   const only = inspectCleanupBytes(lines(record('CaptureStarted', 0), point(1)));
   assert.equal(only.status, 'unknown'); assert.ok(only.reasons.includes('no-cleanup-attempt'));
@@ -413,4 +456,93 @@ test('terminal cleanup checkpoints are closed metadata and cannot prove cleanup'
   const alongside = inspectCleanupBytes(lines(...existing, point(4)));
   assert.equal(alongside.status, 'complete-observed-snapshots');
   assert.equal(alongside.records.find(value => value.phase === 'CleanupResult')?.cleanupResult, 'failed');
+});
+
+test('HUNG diagnostic keeps original configuration and one exact invocation arguments', () => {
+  const root = '/tmp/fixture-workspace'; const paths = hungPaths(root);
+  assert.equal(paths.evidence, root + '/.artifacts/hung-enrollment-diagnostic/evidence');
+  assert.deepEqual(hungPaths(root, paths.evidence), paths);
+  for (const bad of [root + '/evidence', paths.evidence + '/..', '/tmp/other', paths.evidence + '/']) assert.throws(() => hungPaths(root, bad));
+  assert.throws(() => hungPaths('relative'));
+  const args = hungArguments('run', paths.evidence);
+  assert.deepEqual(args, ['--filter', '@e2e-dev/web', 'exec', 'vitest', 'run', 'tests/integration/cdp-recovery.test.ts', '-t', '^' + HUNG_FULL_NAME + '$', '--reporter=verbose', '--reporter=json', '--outputFile.json=' + paths.evidence + '/web/ordinary/results.json']);
+  for (const forbidden of ['--maxWorkers', '--minWorkers', '--retry', '--testTimeout', '--hookTimeout', '--config', '--bail', '--ignore']) assert.equal(args.some(value => value.startsWith(forbidden)), false);
+  assert.equal(hungExit(7, true), 7); assert.equal(hungExit(7, false), 7);
+  assert.equal(hungExit(0, true), 0); assert.equal(hungExit(0, false), 1);
+});
+
+test('HUNG result census never promotes missing skipped duplicated or foreign business runs', () => {
+  const workspace = '/tmp/fixture-workspace'; const file = workspace + '/packages/web/tests/integration/cdp-recovery.test.ts';
+  const collection = [{ file, name: 'CDP session recovery > ' + HUNG_TITLE }];
+  verifyHungCollection(collection, workspace);
+  for (const value of [[], [...collection, ...collection], [{file, name: HUNG_TITLE}], [{file: '/other', name: collection[0]!.name}]]) assert.throws(() => verifyHungCollection(value, workspace));
+  const test = { title: HUNG_TITLE, ancestorTitles: ['CDP session recovery'], fullName: HUNG_FULL_NAME, status: 'failed' };
+  const result = { testResults: [{ name: file, assertionResults: [test] }] };
+  assert.equal(verifyHungResults(result, workspace), 'failed');
+  assert.equal(verifyHungResults({ testResults: [{ name: file, assertionResults: [{...test, status: 'passed'}] }] }, workspace), 'passed');
+  for (const rows of [[], [{...test, status: 'skipped'}], [test,test], [{...test,title:'another'}]]) assert.throws(() => verifyHungResults({testResults:[{name:file,assertionResults:rows}]},workspace));
+});
+
+test('HUNG native TS and JSON stage closure rejects missing extra and duplicate stages', () => {
+  const schema = JSON.parse(readFileSync(new URL('../ci/native-closed-trace-schema.json', import.meta.url), 'utf8')) as { fields: { terminalCleanupStage: { enum: string[] } } };
+  const parser = readFileSync(new URL('./candidate-cleanup-diagnostics.ts', import.meta.url), 'utf8');
+  const stages = schema.fields.terminalCleanupStage.enum;
+  const variants = stages.map(stage => stage.split('-').map(part => part[0]!.toUpperCase() + part.slice(1)).join(''));
+  const native = 'pub(crate) enum TerminalCleanupStage {' + variants.join(',') + ',}';
+  verifyHungStages(native, parser, schema);
+  assert.throws(() => verifyHungStages(native.replace(variants[0]!, 'UnreviewedStage'), parser, schema));
+  assert.throws(() => verifyHungStages(native, parser.replace("'task-proof'", "'unreviewed-stage'"), schema));
+  assert.throws(() => verifyHungStages(native, parser, {fields:{terminalCleanupStage:{enum:[...stages, 'unreviewed-stage']}}}));
+  assert.throws(() => verifyHungStages(native, parser, {fields:{terminalCleanupStage:{enum:[...stages.slice(1),stages[1]]}}}));
+});
+
+test('HUNG fixture capture default compatibility and fixed ignored root require explicit safe mode', t => {
+  function fixture(focused: boolean) {
+    const workspace = fs.realpathSync(directory(t)); const paths = hungPaths(workspace);
+    const evidence = focused ? paths.evidence : join(workspace, 'evidence');
+    const binary = join(workspace, 'NEVER_EXECUTE_native_fixture'); const wrapper = Buffer.from('#!/bin/sh\nexit 99\n');
+    writeFileSync(binary, 'NEVER EXECUTE: pure identity fixture\n', {mode:0o600});
+    const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+    for (const p of [join(evidence,'fixtures/26/web'), join(evidence,'tools'), join(workspace,'scripts/ci')]) fs.mkdirSync(p,{recursive:true});
+    for (const p of [join(evidence,'fixture-invocations'), join(evidence,'web-case-native')]) fs.mkdirSync(p,{mode:0o700});
+    writeFileSync(join(evidence,'source.commit'),'a'.repeat(40)); writeFileSync(join(evidence,'source.tree'),'b'.repeat(40)); writeFileSync(join(evidence,'node.version'),process.version);
+    writeFileSync(join(evidence,'tools/web-native-trace.sh'),wrapper); writeFileSync(join(workspace,'scripts/ci/native-trace-wrapper.sh'),wrapper);
+    // Fixture selector follows this pure test's actual Node, not a fake production Node26 claim.
+    const selector=process.versions.node.split('.')[0]!;
+    const bindingRoot=join(evidence,'fixtures',selector,'web');fs.mkdirSync(bindingRoot,{recursive:true});
+    writeFileSync(join(bindingRoot,'binding.json'),JSON.stringify({selector,lane:'web',run:'1',attempt:'1',sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),nodeVersion:process.version,nativeSha256:{ordinary:digest(readFileSync(binary))}}));
+    const env:NodeJS.ProcessEnv={GITHUB_WORKSPACE:workspace,GITHUB_SHA:'a'.repeat(40),GITHUB_RUN_ID:'1',GITHUB_RUN_ATTEMPT:'1',NODE_SELECTOR:selector,E2E_AGENT_BROWSER_EXECUTABLE:binary,E2E_WEB_THREE_CASE_NATIVE_CAPTURE:'1'};
+    if(focused)env['E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT']=evidence;
+    return {workspace,evidence,env};
+  }
+  for(const focused of [false,true]){
+    const f=fixture(focused);const result=prepareWebCaseNativeCapture('hung-recovery',f.env);assert.ok(result);
+    assert.equal(result.env['E2E_DIAGNOSTIC_INVOCATIONS'],join(f.evidence,'fixture-invocations'));
+    assert.ok(result.env['E2E_DIAGNOSTIC_DIR']?.startsWith(join(f.evidence,'web-case-native/hung-recovery')+'/'));
+    result.finish();assert.equal(JSON.parse(readFileSync(join(f.evidence,'web-case-native/hung-recovery/finished.json'),'utf8')).state,'scope-finished');
+  }
+  const f=fixture(true);
+  for(const root of [join(f.workspace,'evidence'),f.evidence+'/..','/tmp/unrelated',f.evidence+'/'])assert.equal(prepareWebCaseNativeCapture('hung-recovery',{...f.env,E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT:root}),undefined);
+  assert.equal(prepareWebCaseNativeCapture('popup-replacement',f.env),undefined);
+  assert.equal(prepareWebCaseNativeCapture('hung-recovery',{...f.env,E2E_WEB_THREE_CASE_NATIVE_CAPTURE:'0'}),undefined);
+  assert.equal(prepareWebCaseNativeCapture('hung-recovery',{...f.env,E2E_AGENT_BROWSER_EXECUTABLE:join(f.workspace,'missing')}),undefined);
+});
+
+test('HUNG wrapper fixed root is opt-in; invalid roots produce no custody, using only an inert shell fixture', t => {
+  const wrapper = new URL('../ci/native-trace-wrapper.sh', import.meta.url);
+  for(const mode of ['default','focused','escape','wrong-mode'] as const){
+    const workspace=fs.realpathSync(directory(t));const fixed=hungPaths(workspace).evidence;
+    const evidence=mode==='default'?join(workspace,'evidence'):mode==='escape'?join(workspace,'outside'):fixed;
+    const invocations=join(evidence,'fixture-invocations');const trace=join(evidence,'trace');fs.mkdirSync(invocations,{recursive:true,mode:0o700});fs.mkdirSync(trace,{mode:0o700});
+    const inert=join(workspace,'NEVER_NATIVE_fixture.sh');writeFileSync(inert,'#!/bin/sh\n# Inert mock: never a browser/native runtime.\nexit 0\n',{mode:0o700});
+    const env:NodeJS.ProcessEnv={PATH:process.env['PATH'],GITHUB_WORKSPACE:workspace,GITHUB_SHA:'a'.repeat(40),GITHUB_RUN_ID:'1',GITHUB_RUN_ATTEMPT:'1',E2E_CAPTURE_SOURCE_TREE:'b'.repeat(40),E2E_DIAGNOSTIC_NATIVE_EXECUTABLE:inert,E2E_DIAGNOSTIC_DIR:trace,E2E_DIAGNOSTIC_INVOCATIONS:invocations};
+    if(mode!=='default'){env['E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT']=evidence;env['E2E_WEB_THREE_CASE_NATIVE_CAPTURE']=mode==='wrong-mode'?'0':'1';}
+    const result=spawnSync('bash',[wrapper.pathname],{env,encoding:'utf8'});assert.equal(result.status,0);
+    const names=fs.readdirSync(invocations);
+    if(mode==='default'||mode==='focused'){
+      assert.equal(names.length,1);assert.match(names[0]!,/^invocation-[1-9][0-9]*[.]json$/);
+      const receipt=JSON.parse(readFileSync(join(invocations,names[0]!),'utf8'));assert.equal(receipt.schemaVersion,2);assert.equal(receipt.traceDirectory,trace);assert.equal(receipt.nativeExecutable,inert);
+      assert.match(receipt.nonce,/^[a-f0-9]{64}$/);
+    }else{assert.deepEqual(names,[]);assert.match(result.stderr,/NATIVE_INVOCATION_CUSTODY_FAILED/);}
+  }
 });

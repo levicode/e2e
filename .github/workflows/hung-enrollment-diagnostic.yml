@@ -1,0 +1,147 @@
+name: One original HUNG enrollment diagnostic; not native acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/s25-hung-enrollment-diagnostic]
+permissions:
+  contents: read
+concurrency:
+  group: hung-enrollment-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  hung:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NODE_SELECTOR: '26.13.0'
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.13.0'
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      - name: Exact source and new ignored evidence root
+        id: identity
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = levicode/e2e
+          test "$(node --version)" = v26.13.0
+          test "$(pnpm --version)" = 12.3.4
+          test -z "$(git status --porcelain)"
+          mkdir -p .artifacts
+          node scripts/ci/hung-enrollment-diagnostic.ts prepare
+          printf 'E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT=%s/.artifacts/hung-enrollment-diagnostic/evidence\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+      - name: Original frozen dependency install and public package build
+        id: packages
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+          test -z "$(git status --porcelain)"
+          pnpm install --frozen-lockfile 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/dependencies.log"
+          pnpm run build 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/packages.log"
+          test -z "$(git status --porcelain)"
+      - name: Original three TS7 type commands and Formal 32-file acceptance scripts preflight
+        id: preflight
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+          test -z "$(git status --porcelain)"
+          pnpm exec tsc --version | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/typescript.version"
+          grep -Fx 'Version 7.0.2' "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/typescript.version"
+          node --input-type=module - <<'TS'
+          import {createRequire} from 'node:module';import assert from 'node:assert/strict';
+          const require=createRequire(process.cwd()+'/package.json');assert.equal(require('typescript/package.json').version,'7.0.2');
+          TS
+          pnpm --filter e2e run typecheck 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/e2e-types.log"
+          pnpm --filter @e2e-dev/web run typecheck 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/web-types.log"
+          pnpm exec tsc --project scripts 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/scripts-types.log"
+          git ls-files 'scripts/**/*.test.ts' 'scripts/*.test.ts' | LC_ALL=C sort -u > "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/scripts-test-files.txt"
+          test "$(wc -l < "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/scripts-test-files.txt")" -eq 45
+          git ls-files 'scripts/acceptance/*.test.ts' | LC_ALL=C sort > "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/acceptance-test-files.txt"
+          test "$(wc -l < "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/acceptance-test-files.txt")" -eq 32
+          # 45 is source inventory only. Execute the original Formal 32-file command,
+          # not the separate fullmatrix 45-file suite or its coverage claim.
+          node --test 'scripts/acceptance/*.test.ts' 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/acceptance-tests.log"
+          python3 scripts/ci/test-web-case-native-custody.py 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/custody-controls.log"
+          test -z "$(git status --porcelain)"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: levicode/agent-browser
+          ref: 0537c6550dfa9a32e4f6e80ba9d3872169cc5663
+          path: .artifacts/hung-enrollment-diagnostic/native-source
+          persist-credentials: false
+      - name: Install production compiler toolchain
+        run: rustup toolchain install stable --profile minimal
+      - name: New source-bound production-only native build
+        id: native
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+          node scripts/ci/hung-enrollment-diagnostic.ts build 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/native-build.log"
+          node scripts/ci/hung-enrollment-diagnostic.ts verify
+      - name: Original browser prerequisites and actual identities
+        id: browsers
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+          native="$GITHUB_WORKSPACE/.artifacts/hung-enrollment-diagnostic/native-runtime/agent-browser"
+          "$native" install --with-deps 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/native-browser-install.log"
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/playwright-browser-install.log"
+          python3 - <<'CHROME'
+          import pathlib,json,hashlib,subprocess,os
+          paths=[p.resolve() for r in sorted((pathlib.Path.home()/'.agent-browser/browsers').glob('chrome-*'),reverse=True) for p in (r/'chrome',r/'chrome-linux64/chrome') if p.is_file()];assert paths
+          rows=[{'path':str(p),'version':subprocess.check_output([str(p),'--version'],text=True).strip(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths]
+          out=pathlib.Path(os.environ['E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT']);(out/'native-installed-browsers.json').write_text(json.dumps(rows,indent=2)+'\n')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('E2E_CHROMIUM_EXECUTABLE='+str(paths[0])+'\n')
+          (out/'codecs.txt').write_text(subprocess.check_output(['ffmpeg','-version'],text=True)+subprocess.check_output(['ffprobe','-version'],text=True))
+          CHROME
+          pnpm --filter @e2e-dev/web exec node --input-type=module - <<'PW'
+          import {chromium} from 'playwright-core';import {readFileSync,writeFileSync} from 'node:fs';import {createHash} from 'node:crypto';import {execFileSync} from 'node:child_process';
+          const p=chromium.executablePath();writeFileSync(process.env.E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT+'/playwright-installed-browser.json',JSON.stringify({path:p,version:execFileSync(p,['--version'],{encoding:'utf8'}).trim(),sha256:createHash('sha256').update(readFileSync(p)).digest('hex')},null,2));
+          PW
+          node scripts/ci/hung-enrollment-diagnostic.ts verify
+      - name: Original HUNG once; preserve original nonzero exit
+        id: hung
+        env:
+          E2E_WEB_THREE_CASE_NATIVE_CAPTURE: '1'
+        run: |
+          set -uo pipefail
+          unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+          set +e
+          node scripts/ci/hung-enrollment-diagnostic.ts run 2>&1 | tee "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/hung.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$E2E_HUNG_DIAGNOSTIC_EVIDENCE_ROOT/diagnostic-command.exit"
+          exit "$status"
+      - name: Always record actual step states; no acceptance promotion
+        if: ${{ always() }}
+        env:
+          STEP_RESULTS: ${{ toJSON(steps) }}
+        run: |
+          python3 - <<'SUMMARY'
+          import pathlib,json,os
+          out=pathlib.Path('.artifacts/hung-enrollment-diagnostic/evidence');out.mkdir(parents=True,exist_ok=True)
+          states={k:v.get('outcome') for k,v in json.loads(os.environ['STEP_RESULTS']).items()}
+          (out/'workflow-steps.json').write_text(json.dumps({'steps':states,'fullNativeGate':False,'installedAcceptance':False,'scope':'original-hung-once'},indent=2)+'\n')
+          SUMMARY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: hung-enrollment-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/hung-enrollment-diagnostic/evidence/
+            .artifacts/hung-enrollment-diagnostic/native-runtime/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
