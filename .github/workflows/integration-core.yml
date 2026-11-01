@@ -33,9 +33,23 @@ jobs:
       - name: Canonical isolated home and actual source identity
         run: |
           set -euo pipefail
-          root="$(node -e 'console.log(require("fs").realpathSync(process.env.RUNNER_TEMP))')/integration-source"
-          mkdir "$root" "$root/home" "$root/tmp" "$root/evidence"
-          printf 'SOURCE_ROOT=%s\nHOME=%s\nTMPDIR=%s\nRUSTUP_HOME=%s\nCARGO_HOME=%s\n' "$root" "$root/home" "$root/tmp" "${RUSTUP_HOME:-$HOME/.rustup}" "${CARGO_HOME:-$HOME/.cargo}" >> "$GITHUB_ENV"
+          node --input-type=module <<'ROOT'
+          import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
+          const root=fs.mkdtempSync(path.join(fs.realpathSync('/tmp'),'ec.'));fs.chmodSync(root,0o700);
+          const identity=p=>{const s=fs.lstatSync(p);assert.ok(s.isDirectory()&&!s.isSymbolicLink());assert.equal(fs.realpathSync(p),p);assert.equal(s.uid,process.getuid());assert.equal(s.mode&0o777,0o700);return {dev:s.dev,ino:s.ino,uid:s.uid};};
+          const owner=identity(root);for(const name of ['home','tmp','evidence'])fs.mkdirSync(path.join(root,name),{mode:0o700});
+          const coreHome=path.join(root,'core-project','home'),xdg=process.env.XDG_RUNTIME_DIR;
+          const socketName='e2e-'+ '0'.repeat(36)+'.sock'; // process.ts randomUUID is always 36 ASCII bytes.
+          const defaultSocketBytes=Buffer.byteLength(path.join(coreHome,'.agent-browser',socketName));
+          const effectiveSocketBytes=Buffer.byteLength(path.join(xdg?path.join(xdg,'agent-browser'):path.join(coreHome,'.agent-browser'),socketName));
+          fs.writeFileSync(path.join(root,'evidence','source-root-owner.json'),JSON.stringify(owner)+'\n',{flag:'wx',mode:0o600});
+          fs.writeFileSync(path.join(root,'evidence','socket-path-budget.json'),JSON.stringify({defaultSocketBytes,effectiveSocketBytes,limit:103,xdgPresent:xdg!==undefined,xdgNonempty:!!xdg})+'\n',{flag:'wx',mode:0o600});
+          const values={SOURCE_ROOT:root,HOME:path.join(root,'home'),TMPDIR:path.join(root,'tmp'),RUSTUP_HOME:process.env.RUSTUP_HOME||path.join(process.env.HOME,'.rustup'),CARGO_HOME:process.env.CARGO_HOME||path.join(process.env.HOME,'.cargo')};
+          for(const value of Object.values(values))assert.ok(!/[\r\n]/.test(value));
+          fs.appendFileSync(process.env.GITHUB_ENV,Object.entries(values).map(([k,v])=>k+'='+v+'\n').join(''));
+          assert.ok(defaultSocketBytes<=103&&effectiveSocketBytes<=103,'Native Unix socket path exceeds its unchanged 103-byte limit');
+          ROOT
+          root="$(tail -n 5 "$GITHUB_ENV" | sed -n 's/^SOURCE_ROOT=//p')"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
           git rev-parse HEAD HEAD^{tree} > "$root/evidence/source.txt"
@@ -63,6 +77,8 @@ jobs:
           pnpm exec tsc --project scripts > "$SOURCE_ROOT/evidence/script-types.log" 2>&1
       - name: Public CLI core from this invocation fresh source bundle
         id: core
+        env:
+          E2E_CORE_NATIVE_DIAGNOSTICS: '1'
         run: |
           set -uo pipefail
           unset E2E_AGENT_BROWSER_EXECUTABLE E2E_CHROMIUM_EXECUTABLE NODE_PATH NODE_OPTIONS GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
@@ -90,6 +106,11 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
+          node --input-type=module <<'OWNER'
+          import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
+          const root=process.env.SOURCE_ROOT,s=fs.lstatSync(root),owner=JSON.parse(fs.readFileSync(path.join(root,'evidence','source-root-owner.json')));
+          assert.ok(s.isDirectory()&&!s.isSymbolicLink());assert.equal(fs.realpathSync(root),root);assert.equal(s.mode&0o777,0o700);assert.equal(s.uid,process.getuid());assert.deepEqual({dev:s.dev,ino:s.ino,uid:s.uid},owner);
+          OWNER
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() }}
         with:

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync, realpathSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync, realpathSync, existsSync, openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CORE_HTML, ECHO_HTML, CONFIG, CORE_TEST, SECRET_TEST } from './fixtures/preview-core.mjs';
@@ -25,6 +25,33 @@ function files(root) { const found=[];for(const entry of readdirSync(root,{withF
 const env={...process.env,HOME:path.join(project,'home'),E2E_TELEMETRY_DISABLED:'1',E2E_UPDATE_CHECK_DISABLED:'1',E2E_CACHE_DIR:'',CI:'true'};
 for(const key of Object.keys(env)) if (/^(E2E_AGENT_BROWSER|AGENT_BROWSER)/.test(key)||['NODE_PATH','NODE_OPTIONS','E2E_CHROMIUM_EXECUTABLE'].includes(key)) delete env[key];
 mkdirSync(env.HOME);
+// A boolean opt-in, never an externally supplied path or native override.
+const nativeDiagnostics=process.env.E2E_CORE_NATIVE_DIAGNOSTICS==='1';
+function beginNativeDiagnostic(stage) {
+ assert.ok(['baseline','repeat','secret'].includes(stage));
+ // Raw append custody stays outside every uploaded directory. Only validated
+ // bounded bytes are copied into evidence; unknown replacement files stay private.
+ assert.equal(realpathSync(project),project);assert.ok(!lstatSync(project).isSymbolicLink());
+ const parent=lstatSync(project),destination=lstatSync(evidence);
+ const file=path.join(project,stage+'-native-cleanup.jsonl');
+ const fd=openSync(file,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR|constants.O_NOFOLLOW,0o600);
+ const owner=fstatSync(fd);assert.ok(owner.isFile());
+ return {file,finish(){try {
+  const current=lstatSync(file),held=fstatSync(fd);
+  assert.ok(current.isFile()&&!current.isSymbolicLink());assert.equal(realpathSync(file),file);
+  for(const key of ['dev','ino']){assert.equal(current[key],owner[key]);assert.equal(held[key],owner[key]);}
+  assert.ok(held.size<=256*1024,'Native diagnostic exceeded its closed sink bound');
+  const bytes=Buffer.alloc(256*1024+1);const size=readSync(fd,bytes,0,bytes.length,0);assert.ok(size<=256*1024);
+  const content=bytes.subarray(0,size);noSecrets(content);
+  assert.equal(size,held.size);const after=fstatSync(fd);
+  for(const key of ['dev','ino','size','mtimeMs','ctimeMs'])assert.equal(after[key],held[key]);
+  const leaf=lstatSync(file);for(const key of ['dev','ino','size','mtimeMs','ctimeMs'])assert.equal(leaf[key],held[key]);
+  for(const [directory,owner] of [[project,parent],[evidence,destination]]){const stat=lstatSync(directory);assert.ok(stat.isDirectory()&&!stat.isSymbolicLink());for(const key of ['dev','ino'])assert.equal(stat[key],owner[key]);assert.equal(realpathSync(directory),directory);}
+  assert.equal(realpathSync(evidence),evidence);assert.ok(!lstatSync(evidence).isSymbolicLink());
+  writeFileSync(path.join(evidence,path.basename(file)),content,{flag:'wx',mode:0o600});
+  return {file:path.basename(file),bytes:size,sha256:sha(content),status:size===0?'empty-unknown':'captured',acceptanceEvidence:false};
+ } finally {closeSync(fd);}}};
+}
 let server;
 const stages={};
 async function command(label, executable, args, timeoutMs=180_000, extraEnv={}) {
@@ -79,10 +106,14 @@ try {
  async function cli(stage, test, update=false) {
   const output=path.join(project,'.e2e','preview-'+stage);const witness=path.join(evidence,stage+'-core-witness.json'),screen=path.join(evidence,stage+'-screen-witness.json'),secret=path.join(evidence,'secret-observation.json');
   const args=['exec','e2e','run',test,'--output',output,'--reporter','json,markdown,junit','--video','off','--trace','off',...(update?['--update-snapshots']:[])];
-  const result=await command(stage,'pnpm',args,240_000,{PREVIEW_CORE_WITNESS:witness,PREVIEW_SCREENSHOT_WITNESS:screen,PREVIEW_SECRET_WITNESS:secret});
+  const diagnostic=nativeDiagnostics?beginNativeDiagnostic(stage):undefined;
+  let result;let diagnosticFailure=false;
+  try {result=await command(stage,'pnpm',args,240_000,{PREVIEW_CORE_WITNESS:witness,PREVIEW_SCREENSHOT_WITNESS:screen,PREVIEW_SECRET_WITNESS:secret,...(diagnostic?{AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE:diagnostic.file}:{})});}
+  finally {if(diagnostic){try{save(stage+'-native-diagnostic.json',diagnostic.finish());}catch{diagnosticFailure=true;try{save(stage+'-native-diagnostic.json',{status:'invalid-unknown',acceptanceEvidence:false});}catch{/* Never replace the original command failure with diagnostic persistence. */}}}}
   if(existsSync(output))await retainEvidenceDirectory(output,path.join(evidence,stage+'-output'),project);
   if(stage!=='secret'&&existsSync(snapshots))await retainEvidenceDirectory(snapshots,path.join(evidence,stage+'-snapshots'),project);
   verifyExit(result,stage!=='secret');const report=json(path.join(output,'report.json'));const counts=verifyReport(report,stage);
+  assert.equal(diagnosticFailure,false,'Native diagnostic ownership or bound validation failed');
   for(const file of files(output)) {assert.ok(lstatSync(file).size<=32*1024*1024);noSecrets(readFileSync(file));}
   assert.ok(files(output).some(file=>file.endsWith('.md')));assert.ok(files(output).some(file=>file.endsWith('.xml')));
   return {output,witness,screen,report,counts};
