@@ -12,6 +12,64 @@ export const INTEROP_FILES = {
   'persistent-raw-reconnect.test.ts': ['file-identity.json', 'persistent-raw-reconnect.json'],
   'persistent-raw-reconnect-native-receipts.test.ts': ['file-identity.json', 'persistent-raw-reconnect.json', 'persistent-raw-reconnect-native-receipts.json'],
 } as const;
+/** Existing root writers, separate from the four required interop suites. Never acceptance evidence. */
+export const SUPPLEMENTAL_INTEROP_WRITERS: Readonly<Record<string, string>> = {
+  "fresh-surface.json": "packages/web/tests/integration/surface-of-native-fresh.test.ts",
+  "persistent-reopen-borrowed.json": "packages/web/tests/integration/surface-of-native-persistent-reopen.test.ts",
+  "persistent-reopen-borrowed-fenced-race.json": "packages/web/tests/integration/surface-of-native-persistent-reopen.test.ts",
+  "replacement-retirement-reset-before-old-close.json": "packages/web/tests/integration/surface-of-native-replacement-retirement.test.ts",
+  "replacement-retirement-reset-after-old-close.json": "packages/web/tests/integration/surface-of-native-replacement-retirement.test.ts",
+  "replacement-retirement-reset-after-new-create.json": "packages/web/tests/integration/surface-of-native-replacement-retirement.test.ts",
+  "replacement-retirement-restore-before-old-close.json": "packages/web/tests/integration/surface-of-native-replacement-retirement.test.ts",
+  "replacement-retirement-restore-after-old-close.json": "packages/web/tests/integration/surface-of-native-replacement-retirement.test.ts",
+  "replacement-retirement-restore-after-new-create.json": "packages/web/tests/integration/surface-of-native-replacement-retirement.test.ts",
+  "replacement-surface-owned.json": "packages/web/tests/integration/surface-of-native-replacement.test.ts",
+  "replacement-surface-borrowed.json": "packages/web/tests/integration/surface-of-native-replacement.test.ts",
+  "restart-retirement-owned-endAttempt.json": "packages/web/tests/integration/surface-of-native-restart-retirement.test.ts",
+  "restart-retirement-owned-dispose.json": "packages/web/tests/integration/surface-of-native-restart-retirement.test.ts",
+  "restart-retirement-borrowed-endAttempt.json": "packages/web/tests/integration/surface-of-native-restart-retirement.test.ts",
+  "restart-retirement-borrowed-dispose.json": "packages/web/tests/integration/surface-of-native-restart-retirement.test.ts",
+  "restart-surface-owned.json": "packages/web/tests/integration/surface-of-native-restart.test.ts",
+  "restart-surface-borrowed.json": "packages/web/tests/integration/surface-of-native-restart.test.ts",
+  "peer-terminal-before-dispose.json": "packages/web/tests/integration/surface-of-native-retirement-close.test.ts",
+  "peer-terminal-after-dispose.json": "packages/web/tests/integration/surface-of-native-retirement-close.test.ts",
+  "reuse-surface-owned.json": "packages/web/tests/integration/surface-of-native-reuse.test.ts",
+  "reuse-surface-borrowed.json": "packages/web/tests/integration/surface-of-native-reuse.test.ts",
+  "dialog-guard-before-app.json": "packages/web/tests/integration/native-playwright-dialog-ownership.test.ts",
+  "dialog-guard-held-decision.json": "packages/web/tests/integration/native-playwright-dialog-ownership.test.ts",
+  "dialog-guard-raw-observers.json": "packages/web/tests/integration/native-playwright-dialog-ownership.test.ts",
+  "dialog-guard-no-handler.json": "packages/web/tests/integration/native-playwright-dialog-ownership.test.ts",
+  "dialog-guard-popup-replacement.json": "packages/web/tests/integration/native-playwright-dialog-ownership.test.ts",
+  "dialog-guard-borrowed-exact-page.json": "packages/web/tests/integration/native-playwright-dialog-ownership.test.ts"
+};
+const ROOT_DIAGNOSTIC_LIMIT = 128;
+const SUPPLEMENTAL_BYTE_BUDGET = 32 * 1024 * 1024;
+function archiveRootDiagnostics(root: string, destination: string, names: string[]) {
+  const supplemental: { name: string; sourceTestPath: string; status: string; bytes?: number; sha256?: string }[] = [];
+  const unknown = names.filter(name => !Object.hasOwn(SUPPLEMENTAL_INTEROP_WRITERS, name)).sort();
+  const entries = unknown.slice(0, ROOT_DIAGNOSTIC_LIMIT).map(name => {
+    let kind = 'unavailable';
+    try { const stat = lstatSync(join(root, name)); kind = stat.isSymbolicLink() ? 'symlink' : stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'nonregular'; } catch { /* Metadata only; never follow or read unknown entries. */ }
+    return { nameSha256: hash(Buffer.from(name)), kind, unsafe: kind !== 'file' };
+  });
+  let remaining = SUPPLEMENTAL_BYTE_BUDGET;
+  mkdirSync(join(destination, 'supplemental'));
+  for (const name of names.filter(name => Object.hasOwn(SUPPLEMENTAL_INTEROP_WRITERS, name)).sort()) {
+    const sourceTestPath = SUPPLEMENTAL_INTEROP_WRITERS[name]!;
+    try {
+      const input = join(root, name); const stat = lstatSync(input);
+      if (!stat.isFile() || stat.isSymbolicLink() || remaining === 0) throw new Error('Unsafe or over-budget supplemental file');
+      const bytes = readStableInteropFile(input, Math.min(16 * 1024 * 1024, remaining));
+      writeFileSync(join(destination, 'supplemental', name), bytes, { flag: 'wx' }); remaining -= bytes.length;
+      supplemental.push({ name, sourceTestPath, status: 'archived', bytes: bytes.length, sha256: hash(bytes) });
+    } catch { supplemental.push({ name, sourceTestPath, status: 'unavailable-unsafe-or-over-budget' }); }
+  }
+  return { acceptanceEvidence: false, supplemental, supplementalByteBudget: SUPPLEMENTAL_BYTE_BUDGET,
+    supplementalHelperPath: 'packages/web/tests/helpers/native-dialog-fixture.ts',
+    unknownRoots: { total: unknown.length, retained: entries.length, truncated: entries.length < unknown.length,
+      unsafeObserved: entries.filter(entry => entry.unsafe).length, uninspected: unknown.length - entries.length, entries },
+    note: 'Supplemental and unknown root entries are not four-suite proof. Unknown contents are never read or archived.' };
+}
 export interface InteropCapture { root: string; testDirectory: string }
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 /** Bounded, nonblocking regular-file read; never follows an alias or trusts a pre-read size alone. */
@@ -54,7 +112,7 @@ export function archiveInteropCapture(capture: InteropCapture, output: string, i
   const missing: string[] = []; const invalid: string[] = [];
   if (!isAbsolute(capture.root) || realpathSync(capture.root) !== capture.root || !lstatSync(capture.root).isDirectory()) throw new Error('Changed interop temporary root');
   const expectedDirectories = Object.keys(INTEROP_FILES);
-  for (const name of readdirSync(capture.root)) if (!expectedDirectories.includes(name)) invalid.push('unexpected-root-entry');
+  const rootDiagnostics = archiveRootDiagnostics(capture.root, destination, readdirSync(capture.root).filter(name => !expectedDirectories.includes(name))); 
   for (const [testFile, expected] of Object.entries(INTEROP_FILES)) {
     const source = join(capture.root, testFile); const target = join(destination, testFile);
     mkdirSync(target);
@@ -80,7 +138,7 @@ export function archiveInteropCapture(capture: InteropCapture, output: string, i
     }
   }
   const receipt = { schemaVersion: 1, status: identityUnchanged && missing.length === 0 && invalid.length === 0 ? 'captured' : 'incomplete',
-    identityUnchanged, files, missing, invalid, note: 'Archive integrity only; original Vitest assertions and run-level source/native/binary binding remain authoritative.' };
+    identityUnchanged, files, missing, invalid, rootDiagnostics, note: 'Archive integrity only; original Vitest assertions and run-level source/native/binary binding remain authoritative.' };
   writeFileSync(join(destination, 'archive.json'), JSON.stringify(receipt, null, 2), { flag: 'wx' });
   return receipt;
 }

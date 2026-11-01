@@ -305,4 +305,72 @@ class OwnedStop(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p.write_exit(Path(tmp));ack=p.read_json(Path(tmp)/'exit.json');self.assertTrue(ack['ownedChildrenReaped']);self.assertEqual(ack['nonce'],'stop-nonce')
 
+
+
+
+import io
+
+def identity(pid, parent, exe):
+    return dict(pid=pid, ppid=parent, uid=os.getuid(), start=str(pid), group=1, session=1, exe=exe, state='S')
+
+
+class ActualFrame(unittest.TestCase):
+    def exercise(self, raw, known='unknown', post='same', phase='sampling', write_fails=False):
+        with tempfile.TemporaryDirectory() as temp:
+            window = Path(temp)
+            observer = p.Observer.__new__(p.Observer)
+            observer.fixture_pid = 1; observer.native = '/synthetic/native'; observer.encoder = '/synthetic/ffmpeg'; observer.mac = False
+            observer.phase = phase; observer.window = window; observer.known_roles = {}; observer.accepted_encoder_samples = 0
+            fixture = identity(1, 0, '/synthetic/node'); proxy = identity(2, 1, observer.native); daemon = identity(3, 2, observer.native); child = identity(4, 3, observer.encoder)
+            current = {'raw': b'/synthetic/ffmpeg\0-version\0', 'reads': 0, 'failure': False}
+            original_open = Path.open
+            def opened(path, *args, **kwargs):
+                if str(path) == '/proc/4/cmdline': return io.BytesIO(current['raw'])
+                if str(path).startswith('/proc/'): raise AssertionError('uncontrolled proc read')
+                return original_open(path, *args, **kwargs)
+            def snapshot(pid):
+                if pid == 1: return dict(fixture)
+                self.assertEqual(pid, 4)
+                current['reads'] += 1
+                if current['failure'] and current['reads'] == 2:
+                    if post == 'unknown': raise FileNotFoundError()
+                    result = dict(child, state='Z')
+                    if post == 'reused': result['start'] = '999'
+                    return result
+                return dict(child)
+            def children(parent): return {1:[proxy], 2:[daemon], 3:[child]}[parent['pid']]
+            with patch.object(p, 'linux_snapshot', snapshot), patch.object(p, 'linux_children', children), patch.object(p.os, 'getppid', return_value=1), patch.object(Path, 'open', opened):
+                if known != 'unknown':
+                    if known == 'encoder':
+                        out = window / 'agent-browser-action-12345678-abcd-1234-abcd-123456789abc' / 'video.webm'; out.parent.mkdir()
+                        argv = [observer.encoder] + '-y -hide_banner -loglevel error -fpsprobesize 0 -probesize 32 -analyzeduration 0 -f image2pipe -c:v png -framerate 25 -i pipe:0 -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -fps_mode vfr -c:v libvpx -crf 18 -b:v 8000k -deadline realtime -cpu-used 4 -pix_fmt yuv420p -threads 1'.split() + [str(out)]
+                        current['raw'] = ('\0'.join(argv) + '\0').encode()
+                    frame = observer.frame()
+                    seen = {}; p.record_sample(seen, frame, observer.encoder, 1); p.remember_classified(observer, frame)
+                current.update(raw=raw, reads=0, failure=True)
+                if phase == 'final': (window / 'finished.json').write_text('{}')
+                with patch.object(p, 'atomic_json', side_effect=OSError('private')) if write_fails else patch.object(p, 'atomic_json', wraps=p.atomic_json):
+                    with self.assertRaisesRegex(ValueError, '^argv-truncated$'): observer.frame()
+            path = window / 'failure-only.json'
+            return json.loads(path.read_text()) if path.exists() else None
+
+    def test_three_reasons(self):
+        for raw, reason in [(b'', 'empty'), (b'x' * (p.LIMIT + 1), 'oversize'), (b'abc', 'missingNUL')]:
+            with self.subTest(reason=reason):
+                result = self.exercise(raw)
+                self.assertEqual(result['reason'], reason); self.assertEqual(result['knownRole'], 'unknown')
+                self.assertFalse(result['acceptanceProof']); self.assertNotIn('/synthetic', json.dumps(result))
+    def test_known_roles_do_not_accept_retirement(self):
+        for role in ['encoder', 'probe']:
+            result = self.exercise(b'', known=role, phase='final')
+            self.assertEqual(result['knownRole'], role); self.assertEqual(result['acceptedEncoderSamples'], int(role == 'encoder'))
+            self.assertTrue(result['identityStable']); self.assertEqual(result['post']['state'], 'Z'); self.assertTrue(result['finishedSeen'])
+    def test_unavailable_and_reuse_are_facts_not_acceptance(self):
+        self.assertIsNone(self.exercise(b'', post='unknown')['identityStable'])
+        self.assertFalse(self.exercise(b'', post='reused')['identityStable'])
+    def test_arming_and_collection_failure_preserve_error(self):
+        self.assertEqual(self.exercise(b'', phase='arming')['phase'], 'arming')
+        self.assertIsNone(self.exercise(b'', write_fails=True))
+
+
 if __name__=='__main__': unittest.main(verbosity=2)

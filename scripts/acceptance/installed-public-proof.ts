@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { closeSync, constants, copyFileSync, fstatSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
+import { type Stats, closeSync, constants, copyFileSync, fstatSync, lstatSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export function validateInstalledPublicProof(value: unknown, project: string, evidence: string, encoderBinding: Record<string, unknown>): void {
@@ -488,4 +488,79 @@ export function validateInstalledRunClosed(value: unknown): Record<string, any> 
     if (r.projection === 'failed' && (r.exitCode !== null || r.status !== 'unknown' || r.resultCount !== null || r.truncated || r.errors.length || r.steps.length || calls.status !== 'unknown' || cache.status !== 'unknown')) fail();
     return r;
   } catch { return fail(); }
+}
+
+/** Failure-only evidence. Never called by, or accepted as, the proof validator. */
+export function collectInstalledEncoderFailure(project: string, evidence: string): void {
+  let fd: number | undefined;
+  let collection = 'unavailable-or-rejected';
+  try {
+    const root = realpathSync(project);
+    const rootBefore = lstatSync(root);
+    assert.ok(rootBefore.isDirectory() && !rootBefore.isSymbolicLink());
+    const window = join(root, 'installed-encoder-window');
+    const windowBefore = lstatSync(window);
+    assert.ok(windowBefore.isDirectory() && !windowBefore.isSymbolicLink());
+    assert.equal(realpathSync(window), window);
+    const path = join(window, 'failure-only.json');
+    const leafBefore = lstatSync(path);
+    assert.ok(leafBefore.isFile() && !leafBefore.isSymbolicLink() && leafBefore.size > 0 && leafBefore.size <= 8192);
+    const sameNode = (actual: Stats, expected: Stats) => {
+      assert.equal(actual.dev, expected.dev); assert.equal(actual.ino, expected.ino); assert.equal(actual.mode, expected.mode);
+    };
+    const locationFence = () => {
+      assert.equal(realpathSync(project), root);
+      assert.equal(realpathSync(window), window);
+      assert.equal(realpathSync(path), path);
+      sameNode(lstatSync(root), rootBefore);
+      sameNode(lstatSync(window), windowBefore);
+      sameNode(lstatSync(path), leafBefore);
+    };
+    locationFence();
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const before = fstatSync(fd);
+    sameNode(before, leafBefore);
+    assert.ok(before.size === leafBefore.size && before.mtimeMs === leafBefore.mtimeMs && before.ctimeMs === leafBefore.ctimeMs);
+    locationFence();
+    assert.ok(before.isFile() && before.size > 0 && before.size <= 8192);
+    const bytes = Buffer.alloc(8193);
+    let length = 0;
+    while (length < bytes.length) {
+      const count = readSync(fd, bytes, length, bytes.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    const after = fstatSync(fd);
+    sameNode(after, before);
+    locationFence();
+    assert.ok(length === before.size && after.size === before.size && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs);
+    const value = JSON.parse(bytes.subarray(0, length).toString('utf8'));
+    const keys = (object: Record<string, unknown>, expected: string[]) => assert.deepEqual(Object.keys(object).sort(), expected.sort());
+    keys(value, ['schemaVersion', 'kind', 'acceptanceProof', 'error', 'reason', 'phase', 'finishedSeen', 'knownRole', 'acceptedEncoderSamples', 'readStage', 'pre', 'post', 'identityStable']);
+    assert.equal(value.schemaVersion, 1); assert.equal(value.kind, 'encoder-observer-failure-only');
+    assert.equal(value.acceptanceProof, false); assert.equal(value.error, 'argv-truncated');
+    assert.ok(['empty', 'oversize', 'missingNUL'].includes(value.reason));
+    assert.ok(['arming', 'sampling', 'final'].includes(value.phase));
+    assert.equal(typeof value.finishedSeen, 'boolean');
+    assert.ok(['unknown', 'encoder', 'probe'].includes(value.knownRole));
+    assert.ok(Number.isSafeInteger(value.acceptedEncoderSamples) && value.acceptedEncoderSamples >= 0);
+    assert.equal(value.readStage, 'cmdline-parse');
+    const identity = (item: Record<string, unknown>) => {
+      keys(item, ['pid', 'ppid', 'uid', 'group', 'session', 'start', 'state']);
+      for (const name of ['pid', 'ppid', 'uid', 'group', 'session']) assert.ok(Number.isSafeInteger(item[name]) && (item[name] as number) >= 0);
+      assert.ok(item.start === null || (typeof item.start === 'string' && /^[0-9]{1,32}$/.test(item.start)));
+      assert.ok(['R', 'S', 'D', 'Z', 'T', 't', 'X', 'x', 'K', 'W', 'P', 'I', 'unknown'].includes(item.state as string));
+    };
+    identity(value.pre);
+    if (value.post !== null) identity(value.post);
+    assert.ok(value.post === null ? value.identityStable === null : typeof value.identityStable === 'boolean');
+    // Serialize only after closed schema validation; no raw bytes or exception text escapes.
+    writeFileSync(join(evidence, 'installed-encoder-failure-only.json'), JSON.stringify(value, null, 2), { flag: 'wx' });
+    collection = 'collected';
+  } catch {
+    // Diagnostic collection must never replace or suppress the consumer failure.
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch {} }
+    try { writeFileSync(join(evidence, 'installed-encoder-failure-collection.json'), JSON.stringify({ schemaVersion: 1, kind: 'failure-only-collection', acceptanceProof: false, status: collection }), { flag: 'wx' }); } catch {}
+  }
 }

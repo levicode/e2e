@@ -1,0 +1,221 @@
+name: Focused original Formal runtime installed diagnostic only
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: s24-focused-installed-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  installed_diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24.22.1
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - name: Fresh outside-checkout diagnostic paths, never the pending S23 source
+      run: 'set -euo pipefail
+
+        mkdir -p .artifacts
+
+        mkdir .artifacts/focused-installed-diagnostic "$RUNNER_TEMP/focused-installed-home"
+
+        echo "HOME=$RUNNER_TEMP/focused-installed-home" >> "$GITHUB_ENV"
+
+        echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/focused-installed-playwright" >> "$GITHUB_ENV"
+
+        node --version > .artifacts/focused-installed-diagnostic/node.version
+
+        pnpm --version > .artifacts/focused-installed-diagnostic/pnpm.version
+
+        node scripts/ci/focused-installed-runtime.mjs source
+
+        '
+      id: identity
+    - name: Original Formal frozen-lockfile dependencies
+      id: dependencies
+      if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ install --frozen-lockfile\n) > .artifacts/focused-installed-diagnostic/dependencies.log 2>&1\ns=$?\nprintf '%s\\\
+        n' \"$s\" > .artifacts/focused-installed-diagnostic/dependencies.exit\ncat .artifacts/focused-installed-diagnostic/dependencies.log\n\
+        exit \"$s\"\n"
+    - name: Original Formal complete public package build
+      id: packages
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ run build\n) > .artifacts/focused-installed-diagnostic/packages.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/focused-installed-diagnostic/packages.exit\n\
+        cat .artifacts/focused-installed-diagnostic/packages.log\nexit \"$s\"\n"
+    - name: Require actual locked TypeScript 7.0.2
+      id: typescript
+      if: ${{ !cancelled() && steps.packages.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ exec tsc --version | tee .artifacts/focused-installed-diagnostic/typescript.version\ngrep -Fx 'Version 7.0.2' .artifacts/focused-installed-diagnostic/typescript.version\n\
+        node --input-type=module - <<'TS'\nimport fs from 'node:fs';import {createRequire} from 'node:module';import assert\
+        \ from 'node:assert/strict';import {createHash} from 'node:crypto';\nconst r=createRequire(process.cwd()+'/package.json'),p=r.resolve('typescript/package.json'),b=fs.readFileSync(p),v=JSON.parse(b);assert.equal(v.version,'7.0.2');fs.writeFileSync('.artifacts/focused-installed-diagnostic/typescript-package.json',JSON.stringify({version:v.version,sha256:createHash('sha256').update(b).digest('hex')}));\n\
+        TS\n) > .artifacts/focused-installed-diagnostic/typescript.log 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/focused-installed-diagnostic/typescript.exit\n\
+        cat .artifacts/focused-installed-diagnostic/typescript.log\nexit \"$s\"\n"
+    - name: Original Formal complete e2e types
+      id: core_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ --filter e2e run typecheck\n) > .artifacts/focused-installed-diagnostic/core_types.log 2>&1\ns=$?\nprintf '%s\\\
+        n' \"$s\" > .artifacts/focused-installed-diagnostic/core_types.exit\ncat .artifacts/focused-installed-diagnostic/core_types.log\n\
+        exit \"$s\"\n"
+    - name: Original Formal complete Web types
+      id: web_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ --filter @e2e-dev/web run typecheck\n) > .artifacts/focused-installed-diagnostic/web_types.log 2>&1\ns=$?\nprintf\
+        \ '%s\\n' \"$s\" > .artifacts/focused-installed-diagnostic/web_types.exit\ncat .artifacts/focused-installed-diagnostic/web_types.log\n\
+        exit \"$s\"\n"
+    - name: Original Formal complete scripts types
+      id: script_types
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\npnpm\
+        \ exec tsc --project scripts\n) > .artifacts/focused-installed-diagnostic/script_types.log 2>&1\ns=$?\nprintf '%s\\\
+        n' \"$s\" > .artifacts/focused-installed-diagnostic/script_types.exit\ncat .artifacts/focused-installed-diagnostic/script_types.log\n\
+        exit \"$s\"\n"
+    - name: Original Formal full acceptance-scripts collection
+      id: scripts
+      if: ${{ !cancelled() && steps.typescript.outcome == 'success' }}
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY\n\
+        set +e\n( set -e\n  test -z \"$(git status --porcelain)\"\n  test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\ngit\
+        \ status --porcelain -uall > .artifacts/focused-installed-diagnostic/source-before-pure-controls.txt\nstatus=0\nnode\
+        \ --test 'scripts/acceptance/*.test.ts' || status=$?\ngit status --porcelain -uall > .artifacts/focused-installed-diagnostic/source-after-pure-controls.txt\n\
+        test \"$status\" -eq 0\ntest ! -s .artifacts/focused-installed-diagnostic/source-before-pure-controls.txt\ntest !\
+        \ -s .artifacts/focused-installed-diagnostic/source-after-pure-controls.txt\n) > .artifacts/focused-installed-diagnostic/scripts.log\
+        \ 2>&1\ns=$?\nprintf '%s\\n' \"$s\" > .artifacts/focused-installed-diagnostic/scripts.exit\ncat .artifacts/focused-installed-diagnostic/scripts.log\n\
+        exit \"$s\"\n"
+    - name: Require every actual step record and census; never full acceptance
+      id: summary
+      if: ${{ always() }}
+      env:
+        CHECK_STEPS: ${{ toJSON(steps) }}
+      run: "python3 - <<'SUMMARY'\nimport pathlib,json,os,re,hashlib,subprocess\nout=pathlib.Path('.artifacts/focused-installed-diagnostic');out.mkdir(parents=True,exist_ok=True)\n\
+        steps=json.loads(os.environ['CHECK_STEPS']);required=['identity','dependencies','packages','typescript','core_types','web_types','script_types','scripts'];errors=[];outcomes={k:steps.get(k,{}).get('outcome','missing')\
+        \ for k in required};records={}\nfor k in required:\n if outcomes[k]!='success':errors.append(k+':'+outcomes[k])\n\
+        \ if k=='identity':continue\n p=out/(k+'.exit');log=out/(k+'.log')\n if not p.is_file() or not log.is_file():errors.append(k+':missing-record');continue\n\
+        \ text=p.read_text().strip()\n if not re.fullmatch(r'\\d{1,3}',text) or not 0<=int(text)<=255:errors.append(k+':invalid-exit');continue\n\
+        \ code=int(text);records[k]={'exitCode':code,'logSHA256':hashlib.sha256(log.read_bytes()).hexdigest()}\n if code:errors.append(k+':nonzero-exit')\n\
+        counts={};p=out/'scripts.log'\nif p.is_file():\n raw=re.sub(r'\\x1b\\[[0-9;]*m','',p.read_text())\n for key in ['tests','suites','pass','fail','cancelled','skipped','todo']:\n\
+        \  found=re.findall(r'^(?:\u2139|#) '+key+r' (\\d+)\\s*$',raw,re.M)\n  if len(found)!=1:errors.append('scripts:census-'+key)\n\
+        \  else:counts[key]=int(found[0])\n if len(counts)==7:\n  if counts['tests']<=0 or sum(counts[k] for k in ['pass','fail','cancelled','skipped','todo'])!=counts['tests']:errors.append('scripts:inconsistent-census')\n\
+        \  if any(counts[k] for k in ['fail','cancelled','skipped','todo']):errors.append('scripts:nonpassing-or-unrun-tests')\n\
+        \ durations=re.findall(r'^(?:\u2139|#) duration_ms (\\d+(?:[.]\\d+)?)\\s*$',raw,re.M)\n if len(durations)!=1:errors.append('scripts:missing-or-duplicate-terminal-duration')\n\
+        else:errors.append('scripts:missing-log')\nfor name in ['source.commit','source.tree','full-tree.txt','sealed-source.txt','source-pins.sha256','node.version','pnpm.version','typescript.version','typescript-package.json','acceptance-files.txt','whole-scripts-files.txt']:\n\
+        \ if not (out/name).is_file():errors.append('identity:missing-'+name)\ntry:\n if subprocess.check_output(['git','status','--porcelain'],text=True).strip():errors.append('identity:dirty-source')\n\
+        \ head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip();tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()\n\
+        \ if head!=os.environ['GITHUB_SHA'] or (out/'source.commit').read_text().strip()!=head or (out/'source.tree').read_text().strip()!=tree:errors.append('identity:source-mismatch')\n\
+        \ if (out/'full-tree.txt').read_bytes()!=subprocess.check_output(['git','ls-tree','-r','HEAD']):errors.append('identity:tree-list-mismatch')\n\
+        \ for name,expected in [('node.version','v24.22.1'),('pnpm.version','12.3.4'),('typescript.version','Version 7.0.2')]:\n\
+        \  if (out/name).read_text().strip()!=expected:errors.append('identity:version-'+name)\n if json.loads((out/'typescript-package.json').read_text())['version']!='7.0.2':errors.append('identity:typescript-package-version')\n\
+        except (OSError,KeyError,ValueError,subprocess.CalledProcessError):errors.append('identity:unverifiable')\nsummary={'purpose':'focused-installed-types-scripts-preflight','status':'failed'\
+        \ if errors else 'passed','outcomes':outcomes,'records':records,'actualScriptCensus':counts,'errors':errors,'fullFormalAccepted':False,'nativeAccepted':False,'installedAccepted':False,'releaseEligible':False}\n\
+        (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\\n');print(json.dumps(summary));raise SystemExit(bool(errors))\n\
+        SUMMARY\n"
+    - name: Restore original focused runtime and compiler evidence with exact API and ZIP custody
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/restore-focused-installed.py
+    - name: Verify focused historical tuple and current unchanged production source; derive diagnostic provenance
+      id: binding
+      run: node scripts/ci/focused-installed-runtime.mjs bind
+    - name: Original official Chrome and real codecs installation
+      run: 'set -euo pipefail
+
+        "$RUNNER_TEMP/focused-installed-runtime/production" install --with-deps
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        sudo apt-get update
+
+        sudo apt-get install -y ffmpeg
+
+        ffmpeg -version > .artifacts/focused-installed-diagnostic/ffmpeg.version
+
+        ffprobe -version > .artifacts/focused-installed-diagnostic/ffprobe.version
+
+        chrome="$(node scripts/acceptance/installed-chromium.ts "$HOME/.agent-browser/browsers" .artifacts/focused-installed-diagnostic/chromium-executable.json)"
+
+        echo "E2E_CHROMIUM_EXECUTABLE=$chrome" >> "$GITHUB_ENV"
+
+        "$chrome" --version > .artifacts/focused-installed-diagnostic/chrome.version
+
+        '
+    - name: Original live production handshake with current built Web; never reuse old probe
+      run: 'set -euo pipefail
+
+        node --input-type=module -e "import { REQUIRED_CAPABILITIES } from ''./packages/web/dist/native/capabilities.js'';
+        process.stdout.write(JSON.stringify(REQUIRED_CAPABILITIES))" > .artifacts/focused-installed-diagnostic/required-capabilities.json
+
+        node scripts/acceptance/probe-native.ts "$RUNNER_TEMP/focused-installed-runtime/production" .artifacts/focused-installed-diagnostic/required-capabilities.json
+        .artifacts/focused-installed-diagnostic/negotiation.json
+
+        '
+    - name: Original public bundle assembly on this exact clean JS HEAD
+      id: bundle
+      run: 'set -euo pipefail
+
+        node scripts/acceptance/package-bundle.ts "$RUNNER_TEMP/focused-installed-runtime/production" .artifacts/focused-installed-diagnostic/diagnostic-producer.json
+        .artifacts/focused-installed-diagnostic/negotiation.json "$RUNNER_TEMP/focused-installed-bundle"
+
+        digest="$(sha256sum "$RUNNER_TEMP/focused-installed-bundle/manifest.json" | cut -d '' '' -f 1)"
+
+        echo "manifest_sha256=$digest" >> "$GITHUB_OUTPUT"
+
+        '
+    - name: Original full outside-checkout installed sequence exactly once
+      id: installed
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ steps.bundle.outputs.manifest_sha256 }}
+      run: 'set +e
+
+        node scripts/acceptance/candidate-installed.ts "$RUNNER_TEMP/focused-installed-bundle" "$EXPECTED_MANIFEST_SHA256"
+        "$RUNNER_TEMP/focused-installed-consumer" .artifacts/focused-installed-diagnostic > .artifacts/focused-installed-diagnostic/installed-command.stdout.log
+        2> .artifacts/focused-installed-diagnostic/installed-command.stderr.log
+
+        s=$?
+
+        printf ''%s\n'' "$s" > .artifacts/focused-installed-diagnostic/installed-command.exit
+
+        exit "$s"
+
+        '
+    - name: Retain bounded diagnostic facts without replacing business failure
+      if: ${{ !cancelled() && steps.installed.outcome != 'skipped' }}
+      run: node scripts/ci/focused-installed-runtime.mjs collect
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: s24-focused-installed-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .artifacts/focused-installed-diagnostic/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+      with:
+        name: s24-focused-installed-unaccepted-bundle-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/focused-installed-bundle/
+        if-no-files-found: error
+        retention-days: 7
+'on':
+  push:
+    branches:
+    - ci/s24-focused-installed-encoder-diagnostic-20261031

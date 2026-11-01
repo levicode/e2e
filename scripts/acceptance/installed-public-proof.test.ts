@@ -1,5 +1,7 @@
 /** Synthetic validator controls only: never an installed browser acceptance receipt. */
 import assert from 'node:assert/strict';
+import failureFs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync as sdkSymlinkSync, writeFileSync } from 'node:fs';
@@ -7,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { validateInstalledRunClosed, INSTALLED_RUN_DIAGNOSTIC_ENUMS, validateInstalledSdkPrerequisite, INSTALLED_AI_VERSION, installedConsumerMetadata, inspectInstalledSdkPrerequisite, validateEncoderReceipt, validateInstalledPublicProof } from './installed-public-proof.ts';
+import { collectInstalledEncoderFailure, validateInstalledRunClosed, INSTALLED_RUN_DIAGNOSTIC_ENUMS, validateInstalledSdkPrerequisite, INSTALLED_AI_VERSION, installedConsumerMetadata, inspectInstalledSdkPrerequisite, validateEncoderReceipt, validateInstalledPublicProof } from './installed-public-proof.ts';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'installed-proof-pure-')); const project = join(root, 'consumer'); const evidence = join(root, 'evidence');
@@ -290,8 +292,18 @@ function diagnosticFunctions() {
   const closed = new Function(`${block[1]}\nreturn installedRunClosed;`)() as (stage: string, value: any, files?: any) => any;
   return { source, block: block[1]!, closed };
 }
-function sampleRun(events: any = [{ kind: 'engine', name: 'tap', code: 'ENGINE_FAILURE', status: 'failed', durationMs: 12 }]) {
-  return { exitCode: 3, status: 'error', report: { run: { results: [{ attempts: [{ error: { code: 'APP_UNREACHABLE', category: 'infrastructure', phase: 'body' }, steps: [{ api: 'app.open', status: 'passed' }, { api: 'agent.act', status: 'failed', durationMs: 21, cache: { mode: 'agent-concluded', reason: 'action-failed', replayedActions: 1, totalActions: 2 }, metrics: { modelCalls: 0 }, events }] }] }] } } };
+/** Synthetic public-step shape: events intentionally accepts malformed input for projection controls. */
+interface DiagnosticSampleStep {
+  api: string;
+  status: string;
+  durationMs?: number;
+  cache?: { mode: string; reason: string; replayedActions: number; totalActions: number };
+  metrics?: { modelCalls: number };
+  events?: unknown;
+}
+function sampleRun(events: unknown = [{ kind: 'engine', name: 'tap', code: 'ENGINE_FAILURE', status: 'failed', durationMs: 12 }]) {
+  const steps: DiagnosticSampleStep[] = [{ api: 'app.open', status: 'passed' }, { api: 'agent.act', status: 'failed', durationMs: 21, cache: { mode: 'agent-concluded', reason: 'action-failed', replayedActions: 1, totalActions: 2 }, metrics: { modelCalls: 0 }, events }];
+  return { exitCode: 3, status: 'error', report: { run: { results: [{ attempts: [{ error: { code: 'APP_UNREACHABLE', category: 'infrastructure', phase: 'body' }, steps }] }] } } };
 }
 
 test('v2 preserves final and underlying phase codes, public cache fields, ordinals and honest missing facts', () => {
@@ -465,3 +477,64 @@ test('generated cache-run output is isolated from hosted evidence while default-
     } finally { f.close(); }
   }
 });
+
+
+// Failure-only collector controls: no runtime/proc/native execution.
+const failureIdentity = { pid: 4, ppid: 3, uid: 1000, group: 1, session: 1, start: '4', state: 'S' };
+const failureRecord = { schemaVersion: 1, kind: 'encoder-observer-failure-only', acceptanceProof: false, error: 'argv-truncated', reason: 'empty', phase: 'sampling', finishedSeen: false, knownRole: 'unknown', acceptedEncoderSamples: 0, readStage: 'cmdline-parse', pre: failureIdentity, post: null, identityStable: null };
+const failureFile = (project: string) => join(project, 'installed-encoder-window', 'failure-only.json');
+function checkFailureCollection(setup: (project: string) => void, expected: boolean): void {
+  const root = mkdtempSync(join(tmpdir(), 'encoder-diagnostic-pure-'));
+  try {
+    const project = join(root, 'project'); const evidence = join(root, 'evidence');
+    mkdirSync(project); mkdirSync(evidence); mkdirSync(join(project, 'installed-encoder-window'));
+    setup(project);
+    assert.doesNotThrow(() => collectInstalledEncoderFailure(project, evidence));
+    assert.equal(existsSync(join(evidence, 'installed-encoder-failure-only.json')), expected);
+    assert.equal(JSON.parse(readFileSync(join(evidence, 'installed-encoder-failure-collection.json'), 'utf8')).status, expected ? 'collected' : 'unavailable-or-rejected');
+    if (expected) assert.deepEqual(JSON.parse(readFileSync(join(evidence, 'installed-encoder-failure-only.json'), 'utf8')), failureRecord);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+test('failure-only collector archives closed diagnostic', () => checkFailureCollection(p => writeFileSync(failureFile(p), JSON.stringify(failureRecord)), true));
+test('failure-only collector tolerates absence', () => checkFailureCollection(() => {}, false));
+test('failure-only collector rejects raw extra fields', () => checkFailureCollection(p => writeFileSync(failureFile(p), JSON.stringify({ ...failureRecord, rawargv: 'secret' })), false));
+test('failure-only collector rejects oversized file', () => checkFailureCollection(p => writeFileSync(failureFile(p), 'x'.repeat(8193)), false));
+test('failure-only collector rejects unclosed state', () => checkFailureCollection(p => writeFileSync(failureFile(p), JSON.stringify({ ...failureRecord, pre: { ...failureIdentity, state: 'secret' } })), false));
+test('failure-only collector rejects symlink leaf', () => checkFailureCollection(p => { writeFileSync(join(p, 'target'), JSON.stringify(failureRecord)); sdkSymlinkSync(join(p, 'target'), failureFile(p)); }, false));
+test('failure-only collector rejects nonregular leaf', () => checkFailureCollection(p => mkdirSync(failureFile(p)), false));
+test('original receipt validator rejects failure-only diagnostic', () => { assert.throws(() => validateEncoderReceipt(failureRecord, {}, {}, '')); });
+test('failure-only collection error cannot replace consumer failure', () => { assert.doesNotThrow(() => collectInstalledEncoderFailure('/not-an-existing-project', '/not-an-existing-evidence')); });
+
+
+for (const redirect of ['symlink', 'directory', 'same-leaf-inode'] as const) {
+  test(`failure-only collector rejects open-time ${redirect} directory replacement`, () => {
+    const root = mkdtempSync(join(tmpdir(), 'encoder-directory-fence-'));
+    const originalOpen = failureFs.openSync;
+    try {
+      const project = join(root, 'project'); const evidence = join(root, 'evidence'); const foreign = join(root, 'foreign');
+      mkdirSync(project); mkdirSync(evidence); mkdirSync(foreign);
+      const window = join(project, 'installed-encoder-window'); mkdirSync(window);
+      writeFileSync(failureFile(project), JSON.stringify(failureRecord));
+      if (redirect === 'same-leaf-inode') failureFs.linkSync(failureFile(project), join(foreign, 'failure-only.json'));
+      else writeFileSync(join(foreign, 'failure-only.json'), JSON.stringify({ ...failureRecord, pre: { ...failureIdentity, pid: 5 } }));
+      let replaced = false;
+      failureFs.openSync = (path, flags, mode) => {
+        if (path === failureFile(project) && !replaced) {
+          replaced = true;
+          failureFs.renameSync(window, `${window}-original`);
+          if (redirect === 'symlink') sdkSymlinkSync(foreign, window);
+          else failureFs.renameSync(foreign, window);
+        }
+        return originalOpen(path, flags, mode);
+      };
+      syncBuiltinESMExports();
+      assert.doesNotThrow(() => collectInstalledEncoderFailure(project, evidence));
+      assert.equal(replaced, true, 'control must reach the actual collector open');
+      assert.equal(existsSync(join(evidence, 'installed-encoder-failure-only.json')), false);
+      assert.equal(JSON.parse(readFileSync(join(evidence, 'installed-encoder-failure-collection.json'), 'utf8')).status, 'unavailable-or-rejected');
+    } finally {
+      failureFs.openSync = originalOpen; syncBuiltinESMExports();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}

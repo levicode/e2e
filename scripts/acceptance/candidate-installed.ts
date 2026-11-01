@@ -1,4 +1,4 @@
-import { validateInstalledSdkPrerequisite, installedConsumerMetadata, inspectInstalledSdkPrerequisite, prepareInstalledEncoderProof, assertInstalledConsumerIsolation, outside, validateInstalledPublicProof } from './installed-public-proof.ts';
+import { collectInstalledEncoderFailure, validateInstalledSdkPrerequisite, installedConsumerMetadata, inspectInstalledSdkPrerequisite, prepareInstalledEncoderProof, assertInstalledConsumerIsolation, outside, validateInstalledPublicProof } from './installed-public-proof.ts';
 /** Bind the actual installed package graph and exercise its public runtime without an override. */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -39,6 +39,7 @@ try {
   delete env['E2E_AGENT_BROWSER_EXECUTABLE']; delete env['NODE_PATH']; delete env['NODE_OPTIONS'];
   const result = spawnSync(process.execPath, ['installed-candidate.mjs'], { cwd: project, env, encoding: 'utf8', timeout: 300_000, maxBuffer: 16 * 1024 * 1024 });
   writeFileSync(join(evidence, 'installed-consumer.log'), result.stdout + result.stderr);
+  if (result.status !== 0) collectInstalledEncoderFailure(project, evidence);
   if (result.status !== 0) throw new Error(`Installed public consumer failed: ${result.error?.message ?? result.signal ?? result.status}`);
   publicProof = JSON.parse(readFileSync(join(project, 'installed-public-result.json'), 'utf8')) as unknown;
   validateInstalledPublicProof(publicProof, project, evidence, encoderBinding);

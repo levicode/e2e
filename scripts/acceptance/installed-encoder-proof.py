@@ -163,8 +163,22 @@ def select_native(children, native):
     return selected[0]
 
 
+def remember_classified(observer, frame):
+    # Called only AFTER the unchanged record_sample gate succeeds.
+    for child in frame['encoders']:
+        role = 'probe' if encoding(child['argv']) is None else 'encoder'
+        if len(observer.known_roles) < 128:
+            observer.known_roles[tuple(child[k] for k in IDENTITY)] = role
+        if role == 'encoder':
+            observer.accepted_encoder_samples += 1
+
+
 class Observer:
     def __init__(self, binding, fixture):
+        self.phase = "arming"
+        self.window = None
+        self.known_roles = {}
+        self.accepted_encoder_samples = 0
         self.binding = binding
         self.fixture_pid = fixture
         self.native = os.path.realpath(binding['nativeExecutable'])
@@ -175,6 +189,29 @@ class Observer:
         require(digest(self.native) == binding['nativeSha256'], 'native-hash')
         self.mac = sys.platform == 'darwin'
         require(sys.platform in ('linux', 'darwin'), 'unsupported-platform')
+
+    def argv_failure(self, raw, before):
+        # Failure-only evidence: never supplies an argv or changes acceptance.
+        def facts(value):
+            if value is None:
+                return None
+            return {k: value[k] for k in ('pid', 'ppid', 'uid', 'group', 'session')} | {
+                'start': value['start'] if re.fullmatch(r'[0-9]{1,32}', value['start']) else None,
+                'state': value.get('state') if value.get('state') in ('R', 'S', 'D', 'Z', 'T', 't', 'X', 'x', 'K', 'W', 'P', 'I') else 'unknown'}
+        post = None
+        try:
+            post = linux_snapshot(before['pid'])
+        except Exception:
+            pass
+        record = dict(schemaVersion=1, kind='encoder-observer-failure-only', acceptanceProof=False,
+                      error='argv-truncated', reason='empty' if not raw else 'oversize' if len(raw) > LIMIT else 'missingNUL',
+                      phase=self.phase, finishedSeen=(self.window / 'finished.json').exists() if self.window else False,
+                      knownRole=self.known_roles.get(tuple(before[k] for k in IDENTITY), 'unknown'),
+                      acceptedEncoderSamples=self.accepted_encoder_samples, readStage='cmdline-parse',
+                      pre=facts(before), post=facts(post),
+                      identityStable=all(before.get(k) == post.get(k) for k in IDENTITY) if post is not None else None)
+        if self.window:
+            atomic_json(self.window / 'failure-only.json', record)
 
     def mac_frame(self, tracked=None):
         helper = Path(__file__).with_name('installed-encoder-proc')
@@ -214,7 +251,16 @@ class Observer:
                     continue
                 before = linux_snapshot(child['pid']); same(child, before)
                 with (Path('/proc') / str(child['pid']) / 'cmdline').open('rb') as stream:
-                    argv = parse_argv(stream.read(LIMIT + 1))
+                    raw = stream.read(LIMIT + 1)
+                    try:
+                        argv = parse_argv(raw)
+                    except ValueError as error:
+                        if str(error) == 'argv-truncated':
+                            try:
+                                self.argv_failure(raw, before)
+                            except Exception:
+                                pass  # Diagnostic failure must not replace the original failure.
+                        raise
                 same(before, linux_snapshot(child['pid']))
                 argv[0] = self.encoder
                 child['argv'] = argv
@@ -312,6 +358,10 @@ def run(binding_path, window):
     require(arm['segmentPath'] == 'video/video.webm', 'segment-path')
     require(isinstance(arm['deadlineUnixMs'], int) and 0 < arm['deadlineUnixMs'] - time.time() * 1000 <= 120000, 'deadline')
     observer = Observer(binding, arm['fixturePid'])
+    observer.known_roles = {}
+    observer.accepted_encoder_samples = 0
+    observer.phase = 'arming'
+    observer.window = window
     first = observer.frame()
     for layer in ('proxy', 'daemon'): first[layer]['exeSha256'] = binding['nativeSha256']
     require(not first['encoders'], 'encoder-before-arm')
@@ -319,12 +369,17 @@ def run(binding_path, window):
     ready = int(time.time() * 1000)
     atomic_json(window / 'ready.json', dict(nonce=arm['nonce'], ready=ready))
     seen = {}
+    observer.phase = 'sampling'
     while not (window / 'finished.json').exists():
         check_stop()
         require(time.time() * 1000 < arm['deadlineUnixMs'], 'window-deadline')
         frame = observer.frame()
         for layer in ('fixture', 'proxy', 'daemon'): same(first[layer], frame[layer])
         record_sample(seen, frame, observer.encoder, int(time.time() * 1000))
+        try:
+            remember_classified(observer, frame)
+        except Exception:
+            pass  # Diagnostic bookkeeping cannot affect acceptance.
         time.sleep(.01)
     finished = read_json(window / 'finished.json')
     require(ready <= finished['finished'] <= arm['deadlineUnixMs'], 'finished-time')
@@ -333,6 +388,7 @@ def run(binding_path, window):
     require(finished['segmentPath'] == arm['segmentPath'] and isinstance(finished['startedAt'], (int, float, str)), 'finished-segment')
     require(len(seen) == 1, 'no-encoding-observation')
     sample = next(iter(seen.values()))
+    observer.phase = 'final'
     frame = observer.frame(sample['process'])
     for layer in ('fixture', 'proxy', 'daemon'): same(first[layer], frame[layer])
     require(frame.get('tracked') in ('gone', 'zombie'), 'tracked-encoder-not-gone')

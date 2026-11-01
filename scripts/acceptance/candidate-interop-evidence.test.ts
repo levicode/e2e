@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { INTEROP_FILES, readStableInteropFile, prepareInteropCapture, interopEnvironment, archiveInteropCapture, verifyInteropArchive } from './candidate-interop-evidence.ts';
+import { INTEROP_FILES, SUPPLEMENTAL_INTEROP_WRITERS, readStableInteropFile, prepareInteropCapture, interopEnvironment, archiveInteropCapture, verifyInteropArchive } from './candidate-interop-evidence.ts';
 function fixture(t: { after: (fn: () => void) => void }) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'interop-archive-pure-')));
   const tests = join(root, 'tests'); const output = join(root, 'output'); mkdirSync(tests); mkdirSync(output);
@@ -32,12 +32,11 @@ test('all four independent fixture directories and exactly 21 original files sur
   assert.deepEqual(readFileSync(join(f.output, 'interop', receipt.files[1]!.path)), readFileSync(f.first));
   assert.throws(() => archiveInteropCapture(f.capture, f.output, true), /EEXIST/);
 });
-for (const condition of ['missing', 'malformed', 'foreign-identity', 'unknown-file', 'symlink', 'changed-identity'] as const) test(`failure preserves available original evidence and rejects ${condition}`, t => {
+for (const condition of ['missing', 'malformed', 'foreign-identity', 'symlink', 'changed-identity'] as const) test(`failure preserves available original evidence and rejects ${condition}`, t => {
   const f = fixture(t);
   if (condition === 'missing') rmSync(f.first);
   if (condition === 'malformed') writeFileSync(f.first, 'not-json-original-failure');
   if (condition === 'foreign-identity') writeFileSync(join(f.capture.root, 'isolated-page-reopen.test.ts', 'file-identity.json'), JSON.stringify({ collectedTestPath: join(f.tests, 'foreign.test.ts') }));
-  if (condition === 'unknown-file') writeFileSync(join(f.capture.root, 'extra'), 'not archived');
   if (condition === 'symlink') { rmSync(f.first); symlinkSync(join(f.capture.root, 'persistent-raw-reconnect.test.ts', 'persistent-raw-reconnect.json'), f.first); }
   const receipt = archiveInteropCapture(f.capture, f.output, condition !== 'changed-identity');
   assert.equal(receipt.status, 'incomplete'); assert.ok(receipt.files.length >= 20); assert.throws(() => verifyInteropArchive(f.output, receipt, f.tests));
@@ -90,4 +89,35 @@ test('bounded reader rejects in-place same-size mutation and pre-open symlink re
   syncBuiltinESMExports();
   try { assert.throws(() => readStableInteropFile(f.first, 32)); }
   finally { fs.openSync = originalOpen; syncBuiltinESMExports(); }
+});
+
+test('all 27 source-enumerated root receipts are separately archived, not core proof', t => {
+  const f = fixture(t);
+  assert.equal(Object.keys(SUPPLEMENTAL_INTEROP_WRITERS).length, 27);
+  for (const name of Object.keys(SUPPLEMENTAL_INTEROP_WRITERS)) writeFileSync(join(f.capture.root, name), JSON.stringify({ synthetic: name }));
+  const receipt = archiveInteropCapture(f.capture, f.output, true);
+  assert.equal(receipt.status, 'captured'); assert.equal(receipt.files.length, 21);
+  assert.equal(receipt.rootDiagnostics.acceptanceEvidence, false); assert.equal(receipt.rootDiagnostics.supplemental.length, 27);
+  for (const row of receipt.rootDiagnostics.supplemental) {
+    assert.equal(row.status, 'archived'); assert.equal(row.sourceTestPath, SUPPLEMENTAL_INTEROP_WRITERS[row.name]);
+    assert.deepEqual(readFileSync(join(f.output, 'interop/supplemental', row.name)), readFileSync(join(f.capture.root, row.name)));
+  }
+  verifyInteropArchive(f.output, receipt, f.tests);
+});
+test('unknown roots remain bounded visible diagnostics without reading contents or invalidating core', t => {
+  const f = fixture(t);
+  for (let i = 0; i < 130; i++) writeFileSync(join(f.capture.root, `unknown-${i}`), 'not proof or archived');
+  symlinkSync('/not-read-or-followed', join(f.capture.root, 'aaa-link'));
+  const receipt = archiveInteropCapture(f.capture, f.output, true); const unknown = receipt.rootDiagnostics.unknownRoots;
+  assert.equal(receipt.status, 'captured'); assert.equal(unknown.total, 131); assert.equal(unknown.retained, 128); assert.equal(unknown.uninspected, 3); assert.equal(unknown.truncated, true); assert.equal(unknown.unsafeObserved, 1);
+  assert.ok(unknown.entries.every(row => /^[a-f0-9]{64}$/.test(row.nameSha256))); assert.equal(receipt.rootDiagnostics.supplemental.length, 0);
+  verifyInteropArchive(f.output, receipt, f.tests);
+});
+test('unknown inside a required directory still fails; unsafe or capped supplemental output never becomes proof', t => {
+  const f = fixture(t); writeFileSync(join(f.capture.root, 'isolated-page-reopen.test.ts', 'unexpected.json'), '{}');
+  symlinkSync('/not-read-or-followed', join(f.capture.root, 'fresh-surface.json'));
+  const receipt = archiveInteropCapture(f.capture, f.output, true);
+  assert.equal(receipt.status, 'incomplete'); assert.ok(receipt.invalid.includes('isolated-page-reopen.test.ts/unexpected-entry'));
+  assert.equal(receipt.rootDiagnostics.supplemental[0]!.status, 'unavailable-unsafe-or-over-budget');
+  assert.throws(() => verifyInteropArchive(f.output, receipt, f.tests));
 });
