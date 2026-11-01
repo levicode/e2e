@@ -46,7 +46,7 @@ const ROOT_DIAGNOSTIC_LIMIT = 128;
 const SUPPLEMENTAL_BYTE_BUDGET = 32 * 1024 * 1024;
 function archiveRootDiagnostics(root: string, destination: string, names: string[]) {
   const supplemental: { name: string; sourceTestPath: string; status: string; bytes?: number; sha256?: string }[] = [];
-  const unknown = names.filter(name => !Object.hasOwn(SUPPLEMENTAL_INTEROP_WRITERS, name)).sort();
+  const unknown = names.filter(name => !Object.hasOwn(SUPPLEMENTAL_INTEROP_WRITERS, name)).toSorted();
   const entries = unknown.slice(0, ROOT_DIAGNOSTIC_LIMIT).map(name => {
     let kind = 'unavailable';
     try { const stat = lstatSync(join(root, name)); kind = stat.isSymbolicLink() ? 'symlink' : stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'nonregular'; } catch { /* Metadata only; never follow or read unknown entries. */ }
@@ -54,7 +54,7 @@ function archiveRootDiagnostics(root: string, destination: string, names: string
   });
   let remaining = SUPPLEMENTAL_BYTE_BUDGET;
   mkdirSync(join(destination, 'supplemental'));
-  for (const name of names.filter(name => Object.hasOwn(SUPPLEMENTAL_INTEROP_WRITERS, name)).sort()) {
+  for (const name of names.filter(entryName => Object.hasOwn(SUPPLEMENTAL_INTEROP_WRITERS, entryName)).toSorted()) {
     const sourceTestPath = SUPPLEMENTAL_INTEROP_WRITERS[name]!;
     try {
       const input = join(root, name); const stat = lstatSync(input);

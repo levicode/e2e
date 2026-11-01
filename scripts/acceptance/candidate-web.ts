@@ -197,9 +197,9 @@ function main(args: string[]): void {
     if (syntheticRequested && binarySha256 !== undefined && testSourceDigest !== undefined) {
       try {
         const nativeSource = join(REPO_ROOT, '.artifacts/native-source');
-        const nativeSourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: nativeSource, encoding: 'utf8' }).trim();
+        const diagnosticNativeSourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: nativeSource, encoding: 'utf8' }).trim();
         if (execFileSync('git', ['status', '--porcelain'], { cwd: nativeSource, encoding: 'utf8' }).trim()) throw new Error('Dirty native diagnostic source');
-        cleanupCapture = prepareCleanupCapture({ sourceRevision, nativeSourceRevision, testSourceDigest, binarySha256,
+        cleanupCapture = prepareCleanupCapture({ sourceRevision, nativeSourceRevision: diagnosticNativeSourceRevision, testSourceDigest, binarySha256,
           collectorSha256: sha256(readFileSync(join(REPO_ROOT, 'scripts/acceptance/candidate-cleanup-diagnostics.ts'))) }, phaseEnvironment);
         phaseEnvironment = cleanupCapture.env;
       } catch { /* Missing diagnostic setup is unknown and cannot alter original suite behavior. */ }
@@ -237,7 +237,7 @@ function main(args: string[]): void {
       } catch { /* Failed or unavailable reads cannot establish unchanged source/build identity. */ }
       try {
         interopEvidence = archiveInteropCapture(interopCapture, output, identityUnchanged);
-        if (interopEvidence.status !== 'captured') throw new Error('Interop evidence is missing, unsafe or source/build identity changed');
+        if (interopEvidence.status !== 'captured') { status = 'failed'; interopProblem = String(new Error('Interop evidence is missing, unsafe or source/build identity changed')); problem ??= interopProblem; }
       } catch (error) { status = 'failed'; interopProblem = String(error); problem ??= interopProblem; }
     }
     if (installerRuntime) {

@@ -424,8 +424,8 @@ export function validateInstalledRunClosed(value: unknown): Record<string, any> 
   const fail = (): never => { throw new Error('Invalid installed run closed diagnostic'); };
   const object = (v: unknown, keys: string[]): Record<string, any> => {
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return fail();
-    const actual = Object.keys(v).sort();
-    if (JSON.stringify(actual) !== JSON.stringify([...keys].sort())) return fail();
+    const actual = Object.keys(v).toSorted();
+    if (JSON.stringify(actual) !== JSON.stringify([...keys].toSorted())) return fail();
     return v as Record<string, any>;
   };
   const member = (v: unknown, values: readonly unknown[]) => { if (!values.includes(v)) fail(); };
@@ -535,7 +535,7 @@ export function collectInstalledEncoderFailure(project: string, evidence: string
     locationFence();
     assert.ok(length === before.size && after.size === before.size && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs);
     const value = JSON.parse(bytes.subarray(0, length).toString('utf8'));
-    const keys = (object: Record<string, unknown>, expected: string[]) => assert.deepEqual(Object.keys(object).sort(), expected.sort());
+    const keys = (object: Record<string, unknown>, expected: string[]) => assert.deepEqual(Object.keys(object).toSorted(), expected.toSorted());
     keys(value, ['schemaVersion', 'kind', 'acceptanceProof', 'error', 'reason', 'phase', 'finishedSeen', 'knownRole', 'acceptedEncoderSamples', 'readStage', 'pre', 'post', 'identityStable']);
     assert.equal(value.schemaVersion, 1); assert.equal(value.kind, 'encoder-observer-failure-only');
     assert.equal(value.acceptanceProof, false); assert.equal(value.error, 'argv-truncated');

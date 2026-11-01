@@ -358,7 +358,7 @@ test('v2 validator rejects secret fields, unknown tokens, overflow and contradic
     r => { r.steps.push(structuredClone(r.steps[0])); }, r => { r.files.calls.delta = 0; },
     r => { r.files.calls = { status: 'verified', before: 2, after: 1, delta: -1 }; },
     r => { r.projection = 'failed'; }, r => { r.exitCode = 99; }, r => { r.resultCount = 17; },
-    r => { r.steps[0].events = new Array(1); },
+    r => { r.steps[0].events = []; r.steps[0].events.length = 1; },
   ];
   for (const mutate of mutations) { const r = closed('replay', sampleRun()); mutate(r); assert.throws(() => validateInstalledRunClosed(r), { message: 'Invalid installed run closed diagnostic' }); }
 });

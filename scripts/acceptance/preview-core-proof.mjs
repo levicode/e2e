@@ -141,12 +141,12 @@ export async function verifyEvidence(directory, expectedManifestHash) {
  const seen=new Set();assert.ok(Array.isArray(receipt.inventory)&&receipt.inventory.length>0);
  for(const member of receipt.inventory){assert.equal(typeof member.path,'string');assert.ok(member.path&&!path.isAbsolute(member.path)&&!member.path.includes('\\')&&!member.path.split('/').some(p=>p==='..'||p==='.'));assert.ok(!seen.has(member.path));seen.add(member.path);const file=path.join(root,member.path);assert.ok(fs.lstatSync(file).isFile()&&!fs.lstatSync(file).isSymbolicLink());const real=fs.realpathSync(file);assert.ok(real.startsWith(root+path.sep));const bytes=read(member.path);assert.equal(bytes.length,member.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),member.sha256);noSecrets(bytes);}
  const list=dir=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>{const file=path.join(dir,entry.name);assert.ok(!entry.isSymbolicLink());return entry.isDirectory()?list(file):[path.relative(root,file).split(path.sep).join('/')];});
- assert.deepEqual(list(root).filter(name=>name!=='preview-core-result.json').sort(),[...seen].sort());
+ assert.deepEqual(list(root).filter(name=>name!=='preview-core-result.json').toSorted(),[...seen].toSorted());
  const manifestBytes=read('bundle-manifest.json');assert.equal(createHash('sha256').update(manifestBytes).digest('hex'),expectedManifestHash);const manifest=JSON.parse(manifestBytes);shaSafeIdentity(manifest);
  for(const key of ['source','nativeSource','platform','architecture'])assert.deepEqual(manifest[key],receipt[key]);assert.equal(manifest.native.sha256,receipt.nativeSha256);
  assert.equal(createHash('sha256').update(read('bundle-producer.json')).digest('hex'),manifest.producer.sha256);const producer=json('bundle-producer.json');assert.deepEqual(producer.source,manifest.nativeSource);assert.equal(producer.binary.sha256,manifest.native.sha256);assert.equal(producer.producer.platform,manifest.platform);assert.equal(producer.producer.architecture,manifest.architecture);
  const commands=json('commands.json'), identity=json('identity-before.json');
- const labels=['pnpm-version','install-bundle','install-chromium','baseline','repeat','secret'];assert.deepEqual(Object.keys(commands).sort(),labels.toSorted());
+ const labels=['pnpm-version','install-bundle','install-chromium','baseline','repeat','secret'];assert.deepEqual(Object.keys(commands).toSorted(),labels.toSorted());
  for(const key of ['manifestSha256','nativeSha256','source','nativeSource','platform','architecture','node','ai'])assert.deepEqual(identity[key],receipt[key]);
  assert.deepEqual(json('identity-after.json'),identity);assert.equal(identity.nativeOverrideAbsent,true);assert.equal(identity.chromiumOverrideAbsent,true);
  for(const key of ['bundleRoot','projectRoot','nodeExecutable'])assert.ok(path.isAbsolute(identity[key]));

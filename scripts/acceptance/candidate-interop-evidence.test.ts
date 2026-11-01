@@ -52,7 +52,7 @@ test('final receipt rejects changed bytes, paths, identities and detached summar
 test('orchestration always archives and checks HEAD/dist/native/binary even after a failed test', () => {
   const source = readFileSync(new URL('candidate-web.ts', import.meta.url), 'utf8');
   const cleanup = source.slice(source.indexOf('  finally {'), source.indexOf('    if (installerRuntime) {', source.indexOf('  finally {')));
-  for (const obligation of ['sourceState()', 'fingerprint(files)', "['rev-parse', 'HEAD']", "['rev-parse', 'HEAD^{tree}']", 'candidateDistInventory(REPO_ROOT)', 'sha256(readFileSync(binary))', 'nativeSourceRevision', 'nativeSourceTree', 'archiveInteropCapture(interopCapture, output, identityUnchanged)', "status = 'failed'"]) assert.ok(cleanup.includes(obligation), obligation);
+  for (const obligation of ['sourceState()', 'fingerprint(files)', "['rev-parse', 'HEAD']", "['rev-parse', 'HEAD^{tree}']", 'candidateDistInventory(REPO_ROOT)', 'sha256(readFileSync(binary))', 'nativeSourceRevision', 'nativeSourceTree', 'archiveInteropCapture(interopCapture, output, identityUnchanged)', "status = 'failed'"]) assert.notEqual(cleanup.indexOf(obligation), -1, obligation);
   assert.match(source, /if \(sourceState\(\) \|\| execFileSync\('git', \['rev-parse', 'HEAD'\]/);
   assert.doesNotMatch(source, /execFileSync\('git', \['clean'/);
 });
@@ -120,4 +120,21 @@ test('unknown inside a required directory still fails; unsafe or capped suppleme
   assert.equal(receipt.status, 'incomplete'); assert.ok(receipt.invalid.includes('isolated-page-reopen.test.ts/unexpected-entry'));
   assert.equal(receipt.rootDiagnostics.supplemental[0]!.status, 'unavailable-unsafe-or-over-budget');
   assert.throws(() => verifyInteropArchive(f.output, receipt, f.tests));
+});
+
+test('archive failure preserves the original problem and still reaches installer identity checks', () => {
+  const source = readFileSync(new URL('candidate-web.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('      try {\n        interopEvidence = archiveInteropCapture');
+  const end = source.indexOf('\n    }\n    if (installerRuntime)', start);
+  assert.ok(start >= 0 && end > start);
+  const check = new Function('archiveInteropCapture', 'priorProblem', `let status = 'passed'; let problem = priorProblem; let interopProblem; let interopEvidence; const interopCapture = {}; const output = 'synthetic'; const identityUnchanged = true; ${source.slice(start, end)}; const installerIdentityReached = true; return {status, problem, interopProblem, interopEvidence, installerIdentityReached};`) as (archive: () => unknown, prior: string | undefined) => { status: string; problem: string | undefined; interopProblem: string | undefined; interopEvidence: unknown; installerIdentityReached: boolean };
+  for (const prior of [undefined, 'Original functional failure']) {
+    for (const scenario of ['captured', 'missing', 'throws'] as const) {
+      let calls = 0;
+      const result = check(() => { calls += 1; if (scenario === 'throws') throw new Error('Archive failed'); return { status: scenario }; }, prior);
+      assert.equal(calls, 1); assert.equal(result.installerIdentityReached, true);
+      if (scenario === 'captured') { assert.equal(result.status, 'passed'); assert.equal(result.problem, prior); assert.equal(result.interopProblem, undefined); }
+      else { const expected = scenario === 'throws' ? 'Error: Archive failed' : 'Error: Interop evidence is missing, unsafe or source/build identity changed'; assert.equal(result.status, 'failed'); assert.equal(result.interopProblem, expected); assert.equal(result.problem, prior ?? expected); }
+    }
+  }
 });

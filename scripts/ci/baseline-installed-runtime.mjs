@@ -1,7 +1,7 @@
 /** Historical runtime + current JS diagnostic binding, never a fabricated native gate. */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync,writeFileSync,realpathSync,existsSync} from 'node:fs';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -12,12 +12,12 @@ const read=p=>JSON.parse(readFileSync(p,'utf8'));
 export function closedRecords(text){
  const rows=text.split('\n').filter(x=>x.startsWith('INSTALLED_RUN_CLOSED ')).map(x=>{assert.ok(x.length<=32768);return JSON.parse(x.slice(21));});
  assert.ok(rows.length<=2);const seen=new Set();
- const codes=['other','INVALID_CONFIG','CONFIG_NOT_FOUND','CONFIG_AMBIGUOUS','CONFIG_LOAD_FAILED','INVALID_GLOB','NO_TESTS','NO_TESTS_FOUND','COLLECTION_FAILED','MODEL_UNAVAILABLE','RUNNER_BUSY','UNSUPPORTED_CAPABILITY','TEST_SETUP_FAILED','POLICY_DENIED','REPLAY_STALE','REPORT_WRITE_FAILED'];
- const phases=['other','config','collection','filter','launch','beforeAll','beforeEach','body','afterEach','afterAll','cleanup','report'];
+ const codes=new Set(['other','INVALID_CONFIG','CONFIG_NOT_FOUND','CONFIG_AMBIGUOUS','CONFIG_LOAD_FAILED','INVALID_GLOB','NO_TESTS','NO_TESTS_FOUND','COLLECTION_FAILED','MODEL_UNAVAILABLE','RUNNER_BUSY','UNSUPPORTED_CAPABILITY','TEST_SETUP_FAILED','POLICY_DENIED','REPLAY_STALE','REPORT_WRITE_FAILED']);
+ const phases=new Set(['other','config','collection','filter','launch','beforeAll','beforeEach','body','afterEach','afterAll','cleanup','report']);
  for(const [index,x] of rows.entries()){
   if(x.schemaVersion===2){validateInstalledRunClosed(x);assert.equal(x.stage,index===0?'record':'replay');assert.ok(!seen.has(x.stage));seen.add(x.stage);continue;}
-  assert.deepEqual(Object.keys(x).sort(),['schemaVersion','evidence','stage','exitCode','status','resultCount','truncated','errors'].sort());assert.equal(x.schemaVersion,1);assert.equal(x.evidence,'partial-diagnostic-not-acceptance');assert.equal(x.stage,index===0?'record':'replay');assert.ok(!seen.has(x.stage));seen.add(x.stage);assert.ok([0,1,2,3,4,130,null].includes(x.exitCode));assert.ok(['passed','failed','blocked','interrupted','other'].includes(x.status));assert.ok(Number.isInteger(x.resultCount)&&x.resultCount>=0&&x.resultCount<=16);assert.equal(typeof x.truncated,'boolean');assert.ok(Array.isArray(x.errors)&&x.errors.length<=32);
-  for(const e of x.errors){assert.deepEqual(Object.keys(e).sort(),['scope','resultIndex','attemptIndex','stepIndex','code','category','phase'].sort());assert.ok(['run','attempt','secondary','step'].includes(e.scope));for(const [key,max]of [['resultIndex',15],['attemptIndex',3],['stepIndex',63]])assert.ok(Number.isInteger(e[key])&&e[key]>=-1&&e[key]<=max);assert.ok(codes.includes(e.code));assert.ok(['other','test','configuration','infrastructure','internal','interrupted'].includes(e.category));assert.ok(phases.includes(e.phase));if(e.scope==='run')assert.ok(e.resultIndex===-1&&e.attemptIndex===-1&&e.stepIndex===-1);else {assert.ok(e.resultIndex>=0&&e.resultIndex<x.resultCount&&e.attemptIndex>=0);assert.ok(e.scope==='step'?e.stepIndex>=0:e.stepIndex===-1);}}
+  assert.deepEqual(Object.keys(x).toSorted(),['schemaVersion','evidence','stage','exitCode','status','resultCount','truncated','errors'].toSorted());assert.equal(x.schemaVersion,1);assert.equal(x.evidence,'partial-diagnostic-not-acceptance');assert.equal(x.stage,index===0?'record':'replay');assert.ok(!seen.has(x.stage));seen.add(x.stage);assert.ok([0,1,2,3,4,130,null].includes(x.exitCode));assert.ok(['passed','failed','blocked','interrupted','other'].includes(x.status));assert.ok(Number.isInteger(x.resultCount)&&x.resultCount>=0&&x.resultCount<=16);assert.equal(typeof x.truncated,'boolean');assert.ok(Array.isArray(x.errors)&&x.errors.length<=32);
+  for(const e of x.errors){assert.deepEqual(Object.keys(e).toSorted(),['scope','resultIndex','attemptIndex','stepIndex','code','category','phase'].toSorted());assert.ok(['run','attempt','secondary','step'].includes(e.scope));for(const [key,max]of [['resultIndex',15],['attemptIndex',3],['stepIndex',63]])assert.ok(Number.isInteger(e[key])&&e[key]>=-1&&e[key]<=max);assert.ok(codes.has(e.code));assert.ok(['other','test','configuration','infrastructure','internal','interrupted'].includes(e.category));assert.ok(phases.has(e.phase));if(e.scope==='run')assert.ok(e.resultIndex===-1&&e.attemptIndex===-1&&e.stepIndex===-1);else {assert.ok(e.resultIndex>=0&&e.resultIndex<x.resultCount&&e.attemptIndex>=0);assert.ok(e.scope==='step'?e.stepIndex>=0:e.stepIndex===-1);}}
  }
  if(rows.length===2)assert.ok(rows[0].exitCode===0&&rows[0].status==='passed');return rows;
 }
@@ -40,7 +40,7 @@ export function collectSdkObservation(installed,peerValue,log){
 function main(mode){
  const c=read('scripts/ci/baseline-installed-binding.json');const git=(...a)=>execFileSync('git',a,{encoding:'utf8'}).trim();
  assert.equal(process.env.GITHUB_REF,c.exactRef);assert.equal(process.env.GITHUB_RUN_ATTEMPT,'1');assert.equal(process.env.GITHUB_REPOSITORY,'levicode/e2e');assert.equal(process.version,'v24.22.1');assert.equal(git('status','--porcelain'),'');assert.equal(git('rev-parse','HEAD'),process.env.GITHUB_SHA);
- const source={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};const paths=git('diff-tree','--no-commit-id','--name-only','-r',c.baseCommit,'HEAD').split('\n').filter(Boolean).sort();assert.deepEqual(paths,[...c.allowedDelta].sort());
+ const source={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};const paths=git('diff-tree','--no-commit-id','--name-only','-r',c.baseCommit,'HEAD').split('\n').filter(Boolean).toSorted();assert.deepEqual(paths,[...c.allowedDelta].toSorted());
  for(const [p,h]of Object.entries(c.producer209)){assert.equal(H(readFileSync(p)),h);assert.equal(H(execFileSync('git',['show',`HEAD:${p}`])),h);}
  assert.equal(H(readFileSync('scripts/ci/full-standard-runtime-pins.json')),c.originalPinsSHA256);assert.equal(read('.github/native-candidate.json').commit,c.ordinary.nativeSource.commit);
  const dir=join(process.env.RUNNER_TEMP,'baseline-installed-runtime');const pin=c.ordinary;const executable=verifyArtifact(dir,pin.manifestSha256,pin.expected);const m=read(join(dir,'manifest.json'));assert.deepEqual(m.nativeSource,pin.nativeSource);assert.equal(H(readFileSync(executable)),pin.binarySha256);assert.equal(m.compilerSha256,pin.compiler.compilerSHA256);assert.equal(m.rustcSha256,pin.compiler.rustcSHA256);

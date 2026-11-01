@@ -21,7 +21,7 @@ export function verifyCurrentSource(c,git,bytes,env){
  assert.equal(env.GITHUB_REF,c.exactRef);assert.equal(env.GITHUB_RUN_ATTEMPT,'1');assert.equal(env.GITHUB_REPOSITORY,'levicode/e2e');
  const source={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};
  assert.match(source.commit,/^[a-f0-9]{40}$/);assert.match(source.tree,/^[a-f0-9]{40}$/);assert.equal(source.commit,env.GITHUB_SHA);assert.notEqual(source.commit,c.baseCommit,'New consumer must not impersonate historical build');assert.equal(git('rev-parse','HEAD^'),c.baseCommit);assert.equal(git('status','--porcelain'),'');
- assert.deepEqual(git('diff-tree','--no-commit-id','--name-only','-r',c.baseCommit,'HEAD').split('\n').filter(Boolean).sort(),[...c.allowedDelta].sort());
+ assert.deepEqual(git('diff-tree','--no-commit-id','--name-only','-r',c.baseCommit,'HEAD').split('\n').filter(Boolean).toSorted(),[...c.allowedDelta].toSorted());
  const excluded=new Set(c.sourceSealExclusions);const seal=git('ls-tree','-r','HEAD').split('\n').filter(Boolean).filter(s=>!excluded.has(s.split('\t')[1])).join('\n')+'\n';assert.equal(H(seal),c.sourceSealSHA256,'Full source seal');
  for(const [p,h]of Object.entries(c.producer209)){assert.equal(H(bytes(p)),h,'producer209 bytes');assert.equal(H(Buffer.from(git('show',`HEAD:${p}`),'binary')),h,'producer209 committed bytes');}
  for(const [p,h]of Object.entries(c.fixedInputs))assert.equal(H(bytes(p)),h,'Fixed lock/native input');
@@ -39,7 +39,7 @@ function main(mode){
   writeFileSync(join(out,'source-pins.sha256'),JSON.stringify(c.fixedInputs)+'\n',{flag:'wx'});
   const acceptance=names.filter(p=>/^scripts\/acceptance\/[^/]+[.]test[.]ts$/.test(p)),scripts=names.filter(p=>p.startsWith('scripts/')&&p.endsWith('.test.ts'));
   assert.equal(acceptance.length,32);assert.equal(scripts.length,45);
-  for(const [n,v]of [['acceptance-files.txt',acceptance],['whole-scripts-files.txt',scripts]])writeFileSync(join(out,n),v.sort().join('\n')+'\n',{flag:'wx'});
+  for(const [n,v]of [['acceptance-files.txt',acceptance],['whole-scripts-files.txt',scripts]])writeFileSync(join(out,n),v.toSorted().join('\n')+'\n',{flag:'wx'});
   return;
  }
  const dir=resolve(process.env.RUNNER_TEMP,'focused-installed-runtime');verifyFocusedArtifact(dir,c.focusedManifest,c.focusedManifestSHA256);
