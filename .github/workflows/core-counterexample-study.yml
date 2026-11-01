@@ -1,0 +1,107 @@
+name: New native inventory diagnostic N30 (not acceptance)
+'on':
+  push:
+    branches: [ci/core-inventory-diagnostic-20261101]
+permissions:
+  contents: read
+concurrency:
+  group: frozen-core-counterexample-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  study:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '1'
+      E2E_TELEMETRY_DISABLED: '1'
+      E2E_UPDATE_CHECK_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: tooling
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: eb2702e09464b9d13dd45d1b722eea9e623c5069
+          path: subject
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+        with:
+          package_json_file: subject/package.json
+      - name: Owned short root, exact separate identities and pure controls
+        run: |
+          set -euo pipefail
+          node --test tooling/scripts/diagnostic/core-counterexample.test.mjs
+          node --input-type=module <<'ROOT'
+          import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
+          const root=fs.mkdtempSync(path.join(fs.realpathSync('/tmp'),'ec.'));fs.chmodSync(root,0o700);
+          const s=fs.lstatSync(root);assert.ok(s.isDirectory()&&!s.isSymbolicLink());assert.equal(fs.realpathSync(root),root);assert.equal(s.uid,process.getuid());
+          for(const name of ['home','tmp','metadata'])fs.mkdirSync(path.join(root,name),{mode:0o700});
+          const home=path.join(root,'core-project','home'),socket='e2e-'+ '0'.repeat(36)+'.sock',xdg=process.env.XDG_RUNTIME_DIR;
+          const defaultBytes=Buffer.byteLength(path.join(home,'.agent-browser',socket)),effectiveBytes=Buffer.byteLength(path.join(xdg?path.join(xdg,'agent-browser'):path.join(home,'.agent-browser'),socket));assert.ok(defaultBytes<=103&&effectiveBytes<=103);
+          fs.writeFileSync(path.join(root,'metadata','root-owner.json'),JSON.stringify({dev:s.dev,ino:s.ino,uid:s.uid,defaultBytes,effectiveBytes})+'\n',{flag:'wx'});
+          const values={STUDY_ROOT:root,HOME:path.join(root,'home'),TMPDIR:path.join(root,'tmp'),RUSTUP_HOME:process.env.RUSTUP_HOME||path.join(process.env.HOME,'.rustup'),CARGO_HOME:process.env.CARGO_HOME||path.join(process.env.HOME,'.cargo')};for(const v of Object.values(values))assert.ok(!/[\r\n]/.test(v));fs.appendFileSync(process.env.GITHUB_ENV,Object.entries(values).map(([k,v])=>k+'='+v+'\n').join(''));
+          ROOT
+          test "$(git -C tooling rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C subject rev-parse HEAD)" = eb2702e09464b9d13dd45d1b722eea9e623c5069
+          test "$(git -C subject rev-parse 'HEAD^{tree}')" = 8f31e3c028ba336eb9df3e73dbba8d0b4088a13c
+          test -z "$(git -C tooling status --porcelain)"
+          test -z "$(git -C subject status --porcelain)"
+      - name: Documented fresh setup on frozen subject (not tooling checkout)
+        working-directory: subject
+        run: |
+          set -uo pipefail
+          s=0
+          node scripts/setup-source-native.mjs "$STUDY_ROOT/build" "$STUDY_ROOT/user-project" > "$STUDY_ROOT/metadata/setup.stdout.log" 2> "$STUDY_ROOT/metadata/setup.stderr.log" || s=$?
+          printf '%s\n' "$s" > "$STUDY_ROOT/metadata/setup.exit"
+          exit "$s"
+      - name: Source-matched default harness and all 6 new plus 9 original controls
+        timeout-minutes: 75
+        run: |
+          set -euo pipefail
+          node tooling/scripts/diagnostic/core-counterexample.mjs --native-controls "$GITHUB_WORKSPACE/subject" "$STUDY_ROOT/build" "$STUDY_ROOT/native-controls"
+      - name: Retain targeted Rust control evidence immediately, independent of study outcome
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: native-inventory-controls-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: ${{ env.STUDY_ROOT }}/native-controls
+      - name: Separate canonical seed then all 30 samples, any failure remains failure
+        timeout-minutes: 11
+        run: |
+          set -uo pipefail
+          unset E2E_AGENT_BROWSER_EXECUTABLE E2E_CHROMIUM_EXECUTABLE NODE_PATH NODE_OPTIONS GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+          digest="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.env.STUDY_ROOT+"/build/trusted-manifest.json")).sha256)')"
+          node tooling/scripts/diagnostic/core-counterexample.mjs "$GITHUB_WORKSPACE/subject" "$STUDY_ROOT/build/bundle" "$digest" "$STUDY_ROOT/core-project" "$STUDY_ROOT/study-evidence" "$STUDY_ROOT/native-controls"
+      - name: Final subject and tooling pristine, owned root unchanged
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test "$(git -C tooling rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C subject rev-parse HEAD)" = eb2702e09464b9d13dd45d1b722eea9e623c5069
+          test "$(git -C subject rev-parse 'HEAD^{tree}')" = 8f31e3c028ba336eb9df3e73dbba8d0b4088a13c
+          test -z "$(git -C tooling status --porcelain)"
+          test -z "$(git -C subject status --porcelain)"
+          node --input-type=module <<'CHECK'
+          import assert from 'node:assert/strict';import fs from 'node:fs';const root=process.env.STUDY_ROOT,before=JSON.parse(fs.readFileSync(root+'/metadata/root-owner.json')),after=fs.lstatSync(root);assert.ok(after.isDirectory()&&!after.isSymbolicLink());assert.equal(fs.realpathSync(root),root);for(const k of ['dev','ino','uid'])assert.equal(after[k],before[k]);assert.equal(after.mode&0o777,0o700);
+          CHECK
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ always() }}
+        with:
+          name: frozen-core-study-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            ${{ env.STUDY_ROOT }}/metadata
+            ${{ env.STUDY_ROOT }}/build/*.json
+            ${{ env.STUDY_ROOT }}/build/*.log
+            ${{ env.STUDY_ROOT }}/study-evidence
+            ${{ env.STUDY_ROOT }}/native-controls
