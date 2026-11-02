@@ -84,11 +84,28 @@ jobs:
         run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
       - name: Build
         run: pnpm run build
+      - name: Prepare exact iframe diagnostic custody
+        continue-on-error: true
+        run: python3 scripts/ci/benchmark-iframe-capture.py prepare
       - name: Run test
         env:
+          E2E_AGENT_BROWSER_EXECUTABLE: ${{ env.E2E_BENCHMARK_CAPTURE_EXECUTABLE || env.E2E_AGENT_BROWSER_EXECUTABLE }}
           # The reporter posts the comment with the job's token.
           GITHUB_TOKEN: ${{ github.token }}
         run: pnpm --filter @e2e-dev/web-benchmark run test
+      - name: Retain only closed iframe diagnostic receipts
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python3 scripts/ci/benchmark-iframe-capture.py collect
+      - name: Upload closed iframe diagnostic receipts
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmark-iframe-closed
+          path: evidence/benchmark-iframe-closed.json
+          if-no-files-found: warn
+          retention-days: 7
       # The engine's tree against Chrome's accessibility tree and Playwright's
       # getByRole on every scenario, against the disagreements committed in
       # packages/web/tests/crosscheck/expected.txt. `test` built the app.

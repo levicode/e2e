@@ -1,3 +1,4 @@
+import { observeBenchmarkIframeResult, observeBenchmarkIframeTerminal } from './benchmark-iframe-diagnostics.ts';
 import { captureSecretsContext, observeSecretsQuery, observeSecretsClose, type SecretsContext, type SecretsCloseStage } from './secrets-diagnostics.ts';
 import { DISCONNECTED_RECOVERY_CAPABILITY, TERMINAL_RECORDING_CAPABILITY } from './capabilities.ts';
 import { collectFinalizedRecording, type FinalizedRecordingIdentity, type FinalizedVideoBytes, type FinalizedVideoSnapshot, type FinalizedRecordingCommand } from './finalized-recording.ts';
@@ -601,6 +602,7 @@ export class NativeClient {
         const lifecycleOpenCancelCommand = kind === 'request' && (message['command'] === 'page.activate' || message['command'] === 'page.navigate' || message['command'] === 'browser.observe') ? message['command'] : undefined;
         const lifecycleOpenCancelFailure = lifecycleOpenCancelCommand !== undefined && settled.type === 'result' && !settled.ok ? settled : undefined;
         const pageUrlFailure = kind === 'request' && message['command'] === 'page.url' && settled.type === 'result' && !settled.ok ? settled : undefined;
+        if (settled.type === 'result') observeBenchmarkIframeResult(this, context.attemptId, message['command'], settled);
         let timeoutRewritten = false;
         // A local deadline may race the native cancellation signal. Only a reusable,
         // definitive failure can preserve the caller's original timeout reason.
@@ -696,7 +698,7 @@ export class NativeClient {
       else this.dispatchEvent(message, bytes, arrived);
       return;
     }
-    if (message.type === 'error') throw new ReceiveFailure('native-refusal', message.error.code);
+    if (message.type === 'error') { observeBenchmarkIframeTerminal(this, message.error.code); throw new ReceiveFailure('native-refusal', message.error.code); }
     const pending = this.pending.get(message.id);
     if (pending === undefined || (pending.generation !== undefined && message.generation !== pending.generation)) throw new ReceiveFailure('response-correlation');
     const expected = pending.kind === 'hello' ? 'ready' : (pending.kind === 'request' || pending.kind === 'artifact') ? 'result' : pending.kind === 'close' ? 'closed' : 'control-result';

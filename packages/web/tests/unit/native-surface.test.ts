@@ -57,6 +57,7 @@ let recordingMissing: number | undefined;
 const recordingBytes = Buffer.from('synthetic-finalized-segment');
 let cancellationObserved: (() => void) | undefined;
 let holdScopeEnd = false;
+let failCloseForTraceControl = false;
 let holdClose = false;
 let releaseClose: (() => void) | undefined;
 let holdDecision = false;
@@ -75,6 +76,7 @@ let acknowledgeCancel: (() => void) | undefined;
 let interceptRequest: ((frame: Record<string, unknown>, reply: (result: Record<string, unknown>) => void, resources: NativeInteropResources, replace: ((nextScope: string) => Promise<Record<string, unknown>>) | undefined) => boolean) | undefined;
 let sendEvent: (event: string, payload: Record<string, unknown>, decision?: { token: string; timeoutMs: number }) => Promise<void>;
 beforeEach(() => {
+  failCloseForTraceControl = false;
   holdClose = false; releaseClose = undefined;
   continueExactOwner = false; environmentBrowser = 'Synthetic Chromium'; environmentUserAgent = 'synthetic-agent';
   interceptRequest = undefined; cancellationObserved = undefined;
@@ -112,6 +114,11 @@ beforeEach(() => {
       const frame = JSON.parse(chunk.toString()) as Record<string, unknown>; frames.push(frame);
       if (frame['type'] === 'hello') send({ type: 'ready', id: frame['id'], protocol: 'agent-browser-session/1', sessionId: 'synthetic-peer', generation: 1, capabilities, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
       else if (frame['type'] === 'close') {
+        if (failCloseForTraceControl) {
+          const refuse = () => send({ type: 'error', error: { code: 'cleanup-failed' }, scopeState: 'quarantined' });
+          if (holdClose) releaseClose = refuse; else refuse();
+          done(); return;
+        }
         const respond = () => { resources?.closeNative(); send({ type: 'closed', id: frame['id'], generation: 1, scopeState: 'closed' }); };
         if (holdClose) releaseClose = respond; else respond();
       }
@@ -4171,4 +4178,30 @@ it('does not start a late body release after failed attempt cleanup or into anot
     await expect(surface.dispose(cleanup())).rejects.toBe(failure);
     expect(frames.filter(frame => frame['command'] === 'network.body.release')).toHaveLength(0);
   } finally { finish(); await surface.dispose(cleanup()).catch(() => undefined); }
+});
+
+
+describe('benchmark iframe optional trace failure chain control', () => {
+  it('preserves a completed action but refuses later business after quarantined optional trace and failed Close', async () => {
+    const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
+    const screen = vi.fn(); await surface.startAttempt({ ...context('iframe-control'), screen });
+    await surface.open('https://synthetic.test/', operation());
+    const snapshot = await surface.observe(operation()); screen.mockClear();
+    const beforeTrace = frames.filter(frame => frame['command'] === 'browser.trace').length;
+    const peer = holdRequests('browser.trace');
+    try {
+      const action = surface.perform(snapshot.root.ref, { kind: 'tap' }, operation());
+      const trace = await peer.next('browser.trace');
+      failCloseForTraceControl = true; holdClose = true;
+      trace.fail('cleanup-failed', 'unknown');
+      await expect(action).resolves.toBeUndefined();
+      expect(screen).not.toHaveBeenCalled();
+      await expect(surface.observe(operation())).rejects.toThrow('The native browser session is not available');
+      expect(releaseClose).toBeDefined(); releaseClose!();
+      await expect(surface.endAttempt(cleanup())).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser protocol became invalid (native-refusal:cleanup-failed)' });
+      await expect(surface.startAttempt(context('retry'))).rejects.toThrow('provider recording cleanup is unresolved');
+      expect(frames.filter(frame => frame['command'] === 'browser.trace')).toHaveLength(beforeTrace + 1);
+      expect(frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    } finally { await surface.dispose(cleanup()).catch(() => undefined); }
+  });
 });

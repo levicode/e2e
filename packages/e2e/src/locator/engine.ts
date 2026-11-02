@@ -121,9 +121,9 @@ export class LocatorEngine {
   }
 
   /** Deadline for one action-family operation, capped by the running phase's deadline. */
-  deadline(timeoutMs?: number): Deadline {
+  deadline(timeoutMs?: number, now: number = Date.now()): Deadline {
     return Deadline.min(
-      new Deadline(timeoutMs ?? this.options.actionTimeout),
+      new Deadline(timeoutMs ?? this.options.actionTimeout, now),
       this.options.budget.deadline,
     );
   }
@@ -244,13 +244,13 @@ export class LocatorEngine {
   }
 
   /** `resolveExactlyOne`, timing how long it polled before the match appeared. */
-  private async resolveCounted(expression: LocatorExpression, deadline: Deadline): Promise<Resolved> {
+  private async resolveCounted(expression: LocatorExpression, deadline: Deadline, admittedAtMs?: number): Promise<Resolved> {
     const startedMs = Date.now();
     // The wait as it happened: a deadline capped by the test's remaining
     // budget waited less than the action timeout, and the report says so.
     const notFound = (cause?: unknown) =>
       new TestError('LOCATOR_NOT_FOUND', `locator matched no nodes within ${describeExpression(expression)}`, {
-        details: locatorDetails(expression, Date.now() - startedMs),
+        details: locatorDetails(expression, Date.now() - (admittedAtMs ?? startedMs)),
         ...(cause === undefined ? {} : { cause }),
       });
     let sampled = false;
@@ -481,7 +481,10 @@ export class LocatorEngine {
     action: LocatorAction | ((deadline: Deadline) => Promise<LocatorAction>),
     timeoutMs?: number,
   ): Promise<void> {
-    await this.performUntil(expression, action, this.deadline(timeoutMs));
+    // The initial lookup reports from the same admission instant as its budget.
+    // A clock tick before resolving must not shorten the reported wait.
+    const admittedAtMs = Date.now();
+    await this.performUntil(expression, action, this.deadline(timeoutMs, admittedAtMs), admittedAtMs);
   }
 
   /** Performs one pointer action at a viewport point, with no node behind it. */
@@ -615,13 +618,14 @@ export class LocatorEngine {
     expression: LocatorExpression,
     action: LocatorAction | ((deadline: Deadline) => Promise<LocatorAction>),
     deadline: Deadline,
+    admittedAtMs?: number,
   ): Promise<void> {
     if (typeof action !== 'function') this.checkAction(action);
     const startedAt = timestamp();
     const startedMs = Date.now();
     let stale = 0;
     for (;;) {
-      const { ref, waitedMs } = await this.resolveCounted(expression, deadline);
+      const { ref, waitedMs } = await this.resolveCounted(expression, deadline, stale === 0 ? admittedAtMs : undefined);
       // Read now, from the resolve's own cache: a dragTo's target resolve
       // below supersedes this ref, and the node it named would be gone.
       const node = this.options.recordEvent === undefined ? undefined : await this.session.read(ref, this.operationWithin(deadline)).catch(() => undefined);

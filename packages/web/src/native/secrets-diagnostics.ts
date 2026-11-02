@@ -108,7 +108,7 @@ function emit(context: SecretsContext | undefined, event: SecretsEvent): boolean
     flushLoss();
     const kind = data(event, 'kind');
     if (typeof kind !== 'string' || !Object.hasOwn(schema, kind)) return;
-    if ((kind === 'first-cause' && suite !== 'unserved-model-two-workers') || ((kind === 'process-binding' || kind === 'close') && suite !== 'engine-secrets')) return;
+    if ((kind === 'first-cause' && suite !== 'unserved-model-two-workers') || (kind === 'process-binding' && suite !== 'engine-secrets')) return;
     const rules = schema[kind as SecretsEvent['kind']];
     const descriptors = Object.getOwnPropertyDescriptors(event);
     if (Object.keys(descriptors).length !== Object.keys(rules).length + 1) return;
@@ -222,7 +222,7 @@ function clientRecord(client: object, context: SecretsContext) {
 }
 function close(client: object, context: SecretsContext | undefined, stage: SecretsCloseStage, outcome: 'observed' | 'completed' | 'failed', closedFrameConfirmed: boolean): void {
   try {
-    if (suite !== 'engine-secrets' || stopped || context === undefined || !contexts.has(context)) return;
+    if (stopped || context === undefined || !contexts.has(context)) return;
     if (enabledNonce() !== context.captureNonce) { markLoss('owner-unjoined', context.captureNonce); return; }
     const record = clientRecord(client, context);
     if (record === undefined) return;

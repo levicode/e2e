@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "cf5c16944480758d184683867843fb47016e1c1d",
-    "tree": "e5cfd1b20ca09e67526570008ec7762e83de6287",
+    "commit": "e59bfef68490796975ad4f5e57285705de7644fd",
+    "tree": "035395fd00afbd648f20bbbb1ed36bd7199600f2",
     "lockSHA256": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb"
   },
   "required": [
@@ -252,7 +252,19 @@
     "connection::test_isolated_client_env_popup_relay_is_exact_and_feature_gated",
     "native::client_settlement_trace::terminal_enrollment_diagnostic_tests::terminal_enrollment_refusals_are_closed_and_optional",
     "native::client_observation_dispatch::tests::observe_box_command_diagnostic_never_reclassifies_policy_or_cleanup",
-    "native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt"
+    "native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt",
+    "native::client_debt::tests::realm_destruction_discharges_object_component_but_not_input_effect",
+    "native::client_debt::tests::early_release_ack_cannot_discharge_late_creation_and_disposal_is_once_only",
+    "native::client_debt::tests::unsent_old_receipt_never_submits_into_or_drops_a_later_group_lifecycle",
+    "native::client_debt::tests::abandoning_unsubmitted_group_does_not_leak_an_obligation",
+    "native::client_debt::tests::rejected_object_release_is_retained_debt_not_cleanup_success",
+    "native::client_debt::tests::readonly_child_group_detach_discharges_only_child_and_preserves_parent_owner",
+    "native::client_debt::tests::readonly_group_new_context_epoch_never_borrows_prior_realm_cleanup",
+    "native::client_debt::tests::readonly_group_pending_release_exact_session_detach_is_discharged",
+    "native::client_debt::tests::readonly_group_release_before_exact_realm_destroy_is_discharged",
+    "native::client_debt::tests::readonly_group_unknown_creator_preserves_pending_and_rejected_cleanup_on_realm_destroy",
+    "native::client_debt::tests::readonly_group_wrong_realm_session_or_frame_detach_keeps_rejected_debt",
+    "native::client_debt::tests::readonly_group_unknown_creator_after_release_reservation_revokes_realm_retirement"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance"

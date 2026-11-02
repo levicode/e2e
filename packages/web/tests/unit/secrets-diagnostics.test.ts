@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
 const source = new URL('../../src/native/secrets-diagnostics.ts', import.meta.url);
-const names = ['E2E_ENGINE_SECRETS_CAPTURE', 'E2E_ENGINE_SECRETS_DIAGNOSTIC', 'E2E_ENGINE_SECRETS_CAPTURE_NONCE'] as const;
+const names = ['E2E_ENGINE_SECRETS_CAPTURE', 'E2E_ENGINE_SECRETS_DIAGNOSTIC', 'E2E_ENGINE_SECRETS_CAPTURE_NONCE', 'E2E_ENGINE_SECRET_SUITE_CAPTURE', 'E2E_UNSERVED_MODEL_CAPTURE', 'E2E_NATIVE_DIAGNOSTIC_SUITE'] as const;
 let fixture = 0;
 async function controlled(run: (module: typeof import('../../src/native/secrets-diagnostics.ts'), lines: string[]) => void | Promise<void>): Promise<void> {
   const previous = names.map(name => process.env[name]);
@@ -11,6 +11,7 @@ async function controlled(run: (module: typeof import('../../src/native/secrets-
   const lines: string[] = [];
   try {
     process.env[names[0]] = '1'; process.env[names[1]] = '1'; process.env[names[2]] = 'a'.repeat(64);
+    delete process.env[names[3]]; delete process.env[names[4]]; process.env[names[5]] = 'engine-secrets';
     process.stderr.write = ((chunk: string | Uint8Array) => { lines.push(String(chunk)); return true; }) as typeof process.stderr.write;
     await run(await import(`${source.href}?control=${++fixture}`), lines);
   } finally {

@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, constants, accessSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { installedChromium } from '../acceptance/installed-chromium.ts';
 import { verifyFixtureRuntimeArtifacts } from './spec-fixture-runtime.ts';
 import { expectation } from './native-runtime.ts';
 import { POPUP_JOINT_CASE_ENTRY } from './popup-joint-case.ts';
@@ -23,10 +24,12 @@ export function socketBudget(env:NodeJS.ProcessEnv):number {
 export function owned(file:string,directory=false):string {
   assert.ok(path.isAbsolute(file));assert.equal(realpathSync(file),file);const st=lstatSync(file);assert.equal(st.uid,process.getuid?.());assert.equal(st.mode&0o022,0);assert.ok(directory?st.isDirectory():st.isFile());assert.ok(!st.isSymbolicLink());if(!directory)assert.equal(st.nlink,1);return file;
 }
-export function installedChromiumPath(source:string,input:NodeJS.ProcessEnv,resolve:(command:string,args:string[],options:{cwd:string;env:NodeJS.ProcessEnv;encoding:'utf8';timeout:number})=>string=execFileSync):string {
-  const script="import { createRequire } from 'node:module';import path from 'node:path';const require=createRequire(path.join(process.cwd(),'packages/web/package.json'));process.stdout.write(require('playwright-core').chromium.executablePath());";
-  const value=resolve(process.execPath,['--input-type=module','-e',script],{cwd:source,env:cleanJointEnvironment(input),encoding:'utf8',timeout:10000});
-  assert.ok(path.isAbsolute(value)&&!/[\r\n]/.test(value),'Closed installed Chromium path');return value;
+export async function installedChromiumPath(input:NodeJS.ProcessEnv, discover:typeof installedChromium=installedChromium):Promise<string> {
+  const env=cleanJointEnvironment(input);assert.ok(env['HOME'],'Owned installer HOME required');
+  const home=owned(env['HOME'],true);const cache=owned(path.join(home,'.agent-browser/browsers'),true);
+  const found=await discover(cache);const chrome=owned(found.executablePath);
+  const relative=path.relative(cache,chrome);assert.ok(relative&&!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative),'Installed Chromium escapes native cache');
+  accessSync(chrome,constants.X_OK);assert.equal(hash(chrome),found.sha256,'Installed Chromium hash changed');return chrome;
 }
 export function installVerifiedProduction(verify:()=>{binary:string}, source:string, root:string, input:NodeJS.ProcessEnv, run:(command:string,args:string[],options:SpawnSyncOptionsWithStringEncoding)=>SpawnSyncReturns<string>=spawnSync):void {
   const {binary}=verify(); // A mismatched producer/role/source must fail before executing the installer.
@@ -37,7 +40,7 @@ export function installVerifiedProduction(verify:()=>{binary:string}, source:str
   writeFileSync(path.join(root,'evidence/install.json'),JSON.stringify({kind:'public-chromium-install',acceptanceEvidence:false,productionBinarySHA256:hash(binary),exit:p.status,signal:p.signal,error:p.error?'spawn-or-timeout':null,stdoutSHA256:hash(path.join(root,'install.stdout')),stderrSHA256:hash(path.join(root,'install.stderr'))},null,2)+'\n',{flag:'wx',mode:0o600});
   assert.equal(p.status,0,'Verified production public Chromium install failed');assert.equal(p.signal,null);assert.equal(p.error,undefined);
 }
-function main(args:string[]):void {
+async function main(args:string[]):Promise<void> {
   assert.equal(args.length,7);const [prod,prodSHA,prodAttempt,fault,faultSHA,faultAttempt,output]=args as [string,string,string,string,string,string,string];
   const root=owned(output,true);owned(path.join(root,'evidence'),true);
   const source=process.cwd();assert.equal(execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(),'','Dirty diagnostic source');const binding=JSON.parse(readFileSync('scripts/ci/popup-joint-binding.json','utf8'));
@@ -54,7 +57,7 @@ function main(args:string[]):void {
   const pythonProof=JSON.parse(readFileSync(path.join(root,'python.json'),'utf8'));
   assert.equal(pythonProof.version,'3.12.9');assert.equal(pythonProof.websockets,'15.0.1');assert.equal(pythonProof.wheelSHA256,binding.wheelSHA256);assert.ok(pythonProof.module.startsWith(path.join(root,'venv')+path.sep));assert.equal(hash(python),pythonProof.pythonSHA256);
   installVerifiedProduction(()=>verifyFixtureRuntimeArtifacts(production,fixture),source,root,process.env);
-  const chrome=owned(realpathSync(installedChromiumPath(source,process.env)));accessSync(chrome,constants.X_OK);
+  const chrome=await installedChromiumPath(process.env);
   const env:NodeJS.ProcessEnv={...cleanJointEnvironment(process.env),E2E_CHROMIUM_EXECUTABLE:chrome,E2E_TELEMETRY_DISABLED:'1'};
   owned(env['XDG_RUNTIME_DIR']||env['HOME']!,true);const socketPathBytes=socketBudget(env);
   const result:{kind:string;acceptanceEvidence:false;status:string;command:unknown;probes:unknown[];postIdentity:boolean;metadata:string}={kind:'managed-popup-joint',acceptanceEvidence:false,status:'incomplete',command:null,probes:[],postIdentity:false,metadata:'incomplete'};
@@ -83,4 +86,4 @@ function main(args:string[]):void {
   }
   process.exitCode=failed?1:0;
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)main(process.argv.slice(2));
+if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href)await main(process.argv.slice(2));

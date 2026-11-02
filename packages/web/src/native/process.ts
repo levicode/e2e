@@ -1,3 +1,4 @@
+import { bindBenchmarkIframeProcess } from './benchmark-iframe-diagnostics.ts';
 import { bindSecretsClientProcess, captureSecretsContext, captureSecretsProcessContext } from './secrets-diagnostics.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -90,6 +91,7 @@ export async function connectNativeProcess(options: NativeProcessOptions, operat
   try {
     const client = await NativeClient.connect({ readable: child.stdout, writable: child.stdin, dispose, settle, ...(trace === undefined ? {} : { acceptanceTrace: trace }) }, options.capabilities, operation, onEvent);
     bindSecretsClientProcess(client, child.pid, diagnosticProcess, diagnostic);
+    bindBenchmarkIframeProcess(client, child.pid);
     return client;
   } catch (error) {
     dispose();

@@ -39,9 +39,28 @@ test('workflow downloads both artifacts before the verified runtime and has no p
  const source=readFileSync(new URL('./popup-joint-runtime.ts',import.meta.url),'utf8');assert.ok(source.indexOf('installVerifiedProduction(()=>verifyFixtureRuntimeArtifacts')<source.indexOf("for(const role of ['production','fault']"));
 });
 
-test('Chrome resolver uses the same clean cache environment as install, including npm fallback names',()=>{
- const input={HOME:'/owned/home',PLAYWRIGHT_BROWSERS_PATH:'/wrong',npm_config_playwright_browsers_path:'/wrong2',npm_package_config_playwright_browsers_path:'/wrong3',AGENT_BROWSER_ACCEPTANCE_POPUP_RELAY_SCRIPT:'forbidden'};
- assert.equal(installedChromiumPath('/source',input,(_command,_args,options)=>{assert.deepEqual(options.env,{HOME:'/owned/home'});assert.equal(options.cwd,'/source');return '/owned/home/chrome';}),'/owned/home/chrome');
- for(const value of ['relative','/chrome\nforged'])assert.throws(()=>installedChromiumPath('/source',input,()=>value));
- assert.deepEqual(cleanJointEnvironment(input),{HOME:'/owned/home'});
+test('native public installer layout wins over XDG and Playwright caches',async()=>{
+ const root=mkdtempSync(path.join(realpathSync(os.tmpdir()),'native-chrome-'));
+ try {
+  const home=path.join(root,'home');const native=path.join(home,'.agent-browser/browsers/chrome-156.0.8078.4/chrome-linux64');mkdirSync(native,{recursive:true,mode:0o700});const executable=path.join(native,'chrome');writeFileSync(executable,'synthetic official-layout file, never executed',{mode:0o700});
+  const xdg=path.join(root,'xdg');mkdirSync(xdg,{mode:0o700});const input={HOME:home,XDG_CACHE_HOME:xdg,PLAYWRIGHT_BROWSERS_PATH:'/wrong',npm_config_playwright_browsers_path:'/wrong2',npm_package_config_playwright_browsers_path:'/wrong3'};
+  assert.equal(await installedChromiumPath(input),executable);assert.equal(await installedChromiumPath({HOME:home}),executable);
+  assert.equal(cleanJointEnvironment(input)['PLAYWRIGHT_BROWSERS_PATH'],undefined);
+  const source=readFileSync(new URL('../setup-source-native.mjs',import.meta.url),'utf8');assert.ok(source.includes("join(baseEnv.HOME,'.agent-browser/browsers')"));
+  const publicCli=readFileSync(new URL('../../packages/web/src/cli.ts',import.meta.url),'utf8');assert.ok(publicCli.includes('run: runNativeInstall'));
+  const publicInstall=readFileSync(new URL('../../packages/web/src/native/install.ts',import.meta.url),'utf8');assert.ok(publicInstall.includes('resolveNativeExecutable(context.env, context.cwd)'));
+  const second=path.join(home,'.agent-browser/browsers/chrome-155.0.0.1');mkdirSync(second);writeFileSync(path.join(second,'chrome'),'other',{mode:0o700});await assert.rejects(installedChromiumPath(input),/exactly one/);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test('native cache discovery fails closed for missing cache, symlink escape and false digest',async()=>{
+ const root=mkdtempSync(path.join(realpathSync(os.tmpdir()),'native-chrome-neg-'));
+ try {
+  const home=path.join(root,'home');mkdirSync(home);await assert.rejects(installedChromiumPath({HOME:home}));await assert.rejects(installedChromiumPath({HOME:'relative'}));
+  const cache=path.join(home,'.agent-browser/browsers');const version=path.join(cache,'chrome-156.0.8078.4');mkdirSync(version,{recursive:true});const outside=path.join(root,'external');writeFileSync(outside,'synthetic',{mode:0o700});symlinkSync(outside,path.join(version,'chrome'));await assert.rejects(installedChromiumPath({HOME:home}),/escapes/);
+  rmSync(version,{recursive:true});mkdirSync(version);const executable=path.join(version,'chrome');writeFileSync(executable,'synthetic',{mode:0o700});
+  await assert.rejects(installedChromiumPath({HOME:home},async()=>({executablePath:outside,sha256:'0'.repeat(64)})),/escapes/);
+  await assert.rejects(installedChromiumPath({HOME:home},async()=>({executablePath:executable,sha256:'0'.repeat(64)})),/hash changed/);
+  chmodSync(executable,0o600);await assert.rejects(installedChromiumPath({HOME:home}));
+  const linkedHome=path.join(root,'linked-home');symlinkSync(home,linkedHome);await assert.rejects(installedChromiumPath({HOME:linkedHome}));
+ }finally{rmSync(root,{recursive:true,force:true});}
 });

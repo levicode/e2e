@@ -25,6 +25,7 @@ function deadline(remaining: () => { signal: AbortSignal; timeoutMs: number } = 
 
 beforeEach(() => {
   rows.length = 0;
+  vi.stubEnv('E2E_ENGINE_SECRET_SUITE_CAPTURE', ''); vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', ''); vi.stubEnv('E2E_NATIVE_DIAGNOSTIC_SUITE', 'engine-secrets');
   vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '1'); vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', '1'); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE_NONCE', 'a'.repeat(64));
   vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
     const text = String(chunk); if (text.startsWith('ENGINE_SECRETS_DIAGNOSTIC ')) rows.push(JSON.parse(text.slice('ENGINE_SECRETS_DIAGNOSTIC '.length)) as Row); return true;

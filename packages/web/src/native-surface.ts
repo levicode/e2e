@@ -1,3 +1,4 @@
+import { beginBenchmarkIframeAttempt } from './native/benchmark-iframe-diagnostics.ts';
 /** One native adapter owns a worker browser and each attempt's scoped resources. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -280,6 +281,7 @@ export class NativeSurface implements NativeWebSurface {
         retiringAttemptPresent: this.retiringAttempt !== undefined, connectingPresent: this.connecting !== undefined });
       throw invalidState('An attempt is active or its provider recording cleanup is unresolved');
     }
+    beginBenchmarkIframeAttempt(this.client, context.attemptId, context.artifactsDir);
     const attempt: Attempt = { epoch: 0, ready: false, pageReady: false, recoveryObservationRequired: false, context, retirement: new AbortController(), resourceCleanup: new AbortController(), wireRequests: new Set(), scope: '', counter: 0, videoCounter: 0, videoBlobBatches: new Set(), downloads: new Map(), downloadFiles: new Set(), recordingStarts: new Set(), lateRecordings: new Set(), lateRecordingStops: new Map() };
     this.attempt = attempt; this.latch = new ErrorLatch(); this.listeners.clear();
     const startupSignal = AbortSignal.any([context.signal, attempt.retirement.signal]);
