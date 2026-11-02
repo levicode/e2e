@@ -94,6 +94,8 @@ where runs fail, but no test content, app content, or credentials. Opt out with
 > e2e is in active development on the way to 1.0. APIs and config can still
 > change between minor releases.
 
+The agent smoke test has run.
+
 ## Made by TesterArmy
 
 e2e is built by [TesterArmy](https://tester.army/?utm_source=e2e&utm_medium=github&utm_campaign=readme_footer),
