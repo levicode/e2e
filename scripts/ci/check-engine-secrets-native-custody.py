@@ -33,7 +33,21 @@ def rule(v,r):
     if 'oneOf'in r:return any(rule(v,x) for x in r['oneOf'])
     if 'object'in r:return type(v)is dict and set(v)<=set(r['object']) and set(r.get('required',[]))<=set(v) and all(rule(x,r['object'][k]) for k,x in v.items())
     return False
+def observe_initial_fields(row):
+    fields={'initialSample','prefixCheck','prefixRefusal','prefixDebt','prefixDebtCapped'}
+    if row.get('phase')!='ObserveInitialAcquisition':return not bool(fields.intersection(row))
+    base={'schemaVersion','source','pid','record','operationSeq','phase','droppedBefore','emittedBefore','suppressedBefore','overflow','generation'}
+    if not base<=set(row) or not set(row)<=base|fields:return False
+    prefix='prefixCheck' in row or 'prefixRefusal' in row
+    if prefix and not {'prefixCheck','prefixRefusal'}<=set(row):return False
+    if not prefix and ('initialSample' not in row or {'prefixDebt','prefixDebtCapped'}.intersection(row)):return False
+    counted=row.get('prefixRefusal') in {'integrity-lost','input-debt','object-debt','outstanding-commands'}
+    if counted != ('prefixDebt' in row) or counted != ('prefixDebtCapped' in row):return False
+    if row.get('prefixDebtCapped') is True and 65535 not in row['prefixDebt']:return False
+    return True
+
 def new_failure_fields(row):
+    if not observe_initial_fields(row):return False
     if 'inventoryFirstLoss' in row and not (row.get('phase')=='InventorySnapshot' and row.get('inventorySealed') is True and row.get('inventoryIntegrityLost') is True):return False
     if 'terminalProofRefusal' in row and not (row.get('phase')=='TerminalCleanupCheckpoint' and row.get('terminalCleanupStage')=='task-proof' and row.get('terminalCleanupOk') is False):return False
     if 'terminalEnrollmentRefusal' in row and not (row.get('phase')=='TerminalCleanupCheckpoint' and row.get('terminalCleanupStage')=='enrollment-proof' and row.get('terminalCleanupOk') is False):return False

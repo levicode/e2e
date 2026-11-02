@@ -18,6 +18,8 @@ function output(capture: ReturnType<typeof createEngineSecretsCapture>, index: n
 function emit(capture: ReturnType<typeof createEngineSecretsCapture>, index: number, value: unknown) { output(capture, index, prefix + JSON.stringify(value) + '\n'); }
 function complete(capture: ReturnType<typeof createEngineSecretsCapture>) { for (let i = 0; i < 5; i++) { emit(capture, i, row(i)); emit(capture, i, row(i, 'cleanup', worker, cleanup)); } }
 beforeEach(() => {
+  vi.stubEnv('E2E_ENGINE_SECRET_SUITE_CAPTURE', '');
+  vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', '');
   vi.stubEnv('GITHUB_RUN_ID', '123'); vi.stubEnv('GITHUB_RUN_ATTEMPT', '2'); vi.stubEnv('NODE_SELECTOR', process.versions.node);
   vi.stubEnv('E2E_CAPTURE_SOURCE_COMMIT', 'd'.repeat(40)); vi.stubEnv('E2E_CAPTURE_SOURCE_TREE', 'e'.repeat(40));
 });
@@ -299,5 +301,69 @@ describe('declared fullmatrix selector identity', () => {
     const env = { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', NODE_SELECTOR: selector as string, E2E_CAPTURE_SOURCE_COMMIT: 'a'.repeat(40), E2E_CAPTURE_SOURCE_TREE: 'b'.repeat(40) };
     const result = projectEngineSecretsIdentity(env, nodeVersion as string);
     if (accepted) expect(result).toMatchObject({ selector, nodeVersion }); else expect(result).toBeUndefined();
+  });
+});
+
+
+describe('dedicated engine-secret suite producer-to-sink wiring', () => {
+  it('does not let the engine-only flag enable the unserved suite or an unknown suite', async () => {
+    vi.stubEnv('E2E_ENGINE_SECRET_SUITE_CAPTURE', '1'); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '');
+    vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', '1'); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE_NONCE', nonce);
+    vi.resetModules(); const producer = await import('../../../web/src/native/secrets-diagnostics.ts');
+    for (const selected of ['unserved-model-two-workers', 'unknown']) {
+      vi.stubEnv('E2E_NATIVE_DIAGNOSTIC_SUITE', selected); expect(producer.createSecretsSurface()).toBeUndefined();
+    }
+  });
+
+  it('passes real producer query and cleanup rows through the suite collector without global capture', async () => {
+    vi.stubEnv('E2E_ENGINE_SECRET_SUITE_CAPTURE', '1');
+    vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '');
+    vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', undefined);
+    vi.stubEnv('E2E_NATIVE_DIAGNOSTIC_SUITE', undefined);
+    vi.stubEnv('GITHUB_WORKSPACE', '');
+    vi.resetModules();
+    const producer = await import('../../../web/src/native/secrets-diagnostics.ts');
+    const lines: string[] = [];
+    let sink: RunEventSink | undefined;
+    let current = 0;
+    vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+      const text = String(chunk);
+      if (sink) sink({ seq: 1, at: '2026-11-02T00:00:00.000Z', type: 'output', target: 'web', pair: pair(current), stream: 'stderr', text });
+      else lines.push(text);
+      return true;
+    });
+    const sentinel = { outcome: { report: report() } };
+    let calls = 0;
+    const result = await withEngineSecretsDiagnostics(async onEvent => {
+      calls++; sink = onEvent; expect(sink).toBeTypeOf('function');
+      expect(process.env['E2E_ENGINE_SECRETS_CAPTURE']).toBe('');
+      const surface = producer.createSecretsSurface()!;
+      expect(surface).toBeDefined();
+      for (current = 0; current < 5; current++) {
+        const context = surface.start()!;
+        if (current === 1) {
+          const raw = { error: { code: 'cleanup-failed', message: 'DO_NOT_CAPTURE_PRIVATE' }, effects: 'unknown', scopeState: 'quarantined' };
+          producer.observeSecretsQuery({}, context, 'fixture.query', raw, raw, {
+            generation: 1, operationSeq: 7, transmittedTimeoutMs: 500,
+            cancellation: undefined, timeoutRewritten: false, cancelAckSeen: false,
+          });
+        }
+        surface.emit(context, { kind: 'cleanup', ...cleanup } as Parameters<typeof surface.emit>[1]);
+      }
+      sink = undefined;
+      return sentinel;
+    });
+    expect(result).toBe(sentinel); expect(calls).toBe(1);
+    const captured = lines.filter(line => line.startsWith(prefix)).map(line => JSON.parse(line.slice(prefix.length)));
+    expect(captured.find(entry => entry.kind === 'query')).toMatchObject({ caseOrdinal: 2, command: 'fixture.query', rawCode: 'cleanup-failed', rawEffects: 'unknown', rawScopeState: 'quarantined', transmittedTimeoutMs: 500 });
+    expect(lines.join('')).toContain('"lifecycle":"observed"');
+    expect(lines.join('')).toContain('"nativeCapture":"unavailable"');
+    expect(lines.join('')).not.toContain('DO_NOT_CAPTURE_PRIVATE');
+    expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBeUndefined();
+  });
+  it.each(['', '0', 'true'])('leaves dedicated capture disabled for %j', async flag => {
+    vi.stubEnv('E2E_ENGINE_SECRET_SUITE_CAPTURE', flag); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '');
+    const run = vi.fn(async event => { expect(event).toBeUndefined(); return { outcome: { report: report() } }; });
+    await withEngineSecretsDiagnostics(run); expect(run).toHaveBeenCalledTimes(1);
   });
 });

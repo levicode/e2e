@@ -220,6 +220,7 @@ jobs:
       - name: Unit and integration tests
         env:
           E2E_UNSERVED_MODEL_CAPTURE: '1'
+          E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
           PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}

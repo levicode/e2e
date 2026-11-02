@@ -1106,11 +1106,13 @@ export class NativeSurface implements NativeWebSurface {
       // Terminal cleanup must not recover or create a replacement business scope.
       // Keep callback checks, the original budget, and wire-request retirement,
       // but dispatch only through the captured channel under its owning attempt.
+      // Business retirement must join this receipt, not cancel it. The existing
+      // resource owner still aborts at the exact cleanup deadline or terminal join.
       this.assertCallback(); this.latch.throwPending();
       const channel = attempt.channel;
       if (channel === undefined) throw invalidState('The native browser scope is not ready');
-      const result = await withinAttemptRequest({ ...operation, signal: attempt.retirement.signal }, attempt,
-        current => channel.command(name, args, current));
+      const result = await withinAttemptRequest({ ...operation, signal: attempt.resourceCleanup.signal }, attempt,
+        current => channel.command(name, args, current), attempt.resourceCleanup.signal);
       this.assertAttempt(attempt);
       return result;
     }
@@ -1902,14 +1904,14 @@ function assertPublicationBudget(operation: OperationContext): void {
   if (operation.timeoutMs <= 0) throw connectionDeadline('Native publication exhausted its original deadline');
 }
 
-async function withinAttemptRequest<T>(operation: OperationContext, attempt: Attempt, work: (operation: OperationContext) => Promise<T>): Promise<T> {
+async function withinAttemptRequest<T>(operation: OperationContext, attempt: Attempt, work: (operation: OperationContext) => Promise<T>, ownerSignal = attempt.retirement.signal): Promise<T> {
   let settle!: () => void;
   const settled = new Promise<void>(resolve => { settle = resolve; });
   // Register before invoking the channel, including synchronous re-entry/throw.
   attempt.wireRequests.add(settled);
   try {
     return await work({
-      signal: AbortSignal.any([operation.signal, attempt.retirement.signal]),
+      signal: AbortSignal.any([operation.signal, ownerSignal]),
       // Preserve the caller's original monotonic deadline without refreshing it.
       get timeoutMs() { return operation.timeoutMs; },
       runId: operation.runId,

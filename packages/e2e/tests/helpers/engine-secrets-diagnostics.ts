@@ -215,7 +215,7 @@ export function projectEngineSecretsIdentity(env: Readonly<Record<string, string
 
 /** Capture cannot change the original nested run's return value or thrown object. */
 export async function withEngineSecretsDiagnostics<T extends { outcome: { report: unknown } }>(run: (onEvent: RunEventSink | undefined, env?: NodeJS.ProcessEnv) => Promise<T>, projectDir?: string): Promise<T> {
-  if (process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1') return run(undefined);
+  if (process.env['E2E_ENGINE_SECRET_SUITE_CAPTURE'] !== '1' && process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1') return run(undefined);
   const selectedSuite = process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'];
   if ((process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== undefined && process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== '0')
     || (selectedSuite !== undefined && selectedSuite !== 'engine-secrets' && selectedSuite !== 'unserved-model-two-workers')) {

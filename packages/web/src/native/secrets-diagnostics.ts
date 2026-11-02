@@ -8,6 +8,12 @@ export interface SecretsProcessContext { readonly suite: DiagnosticSuite; readon
 const processContexts = new WeakSet<SecretsProcessContext>();
 const processIds = new WeakMap<object, { readonly pid: number; readonly suite: DiagnosticSuite; readonly nonce: string }>();
 const hex = /^[a-f0-9]{64}$/;
+/** A dedicated capture flag admits only its exact suite; legacy opt-in is unchanged. */
+function captureEnabled(suite: string): boolean {
+  return process.env['E2E_ENGINE_SECRETS_CAPTURE'] === '1'
+    || (suite === 'unserved-model-two-workers' && process.env['E2E_UNSERVED_MODEL_CAPTURE'] === '1')
+    || (suite === 'engine-secrets' && process.env['E2E_ENGINE_SECRET_SUITE_CAPTURE'] === '1');
+}
 const admissions = ['callback-check', 'require-attempt', 'owner-check', 'pending-latch', 'caller-aborted', 'download-readiness', 'ensure-connected', 'final-owner-check'] as const;
 const retirements = ['download-file', 'retire-attempt', 'finalized-video', 'recording-stop', 'late-recording-stop', 'connection-cleanup', 'native-video-retire', 'interop-retire', 'playwright-close', 'scope-end', 'native-close', 'provider-release', 'publication', 'worker-release', 'worker-acquisition-cleanup', 'native-resource-cleanup', 'unknown'] as const;
 const codes = new Set(['frame-not-found', 'frame-ambiguous', 'invalid-frame', 'unsupported-protocol', 'unsupported-capability', 'stale-generation', 'scope-unavailable', 'sequence-reused', 'invalid-sequence', 'invalid-timeout', 'capacity-exceeded', 'operation-missing', 'content-length-mismatch', 'redirect-body-unavailable', 'unsupported-command', 'deadline-exceeded', 'cancelled', 'invalid-arguments', 'invalid-locator', 'browser-failure', 'stale-scope', 'cleanup-failed', 'stale-reference', 'policy-denied', 'not-actionable', 'intercepted-pointer', 'checked-state-unchanged', 'checked-control-replaced', 'fill-unsupported-target', 'no-editable-focus', 'tap-target-replaced-before-press', 'locator-not-found', 'decision-missing', 'decision-expired', 'decision-kind-mismatch', 'registry-missing', 'registry-in-use', 'identifier-exhausted', 'unknown']);
@@ -72,7 +78,7 @@ function data(value: unknown, key: string): unknown {
 function enabledNonce(): string | undefined {
   const selected = process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'] ?? 'engine-secrets';
   if (selected !== suite) return undefined;
-  if (process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1' || process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== '1') return undefined;
+  if (!captureEnabled(suite) || process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== '1') return undefined;
   const nonce = process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'];
   return nonce !== undefined && hex.test(nonce) ? nonce : undefined;
 }
@@ -250,7 +256,7 @@ export function captureSecretsProcessContext(): SecretsProcessContext | undefine
   try {
     const suite = process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'] ?? 'engine-secrets';
     const nonce = process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'];
-    if (process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== '1' || process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1'
+    if (process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC'] !== '1' || !captureEnabled(suite)
       || (suite !== 'engine-secrets' && suite !== 'unserved-model-two-workers') || nonce === undefined || !hex.test(nonce)) return undefined;
     const captured = Object.freeze({ suite, nonce }); processContexts.add(captured); return captured;
   } catch { return undefined; }

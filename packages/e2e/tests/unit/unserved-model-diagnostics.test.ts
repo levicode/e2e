@@ -15,7 +15,7 @@ function failure(c: Capture, n: number) { emit(c, n, row(n, 'retirement', { stag
 beforeEach(() => {
   vi.stubEnv('GITHUB_RUN_ID', '123'); vi.stubEnv('GITHUB_RUN_ATTEMPT', '1'); vi.stubEnv('NODE_SELECTOR', process.versions.node);
   vi.stubEnv('E2E_CAPTURE_SOURCE_COMMIT', 'd'.repeat(40)); vi.stubEnv('E2E_CAPTURE_SOURCE_TREE', 'e'.repeat(40));
-  vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', '');
+  vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', ''); vi.stubEnv('E2E_ENGINE_SECRET_SUITE_CAPTURE', '');
   vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', ''); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '');
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
@@ -189,5 +189,65 @@ describe('normal spec dedicated unavailable-model opt-in', () => {
     const run = vi.fn(async sink => { expect(sink).toBeUndefined(); return sentinel; });
     expect(await withUnservedModelDiagnostics(run)).toBe(sentinel); expect(run).toHaveBeenCalledTimes(1);
     expect(lines.join('')).toContain('identity-unavailable'); expect(lines.join('')).not.toContain('_BEGIN');
+  });
+});
+
+
+describe('dedicated helper to actual native diagnostic producer', () => {
+  it('collects real producer rows from two worker instances without enabling the other suite', async () => {
+    vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', '1');
+    const lines: string[] = [];
+    let forward: ((line: string) => void) | undefined;
+    vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+      const line = String(chunk); lines.push(line); forward?.(line); return true;
+    });
+    const r = report(); r.run.results[1]!.attempts[0]!.cleanup = 'failed';
+    r.run.results[1]!.attempts[0]!.secondaryErrors = [{ code: 'ENGINE_FAILURE', phase: 'cleanup' }];
+    const sentinel = { outcome: { report: r } };
+    let calls = 0;
+    const result = await withUnservedModelDiagnostics(async sink => {
+      calls++; expect(sink).toBeTypeOf('function');
+      expect(process.env['E2E_ENGINE_SECRETS_CAPTURE']).toBe('');
+      for (let n = 0; n < 2; n++) {
+        vi.resetModules();
+        const producer = await import('../../../web/src/native/secrets-diagnostics.ts');
+        forward = line => sink!({ type: 'output', seq: 1, at: '2026-11-02T00:00:00.000Z', target: 'web', pair: pair(n), stream: 'stderr', text: line });
+        expect(producer.captureSecretsProcessContext()?.suite).toBe('unserved-model-two-workers');
+        const surface = producer.createSecretsSurface(); expect(surface).toBeDefined();
+        const context = surface!.start(); expect(context).toBeDefined();
+        if (n === 1) surface!.emit(context, { kind: 'retirement', stage: 'scope-end', before: 'undefined', after: 'value' });
+        surface!.emit(context, { kind: 'cleanup', ...clean, reason: n === 1 ? 'receipt-failed' : 'complete', dirty: 'unknown' });
+        const active = process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'];
+        process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'] = 'engine-secrets';
+        expect(producer.createSecretsSurface()).toBeUndefined();
+        expect(producer.captureSecretsProcessContext()).toBeUndefined();
+        process.env['E2E_NATIVE_DIAGNOSTIC_SUITE'] = active;
+        forward = undefined;
+      }
+      return sentinel;
+    });
+    expect(result).toBe(sentinel); expect(calls).toBe(1);
+    const custody = lines.find(line => line.startsWith('UNSERVED_MODEL_DIAGNOSTIC_CUSTODY '));
+    expect(JSON.parse(custody!.slice('UNSERVED_MODEL_DIAGNOSTIC_CUSTODY '.length))).toMatchObject({ lifecycle: 'observed', workerBindings: 2, invalidRecords: 0 });
+    expect(lines.some(line => line.startsWith('ENGINE_SECRETS_DIAGNOSTIC '))).toBe(false);
+    expect(process.env['E2E_ENGINE_SECRETS_CAPTURE']).toBe('');
+    expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('');
+  });
+  it.each([
+    ['0', 'unserved-model-two-workers', '1', 'a'.repeat(64)],
+    ['true', 'unserved-model-two-workers', '1', 'a'.repeat(64)],
+    ['1', 'engine-secrets', '1', 'a'.repeat(64)],
+    ['1', 'unknown', '1', 'a'.repeat(64)],
+    ['1', 'unserved-model-two-workers', '0', 'a'.repeat(64)],
+    ['1', 'unserved-model-two-workers', '1', 'invalid'],
+  ])('rejects incomplete dedicated gate %j / %j / %j / %j', async (capture, suite, diagnostic, captureNonce) => {
+    vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', capture); vi.stubEnv('E2E_NATIVE_DIAGNOSTIC_SUITE', suite);
+    vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', diagnostic); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE_NONCE', captureNonce);
+    vi.resetModules();
+    const producer = await import('../../../web/src/native/secrets-diagnostics.ts');
+    const write = vi.spyOn(process.stderr, 'write');
+    expect(producer.createSecretsSurface()).toBeUndefined();
+    expect(producer.captureSecretsProcessContext()).toBeUndefined();
+    expect(write).not.toHaveBeenCalled();
   });
 });

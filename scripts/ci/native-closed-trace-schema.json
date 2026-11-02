@@ -61,7 +61,8 @@
         "TerminalCleanupCheckpoint",
         "ServiceWorkerAdmission",
         "CaptureStarted",
-        "CaptureLimitReached"
+        "CaptureLimitReached",
+        "ObserveInitialAcquisition"
       ]
     },
     "droppedBefore": {
@@ -1017,6 +1018,38 @@
         "int": 9007199254740991
       },
       "length": 2
-    }
+    },
+    "initialSample": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "prefixCheck": {
+      "enum": [
+        "before-yield",
+        "after-yield"
+      ]
+    },
+    "prefixRefusal": {
+      "enum": [
+        "ledger-unavailable",
+        "cleanup-observed",
+        "owner-mismatch",
+        "cleanup-owner-refused",
+        "admission-refused",
+        "integrity-lost",
+        "input-debt",
+        "object-debt",
+        "outstanding-commands"
+      ]
+    },
+    "prefixDebt": {
+      "array": {
+        "int": 65535
+      },
+      "length": 3
+    },
+    "prefixDebtCapped": "bool"
   }
 }

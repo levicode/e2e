@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { onActionCaptureEnvironment } from '../../packages/e2e/tests/helpers/on-action-capture.ts';
@@ -28,5 +28,5 @@ test('relative, symlink and public parents cannot become capture roots', () => {
     symlinkSync(root, link); assert.equal(onActionCaptureEnvironment({ E2E_ON_ACTION_CAPTURE_DIR: link }), undefined);
     assert.equal(onActionCaptureEnvironment({ E2E_ON_ACTION_CAPTURE_DIR: 'relative' }), undefined);
     chmodSync(root, 0o755); assert.equal(onActionCaptureEnvironment({ E2E_ON_ACTION_CAPTURE_DIR: root }), undefined);
-  } finally { rmSync(link, { force: true }); rmSync(root, { recursive: true, force: true }); }
+  } finally { try { unlinkSync(link); } finally { rmSync(root, { recursive: true, force: true }); } }
 });

@@ -2292,6 +2292,80 @@ describe('native surface ownership and fixed policy binding', () => {
     } finally { release?.(); acknowledgeCancel?.(); await ending; await surface.dispose(cleanup()).catch(() => undefined); }
   });
 
+  it.each(['success', 'refusal'] as const)('joins a failed trigger unsubscribe without cancelling its exact cleanup owner on endAttempt (%s)', async result => {
+    const surface = new NativeSurface({}); await start(surface);
+    const scope = surface.identityScope;
+    let release!: () => void; let entered!: () => void;
+    const reached = new Promise<void>(resolve => { entered = resolve; });
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'download.unsubscribe') return false;
+      release = () => reply(result === 'success'
+        ? { ok: true, data: null, effects: 'completed', scopeState: 'usable' }
+        : { ok: false, error: { code: 'cleanup-failed' }, effects: 'not-dispatched', scopeState: 'usable' });
+      entered(); return true;
+    };
+    const fixture = createBrowserFixture(surface.fixtureSurface(), {
+      operation, signal, attachArtifact: vi.fn(),
+      fixture: (_name: string, target: object) => target, expectable: (target: object) => target,
+      app: { resolveUrl: (url: string) => new URL(url, 'http://fixture.test/').href },
+    } as unknown as EngineFixtureContext);
+    const primary = new Error('synthetic trigger failure');
+    let ending: Promise<unknown> | undefined;
+    try {
+      await expect(fixture.waitForDownload(async () => { throw primary; })).rejects.toBe(primary);
+      await reached;
+      let ended = false;
+      ending = surface.endAttempt(cleanup()).catch(cause => cause).finally(() => { ended = true; });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(ended).toBe(false);
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
+      expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+      release();
+      if (result === 'success') expect(await ending).toBeUndefined();
+      else expect(await ending).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser operation failed (cleanup-failed)' });
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe').map(frame => frame['args'])).toEqual([{ identityScope: scope, subscriptionId: 'synthetic-subscription' }]);
+      expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(1);
+    } finally {
+      release?.(); acknowledgeCancel?.(); await ending;
+      await surface.dispose(cleanup()).catch(() => undefined);
+    }
+  });
+
+  it('still cancels an owned unsubscribe at the original cleanup deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const surface = new NativeSurface({}); await start(surface);
+    let entered!: () => void; let release!: () => void;
+    const reached = new Promise<void>(resolve => { entered = resolve; });
+    interceptRequest = (frame, reply) => {
+      if (frame['command'] !== 'download.unsubscribe') return false;
+      release = () => reply({ ok: false, error: { code: 'cancelled' }, effects: 'not-dispatched', scopeState: 'usable' });
+      entered(); return true;
+    };
+    const { subscriptionId } = await surface.command('download.subscribe', {}, operation());
+    const retiring = surface.command('download.unsubscribe', { subscriptionId }, operation()).catch(cause => cause);
+    let ending: Promise<unknown> | undefined;
+    try {
+      await reached;
+      ending = surface.endAttempt({ ...cleanup(), timeoutMs: 50 }).catch(cause => cause);
+      await vi.advanceTimersByTimeAsync(49);
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(frames.filter(frame => frame['type'] === 'cancel')).toHaveLength(1);
+      acknowledgeCancel?.(); release();
+      // The expired ordinary cleanup budget cancels resource work. Exact
+      // terminal Close can still prove retirement; it is not new mutation time.
+      expect(await ending).toBeUndefined();
+      expect(frames.some(frame => frame['type'] === 'close')).toBe(true);
+      expect(frames.filter(frame => frame['command'] === 'scope.end')).toHaveLength(0);
+      await retiring;
+      expect(frames.filter(frame => frame['command'] === 'download.unsubscribe')).toHaveLength(1);
+      await expect(surface.command('page.title', {}, operation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    } finally {
+      release?.(); acknowledgeCancel?.(); await retiring; await ending;
+      await surface.dispose(cleanup()).catch(() => undefined); vi.useRealTimers();
+    }
+  });
+
   it('cleans the captured download scope without initiating recovery for a cancelled caller', async () => {
     const surface = new NativeSurface({ connect: { cdpEndpoint: () => 'ws://synthetic.test/browser', reconnectEndpoint: () => 'ws://synthetic.test/browser' } });
     await start(surface);
