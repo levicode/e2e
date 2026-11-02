@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "9f5076ec691f3cd114416d36d857ec2aae2ac0bc",
-    "tree": "1a09a5ff6cff7b238cd1a63b2f23b3a39777d719",
+    "commit": "ae499166652b4be9c09da2d87c2d5c0ec9f1777a",
+    "tree": "9935596848a7434d8f10abe5076380b88565ccdf",
     "lockSHA256": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb"
   },
   "required": [
@@ -249,7 +249,10 @@
     "native::client_session::tests::typed_start_classifies_unsignalled_expiry_at_the_locked_decision",
     "native::client_session::tests::typed_start_keeps_duplicate_and_hard_authority_checks_distinct",
     "native::client_session::tests::typed_start_preserves_first_stop_before_expired_clock",
-    "connection::test_isolated_client_env_popup_relay_is_exact_and_feature_gated"
+    "connection::test_isolated_client_env_popup_relay_is_exact_and_feature_gated",
+    "native::client_settlement_trace::terminal_enrollment_diagnostic_tests::terminal_enrollment_refusals_are_closed_and_optional",
+    "native::client_observation_dispatch::tests::observe_box_command_diagnostic_never_reclassifies_policy_or_cleanup",
+    "native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance"

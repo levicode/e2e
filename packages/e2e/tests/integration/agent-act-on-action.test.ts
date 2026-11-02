@@ -14,6 +14,7 @@ import path from 'node:path';
 import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
 import { readEntries } from '../helpers/trace-cache.ts';
 import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
+import { onActionCaptureEnvironment } from '../helpers/on-action-capture.ts';
 import type { StepExecutor, StepExecutorContext } from '../../src/agent/executor.ts';
 
 const TITLE = 'screenshots every action';
@@ -235,13 +236,14 @@ describe('agent.act onAction', () => {
   }, 240_000);
 
   it('waits for the screen the action left before calling the hook', async () => {
+    const captureEnv = onActionCaptureEnvironment();
     const project = createProject({ 'tests/delayed.e2e.ts': DELAYED_SUITE });
     let outcome: RunOutcome | undefined;
     try {
       outcome = await runExisting(project, {
         appUrl: app.url,
         config: { tests: 'tests/**/*.e2e.ts', agents: { default: { executor: continueExecutor } } },
-        runOptions: popupEvalDiagnosticOptions(project.dir, app.url),
+        runOptions: { ...popupEvalDiagnosticOptions(project.dir, app.url), ...(captureEnv === undefined ? {} : { env: { ...captureEnv, CI: '', APP_URL: app.url } }) },
       });
       const result = resultByTitle(outcome, 'the hook sees a change that lands after the tap');
       const diagnostic = closedFailureDiagnostic(result.attempts, outcome.report.run.errors);

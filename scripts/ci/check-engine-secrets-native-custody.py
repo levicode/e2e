@@ -36,6 +36,10 @@ def rule(v,r):
 def new_failure_fields(row):
     if 'inventoryFirstLoss' in row and not (row.get('phase')=='InventorySnapshot' and row.get('inventorySealed') is True and row.get('inventoryIntegrityLost') is True):return False
     if 'terminalProofRefusal' in row and not (row.get('phase')=='TerminalCleanupCheckpoint' and row.get('terminalCleanupStage')=='task-proof' and row.get('terminalCleanupOk') is False):return False
+    if 'terminalEnrollmentRefusal' in row and not (row.get('phase')=='TerminalCleanupCheckpoint' and row.get('terminalCleanupStage')=='enrollment-proof' and row.get('terminalCleanupOk') is False):return False
+    if 'terminalProofCounts' in row:
+        counted={'enrollment-watermark','enrollment-pending','enrollment-realm-pending','enrollment-realm-tickets','enrollment-retiring','registry-reservations','registry-resuming','registry-bootstrap-creations','registry-bootstrap-cleanup','registry-cleanup-reservations','registry-auxiliary','registry-target-count','ledger-objects','ledger-groups','ledger-created-targets','ledger-recording-targets','ledger-target-count'}
+        if row.get('terminalEnrollmentRefusal') not in counted:return False
     return True
 def load_script(name):
     file=pathlib.Path(__file__).with_name(name+'.py');spec=importlib.util.spec_from_file_location(name,file);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module

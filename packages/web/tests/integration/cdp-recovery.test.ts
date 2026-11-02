@@ -1,3 +1,4 @@
+import { downloadRecoveryEvidence } from '../helpers/download-recovery-evidence.ts';
 import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 /** Real CDP transport drops preserve only the dedicated persistent context, never a replacement. */
 
@@ -36,6 +37,7 @@ const recoveryCaptures = new WeakMap<object, ReturnType<typeof beginCaseCleanupC
 /** Reuse the existing observer's bounded facts; this never enables the synthetic batch. */
 function recoveryContractSink(context: TestContext, id: SyntheticCaseId): SyntheticEvidence {
   const sink = beginSyntheticCase(id);
+  if (id === 'P12') return downloadRecoveryEvidence(sink, context.task.meta as Record<string, unknown>);
   if (id !== 'P07' && id !== 'P08') return sink;
   const diagnostic = id === 'P08' && process.env['E2E_CDP_RECOVERY_DIAGNOSTIC'] === '1';
   const contract: RecoveryContract = { schemaVersion: 1, caseId: id, invalid: false, facts: [], terminalCleanup: terminalCloseEvidence() };

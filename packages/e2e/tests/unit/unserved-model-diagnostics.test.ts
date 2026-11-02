@@ -15,6 +15,7 @@ function failure(c: Capture, n: number) { emit(c, n, row(n, 'retirement', { stag
 beforeEach(() => {
   vi.stubEnv('GITHUB_RUN_ID', '123'); vi.stubEnv('GITHUB_RUN_ATTEMPT', '1'); vi.stubEnv('NODE_SELECTOR', process.versions.node);
   vi.stubEnv('E2E_CAPTURE_SOURCE_COMMIT', 'd'.repeat(40)); vi.stubEnv('E2E_CAPTURE_SOURCE_TREE', 'e'.repeat(40));
+  vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', '');
   vi.stubEnv('E2E_ENGINE_SECRETS_DIAGNOSTIC', ''); vi.stubEnv('E2E_ENGINE_SECRETS_CAPTURE', '');
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
@@ -141,5 +142,52 @@ describe('declared fullmatrix selector identity', () => {
     const env = { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', NODE_SELECTOR: selector as string, E2E_CAPTURE_SOURCE_COMMIT: 'a'.repeat(40), E2E_CAPTURE_SOURCE_TREE: 'b'.repeat(40) };
     const result = projectUnservedModelIdentity(env, nodeVersion as string);
     if (accepted) expect(result).toMatchObject({ selector, nodeVersion }); else expect(result).toBeUndefined();
+  });
+});
+
+describe('normal spec dedicated unavailable-model opt-in', () => {
+  it('binds actual identity and emits the first cleanup cause without enabling other capture suites or retrying', async () => {
+    vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', '1');
+    const lines: string[] = []; vi.spyOn(process.stderr, 'write').mockImplementation(chunk => { lines.push(String(chunk)); return true; });
+    const r = report(); r.run.results[1]!.attempts[0]!.cleanup = 'failed';
+    r.run.results[1]!.attempts[0]!.secondaryErrors = [{ code: 'ENGINE_FAILURE', phase: 'cleanup' }];
+    const sentinel = { outcome: { report: r } };
+    let calls = 0;
+    const result = await withUnservedModelDiagnostics(async sink => {
+      calls++; expect(sink).toBeTypeOf('function');
+      expect(process.env['E2E_ENGINE_SECRETS_CAPTURE']).toBe('');
+      expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('1');
+      expect(process.env['E2E_NATIVE_DIAGNOSTIC_SUITE']).toBe('unserved-model-two-workers');
+      const activeNonce = process.env['E2E_ENGINE_SECRETS_CAPTURE_NONCE'];
+      const send = (n: number, kind: string, fields: Record<string, unknown> = {}) => sink!({ type: 'output', seq: 1, at: '2026-11-02T00:00:00.000Z', target: 'web', pair: pair(n), stream: 'stderr', text: prefix + JSON.stringify({ ...row(n, kind, fields), captureNonce: activeNonce }) + '\n' });
+      for (let n = 0; n < 2; n++) {
+        send(n, 'start');
+        if (n === 1) {
+          send(n, 'retirement', { stage: 'scope-end', before: 'undefined', after: 'value' });
+          send(n, 'first-cause', { stage: 'scope-end', code: 'unknown', category: 'unknown' });
+        }
+        send(n, 'cleanup', { ...clean, reason: n === 1 ? 'receipt-failed' : 'complete' });
+      }
+      return sentinel;
+    });
+    expect(result).toBe(sentinel); expect(calls).toBe(1);
+    const rows = lines.filter(line => line.startsWith(prefix)).map(line => JSON.parse(line.slice(prefix.length)));
+    expect(rows.filter(entry => entry.kind === 'first-cause')).toEqual([expect.objectContaining({ stage: 'scope-end', caseOrdinal: 2 })]);
+    expect(lines.join('')).toContain('"sourceCommit":"' + 'd'.repeat(40) + '"');
+    expect(lines.join('')).toContain('"lifecycle":"observed"');
+    expect(process.env['E2E_ENGINE_SECRETS_DIAGNOSTIC']).toBe('');
+  });
+  it.each(['', '0', 'true'])('does not enable dedicated capture for %j', async value => {
+    vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', value);
+    const run = vi.fn(async sink => { expect(sink).toBeUndefined(); return { outcome: { report: report() } }; });
+    await withUnservedModelDiagnostics(run); expect(run).toHaveBeenCalledTimes(1);
+  });
+  it('missing actual identity stays incomplete and preserves the workload without a retry', async () => {
+    vi.stubEnv('E2E_UNSERVED_MODEL_CAPTURE', '1'); vi.stubEnv('E2E_CAPTURE_SOURCE_TREE', '');
+    const lines: string[] = []; vi.spyOn(process.stderr, 'write').mockImplementation(chunk => { lines.push(String(chunk)); return true; });
+    const sentinel = { outcome: { report: report() } };
+    const run = vi.fn(async sink => { expect(sink).toBeUndefined(); return sentinel; });
+    expect(await withUnservedModelDiagnostics(run)).toBe(sentinel); expect(run).toHaveBeenCalledTimes(1);
+    expect(lines.join('')).toContain('identity-unavailable'); expect(lines.join('')).not.toContain('_BEGIN');
   });
 });

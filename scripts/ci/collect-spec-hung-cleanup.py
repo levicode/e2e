@@ -36,14 +36,14 @@ def directory(path):
     return value
 
 
-def identity(workspace, raw, env):
+def identity(workspace, raw, env, bound_files=BOUND_FILES):
     """Bind the existing collector, closed schema, test and selected runtime."""
     binding = closed.parse(closed.read(raw / "binding.json", 8192))
-    closed.exact(binding, {"schemaVersion", "sourceCommit", "sourceTree", "run", "attempt", "nodeVersion", "nativeCommit", "nativeSha256", *BOUND_FILES})
+    closed.exact(binding, {"schemaVersion", "sourceCommit", "sourceTree", "run", "attempt", "nodeVersion", "nativeCommit", "nativeSha256", *bound_files})
     closed.need(binding["schemaVersion"] == 1, "binding")
     for key in ["sourceCommit", "sourceTree", "nativeCommit"]:
         closed.need(type(binding[key]) is str and re.fullmatch("[a-f0-9]{40}", binding[key]), "binding")
-    for key in ["nativeSha256", *BOUND_FILES]:
+    for key in ["nativeSha256", *bound_files]:
         closed.need(type(binding[key]) is str and re.fullmatch("[a-f0-9]{64}", binding[key]), "binding")
     for key, name in [("sourceCommit", "GITHUB_SHA"), ("run", "GITHUB_RUN_ID"), ("attempt", "GITHUB_RUN_ATTEMPT")]:
         closed.need(binding[key] == env.get(name), "binding")
@@ -57,7 +57,7 @@ def identity(workspace, raw, env):
     if binding["validatorSha256"] != VALIDATOR_SHA256:
         raise ValueError("loaded-validator")
     schema = None
-    for key, file in BOUND_FILES.items():
+    for key, file in bound_files.items():
         data = closed.read(workspace / file, (128 if key == "schemaSha256" else 256) * 1024)
         closed.need(binding[key] == closed.sha(data), "binding")
         if key == "schemaSha256":

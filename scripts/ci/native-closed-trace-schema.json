@@ -959,6 +959,64 @@
         "local-integrity-lost",
         "no-owner-operations"
       ]
+    },
+    "terminalEnrollmentRefusal": {
+      "enum": [
+        "ledger-not-remote-eof",
+        "ledger-bootstrap-unpublished",
+        "ledger-context-creation",
+        "ledger-eval-publication",
+        "ledger-operations-empty",
+        "ledger-operation-identity",
+        "ledger-objects",
+        "ledger-groups",
+        "ledger-created-targets",
+        "ledger-recording-targets",
+        "ledger-bindings-empty",
+        "ledger-target-count",
+        "ledger-target-binding",
+        "ledger-lifecycle-binding",
+        "ledger-realm-binding",
+        "ledger-command-contract",
+        "registry-not-sealed",
+        "registry-integrity-lost",
+        "registry-not-ready",
+        "registry-reservations",
+        "registry-resuming",
+        "registry-protected-read",
+        "registry-bootstrap-creations",
+        "registry-bootstrap-cleanup",
+        "registry-cleanup-reservations",
+        "registry-unknown-creation",
+        "registry-auxiliary",
+        "registry-target-count",
+        "registry-target-binding",
+        "enrollment-failed",
+        "enrollment-not-reconciled",
+        "enrollment-watermark",
+        "enrollment-pending",
+        "enrollment-realm-pending",
+        "enrollment-realm-tickets",
+        "enrollment-restart",
+        "enrollment-blank",
+        "enrollment-retiring",
+        "enrollment-session-contract",
+        "enrollment-root-contract",
+        "enrollment-lifecycle",
+        "enrollment-ancestry",
+        "enrollment-terminal-proof",
+        "enrollment-client-identity",
+        "enrollment-terminal-watermark-missing",
+        "enrollment-cleanup-owner",
+        "enrollment-ledger-owner",
+        "enrollment-registry-owner"
+      ]
+    },
+    "terminalProofCounts": {
+      "array": {
+        "int": 9007199254740991
+      },
+      "length": 2
     }
   }
 }

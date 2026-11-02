@@ -51,7 +51,16 @@ test('ordinary Linux CI retains all jobs and uses standard runners on forks', ()
   for (const [file, count] of [['spec.yml', 4], ['docs.yml', 3], ['benchmark.yml', 4]] as const) {
     const workflow = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8');
     const runners = workflow.split('\n').filter((line) => line.startsWith('    runs-on:'));
-    assert.deepEqual(runners, Array.from({ length: count }, () => forkLinuxRunner), file);
+    const expected = Array.from({ length: count }, () => forkLinuxRunner);
+    if (file === 'spec.yml') {
+      expected.push('    runs-on: ubuntu-24.04', '    runs-on: ubuntu-24.04');
+      for (const name of ['popup-joint', 'native-targeted']) {
+        const body = workflow.split(`  ${name}:\n`)[1]?.split(/^  [\w-]+:\s*$/m)[0] ?? '';
+        assert.match(body, /^    runs-on: ubuntu-24\.04$/m, name);
+        assert.ok(body.includes("if: ${{ github.head_ref == 'ci/s25-main-integration-20261101' || github.ref == 'refs/heads/ci/s25-main-integration-20261101' }}"), name);
+      }
+    }
+    assert.deepEqual(runners, expected, file);
   }
   const benchmark = readFileSync(new URL('../.github/workflows/benchmark.yml', import.meta.url), 'utf8');
   assert.match(benchmark, /web-agent:[\s\S]*?if: >-\n      \$\{\{ github\.repository == 'tester-army\/e2e' && needs\.changes\.outputs\.web/);

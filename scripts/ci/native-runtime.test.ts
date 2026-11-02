@@ -114,7 +114,17 @@ test('ordinary workflows keep original tests and gates while making runtime prep
   const benchmark = read('workflows/benchmark.yml');
   assert.ok(spec.includes('node: [22, 24, 26, 22.22.3, 24.8.0]'));
   assert.ok(spec.includes('pnpm: [11, 12]'));
-  assert.ok(spec.includes('needs: [native-runtime, check, test, install]'));
+  assert.ok(spec.includes('needs: [native-runtime, check, test, install, native-targeted, popup-joint]'));
+  const job = (name: string) => spec.split(`  ${name}:\n`)[1]?.split(/^  [\w-]+:\s*$/m)[0] ?? '';
+  assert.match(job('popup-joint'), /^    needs: native-runtime$/m);
+  assert.doesNotMatch(job('native-targeted'), /^    needs:/m);
+  for (const name of ['check', 'test', 'install']) assert.doesNotMatch(job(name), /^    needs:.*(?:native-targeted|popup-joint)/m);
+  for (const name of ['native-targeted', 'popup-joint']) {
+    assert.ok(job(name).includes("if: ${{ github.head_ref == 'ci/s25-main-integration-20261101' || github.ref == 'refs/heads/ci/s25-main-integration-20261101' }}"));
+    assert.doesNotMatch(job(name), /continue-on-error:/);
+  }
+  assert.ok(job('gate').includes('.value.result != "success" and .value.result != "skipped"'));
+  assert.ok(job('gate').includes('exit 1'));
   assert.ok(benchmark.includes('needs: [changes, native-runtime, web, web-agent]'));
   assert.equal((spec.match(/uses: \.\/\.github\/actions\/native-runtime/g) ?? []).length, 2);
   assert.equal((benchmark.match(/uses: \.\/\.github\/actions\/native-runtime/g) ?? []).length, 2);

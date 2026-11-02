@@ -85,7 +85,8 @@ export const SYNTHETIC_COMMANDS = [
   'page.activate', 'page.navigate', 'page.title', 'page.evaluate', 'page.url', 'browser.observe', 'browser.trace', 'browser.query',
   'browser.perform', 'browser.pointer', 'browser.keyboard.type', 'browser.keyboard.press', 'fixture.query',
   'capture.screenshot', 'blob.read', 'blob.release',
-  'state.capture', 'state.restore', 'recording.start', 'recording.stop', 'other',
+  'state.capture', 'state.restore', 'recording.start', 'recording.stop',
+  'download.subscribe', 'download.unsubscribe', 'download.read', 'download.release', 'other',
 ] as const;
 export type SyntheticCommand = typeof SYNTHETIC_COMMANDS[number];
 export const SYNTHETIC_CODES = [

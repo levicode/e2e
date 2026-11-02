@@ -227,7 +227,7 @@ export function projectUnservedModelIdentity(env: Readonly<Record<string, string
 
 /** Only diagnostic environment is scoped; workload return/throw and scheduling are unchanged. */
 export async function withUnservedModelDiagnostics<T extends { outcome: { report: unknown } }>(run: (onEvent: RunEventSink | undefined) => Promise<T>): Promise<T> {
-  if (process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1') return run(undefined);
+  if (process.env['E2E_UNSERVED_MODEL_CAPTURE'] !== '1' && process.env['E2E_ENGINE_SECRETS_CAPTURE'] !== '1') return run(undefined);
   const unavailable = (reason: 'identity-unavailable' | 'overlapping-capture') => {
     try { process.stderr.write(`UNSERVED_MODEL_DIAGNOSTIC_UNAVAILABLE ${JSON.stringify({ schemaVersion: 1, suite: 'unserved-model-two-workers', status: 'incomplete', reason })}\n`); } catch { /* Observed-only; a final sink loss may be unknowable. */ }
   };
