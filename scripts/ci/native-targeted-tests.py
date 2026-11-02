@@ -44,6 +44,50 @@ def resolve_list(text, names):
     return names
 
 
+AFFECTED_PREFIXES = [
+    'native::client_debt::', 'native::cdp::client::',
+    'native::client_actions::', 'native::client_geometry::',
+    'native::client_observation::',
+    'native::client_page::navigation_retirement::tests::',
+]
+
+
+def expanded_selection(text, ignored_text, cfg):
+    """Actual libtest inventory is authority; source mismatches fail closed."""
+    def rows(value):
+        found = [line[:-6] for line in value.splitlines() if line.endswith(': test')]
+        require(len(found) == len(set(found)), 'Duplicate listed test')
+        require(all(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_:]*', n) for n in found), 'Invalid listed name')
+        return found
+    all_names = rows(text); ignored = rows(ignored_text)
+    require(set(ignored) <= set(all_names), 'Ignored names not in full list')
+    resolve_list(text, cfg['required'])
+    require(not set(cfg['required']) & set(ignored), 'Mandatory control ignored')
+    expansion = cfg['expansion']
+    require(expansion['prefixes'] == AFFECTED_PREFIXES, 'Affected prefix contract')
+    inventory = expansion['inventory']
+    require(len({row['name'] for row in inventory}) == len(inventory), 'Duplicate source inventory')
+    missing = [row['name'] for row in inventory if row['name'] not in all_names]
+    require(not missing, 'Source inventory missing from actual list: '+','.join(missing))
+    require(all((row['name'] in ignored) == row['ignored'] for row in inventory), 'Source ignore classification differs')
+    affected = sorted(n for n in all_names if any(n.startswith(prefix) for prefix in AFFECTED_PREFIXES))
+    selected = cfg['required'] + [n for n in affected if n not in ignored and n not in cfg['required']]
+    return {'selected':selected, 'ignored':[n for n in affected if n in ignored],
+            'actualAffected':affected, 'knownDiagnosticGaps':[n for n in expansion['knownDiagnosticGaps'] if n in selected],
+            'inventoryCount':len(inventory), 'listSHA256':hashlib.sha256(text.encode()).hexdigest(),
+            'ignoredListSHA256':hashlib.sha256(ignored_text.encode()).hexdigest()}
+
+
+def verify_inventory_sources(root, cfg):
+    expansion = cfg['expansion']
+    require(expansion['prefixes'] == AFFECTED_PREFIXES, 'Affected prefix contract')
+    for row in expansion['inventory']:
+        source = Path(row['path'])
+        require(not source.is_absolute() and '..' not in source.parts and source.parts[:3] == ('cli','src','native'), 'Inventory source path')
+        require(isinstance(row['ignored'], bool), 'Inventory ignore type')
+        require(digest(root/source) == row['sha256'], 'Inventory source changed')
+
+
 def exact_pass(text, name):
     lines = text.splitlines()
     return (lines.count('test '+name+' ... ok') == 1 and
@@ -99,12 +143,21 @@ def run(root, work, cfg):
         require(result['tooling']['commit'] == os.environ.get('GITHUB_SHA'), 'Actual tooling SHA')
         require(identity(root) == {k:cfg['native'][k] for k in ['commit','tree']}, 'Native identity mismatch')
         require(digest(root/'cli/Cargo.lock') == cfg['native']['lockSHA256'], 'Native lock mismatch')
+        if 'expansion' in cfg: verify_inventory_sources(root, cfg)
         for label,args in [('rustc',['rustc','-Vv']),('cargo',['cargo','--version'])]:
             require(command(label,args)[0] == 0, 'Toolchain unavailable')
         code,text = command('compiler',['cargo','test','--locked','--profile','ci','--no-default-features','--no-run','--message-format=json'] + (['--features','acceptance-faults'] if cfg['features'] else []))
         require(code == 0, 'Compiler failure')
         exe = select_harness(text,root,target,cfg['features']); original = digest(exe); result['harnessSHA256'] = original
         code,text = command('list',[exe,'--list','--format','terse']); require(code == 0, 'List failure'); resolve_list(text,names)
+        if 'expansion' in cfg:
+            code,ignored_text = command('list-ignored',[exe,'--ignored','--list','--format','terse']); require(code == 0, 'Ignored list failure')
+            selection = expanded_selection(text, ignored_text, cfg)
+            result['selection'] = selection
+            names = selection['selected']
+            result['tests'] = [{'name':n,'status':'not-run','knownDiagnosticGap':n in selection['knownDiagnosticGaps']} for n in names]
+            result['ignoredTests'] = [{'name':n,'status':'not-run','reason':'original ignored declaration; requires separate hosted/diagnostic execution'} for n in selection['ignored']]
+            save()
         for index,name in enumerate(names):
             result['tests'][index]['status'] = 'incomplete'; save()
             code,text = command('test-'+str(index+1).zfill(3),[exe,name,'--exact','--test-threads=1','--show-output'])

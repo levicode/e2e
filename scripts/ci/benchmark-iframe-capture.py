@@ -49,16 +49,21 @@ def ts_rows(data,pid,attempt):
     assert rows[0]['kind']=='start';return rows
 def collect(ws):
     root=ws/'evidence/benchmark-iframe';out={'schemaVersion':1,'state':'incomplete','exhaustive':False,'businessAuthority':False,'perturbation':'opt-in scalar writes and native wrapper; no retries or deadlines changed','cases':[]}
+    stage='source-binding'
     try:
         b=json.loads(read(root/'binding.json'));assert b==binding(ws);out['binding']=b
+        stage='report-case'
         report=json.loads(read(ws/'apps/web-benchmark/.e2e/report.json',32*1024*1024))['run']
         hits=[r for r in report['results'] if r.get('id')=='d99d69d8e6ab5f0ee6f4c3be656009a010c438186a8f7984ec4e981ff7ca0124'];assert len(hits)==1
         blocked={a['index']+1 for a in hits[0]['attempts'] if a.get('error',{}).get('phase')=='launch' and a.get('error',{}).get('message')=='An attempt is active or its provider recording cleanup is unresolved' and not a.get('steps')}
         expected={a['index']+1 for a in hits[0]['attempts']}-blocked;out['launchBlockedAttempts']=sorted(blocked);seen=set();schema=json.loads(read(HERE/'native-closed-trace-schema.json'))
-        for p in sorted(root.glob('client-*-attempt-*.jsonl')):
+        case_files=sorted(root.glob('client-*-attempt-*.jsonl'));out['caseFileCount']=len(case_files)
+        for p in case_files:
+            stage='case-ts-records'
             m=re.fullmatch(r'client-([1-9][0-9]*)-attempt-([12])\.jsonl',p.name);assert m
             pid,attempt=map(int,m.groups());assert attempt in expected and attempt not in seen;seen.add(attempt)
             rows=ts_rows(read(p,65536),pid,attempt)
+            stage='process-custody'
             inv=ws/'evidence/fixture-invocations';invraw=read(inv/f'invocation-{pid}.json',4096);iv=json.loads(invraw);mapping=json.loads(read(inv/f'daemon-{pid}.json',1024))
             assert set(iv)=={'schemaVersion','pid','nonce','traceDirectory','nativeExecutable','nativeSHA256','wrapperSHA256','run','attempt','sourceCommit','sourceTree'} and iv['schemaVersion']==2 and type(iv['pid'])is int and re.fullmatch('[a-f0-9]{64}',iv['nonce']) and iv['nativeExecutable']==os.environ['E2E_DIAGNOSTIC_NATIVE_EXECUTABLE']
             assert set(mapping)=={'schemaVersion','kind','proxyPID','daemonPID','nonce','invocationSHA256'} and mapping['schemaVersion']==1 and type(mapping['daemonPID'])is int and 0<mapping['daemonPID']<=2**32-1 and mapping['daemonPID']!=pid
@@ -69,14 +74,18 @@ def collect(ws):
             terminal=any(r['kind']=='result' and r['command']=='browser.trace' and r['scopeState']=='quarantined' for r in rows) and any(r['kind']=='terminal-error' for r in rows)
             selected=[]
             for kind in ['native','query']:
+                stage=kind+'-closed-records'
                 allrows,issues=hung.inspect(read(root/'raw'/f'{kind}-{pid}.jsonl'),schema)
                 # query sinks have no independent shutdown join: retain all other integrity checks.
                 if kind=='query':issues.discard('missing-shutdown-checkpoint')
+                allowed={'empty','record-limit','invalid-record','missing-capture-start','process-or-record-gap','capture-loss','missing-shutdown-checkpoint'}
+                if issues:out['closedIssues']=sorted(issues & allowed)
                 assert not issues and all(r['pid']==daemon for r in allrows)
                 selected.extend(r for r in allrows if r.get('operationSeq') in seqs or (kind=='native' and terminal and r['phase']=='TerminalCleanupCheckpoint'))
             out['cases'].append({'attempt':attempt,'proxyPid':pid,'daemonPid':daemon,'ts':rows,'native':selected,'terminalLinked':terminal,'noAbsenceInference':True})
+        stage='case-census';out['boundAttemptCount']=len(seen);out['expectedAttemptCount']=len(expected)
         assert seen==expected;out['state']='observed'
-    except Exception:out['cases']=[];out['reason']='binding-or-capture-incomplete'
+    except Exception:out['cases']=[];out['reason']='binding-or-capture-incomplete';out['failedStage']=stage
     target=ws/'evidence/benchmark-iframe-closed.json';target.write_text(json.dumps(out,indent=2)+'\n')
     return 0
 if __name__=='__main__':

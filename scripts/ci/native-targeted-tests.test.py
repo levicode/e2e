@@ -73,4 +73,39 @@ class Tests(unittest.TestCase):
             result=json.loads((work/'evidence/result.json').read_text())
             self.assertEqual(result['status'],'incomplete');self.assertEqual(result['tests'],[{'name':'a::b','status':'not-run'}]);self.assertEqual(result['commands'],[])
 
+class ExpansionTests(unittest.TestCase):
+    def config(self):
+        p=m.AFFECTED_PREFIXES[0]
+        return {'required':['mandatory::original'], 'expansion':{'prefixes':m.AFFECTED_PREFIXES[:], 'inventory':[{'name':p+'one','ignored':False},{'name':p+'hosted','ignored':True}], 'knownDiagnosticGaps':[p+'known_red']}}
+    def test_actual_inventory_full_prefix_once_and_mandatory_order(self):
+        c=self.config();p=m.AFFECTED_PREFIXES[0]
+        rows=['mandatory::original',p+'one',p+'hosted',p+'feature_only',p+'known_red','native::client_debt_extra::not_selected']
+        text='\n'.join(n+': test' for n in rows)
+        selection=m.expanded_selection(text,p+'hosted: test\n',c)
+        self.assertEqual(selection['selected'],['mandatory::original']+sorted([p+'one',p+'feature_only',p+'known_red']))
+        self.assertEqual(selection['ignored'],[p+'hosted'])
+        self.assertEqual(selection['knownDiagnosticGaps'],[p+'known_red'])
+        self.assertNotIn('native::client_debt_extra::not_selected',selection['actualAffected'])
+    def test_inventory_differences_and_ignored_mandatory_fail_closed(self):
+        c=self.config();p=m.AFFECTED_PREFIXES[0];text='mandatory::original: test\n'+p+'one: test\n'+p+'hosted: test\n'
+        for full,ignored in [(text.replace(p+'one: test\n',''),p+'hosted: test\n'),(text,'missing: test\n'),(text,'mandatory::original: test\n'+p+'hosted: test\n'),(text,''),(text+text,p+'hosted: test\n')]:
+            with self.assertRaises(ValueError):m.expanded_selection(full,ignored,c)
+        c['expansion']['prefixes']=['native::']
+        with self.assertRaises(ValueError):m.expanded_selection(text,p+'hosted: test\n',c)
+    def test_source_bytes_and_paths_are_bound(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);f=root/'cli/src/native/test.rs';f.parent.mkdir(parents=True);f.write_text('synthetic no execution')
+            row={'path':'cli/src/native/test.rs','sha256':m.digest(f),'ignored':False}
+            cfg={'expansion':{'prefixes':m.AFFECTED_PREFIXES[:],'inventory':[row]}}
+            m.verify_inventory_sources(root,cfg)
+            f.write_text('changed')
+            with self.assertRaises(ValueError):m.verify_inventory_sources(root,cfg)
+            row['path']='../outside'
+            with self.assertRaises(ValueError):m.verify_inventory_sources(root,cfg)
+    def test_actual_ignored_list_is_not_run_and_never_mints_pass(self):
+        c=self.config();p=m.AFFECTED_PREFIXES[0];text='mandatory::original: test\n'+p+'one: test\n'+p+'hosted: test\n'
+        selection=m.expanded_selection(text,p+'hosted: test\n',c)
+        self.assertNotIn(p+'hosted',selection['selected'])
+        self.assertFalse(m.exact_pass('test '+p+'one ... FAILED\n',p+'one'))
+
 if __name__=='__main__':unittest.main()

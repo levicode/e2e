@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "e59bfef68490796975ad4f5e57285705de7644fd",
-    "tree": "035395fd00afbd648f20bbbb1ed36bd7199600f2"
+    "commit": "c772d2e9514123e46571b99d2b8ccf45174550d4",
+    "tree": "3366ed43e346d2908fe050d8d7504bc89cdc8668"
   },
   "relaySHA256": "e928c2161272a1f89f4c11ee4b0d70e3a2a0eb0b70dc1776f59894adbb31c8cd",
   "wheelSHA256": "64dee438fed052b52e4f98f76c5790513235efaa1ef7f3f2192c392cd7c91b65",
   "sourceHashes": {
     ".github/workflows/native-runtime.yml": "83606d05f95be622dc34fd35fc9c4327fd62db1005b13bcdfe756f91fe7d3c6f",
-    ".github/workflows/spec.yml": "26ce42fb5e066bf25ed94bc8f3100e1f6177d928866cc486e9a8401feadafc81",
+    ".github/workflows/spec.yml": "c691d6b2f454f3f7e9c7d9568f9e3254fec91859070d4c7b0108a9c76bcbe2f5",
     "packages/e2e/tests/fixtures/popup-init-order/cases.txt": "1f0971c29c005bb26dc9f3a47e625b3df25aa3c1264393b21cb213b1cd7fefe1",
     "packages/e2e/tests/helpers/popup-document-evidence.ts": "1ed7b36776a0ed5152d96198b7a766d20bf385d198d1c759f4e35551e2192031",
     "packages/e2e/tests/helpers/run-project.ts": "c1fc8e7bbaab2377d0dbe1e7da9d82905f275f9aabd2f8a54c7ef9859c62f974",
@@ -17,13 +17,13 @@
     "scripts/ci/check-engine-secrets-native-custody.py": "0335760df2054e69513ec0066923475069262db59cd2117623086a37938fa6d7",
     "scripts/ci/native-fault-runtime.ts": "465f1d3a9b961e9bdc55fb831dee8c3ac6f3b4c6d619e230cb0538b179c938cd",
     "scripts/ci/native-runtime.ts": "6bba1e947116d971b18ced210ea8fbdae2b3f678f5684104cec843e2be68ca71",
-    "scripts/ci/native-targeted-plan.json": "b752b9980154ff4f5b4c31286820d1298ef8cfd36eff306c0f27e936753efc59",
-    "scripts/ci/native-targeted-tests.py": "157f81fbabc2a261405954f6ab87ab1f30baee13b0665a1aaadcc610ea4e8146",
-    "scripts/ci/native-targeted-tests.test.py": "a967ecdf957f0083fb7c7b736f3887ffc92a233de29133f915890a477f266baa",
+    "scripts/ci/native-targeted-plan.json": "edb50d1119617afb34b719b467cc2096da83e3570afaeeadbbb4d83fe08a0254",
+    "scripts/ci/native-targeted-tests.py": "723f50054682af8b2c2388ded6ef9f4011f9f3ce76b0e3a7bc4f8afba3e85287",
+    "scripts/ci/native-targeted-tests.test.py": "f717e3d07c9fee97b66811cbbe2008557818ce0bb9d83418694e3c961e8fbba5",
     "scripts/ci/popup-joint-case.ts": "df02d4335cf7a661cdcd752cc7aea583e877c9cdd31039c516a5051f44932677",
     "scripts/ci/popup-joint-evidence.py": "c974b54c86ddb8c992387a1d44e1ee9ca90cc92755d259d6211c3f5783134555",
     "scripts/ci/popup-joint-evidence.test.py": "47aafcc09784f9ff3b77190b91bdb429e2386a206a4d79b503f90c6437da233d",
-    "scripts/ci/popup-joint-fault-controls.json": "82468bb0be4d384e21182c29e1807c86a8bc924d2c65c31e60937dcc23528398",
+    "scripts/ci/popup-joint-fault-controls.json": "d5d12f0880a4feb51d062e2f6c1a7ad848a5184d9eee7fdfa67b6c297ee724fb",
     "scripts/ci/popup-joint-requirements.txt": "47e5b7c0631922fd5c9967e13490dbff7389f8d4d5bfe464b2a71e9d9c1175fa",
     "scripts/ci/popup-joint-runtime.test.ts": "aa1720e7179d699467d4c82850ff1e48985315ff23e87c36789b52d2bfb0fb34",
     "scripts/ci/popup-joint-runtime.ts": "404581a8eca936b790cd1100758e6a6a93df3ddf9b3f2e726b9dce3cb056b018",

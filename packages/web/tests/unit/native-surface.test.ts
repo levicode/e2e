@@ -4205,3 +4205,36 @@ describe('benchmark iframe optional trace failure chain control', () => {
     } finally { await surface.dispose(cleanup()).catch(() => undefined); }
   });
 });
+
+describe('benchmark iframe runner artifact binding control', () => {
+  it('binds the real runner result/attempt directory through Surface and real NativeClient receipts', async () => {
+    const { createAttemptArtifacts, resultSegment, attemptSegments } = await import('../../../e2e/dist/run/artifacts.js');
+    const { bindBenchmarkIframeProcess } = await import('../../src/native/benchmark-iframe-diagnostics.ts');
+    const { mkdir } = await import('node:fs/promises');
+    const workspace = await mkdtemp(path.join(tmpdir(), 'iframe-runner-binding-'));
+    const capture = path.join(workspace, 'evidence/benchmark-iframe'); await mkdir(capture, { recursive: true, mode: 0o700 });
+    vi.stubEnv('GITHUB_WORKSPACE', workspace); vi.stubEnv('E2E_BENCHMARK_IFRAME_CAPTURE', '1');
+    const original = vi.mocked(connectNativeProcess).getMockImplementation()!;
+    vi.mocked(connectNativeProcess).mockImplementation(async (...args) => {
+      const client = await original(...args); bindBenchmarkIframeProcess(client, 123); return client;
+    });
+    const surface = new NativeSurface({});
+    try {
+      await start(surface); await surface.endAttempt(cleanup());
+      const id = 'd99d69d8e6ab5f0ee6f4c3be656009a010c438186a8f7984ec4e981ff7ca0124';
+      const segment = resultSegment({ id, file: 'tests/iframe-form.e2e.ts', titlePath: ['iframe form', 'the code read from one frame applies through the other'] });
+      const artifacts = createAttemptArtifacts({ artifactsRoot: path.join(workspace, 'apps/web-benchmark/.e2e/results'), segments: attemptSegments(undefined, segment, 0), attemptId: 'owned-real-layout' });
+      await surface.startAttempt({ ...context('owned-real-layout'), artifactsDir: artifacts.dir, screen: () => {} });
+      const owned = { ...operation(), attemptId: 'owned-real-layout' };
+      await surface.open('https://synthetic.test/', owned); const snapshot = await surface.observe(owned);
+      await surface.perform(snapshot.root.ref, { kind: 'tap' }, owned); await surface.endAttempt(cleanup());
+      const files = await readdir(capture); expect(files).toEqual(['client-123-attempt-1.jsonl']);
+      const rows = (await readFile(path.join(capture, files[0]!), 'utf8')).trim().split('\n').map(row => JSON.parse(row) as Record<string, unknown>);
+      expect(rows[0]).toMatchObject({ kind: 'start', attempt: 1, proxyPid: 123 });
+      expect(rows.filter(row => row['kind'] === 'result').map(row => row['command'])).toContain('browser.perform');
+      expect(rows.filter(row => row['kind'] === 'result').map(row => row['command'])).toContain('browser.trace');
+      expect(rows.filter(row => row['kind'] === 'result').map(row => row['command'])).toContain('scope.end');
+      expect(rows.every(row => row['attempt'] === 1 && row['proxyPid'] === 123)).toBe(true);
+    } finally { await surface.dispose(cleanup()).catch(() => undefined); vi.unstubAllEnvs(); await rm(workspace, { recursive: true, force: true }); }
+  });
+});

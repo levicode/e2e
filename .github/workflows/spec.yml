@@ -220,6 +220,7 @@ jobs:
       - name: Unit and integration tests
         env:
           E2E_UNSERVED_MODEL_CAPTURE: '1'
+          E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
           E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
@@ -230,6 +231,7 @@ jobs:
           set -euo pipefail
           pnpm --filter e2e run build
           pnpm --filter @e2e-dev/web run build
+          export E2E_PLATFORM_HANDLER_DIAGNOSTIC=1
           export E2E_CAPTURE_SOURCE_COMMIT="$(git rev-parse HEAD)"
           export E2E_CAPTURE_SOURCE_TREE="$(git rev-parse HEAD^{tree})"
           test "$E2E_CAPTURE_SOURCE_COMMIT" = "$GITHUB_SHA"

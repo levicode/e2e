@@ -1,3 +1,4 @@
+import { emitPlatformSequence, emitPlatformHandler } from '../helpers/platform-sequence-diagnostics.ts';
 import { withShortReadDiagnostics } from '../helpers/short-read-diagnostics.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -455,24 +456,7 @@ describe('web platform integration', () => {
         configSource: workerConfigSource(1, "\n  cache: 'off',\n  actionTimeout: 5_000,\n  assertionTimeout: 4_000,\n  timeout: 30_000,"),
       },
     )));
-    if (process.env['E2E_PLATFORM_HANDLER_DIAGNOSTIC'] === '1') {
-      // Retain chronology before project cleanup; never print fixture arguments or raw errors.
-      const fixtureFiles = ['tests/kitchen.e2e.ts', 'tests/late-handler.e2e.ts', 'tests/schemes.e2e.ts', 'tests/classes.e2e.ts', 'tests/url-patterns.e2e.ts'];
-      const attempts = outcome.results.flatMap((result, resultIndex) => result.attempts.map((attempt, attemptIndex) => ({ result, resultIndex, attempt, attemptIndex })))
-        .toSorted((left, right) => Date.parse(left.attempt.startedAt) - Date.parse(right.attempt.startedAt));
-      const cap = 128;
-      console.error('PLATFORM_RUN_SEQUENCE', JSON.stringify({
-        total: attempts.length, emitted: Math.min(cap, attempts.length), dropped: Math.max(0, attempts.length - cap), truncated: attempts.length > cap,
-        firstFailedCleanup: attempts.findIndex(({ attempt }) => attempt.cleanup !== 'complete'),
-        run: JSON.parse(closedFailureDiagnostic([], outcome.report.run.errors)),
-        attempts: attempts.slice(0, cap).map(({ result, resultIndex, attempt, attemptIndex }, sequence) => ({
-          sequence, resultIndex, attemptIndex, fixtureIndex: fixtureFiles.indexOf(result.test.file),
-          declarationIndex: result.test.declarationIndex, line: result.test.source?.line,
-          startedAtMs: Date.parse(attempt.startedAt), durationMs: attempt.durationMs,
-          facts: JSON.parse(closedFailureDiagnostic([attempt])),
-        })),
-      }));
-    }
+    emitPlatformSequence(outcome);
   }, 240_000);
 
   afterAll(async () => {
@@ -595,7 +579,7 @@ describe('web platform integration', () => {
     const result = resultByTitle(outcome, title);
     expect(result.status).toBe('failed');
     const attempt = result.attempts[0]!;
-    if (process.env['E2E_PLATFORM_HANDLER_DIAGNOSTIC'] === '1') console.error('PLATFORM_HANDLER_RECEIPT', JSON.stringify({ kind: _kind, error: attempt.error, cleanup: attempt.cleanup, steps: attempt.steps.map(step => ({ api: step.api, status: step.status, error: step.error })), runErrors: outcome.report.run.errors }));
+    emitPlatformHandler(_kind === 'route' ? 'route' : 'dialog', attempt, outcome.report.run.errors);
     expect(attempt.error).toMatchObject({ code: 'ASSERTION_FAILED', phase: 'body' });
     expect(attempt.cleanup).toBe('complete');
     expect(outcome.report.run.errors.map((error) => error.code)).toEqual([]);

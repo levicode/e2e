@@ -58,5 +58,10 @@ class Capture(unittest.TestCase):
     else:
      with (root/'raw/native-123.jsonl').open('ab') as f:f.write(b'{"secret":"CANARY"}\n')
     with patch.dict(os.environ,env):m.collect(ws)
-    data=(ws/'evidence/benchmark-iframe-closed.json').read_text();d=json.loads(data);self.assertEqual(d['state'],'incomplete');self.assertEqual(d['cases'],[]);self.assertNotIn('CANARY',data)
+    data=(ws/'evidence/benchmark-iframe-closed.json').read_text();d=json.loads(data);self.assertEqual(d['state'],'incomplete');self.assertEqual(d['cases'],[]);self.assertNotIn('CANARY',data);self.assertEqual(d['failedStage'],'process-custody' if mode=='daemon' else 'native-closed-records')
+ def test_absent_case_binding_is_distinguished_from_native_schema_failure(self):
+  with tempfile.TemporaryDirectory() as td,patch.object(m.subprocess,'check_output',side_effect=lambda args,**kw: ('1' if args[-1]=='HEAD' else '2')*40+'\n'):
+   ws=pathlib.Path(td);env,root=self.fixture(ws);(root/'client-123-attempt-1.jsonl').unlink()
+   with patch.dict(os.environ,env):m.collect(ws)
+   d=json.loads((ws/'evidence/benchmark-iframe-closed.json').read_text());self.assertEqual(d['failedStage'],'case-census');self.assertEqual(d['caseFileCount'],0);self.assertEqual(d['boundAttemptCount'],0);self.assertEqual(d['expectedAttemptCount'],1);self.assertEqual(d['cases'],[])
 if __name__=='__main__':unittest.main()

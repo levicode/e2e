@@ -1,3 +1,5 @@
+import { observeHungControls } from '../helpers/hung-control-evidence.ts';
+import { retainP07Contract } from '../helpers/recovery-contract-evidence.ts';
 import { downloadRecoveryEvidence } from '../helpers/download-recovery-evidence.ts';
 import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 /** Real CDP transport drops preserve only the dedicated persistent context, never a replacement. */
@@ -264,6 +266,7 @@ describe('CDP session recovery', () => {
     }
     const contract = recoveryContracts.get(context.task);
     recoveryContracts.delete(context.task);
+    if (contract?.caseId === 'P07') retainP07Contract(contract, diagnostic?.outcome);
     if (failures.length > 0) throw new AggregateError(failures, 'Recovery fixture cleanup failed');
     if (contract !== undefined) {
       expect(contract.invalid).toBe(false);
@@ -914,6 +917,7 @@ describe('CDP session recovery', () => {
       native = await pending;
       return native;
     });
+    const restoreControls = observeHungControls(NativeClient.prototype, record);
     const request = NativeClient.prototype.request;
     const probe = vi.spyOn(NativeClient.prototype, 'request').mockImplementation(function (this: NativeClient, ...args) {
       const ordinal = ++callOrdinal;
@@ -976,7 +980,7 @@ describe('CDP session recovery', () => {
       wireClosed = true;
       for (const remove of detach) remove();
       console.error('HUNG_WIRE', JSON.stringify({ schemaVersion: 1, overflow, entries: wire }));
-      probe.mockRestore(); vi.mocked(NativeClient.connect).mockImplementation(connect);
+      restoreControls(); probe.mockRestore(); vi.mocked(NativeClient.connect).mockImplementation(connect);
     }
     if (failed && cleanupFailures.length > 0) throw new AggregateError([failure, ...cleanupFailures], 'Hung resolver body and cleanup failed');
     if (failed) throw failure;
