@@ -31,6 +31,13 @@ export interface CrossCheckResult {
   /** Engine nodes compared against at least one oracle; zero means the page checked nothing. */
   readonly compared: number;
   readonly disagreements: readonly Disagreement[];
+  /** File hosts joined by protected ref to Chrome, bounded to 16 pairs of 1024-character fields. */
+  readonly fileInputs: readonly {
+    readonly nativeRole: string;
+    readonly nativeName: string;
+    readonly chromeRole: string;
+    readonly chromeName: string;
+  }[];
 }
 
 /** Engine roles never compared: structure and text the tree keeps for the model, with no ARIA counterpart. */
@@ -89,8 +96,8 @@ function isUnnamedSvg(node: SemanticNode, facts: ElementFacts): boolean {
   return facts.svgRoot && node.role === 'image' && (node.name ?? '') === '';
 }
 
-/** Engine roles ARIA does not define, so `getByRole` cannot be asked for them. */
-const NON_ARIA_ROLES = new Set(['box', 'iframe']);
+/** Engine roles ARIA does not define, so only Chrome can be asked for them. */
+const NON_ARIA_ROLES = new Set(['box', 'iframe', 'DescriptionList']);
 
 /** Chrome roles the engine is expected to report whenever Chrome exposes them. */
 const INTERACTIVE_CHROME_ROLES = new Set([
@@ -115,8 +122,8 @@ function glyphTolerant(name: string): RegExp {
 /** The ARIA states compared, as Chrome's AX property names. */
 const STATES = ['checked', 'disabled', 'expanded', 'selected', 'pressed'] as const;
 
-/** Temporary oracle identity, never model metadata or a guessed native ref. */
-const MARKER = 'data-e2e-crosscheck';
+/** Default fixture query attribute, overlaid only after the protected snapshot and fully restored. */
+export const CROSSCHECK_MARKER = 'data-testid';
 
 function flatten(node: SemanticNode, out: SemanticNode[] = []): SemanticNode[] {
   out.push(node);
@@ -165,7 +172,7 @@ async function tagOracleElements(page: Page) {
         const result = await element.cdp.send('Runtime.callFunctionOn', {
           objectId: element.objectId,
           functionDeclaration: 'function(attribute, previous) { if (previous === null) this.removeAttribute(attribute); else this.setAttribute(attribute, previous); }',
-          arguments: [{ value: MARKER }, { value: element.previous }], returnByValue: true,
+          arguments: [{ value: CROSSCHECK_MARKER }, { value: element.previous }], returnByValue: true,
         });
         if (result.exceptionDetails !== undefined) throw new Error('Oracle marker restoration failed');
       } catch (cause) { failures.push(cause); }
@@ -197,7 +204,7 @@ async function tagOracleElements(page: Page) {
       if (node.nodeType === 1) {
         const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.backendNodeId, objectGroup: group });
         if (object.objectId === undefined) throw new Error('Oracle could not resolve an element');
-        const attributeIndex = node.attributes?.findIndex((attribute, index) => index % 2 === 0 && attribute === MARKER) ?? -1;
+        const attributeIndex = node.attributes?.findIndex((attribute, index) => index % 2 === 0 && attribute === CROSSCHECK_MARKER) ?? -1;
         const previous = attributeIndex < 0 ? null : node.attributes![attributeIndex + 1]!;
         const token = `${group}-${elements.length}`;
         const element: TaggedElement = { token, frameId, cdp, objectId: object.objectId, previous };
@@ -213,13 +220,14 @@ async function tagOracleElements(page: Page) {
               inClosedShadow: root instanceof ShadowRoot && root.mode === 'closed',
               editingHost: this instanceof HTMLElement && this.isContentEditable,
               svgRoot: this instanceof SVGSVGElement,
+              fileInput: this instanceof HTMLInputElement && this.type === 'file',
             };
           }`,
-          arguments: [{ value: MARKER }, { value: token }], returnByValue: true,
+          arguments: [{ value: CROSSCHECK_MARKER }, { value: token }], returnByValue: true,
         });
         if (read.exceptionDetails !== undefined || read.result.value === undefined) throw new Error('Oracle could not read element facts');
         element.facts = read.result.value as ElementFacts;
-        if (node.frameId !== undefined && node.frameId !== frameId) edges.set(node.frameId, { parent: frameId, selector: `[${MARKER}=${JSON.stringify(token)}]` });
+        if (node.frameId !== undefined && node.frameId !== frameId) edges.set(node.frameId, { parent: frameId, selector: `[${CROSSCHECK_MARKER}=${JSON.stringify(token)}]` });
       }
       for (const child of [...node.children ?? [], ...node.shadowRoots ?? []]) await walk(cdp, child, frameId);
       if (node.contentDocument !== undefined) {
@@ -244,7 +252,7 @@ async function tagOracleElements(page: Page) {
       return path;
     };
     for (const element of elements) pathFor(element.frameId);
-    return { elements, paths, restore };
+    return { elements, paths, markerPrefix: group, restore };
   } catch (cause) {
     try { await restore(); }
     catch (cleanupError) { throw new AggregateError([cause, cleanupError], 'Oracle setup and cleanup failed', { cause: cleanupError }); }
@@ -253,7 +261,7 @@ async function tagOracleElements(page: Page) {
 }
 
 /** Join exact marker/ref identities without borrowing any fixture-query semantics for the model. */
-async function captureTagged(fixture: NativeOracle) {
+export async function captureTagged(fixture: NativeOracle) {
   const snapshot = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent', timeoutMs: 30_000 });
   const nodes = flatten(snapshot.root);
   const tagged = await tagOracleElements(fixture.oracle);
@@ -262,14 +270,16 @@ async function captureTagged(fixture: NativeOracle) {
     const facts = new Map<string, ElementFacts>();
     const markers = new Map<string, string>();
     const ids = new Map<string, string>();
+    const marked: LocatorExpression = { kind: 'query', query: { kind: 'testId',
+      value: { kind: 'regexp', source: `^${tagged.markerPrefix}-[0-9]+$`, flags: '' } } };
     for (const [frameId, path] of tagged.paths) {
-      const expression = path.reduceRight<LocatorExpression>((source, selector) => ({ kind: 'frame', selector, source }), { kind: 'selector', selector: `[${MARKER}]` });
+      const expression = path.reduceRight<LocatorExpression>((source, selector) => ({ kind: 'frame', selector, source }), marked);
       // Explicit fixture reads preserve attributes; protected observation does not.
       // Only the marker and exact ref participate in this join, never query metadata.
       const matches = await fixture.engine.locate!(expression, { ...fixture.operation(), timeoutMs: 30_000 }, { purpose: 'fixture' });
       const correlated = await fixture.correlate(matches.map(match => match.ref), nodes, { ...fixture.operation(), timeoutMs: 30_000 });
       for (const [index, match] of matches.entries()) {
-        const token = match.attributes?.[MARKER];
+        const token = match.attributes?.[CROSSCHECK_MARKER];
         const element = token === undefined ? undefined : byToken.get(token);
         if (element === undefined || element.frameId !== frameId || element.facts === undefined) throw new Error('Fixture query did not identify an exact oracle element');
         const observed = correlated[index];
@@ -302,6 +312,8 @@ interface ElementFacts {
   readonly editingHost: boolean;
   /** An inline `<svg>`, which Chrome ignores unless something names it. */
   readonly svgRoot: boolean;
+  /** The DOM file-input host, not its browser-owned shadow controls. */
+  readonly fileInput: boolean;
 }
 
 /** The fields of CDP's `Accessibility.AXNode` the check reads. */
@@ -336,7 +348,7 @@ async function chromeTree(page: Page, ids: ReadonlyMap<string, string>): Promise
           let node = this;
           while (node !== null && !(node instanceof ShadowRoot)) node = node.parentNode;
           if (node !== null && node.host.matches('input, select, textarea, video, audio')) return '';
-          return this.nodeType === 1 ? this.getAttribute(${JSON.stringify(MARKER)}) : null;
+          return this.nodeType === 1 ? this.getAttribute(${JSON.stringify(CROSSCHECK_MARKER)}) : null;
         }`,
         returnByValue: true,
       });
@@ -362,7 +374,8 @@ function chromeState(node: AXNode, state: (typeof STATES)[number]): string {
   return value === undefined ? 'false' : String(value);
 }
 
-function compareWithChrome(node: SemanticNode, ax: AXNode, facts: ElementFacts, into: Disagreement[]): void {
+/** Compare Chrome's complete node even when Playwright cannot query its role. */
+export function compareWithChrome(node: SemanticNode, ax: AXNode, facts: ElementFacts, into: Disagreement[]): void {
   const role = node.role!;
   const ours = node.name ?? '';
   const label = describe(role, ours);
@@ -400,7 +413,7 @@ async function compareWithPlaywright(page: Page, node: SemanticNode, marker: str
       // `includeHidden` also changes how Playwright computes names, so it is
       // set only for a node the tree itself reports hidden.
       .getByRole(role as Parameters<Page['getByRole']>[0], { name: glyphTolerant(name), includeHidden: node.states?.hidden === true })
-      .evaluateAll((elements, [attribute, id]) => elements.some((element) => element.getAttribute(attribute!) === id), [MARKER, marker]);
+      .evaluateAll((elements, [attribute, id]) => elements.some((element) => element.getAttribute(attribute!) === id), [CROSSCHECK_MARKER, marker]);
     if (!found) into.push({ oracle: 'playwright', field: 'getByRole', ours: 'match', theirs: 'no match', node: label });
   } catch (error) {
     into.push({ oracle: 'playwright', field: 'getByRole', ours: 'match', theirs: `error: ${(error as Error).message.split('\n')[0]}`, node: label });
@@ -414,9 +427,20 @@ export async function crossCheck(fixture: NativeOracle): Promise<CrossCheckResul
   try {
     const chrome = await chromeTree(page, ids);
     const disagreements: Disagreement[] = [];
+    const fileInputs: Array<CrossCheckResult['fileInputs'][number]> = [];
     let compared = 0;
     for (const node of nodes) {
       const fact = facts.get(node.ref.id);
+      if (fact?.fileInput === true) {
+        const ax = chrome.byId.get(node.ref.id);
+        const pair = {
+          nativeRole: node.role ?? '', nativeName: node.name ?? '',
+          chromeRole: typeof ax?.role?.value === 'string' ? ax.role.value : '',
+          chromeName: typeof ax?.name?.value === 'string' ? ax.name.value : '',
+        };
+        if (fileInputs.length >= 16 || Object.values(pair).some(value => value.length > 1024)) throw new Error('File-input evidence exceeded its bound');
+        fileInputs.push(pair);
+      }
       if (node.role === undefined || STRUCTURAL_ROLES.has(node.role) || fact === undefined || fact.inChildFrame) continue;
       if (isUnnamedSvg(node, fact)) continue;
       compared += 1;
@@ -432,7 +456,7 @@ export async function crossCheck(fixture: NativeOracle): Promise<CrossCheckResul
       if (ax.ignored || !INTERACTIVE_CHROME_ROLES.has(role)) continue;
       disagreements.push({ oracle: 'chrome', field: 'missing', ours: 'no node', theirs: role, node: describe(role, normalize(String(ax.name?.value ?? ''))) });
     }
-    return { compared, disagreements };
+    return { compared, disagreements, fileInputs };
   } finally {
     await restore();
   }

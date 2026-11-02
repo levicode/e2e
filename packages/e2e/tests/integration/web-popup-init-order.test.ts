@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resultByTitle, createProject, runExisting, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
+import { popupDocumentDiagnosticFixture, popupDocumentDiagnosticHtml } from '../helpers/popup-document-evidence.ts';
 
 const titles = [
   'existing document stays untouched until next navigation',
@@ -23,11 +24,11 @@ describe('popup initialization document boundary controls', () => {
         response.writeHead(404).end(); return;
       }
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end('<!doctype html><script>globalThis.firstInline = [...(globalThis.initOrder ?? [])];</script><script>addEventListener("DOMContentLoaded", () => { if (opener) opener.postMessage({kind: "init-document", snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin); }, {once: true});</script><title>Synthetic init order</title><body>fixture</body>');
+      response.end(popupDocumentDiagnosticHtml('<!doctype html><script>globalThis.firstInline = [...(globalThis.initOrder ?? [])];</script><script>addEventListener("DOMContentLoaded", () => { if (opener) opener.postMessage({kind: "init-document", snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin); }, {once: true});</script><title>Synthetic init order</title><body>fixture</body>'));
     });
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    project = createProject({ 'tests/popup-init-order.e2e.ts': readFileSync(new URL('../fixtures/popup-init-order/cases.txt', import.meta.url), 'utf8') });
+    project = createProject({ 'tests/popup-init-order.e2e.ts': popupDocumentDiagnosticFixture(readFileSync(new URL('../fixtures/popup-init-order/cases.txt', import.meta.url), 'utf8')) });
     outcome = await runExisting(project, { appUrl: origin, runOptions: popupEvalDiagnosticOptions(project.dir, origin), config: { workers: 1 } });
   }, 120_000);
   afterAll(async () => {

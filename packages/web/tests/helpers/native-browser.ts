@@ -15,10 +15,12 @@ import { correlateObserved, type CorrelateObserved } from './native-correlation.
 /**
  * Test-only real core fixture graph over the already-started public engine.
  * These callers provide stable attempt fields. The graph has a bounded 30s
- * helper lifetime; each action uses the caller's initial per-action timeout.
+ * helper lifetime by default; long suites can explicitly bound their shared
+ * graph lifetime without changing any per-operation timeout.
  * No fabricated EngineFixtureContext or replacement locator implementation.
  */
-export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): { browser: Browser; session: TargetSession; correlate: CorrelateObserved; identityScope(): string } {
+export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/', lifetimeMs = 30_000): { browser: Browser; session: TargetSession; correlate: CorrelateObserved; identityScope(): string } {
+  if (!Number.isSafeInteger(lifetimeMs) || lifetimeMs <= 0 || lifetimeMs > 1_200_000) throw new RangeError('Native fixture lifetime must be between 1ms and 20 minutes');
   const current = operation();
   const config = resolveConfig({ targets: [{ name: 'web', platform: 'web', engine, app: { url: baseUrl } }], cache: 'off', timeout: 30_000, actionTimeout: current.timeoutMs, assertionTimeout: current.timeoutMs }, { projectRoot: process.cwd(), env: process.env });
   const steps = new StepRecorder(current.attemptId);
@@ -26,7 +28,7 @@ export function nativeBrowserGraph(engine: EngineHandle, operation: () => Operat
   const captured = captureFixtureSurface(() => {
     const { fixtures } = createFixtures({
       config, target: config.targets[0]!, session,
-      steps, budget: new AttemptBudget(current.signal, new Deadline(30_000)), runId: current.runId, attemptId: current.attemptId,
+      steps, budget: new AttemptBudget(current.signal, new Deadline(lifetimeMs)), runId: current.runId, attemptId: current.attemptId,
       attempt: { testId: 'native-browser-fixture', titlePath: ['native-browser-fixture'], attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
       artifacts: { dir: process.cwd(), register: (_kind, relativePath) => relativePath, link: (relativePath) => relativePath }, priorSteps: () => steps.completed(),
       agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),

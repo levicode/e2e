@@ -27,13 +27,30 @@ let fixture: NativeOracle | undefined;
 const seen = new Set<string>();
 const pages = new Set<string>();
 
-beforeAll(async () => { fixture = await startNativeOracle('crosscheck'); });
+beforeAll(async () => {
+  // This graph is shared by the 10-minute scenario loop and the fixture tests.
+  // Navigation retains its 30-second deadline; action and assertion timeouts are unchanged.
+  fixture = await startNativeOracle('crosscheck', 600_000 + (FIXTURE_PAGES.length + 2) * 30_000);
+});
 afterAll(async () => { await fixture?.close(); });
 
 /** Checks the page as loaded and records its disagreements under `name`. */
 async function check(name: string): Promise<void> {
   const result = await crossCheck(fixture!);
   expect(result.compared, `${name} compared no node`).toBeGreaterThan(0);
+  if (name === 'benchmark: file-round-trip') {
+    const hostCount = await fixture!.oracle.locator('input[type="file"]').count();
+    const uploadHostCount = await fixture!.oracle.locator('input[type="file"][data-testid="upload-input"]').count();
+    process.stdout.write(`CROSSCHECK_FILE_INPUT_FACTS ${JSON.stringify({ scenario: 'file-round-trip', hostCount, uploadHostCount, fileInputs: result.fileInputs })}\n`);
+    expect(hostCount, 'file-round-trip must retain its original single file-input host').toBe(1);
+    expect(uploadHostCount, 'file-round-trip must retain the upload-input host after marker restoration').toBe(1);
+    expect(result.fileInputs, 'file-round-trip must correlate the real file-input host to a protected ref and Chrome AX node').toHaveLength(1);
+    for (const pair of result.fileInputs) {
+      for (const value of Object.values(pair)) expect(value.trim().length, 'file-input roles and names must be non-empty').toBeGreaterThan(0);
+      expect(pair.nativeRole).toBe(pair.chromeRole);
+      expect(pair.nativeName).toBe(pair.chromeName);
+    }
+  }
   pages.add(name);
   for (const disagreement of result.disagreements) seen.add(keyOf(name, disagreement));
 }
@@ -53,9 +70,18 @@ describe('cross-check', () => {
         [...new Set([...document.querySelectorAll<HTMLAnchorElement>('a[href^="/e/"]')].map(link => new URL(link.href).pathname.slice('/e/'.length)))]);
       expect(slugs.length).toBeGreaterThan(0);
       for (const slug of slugs.toSorted()) {
-        await fixture!.browser.goto(new URL(`/e/${slug}`, BENCHMARK).href, { waitUntil: 'networkidle' });
-        await check(`benchmark: ${slug}`);
+        let phase = 'goto';
+        try {
+          await fixture!.browser.goto(new URL(`/e/${slug}`, BENCHMARK).href, { waitUntil: 'networkidle' });
+          phase = 'check';
+          await check(`benchmark: ${slug}`);
+        } catch (error) {
+          const scenario = /^[a-z0-9-]{1,100}$/i.test(slug) ? slug : 'unrecognized-slug';
+          process.stderr.write(`CROSSCHECK_SCENARIO_FAILURE ${JSON.stringify({ scenario, phase })}\n`);
+          throw error;
+        }
       }
+      process.stdout.write(`CROSSCHECK_SCENARIOS_COMPLETE ${JSON.stringify({ count: slugs.length })}\n`);
     });
   });
 

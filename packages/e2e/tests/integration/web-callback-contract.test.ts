@@ -13,6 +13,7 @@ const CASES = [
   'dialog decisions settle an awaiting evaluation',
   'download subscription runs its trigger',
   'custom executor uses checked actions and the test verifies the response',
+  'a sibling request decision keeps the live route callback',
 ] as const;
 
 /** Find the single Save control without depending on any engine-specific handle. */
@@ -110,6 +111,30 @@ test('${CASES[5]}', { timeout: 8_000 }, async ({ browser, agent }) => {
   const matched = await response;
   expect(matched.status).toBe(200);
   expect(await matched.json()).toEqual({ saved: true, count: 1 });
+});
+
+test('${CASES[6]}', { timeout: 8_000 }, async ({ browser }) => {
+  await browser.goto('/');
+  await browser.setCookies([{ name: 'fixture', value: 'public-synthetic', url: '/' }]);
+  let siblingDone!: () => void;
+  const siblingSettled = new Promise<void>(resolve => { siblingDone = resolve; });
+  await browser.route('**/sibling', async route => {
+    await route.continue();
+    siblingDone();
+  });
+  await browser.route('**/read', async route => {
+    await siblingSettled;
+    expect(await browser.url()).toMatch(/\\/$/);
+    expect(await browser.title()).toBe('Callback fixture');
+    expect((await browser.cookies()).some(cookie => cookie.name === 'fixture')).toBe(true);
+    expect(await browser.locator('h1').textContent()).toBe('Ready');
+    expect(await browser.evaluate(() => document.querySelector('h1')?.textContent ?? '')).toBe('Ready');
+    await route.fulfill({ body: 'callback finished' });
+  });
+  expect(await browser.evaluate(() => Promise.all([
+    fetch('/read').then(response => response.text()),
+    fetch('/sibling').then(response => response.text()),
+  ]))).toEqual(['callback finished', 'network']);
 });
 `;
 

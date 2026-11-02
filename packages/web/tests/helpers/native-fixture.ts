@@ -21,7 +21,7 @@ export interface NativeFixture {
 }
 
 /** Start the native engine without bypassing its executable or capability checks. */
-export async function startNativeFixture(name: string, options: WebOptions = {}): Promise<NativeFixture> {
+export async function startNativeFixture(name: string, options: WebOptions = {}, lifetimeMs = 30_000): Promise<NativeFixture> {
   const engine = web(options);
   const artifactsDir = mkdtempSync(path.join(tmpdir(), `e2e-${name}-`));
   const operation = (): OperationContext => ({
@@ -43,7 +43,7 @@ export async function startNativeFixture(name: string, options: WebOptions = {})
       resolveSecret: noSecrets, ...ignoreTrace,
     });
     await engine.session!.open!('about:blank', operation());
-    return { engine, ...nativeBrowserGraph(engine, operation), operation, close };
+    return { engine, ...nativeBrowserGraph(engine, operation, undefined, lifetimeMs), operation, close };
   } catch (cause) {
     try { await close(); }
     catch (cleanupError) { throw new AggregateError([cause, cleanupError], 'Native fixture startup and cleanup failed', { cause: cleanupError }); }

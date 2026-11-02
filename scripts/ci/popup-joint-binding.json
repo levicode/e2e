@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "native": {
+    "commit": "9f5076ec691f3cd114416d36d857ec2aae2ac0bc",
+    "tree": "1a09a5ff6cff7b238cd1a63b2f23b3a39777d719"
+  },
+  "relaySHA256": "e928c2161272a1f89f4c11ee4b0d70e3a2a0eb0b70dc1776f59894adbb31c8cd",
+  "wheelSHA256": "64dee438fed052b52e4f98f76c5790513235efaa1ef7f3f2192c392cd7c91b65",
+  "sourceHashes": {
+    ".github/workflows/native-runtime.yml": "83606d05f95be622dc34fd35fc9c4327fd62db1005b13bcdfe756f91fe7d3c6f",
+    ".github/workflows/spec.yml": "4dc1b05ff25d9ec86f16564e837fae6a3fa086496902c86e2d98f465d322ebf0",
+    "packages/e2e/tests/fixtures/popup-init-order/cases.txt": "1f0971c29c005bb26dc9f3a47e625b3df25aa3c1264393b21cb213b1cd7fefe1",
+    "packages/e2e/tests/helpers/popup-document-evidence.ts": "1ed7b36776a0ed5152d96198b7a766d20bf385d198d1c759f4e35551e2192031",
+    "packages/e2e/tests/helpers/run-project.ts": "c1fc8e7bbaab2377d0dbe1e7da9d82905f275f9aabd2f8a54c7ef9859c62f974",
+    "packages/e2e/tests/integration/web-popup-init-order.test.ts": "ed70a3af61e099eba95ec50d1f554af13be8c03ef8ecad0a59cb877f32c17dc0",
+    "scripts/acceptance/candidate-web.ts": "e2c87d22fbf083cb51ce6433500513f6670ddcc40dcfaa7e636bb4ade3d9358a",
+    "scripts/ci/check-engine-secrets-native-custody.py": "1d3d5e787d01d0d7ba372f72248542dfd337367cb25d2e4393261644dafbd8c8",
+    "scripts/ci/native-fault-runtime.ts": "465f1d3a9b961e9bdc55fb831dee8c3ac6f3b4c6d619e230cb0538b179c938cd",
+    "scripts/ci/native-runtime.ts": "6bba1e947116d971b18ced210ea8fbdae2b3f678f5684104cec843e2be68ca71",
+    "scripts/ci/native-targeted-plan.json": "2d642d7e71d295df26eb4fa812e53f38f9ef76e971d1712b311fd7f51d91cff1",
+    "scripts/ci/native-targeted-tests.py": "157f81fbabc2a261405954f6ab87ab1f30baee13b0665a1aaadcc610ea4e8146",
+    "scripts/ci/native-targeted-tests.test.py": "a967ecdf957f0083fb7c7b736f3887ffc92a233de29133f915890a477f266baa",
+    "scripts/ci/popup-joint-case.ts": "df02d4335cf7a661cdcd752cc7aea583e877c9cdd31039c516a5051f44932677",
+    "scripts/ci/popup-joint-evidence.py": "c974b54c86ddb8c992387a1d44e1ee9ca90cc92755d259d6211c3f5783134555",
+    "scripts/ci/popup-joint-evidence.test.py": "47aafcc09784f9ff3b77190b91bdb429e2386a206a4d79b503f90c6437da233d",
+    "scripts/ci/popup-joint-fault-controls.json": "7d4a39c834955c211ff546be20c5a63e9b536a2bd2764f8a110ce8bdd1e21e97",
+    "scripts/ci/popup-joint-requirements.txt": "47e5b7c0631922fd5c9967e13490dbff7389f8d4d5bfe464b2a71e9d9c1175fa",
+    "scripts/ci/popup-joint-runtime.test.ts": "e1cb50369af2374c2c426aedd2a1bd49dbdfee39bdce2905c0ee8aeb9bc591fc",
+    "scripts/ci/popup-joint-runtime.ts": "7d0d6a1dc1ab933b2a6951d6217adcfda21edded6ac5c23faa86310deb7a1603",
+    "scripts/ci/popup-passive-joint-relay.py": "e928c2161272a1f89f4c11ee4b0d70e3a2a0eb0b70dc1776f59894adbb31c8cd",
+    "scripts/ci/spec-fixture-runtime.ts": "f1d114431bf0a71ce94a4751a5f79b8b923fbfdb5560542145fddc571e74b503",
+    "scripts/ci/test_popup_passive_joint_relay.py": "1febcf37cafe5b88bd5a8b02f6fca61b5d4f3cde9e9872dbc49f83f4419df0b7"
+  }
+}

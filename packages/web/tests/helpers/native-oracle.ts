@@ -16,8 +16,8 @@ export interface NativeActionOracle extends NativeFixture {
 }
 
 /** Existing callers retain their read-only oracle contract. */
-export async function startNativeOracle(name: string): Promise<NativeOracle> {
-  const { page, ...fixture } = await connectNativeOracle(name);
+export async function startNativeOracle(name: string, lifetimeMs = 30_000): Promise<NativeOracle> {
+  const { page, ...fixture } = await connectNativeOracle(name, lifetimeMs);
   return { ...fixture, oracle: page };
 }
 
@@ -28,7 +28,7 @@ export async function startNativeActionOracle(name: string): Promise<NativeActio
 }
 
 /** Identify the native page by a random witness, not by URL or node authority. */
-async function connectNativeOracle(name: string): Promise<NativeFixture & { readonly page: Page }> {
+async function connectNativeOracle(name: string, lifetimeMs = 30_000): Promise<NativeFixture & { readonly page: Page }> {
   const remote = await launchRemoteChrome();
   let fixture: NativeFixture | undefined;
   let connection: OracleBrowser | undefined;
@@ -40,7 +40,7 @@ async function connectNativeOracle(name: string): Promise<NativeFixture & { read
     if (failures.length > 0) throw new AggregateError(failures, 'Native oracle fixture cleanup failed');
   };
   try {
-    fixture = await startNativeFixture(name, { connect: { cdpEndpoint: () => remote.endpoint } });
+    fixture = await startNativeFixture(name, { connect: { cdpEndpoint: () => remote.endpoint } }, lifetimeMs);
     const marker = randomUUID();
     await fixture.browser.evaluate((value) => {
       (window as unknown as { nativeOracleWitness: string }).nativeOracleWitness = value;
