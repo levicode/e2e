@@ -4,6 +4,8 @@ import type {
   SemanticNode, ViewportPoint, ViewportSize,
 } from 'e2e/engine';
 
+import type { ObserveContinuation } from './protocol.ts';
+
 export interface Scoped { readonly identityScope: string }
 export interface NativeBlob extends Scoped {
   readonly handle: string;
@@ -67,7 +69,7 @@ export interface EngineCommandMap {
   'page.activate': { args: Scoped; result: { readonly activated: true } };
   'scope.end': { args: Scoped; result: null };
 
-  'browser.observe': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };
+  'browser.observe': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions; readonly continuation?: ObserveContinuation }; result: NativeObservation };
   /** Live trace-only tree: temporary refs never enter native action authority. */
   'browser.trace': { args: Scoped & ReadPolicy & { readonly options: EngineObserveOptions }; result: NativeObservation };
   'fixture.query': { args: Scoped & ReadPolicy & { readonly expression: LocatorExpression }; result: Scoped & { readonly revision: string; readonly nodes: readonly SemanticNode[] } };

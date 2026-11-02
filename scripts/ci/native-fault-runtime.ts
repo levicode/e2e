@@ -69,6 +69,7 @@ export function verifyArtifact(directory: string, expectedDigest: string, expect
   const manifest = object(JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8')));
   assert.equal(manifest['schemaVersion'], 1);
   assert.equal(manifest['kind'], 'source-built-ci-runtime');
+  assert.equal(manifest['runtimeRole'], 'acceptance-faults-fixture');
   assert.equal(manifest['acceptanceEvidence'], false);
   assert.deepEqual(manifest['source'], expected.source);
   assert.equal(manifest['repository'], expected.repository);
@@ -127,7 +128,7 @@ function build(root: string, native: string, target: string, directory: string, 
   writeFileSync(join(directory, 'rustc.txt'), rustc.stdout);
   regular(executable); copyFileSync(executable, join(directory, 'agent-browser'));
   const manifest = {
-    schemaVersion: 1, kind: 'source-built-ci-runtime', acceptanceEvidence: false,
+    schemaVersion: 1, kind: 'source-built-ci-runtime', runtimeRole: 'acceptance-faults-fixture', acceptanceEvidence: false,
     ...expected, nativeCommit: undefined, nativeRepository: NATIVE_REPOSITORY, nativeSource,
     compilation: { profile: 'ci', features: ['acceptance-faults'], manifestPath, sourcePath, executable },
     binarySha256: hash(join(directory, 'agent-browser')), compilerSha256: hash(join(directory, 'compiler.jsonl')), rustcSha256: hash(join(directory, 'rustc.txt')),

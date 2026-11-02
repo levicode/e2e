@@ -56,7 +56,8 @@ export function producerAttempt(value: string, current: string): string {
   assert.ok(BigInt(value) <= BigInt(current), 'Producer attempt cannot be in the future');
   return value;
 }
-function expectation(root: string, previousAttempt?: string): Expected {
+/** Recompute source, native pin and host identity for the selected same-run producer attempt. */
+export function expectation(root: string, previousAttempt?: string): Expected {
   const identity = source(root);
   assert.equal(identity.commit, process.env['GITHUB_SHA'], 'CI checkout must match this workflow commit');
   const required = (name: string) => {
@@ -77,6 +78,7 @@ export function verifyArtifact(directory: string, expectedDigest: string, expect
   const manifest = object(JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8')));
   assert.equal(manifest['schemaVersion'], 1);
   assert.equal(manifest['kind'], 'source-built-ci-runtime');
+  assert.equal(manifest['runtimeRole'], undefined, 'Fault fixture roles cannot bootstrap ordinary CI');
   assert.equal(manifest['acceptanceEvidence'], false);
   assert.deepEqual(manifest['source'], expected.source);
   assert.equal(manifest['repository'], expected.repository);

@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { connectionCancellation, connectionDeadline, withConnectionBudget } from '../operation-budget.ts';
 import { EngineError, TestError, LOCATOR_ACTION_KINDS, type JsonValue, type OperationContext } from 'e2e/engine';
+import type { ObserveContinuation } from './protocol.ts';
 import type { BrowserCommandMap } from './browser-contract.ts';
 import { resultError, type NativeActionErrorContext } from './browser-channel.ts';
 import { decodeBrowserResult } from './browser-decode.ts';
@@ -29,6 +30,15 @@ export interface BlobBatchCustody {
   readonly pendingHandles: readonly string[];
   read(blob: NativeBlob, operation: OperationContext, observer: BlobReadObserver): Promise<Buffer>;
   retire(operation: OperationContext): Promise<void>;
+}
+
+const observationContinuations = new WeakMap<Error, ObserveContinuation>();
+/** Consume authority only on the exact native observation failure that carried it. */
+export function takeObservationContinuation(cause: unknown): ObserveContinuation | undefined {
+  if (!(cause instanceof Error)) return undefined;
+  const continuation = observationContinuations.get(cause);
+  observationContinuations.delete(cause);
+  return continuation;
 }
 
 const unavailableBlobReads = new WeakSet<EngineError | TestError>();
@@ -103,6 +113,7 @@ export class EngineChannel {
         frameDiagnostic = { selector, index: facts.index, count: facts.count };
       }
       const cause = resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
+      if (name === 'browser.observe' && result.observeContinuation !== undefined) observationContinuations.set(cause, result.observeContinuation);
       if (name === 'scope.reconnect' && result.effects === 'not-dispatched' && result.scopeState === 'quarantined'
         && result.error?.code === 'stale-scope') rejectedReconnectAdmissions.add(cause);
       if (name === 'blob.read' && result.effects === 'not-dispatched' && result.scopeState === 'usable'

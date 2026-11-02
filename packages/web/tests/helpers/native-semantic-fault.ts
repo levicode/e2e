@@ -6,6 +6,7 @@ import type { NativeClient } from '../../src/native/client.ts';
 import * as transport from '../../src/native/process.ts';
 import { AcceptanceTrace } from '../../src/native/acceptance-trace.ts';
 import { openSemanticTrace, type SemanticTraceCase } from './acceptance-trace-files.ts';
+import { SEMANTIC_FAULT_CAPABILITY, semanticFaultRuntimeFromEnvironment } from './semantic-fault-runtime.ts';
 
 export type SemanticFaultPhase = 'semantic-acquire' | 'semantic-publish';
 export interface SemanticFaultStatus {
@@ -33,7 +34,11 @@ export function semanticFaultControl(traceCase?: SemanticTraceCase) {
   let client: NativeClient | undefined;
   const connect = transport.connectNativeProcess;
   const spy = vi.spyOn(transport, 'connectNativeProcess').mockImplementation(async (...args) => {
-    const connected = trace === undefined ? await connect(...args) : await connect({ ...args[0], acceptanceTrace: trace }, args[1], args[2]);
+    const runtime = semanticFaultRuntimeFromEnvironment(process.env);
+    const connected = await connect({ ...args[0], executable: runtime.binary,
+      capabilities: [...new Set([...args[0].capabilities, SEMANTIC_FAULT_CAPABILITY])],
+      ...(trace === undefined ? {} : { acceptanceTrace: trace }),
+    }, args[1], args[2]);
     if (client !== undefined) {
       const failure = new Error('Acceptance fault fixture must own exactly one native client');
       try {

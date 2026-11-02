@@ -25,7 +25,7 @@ import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched, isNativeResourceCleanupFailure, isNativeUsableFailure } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
-import { EngineChannel, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
+import { EngineChannel, takeObservationContinuation, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
 import { NativeReferenceBridge, type ReferenceOwner } from './native/reference-bridge.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
@@ -1230,11 +1230,26 @@ export class NativeSurface implements NativeWebSurface {
     return result;
   }
   async observe(operation: OperationContext, options: EngineObserveOptions = {}): Promise<EngineSnapshot> {
+    // One caller budget and immutable options cover admission and both possible captures.
+    const original = operation; const deadline = performance.now() + original.timeoutMs;
+    operation = { ...original, get timeoutMs() { return Math.min(original.timeoutMs, deadline - performance.now()); } };
+    options = { ...options };
     const optionalPixels = options.pixels === true;
-    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
+    const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope);
+    operation = { ...admitted.operation, get timeoutMs() { return Math.min(admitted.operation.timeoutMs, original.timeoutMs, deadline - performance.now()); } };
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
     const epoch = attempt.epoch; const client = this.requireClient(); const publication = client.publicationCheckpoint();
-    const snapshot = await this.engineCommand('browser.observe', { identityScope: scope, options, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR }, operation);
+    const args = { identityScope: scope, options, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR };
+    let snapshot;
+    try { snapshot = await this.engineCommand('browser.observe', args, operation); }
+    catch (cause) {
+      const continuation = takeObservationContinuation(cause);
+      if (continuation === undefined) throw cause;
+      // No generic retry: native minted this one-use authority only after clean settlement.
+      this.assertObservationOwner(attempt, scope, epoch, client);
+      this.assertPublication(client, publication); this.assertBudget(operation);
+      snapshot = await this.engineCommand('browser.observe', { ...args, continuation }, operation);
+    }
     this.assertObservationOwner(attempt, scope, epoch, client);
     const revision = observationRevision(snapshot.revision);
     if (snapshot.identityScope !== scope || (snapshot.pixels !== undefined && snapshot.pixels.identityScope !== scope) || revision === undefined) throw client.invalidate();

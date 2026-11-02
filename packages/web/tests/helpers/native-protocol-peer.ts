@@ -6,10 +6,10 @@ import type { Effects, NativeEvent, ScopeState } from '../../src/native/protocol
 
 export interface PeerRequest {
   readonly type: 'request'; readonly id: string; readonly generation: number;
-  readonly operationSeq: number; readonly command: string; readonly args: Record<string, JsonValue>;
+  readonly operationSeq: number; readonly timeoutMs?: number; readonly command: string; readonly args: Record<string, JsonValue>;
 }
 export type PeerOutcome = { readonly data: JsonValue; readonly scopeState?: ScopeState } | {
-  readonly error: string; readonly frameSelection?: unknown; readonly effects?: Effects; readonly scopeState?: ScopeState;
+  readonly error: string; readonly observeContinuation?: unknown; readonly frameSelection?: unknown; readonly effects?: Effects; readonly scopeState?: ScopeState;
 };
 
 /** Keeps the real NativeClient parser, sequence checks, cancellation, and result decoding in the test. */
@@ -59,7 +59,7 @@ export class NativeProtocolPeer {
           void Promise.resolve().then(() => request(call)).then(outcome => this.send({
             type: 'result', id: call.id, generation: call.generation, operationSeq: call.operationSeq,
             ...('data' in outcome ? { ok: true, data: outcome.data, effects: 'completed', scopeState: outcome.scopeState ?? 'usable' }
-              : { ok: false, error: { code: outcome.error, ...(outcome.frameSelection === undefined ? {} : { frameSelection: outcome.frameSelection }) }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable' }),
+              : { ok: false, error: { code: outcome.error, ...(outcome.frameSelection === undefined ? {} : { frameSelection: outcome.frameSelection }) }, effects: outcome.effects ?? 'not-dispatched', scopeState: outcome.scopeState ?? 'usable', ...(outcome.observeContinuation === undefined ? {} : { observeContinuation: outcome.observeContinuation }) }),
           })).catch(error => this.output.destroy(error instanceof Error ? error : new Error('Synthetic peer failed')));
         } else throw new Error(`Unexpected synthetic peer frame ${String(frame['type'])}`);
         done();

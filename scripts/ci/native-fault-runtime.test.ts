@@ -24,7 +24,7 @@ function fixture(t: { after: (fn: () => void) => void }) {
   writeFileSync(join(directory, 'compiler.jsonl'), compiler());
   writeFileSync(join(directory, 'rustc.txt'), rustc);
   const manifest = {
-    schemaVersion: 1, kind: 'source-built-ci-runtime', acceptanceEvidence: false,
+    schemaVersion: 1, kind: 'source-built-ci-runtime', runtimeRole: 'acceptance-faults-fixture', acceptanceEvidence: false,
     source, repository: expected.repository, runId: expected.runId, runAttempt: expected.runAttempt,
     platform: expected.platform, architecture: expected.architecture,
     nativeRepository: 'levicode/agent-browser', nativeSource: { commit: nativeCommit, tree: '4'.repeat(40) },

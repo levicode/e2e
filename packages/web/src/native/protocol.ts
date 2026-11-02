@@ -1,5 +1,5 @@
 import { NativeFrameError } from './frames.ts';
-import { CONTINUE_EXACT_OWNER_CAPABILITY, DISCONNECTED_RECOVERY_CAPABILITY } from './capabilities.ts';
+import { CONTINUE_EXACT_OWNER_CAPABILITY, DISCONNECTED_RECOVERY_CAPABILITY, OBSERVE_CONTINUATION_CAPABILITY } from './capabilities.ts';
 
 export const NATIVE_PROTOCOL = 'agent-browser-session/1';
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -28,11 +28,18 @@ export interface OperationRetention {
   readonly inputDebt: number;
   readonly objectDebt: number;
 }
+/** Opaque single-use native authority, bound to a fully settled earlier observation. */
+export interface ObserveContinuation {
+  readonly version: 1;
+  readonly token: string;
+  readonly retiredOperationSeq: number;
+}
 export interface NativeResult {
   readonly type: 'result'; readonly id: string; readonly generation: number; readonly operationSeq: number;
   readonly ok: boolean; readonly data?: unknown; readonly error?: WireError;
   readonly effects: Effects; readonly scopeState: ScopeState;
   readonly retention?: OperationRetention;
+  readonly observeContinuation?: ObserveContinuation;
   /** One explicit recovery attempt only; old scope and effects remain quarantined/Unknown. */
   readonly recovery?: { readonly version: 1; readonly identityScope: string };
 }
@@ -80,7 +87,7 @@ function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities:
       break;
     }
     case 'result':
-      keys(value, ['type', 'id', 'generation', 'operationSeq', 'ok', 'effects', 'scopeState'], ['data', 'error', 'retention', 'recovery']);
+      keys(value, ['type', 'id', 'generation', 'operationSeq', 'ok', 'effects', 'scopeState'], ['data', 'error', 'retention', 'recovery', 'observeContinuation']);
       identifier(value['id']); positive(value['generation']); positive(value['operationSeq']); state(value['scopeState']);
       if (typeof value['ok'] !== 'boolean' || (typeof value['effects'] !== 'string' || !EFFECTS.has(value['effects']))) throw new NativeFrameError();
       if (value['ok']) {
@@ -88,6 +95,13 @@ function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities:
       } else {
         error(value['error'], true);
         if (Object.hasOwn(value, 'data')) throw new NativeFrameError();
+      }
+      if (Object.hasOwn(value, 'observeContinuation')) {
+        if (!negotiatedCapabilities.includes(OBSERVE_CONTINUATION_CAPABILITY) || value['ok'] || value['effects'] !== 'not-dispatched' || value['scopeState'] !== 'usable' || record(value['error'])['code'] !== 'stale-scope' || Object.hasOwn(value, 'retention') || Object.hasOwn(value, 'recovery')) throw new NativeFrameError();
+        const continuation = record(value['observeContinuation']);
+        keys(continuation, ['version', 'token', 'retiredOperationSeq']);
+        if (continuation['version'] !== 1 || continuation['retiredOperationSeq'] !== value['operationSeq']) throw new NativeFrameError();
+        identifier(continuation['token']);
       }
       if (Object.hasOwn(value, 'recovery')) {
         if (!negotiatedCapabilities.includes(DISCONNECTED_RECOVERY_CAPABILITY) || value['effects'] !== 'unknown' || value['ok'] || value['scopeState'] !== 'quarantined' || Object.hasOwn(value, 'retention')) throw new NativeFrameError();

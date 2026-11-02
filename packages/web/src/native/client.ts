@@ -30,6 +30,7 @@ interface CallbackOwner { readonly source: 'network-request' | 'other'; retiredA
 interface Pending {
   readonly kind: 'hello' | 'request' | 'artifact' | 'decision' | 'cancel' | 'close';
   readonly operationSeq?: number;
+  readonly continuedObservation?: boolean;
   readonly cancelTarget?: number;
   // Only ordinary decide() receipts require ACK-before-close custody. Private
   // interop handoff controls retain their distinct validated-close contract.
@@ -648,7 +649,7 @@ export class NativeClient {
       };
       const args = message['args'];
       const scope = args !== null && typeof args === 'object' && 'identityScope' in args && typeof args.identityScope === 'string' ? args.identityScope : undefined;
-      this.pending.set(id, { kind, ...(kind === 'decision' && dispatchSignal !== undefined ? { decisionReceipt: 'ordinary' as const } : {}), ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
+      this.pending.set(id, { kind, ...(kind === 'decision' && dispatchSignal !== undefined ? { decisionReceipt: 'ordinary' as const } : {}), ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(message['command'] === 'browser.observe' ? { continuedObservation: Object.hasOwn(message['args'] as object, 'continuation') } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
       // Check after serialization and before the sole write. Pre-dispatch
       // caller cancellation is definite no-effect, not a protocol failure.
       if (dispatchSignal?.aborted) {
@@ -720,6 +721,8 @@ export class NativeClient {
         if (callback.timer !== undefined) clearTimeout(callback.timer);
       }
     }
+    if (message.type === 'result' && message.observeContinuation !== undefined
+      && (pending.kind !== 'request' || pending.command !== 'browser.observe' || pending.callbackToken !== undefined || pending.continuedObservation || pending.identityScope === undefined)) throw new ReceiveFailure('response-correlation');
     if (message.type === 'result' && message.recovery !== undefined) {
       if (this.recovery !== undefined || pending.callbackToken !== undefined || pending.identityScope !== message.recovery.identityScope) throw new ReceiveFailure('response-correlation');
       this.recovery = { scope: message.recovery.identityScope, operationSeq: message.operationSeq, claimed: false };

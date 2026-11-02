@@ -11,6 +11,7 @@ import { NATIVE_TRACE_FILE, SEMANTIC_TRACE_CASES, tsTraceFile } from '../../pack
 import { collectSemanticTraceEvidence } from './candidate-semantic-trace.ts';
 import { REPO_ROOT } from '../public-packages.ts';
 import { cleanInstallerEnvironment, INSTALLER_EXECUTABLE_ENV, INSTALLER_BINDING_ENV, type InstallerRuntimeBinding, type InstallerRuntimeReceipt } from '../../packages/web/tests/helpers/installer-fixture.ts';
+import { cleanSemanticFaultEnvironment, semanticFaultEnvironment } from '../../packages/web/tests/helpers/semantic-fault-runtime.ts';
 import { cleanCleanupEnvironment, prepareCleanupCapture, collectCleanupCapture, type CleanupCapture } from './candidate-cleanup-diagnostics.ts';
 import { prepareInteropCapture, interopEnvironment, archiveInteropCapture, type InteropCapture } from './candidate-interop-evidence.ts';
 import { SYNTHETIC_BATCH_ENV } from '../../packages/web/tests/helpers/synthetic-evidence.ts';
@@ -115,7 +116,7 @@ export function candidateScreenshotEnvironment(id: string, enabled: boolean, inh
 }
 /** Fault diagnostics are bounded by the native sink and never enabled for production suites. */
 export function candidatePhaseEnvironment(id: string, inherited: NodeJS.ProcessEnv, output: string): NodeJS.ProcessEnv {
-  const env = cleanInstallerEnvironment(cleanCleanupEnvironment(inherited));
+  const env = cleanSemanticFaultEnvironment(cleanInstallerEnvironment(cleanCleanupEnvironment(inherited)));
   delete env['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
   delete env[CALLBACK_SCREENSHOT_ENV];
   if (id === 'semantic-faults') {
@@ -153,7 +154,7 @@ function main(args: string[]): void {
   const syntheticRequested = process.env[SYNTHETIC_BATCH_ENV] === '1' && (suite.id === 'web-browser' || suite.id === 'public-callbacks');
   let syntheticCapture: SyntheticCapture | undefined;
   let cleanupCapture: CleanupCapture | undefined;
-  let phaseEnvironment: NodeJS.ProcessEnv = cleanCleanupEnvironment(cleanInstallerEnvironment(cleanSyntheticEnvironment(process.env)));
+  let phaseEnvironment: NodeJS.ProcessEnv = cleanSemanticFaultEnvironment(cleanCleanupEnvironment(cleanInstallerEnvironment(cleanSyntheticEnvironment(process.env))));
   delete phaseEnvironment['AGENT_BROWSER_ACCEPTANCE_PHASE_FILE'];
   delete phaseEnvironment[CALLBACK_SCREENSHOT_ENV];
   let capturePrepared = suite.id !== 'semantic-faults';
@@ -205,7 +206,8 @@ function main(args: string[]): void {
       } catch { /* Missing diagnostic setup is unknown and cannot alter original suite behavior. */ }
     }
     try { phaseEnvironment = candidateScreenshotEnvironment(suite.id, syntheticCapture !== undefined, phaseEnvironment, output); } catch { delete phaseEnvironment[CALLBACK_SCREENSHOT_ENV]; }
-    const env: NodeJS.ProcessEnv = { ...interopEnvironment(candidateInstallerEnvironment(phaseEnvironment, installerRuntime), interopCapture), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
+    const semanticRuntime = suite.id === 'semantic-faults' ? { binary: realpathSync(binary), binding: { binarySha256: binarySha256!, negotiationProofSha256: sha256(readFileSync(proofArg)) } } : undefined;
+    const env: NodeJS.ProcessEnv = { ...semanticFaultEnvironment(interopEnvironment(candidateInstallerEnvironment(phaseEnvironment, installerRuntime), interopCapture), semanticRuntime), E2E_AGENT_BROWSER_EXECUTABLE: binary, E2E_TELEMETRY_DISABLED: '1', E2E_UPDATE_CHECK_DISABLED: '1', E2E_CACHE_DIR: '' };
     if (suite.id === 'crosscheck-benchmark') {
       if (env['CROSSCHECK_BENCHMARK_URL'] !== 'http://127.0.0.1:4280') throw new Error('Optional benchmark must be the explicitly served local synthetic app');
     } else delete env['CROSSCHECK_BENCHMARK_URL'];

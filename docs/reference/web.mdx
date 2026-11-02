@@ -1417,6 +1417,10 @@ automatic retry loop. Once `dispose` confirms that no cleanup remains unresolved
 explicit `init` may create a fresh native worker on the same engine handle,
 without reviving the retired scope or its fixtures.
 
+### Initial observation inventory changes
+
+`browser.observe-continuation/1` allows one fresh observation when native proves that only the initial frame inventory revision changed. The first operation must finish its retained cleanup with no outstanding input or object debt, no rejected cleanup, and the exact original page owner. Native issues a single-use continuation bound to that owner, the original options and deadline. The adapter consumes it at most once, preserving cancellation and the remaining budget. Each capture retains the original bounded inventory checks. A changed attachment, unconfirmed cleanup, or a second failed capture remains an error; no click, fill, navigation or other action is replayed. Older native runtimes without this coordinated capability fail negotiation.
+
 ### Locator values inside native callbacks
 
 Native Web negotiates `browser.fixture-read-fields/1` for pure locator field reads. A live, native-verified callback can read current values in its own scope while an outer request is pending. Secure-field denial still applies, and the read does not publish references, clear input debt, permit actions, or promise a transaction-consistent snapshot. Stale, expired, cancelled, or cross-scope callbacks fail closed. This is a fixed native matcher/projection, not an evaluation or alternate query engine. Older native binaries lacking the capability are unsupported; there is no fallback.

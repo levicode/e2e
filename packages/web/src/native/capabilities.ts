@@ -1,3 +1,6 @@
+/** Optional one-use continuation of a clean initial observation inventory race. */
+export const OBSERVE_CONTINUATION_CAPABILITY = 'browser.observe-continuation/1';
+
 /** Required coordinated native operation-retirement contract. */
 export const CONTINUE_EXACT_OWNER_CAPABILITY = 'operation.continue-exact-owner/1';
 
@@ -30,6 +33,7 @@ export const ISSUANCE_BOUND_REFERENCES_CAPABILITY = 'browser.issuance-bound-refe
 
 /** Full public Web candidate contract. Advertising handlers is not acceptance certification. */
 export const REQUIRED_CAPABILITIES = [
+  OBSERVE_CONTINUATION_CAPABILITY,
   CONTINUE_EXACT_OWNER_CAPABILITY,
   INTEROP_CONTEXT_REPLACEMENT_CAPABILITY,
   DISCONNECTED_RECOVERY_CAPABILITY,

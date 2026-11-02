@@ -240,6 +240,11 @@ start a script that brings them up and serves the app.
   succeeds, including any requested pixels. Locator reads and screenshots do not
   count; direct `browser.mouse` input remains available to test code.
 
+- Native Web may continue an initial observation inventory race once under
+  `browser.observe-continuation/1`, only after native proves clean settlement and
+  the same page owner. It keeps the original options, cancellation and deadline.
+  Changed ownership or remaining cleanup debt still fails; it never replays an action.
+
 Two browsers, one app declaration:
 
 ```ts

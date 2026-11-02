@@ -438,6 +438,7 @@ import {createHash} from 'node:crypto';
 import {REQUIRED_CAPABILITIES} from '../../packages/web/src/native/capabilities.ts';
 import {CANDIDATE_FAULT_FILE} from '../../scripts/acceptance/candidate-manifest.ts';
 import {verifyCandidateRuntime,verifyInstallerFixtureRuntime,candidateInstallerEnvironment,verifyInstallerFixturePostRun,verifySemanticFaults} from '../../scripts/acceptance/candidate-web.ts';
+import {semanticFaultEnvironment} from '../../packages/web/tests/helpers/semantic-fault-runtime.ts';
 const out=resolve('evidence/web');mkdirSync(out,{recursive:true});
 const ordinary=process.env.E2E_AGENT_BROWSER_EXECUTABLE!,fault=process.env.FULL_NODE_FAULT_EXECUTABLE!;
 const hash=(p:string)=>createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -465,7 +466,7 @@ try {
  for(const [name,rows] of [['ordinary',ordinaryRows],['fault',faultRows]] as const){mkdirSync(out+'/'+name);writeFileSync(out+'/'+name+'/collection.json',JSON.stringify(rows,null,2));}
  // Both commands run even when ordinary fails; no reporter/receipt failure can erase fault results.
  const ordinaryOK=run('ordinary-command',[...common,'run','--exclude',`tests/integration/${CANDIDATE_FAULT_FILE}`,'--reporter=verbose','--reporter=json',`--outputFile.json=${out}/ordinary/results.json`],ordinaryEnv);
- const faultEnv={...env,E2E_AGENT_BROWSER_EXECUTABLE:fault,E2E_INTEROP_EVIDENCE_DIR:resolve(env.E2E_INTEROP_EVIDENCE_DIR!,'..','fault')};
+ const faultEnv={...semanticFaultEnvironment(env,installer),E2E_AGENT_BROWSER_EXECUTABLE:fault,E2E_INTEROP_EVIDENCE_DIR:resolve(env.E2E_INTEROP_EVIDENCE_DIR!,'..','fault')};
  const faultOK=run('fault-command',[...common,'run',`tests/integration/${CANDIDATE_FAULT_FILE}`,'--reporter=verbose','--reporter=json',`--outputFile.json=${out}/fault/results.json`],faultEnv);
  const nativeCaptureOK=run('ordinary-native-capture',['python3','scripts/ci/check-web-case-native-custody.py',resolve('evidence')],ordinaryEnv);
  for(const name of ['ordinary','fault'])writeFileSync(out+'/'+name+'/command.exit',readFileSync(out+'/'+name+'-command.exit'));

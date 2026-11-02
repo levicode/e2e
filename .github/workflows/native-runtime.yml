@@ -3,6 +3,10 @@ name: build source-pinned native runtime for ordinary CI
 # Bootstrap only. Full candidate and installed-no-override acceptance stay separate.
 on:
   workflow_call:
+    inputs:
+      fault-fixtures:
+        type: boolean
+        default: false
     outputs:
       artifact-id:
         value: ${{ jobs.build.outputs.artifact-id }}
@@ -10,6 +14,12 @@ on:
         value: ${{ jobs.build.outputs.run-attempt }}
       manifest-sha256:
         value: ${{ jobs.build.outputs.manifest-sha256 }}
+      fault-artifact-id:
+        value: ${{ jobs.build.outputs.fault-artifact-id }}
+      fault-manifest-sha256:
+        value: ${{ jobs.build.outputs.fault-manifest-sha256 }}
+      fault-run-attempt:
+        value: ${{ jobs.build.outputs.fault-run-attempt }}
 permissions:
   contents: read
 jobs:
@@ -20,6 +30,9 @@ jobs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
       manifest-sha256: ${{ steps.build.outputs.manifest-sha256 }}
       run-attempt: ${{ steps.build.outputs.run-attempt }}
+      fault-artifact-id: ${{ steps.upload-fault.outputs.artifact-id }}
+      fault-manifest-sha256: ${{ steps.build-fault.outputs.manifest-sha256 }}
+      fault-run-attempt: ${{ steps.build-fault.outputs.run-attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -47,5 +60,20 @@ jobs:
         with:
           name: ci-native-runtime-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ci-native-artifact/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Build and seal the separate fixture runtime from the same clean source
+        if: ${{ inputs.fault-fixtures }}
+        id: build-fault
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          REVIEWED_NATIVE_SHA: ${{ steps.pin.outputs.sha }}
+        run: node scripts/ci/native-fault-runtime.ts build .artifacts/ci-native-source "$RUNNER_TEMP/ci-native-fault-target" "$RUNNER_TEMP/ci-native-fault-artifact" "$REVIEWED_NATIVE_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ inputs.fault-fixtures }}
+        id: upload-fault
+        with:
+          name: ci-native-fault-fixture-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-native-fault-artifact/
           if-no-files-found: error
           retention-days: 7
