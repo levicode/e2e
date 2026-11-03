@@ -36,6 +36,16 @@ async function close(fixture: Awaited<ReturnType<typeof opened>>) {
 }
 
 describe('native session client', () => {
+  it('reports an unproven close receipt as a cleanup failure, not a corrupt protocol', async () => {
+    const fixture = await opened();
+    const closing = fixture.client.close(context()).then(() => 'closed', cause => cause);
+    fixture.send({ type: 'closed', id: fixture.requests.at(-1)!['id'], generation: 1, scopeState: 'quarantined', cleanup: 'unproven' });
+    expect(await closing).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native browser cleanup could not be proven' });
+    // The receipt is correlated and terminal; it must not be re-reported as a
+    // native refusal that invalidates an already-clean close exchange.
+    expect(fixture.requests.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+  });
+
   it.each(['before-deadline', 'after-deadline'] as const)('preserves ordinary decision deadline during automatic terminal cleanup: %s', async timing => {
     vi.useFakeTimers();
     try {

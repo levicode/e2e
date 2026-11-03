@@ -54,7 +54,7 @@ export interface NativeEvent {
 }
 export type ServerMessage = NativeReady | NativeResult | NativeControlResult | NativeEvent |
   { readonly type: 'error'; readonly id?: string; readonly error: WireError; readonly scopeState: ScopeState } |
-  { readonly type: 'closed'; readonly id: string; readonly generation: number; readonly scopeState: 'closed' };
+  { readonly type: 'closed'; readonly id: string; readonly generation: number; readonly scopeState: 'closed' | 'quarantined'; readonly cleanup?: 'proven' | 'unproven' };
 
 const FRAME_ERROR_CODES = new Set(['frame-not-found', 'frame-ambiguous']);
 const ERROR_CODES = new Set([
@@ -143,9 +143,16 @@ function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities:
       error(value['error']); state(value['scopeState']);
       break;
     case 'closed':
-      keys(value, ['type', 'id', 'generation', 'scopeState']);
+      keys(value, ['type', 'id', 'generation', 'scopeState'], ['cleanup']);
       identifier(value['id']); positive(value['generation']);
-      if (value['scopeState'] !== 'closed') throw new NativeFrameError();
+      // A proven close retires the scope. An unproven receipt says the local
+      // scope and transport are gone while some remote obligation could not be
+      // proven retired; it is a cleanup failure, never protocol corruption.
+      if (value['cleanup'] === 'unproven') {
+        if (value['scopeState'] !== 'quarantined') throw new NativeFrameError();
+      } else if (value['cleanup'] === undefined || value['cleanup'] === 'proven') {
+        if (value['scopeState'] !== 'closed') throw new NativeFrameError();
+      } else throw new NativeFrameError();
       break;
     default: throw new NativeFrameError();
   }

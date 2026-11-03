@@ -19,6 +19,21 @@ describe('native session wire contract', () => {
     for (const message of vectors.server) expect(() => serverMessage({ ...message, privateSample: 'not diagnostic text' })).toThrow(NativeFrameError);
   });
 
+  it('accepts the correlated unproven close receipt and keeps proven closes unchanged', () => {
+    const proven = serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'closed' });
+    expect(proven).not.toHaveProperty('cleanup');
+    const explicit = serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'closed', cleanup: 'proven' });
+    expect(explicit).toMatchObject({ cleanup: 'proven' });
+    const unproven = serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'quarantined', cleanup: 'unproven' });
+    expect(unproven).toMatchObject({ scopeState: 'quarantined', cleanup: 'unproven' });
+    // The cleanup state and the scope state must agree; a proven close cannot
+    // leave the scope quarantined and an unproven one cannot claim closure.
+    expect(() => serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'quarantined' })).toThrow(NativeFrameError);
+    expect(() => serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'closed', cleanup: 'unproven' })).toThrow(NativeFrameError);
+    expect(() => serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'quarantined', cleanup: 'proven' })).toThrow(NativeFrameError);
+    expect(() => serverMessage({ type: 'closed', id: 'c1', generation: 1, scopeState: 'quarantined', cleanup: 'privateSample' })).toThrow(NativeFrameError);
+  });
+
   it('does not confuse an acknowledged cancellation with a terminal operation', () => {
     const message = serverMessage({ type: 'control-result', id: 'c1', generation: 1, accepted: true, scopeState: 'usable' });
     expect(message.type).toBe('control-result');

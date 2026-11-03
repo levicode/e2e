@@ -416,6 +416,10 @@ export class NativeClient {
       diagnosticStage = 'close-exchange';
       const message = await this.exchange('close', { type: 'close', generation: this.ready.generation }, { ...context, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
       if (message.type !== 'closed') throw this.fail('The native browser did not confirm scope closure');
+      // The daemon retired the local scope and transport but could not prove
+      // every remote obligation. Record a cleanup failure; this is not a
+      // corrupt protocol and must not wedge the worker's later attempts.
+      if (message.cleanup === 'unproven') throw new EngineError('ENGINE_FAILURE', 'The native browser cleanup could not be proven', { retryable: false });
       closedFrameConfirmed = true;
       diagnosticStage = 'channel-settle';
       await this.channel.settle?.({ runId: context.runId, attemptId: context.attemptId, origin: context.origin, signal: context.signal, timeoutMs: Math.max(0, 15000 - (performance.now() - started)) });
@@ -767,7 +771,7 @@ export class NativeClient {
       || (message.type === 'control-result' && pending.kind === 'cancel' && pending.quarantined === true)
       || this.recovery !== undefined && ((message.type === 'result' && message.recovery !== undefined)
       || (message.type === 'control-result' && pending.kind === 'cancel' && pending.cancelTarget === this.recovery.operationSeq));
-    if (pending.kind !== 'artifact' && !recoveryControl && (message.scopeState === 'quarantined' || (message.scopeState === 'closed' && message.type !== 'closed'))) {
+    if (pending.kind !== 'artifact' && !recoveryControl && message.type !== 'closed' && (message.scopeState === 'quarantined' || message.scopeState === 'closed')) {
       if ((message.type === 'result' || message.type === 'control-result') && this.requiredCapabilities.includes('terminal.close/1') && this.ready?.capabilities.includes('terminal.close/1')) this.beginTerminalCleanup(message.type === 'result' && !message.ok ? pending : undefined);
       else if (!this.terminal) this.fail('The native browser scope is no longer reusable');
     }
