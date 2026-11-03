@@ -235,7 +235,10 @@ jobs:
           export E2E_CAPTURE_SOURCE_COMMIT="$(git rev-parse HEAD)"
           export E2E_CAPTURE_SOURCE_TREE="$(git rev-parse HEAD^{tree})"
           test "$E2E_CAPTURE_SOURCE_COMMIT" = "$GITHUB_SHA"
-          node scripts/ci/spec-fixture-runtime.ts "$RUNNER_TEMP/ci-native-runtime" "$PRODUCTION_MANIFEST_SHA256" "$PRODUCTION_RUN_ATTEMPT" "$RUNNER_TEMP/ci-native-fault-runtime" "$FAULT_MANIFEST_SHA256" "$FAULT_RUN_ATTEMPT" "$E2E_SPEC_EVIDENCE_DIR/runtime" -- pnpm test
+          # A failure inside the e2e package must not hide the web package's
+          # native acceptance tests (P07 among them): keep the aggregate exit
+          # status while running them when the chained test script stopped early.
+          node scripts/ci/spec-fixture-runtime.ts "$RUNNER_TEMP/ci-native-runtime" "$PRODUCTION_MANIFEST_SHA256" "$PRODUCTION_RUN_ATTEMPT" "$RUNNER_TEMP/ci-native-fault-runtime" "$FAULT_MANIFEST_SHA256" "$FAULT_RUN_ATTEMPT" "$E2E_SPEC_EVIDENCE_DIR/runtime" -- sh -c 'pnpm test; status=$?; if [ "$status" -ne 0 ]; then pnpm --filter @e2e-dev/web run test || status=$?; fi; exit "$status"' 
       - name: Retain validated HUNG cleanup metadata
         if: ${{ always() }}
         continue-on-error: true
