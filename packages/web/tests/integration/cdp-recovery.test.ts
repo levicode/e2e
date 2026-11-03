@@ -7,7 +7,7 @@ import { beginCaseCleanupCapture } from '../helpers/case-cleanup-capture.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { connect as connectSocket, createServer, type AddressInfo, type Socket } from 'node:net';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type TestContext } from 'vitest';
@@ -773,6 +773,11 @@ describe('CDP session recovery', () => {
     const remote = await host();
     const replacement = await host();
     let provisioned = 0;
+    // Capture only closed native cleanup-stage facts for this exact case. The
+    // file is inert JSONL; the native runtime validates it before appending.
+    const cleanupEvidence = path.join(tmpdir(), `p07-native-cleanup-${randomUUID()}.jsonl`);
+    writeFileSync(cleanupEvidence, '');
+    process.env['AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE'] = cleanupEvidence;
     const engine = await start({
       cdpEndpoint: () => { provisioned += 1; return remote.endpoint; },
       reconnectEndpoint: () => replacement.endpoint,
@@ -796,9 +801,20 @@ describe('CDP session recovery', () => {
     } finally {
       recoveryEvidence.getStore()?.passed('body');
       recoveryPhase('dispose', 'cleanup');
-      await engine.dispose!(cleanup());
-      await closeRemoteChrome(remote);
-      await closeRemoteChrome(replacement);
+      try {
+        await engine.dispose!(cleanup());
+      } finally {
+        try {
+          const stages = readFileSync(cleanupEvidence, 'utf8').split('\n').filter(Boolean).flatMap(line => {
+            try { return [JSON.parse(line) as Record<string, unknown>]; } catch { return []; }
+          }).filter(record => record['phase'] === 'TerminalCleanupCheckpoint' || record['terminalCleanupStage'] !== undefined || record['terminalProofRefusal'] !== undefined || record['terminalEnrollmentRefusal'] !== undefined)
+            .map(record => Object.fromEntries(Object.entries(record).filter(([key]) => ['phase', 'terminalCleanupStage', 'terminalCleanupOk', 'terminalProofRefusal', 'terminalEnrollmentRefusal', 'terminalProofCounts', 'cleanupPart', 'cleanupResult', 'cleanupLifecycle'].includes(key))));
+          process.stderr.write(`P07_NATIVE_CLEANUP_STAGES ${JSON.stringify(stages)}\n`);
+        } catch { /* Missing capture is unknown evidence, never a proven close. */ }
+        delete process.env['AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE'];
+        await closeRemoteChrome(remote);
+        await closeRemoteChrome(replacement);
+      }
       recoveryEvidence.getStore()?.passed('cleanup');
     }
   }), 60_000);
