@@ -80,6 +80,8 @@ class Metadata:
         self.ignored_responses = 0
         self.commands = 0
         self.scripts = 0
+        self.transport_errors = set()
+        self.owner_retired = False
         self.finished = False
 
     def now(self):
@@ -147,6 +149,21 @@ class Metadata:
         elif len(line) <= MAX_LINE_BYTES and self.bytes + len(line) <= MAX_BYTES:
             self.lines.append(line)
             self.bytes += len(line)
+
+    def transport_error(self, connection):
+        """The native owner's clean retirement drains the browser; a dependent
+        client's socket then cannot close gracefully, which is teardown rather
+        than lost evidence. An owner error, or any error before its clean
+        retirement, remains a transport error."""
+        if self.owner_retired and self.roles.get(connection) == "playwright":
+            return
+        self.transport_errors.add(connection)
+        self.emit("transport", connectionOrdinal=connection, transportState="error")
+
+    def transport_closed(self, connection):
+        self.emit("transport", connectionOrdinal=connection, transportState="closed")
+        if self.roles.get(connection) == "native" and connection not in self.transport_errors:
+            self.owner_retired = True
 
     def connection(self):
         self.connections += 1
@@ -231,8 +248,9 @@ class Metadata:
             self.role(connection, "native", "dom-whitespace-all")
         if method == "Page.addScriptToEvaluateOnNewDocument":
             world, source = params.get("worldName"), params.get("source")
-            if ((isinstance(world, str) and world.startswith("__playwright_utility_world__")) or
-                    (isinstance(source, str) and "__playwright_utility_world__" in source)):
+            # Playwright names the utility world "__playwright_utility_world_<page guid>".
+            if ((isinstance(world, str) and world.startswith("__playwright_utility_world_")) or
+                    (isinstance(source, str) and "__playwright_utility_world_" in source)):
                 self.role(connection, "playwright", "pw-utility-world")
         if not isinstance(method, str) or method not in METHODS:
             return
@@ -436,10 +454,10 @@ async def main():
                             task.cancel()
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     if any(isinstance(result, Exception) for result in results):
-                        metadata.emit("transport", connectionOrdinal=connection, transportState="error")
-                metadata.emit("transport", connectionOrdinal=connection, transportState="closed")
+                        metadata.transport_error(connection)
+                metadata.transport_closed(connection)
         except Exception:
-            metadata.emit("transport", connectionOrdinal=connection, transportState="error")
+            metadata.transport_error(connection)
 
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()

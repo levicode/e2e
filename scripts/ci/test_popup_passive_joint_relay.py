@@ -86,6 +86,52 @@ class PassiveMetadataControls(unittest.TestCase):
         self.assertNotEqual(registration["commandOrdinal"], runtime["commandOrdinal"])
         self.assertEqual(self.metadata.pending, {})
 
+    def test_playwright_utility_world_with_page_guid_is_classified(self):
+        connection = self.metadata.connection()
+        self.send(connection, True, {"id": 1, "method": "Page.addScriptToEvaluateOnNewDocument", "params": {
+            "source": "", "worldName": "__playwright_utility_world_page@0123456789abcdef0123456789abcdef"}})
+        self.send(connection, False, {"id": 1, "result": {"identifier": "RAW-IDENTIFIER"}})
+        roles = [record for record in self.records() if record["kind"] == "role"]
+        self.assertEqual([(record["connectionOrdinal"], record["role"], record["signal"]) for record in roles],
+                         [(connection, "playwright", "pw-utility-world")])
+
+    def test_unrelated_world_name_is_not_a_playwright_signal(self):
+        connection = self.metadata.connection()
+        self.send(connection, True, {"id": 1, "method": "Page.addScriptToEvaluateOnNewDocument", "params": {
+            "source": "", "worldName": "__playwright_utility_world"}})
+        self.assertEqual([record for record in self.records() if record["kind"] == "role"], [])
+
+    def classify_pair(self):
+        native, playwright = self.metadata.connection(), self.metadata.connection()
+        self.send(native, True, {"id": 1, "method": "DOM.enable", "params": {"includeWhitespace": "all"}})
+        self.send(native, False, {"id": 1, "result": {}})
+        self.send(playwright, True, {"id": 2, "method": "Page.addScriptToEvaluateOnNewDocument", "params": {
+            "source": "", "worldName": "__playwright_utility_world_page@0123456789abcdef0123456789abcdef"}})
+        self.send(playwright, False, {"id": 2, "result": {"identifier": "RAW-IDENTIFIER"}})
+        return native, playwright
+
+    def test_dependent_transport_error_after_owner_retirement_is_teardown(self):
+        native, playwright = self.classify_pair()
+        self.metadata.transport_closed(native)
+        self.metadata.transport_error(playwright)
+        self.metadata.finish()
+        summary = self.records()[-1]
+        self.assertFalse(summary["transportError"])
+        self.assertTrue(summary["metadataComplete"])
+        self.assertEqual([record for record in self.records() if record.get("transportState") == "error"], [])
+
+    def test_dependent_transport_error_before_owner_retirement_stays_an_error(self):
+        native, playwright = self.classify_pair()
+        self.metadata.transport_error(playwright)
+        self.metadata.transport_closed(native)
+        self.assert_incomplete("transportError")
+
+    def test_owner_transport_error_is_never_suppressed_as_teardown(self):
+        native, playwright = self.classify_pair()
+        self.metadata.transport_closed(native)
+        self.metadata.transport_error(native)
+        self.assert_incomplete("transportError")
+
     def test_manual_attach_ack_binds_the_real_returned_session_to_the_requested_target(self):
         connection = self.metadata.connection()
         self.send(connection, False, {"method": "Target.targetCreated", "params": {"targetInfo": {"targetId": "RAW-TARGET", "browserContextId": "RAW-CONTEXT", "type": "page"}}})

@@ -52,7 +52,7 @@ async function main(args:string[]):Promise<void> {
   assert.deepEqual(manifest.nativeSource,binding.native);
   for(const [file,digest] of Object.entries(binding.sourceHashes))assert.equal(hash(file),digest,'Changed diagnostic source');
   const script=owned(realpathSync('scripts/ci/popup-passive-joint-relay.py'));
-  assert.equal(hash(script),'e928c2161272a1f89f4c11ee4b0d70e3a2a0eb0b70dc1776f59894adbb31c8cd');
+  assert.equal(hash(script),'61a10b503a9453a0c171f96f5847d3b60adbc9a31071b5b5e15a75fbc1aeb6f8');
   const python=owned(path.join(root,'venv/bin/python3'));accessSync(python,constants.X_OK);assert.ok(python.startsWith(owned(path.join(root,'venv'),true)+path.sep));
   const pythonProof=JSON.parse(readFileSync(path.join(root,'python.json'),'utf8'));
   assert.equal(pythonProof.version,'3.12.9');assert.equal(pythonProof.websockets,'15.0.1');assert.equal(pythonProof.wheelSHA256,binding.wheelSHA256);assert.ok(pythonProof.module.startsWith(path.join(root,'venv')+path.sep));assert.equal(hash(python),pythonProof.pythonSHA256);
