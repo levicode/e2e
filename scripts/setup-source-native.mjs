@@ -5,7 +5,7 @@ import {spawnSync,execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,mkdirSync,openSync,closeSync,existsSync,lstatSync,realpathSync} from 'node:fs';
 import {resolve,join,relative,isAbsolute,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
-export const NATIVE=Object.freeze({commit:'5e3a70a4e3ef99a6a9b8780fb9a0fc36c06efc04',tree:'932ef4283fddf875fb663a9458f814ef65c3228a'});
+export const NATIVE=Object.freeze({commit:'b281a81f8bee4a68b9f9df4d1244926ba41ae247',tree:'7070aabc28ee25328ae8615da77363c9f465c908'});
 export const LOCK='33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 export function outside(root,p){const r=relative(root,p);return r==='..'||r.startsWith('../')||isAbsolute(r);}
