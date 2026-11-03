@@ -1,0 +1,309 @@
+{
+  "facts": [
+    {
+      "ordinal": 0,
+      "kind": "main",
+      "phase": "first-script",
+      "marker": "match",
+      "ready": "loading"
+    },
+    {
+      "ordinal": 1,
+      "kind": "main",
+      "phase": "dom-content-loaded",
+      "marker": "match",
+      "ready": "interactive"
+    },
+    {
+      "ordinal": 2,
+      "kind": "frame",
+      "phase": "first-script",
+      "marker": "match",
+      "ready": "loading"
+    },
+    {
+      "ordinal": 3,
+      "kind": "frame",
+      "phase": "dom-content-loaded",
+      "marker": "match",
+      "ready": "interactive"
+    },
+    {
+      "ordinal": 4,
+      "kind": "parent",
+      "phase": "created",
+      "marker": "present",
+      "ready": "complete"
+    },
+    {
+      "ordinal": 5,
+      "kind": "popup",
+      "phase": "dom-content-loaded",
+      "marker": "match",
+      "ready": "interactive"
+    },
+    {
+      "ordinal": 6,
+      "kind": "popup",
+      "phase": "first-script",
+      "marker": "match",
+      "ready": "loading"
+    }
+  ],
+  "dragFacts": [
+    {
+      "records": [
+        {
+          "ordinal": 0,
+          "type": "pointermove",
+          "trusted": true,
+          "button": -1,
+          "buttons": 0,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 1,
+          "type": "mousemove",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 2,
+          "type": "pointerdown",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 3,
+          "type": "mousedown",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 4,
+          "type": "pointermove",
+          "trusted": true,
+          "button": -1,
+          "buttons": 1,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 5,
+          "type": "mousemove",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 6,
+          "type": "dragstart",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 7,
+          "type": "pointercancel",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 8,
+          "type": "dragenter",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 9,
+          "type": "dragenter",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "destination",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 10,
+          "type": "dragleave",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 11,
+          "type": "dragover",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "destination",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 12,
+          "type": "drop",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "destination",
+          "dataTypes": []
+        }
+      ],
+      "overflow": 0
+    },
+    {
+      "records": [
+        {
+          "ordinal": 0,
+          "type": "pointermove",
+          "trusted": true,
+          "button": -1,
+          "buttons": 0,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 1,
+          "type": "mousemove",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 2,
+          "type": "pointerdown",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 3,
+          "type": "mousedown",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 4,
+          "type": "pointermove",
+          "trusted": true,
+          "button": -1,
+          "buttons": 1,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 5,
+          "type": "mousemove",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 6,
+          "type": "dragstart",
+          "trusted": true,
+          "button": 0,
+          "buttons": 1,
+          "bucket": "source",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 7,
+          "type": "pointercancel",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 8,
+          "type": "dragenter",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 9,
+          "type": "dragenter",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "destination",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 10,
+          "type": "dragleave",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "other",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 11,
+          "type": "dragover",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "destination",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 12,
+          "type": "drop",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "destination",
+          "dataTypes": []
+        },
+        {
+          "ordinal": 13,
+          "type": "dragend",
+          "trusted": true,
+          "button": 0,
+          "buttons": 0,
+          "bucket": "source",
+          "dataTypes": []
+        }
+      ],
+      "overflow": 0
+    }
+  ],
+  "rejected": 0
+}
