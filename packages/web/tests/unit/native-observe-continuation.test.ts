@@ -62,9 +62,9 @@ test('retries one clean stale-scope observation and returns the second refusal',
   const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-scope' } : undefined);
   try {
     await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE', retryable: false });
-    expect(peer!.requests.filter(frame => frame.command === 'browser.observe')).toHaveLength(2);
-    expect(peer!.requests.filter(frame => frame.command === 'browser.observe')[1]!.operationSeq)
-      .toBeGreaterThan(peer!.requests.filter(frame => frame.command === 'browser.observe')[0]!.operationSeq);
+    const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.operationSeq).toBeGreaterThan(calls[0]!.operationSeq);
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
