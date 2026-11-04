@@ -26,7 +26,7 @@ import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched, isNativeResourceCleanupFailure, isNativeUsableFailure } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
-import { EngineChannel, takeObservationContinuation, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
+import { EngineChannel, takeObservationContinuation, isCleanObservationRefusal, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
 import { NativeReferenceBridge, type ReferenceOwner } from './native/reference-bridge.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
@@ -1224,10 +1224,24 @@ export class NativeSurface implements NativeWebSurface {
   private async engineCommand<K extends keyof EngineCommandMap>(name: K, args: EngineCommandMap[K]['args'], operation: OperationContext): Promise<EngineCommandMap[K]['result']> {
     const attempt = this.requireAttempt(); const scope = attempt.scope; const pageEpoch = attempt.epoch;
     const engine = this.requireEngine();
-    const result = await withinAttemptRequest(operation, attempt, async current => {
+    const run = () => withinAttemptRequest(operation, attempt, async current => {
       const work = () => engine.command(name, args, current);
       return name === 'recording.start' ? this.creatingPage(attempt, current, work) : work();
     });
+    let result: EngineCommandMap[K]['result'];
+    try { result = await run(); }
+    catch (cause) {
+      // Exactly one fresh dispatch for a clean native refusal: not-dispatched on
+      // a still-current usable scope. Unknown/unproven effects and a replaced
+      // page never retry, and a second refusal is returned unchanged.
+      if (name !== 'capture.screenshot' || !isCleanObservationRefusal(cause)) throw cause;
+      this.assertAttempt(attempt);
+      if (attempt.scope !== scope || attempt.epoch !== pageEpoch) throw cause;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      this.assertAttempt(attempt);
+      if (attempt.scope !== scope || attempt.epoch !== pageEpoch) throw cause;
+      result = await run();
+    }
     this.assertAttempt(attempt);
     if (scope !== attempt.scope) throw invalidState('The browser scope changed during an operation');
     if ((name.startsWith('browser.') || name.startsWith('fixture.') || name === 'capture.screenshot' || name === 'state.capture') && attempt.epoch !== pageEpoch) throw new EngineError('CANCELLED', 'The native page result owner has retired', { retryable: false });
@@ -1248,11 +1262,23 @@ export class NativeSurface implements NativeWebSurface {
     try { snapshot = await this.engineCommand('browser.observe', args, operation); }
     catch (cause) {
       const continuation = takeObservationContinuation(cause);
-      if (continuation === undefined) throw cause;
-      // No generic retry: native minted this one-use authority only after clean settlement.
-      this.assertObservationOwner(attempt, scope, epoch, client);
-      this.assertPublication(client, publication); this.assertBudget(operation);
-      snapshot = await this.engineCommand('browser.observe', { ...args, continuation }, operation);
+      if (continuation !== undefined) {
+        // No generic retry: native minted this one-use authority only after clean settlement.
+        this.assertObservationOwner(attempt, scope, epoch, client);
+        this.assertPublication(client, publication); this.assertBudget(operation);
+        snapshot = await this.engineCommand('browser.observe', { ...args, continuation }, operation);
+      } else if (isCleanObservationRefusal(cause)) {
+        // A same-document navigation can move the page inventory between
+        // admission and the first read. Native proved the refusal undispatched
+        // on a usable scope; one fresh capture is safe. It is the only retry:
+        // a second refusal, or any unknown/completed outcome, reaches the caller.
+        this.assertObservationOwner(attempt, scope, epoch, client);
+        this.assertPublication(client, publication); this.assertBudget(operation);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        this.assertObservationOwner(attempt, scope, epoch, client);
+        this.assertPublication(client, publication); this.assertBudget(operation);
+        snapshot = await this.engineCommand('browser.observe', args, operation);
+      } else throw cause;
     }
     this.assertObservationOwner(attempt, scope, epoch, client);
     const revision = observationRevision(snapshot.revision);
