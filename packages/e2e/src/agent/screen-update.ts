@@ -46,7 +46,7 @@ interface ShownScreen {
 }
 
 /** A node line whose role is the on-screen keyboard, as device trees list it. */
-const KEYBOARD_LINE = /^#\S+ keyboard\b/;
+const KEYBOARD_LINE = /^[#@]\S+ keyboard\b/;
 
 /**
  * What the model needs to hear when an action closed the keyboard: on a
@@ -320,7 +320,8 @@ function describeLocation(observation: ExecutorObservation): string {
 
 /** Node id at the head of one rendered line, or undefined for a marker line. */
 function lineId(line: string): string | undefined {
-  return /^\s*#(\S+)/.exec(line)?.[1];
+  const match = /^\s*(?:#(\S+)|(@\S+))/.exec(line);
+  return match?.[1] ?? match?.[2];
 }
 
 /**

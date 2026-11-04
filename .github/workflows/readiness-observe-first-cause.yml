@@ -1,0 +1,833 @@
+name: Readiness and observation first-cause validation
+'on':
+  push:
+    branches:
+    - implement/readiness-observe-first-cause-ci
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: readiness-observe-first-cause-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: dc85674a636875c5b4c53fb381903fdd8ae2cf3b
+  NATIVE_SOURCE_TREE: c3e81deb2c4646ae75625e906cbda398bb0a3bb5
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  native-runtime:
+    uses: ./.github/workflows/native-runtime.yml
+  native-producer-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Compile acceptance-faults exact test harness only
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse\
+        \ HEAD)\" = \"$NATIVE_SOURCE_SHA\"\ntest \"$(git rev-parse HEAD^{tree})\"\
+        \ = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\nrustup\
+        \ toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset\
+        \ RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo\
+        \ +1.99.1 test --locked --profile ci --timings --no-default-features --features\
+        \ acceptance-faults --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout\
+        \ = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished\
+        \ = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n  \
+        \  record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
+        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason')\
+        \ == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
+        \ [])\n        and record.get('profile', {}).get('test') is True\n       \
+        \ and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n\
+        \        paths.add(record['executable'])\nif build_finished != [True]:\n \
+        \   raise SystemExit('Missing or unsuccessful final compiler build receipt')\n\
+        if len(paths) != 1:\n    raise SystemExit(f'Expected exactly one test executable,\
+        \ got {len(paths)}')\nharness = paths.pop()\nif not Path(harness).is_file():\n\
+        \    raise SystemExit('Compiler-selected harness is missing')\n(out / 'harness.path').write_text(harness\
+        \ + '\\n')\nPY_HARNESS\nmkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"\
+        $(cat \"$GITHUB_WORKSPACE/evidence/harness.path\")\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests\
+        \ > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\\
+        n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      id: harness_artifact
+      with:
+        name: paired-optional-feature-harness
+        path: native-harness/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Run exact optional observation producer inventory
+      run: python3 scripts/ci/run-optional-observe-tests.py "$(cat evidence/harness.path)"
+        scripts/ci/optional-observe-inventory.json evidence/native-focused
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: optional-observe-native-focused-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    outputs:
+      compiled: ${{ steps.compile.outcome }}
+      harness-sha: ${{ steps.compile.outputs.harness-sha }}
+      artifact-id: ${{ steps.harness_artifact.outputs.artifact-id }}
+  encoder19:
+    needs:
+    - native-producer-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Validate installed encoder with actual encode and decode
+      timeout-minutes: 7
+      run: "set -euo pipefail\nmkdir -p evidence\ndate -u +%FT%TZ > evidence/encoder-install.started\n\
+        cat /etc/os-release > evidence/encoder-host.txt\nprobe() {\n command -v ffmpeg\
+        \ >/dev/null && command -v ffprobe >/dev/null || return 1\n timeout 20 ffmpeg\
+        \ -v error -f lavfi -i color=c=black:s=64x64:d=0.2 -c:v libvpx -y \"$RUNNER_TEMP/encoder-preflight.webm\"\
+        \ || return 1\n timeout 10 ffprobe -v error -show_entries stream=codec_name,width,height\
+        \ -of json \"$RUNNER_TEMP/encoder-preflight.webm\" > evidence/encoder-preflight.json\
+        \ || return 1\n timeout 20 ffmpeg -v error -i \"$RUNNER_TEMP/encoder-preflight.webm\"\
+        \ -frames:v 1 -f null - || return 1\n}\nif ! probe > evidence/encoder-first-probe.log\
+        \ 2>&1; then\n timeout 120 sudo apt-get update 2>&1 | tee evidence/encoder-apt-update.log\n\
+        \ timeout 180 sudo apt-get install -y ffmpeg 2>&1 | tee evidence/encoder-apt-install.log\n\
+        \ probe > evidence/encoder-final-probe.log 2>&1\nfi\nffmpeg -version > evidence/ffmpeg-version.txt\n\
+        ffprobe -version > evidence/ffprobe-version.txt\nsha256sum \"$(readlink -f\
+        \ \"$(command -v ffmpeg)\")\" \"$(readlink -f \"$(command -v ffprobe)\")\"\
+        \ > evidence/encoder-binaries.sha256\ndate -u +%FT%TZ > evidence/encoder-install.finished\n"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        artifact-ids: ${{ needs.native-producer-tests.outputs.artifact-id }}
+        path: native-harness
+        merge-multiple: true
+    - name: Verify exact same-run feature harness
+      env:
+        EXPECTED_HARNESS_SHA: ${{ needs.native-producer-tests.outputs.harness-sha
+          }}
+      run: 'set -euo pipefail
+
+        test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(git -C native rev-parse HEAD^{tree})" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/native-source.sha)" = "$NATIVE_SOURCE_SHA"
+
+        test "$(cat native-harness/native-source.tree)" = "$NATIVE_SOURCE_TREE"
+
+        test "$(cat native-harness/producer-run.id)" = "$GITHUB_RUN_ID"
+
+        test "$(cat native-harness/features.txt)" = acceptance-faults
+
+        printf ''%s  %s\n'' "$EXPECTED_HARNESS_SHA" native-harness/agent-browser-tests
+        | sha256sum --check
+
+        (cd native-harness; sha256sum --check SHA256SUMS)
+
+        chmod +x native-harness/agent-browser-tests
+
+        cp native-harness/native-source.* native-harness/features.txt native-harness/producer-run.id
+        evidence/
+
+        '
+    - name: Run exactly 19 real encoder contracts, not Chrome evidence
+      run: python3 scripts/ci/run-encoder-contracts.py native-harness/agent-browser-tests
+        evidence/encoder19 scripts/ci/encoder-contracts-inventory.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: failed-video-encoder19-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    if: ${{ always() && needs.native-producer-tests.outputs.compiled == 'success'
+      }}
+  adapter-units:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+    - name: Full Web unit and source type checks
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec tsc --noEmit
+
+        pnpm --filter e2e exec tsc --noEmit
+
+        pnpm --filter e2e exec vitest run tests/unit/action-outcome-diagnostics.test.ts
+        --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/closed-helper.json"
+
+        pnpm exec oxlint packages/e2e/src/expect/async.ts packages/e2e/src/locator/engine.ts
+        packages/e2e/tests/helpers/action-outcome-diagnostics.ts packages/e2e/tests/integration/web-selector-chains.test.ts
+        packages/e2e/tests/unit/action-outcome-diagnostics.test.ts packages/e2e/tests/unit/locator-field-assertions.test.ts
+        packages/web/src/native-surface.ts packages/web/src/native/browser-channel.ts
+        packages/web/src/native/protocol.ts packages/web/tests/unit/native-finalized-recording-surface.test.ts
+        packages/web/tests/unit/native-selector-errors.test.ts packages/web/tests/unit/native-worker-reinit.test.ts
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit --reporter=verbose --reporter=json
+        --outputFile.json="$GITHUB_WORKSPACE/evidence/web-units.json" 2>&1 | tee evidence/web-units.log
+
+        '
+    - name: Record complete unit execution counts
+      if: always()
+      run: 'python3 - <<''PY_COUNTS''
+
+        import json
+
+        w=json.load(open(''evidence/web-units.json''));h=json.load(open(''evidence/closed-helper.json''))
+
+        assert w[''numTotalTests'']>=1516 and w[''numPendingTests'']==0
+
+        assert h[''numTotalTests'']==5 and h[''numPendingTests'']==0
+
+        json.dump({''web'':{k:w[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']},''helper'':{k:h[k]
+        for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']}},open(''evidence/unit-counts.json'',''w''),indent=2)
+
+        PY_COUNTS
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: optional-observe-adapter-unit-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  download-lifecycle:
+    needs: native-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run native artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      timeout-minutes: 3
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium
+      timeout-minutes: 8
+    - name: Execute unchanged full original test file
+      run: 'set -euo pipefail
+
+        export E2E_DOWNLOAD_RELEASE_DIAGNOSTIC=1
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        sha256sum "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-executable.sha256
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter e2e exec vitest list tests/integration/web-download-lifecycle.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_COLLECT''
+
+        import json
+
+        from pathlib import Path
+
+        r=json.loads(Path(''evidence/collection.json'').read_text())
+
+        assert isinstance(r,list) and len(r)==14
+
+        assert all(x[''file''].endswith(''/tests/integration/web-download-lifecycle.test.ts'')
+        for x in r)
+
+
+        PY_COLLECT
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-download-lifecycle.test.ts
+        --bail=0 --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        python3 - <<''PY_COUNT''
+
+        import json
+
+        from pathlib import Path
+
+        expected=len(json.loads(Path(''evidence/collection.json'').read_text()))
+
+        r=json.loads(Path(''evidence/results.json'').read_text())
+
+        a=[a for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        counts={''expected'':expected,''executed'':sum(x[''status''] in (''passed'',''failed'')
+        for x in a),''passed'':sum(x[''status'']==''passed'' for x in a),''failed'':sum(x[''status'']==''failed''
+        for x in a),''pending'':sum(x[''status''] not in (''passed'',''failed'') for
+        x in a)}
+
+        Path(''evidence/execution-counts.json'').write_text(json.dumps(counts,indent=2)+''\n'')
+
+        assert len(a)==expected and counts[''executed'']==expected and counts[''pending'']==0,counts
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: download-lifecycle-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  provider-downloads:
+    needs: native-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run native artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      timeout-minutes: 3
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium
+      timeout-minutes: 8
+    - name: Execute unchanged full original test file
+      run: 'set -euo pipefail
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        sha256sum "$E2E_AGENT_BROWSER_EXECUTABLE" > evidence/native-executable.sha256
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/integration/provider-downloads.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_COLLECT''
+
+        import json
+
+        from pathlib import Path
+
+        r=json.loads(Path(''evidence/collection.json'').read_text())
+
+        assert isinstance(r,list) and len(r)>0
+
+        assert all(x[''file''].endswith(''/tests/integration/provider-downloads.test.ts'')
+        for x in r)
+
+        assert len(r)==2
+
+        PY_COLLECT
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/integration/provider-downloads.test.ts
+        --bail=0 --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        python3 - <<''PY_COUNT''
+
+        import json
+
+        from pathlib import Path
+
+        expected=len(json.loads(Path(''evidence/collection.json'').read_text()))
+
+        r=json.loads(Path(''evidence/results.json'').read_text())
+
+        a=[a for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        counts={''expected'':expected,''executed'':sum(x[''status''] in (''passed'',''failed'')
+        for x in a),''passed'':sum(x[''status'']==''passed'' for x in a),''failed'':sum(x[''status'']==''failed''
+        for x in a),''pending'':sum(x[''status''] not in (''passed'',''failed'') for
+        x in a)}
+
+        Path(''evidence/execution-counts.json'').write_text(json.dumps(counts,indent=2)+''\n'')
+
+        assert len(a)==expected and counts[''executed'']==expected and counts[''pending'']==0,counts
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: provider-downloads-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  frozen-cache-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run native artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      timeout-minutes: 3
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Install browser and build actual packages and unchanged app
+      run: 'set -euo pipefail
+
+        pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build
+
+        pnpm --filter @e2e-dev/github run build
+
+        pnpm --filter @e2e-dev/web-benchmark run build
+
+        node --test scripts/ci/frozen-cache-contract.test.mjs
+
+        '
+      timeout-minutes: 15
+    - name: Typecheck actual new dynamic output integration and all core tests
+      run: pnpm --filter e2e exec tsc --noEmit -p tsconfig.json
+      timeout-minutes: 10
+    - name: Install pinned fixture Playwright Chrome
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium
+      timeout-minutes: 8
+    - name: Actual frozen cache replay, including seven old output anchors
+      run: 'set -euo pipefail
+
+        mkdir -p evidence/cache-replay
+
+        python3 - <<''PY_PRIVATE''
+
+        import os
+
+        from pathlib import Path
+
+        p=Path(''evidence/native-cleanup.jsonl'').resolve()
+
+        fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.close(fd)
+
+        PY_PRIVATE
+
+        export AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$GITHUB_WORKSPACE/evidence/native-cleanup.jsonl"
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        unset AI_GATEWAY_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY GH_TOKEN GITHUB_TOKEN
+
+        node scripts/ci/frozen-cache-gate.mjs 2>&1 | tee evidence/cache-replay/run.log
+
+        '
+    - name: Preserve diagnostic completeness boundaries
+      if: always()
+      run: "python3 - <<'PY_DIAG'\nimport json,hashlib\nfrom pathlib import Path\n\
+        p=Path('evidence/native-cleanup.jsonl');rows=[];bad=0\nif p.exists():\n for\
+        \ line in p.read_text().splitlines():\n  try: rows.append(json.loads(line))\n\
+        \  except (ValueError,TypeError): bad+=1\nout={'exists':p.exists(),'bytes':p.stat().st_size\
+        \ if p.exists() else 0,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()\
+        \ if p.exists() else None,'records':len(rows),'invalidLines':bad,'captureStarted':sum(x.get('phase')=='CaptureStarted'\
+        \ for x in rows),'captureLimitReached':sum(x.get('phase')=='CaptureLimitReached'\
+        \ for x in rows),'maxDroppedBefore':max([x.get('droppedBefore',0) for x in\
+        \ rows]+[0]),'maxSuppressedBefore':max([x.get('suppressedBefore',0) for x\
+        \ in rows]+[0]),'overflow':any(x.get('overflow') is True for x in rows),'absenceDoesNotProveSuccess':True,'acceptedMeansJoinedProducerOutputNotPublicSuccess':True,'pixelsAvailableMeansNativeOutputNotAdapter':True}\n\
+        Path('evidence/diagnostic-boundary.json').write_text(json.dumps(out,indent=2)+'\\\
+        n')\nPY_DIAG\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: readiness-frozen-cache-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env: {}
+    needs:
+    - native-runtime
+  cache-first-population:
+    needs: native-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from
+        "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run native artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      timeout-minutes: 3
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact source, compiler, host and binary
+      timeout-minutes: 1
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium
+      timeout-minutes: 8
+    - name: Run unchanged cache population failure with bounded inner report
+      run: 'set -euo pipefail
+
+        mkdir -p evidence/cache-replay
+
+        python3 - <<''PY_PRIVATE''
+
+        import os
+
+        from pathlib import Path
+
+        p=Path(''evidence/native-cleanup.jsonl'').resolve()
+
+        fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.close(fd)
+
+        PY_PRIVATE
+
+        export AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE="$GITHUB_WORKSPACE/evidence/native-cleanup.jsonl"
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        export E2E_TEST_ACTION_DIAGNOSTICS=1
+
+        unset E2E_DOWNLOAD_RELEASE_DIAGNOSTIC
+
+        printf ''%s  %s\n'' ''433230f1d60c0f51c764ab4a52c1203cf0bdc5f534e437c9044680ac50641c48''
+        ''packages/e2e/tests/integration/agent-trace-cache.test.ts'' | sha256sum --check
+
+        selector=''evicts a previously good entry once its flow is implicated in a
+        failure$''
+
+        pnpm --filter e2e exec vitest list tests/integration/agent-trace-cache.test.ts
+        -t "$selector" --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_COLLECT''
+
+        import json
+
+        r=json.load(open(''evidence/collection.json''));assert len(r)==1,r
+
+        assert r[0][''file''].endswith(''/tests/integration/agent-trace-cache.test.ts'')
+
+        PY_COLLECT
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/agent-trace-cache.test.ts
+        -t "$selector" --bail=0 --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        python3 - <<''PY_COUNT''
+
+        import json
+
+        r=json.load(open(''evidence/results.json''));a=[x for t in r[''testResults'']
+        for x in t[''assertionResults'']];selected=[x for x in a if x[''title'']==''evicts
+        a previously good entry once its flow is implicated in a failure''];executed=[x
+        for x in a if x[''status''] in (''passed'',''failed'')]
+
+        assert len(selected)==len(executed)==1 and selected[0][''status''] in (''passed'',''failed'')
+
+        json.dump({''selected'':1,''executed'':1,''status'':selected[0][''status''],''unselected'':len(a)-1,''originalConsumerUnchanged'':True},open(''evidence/execution-counts.json'',''w''),indent=2)
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+    - name: Preserve diagnostic completeness boundaries
+      if: always()
+      run: "python3 - <<'PY_DIAG'\nimport json,hashlib\nfrom pathlib import Path\n\
+        p=Path('evidence/native-cleanup.jsonl');rows=[];bad=0\nif p.exists():\n for\
+        \ line in p.read_text().splitlines():\n  try: rows.append(json.loads(line))\n\
+        \  except (ValueError,TypeError): bad+=1\nout={'exists':p.exists(),'bytes':p.stat().st_size\
+        \ if p.exists() else 0,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()\
+        \ if p.exists() else None,'records':len(rows),'invalidLines':bad,'captureStarted':sum(x.get('phase')=='CaptureStarted'\
+        \ for x in rows),'captureLimitReached':sum(x.get('phase')=='CaptureLimitReached'\
+        \ for x in rows),'maxDroppedBefore':max([x.get('droppedBefore',0) for x in\
+        \ rows]+[0]),'maxSuppressedBefore':max([x.get('suppressedBefore',0) for x\
+        \ in rows]+[0]),'overflow':any(x.get('overflow') is True for x in rows),'absenceDoesNotProveSuccess':True,'acceptedMeansJoinedProducerOutputNotPublicSuccess':True,'pixelsAvailableMeansNativeOutputNotAdapter':True}\n\
+        Path('evidence/diagnostic-boundary.json').write_text(json.dumps(out,indent=2)+'\\\
+        n')\nPY_DIAG\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: cache-first-population-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7

@@ -697,7 +697,10 @@ describe('agent.act with the default ToolLoopAgent executor', () => {
       'upload',
     ]);
     expect(loopCalls[0]!.prompt).toContain('increment the counter once');
-    expect(loopCalls[0]!.prompt).toMatch(/Current screen \(revision b\d+, path \/, \d+ nodes\):/);
+    const initial = /Current screen \(revision ([^,\n]+), path \/, \d+ nodes\):/.exec(loopCalls[0]!.prompt);
+    expect(initial).not.toBeNull();
+    // The action delta refers back to the exact opaque token shown before it.
+    expect(loopCalls[1]!.lastToolResult).toContain(`since revision ${initial![1]}`);
     // The result reports the change since the opening screen, not the tree again.
     expect(loopCalls[1]!.lastToolResult).toContain('Screen changes since revision');
     expect(loopCalls[1]!.lastToolResult).toMatch(/changed #\S+ status "Counter" text="1" \(was: #\S+ status "Counter" text="0"\)/);
@@ -815,7 +818,7 @@ describe('the default agent reads action results after their effect', () => {
       expect(resultByTitle(outcome, 'default agent taps a control with no effect').status).toBe('passed');
       expect(loopCalls[1]!.lastToolResult).toContain('No listed node changed within the wait after this action');
       // No tree and no change lines: the model has the screen already.
-      expect(loopCalls[1]!.lastToolResult).not.toMatch(/^(added|changed|removed) #n\d+ /m);
+      expect(loopCalls[1]!.lastToolResult).not.toMatch(/^(added|changed|removed) #@e\d+ /m);
     } finally {
       project.cleanup();
     }

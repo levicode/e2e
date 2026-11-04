@@ -1,10 +1,11 @@
 /** Separates exceptions thrown by trusted page code from failures of the evaluation transport. */
-import { TestError } from 'e2e/engine';
-import { message } from './support.ts';
+import { jsonValueProblem, TestError } from 'e2e/engine';
+import { message } from './runtime-support.ts';
 
 type EvaluationResult =
   | { ok: true; value: unknown }
-  | { ok: false; message: string };
+  | { ok: false; message: string }
+  | { ok: false; invalidResult: true };
 
 /** The `__name` helper tsx's `keepNames` output calls, declared beside test code serialized into the page. */
 export const KEEP_NAMES_HELPER = "const __name = (target, value) => Object.defineProperty(target, 'name', { value, configurable: true });";
@@ -55,7 +56,11 @@ export function compileEvaluation(source: string, hasArgument: boolean): (arg: u
       return (async () => {
         ${KEEP_NAMES_HELPER}
         try {
-          return { ok: true, value: await ((result) => typeof result === 'function' ? result(${hasArgument ? 'arg' : ''}) : result)((${source}\n)) };
+          return ((value) => {
+            const snapshot = { value: undefined };
+            const problem = (${jsonValueProblem.toString()})(value, undefined, undefined, snapshot);
+            return problem === undefined ? { ok: true, value: snapshot.value } : { ok: false, invalidResult: true };
+          })(await ((result) => typeof result === 'function' ? result(${hasArgument ? 'arg' : ''}) : result)((${source}\n)));
         } catch (cause) {
           let message;
           try {

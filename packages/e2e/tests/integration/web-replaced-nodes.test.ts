@@ -10,8 +10,14 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { popupEvalDiagnosticOptions } from '../helpers/popup-eval-diagnostics.ts';
+import { withShortReadDiagnostics } from '../helpers/short-read-diagnostics.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
-import { resultByTitle, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
+import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
+import { resultByTitle, createProject, runExisting, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 const SUITE = `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
@@ -78,16 +84,26 @@ for (const kind of ['testId', 'label', 'displayValue']) {
 }
 
 test('a stable field among fields replaced every frame resolves promptly', async ({ app, screen }) => {
-  await app.open('/replaced-crowd');
-  const city = [screen.getByLabel('City', { exact: true }), screen.getByDisplayValue('paris')];
-  for (let round = 0; round < 5; round += 1) {
-    for (const field of city) {
-      await expect(field).toBeVisible({ timeout: 1_000 });
-      await expect(field).toHaveCount(1, { timeout: 1_000 });
+  const diagnostic = process.env['E2E_REPLACED_FIELD_CAPTURE'] === '1';
+  const previous = process.env['E2E_REPLACED_FIELD_ACTIVE'];
+  if (diagnostic) process.env['E2E_REPLACED_FIELD_ACTIVE'] = '1';
+  try {
+    await app.open('/replaced-crowd');
+    const city = [screen.getByLabel('City', { exact: true }), screen.getByDisplayValue('paris')];
+    for (let round = 0; round < 5; round += 1) {
+      for (const field of city) {
+        await expect(field).toBeVisible({ timeout: 1_000 });
+        await expect(field).toHaveCount(1, { timeout: 1_000 });
+      }
     }
-  }
-  for (const absent of [screen.getByLabel('Nickname', { exact: true }), screen.getByDisplayValue('ada')]) {
-    await expect(absent).toBeHidden({ timeout: 1_000 });
+    for (const absent of [screen.getByLabel('Nickname', { exact: true }), screen.getByDisplayValue('ada')]) {
+      await expect(absent).toBeHidden({ timeout: 1_000 });
+    }
+  } finally {
+    if (diagnostic) {
+      if (previous === undefined) delete process.env['E2E_REPLACED_FIELD_ACTIVE'];
+      else process.env['E2E_REPLACED_FIELD_ACTIVE'] = previous;
+    }
   }
 });
 
@@ -102,10 +118,47 @@ test('a field removed while it is being replaced reads as hidden', async ({ app,
 });
 `;
 
+/** A new destination and mandatory owned inputs prevent stale capture reuse. */
+function archiveReplacedFieldCapture(projectDir: string | undefined, report: unknown, closedRows: string | undefined, captureNonce: string | undefined): void {
+  const parent = path.resolve('.e2e/replaced-nodes');
+  mkdirSync(parent, { recursive: true });
+  const parentInfo = lstatSync(parent);
+  if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error('Invalid capture destination');
+  const output = mkdtempSync(path.join(parent, 'run-'));
+  if (projectDir === undefined || report === undefined || closedRows === undefined || captureNonce === undefined || !/^[0-9a-f]{64}$/.test(captureNonce)) throw new Error('Missing capture inputs');
+  const source = path.join(projectDir, '.e2e', 'native-trace');
+  const sourceInfo = lstatSync(source);
+  if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) throw new Error('Missing owned native trace');
+  const files = readdirSync(source);
+  if (files.length === 0 || files.some(file => !/^(native|query)-[0-9]+\.jsonl$/.test(file))) throw new Error('Invalid native trace inputs');
+  for (const file of files) {
+    const info = lstatSync(path.join(source, file));
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Invalid native trace input');
+  }
+  const trace = path.join(output, 'native-trace');
+  mkdirSync(trace);
+  // No merge/skip-existing behavior. A partial copy has no completed custody.
+  for (const file of files) copyFileSync(path.join(source, file), path.join(trace, file));
+  const reportText = JSON.stringify(report, null, 2);
+  writeFileSync(path.join(output, 'report.json'), reportText);
+  writeFileSync(path.join(output, 'closed-js.jsonl'), closedRows);
+  const custody = {
+    schemaVersion: 2, run: path.basename(output), captureNonce,
+    reportSHA256: createHash('sha256').update(reportText).digest('hex'),
+    closedJsSHA256: createHash('sha256').update(closedRows).digest('hex'),
+  };
+  writeFileSync(path.join(output, 'custody.json'), JSON.stringify(custody));
+  // Bind this fresh directory to the current harness log. A stale archive alone
+  // cannot satisfy field-only acceptance if this capture fails before creation.
+  process.stderr.write(`REPLACED_FIELD_CAPTURE_ARCHIVE ${JSON.stringify(custody)}\n`);
+}
+
 describe('reads of a node replaced every frame', () => {
   let app: FixtureApp;
   let outcome: RunOutcome;
   let project: FixtureProject;
+  let closedRows: string | undefined;
+  let captureNonce: string | undefined;
 
   beforeAll(async () => {
     app = await startFixtureApp();
@@ -113,46 +166,59 @@ describe('reads of a node replaced every frame', () => {
     // loaded CI runner each read takes far longer than locally, and the suite
     // asserts what the reads return, not how fast they are. The hook's own
     // budget covers all eight tests at that deadline.
-    ({ outcome, project } = await runProject(
-      { 'tests/replaced.e2e.ts': SUITE },
-      { appUrl: app.url, config: { actionTimeout: 5_000, assertionTimeout: 4_000, timeout: 90_000 } },
-    ));
+    project = createProject({ 'tests/replaced.e2e.ts': SUITE });
+    outcome = await withShortReadDiagnostics('replaced-nodes', onEvent => runExisting(project, {
+      appUrl: app.url,
+      runOptions: { ...popupEvalDiagnosticOptions(project.dir, app.url, 'E2E_REPLACED_FIELD_CAPTURE'), onEvent },
+      config: { actionTimeout: 5_000, assertionTimeout: 4_000, timeout: 90_000 },
+    }), (rows, nonce) => { closedRows = rows; captureNonce = nonce; });
   }, 750_000);
 
   afterAll(async () => {
+    // Capture the original whole workload before its owned temporary project is
+    // removed. Never rerun/select the failing case or change its deadline.
+    if (process.env['E2E_REPLACED_FIELD_CAPTURE'] === '1') {
+      try {
+        archiveReplacedFieldCapture(project?.dir, outcome?.report, closedRows, captureNonce);
+      } catch {
+        // A custody failure is not a new test outcome. The independent capture
+        // validator must reject missing/incomplete evidence; never infer success.
+        try { process.stderr.write('REPLACED_FIELD_CAPTURE_CUSTODY_FAILED\n'); } catch { /* Preserve the original result. */ }
+      }
+    }
     project?.cleanup();
     await app?.close();
   });
 
   it('never reads the live field as hidden through a detached node', () => {
     const result = resultByTitle(outcome, 'a field replaced every frame never reads as hidden');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('never reads the live field as hidden while the runner is starved', () => {
     const result = resultByTitle(outcome, 'a field replaced every frame never reads as hidden on a starved runner');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('reads a stable neighbor of a replaced field without tripping on it', () => {
     const result = resultByTitle(outcome, 'a stable field beside one replaced every frame reads as shown');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it.each(['testId', 'label', 'displayValue'])('fails toBeHidden on the live field by %s', (kind) => {
     const result = resultByTitle(outcome, `toBeHidden fails on a field replaced every frame: ${kind}`);
     expect(result.status).toBe('failed');
     // A last sample that lands on a replaced node past the deadline reports the locator unresolved.
-    expect(['ASSERTION_FAILED', 'LOCATOR_NOT_FOUND']).toContain(result.attempts[0]!.error?.code);
+    expect(['ASSERTION_FAILED', 'LOCATOR_NOT_FOUND'], closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toContain(result.attempts[0]!.error?.code);
   });
 
   it('resolves a stable field among churning candidates within a short deadline', () => {
     const result = resultByTitle(outcome, 'a stable field among fields replaced every frame resolves promptly');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('still reads a genuinely removed field as hidden', () => {
     const result = resultByTitle(outcome, 'a field removed while it is being replaced reads as hidden');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 });

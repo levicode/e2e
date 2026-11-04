@@ -22,11 +22,13 @@ const KNOWN_KEYS = [
   'workers',
   'observe',
   'locate',
+  'readFields',
   'perform',
   'actions',
   'performAt',
   'pointerActions',
   'tapModifiers',
+  'referenceRevisions',
   'keyboard',
   'fixtures',
   'state',
@@ -63,6 +65,7 @@ const RETIRED_HOOKS: Readonly<Partial<Record<keyof typeof NESTED_HOOKS, readonly
 const FUNCTION_MEMBERS = [
   'observe',
   'locate',
+  'readFields',
   'perform',
   'performAt',
   'prepare',
@@ -221,6 +224,9 @@ export function defineEngine(spec: Engine): EngineHandle {
     }
     capabilities.add('location');
   }
+  if (spec.readFields !== undefined && spec.locate === undefined) {
+    throw invalid(name, 'declares readFields without locate: fixture fields use the same locator contract');
+  }
   if (spec.performAt !== undefined) {
     if (!capabilities.has('observation')) {
       throw invalid(name, 'declares performAt without observe: a point is read off the observation pixels');
@@ -232,6 +238,7 @@ export function defineEngine(spec: Engine): EngineHandle {
   } else if (spec.pointerActions !== undefined) {
     throw invalid(name, 'declares pointerActions without performAt');
   }
+  if (spec.referenceRevisions !== undefined && spec.referenceRevisions !== 'engine') throw invalid(name, 'referenceRevisions must be engine');
   if (spec.tapModifiers !== undefined) {
     if (typeof spec.tapModifiers !== 'boolean') throw invalid(name, 'tapModifiers must be a boolean');
     if (spec.tapModifiers && !capabilities.has('actions')) {
@@ -254,6 +261,7 @@ export function defineEngine(spec: Engine): EngineHandle {
     if (fn !== undefined) handle[member] = fn.bind(spec);
   }
   if (spec.actions !== undefined) handle['actions'] = declaredKinds(name, 'actions', spec.actions, LOCATOR_ACTION_KINDS);
+  if (spec.referenceRevisions === 'engine') handle['referenceRevisions'] = 'engine';
   if (spec.tapModifiers === true) handle['tapModifiers'] = true;
   if (spec.pointerActions !== undefined) {
     handle['pointerActions'] = declaredKinds(name, 'pointerActions', spec.pointerActions, POINTER_ACTION_KINDS);

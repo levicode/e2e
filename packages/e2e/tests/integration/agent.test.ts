@@ -279,7 +279,9 @@ describe('agent judgment tier', () => {
     expect(step.events.filter((event) => event.kind === 'schema')).toHaveLength(2);
     // The rejection stands in for the verdict the step never got, so the report keeps its evidence rule.
     expect(step.explanation).toBe('unknown protocolVersion');
-    expect(step.observationRevision).toMatch(/^b\d+$/);
+    const rejected = fakeCalls.filter((call) => call.instruction === RETIRED_SHAPE_TWICE);
+    expect(rejected.at(-1)!.revision).not.toBe('');
+    expect(step.observationRevision).toBe(rejected.at(-1)!.revision);
   });
 
   it('leaves room for reasoning and sends provider options without pinning temperature', () => {
@@ -377,10 +379,13 @@ describe('agent judgment tier', () => {
 
   it('sends the semantic tree with node references and no secret values', () => {
     const judged = fakeCalls.find((call) => call.schemaName === 'agent-judgment-2')!;
-    expect(judged.observation).toContain('#n');
+    expect(judged.observation).toMatch(/^\s*#@e\d+ button "Increment"/m);
     expect(judged.observation).toContain('button "Increment"');
     expect(judged.observation).toContain('value=<secure>');
-    expect(judged.revision).toMatch(/^b\d+$/);
+    expect(judged.revision).not.toBe('');
+    // The report must preserve the observation token actually sent to the model.
+    const steps = outcome.report.run.results.flatMap((result) => result.attempts).flatMap((attempt) => attempt.steps);
+    expect(steps.map((step) => step.observationRevision)).toContain(judged.revision);
   });
 
   it('discloses href origin and path only, never query strings or fragments', () => {

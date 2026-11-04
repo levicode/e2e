@@ -49,6 +49,36 @@ describe('compileEvaluation', () => {
     await expect(compileEvaluation('(n) => n + 1', true)(41)).resolves.toEqual({ ok: true, value: 42 });
   });
 
+  it.each([
+    'Infinity', 'NaN', '({ nested: [Infinity] })', '({ nested: undefined })',
+    '({ nested: () => 1 })', '1n', 'Symbol("value")', 'new Date(0)',
+    '(() => { const value = {}; value.self = value; return value; })()',
+  ])('rejects invalid results before JSON transport can erase them: %s', async source => {
+    const envelope = await compileEvaluation(source, false)(undefined);
+    expect(JSON.parse(JSON.stringify(envelope))).toEqual({ ok: false, invalidResult: true });
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['Object.assign(Object.create(null), { value: 1 })', { value: 1 }],
+    ['(() => { const shared = { value: 1 }; return [shared, shared]; })()', [{ value: 1 }, { value: 1 }]],
+  ])('preserves valid top-level undefined, null prototypes and DAG values: %s', async (source, value) => {
+    await expect(compileEvaluation(source as string, false)(undefined)).resolves.toEqual({ ok: true, value });
+  });
+
+  it('emits the validated snapshot without reading stateful getters again', async () => {
+    const envelope = await compileEvaluation(`() => {
+      let reads = 0;
+      return { get value() { return ++reads === 1 ? 42 : Infinity; }, get count() { return reads; } };
+    }`, false)(undefined);
+    expect(JSON.parse(JSON.stringify(envelope))).toEqual({ ok: true, value: { value: 42, count: 1 } });
+  });
+
+  it('copies __proto__ as an ordinary data property without invoking toJSON', async () => {
+    const envelope = await compileEvaluation(`JSON.parse('{"__proto__":{"value":42}}')`, false)(undefined);
+    expect(JSON.parse(JSON.stringify(envelope))).toEqual({ ok: true, value: JSON.parse('{"__proto__":{"value":42}}') });
+  });
+
   it('reports an exception from the evaluated code by message', async () => {
     const evaluate = compileEvaluation('() => { throw new Error("boom"); }', false);
     await expect(evaluate(undefined)).resolves.toEqual({ ok: false, message: 'boom' });

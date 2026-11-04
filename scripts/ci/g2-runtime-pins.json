@@ -1,0 +1,24 @@
+{
+  "artifactId": 12735871569,
+  "artifactName": "ci-native-runtime-Native peer retirement and real reuse (finite G2)-40506204306-1",
+  "artifactSize": 13736751,
+  "artifactDigest": "sha256:1b2471658a14cf32234e312d3fd75bda7dacf3e714fd155e0cedf261b3abc080",
+  "manifestSha256": "219a95d95cb6cf35de2d335d64150224e8cad092eecb783f86f05c8c1cbc04cd",
+  "expected": {
+    "source": {
+      "commit": "6a6ac971f7692704602fbdd2433f0b7c2e66c1b3",
+      "tree": "0249de29b81578943583b78d8a63ec69ab64c8f5"
+    },
+    "repository": "levicode/e2e",
+    "runId": "40506204306",
+    "runAttempt": "1",
+    "platform": "linux",
+    "architecture": "x64",
+    "nativeCommit": "4292ef0710fa0517bbe38aac762ebc88f0123d91"
+  },
+  "nativeSource": {
+    "commit": "4292ef0710fa0517bbe38aac762ebc88f0123d91",
+    "tree": "5d28268b90ee0c8497f100ba4582d7b99c25cf32"
+  },
+  "binarySha256": "50724ab835eaa15433490a491425ea1277cfe525c2f195752075783ae421df50"
+}

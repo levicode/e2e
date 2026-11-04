@@ -8,6 +8,7 @@ Every app uses the same demo: enter a name and press Greet.
 | [with-vite](with-vite) | Vite + React | Chromium |
 | [with-next](with-next) | Next.js App Router | Chromium |
 | [with-astro](with-astro) | Astro | Chromium |
+| [with-angular](with-angular) | Angular | Chromium |
 | [with-expo](with-expo) | Expo + React Native | Chromium, iOS simulator, Android emulator |
 | [with-swiftui](with-swiftui) | SwiftUI | iOS simulator |
 | [with-compose](with-compose) | Jetpack Compose | Android emulator |
@@ -18,6 +19,9 @@ Every app uses the same demo: enter a name and press Greet.
 Each folder installs published packages from npm and works outside this
 repository. See its README for run commands. Agent tests need
 `AI_GATEWAY_API_KEY`; without it, they skip.
+
+Start a new project from one with `npx e2e init my-app --example with-expo`.
+`init` downloads the folder from the tag of the CLI's version.
 
 ## Hosted mobile devices
 

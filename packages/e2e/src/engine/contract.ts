@@ -82,7 +82,8 @@ export interface SemanticQuery {
 /**
  * The location capability's query language. `selector` is a platform-native
  * selector string (CSS or XPath on a document platform, a predicate on a
- * device platform); `frame` scopes a query inside one nested document.
+ * device platform); `frame` scopes a query inside one nested document;
+ * `union` matches either side, each node once, in document order.
  */
 export type LocatorExpression =
   | {
@@ -109,7 +110,18 @@ export type LocatorExpression =
       readonly kind: 'frame';
       readonly selector: string;
       readonly source: LocatorExpression;
+    }
+  | {
+      readonly kind: 'union';
+      readonly left: LocatorExpression;
+      readonly right: LocatorExpression;
     };
+
+/** Pure fixture value projections never carry reference or geometry authority. */
+export type EngineReadField = Exclude<keyof SemanticNode, 'ref' | 'rect' | 'children'>;
+export type EngineFieldValues = Pick<SemanticNode, EngineReadField> & {
+  readonly states: NonNullable<SemanticNode['states']> & { readonly secure: boolean };
+};
 
 export interface NodeRef {
   readonly id: string;
@@ -243,8 +255,9 @@ export interface ObservationPixels {
 
 /**
  * One deterministic action `perform` carries out on a node. The `swipe`
- * kind on the observation's root node is the viewport swipe: the agent's
- * `scroll` verb and `screen.swipe()` both arrive as `perform(root, swipe)`,
+ * kind on the observation's viewportRef (or root when omitted) is the viewport
+ * swipe: the agent's `scroll` verb and `screen.swipe()` both arrive as
+ * `perform(viewportRef ?? root, swipe)`,
  * so a surface implements scrolling once.
  *
  * `press` takes one key in the `Key` grammar below.

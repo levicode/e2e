@@ -1,3 +1,4 @@
+import { withShortReadDiagnostics } from '../helpers/short-read-diagnostics.ts';
 /**
  * A secret the page shows transformed is still a secret. Through the real
  * browser engine: a token echoed under CSS `text-transform` and a two-line
@@ -58,8 +59,9 @@ describe('secrets shown transformed', () => {
   beforeAll(async () => {
     app = await startFixtureApp();
     project = createProject({ 'tests/echo.e2e.ts': SUITE });
-    outcome = await runExisting(project, {
+    outcome = await withShortReadDiagnostics('transformed-secrets', onEvent => runExisting(project, {
       appUrl: app.url,
+      runOptions: { onEvent },
       config: {
         tests: 'tests/**/*.e2e.ts',
         reporters: ['json', 'markdown', 'junit'] as const,
@@ -76,7 +78,7 @@ describe('secrets shown transformed', () => {
           },
         },
       },
-    });
+    }));
   }, 120_000);
 
   afterAll(async () => {

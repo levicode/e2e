@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EngineFixtureContext, LocatorExpression } from 'e2e/engine';
 import type { Locator, Screen } from 'e2e';
-import type { PlaywrightSurface } from '../../src/surface.ts';
+import type { NativeWebSurface } from '../../src/native/browser-contract.ts';
 import { createBrowserFixture } from '../../src/browser.ts';
 
 function browserWithRecordingContext() {
@@ -33,7 +33,7 @@ function browserWithRecordingContext() {
       } as unknown as Screen;
     },
   } as unknown as EngineFixtureContext;
-  const browser = createBrowserFixture({} as PlaywrightSurface, context);
+  const browser = createBrowserFixture({ routeRegistryVersion: () => 0, subscribe: () => () => {} } as unknown as NativeWebSurface, context);
   return { browser, minted };
 }
 

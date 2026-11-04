@@ -22,6 +22,21 @@ const HOME = [
 ];
 
 describe('ScreenPresenter', () => {
+  it('keys native deltas by exact IDs and preserves opaque revision tokens', () => {
+    const presenter = new ScreenPresenter();
+    const before = 'native:issuer-A/observation-X';
+    const after = 'native:issuer-A/observation-Y';
+    const home = HOME.map((line) => line.replace(/#n/g, '#@e'));
+    expect(presenter.initial(screen(before, home))).toContain(`Current screen (revision ${before}, 6 nodes):`);
+    const next = [...home];
+    next[3] = ' #@e4 status "Counter" text="1"';
+    const text = presenter.update(screen(after, next), { lead: 'Tapped #@e3.' });
+    expect(text).toContain(`Screen changes since revision ${before} (now revision ${after}, 6 nodes):`);
+    expect(text).toContain('changed #@e4 status "Counter" text="1" (was: #@e4 status "Counter" text="0")');
+    expect(text).not.toMatch(/^(added|removed) /m);
+    expect(text).not.toContain('#n');
+  });
+
   it('retires semantic history through repeated unavailable captures and shows recovery whole', () => {
     const presenter = new ScreenPresenter();
     presenter.initial(screen('b1', ['#root', ' #save button "Save"']));

@@ -1,0 +1,64 @@
+/** Public fixture setup for integration tests, never a replacement backend or Page handle. */
+import type { EngineHandle, OperationContext } from 'e2e/engine';
+import { resolveConfig } from '../../../e2e/dist/config/resolve.js';
+import { createEngineSession } from '../../../e2e/dist/engine/session.js';
+import type { TargetSession } from '../../../e2e/dist/engine/surface.js';
+import { Deadline } from '../../../e2e/dist/internal/time.js';
+import { AttemptBudget } from '../../../e2e/dist/run/budget.js';
+import { createFixtures } from '../../../e2e/dist/run/fixtures.js';
+import { StepRecorder } from '../../../e2e/dist/run/steps.js';
+import { WorkerModels } from '../../../e2e/dist/run/worker-models.js';
+import type { Browser } from '../../src/index.ts';
+import { captureFixtureSurface } from './capture-fixture-surface.ts';
+import { correlateObserved, type CorrelateObserved } from './native-correlation.ts';
+
+/**
+ * Test-only real core fixture graph over the already-started public engine.
+ * These callers provide stable attempt fields. The graph has a bounded 30s
+ * helper lifetime by default; long suites can explicitly bound their shared
+ * graph lifetime without changing any per-operation timeout.
+ * No fabricated EngineFixtureContext or replacement locator implementation.
+ */
+export function nativeBrowserGraph(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/', lifetimeMs = 30_000): { browser: Browser; session: TargetSession; correlate: CorrelateObserved; identityScope(): string } {
+  if (!Number.isSafeInteger(lifetimeMs) || lifetimeMs <= 0 || lifetimeMs > 1_200_000) throw new RangeError('Native fixture lifetime must be between 1ms and 20 minutes');
+  const current = operation();
+  const config = resolveConfig({ targets: [{ name: 'web', platform: 'web', engine, app: { url: baseUrl } }], cache: 'off', timeout: 30_000, actionTimeout: current.timeoutMs, assertionTimeout: current.timeoutMs }, { projectRoot: process.cwd(), env: process.env });
+  const steps = new StepRecorder(current.attemptId);
+  const session = createEngineSession({ engine, targetName: 'web' });
+  const captured = captureFixtureSurface(() => {
+    const { fixtures } = createFixtures({
+      config, target: config.targets[0]!, session,
+      steps, budget: new AttemptBudget(current.signal, new Deadline(lifetimeMs)), runId: current.runId, attemptId: current.attemptId,
+      attempt: { testId: 'native-browser-fixture', titlePath: ['native-browser-fixture'], attemptId: current.attemptId, index: 0, signal: current.signal, memory: new Map() },
+      artifacts: { dir: process.cwd(), register: (_kind, relativePath) => relativePath, link: (relativePath) => relativePath }, priorSteps: () => steps.completed(),
+      agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
+    });
+    return Reflect.get(fixtures, 'browser') as Browser;
+  });
+  return { browser: captured.value, session, correlate: correlateObserved(captured.surface, operation), identityScope: () => captured.surface.identityScope };
+}
+
+/** Existing fixture-only callers keep the same real graph and public Browser surface. */
+export function nativeBrowser(engine: EngineHandle, operation: () => OperationContext, baseUrl = 'http://localhost/'): Browser {
+  return nativeBrowserGraph(engine, operation, baseUrl).browser;
+}
+
+/** Replace a synthetic fixture document through trusted evaluation, including inline scripts. */
+export async function nativeDocument(browser: Browser, html: string): Promise<void> {
+  await browser.evaluate((content) => {
+    document.open();
+    // document.open clears listeners; arm the replacement document before writing.
+    return new Promise<null>((resolve, reject) => {
+      const loaded = () => resolve(null);
+      window.addEventListener('load', loaded, { once: true });
+      try {
+        document.write(content);
+        document.close();
+      } catch (error) {
+        window.removeEventListener('load', loaded);
+        reject(error);
+      }
+    });
+  }, html);
+}
+

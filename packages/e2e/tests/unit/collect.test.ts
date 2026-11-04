@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { recordCollectFsCapability } from '../helpers/collect-fs-applicability.ts';
 import { collect, excludingEntry, relativeToRoot, selectPositionals } from '../../src/collect/collect.ts';
 import { resolveConfig } from '../../src/config/resolve.ts';
 
@@ -27,6 +28,7 @@ beforeAll(() => {
     writeFileSync(path.join(root, file), '');
   }
   caseInsensitiveFs = existsSync(path.join(root, 'tests', 'Agent'));
+  recordCollectFsCapability(root, caseInsensitiveFs, import.meta.url);
 });
 
 afterAll(() => {

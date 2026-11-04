@@ -1,61 +1,47 @@
-/**
- * Playwright error translation at the engine contract boundary: what the
- * runner is allowed to retry, what it must surface, and what must pass through
- * untouched because it is already classified.
- */
-
+/** Closed native failures preserve public retry/classification semantics without parsing backend text. */
 import { describe, expect, it } from 'vitest';
-import { EngineError } from 'e2e/engine';
-import { ConfigurationError, TestError } from 'e2e/engine';
-import { isTestErrorCode, navigationStaleOr, staleOr, translatePwError } from '../../src/support.ts';
+import { ConfigurationError, EngineError, TestError } from 'e2e/engine';
+import { isTestErrorCode } from '../../src/runtime-support.ts';
+import { resultError } from '../../src/native/browser-channel.ts';
+import type { Effects } from '../../src/native/protocol.ts';
+import { dialogPeer, nativeDialog } from '../helpers/dialog-peer.ts';
 
-function pwTimeout(text: string): Error {
-  const error = new Error(text);
-  error.name = 'TimeoutError';
-  return error;
-}
-
-/** A runner error the way it arrives from a copy of `e2e` this module never imported. */
 function foreignTestError(code: string): Error {
-  const error = new Error(code);
-  error.name = 'TestError';
-  Object.assign(error, { category: 'test', code, retryable: false });
-  return error;
+  const error = new Error(code); error.name = 'TestError';
+  Object.assign(error, { category: 'test', code, retryable: false }); return error;
+}
+function failure(code: string, effects: Effects = 'not-dispatched'): EngineError | TestError {
+  return resultError({ type: 'result', id: 'failure', generation: 1, operationSeq: 1, ok: false, error: { code }, effects, scopeState: effects === 'unknown' ? 'quarantined' : 'usable' });
+}
+async function fromCallback(error: Error): Promise<Error | undefined> {
+  const peer = await dialogPeer();
+  try {
+    await peer.add(() => { throw error; }); await peer.dispatch(nativeDialog().dialog);
+    try { peer.throwPending(); } catch (cause) { if (cause instanceof Error) return cause; throw cause; }
+    return undefined;
+  } finally { await peer.close(); }
 }
 
-const NAVIGATION_RACES = [
-  'Execution context was destroyed, most likely because of a navigation.',
-  'locator.evaluate: Frame was detached',
-];
-
-describe('translatePwError', () => {
-  it('passes engine errors through untouched', () => {
+describe('native error boundary', () => {
+  it('passes engine errors through untouched', async () => {
     const original = new EngineError('NODE_STALE', 'gone', { retryable: true });
-    expect(translatePwError(original, 'observe')).toBe(original);
+    expect(await fromCallback(original)).toBe(original);
   });
-
-  it('passes runner errors through untouched: policy never becomes infrastructure', () => {
-    const denied = new ConfigurationError('POLICY_DENIED', 'origin not allowed');
-    expect(translatePwError(denied, 'navigation')).toBe(denied);
-    const invalid = new TestError('INVALID_ARGUMENT', 'not JSON');
-    expect(translatePwError(invalid, 'evaluate')).toBe(invalid);
+  it('passes runner errors through untouched: policy never becomes infrastructure', async () => {
+    const denied = new TestError('POLICY_DENIED', 'blocked');
+    const invalid = new TestError('INVALID_STATE', 'bad state');
+    expect(await fromCallback(denied)).toBe(denied); expect(await fromCallback(invalid)).toBe(invalid);
   });
-
-  it('recognizes an EngineError from another module copy structurally', () => {
-    const foreign = new Error('stale');
-    foreign.name = 'EngineError';
+  it('recognizes an EngineError from another module copy structurally', async () => {
+    const foreign = new Error('stale'); foreign.name = 'EngineError';
     Object.assign(foreign, { code: 'NODE_STALE', retryable: true });
-    expect(translatePwError(foreign, 'read')).toBe(foreign);
+    expect(await fromCallback(foreign)).toBe(foreign);
   });
-
-  it('passes a runner error from another module copy through untouched', () => {
-    const foreign = foreignTestError('LOCATOR_AMBIGUOUS');
-    expect(translatePwError(foreign, 'read')).toBe(foreign);
+  it('passes a runner error from another module copy through untouched', async () => {
+    const foreign = foreignTestError('LOCATOR_AMBIGUOUS'); expect(await fromCallback(foreign)).toBe(foreign);
   });
-
   it('maps a timeout to a non-retryable OPERATION_TIMEOUT', () => {
-    const error = translatePwError(pwTimeout('waiting for locator'), 'observe');
-    expect(error).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+    expect(failure('deadline-exceeded')).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
   });
 });
 
@@ -80,51 +66,67 @@ describe('isTestErrorCode', () => {
   });
 });
 
-describe('navigationStaleOr', () => {
-  it('reports a capture that lost its document as retryable', () => {
-    for (const text of NAVIGATION_RACES) {
-      const error = navigationStaleOr(new Error(text), 'observe');
-      expect(error).toMatchObject({ code: 'NODE_STALE', retryable: true });
-      expect(error.message).toContain('observe:');
-    }
+// Navigation replacement and detached-node detection now belong to native code.
+// These assertions cover the public projection of its closed stale-reference evidence;
+// native browser races remain separate required acceptance gates, not string matching here.
+describe('native read/capture error projection', () => {
+  it.each(['not-dispatched', 'completed'] as const)('preserves deadline classification after %s', (effects) => {
+    expect(failure('deadline-exceeded', effects)).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  });
+  it('does not downgrade an unknown action outcome to a retryable timeout', () => {
+    expect(failure('deadline-exceeded', 'unknown')).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+  });
+  it('reports a capture that lost its document as retryable only before dispatch', () => {
+    expect(failure('stale-reference')).toMatchObject({ code: 'NODE_STALE', retryable: true });
+    expect(failure('stale-reference', 'completed')).toMatchObject({ code: 'NODE_STALE', retryable: false });
+  });
+  it('keeps a timeout a timeout: a capture that ran out of budget is not a race', () => {
+    expect(failure('deadline-exceeded')).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
   });
 
-  it('keeps a timeout a timeout: a capture that ran out of budget is not a race', () => {
-    const error = navigationStaleOr(pwTimeout('observation capture timed out'), 'observe');
-    expect(error).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+  // Native transports classify by closed code; callback text never changes that authority.
+  it.each([
+    'Execution context was destroyed, most likely because of a navigation.',
+    'locator.evaluate: Frame was detached',
+  ])('keeps a timeout a timeout when its call log says %s', async (line) => {
+    const timeout = new EngineError('OPERATION_TIMEOUT', `Timeout 5000ms exceeded.\nCall log:\n  - ${line}`, { retryable: false });
+    expect(await fromCallback(timeout)).toBe(timeout);
+    expect(timeout).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
   });
 
   it('leaves every other failure a non-retryable ENGINE_FAILURE', () => {
-    const error = navigationStaleOr(new Error('protocol error'), 'observe');
-    expect(error).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+    expect(failure('browser-failure')).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
   });
-
-  it('never reclassifies an engine error the capture already classified', () => {
-    const original = new EngineError('ENGINE_FAILURE', 'Execution context was destroyed', {
-      retryable: false,
-    });
-    expect(navigationStaleOr(original, 'observe')).toBe(original);
+  it('never reclassifies an engine error the callback already classified', async () => {
+    const original = new EngineError('ENGINE_FAILURE', 'Execution context was destroyed', { retryable: false });
+    expect(await fromCallback(original)).toBe(original);
   });
-});
-
-describe('staleOr', () => {
-  it('treats a navigation race like a stale node', () => {
-    for (const text of NAVIGATION_RACES) {
-      expect(staleOr(new Error(text), 'read')).toMatchObject({ code: 'NODE_STALE', retryable: true });
-    }
+  it('treats exact native navigation-race evidence as stale, not arbitrary error text', async () => {
+    expect(failure('stale-reference')).toMatchObject({ code: 'NODE_STALE', retryable: true });
+    expect(await fromCallback(new Error('Execution context was destroyed'))).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
   });
-
-  it('still reports detachment and misses as stale', () => {
-    expect(staleOr(new Error('element is not attached to the DOM'), 'read')).toMatchObject({
-      code: 'NODE_STALE',
-      retryable: true,
-    });
+  it('still reports exact native detachment and misses as stale', () => {
+    expect(failure('stale-reference')).toMatchObject({ code: 'NODE_STALE', retryable: true });
   });
-
   it('keeps a timeout a timeout: locate resolves once and never waits', () => {
-    expect(staleOr(pwTimeout('waiting for element'), 'read')).toMatchObject({
-      code: 'OPERATION_TIMEOUT',
-      retryable: false,
-    });
+    expect(failure('deadline-exceeded')).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
   });
+  it('never retries a stale-looking error with an unknown action outcome', () => {
+    expect(failure('stale-reference', 'unknown')).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+  });
+
+  it.each([
+    'resolved to hidden',
+    'element is not attached to the DOM',
+    'element was detached from the DOM',
+    'no element found',
+    'frame was detached',
+  ])(
+    'keeps a timeout a timeout when its call log says %s',
+    async (line) => {
+      const timeout = new EngineError('OPERATION_TIMEOUT', `Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('#x')\n  - locator ${line}`, { retryable: false });
+      expect(await fromCallback(timeout)).toBe(timeout);
+      expect(timeout).toMatchObject({ code: 'OPERATION_TIMEOUT', retryable: false });
+    },
+  );
 });

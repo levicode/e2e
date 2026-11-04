@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Board</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 640px; }
+    nav a { margin-right: 0.75rem; }
+    li { margin: 0.25rem 0; }
+    .done label { text-decoration: line-through; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <nav aria-label="Main">
+    <a href="/">Home</a>
+    <a href="/todos">Todos</a>
+    <a href="/forms">Forms</a>
+    <a href="/login">Login</a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/wizard">Wizard</a>
+    <a href="/checkout">Checkout</a>
+    <a href="/network">Network</a>
+    <a href="/dialogs">Dialogs</a>
+    <a href="/board">Board</a>
+    <a href="/pointer">Pointer</a>
+    <a href="/frames">Frames</a>
+    <a href="/canvas">Canvas</a>
+    <a href="/canvas-flow">Keypad</a>
+    <a href="/canvas-wizard">Canvas wizard</a>
+    <a href="/canvas-form">Canvas form</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/release-notes">Release notes</a>
+    <a href="/controls">Controls</a>
+    <a href="/scroll">Scroll</a>
+    <a href="/browser">Browser</a>
+    <a href="/speed">Speed</a>
+    <a href="/about">About</a>
+  </nav>
+  <h1>Board</h1>
+
+       <label for="board-search">Search cards</label>
+       <input id="board-search" type="search" />
+       <output aria-label="Search state">idle</output>
+
+       <div id="card-menu">Card actions</div>
+       <button id="archive" hidden>Archive card</button>
+
+       <ul aria-label="Todo column">
+         <li id="card" draggable="true">Design review</li>
+       </ul>
+       <section id="done" aria-label="Done column">Done column</section>
+       <output aria-label="Board state">Design review is in todo</output>
+
+       <label for="attachment">Attachment</label>
+       <input id="attachment" type="file" />
+       <output aria-label="Attachment state">none</output>
+
+       <script>
+         const boardState = document.querySelector('output[aria-label="Board state"]');
+         document.getElementById('board-search').addEventListener('keydown', (event) => {
+           if (event.key !== 'Enter') return;
+           document.querySelector('output[aria-label="Search state"]').textContent =
+             'searched: ' + event.target.value;
+         });
+         document.getElementById('card-menu').addEventListener('mouseenter', () => {
+           document.getElementById('archive').hidden = false;
+         });
+         document.getElementById('archive').addEventListener('click', () => {
+           boardState.textContent = 'Design review is archived';
+         });
+         const done = document.getElementById('done');
+         done.addEventListener('dragover', (event) => event.preventDefault());
+         done.addEventListener('drop', (event) => {
+           event.preventDefault();
+           boardState.textContent = 'Design review is done';
+         });
+         document.getElementById('attachment').addEventListener('change', (event) => {
+           document.querySelector('output[aria-label="Attachment state"]').textContent =
+             event.target.files[0] ? event.target.files[0].name : 'none';
+         });
+       </script>
+</body>
+</html>

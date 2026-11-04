@@ -12,8 +12,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { EngineCleanupContext, EngineHandle, LocatorExpression, OperationContext, SemanticNode } from 'e2e/engine';
-import { surfaceOf, web } from '../../src/index.ts';
+import { web } from '../../src/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
+import { nativeBrowser, nativeDocument } from '../helpers/native-browser.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
 const PAGE = `
@@ -71,12 +72,12 @@ describe('names with CSS generated content', () => {
     artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-glyphs-'));
     await engine.init!({
       runId: 'run-glyphs', targetName: 'web', projectRoot: process.cwd(),
-      app: { site: new URL(app.url).hostname }, env: {}, headed: false,
+      app: { site: new URL(app.url).hostname }, env: process.env, headed: false,
       workerSlot: 0, log: () => undefined, signal: new AbortController().signal,
     });
     await engine.startAttempt!({ attemptId: 'glyphs-1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
     await engine.session!.open!(`${app.url}/login`, op);
-    await surfaceOf(engine)!.page().setContent(PAGE);
+    await nativeDocument(nativeBrowser(engine, () => op, app.url), PAGE);
   });
 
   afterAll(async () => {

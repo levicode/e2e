@@ -1,0 +1,454 @@
+name: Download lifecycle and provider lease real-runtime validation
+'on':
+  push:
+    branches:
+    - implement/download-provider-lifecycle-ci
+permissions:
+  contents: read
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 2b9e0a00ee6466e55c52dacdba1d4f1bece2e2aa
+  NATIVE_SOURCE_TREE: 5d92121a84c82082e5c826737ffeb19e92ea4857
+jobs:
+  types-and-web-units:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+    - name: Full Web unit and source type checks
+      run: 'pnpm --filter e2e exec tsc --noEmit
+
+        set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec tsc --noEmit
+
+        pnpm exec oxlint packages/web/src/native-surface.ts packages/web/src/native/engine-channel.ts packages/web/src/native/reference-aliases.ts
+        packages/web/tests/unit/native-optional-pixel-transfer.test.ts packages/web/tests/integration/closed-shadow.test.ts
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/unit --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/web-units.json"
+        2>&1 | tee evidence/web-units.log
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: download-provider-adapter-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  download-lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact historical runtime with API and ZIP checks
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-interrupt-runtime.py
+      timeout-minutes: 3
+    - name: Verify explicit producer source, compiler and bytes
+      run: node scripts/ci/verify-interrupt-runtime.ts "$RUNNER_TEMP/interrupt-native-runtime"
+      timeout-minutes: 1
+    - name: Install exact owned browser dependencies
+      run: '"$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps'
+      timeout-minutes: 10
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+    - name: Collect and execute the complete required selection
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter e2e exec vitest list tests/integration/web-download-lifecycle.test.ts --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        assert.equal(JSON.parse(fs.readFileSync(''evidence/collection.json'',''utf8'')).length,13);
+
+        JS
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-download-lifecycle.test.ts --bail=0 --reporter=verbose
+        --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json" 2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        const r=JSON.parse(fs.readFileSync(''evidence/results.json'',''utf8''));const rows=r.testResults.flatMap(x=>x.assertionResults);
+
+        assert.equal(rows.length,13);assert.equal(r.numPendingTests,0);assert.equal(r.numPassedTests,13);assert.equal(r.numFailedTests,0);
+
+        JS
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: download-lifecycle-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  provider-cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact historical runtime with API and ZIP checks
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-interrupt-runtime.py
+      timeout-minutes: 3
+    - name: Verify explicit producer source, compiler and bytes
+      run: node scripts/ci/verify-interrupt-runtime.ts "$RUNNER_TEMP/interrupt-native-runtime"
+      timeout-minutes: 1
+    - name: Install exact owned browser dependencies
+      run: '"$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps'
+      timeout-minutes: 10
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+    - name: Collect and execute the complete required selection
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/integration/provider-cleanup.test.ts --no-staticParse
+        --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        assert.equal(JSON.parse(fs.readFileSync(''evidence/collection.json'',''utf8'')).length,2);
+
+        JS
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/integration/provider-cleanup.test.ts --bail=0 --reporter=verbose
+        --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json" 2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        const r=JSON.parse(fs.readFileSync(''evidence/results.json'',''utf8''));const rows=r.testResults.flatMap(x=>x.assertionResults);
+
+        assert.equal(rows.length,2);assert.equal(r.numPendingTests,0);assert.equal(r.numPassedTests,2);assert.equal(r.numFailedTests,0);
+
+        JS
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: provider-cleanup-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  original-provider-downloads:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact historical runtime with API and ZIP checks
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-interrupt-runtime.py
+      timeout-minutes: 3
+    - name: Verify explicit producer source, compiler and bytes
+      run: node scripts/ci/verify-interrupt-runtime.ts "$RUNNER_TEMP/interrupt-native-runtime"
+      timeout-minutes: 1
+    - name: Install exact owned browser dependencies
+      run: '"$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps'
+      timeout-minutes: 10
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+    - name: Collect and execute the complete required selection
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter @e2e-dev/web exec vitest list tests/integration/provider-downloads.test.ts --no-staticParse
+        --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        assert.equal(JSON.parse(fs.readFileSync(''evidence/collection.json'',''utf8'')).length,2);
+
+        JS
+
+        set +e
+
+        pnpm --filter @e2e-dev/web exec vitest run tests/integration/provider-downloads.test.ts --bail=0 --reporter=verbose
+        --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json" 2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        const r=JSON.parse(fs.readFileSync(''evidence/results.json'',''utf8''));const rows=r.testResults.flatMap(x=>x.assertionResults);
+
+        assert.equal(rows.length,2);assert.equal(r.numPendingTests,0);assert.equal(r.numPassedTests,2);assert.equal(r.numFailedTests,0);
+
+        JS
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: original-provider-downloads-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  original-download-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Capture exact recipe source and reject unfilled pins
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        [[ "$NATIVE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+        test "$NATIVE_SOURCE_SHA" != 0000000000000000000000000000000000000000
+
+        test -z "$(git status --porcelain --untracked-files=no)"
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        printf ''%s\n'' "$GITHUB_RUN_ID" > evidence/run.id
+
+        node --version > evidence/node.version
+
+        node --input-type=module -e ''import fs from "node:fs";import assert from "node:assert/strict";const p=JSON.parse(fs.readFileSync(".github/native-candidate.json","utf8"));assert.equal(p.commit,process.env.NATIVE_SOURCE_SHA);assert.equal(p.repository,"levicode/agent-browser");''
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact historical runtime with API and ZIP checks
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/download-interrupt-runtime.py
+      timeout-minutes: 3
+    - name: Verify explicit producer source, compiler and bytes
+      run: node scripts/ci/verify-interrupt-runtime.ts "$RUNNER_TEMP/interrupt-native-runtime"
+      timeout-minutes: 1
+    - name: Install exact owned browser dependencies
+      run: '"$E2E_AGENT_BROWSER_EXECUTABLE" install --with-deps'
+      timeout-minutes: 10
+    - name: Build actual public core and web adapter
+      run: pnpm run build
+    - name: Install original core fixture Playwright Chromium
+      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps
+    - name: Collect and execute the complete required selection
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN
+
+        pnpm --filter e2e exec vitest list tests/integration/web-platform.test.ts -t download --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        assert.equal(JSON.parse(fs.readFileSync(''evidence/collection.json'',''utf8'')).length,3);
+
+        JS
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-platform.test.ts -t download --bail=0 --reporter=verbose
+        --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json" 2>&1 | tee evidence/test.log
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/test.exit
+
+        node --input-type=module - <<''JS''
+
+        import fs from ''node:fs'';import assert from ''node:assert/strict'';
+
+        const r=JSON.parse(fs.readFileSync(''evidence/results.json'',''utf8''));const rows=r.testResults.flatMap(x=>x.assertionResults);
+
+        assert.equal(rows.length,3);assert.equal(r.numPendingTests,0);assert.equal(r.numPassedTests,3);assert.equal(r.numFailedTests,0);
+
+        JS
+
+        exit "$status"
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: original-download-contracts-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7

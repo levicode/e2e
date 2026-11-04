@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "native": {
+    "commit": "3aea0b922714be03d37a0d71dc431f27f7a98380",
+    "tree": "75481ed8b8b6f127e19ef5e80be6fcc4e89ae89b"
+  },
+  "relaySHA256": "61a10b503a9453a0c171f96f5847d3b60adbc9a31071b5b5e15a75fbc1aeb6f8",
+  "wheelSHA256": "64dee438fed052b52e4f98f76c5790513235efaa1ef7f3f2192c392cd7c91b65",
+  "sourceHashes": {
+    ".github/workflows/native-runtime.yml": "83606d05f95be622dc34fd35fc9c4327fd62db1005b13bcdfe756f91fe7d3c6f",
+    ".github/workflows/spec.yml": "c691d6b2f454f3f7e9c7d9568f9e3254fec91859070d4c7b0108a9c76bcbe2f5",
+    "packages/e2e/tests/fixtures/popup-init-order/cases.txt": "1f0971c29c005bb26dc9f3a47e625b3df25aa3c1264393b21cb213b1cd7fefe1",
+    "packages/e2e/tests/helpers/popup-document-evidence.ts": "1ed7b36776a0ed5152d96198b7a766d20bf385d198d1c759f4e35551e2192031",
+    "packages/e2e/tests/helpers/run-project.ts": "c1fc8e7bbaab2377d0dbe1e7da9d82905f275f9aabd2f8a54c7ef9859c62f974",
+    "packages/e2e/tests/integration/web-popup-init-order.test.ts": "ed70a3af61e099eba95ec50d1f554af13be8c03ef8ecad0a59cb877f32c17dc0",
+    "scripts/acceptance/candidate-web.ts": "e2c87d22fbf083cb51ce6433500513f6670ddcc40dcfaa7e636bb4ade3d9358a",
+    "scripts/ci/check-engine-secrets-native-custody.py": "0335760df2054e69513ec0066923475069262db59cd2117623086a37938fa6d7",
+    "scripts/ci/native-fault-runtime.ts": "465f1d3a9b961e9bdc55fb831dee8c3ac6f3b4c6d619e230cb0538b179c938cd",
+    "scripts/ci/native-runtime.ts": "6bba1e947116d971b18ced210ea8fbdae2b3f678f5684104cec843e2be68ca71",
+    "scripts/ci/native-targeted-plan.json": "2ef478e43e8b807ddc68c1fdf350d0dc73c8861a405d4df39c9ff57492fdf779",
+    "scripts/ci/native-targeted-tests.py": "723f50054682af8b2c2388ded6ef9f4011f9f3ce76b0e3a7bc4f8afba3e85287",
+    "scripts/ci/native-targeted-tests.test.py": "f717e3d07c9fee97b66811cbbe2008557818ce0bb9d83418694e3c961e8fbba5",
+    "scripts/ci/popup-joint-case.ts": "df02d4335cf7a661cdcd752cc7aea583e877c9cdd31039c516a5051f44932677",
+    "scripts/ci/popup-joint-evidence.py": "c974b54c86ddb8c992387a1d44e1ee9ca90cc92755d259d6211c3f5783134555",
+    "scripts/ci/popup-joint-evidence.test.py": "47aafcc09784f9ff3b77190b91bdb429e2386a206a4d79b503f90c6437da233d",
+    "scripts/ci/popup-joint-fault-controls.json": "85ecc46e48880b8b4f7d2dea5a9c92374d1adeb22cf90a576bc9c232431418ae",
+    "scripts/ci/popup-joint-requirements.txt": "47e5b7c0631922fd5c9967e13490dbff7389f8d4d5bfe464b2a71e9d9c1175fa",
+    "scripts/ci/popup-joint-runtime.test.ts": "aa1720e7179d699467d4c82850ff1e48985315ff23e87c36789b52d2bfb0fb34",
+    "scripts/ci/popup-joint-runtime.ts": "868d7d9df90578bc41746bd31642f86578ca4eb6f64a74c47ab2efa0d2d113c4",
+    "scripts/ci/popup-passive-joint-relay.py": "61a10b503a9453a0c171f96f5847d3b60adbc9a31071b5b5e15a75fbc1aeb6f8",
+    "scripts/ci/spec-fixture-runtime.ts": "f1d114431bf0a71ce94a4751a5f79b8b923fbfdb5560542145fddc571e74b503",
+    "scripts/ci/test_popup_passive_joint_relay.py": "43de798bff465ceac3d1f84e7263e1902bab5dc124d186cd225be8f831fe57c3",
+    "scripts/acceptance/installed-chromium.ts": "c02ec7036c925a99ea963f1862eaaab3bbae492051e2f5c071e1e057e4d4e986"
+  }
+}

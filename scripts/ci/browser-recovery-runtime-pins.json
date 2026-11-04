@@ -1,0 +1,26 @@
+{
+  "artifactId": 12829745464,
+  "artifactName": "ci-native-runtime-Typed action admission cause preservation bounded acceptance-40715430269-1",
+  "artifactSize": 13968293,
+  "artifactDigest": "sha256:4fe2fb36b8ff5664e50f8ef76e8879aa8739a88f6cc6df6252695ba47cfcef06",
+  "manifestSha256": "80b93c2dba4302bc2ea571c720e97ba2d3de47e4f58eedcb5468c415ca236a6a",
+  "expected": {
+    "source": {
+      "commit": "76a7765ed15eab90d5958a417e1b2224eb0a2b12",
+      "tree": "91f42f655a92bbd4aa3134a1f6609344689be697"
+    },
+    "repository": "levicode/e2e",
+    "runId": "40715430269",
+    "runAttempt": "1",
+    "platform": "linux",
+    "architecture": "x64",
+    "nativeCommit": "ef81a637abb7bd63aa877f1790949d0a2a5d9e71"
+  },
+  "nativeSource": {
+    "commit": "ef81a637abb7bd63aa877f1790949d0a2a5d9e71",
+    "tree": "3822bc7dcc16bcfdfc6c6d3f81296edc832b1ea4"
+  },
+  "binarySha256": "6623feec49e931c29e92001221b8635a679f3913831075f3e498a317d133eabd",
+  "harnessNative": "ef81a637abb7bd63aa877f1790949d0a2a5d9e71",
+  "scope": "Existing current-source remaining Linux consumers; immutable ordinary reuse; no native build/product/fixture changes"
+}

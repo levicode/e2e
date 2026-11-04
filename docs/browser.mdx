@@ -113,6 +113,14 @@ await expect(editor.frameLocator('#preview').getByRole('heading', 'Uploaded')).t
 only when role, label, and test-id queries can't find the element. For a
 match made ambiguous by a hidden duplicate, try `{ visible: true }` first.
 
+The agent's semantic tree shows a frame from another site, such as a hosted
+card field, as an `iframe` element with none of its content
+([site check](/reference/security#site-check)). The agent reaches that
+content only through screenshots. Use `frameLocator` for steps in that
+frame. To judge its content with `agent.assert`, pass
+[`vision`](/reference/agent#vision). An `agent.act` whose only change is in
+that frame never records a [replay](/cache#when-a-recording-is-written).
+
 ## Read from the page
 
 `browser.evaluate` runs a function in the page. e2e serializes the
@@ -176,35 +184,19 @@ origin it would go to. When one entry is refused, e2e sets none.
 
 ## Pick a browser
 
-The browser is an option of the engine, `chromium` by default. Two
-browsers on one app are two targets, as in
-[One size per target](/web#one-size-per-target):
+This native backend currently supports Chromium. Its public installer rejects
+`firefox` and `webkit`; changing a browser name does not select an implemented
+alternative backend. The engine/provider extension points remain available for
+separately implemented backends, but are not a claim of acceptance here.
 
-```ts title="Target fragment"
-{ name: 'webkit', engine: web({ browser: 'webkit' }), app },
-```
+Before the first run, install and verify the matching native runtime bundle,
+then explicitly install Chromium as described in
+[Installing browsers](/reference/web#installing-browsers). Installing the npm
+packages or running `e2e init` alone does not satisfy the runtime prerequisite.
 
-In CI, install the extra browser with the
-[install command](/reference/web#installing-browsers):
-
-<CodeGroup>
-```bash npm
-npx @e2e-dev/web install webkit --with-deps
-```
-
-```bash pnpm
-pnpm exec e2e-web install webkit --with-deps
-```
-
-```bash bun
-bunx @e2e-dev/web install webkit --with-deps
-```
-</CodeGroup>
-
-`connect` attaches to a remote Chromium over CDP instead of launching one,
-or to another browser that speaks CDP, such as a running
-[Lightpanda](/integrations/lightpanda).
-To set sizes, see [Viewports](/web#viewports).
+`connect` attaches to a remote Chromium over CDP instead of launching one.
+Other CDP implementations require their own compatibility validation; a shared
+protocol alone does not prove support. To set sizes, see [Viewports](/web#viewports).
 
 ## Hosted browsers
 
@@ -218,6 +210,7 @@ when the run no longer uses it.
 | [Kernel](/integrations/kernel) | `kernel()` from `@e2e-dev/kernel` |
 | [smol machines](/integrations/smol) microVMs on your own computer | `smol()` from `@e2e-dev/smol` |
 | [Lightpanda](/integrations/lightpanda), the open-source headless browser, on your own machine | `lightpanda()` from `@e2e-dev/lightpanda` |
+| [TestMu AI](/integrations/testmu#run-web-targets-in-browsers) | `testmuBrowsers()` from `@e2e-dev/testmu/web` |
 | Any other service | Your own provider, a few dozen lines in your project |
 
 When the service shows the window in a live view, add `viewport: null` so
@@ -395,6 +388,8 @@ apply:
 - No session state capture or restore. A run whose tests use a
   [session](/authentication) on the target fails with `COLLECTION_ERROR`
   before its setup test signs in.
+
+If the application tab closes while the connection stays healthy, the next explicit page open or video-start activation can open one blank replacement in the same context after native verifies closure and completes prior-page cleanup. Other host tabs are left alone; reads and locator queries do not reopen a closed page. Uncertain creation or recording cleanup fails closed; the operation is not replayed.
 
 After a transport drop, the next operation reattaches through the lease's
 `reconnectEndpoint`, else its `cdpEndpoint`, and checks that it is the same

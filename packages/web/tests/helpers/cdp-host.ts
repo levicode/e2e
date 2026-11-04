@@ -1,7 +1,7 @@
 /** A local Chrome process owned independently of the engine's CDP transport. */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
@@ -22,11 +22,14 @@ export async function closeRemoteChrome(chrome: Omit<RemoteChrome, 'endpoint'>):
 }
 
 /** Launches the remote host and releases its resources if it never becomes ready. */
-export async function launchRemoteChrome(): Promise<RemoteChrome> {
+export async function launchRemoteChrome(executablePath?: string): Promise<RemoteChrome> {
+  if (executablePath !== undefined && (!path.isAbsolute(executablePath) || !existsSync(executablePath))) {
+    throw new Error('explicit Chrome executable must be an existing absolute path');
+  }
   const userDataDir = mkdtempSync(path.join(tmpdir(), 'e2e-cdp-host-'));
   // The sandbox flags are what a containerized CI runner needs to start Chrome
   // at all; they change nothing about the attach under test.
-  const proc = spawn(chromium.executablePath(), [
+  const proc = spawn(executablePath ?? chromium.executablePath(), [
     '--headless=new',
     '--remote-debugging-port=0',
     '--no-first-run',

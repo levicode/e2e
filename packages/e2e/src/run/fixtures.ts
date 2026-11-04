@@ -1,5 +1,6 @@
 /** Attempt-scoped fixture graph. */
 
+import path from 'node:path';
 import { BUILT_IN_AGENT } from '../agent/agent-brand.ts';
 import { createAgentFixture } from '../agent/index.ts';
 import { prepareObservation } from '../agent/observation.ts';
@@ -24,6 +25,7 @@ import {
   createLocator,
   createScopedScreen,
   createScreen,
+  locatorInternals,
   type ScreenContext,
   type SecretResolver,
 } from '../locator/screen.ts';
@@ -94,6 +96,7 @@ export interface AttemptFixtures {
 
 export function createFixtures(environment: AttemptEnvironment): AttemptFixtures {
   const engine = new LocatorEngine({
+    readPurpose: 'fixture',
     session: environment.session,
     budget: environment.budget,
     runId: environment.runId,
@@ -342,10 +345,18 @@ function fixtureContext(
       return engine.signal;
     },
     operation: (timeoutMs) => engine.operation(timeoutMs),
+    assertionBudget: (timeoutMs) => engine.assertionBudget(timeoutMs),
     attachArtifact: (kind, relativePath) =>
       steps.attachArtifact(environment.artifacts.register(kind, relativePath)),
     attachViewport: (viewport) => steps.attachViewport(viewport),
     locator: (expression) => createLocator(screenContext, expression),
+    sampleAttribute: (target, name, deadline) => {
+      const internals = locatorInternals(target);
+      if (internals?.context.engine !== engine) {
+        throw new ConfigurationError('INVALID_ARGUMENT', 'sampleAttribute requires a locator owned by this fixture context');
+      }
+      return engine.sampleAttribute(internals.expression, name, deadline);
+    },
     screen: (wrap) => createScopedScreen(screenContext, wrap),
     expectable<T extends object, E extends object>(target: T, factory: () => E): T & Expectable<E> {
       let surface: E | undefined;
@@ -509,7 +520,7 @@ function createApp(environment: AttemptEnvironment, engine: LocatorEngine): App 
       return steps.run('app', 'app.screenshot', label ?? '', async () => {
         const relative = await engine.session.artifacts.screenshot(label, engine.operation());
         environment.steps.attachArtifact(environment.artifacts.register('screenshot', relative));
-        return relative;
+        return path.join(environment.artifacts.dir, relative);
       });
     },
   };

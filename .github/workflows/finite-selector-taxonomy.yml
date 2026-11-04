@@ -1,0 +1,1292 @@
+name: Finite original selector taxonomy acceptance
+'on':
+  push:
+    branches:
+    - ci/finite-selector-taxonomy-acceptance
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: finite-selector-taxonomy-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 99408113a5d155089886fb9679eef77176eb5d40
+  NATIVE_SOURCE_TREE: 287b2573dfa067eb7a6ce515397f65d7add714a2
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  preflight-both-mode-typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Check default and acceptance-faults tests without executing any harness
+      run: "set +e\nset -uo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git\
+        \ rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\" || exit 1\ntest \"$(git rev-parse\
+        \ HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\" || exit 1\ntest -z \"$(git status\
+        \ --porcelain)\" || exit 1\nrustup toolchain install 1.99.1 --profile minimal\
+        \ || exit 1\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nsha256sum\
+        \ Cargo.lock > \"$GITHUB_WORKSPACE/evidence/cargo-lock.sha256\"\nunset RUSTC_WRAPPER\
+        \ RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"\
+        $RUNNER_TEMP/native36-check-target\"\nfailed=0\nfor kind in default acceptance-faults;\
+        \ do\n  args=()\n  if test \"$kind\" = acceptance-faults; then args+=(--features\
+        \ acceptance-faults); fi\n  cargo +1.99.1 check --locked --profile ci --tests\
+        \ --bin agent-browser -j1 \"${args[@]}\" --message-format=json > \"$GITHUB_WORKSPACE/evidence/$kind.jsonl\"\
+        \ 2> \"$GITHUB_WORKSPACE/evidence/$kind.log\"\n  status=$?\n  printf '%s\\\
+        n' \"$status\" > \"$GITHUB_WORKSPACE/evidence/$kind.exit\"\n  if test \"$status\"\
+        \ -ne 0; then failed=1; fi\ndone\npython3 - <<'PY_RECEIPT'\nimport json,os,pathlib\n\
+        p=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'evidence';rows=[]\nfor kind\
+        \ in ['default','acceptance-faults']:\n records=[json.loads(x) for x in (p/(kind+'.jsonl')).read_text().splitlines()]\n\
+        \ errors=[r['message']['rendered'] for r in records if r.get('reason')=='compiler-message'\
+        \ and r.get('message',{}).get('level')=='error']\n rows.append({'kind':kind,'exit':int((p/(kind+'.exit')).read_text()),'buildFinished':[r.get('success')\
+        \ for r in records if r.get('reason')=='build-finished'],'errors':errors})\n\
+        (p/'result.json').write_text(json.dumps({'nativeSource':{'commit':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE']},'kind':'cargo-check-tests-only','reviewPending':False,'testExecution':False,'runtimeAcceptance':False,'results':rows},indent=2))\n\
+        assert all(r['exit']==0 and r['buildFinished']==[True] for r in rows),rows\n\
+        PY_RECEIPT\nreceipt=$?\ntest \"$failed\" -eq 0 && test \"$receipt\" -eq 0\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: native36-final-both-mode-compile-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  native-runtime:
+    uses: ./.github/workflows/native-runtime.yml
+    needs:
+    - preflight-both-mode-typecheck
+  supplementary-fast-faults:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '24'
+    - name: Exact source JavaScript nine bounded negative and positive controls
+      run: node scripts/ci/check-selector-taxonomy.cjs native/cli/src/native/client_observation/selector_query.js
+    - name: Compile supplementary fast-profile test harness (not production acceptance)
+      shell: bash
+      run: "set -euo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git rev-parse\
+        \ HEAD)\" = \"$NATIVE_SOURCE_SHA\"\ntest \"$(git rev-parse HEAD^{tree})\"\
+        \ = \"$NATIVE_SOURCE_TREE\"\ntest -z \"$(git status --porcelain)\"\nrustup\
+        \ toolchain install 1.99.1 --profile minimal\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nunset\
+        \ RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\n\
+        export CARGO_TARGET_DIR=\"$RUNNER_TEMP/native-regressions-target\"\ncargo\
+        \ +1.99.1 test --locked --profile ci-test-fast --config 'profile.ci-test-fast.inherits=\"\
+        ci\"' --config profile.ci-test-fast.opt-level=1 --config 'profile.ci-test-fast.lto=\"\
+        off\"' --config profile.ci-test-fast.codegen-units=16 --config profile.ci-test-fast.debug=0\
+        \ --config profile.ci-test-fast.debug-assertions=false --config profile.ci-test-fast.overflow-checks=false\
+        \ --config 'profile.ci-test-fast.panic=\"unwind\"' --config profile.ci-test-fast.incremental=false\
+        \ --config profile.ci-test-fast.strip=true --timings --no-default-features\
+        \ --features acceptance-faults --bin agent-browser -j1 --no-run --message-format=json\
+        \ > \"$GITHUB_WORKSPACE/evidence/harness.jsonl\" 2> \"$GITHUB_WORKSPACE/evidence/harness-build.log\"\
+        \npython3 - <<'PY_HARNESS'\nimport json, os\nfrom pathlib import Path\nout\
+        \ = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'\npaths = set()\nbuild_finished\
+        \ = []\nfor line in (out / 'harness.jsonl').read_text().splitlines():\n  \
+        \  record = json.loads(line)\n    if record.get('reason') == 'build-finished':\n\
+        \        build_finished.append(record.get('success') is True)\n    if (record.get('reason')\
+        \ == 'compiler-artifact'\n        and record.get('target', {}).get('name')\
+        \ == 'agent-browser'\n        and 'bin' in record.get('target', {}).get('kind',\
+        \ [])\n        and record.get('profile', {}).get('test') is True\n       \
+        \ and record.get('features') == ['acceptance-faults']\n        and record.get('executable')):\n\
+        \        assert record['profile']['opt_level']=='1' and record['profile']['debug_assertions']\
+        \ is False and record['profile']['overflow_checks'] is False\n        paths.add(record['executable'])\n\
+        if build_finished != [True]:\n    raise SystemExit('Missing or unsuccessful\
+        \ final compiler build receipt')\nif len(paths) != 1:\n    raise SystemExit(f'Expected\
+        \ exactly one test executable, got {len(paths)}')\nharness = paths.pop()\n\
+        if not Path(harness).is_file():\n    raise SystemExit('Compiler-selected harness\
+        \ is missing')\n(out / 'harness.path').write_text(harness + '\\n')\nPY_HARNESS\n\
+        mkdir -p \"$GITHUB_WORKSPACE/native-harness\"\nharness=\"$(cat \"$GITHUB_WORKSPACE/evidence/harness.path\"\
+        )\"\ncp \"$harness\" \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ngit rev-parse HEAD > \"$GITHUB_WORKSPACE/native-harness/native-source.sha\"\
+        \ngit rev-parse HEAD^{tree} > \"$GITHUB_WORKSPACE/native-harness/native-source.tree\"\
+        \n(cd \"$GITHUB_WORKSPACE/native-harness\"; sha256sum agent-browser-tests\
+        \ > SHA256SUMS)\n\nprintf '%s\\n' acceptance-faults > \"$GITHUB_WORKSPACE/native-harness/features.txt\"\
+        \nprintf '%s\\n' \"$GITHUB_RUN_ID\" > \"$GITHUB_WORKSPACE/native-harness/producer-run.id\"\
+        \n\nmkdir -p \"$GITHUB_WORKSPACE/evidence/cargo-timings\"\ncp -a \"$RUNNER_TEMP/native-regressions-target/cargo-timings/.\"\
+        \ \"$GITHUB_WORKSPACE/evidence/cargo-timings/\"\n\nprintf \"harness-sha=%s\\\
+        n\" \"$(sha256sum \"$GITHUB_WORKSPACE/native-harness/agent-browser-tests\"\
+        \ | cut -d' ' -f1)\" >> \"$GITHUB_OUTPUT\"\n"
+      id: compile
+    - name: Run exact optional observation producer inventory
+      run: python3 scripts/ci/run-optional-observe-tests.py "$(cat evidence/harness.path)"
+        scripts/ci/optional-observe-inventory.json evidence/native-focused
+    - name: Run owner-stop containment isolated reopen and worker error exact controls
+      if: ${{ always() && steps.compile.outcome == 'success' }}
+      run: python3 scripts/ci/run-owner-stop-exact.py
+    - name: Run six typed admission controls plus unchanged original swipe exact
+      if: ${{ always() && steps.compile.outcome == 'success' }}
+      run: python3 scripts/ci/run-typed-admission-exact.py candidate
+    - name: Run complete original nonignored feature harness without filters
+      run: 'set -euo pipefail
+
+        native-harness/agent-browser-tests --list > evidence/all-tests.list
+
+        native-harness/agent-browser-tests --ignored --list > evidence/ignored-tests.list
+
+        python3 - <<''PY_INVENTORY''
+
+        import pathlib,json
+
+        p=pathlib.Path(''evidence'')
+
+        def names(f):return [x[:-6] for x in (p/f).read_text().splitlines() if x.endswith('':
+        test'')]
+
+        a=names(''all-tests.list'');i=names(''ignored-tests.list'');assert a and len(a)==len(set(a))
+        and len(i)==len(set(i)) and set(i)<=set(a)
+
+        json.dump({''total'':len(a),''ignored'':len(i),''nonignored'':len(a)-len(i),''features'':[''acceptance-faults''],''standardDefaultFeatureAcceptance'':False},open(p/''inventory.json'',''w''),indent=2)
+
+        PY_INVENTORY
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        timeout --signal=TERM --kill-after=5s 1200 native-harness/agent-browser-tests
+        > evidence/full-suite.log 2>&1
+
+        status=$?
+
+        set -e
+
+        printf ''%s\n'' "$status" > evidence/full-suite.exit
+
+        python3 - <<''PY_RESULTS''
+
+        import pathlib,json,re
+
+        p=pathlib.Path(''evidence'');s=(p/''full-suite.log'').read_text();i=json.load(open(p/''inventory.json''));m=re.findall(r''test
+        result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured;
+        (\d+) filtered out'',s)
+
+        result={''exit'':int((p/''full-suite.exit'').read_text()),''inventory'':i,''summaries'':m,''failedTests'':re.findall(r''^test
+        (.+) \.\.\. FAILED$'',s,re.M),''notDefaultFeatureAcceptance'':True}
+
+        (p/''result.json'').write_text(json.dumps(result,indent=2)+''\n'');assert
+        len(m)==1,m
+
+        _,passed,failed,ignored,measured,filtered=m[0];assert int(passed)+int(failed)==i[''nonignored''];assert
+        int(ignored)==i[''ignored''] and int(measured)==int(filtered)==0;assert int(passed)+int(failed)+int(ignored)==i[''total'']
+
+        assert result[''exit'']==0 and int(failed)==0,result
+
+        PY_RESULTS
+
+        test "$status" -eq 0
+
+        '
+      if: ${{ always() && steps.compile.outcome == 'success' }}
+    - name: Run exact two selector syntax parser and expression controls
+      if: ${{ always() && steps.compile.outcome == 'success' }}
+      run: python3 scripts/ci/run-selector-taxonomy-exact.py
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: selector-taxonomy-fast-fault-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - preflight-both-mode-typecheck
+  strict-raw-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        test -z "$(git -C . status --porcelain)"
+
+        mkdir -p evidence
+
+        git -C . rev-parse HEAD > evidence/product-checkout.sha
+
+        git -C . rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum ./packages/e2e/tests/fixtures/public-raw-text.e2e.ts ./packages/e2e/tests/fixtures/public-raw-internal.e2e.ts
+        ./packages/e2e/tests/fixtures/public-raw-css.e2e.ts ./packages/e2e/tests/integration/web-selector-raw-text.test.ts
+        ./packages/e2e/tests/integration/web-selector-raw-internal.test.ts ./packages/e2e/tests/integration/web-selector-raw-css.test.ts
+        > evidence/probe-files.sha256
+
+        printf ''%s\n'' candidate > evidence/pair-label
+
+        printf "PLAYWRIGHT_BROWSERS_PATH=%s/selector-pw-host\n" "$RUNNER_TEMP" >>
+        "$GITHUB_ENV"
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+    - name: Verify exact same-run source host compiler executable
+      id: verify
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        assert.equal(createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),''377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025'');
+
+        assert.equal(execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),''Google
+        Chrome for Testing 156.0.8078.4'');
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat evidence/borrowed-chrome.path)"
+
+        ldd "$chrome" > evidence/borrowed-chrome-ldd.txt
+
+        ! grep -q ''not found'' evidence/borrowed-chrome-ldd.txt
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > evidence/borrowed-chrome-preflight.html
+        2> evidence/borrowed-chrome-preflight.log
+
+        '
+    - name: Typecheck identical public selector fixtures and wrappers
+      run: 'set -euo pipefail
+
+        cat > tsconfig.selector-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/fixtures/public-raw-text.e2e.ts", "packages/e2e/tests/fixtures/public-raw-internal.e2e.ts",
+        "packages/e2e/tests/fixtures/public-raw-css.e2e.ts", "packages/e2e/tests/integration/web-selector-raw-text.test.ts",
+        "packages/e2e/tests/integration/web-selector-raw-internal.test.ts", "packages/e2e/tests/integration/web-selector-raw-css.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.selector-gate.json
+
+        rm tsconfig.selector-gate.json
+
+        '
+      id: selector_types
+    - name: Execute strict identical raw text internal and CSS public contracts
+      run: 'set -euo pipefail
+
+        test -x "$E2E_AGENT_BROWSER_EXECUTABLE"
+
+        pnpm --filter e2e exec vitest list tests/integration/web-selector-raw-text.test.ts
+        tests/integration/web-selector-raw-internal.test.ts tests/integration/web-selector-raw-css.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        rows=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(rows)==3
+
+        assert {r[''file''].split(''/'')[-1] for r in rows}==set([''web-selector-raw-text.test.ts'',
+        ''web-selector-raw-internal.test.ts'', ''web-selector-raw-css.test.ts''])
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-selector-raw-text.test.ts
+        tests/integration/web-selector-raw-internal.test.ts tests/integration/web-selector-raw-css.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        python3 - <<''PY_COUNT''
+
+        import json,pathlib,os
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[x
+        for t in r[''testResults''] for x in t[''assertionResults'']];c={k:r[k] for
+        k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};c[''innerPassAssertionsExpected'']=3;c[''observationCount'']=18;c[''innerEvidence'']=''unchanged
+        wrappers assert strict original facts and public error contract'';c[''side'']=''candidate'';c[''originalObservationOnly'']=False;(p/''counts.json'').write_text(json.dumps(c,indent=2));assert
+        len(a)==r[''numTotalTests'']==3 and r[''numPendingTests'']==0
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      if: ${{ success() && steps.selector_types.outcome == 'success' }}
+    - name: Preserve CSS ordered receipts without altering test conclusion
+      if: ${{ always() }}
+      run: "python3 - <<'PY_RECORDS'\nimport pathlib,json\np=pathlib.Path('evidence');s=(p/'tests.log').read_text()\
+        \ if (p/'tests.log').exists() else '';records=[]\nfor line in s.splitlines():\n\
+        \ if 'RAW_CSS_PAIR_RECORDS ' in line:records.append(json.JSONDecoder().raw_decode(line.split('RAW_CSS_PAIR_RECORDS\
+        \ ',1)[1])[0])\n(p/'raw-css-pair-records.json').write_text(json.dumps(records,indent=2))\n\
+        PY_RECORDS\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: selector-taxonomy-strict18-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_SELECTOR_PAIR_LABEL: candidate
+    needs:
+    - native-runtime
+  syntax-original:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+      id: restore
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Verify exact same-run source host compiler executable
+      id: verify_runtime
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+    - name: native-browser-codecs
+      id: native_browser_codecs
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
+        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
+        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
+        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
+        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
+        \nexit \"$s\"\n"
+      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: public-browser-install
+      id: public_browser_install
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        node packages/web/dist/bin.js install chromium --with-deps
+
+        ) 2>&1 | tee "evidence/public-browser-install.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/public-browser-install.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome
+        == 'success' }}
+    - name: Verify actual shared Chrome 156.0.8078.73 and expose only diagnostic path
+      id: chrome_identity
+      run: 'set -euo pipefail
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        python3 - <<''PY_CHROME''
+
+        import json,pathlib,os
+
+        m=json.load(open(''evidence/focused-chrome.json''))
+
+        assert m[''version'']==''Google Chrome for Testing 156.0.8078.73'',m
+
+        assert m[''sha256'']==''8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80'',m
+
+        p=pathlib.Path(m[''chrome'']);assert p.is_absolute() and p.is_file() and ''\n''
+        not in str(p)
+
+        with open(os.environ[''GITHUB_ENV''],''a'') as f:f.write(''E2E_CHAIN_CHROME_EXECUTABLE=''+str(p)+''\n'')
+
+        PY_CHROME
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: a46bb9962fe3b010ab192e69065696c18c7910b3
+        path: baseline
+        persist-credentials: false
+    - name: Verify clean baseline before any baseline generated files
+      run: 'set -euo pipefail
+
+        test -z "$(git -C baseline status --porcelain)"
+
+        git -C baseline rev-parse HEAD > evidence/baseline.sha
+
+        git -C baseline rev-parse HEAD^{tree} > evidence/baseline.tree
+
+        '
+    - name: Build exact original source
+      working-directory: baseline
+      run: 'set -euo pipefail
+
+        pnpm install --frozen-lockfile
+
+        pnpm --filter e2e build
+
+        pnpm --filter @e2e-dev/web build
+
+        '
+    - name: Exact wrapper and public fixture typecheck
+      working-directory: baseline
+      run: 'set -euo pipefail
+
+        cat > tsconfig.chain-diagnostic.json <<''JSON_TYPES''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/integration/web-chain-syntax-observation.test.ts",
+        "packages/e2e/tests/fixtures/public-chain-syntax-observation.e2e.ts"]}
+
+        JSON_TYPES
+
+        pnpm exec tsc -p tsconfig.chain-diagnostic.json
+
+        pnpm exec oxlint --deny-warnings packages/e2e/tests/integration/web-chain-syntax-observation.test.ts
+        packages/e2e/tests/fixtures/public-chain-syntax-observation.e2e.ts
+
+        rm tsconfig.chain-diagnostic.json
+
+        sha256sum packages/e2e/tests/integration/web-chain-syntax-observation.test.ts
+        packages/e2e/tests/fixtures/public-chain-syntax-observation.e2e.ts > "$GITHUB_WORKSPACE/evidence/fixture.sha256"
+
+        pnpm --filter @e2e-dev/web exec node -e "if(require(''playwright-core/package.json'').version!==''1.64.1'')process.exit(1)"
+
+        '
+    - name: Execute unchanged bounded diagnostic and preserve original exit
+      working-directory: baseline
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        export E2E_CHAIN_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/inner"
+
+        mkdir -p "$E2E_CHAIN_EVIDENCE_DIR"
+
+        unset E2E_AGENT_BROWSER_EXECUTABLE
+
+        pnpm --filter e2e exec vitest list tests/integration/web-chain-syntax-observation.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        r=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(r)==1 and r[0][''file''].endswith(''/web-chain-syntax-observation.test.ts''),r
+
+        PY_LIST
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-chain-syntax-observation.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf ''%s\n'' "$s" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        set -e
+
+        python3 - <<''PY_COUNT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[a
+        for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        assert len(a)==r[''numTotalTests'']==1 and r[''numPendingTests'']==0,r
+
+        (p/''counts.json'').write_text(json.dumps({k:r[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']},indent=2))
+
+        PY_COUNT
+
+        exit "$s"
+
+        '
+    - name: Summarize retained inner evidence separately from original test exit
+      if: ${{ always() }}
+      env:
+        DIAGNOSTIC_KIND: syntax
+      run: 'python3 - <<''PY_INNER''
+
+        import json,pathlib,os
+
+        root=pathlib.Path(''evidence'');kind=os.environ[''DIAGNOSTIC_KIND''];p=root/''inner''/kind
+
+        summary={''kind'':kind,''originalExit'':(root/''tests.exit'').read_text().strip()
+        if (root/''tests.exit'').exists() else None,''retainedFiles'':[str(f) for
+        f in p.rglob(''*'') if f.is_file()]}
+
+        report=p/''outcome-report.json''
+
+        summary[''reportRetained'']=report.is_file()
+
+        summary[''observationFileRetained'']=(p/''observations.jsonl'').is_file()
+
+        (root/''evidence-custody.json'').write_text(json.dumps(summary,indent=2))
+
+        assert summary[''reportRetained''] and summary[''observationFileRetained''],summary
+
+        PY_INNER
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: selector-taxonomy-syntax-original-evidence
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - native-runtime
+  syntax-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+      id: restore
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Verify exact same-run source host compiler executable
+      id: verify_runtime
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+    - name: native-browser-codecs
+      id: native_browser_codecs
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
+        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
+        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
+        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
+        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
+        \nexit \"$s\"\n"
+      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: public-browser-install
+      id: public_browser_install
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        node packages/web/dist/bin.js install chromium --with-deps
+
+        ) 2>&1 | tee "evidence/public-browser-install.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/public-browser-install.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome
+        == 'success' }}
+    - name: Verify actual shared Chrome 156.0.8078.73 and expose only diagnostic path
+      id: chrome_identity
+      run: 'set -euo pipefail
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        python3 - <<''PY_CHROME''
+
+        import json,pathlib,os
+
+        m=json.load(open(''evidence/focused-chrome.json''))
+
+        assert m[''version'']==''Google Chrome for Testing 156.0.8078.73'',m
+
+        assert m[''sha256'']==''8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80'',m
+
+        p=pathlib.Path(m[''chrome'']);assert p.is_absolute() and p.is_file() and ''\n''
+        not in str(p)
+
+        with open(os.environ[''GITHUB_ENV''],''a'') as f:f.write(''E2E_CHAIN_CHROME_EXECUTABLE=''+str(p)+''\n'')
+
+        PY_CHROME
+
+        '
+    - name: Exact wrapper and public fixture typecheck
+      working-directory: .
+      run: 'set -euo pipefail
+
+        cat > tsconfig.chain-diagnostic.json <<''JSON_TYPES''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/integration/web-chain-syntax-observation.test.ts",
+        "packages/e2e/tests/fixtures/public-chain-syntax-observation.e2e.ts"]}
+
+        JSON_TYPES
+
+        pnpm exec tsc -p tsconfig.chain-diagnostic.json
+
+        pnpm exec oxlint --deny-warnings packages/e2e/tests/integration/web-chain-syntax-observation.test.ts
+        packages/e2e/tests/fixtures/public-chain-syntax-observation.e2e.ts
+
+        rm tsconfig.chain-diagnostic.json
+
+        sha256sum packages/e2e/tests/integration/web-chain-syntax-observation.test.ts
+        packages/e2e/tests/fixtures/public-chain-syntax-observation.e2e.ts > "$GITHUB_WORKSPACE/evidence/fixture.sha256"
+
+        pnpm --filter @e2e-dev/web exec node -e "if(require(''playwright-core/package.json'').version!==''1.64.1'')process.exit(1)"
+
+        '
+    - name: Execute unchanged bounded diagnostic and preserve original exit
+      working-directory: .
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        export E2E_CHAIN_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/inner"
+
+        mkdir -p "$E2E_CHAIN_EVIDENCE_DIR"
+
+        pnpm --filter e2e exec vitest list tests/integration/web-chain-syntax-observation.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        r=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(r)==1 and r[0][''file''].endswith(''/web-chain-syntax-observation.test.ts''),r
+
+        PY_LIST
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-chain-syntax-observation.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf ''%s\n'' "$s" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        set -e
+
+        python3 - <<''PY_COUNT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[a
+        for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        assert len(a)==r[''numTotalTests'']==1 and r[''numPendingTests'']==0,r
+
+        (p/''counts.json'').write_text(json.dumps({k:r[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']},indent=2))
+
+        PY_COUNT
+
+        exit "$s"
+
+        '
+    - name: Summarize retained inner evidence separately from original test exit
+      if: ${{ always() }}
+      env:
+        DIAGNOSTIC_KIND: syntax
+      run: 'python3 - <<''PY_INNER''
+
+        import json,pathlib,os
+
+        root=pathlib.Path(''evidence'');kind=os.environ[''DIAGNOSTIC_KIND''];p=root/''inner''/kind
+
+        summary={''kind'':kind,''originalExit'':(root/''tests.exit'').read_text().strip()
+        if (root/''tests.exit'').exists() else None,''retainedFiles'':[str(f) for
+        f in p.rglob(''*'') if f.is_file()]}
+
+        report=p/''outcome-report.json''
+
+        summary[''reportRetained'']=report.is_file()
+
+        summary[''observationFileRetained'']=(p/''observations.jsonl'').is_file()
+
+        (root/''evidence-custody.json'').write_text(json.dumps(summary,indent=2))
+
+        assert summary[''reportRetained''] and summary[''observationFileRetained''],summary
+
+        PY_INNER
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: selector-taxonomy-syntax-current-evidence
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - native-runtime
+  shadow-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+      id: restore
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Verify exact same-run source host compiler executable
+      id: verify_runtime
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+    - name: native-browser-codecs
+      id: native_browser_codecs
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
+        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
+        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
+        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
+        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
+        \nexit \"$s\"\n"
+      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: public-browser-install
+      id: public_browser_install
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        node packages/web/dist/bin.js install chromium --with-deps
+
+        ) 2>&1 | tee "evidence/public-browser-install.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/public-browser-install.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome
+        == 'success' }}
+    - name: Verify actual shared Chrome 156.0.8078.73 and expose only diagnostic path
+      id: chrome_identity
+      run: 'set -euo pipefail
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        python3 - <<''PY_CHROME''
+
+        import json,pathlib,os
+
+        m=json.load(open(''evidence/focused-chrome.json''))
+
+        assert m[''version'']==''Google Chrome for Testing 156.0.8078.73'',m
+
+        assert m[''sha256'']==''8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80'',m
+
+        p=pathlib.Path(m[''chrome'']);assert p.is_absolute() and p.is_file() and ''\n''
+        not in str(p)
+
+        with open(os.environ[''GITHUB_ENV''],''a'') as f:f.write(''E2E_CHAIN_CHROME_EXECUTABLE=''+str(p)+''\n'')
+
+        PY_CHROME
+
+        '
+    - name: Exact wrapper and public fixture typecheck
+      working-directory: .
+      run: 'set -euo pipefail
+
+        cat > tsconfig.chain-diagnostic.json <<''JSON_TYPES''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/integration/web-selector-chains.test.ts"]}
+
+        JSON_TYPES
+
+        pnpm exec tsc -p tsconfig.chain-diagnostic.json
+
+        pnpm exec oxlint --deny-warnings packages/e2e/tests/integration/web-selector-chains.test.ts
+
+        rm tsconfig.chain-diagnostic.json
+
+        sha256sum packages/e2e/tests/integration/web-selector-chains.test.ts > "$GITHUB_WORKSPACE/evidence/fixture.sha256"
+
+        pnpm --filter @e2e-dev/web exec node -e "if(require(''playwright-core/package.json'').version!==''1.64.1'')process.exit(1)"
+
+        '
+    - name: Execute unchanged bounded diagnostic and preserve original exit
+      working-directory: .
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        export E2E_CHAIN_EVIDENCE_DIR="$GITHUB_WORKSPACE/evidence/inner"
+
+        mkdir -p "$E2E_CHAIN_EVIDENCE_DIR"
+
+        pnpm --filter e2e exec vitest list tests/integration/web-selector-chains.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        r=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(r)==1 and r[0][''file''].endswith(''/web-selector-chains.test.ts''),r
+
+        PY_LIST
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-selector-chains.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf ''%s\n'' "$s" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        set -e
+
+        python3 - <<''PY_COUNT''
+
+        import json,os,pathlib
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[a
+        for t in r[''testResults''] for a in t[''assertionResults'']]
+
+        assert len(a)==r[''numTotalTests'']==1 and r[''numPendingTests'']==0,r
+
+        (p/''counts.json'').write_text(json.dumps({k:r[k] for k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']},indent=2))
+
+        PY_COUNT
+
+        exit "$s"
+
+        '
+    - name: Summarize retained inner evidence separately from original test exit
+      if: ${{ always() }}
+      env:
+        DIAGNOSTIC_KIND: shadow
+      run: 'python3 - <<''PY_INNER''
+
+        import json,pathlib,os
+
+        root=pathlib.Path(''evidence'');kind=os.environ[''DIAGNOSTIC_KIND''];p=root/''inner''/kind
+
+        summary={''kind'':kind,''originalExit'':(root/''tests.exit'').read_text().strip()
+        if (root/''tests.exit'').exists() else None,''retainedFiles'':[str(f) for
+        f in p.rglob(''*'') if f.is_file()]}
+
+        report=p/''outcome-report.json''
+
+        summary[''reportRetained'']=report.is_file()
+
+        summary[''observationFileRetained'']=(p/''observations.jsonl'').is_file()
+
+        (root/''evidence-custody.json'').write_text(json.dumps(summary,indent=2))
+
+        assert summary[''reportRetained''] and summary[''observationFileRetained''],summary
+
+        PY_INNER
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: selector-taxonomy-shadow-current-evidence
+        path: evidence/
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - native-runtime

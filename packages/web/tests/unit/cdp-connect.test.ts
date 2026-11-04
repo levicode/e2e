@@ -6,8 +6,11 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { EngineInitInfo } from 'e2e/engine';
-import { web, type WebConnectOptions } from '../../src/index.ts';
-import { PlaywrightSurface } from '../../src/surface.ts';
+import { web, type WebOptions, type WebConnectOptions } from '../../src/index.ts';
+import { NativeSurface } from '../../src/native-surface.ts';
+import { connectNativeProcess } from '../../src/native/process.ts';
+vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-agent-browser' }));
+vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
 
 function initInfo(signal = new AbortController().signal): EngineInitInfo {
   return {
@@ -43,10 +46,10 @@ describe('web({ connect })', () => {
     expect(() => web({ connect, timezoneId: 'Europe/Berlin' })).toThrow(/persistent context; timezoneId requires/);
   });
 
-  it('rejects connect with a non-chromium browser as INVALID_CONFIG', () => {
+  it('rejects unsupported browser selections before connecting', () => {
     for (const browser of ['firefox', 'webkit'] as const) {
-      expect(() => web({ browser, connect: { cdpEndpoint: () => 'ws://x' } })).toThrowError(
-        /chromium-only/,
+      expect(() => web({ browser, connect: { cdpEndpoint: () => 'ws://x' } } as unknown as WebOptions)).toThrowError(
+        /supports Chromium only/,
       );
     }
   });
@@ -70,15 +73,15 @@ describe('web({ connect })', () => {
   });
 });
 
-describe('PlaywrightSurface CDP attach', () => {
+describe('NativeSurface CDP attach', () => {
   it('fails init with ENGINE_FAILURE when the endpoint resolves empty or the resolver throws, without touching a browser', async () => {
-    const empty = new PlaywrightSurface({ connect: { cdpEndpoint: () => '   ' } });
+    const empty = new NativeSurface({ connect: { cdpEndpoint: () => '   ' } });
     await expect(empty.init(initInfo())).rejects.toMatchObject({
       code: 'ENGINE_FAILURE',
       retryable: false,
       message: expect.stringContaining('connect.cdpEndpoint resolved to an empty CDP endpoint'),
     });
-    const throwing = new PlaywrightSurface({
+    const throwing = new NativeSurface({
       connect: {
         cdpEndpoint: () => {
           throw new Error('vault down');
@@ -87,14 +90,15 @@ describe('PlaywrightSurface CDP attach', () => {
     });
     await expect(throwing.init(initInfo())).rejects.toMatchObject({
       code: 'ENGINE_FAILURE',
-      message: expect.stringContaining('vault down'),
+      message: 'connect.cdpEndpoint could not resolve a browser endpoint',
     });
+    expect(connectNativeProcess).not.toHaveBeenCalled();
   });
 
   it('hands the init signal to the resolver and cancels promptly while it is still pending', async () => {
     const controller = new AbortController();
     let seen: AbortSignal | undefined;
-    const surface = new PlaywrightSurface({
+    const surface = new NativeSurface({
       connect: {
         cdpEndpoint: (signal) => {
           seen = signal;
@@ -114,7 +118,7 @@ describe('PlaywrightSurface CDP attach', () => {
     const controller = new AbortController();
     controller.abort();
     let resolved = 0;
-    const surface = new PlaywrightSurface({
+    const surface = new NativeSurface({
       connect: {
         cdpEndpoint: () => {
           resolved += 1;

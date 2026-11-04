@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Immutable historical diagnostic, not current native acceptance. The then-native canvas/SVG mismatches remain failures.",
+  "baselineRevision": "d7c6b5e5a4c27fac7633e66866fd367b0351ead8",
+  "sourceEvidence": {
+    "artifactId": 12441352372,
+    "archiveSha256": "664a97aef391248d7d05423b79a28e203b1ff635e5eb96562b8cab456afe8591",
+    "member": "web-browser.synthetic-evidence.json",
+    "memberSha256": "f66d19644b4f2ea6100c82f5852fbb154b04309f9efeb72b8224799694d7c825"
+  },
+  "case": {
+    "caseId": "P42O",
+    "sourceSha256": "05b7dfe5fff22ae77cef5dbd5e2693a43d5f0cbf1228dc0a2162f07dca0a418c",
+    "status": "complete",
+    "reasons": [],
+    "records": [
+      {
+        "kind": "header",
+        "schemaVersion": 1,
+        "binding": {
+          "runId": "0c9ab17ed4fb0312ba367dcfbb52165e",
+          "suite": "web-browser",
+          "sourceRevision": "a52e2be3c94a32da08ea76aa731017d40f1b1a03",
+          "testSourceDigest": "de6d309844fb03d1125736aee99ae547ac9997bfb81a739a3aa005b5b4fe2fcd",
+          "binarySha256": "f56cd47feb07433156f7b25963ba0beb66ced001fedf35961353b6ec2fee2957"
+        },
+        "caseId": "P42O",
+        "sourceSha256": "05b7dfe5fff22ae77cef5dbd5e2693a43d5f0cbf1228dc0a2162f07dca0a418c"
+      },
+      {
+        "kind": "record",
+        "sequence": 0,
+        "fact": {
+          "kind": "canvas-oracle",
+          "targetOrdinal": 0,
+          "nativeIncluded": true,
+          "baselineIncluded": true,
+          "roleMatchesExpected": false,
+          "nativeRoleEqualsBaseline": false,
+          "namePresence": false,
+          "valuePresence": false,
+          "truncated": false,
+          "unavailable": false
+        }
+      },
+      {
+        "kind": "record",
+        "sequence": 1,
+        "fact": {
+          "kind": "canvas-oracle",
+          "targetOrdinal": 1,
+          "nativeIncluded": true,
+          "baselineIncluded": true,
+          "roleMatchesExpected": false,
+          "nativeRoleEqualsBaseline": false,
+          "namePresence": false,
+          "valuePresence": false,
+          "truncated": false,
+          "unavailable": false
+        }
+      },
+      {
+        "kind": "record",
+        "sequence": 2,
+        "fact": {
+          "kind": "canvas-oracle",
+          "targetOrdinal": 2,
+          "nativeIncluded": true,
+          "baselineIncluded": true,
+          "roleMatchesExpected": true,
+          "nativeRoleEqualsBaseline": true,
+          "namePresence": false,
+          "valuePresence": false,
+          "truncated": false,
+          "unavailable": false
+        }
+      },
+      {
+        "kind": "record",
+        "sequence": 3,
+        "fact": {
+          "kind": "canvas-oracle",
+          "targetOrdinal": 3,
+          "nativeIncluded": true,
+          "baselineIncluded": true,
+          "roleMatchesExpected": true,
+          "nativeRoleEqualsBaseline": true,
+          "namePresence": false,
+          "valuePresence": true,
+          "truncated": false,
+          "unavailable": false
+        }
+      },
+      {
+        "kind": "record",
+        "sequence": 4,
+        "fact": {
+          "kind": "phase",
+          "section": "cleanup",
+          "phase": "dispose",
+          "state": "passed"
+        }
+      },
+      {
+        "kind": "footer",
+        "sequence": 5,
+        "dropped": 0,
+        "truncated": false,
+        "incomplete": false,
+        "outcome": {
+          "setup": "passed",
+          "body": "passed",
+          "cleanup": "passed"
+        }
+      }
+    ],
+    "recordsSha256": "9014fb2349f1baa6dc899d6dd506be5c8a1c25cc472799034f44015b9d06b482"
+  }
+}

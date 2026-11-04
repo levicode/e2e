@@ -1,0 +1,12 @@
+{
+  "contracts": [
+    {
+      "name": "native::client_browser::state_lifecycle_tests::terminal_recording_tests::failed_peer_phase_one_still_contains_exact_context_on_terminal_shutdown",
+      "requires": [
+        "ffmpeg"
+      ],
+      "browserIdentityRequired": false
+    }
+  ],
+  "notFullAcceptance": true
+}

@@ -1,19 +1,18 @@
-import { chromium, type Browser, type ElementHandle } from 'playwright-core';
-import { afterAll, beforeAll, expect, it } from 'vitest';
-import { captureDocument } from '../../src/observation.ts';
+import { expect, it } from 'vitest';
+import type { SemanticNode } from 'e2e/engine';
+import { nativeDocument } from '../helpers/native-browser.ts';
+import { startNativeFixture } from '../helpers/native-fixture.ts';
 
-let browser: Browser;
-
-beforeAll(async () => { browser = await chromium.launch(); });
-afterAll(async () => { await browser.close(); });
+function descendants(node: SemanticNode): SemanticNode[] {
+  return [node, ...(node.children ?? []).flatMap(descendants)];
+}
 
 it.each(['stringify', 'bound-stringify', 'object-toJSON', 'array-toJSON', 'function-toString'] as const)('captures live refs when the page overrides %s', async (override) => {
-  const page = await browser.newPage();
-  const handles = new Map<string, ElementHandle<Element>>();
+  const fixture = await startNativeFixture(`observation-metadata-${override}`);
   try {
-    await page.setContent(`<button onclick="this.textContent = 'Clicked'">Preserved "quoted" name</button>
+    await nativeDocument(fixture.browser, `<button onclick="this.textContent = 'Clicked'">Preserved "quoted" name</button>
       <input type="password" aria-label="Password" value="withheld-secret">`);
-    await page.evaluate((kind) => {
+    await fixture.browser.evaluate((kind) => {
       if (kind === 'stringify') JSON.stringify = () => '{"nodes":[],"ids":[],"truncated":false}';
       else if (kind === 'bound-stringify') {
         // oxlint-disable-next-line no-extra-bind -- Bound replacements stringify like anonymous native functions.
@@ -27,22 +26,26 @@ it.each(['stringify', 'bound-stringify', 'object-toJSON', 'array-toJSON', 'funct
           value: () => 'not metadata', configurable: true,
         });
       }
+      return null;
     }, override);
-    const captured = await captureDocument({
-      testIdAttribute: 'data-testid', site: undefined, reserveIds: () => 1,
-      commit: (id, element) => { handles.set(id, element); },
-    }, page, { framePath: [], budget: 100, deadline: Date.now() + 10_000, signal: new AbortController().signal });
+    const captured = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent' });
 
-    expect(captured.nodeCount).toBe(3);
-    expect(captured.truncated).toBe(false);
-    const button = captured.tree.children?.[0];
+    // The former reader's three total nodes were implementation metadata, not a
+    // public shape contract: native AX may retain additional static-text nodes.
+    // Preserve both controls, exact labels/privacy, non-truncation, and live identity.
+    const nodes = descendants(captured.root);
+    const buttons = nodes.filter(node => node.role === 'button');
+    const passwords = nodes.filter(node => node.states?.secure === true && node.name === 'Password');
+    expect(buttons).toHaveLength(1);
+    expect(passwords).toHaveLength(1);
+    expect(captured.truncated ?? false).toBe(false);
+    const button = buttons[0];
     expect(button).toMatchObject({ role: 'button', name: 'Preserved "quoted" name' });
-    expect(captured.tree.children?.[1]).toMatchObject({ states: { secure: true }, name: 'Password' });
-    expect(JSON.stringify(captured.tree)).not.toContain('withheld-secret');
-    await handles.get(button!.ref.id)!.click();
-    expect(await page.getByRole('button').textContent()).toBe('Clicked');
+    expect(passwords[0]).toMatchObject({ states: { secure: true }, name: 'Password' });
+    expect(JSON.stringify(captured.root)).not.toContain('withheld-secret');
+    await fixture.engine.perform!(button!.ref, { kind: 'tap' }, fixture.operation());
+    expect(await fixture.browser.evaluate(() => document.querySelector('button')!.textContent)).toBe('Clicked');
   } finally {
-    await Promise.all([...handles.values()].map((element) => element.dispose()));
-    await page.close();
+    await fixture.close();
   }
 });

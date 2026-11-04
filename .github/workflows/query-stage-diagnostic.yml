@@ -1,0 +1,590 @@
+name: Bounded query read-stage and guard diagnostics
+'on':
+  push:
+    branches:
+    - ci/query-stage-diagnostics
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: query-stage-diagnostics-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: ae73b4c6c6fa097f26020f6d416b2ec08a724d30
+  NATIVE_SOURCE_TREE: ceb9c6be10885040479fe2a9e402e79c53c52310
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  preflight-both-mode-typecheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '1'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/agent-browser
+        ref: ${{ env.NATIVE_SOURCE_SHA }}
+        path: native
+        persist-credentials: false
+    - name: Check default and acceptance-faults tests without executing any harness
+      run: "set +e\nset -uo pipefail\nmkdir -p evidence\ncd native/cli\ntest \"$(git\
+        \ rev-parse HEAD)\" = \"$NATIVE_SOURCE_SHA\" || exit 1\ntest \"$(git rev-parse\
+        \ HEAD^{tree})\" = \"$NATIVE_SOURCE_TREE\" || exit 1\ntest -z \"$(git status\
+        \ --porcelain)\" || exit 1\nrustup toolchain install 1.99.1 --profile minimal\
+        \ || exit 1\nrustc +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/rustc-version.txt\"\
+        \ncargo +1.99.1 -Vv > \"$GITHUB_WORKSPACE/evidence/cargo-version.txt\"\nsha256sum\
+        \ Cargo.lock > \"$GITHUB_WORKSPACE/evidence/cargo-lock.sha256\"\nunset RUSTC_WRAPPER\
+        \ RUSTC_WORKSPACE_WRAPPER RUSTFLAGS CARGO_ENCODED_RUSTFLAGS\nexport CARGO_TARGET_DIR=\"\
+        $RUNNER_TEMP/native36-check-target\"\nfailed=0\nfor kind in default acceptance-faults;\
+        \ do\n  args=()\n  if test \"$kind\" = acceptance-faults; then args+=(--features\
+        \ acceptance-faults); fi\n  cargo +1.99.1 check --locked --profile ci --tests\
+        \ --bin agent-browser -j1 \"${args[@]}\" --message-format=json > \"$GITHUB_WORKSPACE/evidence/$kind.jsonl\"\
+        \ 2> \"$GITHUB_WORKSPACE/evidence/$kind.log\"\n  status=$?\n  printf '%s\\\
+        n' \"$status\" > \"$GITHUB_WORKSPACE/evidence/$kind.exit\"\n  if test \"$status\"\
+        \ -ne 0; then failed=1; fi\ndone\npython3 - <<'PY_RECEIPT'\nimport json,os,pathlib\n\
+        p=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'evidence';rows=[]\nfor kind\
+        \ in ['default','acceptance-faults']:\n records=[json.loads(x) for x in (p/(kind+'.jsonl')).read_text().splitlines()]\n\
+        \ errors=[r['message']['rendered'] for r in records if r.get('reason')=='compiler-message'\
+        \ and r.get('message',{}).get('level')=='error']\n rows.append({'kind':kind,'exit':int((p/(kind+'.exit')).read_text()),'buildFinished':[r.get('success')\
+        \ for r in records if r.get('reason')=='build-finished'],'errors':errors})\n\
+        (p/'result.json').write_text(json.dumps({'nativeSource':{'commit':os.environ['NATIVE_SOURCE_SHA'],'tree':os.environ['NATIVE_SOURCE_TREE']},'kind':'cargo-check-tests-only','reviewPending':False,'testExecution':False,'runtimeAcceptance':False,'results':rows},indent=2))\n\
+        assert all(r['exit']==0 and r['buildFinished']==[True] for r in rows),rows\n\
+        PY_RECEIPT\nreceipt=$?\ntest \"$failed\" -eq 0 && test \"$receipt\" -eq 0\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: query-stage-both-mode-compile-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+  native-runtime:
+    uses: ./.github/workflows/native-runtime.yml
+    needs:
+    - preflight-both-mode-typecheck
+  controls-query:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+      id: restore
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Verify exact same-run source host compiler executable
+      id: verify_runtime
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+    - name: native-browser-codecs
+      id: native_browser_codecs
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
+        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
+        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
+        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
+        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
+        \nexit \"$s\"\n"
+      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: public-browser-install
+      id: public_browser_install
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        node packages/web/dist/bin.js install chromium --with-deps
+
+        ) 2>&1 | tee "evidence/public-browser-install.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/public-browser-install.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome
+        == 'success' }}
+    - name: Verify actual shared Chrome 156.0.8078.73 and expose only diagnostic path
+      id: chrome_identity
+      run: 'set -euo pipefail
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        python3 - <<''PY_CHROME''
+
+        import json,pathlib,os
+
+        m=json.load(open(''evidence/focused-chrome.json''))
+
+        assert m[''version'']==''Google Chrome for Testing 156.0.8078.73'',m
+
+        assert m[''sha256'']==''8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80'',m
+
+        p=pathlib.Path(m[''chrome'']);assert p.is_absolute() and p.is_file() and ''\n''
+        not in str(p)
+
+        with open(os.environ[''GITHUB_ENV''],''a'') as f:f.write(''E2E_CHAIN_CHROME_EXECUTABLE=''+str(p)+''\n'')
+
+        PY_CHROME
+
+        '
+    - name: Validate closed diagnostic schema with original 13 pure controls
+      run: 'set -euo pipefail
+
+        python3 scripts/ci/test-check-critical-query-traces.py 2>&1 | tee evidence/query-validator-tests.log
+
+        '
+    - name: Enable exact existing bounded per-process sinks after provisioning
+      id: trace_setup
+      run: 'set -euo pipefail
+
+        mkdir -p evidence/native-trace
+
+        chmod +x scripts/ci/native-trace-wrapper.sh
+
+        printf ''E2E_DIAGNOSTIC_NATIVE_EXECUTABLE=%s
+
+        '' "$E2E_AGENT_BROWSER_EXECUTABLE" >> "$GITHUB_ENV"
+
+        printf ''E2E_DIAGNOSTIC_DIR=%s/evidence/native-trace
+
+        '' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+        printf ''E2E_AGENT_BROWSER_EXECUTABLE=%s/scripts/ci/native-trace-wrapper.sh
+
+        '' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+        '
+    - name: Execute exact original single public consumer with unchanged retry and
+        deadlines
+      working-directory: apps/testbed
+      if: ${{ success() && steps.trace_setup.outcome == 'success' }}
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        pnpm exec tsc --noEmit
+
+        node node_modules/e2e/dist/cli/bin.js list tests/controls.e2e.ts --grep ''^controls
+        a secondary tap opens the context menu$'' --reporter json > "$GITHUB_WORKSPACE/evidence/selection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        p=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/selection.json''))[''pairs''];assert
+        len(p)==1 and p[0][''disposition'']==''run'',p
+
+        PY_LIST
+
+        set +e
+
+        node node_modules/e2e/dist/cli/bin.js run tests/controls.e2e.ts --grep ''^controls
+        a secondary tap opens the context menu$'' 2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        s=${PIPESTATUS[0]};printf ''%s\n'' "$s" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        exit "$s"
+
+        '
+    - name: Validate actual paired native capture sets and preserve loss limits
+      if: ${{ always() }}
+      run: 'set -euo pipefail
+
+        n="$(find evidence/native-trace -maxdepth 1 -name ''native-*.jsonl'' -type
+        f | wc -l)"
+
+        test "$n" -ge 1
+
+        python3 scripts/ci/check-critical-query-traces.py "$n"
+
+        '
+    - name: Record actual selected executions separately from filtered entries
+      if: ${{ always() }}
+      run: 'python3 - <<''PY_REPORT''
+
+        import pathlib,json
+
+        r=json.load(open(''apps/testbed/.e2e/report.json''))[''run''];executed=[x
+        for x in r[''results''] if x.get(''attempts'')]
+
+        p=pathlib.Path(''evidence'');(p/''inner-execution.json'').write_text(json.dumps({''executed'':len(executed),''results'':r[''results''],''runErrors'':r.get(''errors'')},indent=2));assert
+        len(executed)==1
+
+        PY_REPORT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: query-stage-controls-query-evidence
+        path: 'evidence/
+
+          apps/testbed/.e2e/report.json
+
+          apps/testbed/.e2e/results/'
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - native-runtime
+  login-query:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Require clean source before evidence and record exact identity
+      run: 'set -euo pipefail
+
+        test -z "$(git status --porcelain)"
+
+        mkdir -p evidence
+
+        git rev-parse HEAD > evidence/e2e-source.sha
+
+        git rev-parse HEAD^{tree} > evidence/e2e-source.tree
+
+        sha256sum pnpm-lock.yaml .github/native-candidate.json > evidence/source-pins.sha256
+
+        '
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 26
+        check-latest: true
+        cache: pnpm
+    - name: Record actual Node and package-manager versions
+      run: 'node --version > evidence/node.version
+
+        pnpm --version > evidence/pnpm.version
+
+        npm --version > evidence/npm.version
+
+        '
+    - name: dependencies
+      id: dependencies
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm install --frozen-lockfile
+
+        ) 2>&1 | tee "evidence/dependencies.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/dependencies.exit"
+
+        exit "$s"
+
+        '
+    - name: Download exact same-run ordinary artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.native-runtime.outputs.artifact-id }}
+        path: ${{ runner.temp }}/ci-native-runtime
+        merge-multiple: true
+      id: restore
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: Verify exact same-run source host compiler executable
+      id: verify_runtime
+      env:
+        EXPECTED_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256
+          }}
+        PRODUCER_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+      run: 'set -euo pipefail
+
+        node scripts/ci/native-runtime.ts verify "$RUNNER_TEMP/ci-native-runtime"
+        "$EXPECTED_MANIFEST_SHA256" "$PRODUCER_ATTEMPT"
+
+
+        cp "$RUNNER_TEMP/ci-native-runtime/manifest.json" evidence/native-runtime.manifest.json
+
+        '
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+    - name: native-browser-codecs
+      id: native_browser_codecs
+      run: "set -uo pipefail\nunset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY\
+        \ OPENAI_API_KEY ANTHROPIC_API_KEY\nset +e\n( set -e\n\"$E2E_AGENT_BROWSER_EXECUTABLE\"\
+        \ install --with-deps\nif ! command -v ffmpeg >/dev/null || ! command -v ffprobe\
+        \ >/dev/null; then\n sudo apt-get update\n sudo apt-get install -y ffmpeg\n\
+        fi\nffmpeg -version\nffprobe -version\n) 2>&1 | tee \"evidence/native-browser-codecs.log\"\
+        \ns=${PIPESTATUS[0]}\nprintf \"%s\\n\" \"$s\" > \"evidence/native-browser-codecs.exit\"\
+        \nexit \"$s\"\n"
+      if: ${{ !cancelled() && steps.verify_runtime.outcome == 'success' }}
+    - name: complete-build
+      id: complete_build
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        pnpm run build
+
+        ) 2>&1 | tee "evidence/complete-build.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/complete-build.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+    - name: public-browser-install
+      id: public_browser_install
+      run: 'set -uo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        set +e
+
+        ( set -e
+
+        node packages/web/dist/bin.js install chromium --with-deps
+
+        ) 2>&1 | tee "evidence/public-browser-install.log"
+
+        s=${PIPESTATUS[0]}
+
+        printf "%s\n" "$s" > "evidence/public-browser-install.exit"
+
+        exit "$s"
+
+        '
+      if: ${{ !cancelled() && steps.complete_build.outcome == 'success' && steps.native_browser_codecs.outcome
+        == 'success' }}
+    - name: Verify actual shared Chrome 156.0.8078.73 and expose only diagnostic path
+      id: chrome_identity
+      run: 'set -euo pipefail
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        python3 - <<''PY_CHROME''
+
+        import json,pathlib,os
+
+        m=json.load(open(''evidence/focused-chrome.json''))
+
+        assert m[''version'']==''Google Chrome for Testing 156.0.8078.73'',m
+
+        assert m[''sha256'']==''8ea0ecbfc1ac0dc0e957de722babf9b72f8e86cb8643308ff17a491d59bdaa80'',m
+
+        p=pathlib.Path(m[''chrome'']);assert p.is_absolute() and p.is_file() and ''\n''
+        not in str(p)
+
+        with open(os.environ[''GITHUB_ENV''],''a'') as f:f.write(''E2E_CHAIN_CHROME_EXECUTABLE=''+str(p)+''\n'')
+
+        PY_CHROME
+
+        '
+    - name: Enable exact existing bounded per-process sinks after provisioning
+      id: trace_setup
+      run: 'set -euo pipefail
+
+        mkdir -p evidence/native-trace
+
+        chmod +x scripts/ci/native-trace-wrapper.sh
+
+        printf ''E2E_DIAGNOSTIC_NATIVE_EXECUTABLE=%s
+
+        '' "$E2E_AGENT_BROWSER_EXECUTABLE" >> "$GITHUB_ENV"
+
+        printf ''E2E_DIAGNOSTIC_DIR=%s/evidence/native-trace
+
+        '' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+        printf ''E2E_AGENT_BROWSER_EXECUTABLE=%s/scripts/ci/native-trace-wrapper.sh
+
+        '' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+        '
+    - name: Execute exact original single public consumer with unchanged retry and
+        deadlines
+      working-directory: apps/testbed
+      if: ${{ success() && steps.trace_setup.outcome == 'success' }}
+      run: 'set -euo pipefail
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN AI_GATEWAY_API_KEY OPENAI_API_KEY
+        ANTHROPIC_API_KEY
+
+        pnpm exec tsc --noEmit
+
+        node node_modules/e2e/dist/cli/bin.js list tests/dashboard.e2e.ts --grep ''^dashboard
+        wrong credentials surface an alert$'' --reporter json > "$GITHUB_WORKSPACE/evidence/selection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        p=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/selection.json''))[''pairs''];assert
+        len(p)==1 and p[0][''disposition'']==''run'',p
+
+        PY_LIST
+
+        set +e
+
+        node node_modules/e2e/dist/cli/bin.js run tests/dashboard.e2e.ts --grep ''^dashboard
+        wrong credentials surface an alert$'' 2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        s=${PIPESTATUS[0]};printf ''%s\n'' "$s" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        exit "$s"
+
+        '
+    - name: Validate actual paired native capture sets and preserve loss limits
+      if: ${{ always() }}
+      run: 'set -euo pipefail
+
+        n="$(find evidence/native-trace -maxdepth 1 -name ''native-*.jsonl'' -type
+        f | wc -l)"
+
+        test "$n" -ge 1
+
+        python3 scripts/ci/check-critical-query-traces.py "$n"
+
+        '
+    - name: Record actual selected executions separately from filtered entries
+      if: ${{ always() }}
+      run: 'python3 - <<''PY_REPORT''
+
+        import pathlib,json
+
+        r=json.load(open(''apps/testbed/.e2e/report.json''))[''run''];executed=[x
+        for x in r[''results''] if x.get(''attempts'')]
+
+        p=pathlib.Path(''evidence'');(p/''inner-execution.json'').write_text(json.dumps({''executed'':len(executed),''results'':r[''results''],''runErrors'':r.get(''errors'')},indent=2));assert
+        len(executed)==1
+
+        PY_REPORT
+
+        '
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: ${{ always() }}
+      with:
+        name: query-stage-login-query-evidence
+        path: 'evidence/
+
+          apps/testbed/.e2e/report.json
+
+          apps/testbed/.e2e/results/'
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - native-runtime

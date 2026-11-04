@@ -1,0 +1,391 @@
+{
+  "schemaVersion": "report-1",
+  "run": {
+    "id": "01a1a398-9d01-754b-bbf2-5ac4dac8241c",
+    "specVersion": "0.1",
+    "runner": {
+      "name": "e2e",
+      "version": "0.21.3"
+    },
+    "status": "passed",
+    "exitCode": 0,
+    "startedAt": "2026-11-03T22:47:30.362Z",
+    "finishedAt": "2026-11-03T22:47:31.862Z",
+    "project": {
+      "id": "unportable-3292b645f25b2d21da12b136eb9c7edf",
+      "configDigest": "5065e7ddb15ad61df634093d4feab725d40a77df06d5d5296b4a405c9d234c50"
+    },
+    "environment": {
+      "ci": false,
+      "trustNoticeShown": false,
+      "os": "darwin 24.1.0",
+      "arch": "arm64",
+      "runtime": "node v24.22.1"
+    },
+    "vcs": {
+      "commit": "4c859f7ffb7be147fad6089819267d56e98389bb",
+      "branch": "agent/browser-residuals-contract",
+      "dirty": false
+    },
+    "targets": [
+      {
+        "id": "web",
+        "index": 0,
+        "platform": "web",
+        "baseOrigin": "http://127.0.0.1:58017",
+        "environment": "test",
+        "engine": {
+          "name": "web",
+          "version": "0.15.3",
+          "spiVersion": 1
+        },
+        "capabilities": [
+          "actions",
+          "artifacts",
+          "browser",
+          "keyboard",
+          "location",
+          "observation",
+          "pointer",
+          "state"
+        ],
+        "artifactCapabilities": [
+          "screenshot",
+          "video"
+        ],
+        "stateCapability": true
+      }
+    ],
+    "serialGroups": [],
+    "results": [
+      {
+        "id": "4c90f3c6f1822fb85a1c3d6f3ea10e67da1f1c06b4bd1a0fc62431b2fef0c167",
+        "testId": "tests/popup-swipe.e2e.ts::init%20scripts%20and%20partial%20media%20updates%20cover%20frames%20and%20new%20tabs",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "init scripts and partial media updates cover frames and new tabs"
+        ],
+        "file": "tests/popup-swipe.e2e.ts",
+        "source": {
+          "file": "tests/popup-swipe.e2e.ts",
+          "line": 15,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a1a398-9d3e-7913-bb05-618c9f68911b",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-11-03T22:47:30.367Z",
+            "durationMs": 666,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "environment": {
+              "browser": "chromium 156.0.8078.80",
+              "user agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+            },
+            "steps": [
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:0",
+                "index": 0,
+                "kind": "resource",
+                "api": "browser.addInitScript",
+                "label": "function",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:30.907Z",
+                "durationMs": 1,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 16,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:1",
+                "index": 1,
+                "kind": "resource",
+                "api": "browser.emulateMedia",
+                "label": "colorScheme: dark, reducedMotion: reduce",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:30.908Z",
+                "durationMs": 1,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 19,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:2",
+                "index": 2,
+                "kind": "resource",
+                "api": "browser.emulateMedia",
+                "label": "colorScheme: light",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:30.910Z",
+                "durationMs": 1,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 23,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:3",
+                "index": 3,
+                "kind": "resource",
+                "api": "browser.goto",
+                "label": "/a",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:30.911Z",
+                "durationMs": 27,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-11-03T22:47:30.935Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "frame loaded http://127.0.0.1:58017/frame"
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 24,
+                  "column": 16
+                }
+              },
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:4",
+                "index": 4,
+                "kind": "resource",
+                "api": "browser.evaluate",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:30.939Z",
+                "durationMs": 2,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 25,
+                  "column": 23
+                }
+              },
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:5",
+                "index": 5,
+                "kind": "resource",
+                "api": "browser.evaluate",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:30.970Z",
+                "durationMs": 31,
+                "events": [
+                  {
+                    "kind": "navigation",
+                    "startedAt": "2026-11-03T22:47:30.995Z",
+                    "durationMs": 0,
+                    "status": "passed",
+                    "detail": "the app opened a new tab at http://127.0.0.1:58017/popup; the test stays on its page"
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 35,
+                  "column": 30
+                }
+              },
+              {
+                "id": "01a1a398-9d3e-7913-bb05-618c9f68911b:6",
+                "index": 6,
+                "kind": "resource",
+                "api": "browser.url",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:31.003Z",
+                "durationMs": 6,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 62,
+                  "column": 23
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "6c60db4122fdc4f1c6750433c50a13a162314a209a598b23c215e6a62ba09fa5",
+        "testId": "tests/popup-swipe.e2e.ts::a%20path%20swipe%20drags%20and%20drops%20on%20the%20board",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "a path swipe drags and drops on the board"
+        ],
+        "file": "tests/popup-swipe.e2e.ts",
+        "source": {
+          "file": "tests/popup-swipe.e2e.ts",
+          "line": 64,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a1a398-9fda-7023-95dd-592bfcfcc69b",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-11-03T22:47:31.034Z",
+            "durationMs": 524,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "environment": {
+              "browser": "chromium 156.0.8078.80",
+              "user agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+            },
+            "steps": [
+              {
+                "id": "01a1a398-9fda-7023-95dd-592bfcfcc69b:0",
+                "index": 0,
+                "kind": "app",
+                "api": "app.open",
+                "label": "/board",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:31.203Z",
+                "durationMs": 111,
+                "events": [],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:58017/board",
+                  "nodes": 38,
+                  "changes": []
+                },
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 65,
+                  "column": 12
+                }
+              },
+              {
+                "id": "01a1a398-9fda-7023-95dd-592bfcfcc69b:1",
+                "index": 1,
+                "kind": "screen",
+                "api": "screen.swipe",
+                "label": "(372, 230.875) → (352, 264.875)",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:31.454Z",
+                "durationMs": 63,
+                "events": [
+                  {
+                    "kind": "engine",
+                    "name": "swipeTo",
+                    "startedAt": "2026-11-03T22:47:31.454Z",
+                    "durationMs": 63,
+                    "status": "passed",
+                    "detail": "swipeTo at (372, 231)"
+                  }
+                ],
+                "artifacts": [],
+                "screen": {
+                  "location": "http://127.0.0.1:58017/board",
+                  "nodes": 38,
+                  "since": 0,
+                  "changes": [
+                    "added status \"Board state\" text=\"Design review is done\"",
+                    "removed status \"Board state\" text=\"Design review is in todo\""
+                  ]
+                },
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 68,
+                  "column": 15
+                }
+              },
+              {
+                "id": "01a1a398-9fda-7023-95dd-592bfcfcc69b:2",
+                "index": 2,
+                "kind": "assertion",
+                "api": "expect.toHaveText",
+                "label": "getByLabel(\"Board state\")",
+                "status": "passed",
+                "startedAt": "2026-11-03T22:47:31.517Z",
+                "durationMs": 16,
+                "events": [
+                  {
+                    "kind": "poll",
+                    "name": "expect",
+                    "startedAt": "2026-11-03T22:47:31.517Z",
+                    "durationMs": 16,
+                    "status": "passed",
+                    "count": 1
+                  }
+                ],
+                "artifacts": [],
+                "source": {
+                  "file": "tests/popup-swipe.e2e.ts",
+                  "line": 72,
+                  "column": 49
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "summary": {
+      "discovered": 2,
+      "selected": 2,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "interrupted": 0,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "limits": {
+      "maxAgentContextBytes": 16384,
+      "maxLedgerBytes": 8192,
+      "maxObservationBytes": 262144,
+      "maxEventsPerStep": 1000,
+      "maxModelTokensPerCall": 64000
+    },
+    "usage": {
+      "discoveredResults": 2,
+      "maxAgentContextBytes": 0,
+      "maxLedgerBytes": 0,
+      "maxObservationBytes": 0,
+      "artifactBytes": 0,
+      "downloads": 0,
+      "events": 4,
+      "modelTokens": 0,
+      "maxModelCallsInStep": 0,
+      "maxActionStepsInStep": 0
+    }
+  }
+}

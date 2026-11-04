@@ -1,0 +1,6 @@
+{
+  "name": "@e2e-dev/heldout-release", "version": "0.0.0", "private": true, "type": "module",
+  "scripts": { "test": "node --test *.test.ts", "typecheck": "tsc --noEmit", "release:check": "node run.ts" },
+  "dependencies": { "e2e": "workspace:*", "@e2e-dev/web": "workspace:*" },
+  "devDependencies": { "typescript": "7.0.2", "@types/node": "26.6.2" }
+}

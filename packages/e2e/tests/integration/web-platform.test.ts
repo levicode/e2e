@@ -1,7 +1,10 @@
+import { emitPlatformSequence, emitPlatformHandler } from '../helpers/platform-sequence-diagnostics.ts';
+import { withShortReadDiagnostics } from '../helpers/short-read-diagnostics.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
+import { closedFailureDiagnostic } from '../helpers/closed-failure-diagnostic.ts';
 import { assertValidReport } from '../helpers/report-schema.ts';
 import {
   resultByTitle,
@@ -56,11 +59,16 @@ test('deterministic queries and reads', async ({ app, screen, browser }) => {
 
 test('class assertions report the observed class on failure', async ({ app, browser }) => {
   await app.open();
+  const previousDiagnostic = process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
+  if (process.env['E2E_SHORT_READ_DIAGNOSTIC'] === '1') process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = 'web-platform-class300';
   try {
     await expect(browser).toHaveClass(browser.locator('#class-card'), 'card inactive', { timeout: 300 });
     throw new Error('toHaveClass unexpectedly passed');
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes('class "card active"')) throw error;
+  } finally {
+    if (previousDiagnostic === undefined) delete process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'];
+    else process.env['E2E_CLASS_SAMPLE_DIAGNOSTIC'] = previousDiagnostic;
   }
 });
 
@@ -433,7 +441,7 @@ describe('web platform integration', () => {
 
   beforeAll(async () => {
     app = await startFixtureApp();
-    ({ outcome, project } = await runProjectWithConfigFile(
+    ({ outcome, project } = await withShortReadDiagnostics('web-platform', onEvent => runProjectWithConfigFile(
       {
         'tests/kitchen.e2e.ts': KITCHEN_SINK,
         'tests/late-handler.e2e.ts': LATE_HANDLER_THEN_TEARDOWN,
@@ -444,9 +452,11 @@ describe('web platform integration', () => {
       },
       {
         appUrl: app.url,
+        runOptions: { onEvent },
         configSource: workerConfigSource(1, "\n  cache: 'off',\n  actionTimeout: 5_000,\n  assertionTimeout: 4_000,\n  timeout: 30_000,"),
       },
-    ));
+    )));
+    emitPlatformSequence(outcome);
   }, 240_000);
 
   afterAll(async () => {
@@ -473,7 +483,7 @@ describe('web platform integration', () => {
     'string and RegExp URL patterns match what they name',
   ])('passes %s', (title) => {
     const result = resultByTitle(outcome, title);
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
   });
 
   it('decides absence under an absent frame without waiting out the deadline', () => {
@@ -498,7 +508,7 @@ describe('web platform integration', () => {
     const error = result.attempts[0]!.error;
     expect(error?.code).toBe('ACTION_FAILED');
     const timing = /^no download started within (\d+)ms; the trigger resolved after (\d+)ms$/.exec(error?.message ?? '');
-    expect(timing).not.toBeNull();
+    expect(timing, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).not.toBeNull();
     // The operation reports its remaining budget after setup, capped by the requested 500ms.
     const waitMs = Number(timing?.[1]);
     expect(waitMs).toBeGreaterThan(0);
@@ -569,6 +579,7 @@ describe('web platform integration', () => {
     const result = resultByTitle(outcome, title);
     expect(result.status).toBe('failed');
     const attempt = result.attempts[0]!;
+    emitPlatformHandler(_kind === 'route' ? 'route' : 'dialog', attempt, outcome.report.run.errors);
     expect(attempt.error).toMatchObject({ code: 'ASSERTION_FAILED', phase: 'body' });
     expect(attempt.cleanup).toBe('complete');
     expect(outcome.report.run.errors.map((error) => error.code)).toEqual([]);
@@ -619,7 +630,7 @@ describe('web platform integration', () => {
   it('exits with configuration precedence and writes report.json', () => {
     // POLICY_DENIED failures classify as configuration errors, and exit-code
     // precedence is 130 > 4 > 3 > 2 > 1 > 0.
-    expect(outcome.exitCode).toBe(2);
+    expect(outcome.exitCode, closedFailureDiagnostic(outcome.results.flatMap(result => result.attempts), outcome.report.run.errors)).toBe(2);
     expect(outcome.status).toBe('error');
     expect(outcome.reportPath).toBeDefined();
     expect(existsSync(outcome.reportPath!)).toBe(true);
@@ -654,7 +665,7 @@ describe('web platform integration', () => {
 
   it('keeps a class assertion polling while the node is missing and passes once it arrives', () => {
     const result = resultByTitle(outcome, 'class assertions poll for a node that arrives late');
-    expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
+    expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
     const step = result.attempts[0]!.steps.find((candidate) => candidate.api === 'expect.toHaveClass');
     expect(step?.durationMs).toBeGreaterThan(500);
   });

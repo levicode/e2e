@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.reset-check.json","include":["src/index.ts","tests/integration/surface-of-native-replacement-retirement.test.ts"]}

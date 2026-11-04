@@ -292,7 +292,8 @@ class ActDispatch {
         ...(this.spec.vision === undefined ? {} : { vision: this.spec.vision }),
       },
       target: this.runtime.target,
-      attempt: this.runtime.attempt,
+      // Redacted per step like the context: a secret resolved since collection is covered too.
+      attempt: { ...this.runtime.attempt, titlePath: this.runtime.attempt.titlePath.map((part) => this.runtime.redact(part)) },
       ...(replayedPrefix === undefined ? {} : { replayedPrefix }),
       signal: this.accounting.signal,
       // Resolved on first read, so executors that bring their own model (or
@@ -354,11 +355,20 @@ class ActDispatch {
         this.dispatchStep(),
         new Promise<never>((_, reject) => {
           const { signal } = accounting;
+          const abort = () => {
+            // AbortSignal.reason is caller data (often a DOMException), not
+            // an agent verdict. Classify through the runtime's own signal and
+            // clock before cache settlement can mistake cancellation for a
+            // failed action and evict the recording at a derived-data gap.
+            let cause: unknown = signal.reason;
+            try { accounting.checkpoint(cause); } catch (error) { cause = error; }
+            reject(cause);
+          };
           if (signal.aborted) {
-            reject(signal.reason as Error);
+            abort();
             return;
           }
-          signal.addEventListener('abort', () => reject(signal.reason as Error), { once: true });
+          signal.addEventListener('abort', abort, { once: true });
         }),
       ]);
     } finally {
@@ -477,7 +487,7 @@ class ActDispatch {
       ...(this.spec.vision === 'only' && this.feed.pixelsShown ? { visionOnly: true } : {}),
       ...(latest !== undefined ? { observationRevision: latest.revision } : {}),
       ...(this.turns !== undefined && this.turns.length > 0 ? { turns: this.turns } : {}),
-      ...this.feed.visionReport(),
+      ...this.feed.reportDetails(),
     });
     this.writeTranscript();
   }

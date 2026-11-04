@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "repository": "levicode/agent-browser",
+  "commit": "f1c06bfbc40739d2c4311d79a553857f5cfd5ef6",
+  "tree": "7a079187a061dca69acb7c78f4999d8fc792f64f",
+  "files": {
+    "cli/src/native/client_enrollment.rs": "b6d4476dd7c5c7703291e6f858ca798aec49b175c71f9f76e03ad89020f72b3a",
+    "cli/src/native/client_eval_network_watermark_tests.rs": "88833668b4b74dc844bcfdf668177ffeda0577db011d815929347d013af18ef2",
+    "cli/src/native/client_browser_response_entry_tests.rs": "e46dee71e154a82af8861f4b5f503210cea3ada5d49130799ba043727d7f598c"
+  },
+  "nativePatchSHA256": "2be6195c78d047fc8f7b4e3cd4a83ac1d9394b3577646e1a85426f630e33b160",
+  "toolchain": "1.99.1",
+  "profile": "ci",
+  "features": [],
+  "tests": [
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_resume_ack_before_complete_retained",
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_capture_pending_after_complete_retained_before_network_commit",
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_preparation_c0_after_resume_ack_before_complete_retained",
+    "native::client_browser::state_lifecycle_tests::restart_transport_tests::response_entry_tests::framed_popup_preparation_c0_after_complete_retained_before_network_commit"
+  ],
+  "expectedCodes": [
+    0,
+    0,
+    101,
+    101
+  ],
+  "boundaries": [
+    "ack-before-complete-retained",
+    "complete-retained-before-network-commit",
+    "ack-before-complete-retained",
+    "complete-retained-before-network-commit"
+  ],
+  "scope": "two exact baseline witnesses PASS and same-code C0 expected RED only after actual capture/pending and joined cleanup; no production behavior fix"
+}

@@ -1,6 +1,6 @@
 /** Runner-owned polling locator assertions. */
 
-import type { SemanticNode } from '../engine/surface.ts';
+import type { EngineReadField, SemanticNode } from '../engine/surface.ts';
 import { TestError } from '../internal/errors.ts';
 import { rejectUnknownOptions } from '../internal/options.ts';
 import {
@@ -22,15 +22,19 @@ import type { LocatorInternals } from '../locator/screen.ts';
 import type { AsyncExpectation, ScreenshotOptions, TextMatch, TextMatcherOptions } from '../types.ts';
 import { expectScreenshot } from './screenshot.ts';
 
+type SampleNode = Pick<SemanticNode, EngineReadField>;
+
 interface Sample {
   readonly count: number;
-  readonly node: SemanticNode | null;
+  readonly node: SampleNode | null;
   /** Every current match, read; only a `wholeSet: 'read'` matcher asks for them. */
   readonly nodes: readonly SemanticNode[];
 }
 
 interface MatcherSpec {
   readonly name: string;
+  /** Pure fields needed by a reference-free single-node sample. */
+  readonly fields?: readonly EngineReadField[];
   /**
    * Evaluates the whole sample instead of requiring one node: `true` counts
    * the matches, `'read'` also reads each of them.
@@ -47,7 +51,7 @@ interface MatcherSpec {
    * rejects keeps the poll waiting, negated or not: `not.toHaveValue` on a
    * heading is not a pass.
    */
-  readonly evaluableNode?: (node: SemanticNode) => boolean;
+  readonly evaluableNode?: (node: SampleNode) => boolean;
   /**
    * The matcher reads what an engine withholds on a secure field, its value,
    * text, or attributes; a name is never withheld. A secure node in the sample
@@ -169,13 +173,15 @@ class AsyncExpectationImpl implements AsyncExpectation {
     const { engine } = this.internals.context;
     const api = this.api(spec.name);
     await this.internals.context.steps.run('assertion', api, this.label, async () => {
-      const deadline = engine.deadline(timeout ?? engine.assertionTimeout);
+      const budget = engine.assertionBudget(timeout ?? engine.assertionTimeout);
+      const { deadline } = budget;
       let lastSample: Sample = { count: 0, node: null, nodes: [] };
       const samples = new SampleHistory('expect', (text) => engine.redact(text));
       await samples.record(engine, () =>
         pollCondition({
           deadline,
-          signal: engine.signal,
+          signal: budget.signal,
+          ownsExpiredDeadline: budget.ownsExpiredDeadline,
           negated: this.negated,
           evaluate: async () => {
             const sample = await this.sample(spec, deadline);
@@ -224,15 +230,17 @@ class AsyncExpectationImpl implements AsyncExpectation {
   private async sample(spec: MatcherSpec, deadline: Deadline): Promise<Sample> {
     const { engine } = this.internals.context;
     if (spec.wholeSet === 'read') {
-      const nodes = await engine.readAll(this.internals.expression, deadline);
+      const nodes = await engine.readAllNow(this.internals.expression, deadline);
       return { count: nodes.length, node: null, nodes };
     }
     if (spec.wholeSet === true) {
-      const refs = await engine.resolveAll(this.internals.expression, deadline);
-      return { count: refs.length, node: null, nodes: [] };
+      const count = await engine.countNow(this.internals.expression, deadline);
+      return { count, node: null, nodes: [] };
     }
     const missingFrame = spec.evaluableWithoutNode === true ? 'empty' : 'wait';
-    const { node, count } = await engine.tryRead(this.internals.expression, deadline, missingFrame);
+    const { node, count } = spec.fields === undefined
+      ? await engine.tryRead(this.internals.expression, deadline, missingFrame)
+      : await engine.tryReadFields(this.internals.expression, spec.fields, deadline, missingFrame);
     return { count, node, nodes: [] };
   }
 
@@ -262,6 +270,7 @@ class AsyncExpectationImpl implements AsyncExpectation {
     return this.poll(
       {
         name,
+        fields: ['states'],
         evaluableWithoutNode: true,
         predicate: (sample) => isNodeVisible(sample.node) === visible,
         describeExpected: visible ? 'visible' : 'hidden or absent',
@@ -415,6 +424,7 @@ class AsyncExpectationImpl implements AsyncExpectation {
     return this.poll(
       {
         name: 'toHaveAttribute',
+        fields: ['attributes'],
         readsWithheld: true,
         predicate: (sample) => {
           if (sample.node === null) return false;
@@ -501,7 +511,7 @@ function matchesSubsequence(
  * device engine omits an empty value; any other node is not a form control
  * and cannot answer `toHaveValue` at all.
  */
-function readField(def: TextMatcherDef, node: SemanticNode): string | undefined {
+function readField(def: TextMatcherDef, node: SampleNode): string | undefined {
   const raw = node[def.field];
   if (raw !== undefined) return raw;
   if (def.field !== 'value') return '';

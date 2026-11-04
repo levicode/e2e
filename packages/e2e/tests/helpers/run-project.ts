@@ -8,6 +8,7 @@ import { web } from '@e2e-dev/web';
 import type { ListOptions, ListedPair, ListResult, RunOptions, RunOutcome } from '../../src/run/runner.ts';
 import type { E2EConfig } from '../../src/index.ts';
 import { createFakeEngine, FAKE_APP } from './fake-engine.ts';
+import { actionOutcomeDiagnostics } from './action-outcome-diagnostics.ts';
 
 export type { RunOptions, RunOutcome };
 
@@ -28,8 +29,8 @@ type Target = NonNullable<E2EConfig['targets']>[number];
  * symbol is shared at runtime even though the src/dist types differ; this is
  * the one place that difference is cast away.
  */
-export function webTarget(name: string, url: string): Target {
-  return { name, engine: web() as unknown as NonNullable<Target['engine']>, app: { url } };
+export function webTarget(name: string, url: string, options?: Parameters<typeof web>[0]): Target {
+  return { name, engine: web(options) as unknown as NonNullable<Target['engine']>, app: { url } };
 }
 
 /**
@@ -106,7 +107,7 @@ export async function runExisting(
   project: FixtureProject,
   options: RunProjectOptions,
 ): Promise<RunOutcome> {
-  return run({
+  const outcome = await run({
     cwd: project.dir,
     // Core knows no engine: a web target is served by the playwright engine
     // the test explicitly passes, exactly as a project config would.
@@ -115,6 +116,12 @@ export async function runExisting(
     quiet: true,
     ...options.runOptions,
   });
+  if (process.env['E2E_TEST_ACTION_DIAGNOSTICS'] === '1') {
+    try {
+      for (const row of actionOutcomeDiagnostics(outcome)) process.stderr.write(`E2E_ACTION_OUTCOME ${JSON.stringify(row)}\n`);
+    } catch { /* Diagnostic output cannot change the original consumer outcome. */ }
+  }
+  return outcome;
 }
 
 /** Lists a fixture project's selection without running it; the project is left for the caller to clean up. */

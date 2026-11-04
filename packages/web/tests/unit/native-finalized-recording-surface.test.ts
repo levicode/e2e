@@ -1,0 +1,258 @@
+/** Real NativeSurface/NativeClient flow; bytes are adapter fixtures, not native video proof. */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { NativeSurface } from '../../src/native-surface.ts';
+import { connectNativeProcess } from '../../src/native/process.ts';
+import { chromium } from 'playwright-core';
+import { NativeInteropResources } from '../helpers/native-interop-resources.ts';
+import type { PeerRequest } from '../helpers/native-protocol-peer.ts';
+import { FinalizedRecordingPeer, artifactOperation, type ArtifactReply, type ArtifactRequest } from '../helpers/native-finalized-recording-peer.ts';
+import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
+vi.mock('../../src/native/runtime.ts', () => ({ resolveNativeExecutable: async () => '/synthetic/trusted-native' }));
+vi.mock('../../src/native/process.ts', () => ({ connectNativeProcess: vi.fn() }));
+const fileFault = vi.hoisted(() => ({ refuse: false, held: undefined as Promise<void> | undefined, reached: 0 }));
+vi.mock('node:fs/promises', async original => {
+  const real = await original<typeof import('node:fs/promises')>();
+  return { ...real, unlink: async (...args: Parameters<typeof real.unlink>) => {
+    if (String(args[0]).includes('.native-finalized-')) {
+      fileFault.reached++;
+      if (fileFault.held !== undefined) await fileFault.held;
+      if (fileFault.refuse) throw new Error('fixture refuses owned staging removal');
+    }
+    return real.unlink(...args);
+  } };
+});
+let artifactsDir: string; const surfaces: NativeSurface[] = [];
+beforeEach(() => { vi.clearAllMocks(); fileFault.refuse = false; fileFault.held = undefined; fileFault.reached = 0; artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-finalized-public-')); });
+afterEach(async () => {
+  vi.useRealTimers();
+  await Promise.allSettled(surfaces.splice(0).map(surface => surface.dispose({ signal: new AbortController().signal, timeoutMs: 1000 })));
+  rmSync(artifactsDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
+});
+const peerResources = new WeakMap<FinalizedRecordingPeer, NativeInteropResources>();
+function recordingPeer(override?: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined>): FinalizedRecordingPeer {
+  const resources = new NativeInteropResources({ endpoint: 'ws://synthetic.test/browser', browserIdentity: 'browser', allocateScopeIdentity: () => 'attempt-scope', allocateContextIdentity: () => ({ contextId: 'context', targetId: 'page' }) });
+  const peer = new FinalizedRecordingPeer(async request => {
+    if (request.command.startsWith('scope.interop.') || ['scope.open', 'scope.end'].includes(request.command)) {
+      const result = await resources.respond(request as PeerRequest);
+      return 'data' in result ? { ok: true, data: result.data, effects: 'completed', scopeState: 'usable' }
+        : { ok: false, error: { code: result.error }, effects: result.effects ?? 'not-dispatched', scopeState: 'usable' };
+    }
+    if (request.command === 'page.activate') return (await override?.(request)) ?? { ok: true, data: { activated: true }, effects: 'completed', scopeState: 'usable' };
+    // Artifact data, terminal receipts, delays, and faults stay in the existing peer.
+    if (!['scope.configure', 'network.routes.replace', 'page.activate', 'recording.start', 'recording.stop',
+      'scope.reset', 'state.restore', 'recording.finalized.collect', 'recording.finalized.read',
+      'recording.finalized.release', 'page.title', 'browser.pointer', 'capture.screenshot'].includes(request.command))
+      throw new Error(`Unexpected finalized fixture command ${request.command}`);
+    return override?.(request);
+  }, undefined, { close: () => resources.closeNative() });
+  peerResources.set(peer, resources);
+  return peer;
+}
+function connectPeer(peer: FinalizedRecordingPeer): void {
+  const resources = peerResources.get(peer)!;
+  vi.spyOn(chromium, 'connectOverCDP').mockImplementation(endpoint => resources.connectPlaywright(endpoint));
+  vi.mocked(connectNativeProcess).mockImplementationOnce(async (config, operation, event) => peer.connect(config.capabilities, event, operation));
+}
+async function fixture(override?: (request: ArtifactRequest) => ArtifactReply | undefined | Promise<ArtifactReply | undefined>, options: ConstructorParameters<typeof NativeSurface>[0] = {}, replacePreparedWorker = false, startRecording = true) {
+  let peer = recordingPeer(override); connectPeer(peer);
+  const surface = new NativeSurface(options); surfaces.push(surface);
+  const prepared = await surface.prepare({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, slots: 1, signal: artifactOperation().signal, log: () => {} });
+  await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: prepared?.env ?? {}, headed: false, workerSlot: 0, signal: artifactOperation().signal, log: () => {} });
+  if (replacePreparedWorker) {
+    // The prepared worker lease belongs to the runner. Only a replacement
+    // actually acquired after this framed disconnect is owned by the worker.
+    peer.send({ type: 'event', generation: 1, sequence: 1, event: 'browser.disconnected', payload: { reason: 'browser-connection-closed' } });
+    await vi.waitFor(() => expect(peer.eventsSeen).toBe(1));
+    peer = recordingPeer(override); connectPeer(peer);
+  }
+  await surface.startAttempt({ attemptId: 'attempt', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+  if (startRecording) await surface.startVideo(artifactOperation());
+  return { peer, surface };
+}
+it('does not replace the reset failure or pretend empty success when frozen collection is refused', async () => {
+  const { peer, surface } = await fixture(request => request.command === 'recording.finalized.collect'
+    ? { ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'quarantined' } : undefined);
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await expect(surface.stopVideo(artifactOperation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  await expect(surface.stopVideo(artifactOperation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  expect(peer.requests.filter(request => request.command === 'recording.finalized.collect')).toHaveLength(1);
+  expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+});
+it('cannot hand an old attempt frozen result to a new attempt even if its peer reuses the scope text', async () => {
+  let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+  const { peer, surface } = await fixture(async request => { if (request.command === 'recording.finalized.read') await held; return undefined; });
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await vi.waitFor(() => expect(peer.requests.some(request => request.command === 'recording.finalized.read')).toBe(true));
+  await surface.endAttempt({ signal: artifactOperation().signal, timeoutMs: 1000 }); release();
+  const next = recordingPeer(request => request.command === 'recording.stop'
+    ? { ok: true, effects: 'completed', scopeState: 'usable', data: { identityScope: next.scope, segments: [] } } : undefined);
+  connectPeer(next);
+  await surface.startAttempt({ attemptId: 'next', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace });
+  await expect(surface.stopVideo({ ...artifactOperation(), attemptId: 'next' })).resolves.toEqual([]);
+  expect(next.requests.filter(request => request.command === 'recording.stop')).toHaveLength(1);
+  expect(next.requests.some(request => request.command.startsWith('recording.finalized.'))).toBe(false);
+  expect(peer.requests.some(request => request.command === 'recording.finalized.release')).toBe(false);
+});
+
+it('joins actual local staging retirement before releasing the same provider lease', async () => {
+  let releaseFile!: () => void; fileFault.held = new Promise<void>(resolve => { releaseFile = resolve; });
+  const release = vi.fn(async (_lease: { id: string }) => {}); let acquisitions = 0;
+  const acquire = vi.fn(async () => ({ id: `lease-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }));
+  const { peer, surface } = await fixture(undefined, { browser: { name: 'finalized-provider', scope: 'worker',
+    acquire, release } }, true);
+  expect(acquire).toHaveBeenCalledTimes(2);
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await vi.waitFor(() => expect(fileFault.reached).toBe(1));
+  const ending = surface.endAttempt({ signal: artifactOperation().signal, timeoutMs: 1000 });
+  await vi.waitFor(() => expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1));
+  const disposing = surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 });
+  expect(release).not.toHaveBeenCalled(); releaseFile(); await ending; await disposing;
+  expect(release).toHaveBeenCalledOnce(); expect(release.mock.calls[0]![0].id).toBe('lease-2');
+});
+it('releases the provider lease without clearing the failed staging owner or granting a new attempt', async () => {
+  fileFault.refuse = true; const release = vi.fn(async (_lease: { id: string }) => {}); let acquisitions = 0;
+  const acquire = vi.fn(async () => ({ id: `lease-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }));
+  const { surface } = await fixture(undefined, { browser: { name: 'finalized-provider', scope: 'worker',
+    acquire, release } }, true);
+  expect(acquire).toHaveBeenCalledTimes(2);
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await vi.waitFor(() => expect(fileFault.reached).toBeGreaterThanOrEqual(1));
+  const failure = await surface.endAttempt({ signal: artifactOperation().signal, timeoutMs: 1000 }).catch((cause: unknown) => cause);
+  expect(failure).toMatchObject({ code: 'ENGINE_FAILURE' });
+  await expect(surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 })).rejects.toBe(failure);
+  expect(release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'lease-2' }), expect.any(Object));
+  await expect(surface.startAttempt({ attemptId: 'next', artifactsDir, signal: artifactOperation().signal, resolveSecret: noSecrets, ...ignoreTrace })).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  expect(release).toHaveBeenCalledTimes(1);
+  expect(acquire).toHaveBeenCalledTimes(2);
+});
+
+it.each(['action', 'capture', 'connection'] as const)('collects immutable video after terminal %s failure without admitting mutation or opening a replacement', async kind => {
+  const command = kind === 'action' ? 'browser.pointer' : kind === 'capture' ? 'capture.screenshot' : 'page.title';
+  const { readFile } = await import('node:fs/promises');
+  const { peer, surface } = await fixture(request => {
+    if (request.command !== command) return undefined;
+    peer.failedSequence = request.operationSeq;
+    return { ok: false, error: { code: 'browser-failure' }, effects: kind === 'connection' ? 'not-dispatched' : 'unknown', scopeState: 'quarantined' };
+  });
+  const failing = kind === 'action' ? surface.performAt({ x: 1, y: 1 }, { kind: 'tap' }, artifactOperation())
+    : kind === 'capture' ? surface.screenshot(undefined, artifactOperation()) : surface.command('page.title', {}, artifactOperation());
+  await expect(failing).rejects.toMatchObject({ code: kind === 'connection' ? 'ENGINE_FAILURE' : 'ACTION_MAY_HAVE_COMMITTED' });
+  const saved = await surface.stopVideo(artifactOperation());
+  expect(saved).toEqual([{ path: 'video/video.webm', startedAt: '2026-10-26T00:00:00.000Z' }]);
+  expect(await readFile(path.join(artifactsDir, 'path' in saved[0]! ? saved[0]!.path : 'unexpected-link'))).toEqual(peer.bytes);
+  const count = peer.requests.length;
+  await expect(surface.startVideo(artifactOperation())).rejects.toThrow();
+  await expect(surface.performAt({ x: 1, y: 1 }, { kind: 'tap' }, artifactOperation())).rejects.toThrow();
+  await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
+  expect(peer.requests).toHaveLength(count);
+  expect(peer.requests.filter(request => request.command === 'scope.interop.adopt')).toHaveLength(1);
+  expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+  expect(peer.requests.filter(request => request.command === command)).toHaveLength(1);
+});
+
+it('returns all independently verified terminal segments after reporting a middle-segment failure once', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { peer, surface } = await fixture(request => {
+    if (request.command === 'recording.finalized.collect') {
+      const manifest = peer.manifest(); const original = (manifest['segments'] as Record<string, unknown>[])[0]!;
+      return { ok: true, effects: 'completed', scopeState: 'quarantined', data: { ...manifest,
+        segments: [1, 2, 3].map(ordinal => ({ ...original, handle: `safe-${ordinal}`, ordinal, startedAt: `2026-10-26T00:00:0${ordinal}.000Z` })) } };
+    }
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-2')
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    return undefined;
+  });
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await expect(surface.stopVideo(artifactOperation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+  const saved = await surface.stopVideo(artifactOperation());
+  expect(saved).toEqual([
+    { path: 'video/video.webm', startedAt: '2026-10-26T00:00:01.000Z' },
+    { path: 'video/video-part2.webm', startedAt: '2026-10-26T00:00:03.000Z' },
+  ]);
+  for (const file of saved) expect(await readFile(path.join(artifactsDir, 'path' in file ? file.path : 'unexpected-link'))).toEqual(peer.bytes);
+  expect(peer.requests.filter(request => request.command === 'recording.finalized.collect')).toHaveLength(1);
+  expect(peer.requests.filter(request => request.command === 'recording.finalized.read')).toHaveLength(3);
+  expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+  await expect(surface.startVideo(artifactOperation())).rejects.toThrow();
+  await expect(surface.stopVideo(artifactOperation())).resolves.toEqual([]);
+});
+
+
+it('terminal collection preserves first read-refusal after later deadline instead of replacing it', async () => {
+  const { peer, surface } = await fixture(async request => {
+    if (request.command === 'recording.finalized.collect') {
+      const manifest = peer.manifest(); const original = (manifest['segments'] as Record<string, unknown>[])[0]!;
+      return { ok: true, effects: 'completed', scopeState: 'quarantined', data: { ...manifest,
+        segments: [1, 2, 3].map(ordinal => ({ ...original, handle: `safe-${ordinal}`, ordinal })) } };
+    }
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-2')
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    if (request.command === 'recording.finalized.read' && request.args['handle'] === 'safe-3') await new Promise(() => {});
+    return undefined;
+  });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  await expect(surface.reset(artifactOperation())).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+  await vi.waitFor(() => expect(peer.requests.filter(request => request.command === 'recording.finalized.read')).toHaveLength(3));
+  await vi.advanceTimersByTimeAsync(15001);
+  const first = await surface.stopVideo(artifactOperation()).catch(error => error);
+  vi.useRealTimers();
+  const saved = await surface.stopVideo(artifactOperation());
+  expect(first).toMatchObject({ code: 'ENGINE_FAILURE', message: 'The native finalized recording could not be collected' });
+  expect(saved).toHaveLength(1);
+});
+
+// A legal empty terminal-artifact lane is not a failed native close receipt.
+// This peer proves framed adapter/lease ownership, not a producer or Chromium.
+it.each([
+  { startRecording: false, collection: 'unavailable' },
+  { startRecording: true, collection: 'unavailable' },
+  { startRecording: false, collection: 'held' },
+  { startRecording: true, collection: 'held' },
+] as const)('releases the exact worker after confirmed close with $collection collection (recorder=$startRecording)', async ({ startRecording, collection }) => {
+  let unblock!: () => void;
+  const held = new Promise<void>(resolve => { unblock = resolve; });
+  const release = vi.fn(async (_lease: { id: string }) => {});
+  let acquisitions = 0;
+  const acquire = vi.fn(async () => ({ id: `lease-${++acquisitions}`, cdpEndpoint: 'ws://synthetic.test/browser' }));
+  const { peer, surface } = await fixture(async request => {
+    if (request.command === 'page.title') {
+      peer.failedSequence = request.operationSeq;
+      return { ok: false, error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined' };
+    }
+    if (request.command === 'recording.finalized.collect') {
+      if (collection === 'held') await held;
+      return { ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'quarantined' };
+    }
+    return undefined;
+  }, { browser: { name: 'finalized-provider', scope: 'worker', acquire, release } }, true, startRecording);
+  try {
+    const failure = await surface.command('page.title', {}, artifactOperation()).catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false });
+    await vi.waitFor(() => expect(peer.requests.filter(request => request.command === 'recording.finalized.collect')).toHaveLength(1));
+    const requests = peer.requests.length;
+    await expect(surface.command('page.title', {}, artifactOperation())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(peer.requests).toHaveLength(requests);
+    if (collection === 'unavailable') {
+      // Absence is an artifact failure, never successful [] and never cleanup poison.
+      await expect(surface.stopVideo(artifactOperation())).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    }
+    await expect(surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 })).resolves.toBeUndefined();
+    expect(peer.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    expect(release).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'lease-2' }), expect.any(Object));
+    expect(acquire).toHaveBeenCalledTimes(2);
+    const failed = peer.requests.find(request => request.command === 'page.title');
+    expect(peer.requests.filter(request => request.command.startsWith('recording.finalized.')).map(request => [request.command, request.args])).toEqual([
+      ['recording.finalized.collect', { identityScope: peer.scope, failedOperationSeq: failed!.operationSeq }],
+    ]);
+    expect(peer.requests.filter(request => request.command === 'recording.stop')).toHaveLength(0);
+    unblock();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    await surface.dispose({ signal: artifactOperation().signal, timeoutMs: 1000 });
+    expect(peer.requests).toHaveLength(requests);
+    expect(release).toHaveBeenCalledTimes(1);
+  } finally { unblock(); }
+});

@@ -1,13 +1,13 @@
+import { beginSyntheticCase } from '../helpers/synthetic-evidence.ts';
+import { SyntheticRecoveryEvidence } from '../helpers/synthetic-native-outcomes.ts';
 /**
  * The built `e2e-web` command as a user runs it: a real process spawning the
- * pinned Playwright CLI. The download host is a local server that accepts and
- * never answers, so a cancelled install is observable without the network.
+ * real native installer. P14 alone uses the verified acceptance-faults runtime
+ * and loopback archive source; it does not establish public-source cold installation.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { createServer, type Server, type Socket } from 'node:net';
-import { tmpdir } from 'node:os';
+import { createInstallerFixture } from '../helpers/installer-fixture.ts';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -23,10 +23,17 @@ function exited(child: ChildProcess): Promise<{ code: number | null; signal: Nod
   return new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
 }
 
-const cleanups: (() => void)[] = [];
+const cleanups: (() => Promise<void>)[] = [];
+let bodyFailed = false;
+let installEvidence: SyntheticRecoveryEvidence | undefined;
 
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
+afterEach(async () => {
+  const evidence = installEvidence;
+  let cleanupFailed = false;
+  evidence?.enter('backstop', 'cleanup');
+  try { for (const cleanup of cleanups.splice(0)) await cleanup(); }
+  catch (cause) { cleanupFailed = true; if (!bodyFailed) throw cause; console.error(cause); }
+  finally { evidence?.finishBackstop(cleanupFailed); installEvidence = undefined; bodyFailed = false; }
 });
 
 describe('e2e-web', () => {
@@ -35,31 +42,24 @@ describe('e2e-web', () => {
   });
 
   it('ends the download when the command gets SIGTERM, and exits 143', async () => {
-    const browsers = mkdtempSync(path.join(tmpdir(), 'e2e-web-cli-'));
-    const sockets: Socket[] = [];
-    const server: Server = createServer((socket) => {
-      sockets.push(socket);
-      socket.resume();
-    });
-    cleanups.push(() => {
-      for (const socket of sockets) socket.destroy();
-      server.close();
-      rmSync(browsers, { recursive: true, force: true });
-    });
-    const connected = new Promise<Socket>((resolve) => server.once('connection', resolve));
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const address = server.address();
-    if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+    const evidence = new SyntheticRecoveryEvidence(beginSyntheticCase('P14'));
+    installEvidence = evidence;
+    evidence.enter('host');
+    try {
+    const fixture = createInstallerFixture(BIN);
+    cleanups.push(() => fixture.close());
+    evidence.evidence.record({ kind: 'installer-runtime', ...fixture.binding });
+    evidence.enter('download-trigger', 'setup');
+    const { cancel, exited: installerExited, downloadClosed } = await fixture.start();
+    evidence.enter('download-event');
+    evidence.passed('setup');
+    evidence.enter('cancel', 'body');
+    expect(cancel()).toBe(true);
 
-    const child = runBin(['install', 'chromium'], {
-      PLAYWRIGHT_BROWSERS_PATH: browsers,
-      PLAYWRIGHT_DOWNLOAD_HOST: `http://127.0.0.1:${String(address.port)}`,
-    });
-    const download = await connected;
-    const downloadClosed = new Promise<void>((resolve) => download.once('close', () => resolve()));
-    child.kill('SIGTERM');
-
-    expect(await exited(child)).toEqual({ code: 143, signal: null });
-    await downloadClosed;
+    evidence.enter('assertion');
+    expect(await installerExited()).toEqual({ code: 143, signal: null });
+    await downloadClosed();
+    evidence.passed('body');
+    } catch (cause) { bodyFailed = true; evidence.failed(); throw cause; }
   });
 });

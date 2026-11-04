@@ -26,6 +26,9 @@ web:
   - 'packages/github/**'
   - 'apps/web-benchmark/**'
   - '.github/workflows/benchmark.yml'
+  - '.github/workflows/native-runtime.yml'
+  - '.github/actions/native-runtime/**'
+  - '.github/native-candidate.json'
 
 mobile:
   - *runner

@@ -1,7 +1,7 @@
 /**
  * A provider that serves downloads, against a real Chrome over CDP: the
  * browser saves the file to the provider's directory on its own disk, not
- * Playwright's on the runner's, and `waitForDownload` gets it back through
+ * the runner's local artifact directory, and `waitForDownload` gets it back through
  * the provider's `read`. A hosted browser needs exactly this, since the
  * runner's directory does not exist on its machine; here the "remote" disk
  * is a local directory the provider reads.
@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeAll, afterAll, describe, expect, it } from 'vitest';
 import type { EngineFixtureContext, EngineHandle, OperationContext } from 'e2e/engine';
-import { web as webEngine, surfaceOf, type BrowserProvider, type BrowserProviderScope, type Browser } from '../../src/index.ts';
+import { web as webEngine, type BrowserProvider, type BrowserProviderScope, type Browser } from '../../src/index.ts';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
@@ -44,12 +44,19 @@ describe.each<BrowserProviderScope>(['worker', 'attempt'])('downloads through a 
   });
 
   afterEach(async () => {
-    await engine?.endAttempt!(cleanup());
-    await engine?.dispose!(cleanup());
-    await engine?.finish!({ runId: 'run-downloads', targetName: 'web', env: {}, log: () => undefined, ...cleanup() });
-    if (chrome !== undefined) await closeRemoteChrome(chrome);
-    if (artifactsDir !== undefined) rmSync(artifactsDir, { recursive: true, force: true });
-    if (remoteDisk !== undefined) rmSync(remoteDisk, { recursive: true, force: true });
+    const failures: unknown[] = [];
+    const releases = [
+      async () => { await engine?.endAttempt!(cleanup()); },
+      async () => { await engine?.dispose!(cleanup()); },
+      async () => { await engine?.finish!({ runId: 'run-downloads', targetName: 'web', env: process.env, log: () => undefined, ...cleanup() }); },
+      async () => { if (chrome !== undefined) await closeRemoteChrome(chrome); },
+      async () => { if (artifactsDir !== undefined) rmSync(artifactsDir, { recursive: true, force: true }); },
+      async () => { if (remoteDisk !== undefined) rmSync(remoteDisk, { recursive: true, force: true }); },
+    ];
+    for (const release of releases) {
+      try { await release(); } catch (cause) { failures.push(cause); }
+    }
+    if (failures.length > 0) throw new AggregateError(failures, 'Provider download fixture cleanup failed');
   });
 
   it('saves the file on the browser\'s disk and reads it back through the provider', async () => {
@@ -71,23 +78,14 @@ describe.each<BrowserProviderScope>(['worker', 'attempt'])('downloads through a 
       },
     };
     engine = webEngine({ browser: provider });
-    const prepared = await engine.prepare!({ runId: 'run-downloads', targetName: 'web', projectRoot: process.cwd(), app: { site: new URL(app.url).hostname }, slots: 1, env: {}, signal: signal(), headed: false, log: () => undefined });
+    const prepared = await engine.prepare!({ runId: 'run-downloads', targetName: 'web', projectRoot: process.cwd(), app: { site: new URL(app.url).hostname }, slots: 1, env: process.env, signal: signal(), headed: false, log: () => undefined });
     await engine.init!({
       runId: 'run-downloads', targetName: 'web', projectRoot: process.cwd(),
-      app: { site: new URL(app.url).hostname }, env: { ...prepared?.env }, headed: false,
+      app: { site: new URL(app.url).hostname }, env: { ...process.env, ...prepared?.env }, headed: false,
       workerSlot: 0, signal: signal(), log: () => undefined,
     });
     await engine.startAttempt!({ attemptId: 'a1', artifactsDir, signal: signal(), resolveSecret: noSecrets, ...ignoreTrace });
     await engine.session!.open!(`${app.url}/login`, operation());
-    const page = surfaceOf(engine)!.page();
-    await page.evaluate(() => {
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob(['report body']));
-      link.download = 'report.txt';
-      link.id = 'download';
-      link.textContent = 'Download';
-      document.body.append(link);
-    });
     const attached: string[] = [];
     const browser = engine.fixtures!['browser']!({
       operation: () => operation(),
@@ -97,7 +95,19 @@ describe.each<BrowserProviderScope>(['worker', 'attempt'])('downloads through a 
       attachArtifact: (_kind: string, relative: string) => attached.push(relative),
     } as unknown as EngineFixtureContext) as Browser;
 
-    const file = await browser.waitForDownload(() => page.locator('#download').click());
+    await browser.evaluate(() => {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob(['report body']));
+      link.download = 'report.txt';
+      link.id = 'download';
+      link.textContent = 'Download';
+      document.body.append(link);
+      return null;
+    });
+
+    const [download] = await engine.locate!({ kind: 'selector', selector: '#download' }, operation());
+    expect(download).toBeDefined();
+    const file = await browser.waitForDownload(() => engine!.perform!(download!.ref, { kind: 'tap' }, operation()));
 
     expect(file.suggestedFilename).toBe('report.txt');
     expect(path.isAbsolute(file.absolutePath)).toBe(true);

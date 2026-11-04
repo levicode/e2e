@@ -1,0 +1,646 @@
+name: Original raw selector acquisition and paired union boundaries
+'on':
+  push:
+    branches:
+    - ci/raw-selector-union-boundaries
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: raw-selector-union-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  E2E_UPDATE_CHECK_DISABLED: '1'
+  NATIVE_SOURCE_SHA: 1b0d6fe15fbca4e916edadfa12e529365c48435d
+  NATIVE_SOURCE_TREE: 0bc8ba70ba1c8e26ac2717f8194c403d109d964c
+  NEXT_TELEMETRY_DISABLED: '1'
+jobs:
+  raw-selector-original:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: a53b4f42cecef5eed94f9825f3bf5915540f43d4
+        path: baseline
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        test -z "$(git -C baseline status --porcelain)"
+
+        mkdir -p evidence
+
+        git -C baseline rev-parse HEAD > evidence/product-checkout.sha
+
+        git -C baseline rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum baseline/packages/e2e/tests/fixtures/public-raw-selector-baseline.e2e.ts
+        baseline/packages/e2e/tests/integration/web-raw-selector-baseline.test.ts
+        > evidence/probe-files.sha256
+
+        printf ''%s\n'' baseline > evidence/pair-label
+
+        printf "PLAYWRIGHT_BROWSERS_PATH=%s/selector-pw-host\n" "$RUNNER_TEMP" >>
+        "$GITHUB_ENV"
+
+        test "$(git -C baseline rev-parse HEAD)" = "a53b4f42cecef5eed94f9825f3bf5915540f43d4"
+
+        test "$(git -C baseline rev-parse HEAD^{tree})" = "40a9c6e7506b465626e3e61d1283ad14e89850bb"
+
+        '
+    - run: pnpm install --frozen-lockfile
+      working-directory: baseline
+    - name: Restore immutable ordinary artifact 12801534331 with metadata and ZIP
+        hash verification
+      timeout-minutes: 4
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        python3 scripts/ci/download-browser-recovery-runtime.py
+
+        '
+    - name: Verify exact prior source compiler host and binary
+      id: verify
+      run: 'set -euo pipefail
+
+        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+
+        '
+      timeout-minutes: 1
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+      working-directory: baseline
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat "$GITHUB_WORKSPACE/evidence/borrowed-chrome.path")"
+
+        ldd "$chrome" > "$GITHUB_WORKSPACE/evidence/borrowed-chrome-ldd.txt"
+
+        ! grep -q ''not found'' "$GITHUB_WORKSPACE/evidence/borrowed-chrome-ldd.txt"
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > "$GITHUB_WORKSPACE/evidence/borrowed-chrome-preflight.html"
+        2> "$GITHUB_WORKSPACE/evidence/borrowed-chrome-preflight.log"
+
+        '
+      working-directory: baseline
+    - name: Typecheck identical public selector fixtures and wrappers
+      run: 'set -euo pipefail
+
+        cat > tsconfig.selector-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/fixtures/public-raw-selector-baseline.e2e.ts",
+        "packages/e2e/tests/integration/web-raw-selector-baseline.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.selector-gate.json
+
+        rm tsconfig.selector-gate.json
+
+        '
+      working-directory: baseline
+      id: selector_types
+    - name: Execute original-only raw acquisition
+      run: 'set -euo pipefail
+
+        unset E2E_AGENT_BROWSER_EXECUTABLE AGENT_BROWSER_EXECUTABLE
+
+        pnpm --filter e2e exec vitest list tests/integration/web-raw-selector-baseline.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        rows=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(rows)==1
+
+        assert rows[0][''file''].split(''/'')[-1]==''web-raw-selector-baseline.test.ts''
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-raw-selector-baseline.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        python3 - <<''PY_COUNT''
+
+        import json,pathlib,os
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[x
+        for t in r[''testResults''] for x in t[''assertionResults'']];c={k:r[k] for
+        k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};c[''innerPassAssertionsExpected'']=4;c[''innerEvidence'']=''unchanged
+        wrapper asserts exact titles, statuses and no run errors'';c[''side'']=''baseline'';c[''baselineAcquisitionOnly'']=True;(p/''counts.json'').write_text(json.dumps(c,indent=2));assert
+        len(a)==r[''numTotalTests'']==1 and r[''numPendingTests'']==0
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      working-directory: baseline
+      if: ${{ success() && steps.selector_types.outcome == 'success' }}
+    - name: Extract actual original public raw observations from retained log
+      if: always()
+      run: "set -euo pipefail\npython3 - <<'PY_RAW'\nimport json,pathlib,re\np=pathlib.Path('evidence');text=re.sub(r'\e\
+        \\[[0-9;]*m','',(p/'tests.log').read_text());marker='RAW_SELECTOR_BASELINE_RECORDS';rows=[]\n\
+        for line in text.splitlines():\n if marker in line: rows.append(json.JSONDecoder().raw_decode(line.split(marker,1)[1].lstrip())[0])\n\
+        (p/'raw-selector-baseline-observations.json').write_text(json.dumps(rows,indent=2))\n\
+        assert len(rows)==1 and len(rows[0])==24\nassert len({x['id'] for x in rows[0]})==24\n\
+        assert sum(x['result']['kind']=='matches' for x in rows[0])==21\nassert sum(x['result']['kind']=='error'\
+        \ for x in rows[0])==3\nPY_RAW\n"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: raw-selector-original-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_SELECTOR_PAIR_LABEL: baseline
+  union-boundaries-original:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: levicode/e2e
+        ref: a53b4f42cecef5eed94f9825f3bf5915540f43d4
+        path: baseline
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        test -z "$(git -C baseline status --porcelain)"
+
+        mkdir -p evidence
+
+        git -C baseline rev-parse HEAD > evidence/product-checkout.sha
+
+        git -C baseline rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum baseline/packages/e2e/tests/fixtures/public-union-boundaries.e2e.ts
+        baseline/packages/e2e/tests/integration/web-selector-union-boundaries.test.ts
+        > evidence/probe-files.sha256
+
+        printf ''%s\n'' baseline > evidence/pair-label
+
+        printf "PLAYWRIGHT_BROWSERS_PATH=%s/selector-pw-host\n" "$RUNNER_TEMP" >>
+        "$GITHUB_ENV"
+
+        test "$(git -C baseline rev-parse HEAD)" = "a53b4f42cecef5eed94f9825f3bf5915540f43d4"
+
+        test "$(git -C baseline rev-parse HEAD^{tree})" = "40a9c6e7506b465626e3e61d1283ad14e89850bb"
+
+        '
+    - run: pnpm install --frozen-lockfile
+      working-directory: baseline
+    - name: Restore immutable ordinary artifact 12801534331 with metadata and ZIP
+        hash verification
+      timeout-minutes: 4
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        python3 scripts/ci/download-browser-recovery-runtime.py
+
+        '
+    - name: Verify exact prior source compiler host and binary
+      id: verify
+      run: 'set -euo pipefail
+
+        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+
+        '
+      timeout-minutes: 1
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+      working-directory: baseline
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat "$GITHUB_WORKSPACE/evidence/borrowed-chrome.path")"
+
+        ldd "$chrome" > "$GITHUB_WORKSPACE/evidence/borrowed-chrome-ldd.txt"
+
+        ! grep -q ''not found'' "$GITHUB_WORKSPACE/evidence/borrowed-chrome-ldd.txt"
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > "$GITHUB_WORKSPACE/evidence/borrowed-chrome-preflight.html"
+        2> "$GITHUB_WORKSPACE/evidence/borrowed-chrome-preflight.log"
+
+        '
+      working-directory: baseline
+    - name: Typecheck identical public selector fixtures and wrappers
+      run: 'set -euo pipefail
+
+        cat > tsconfig.selector-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/fixtures/public-union-boundaries.e2e.ts", "packages/e2e/tests/integration/web-selector-union-boundaries.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.selector-gate.json
+
+        rm tsconfig.selector-gate.json
+
+        '
+      working-directory: baseline
+      id: selector_types
+    - name: Execute identical public union boundaries
+      run: 'set -euo pipefail
+
+        unset E2E_AGENT_BROWSER_EXECUTABLE AGENT_BROWSER_EXECUTABLE
+
+        pnpm --filter e2e exec vitest list tests/integration/web-selector-union-boundaries.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        rows=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(rows)==1
+
+        assert rows[0][''file''].split(''/'')[-1]==''web-selector-union-boundaries.test.ts''
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-selector-union-boundaries.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        python3 - <<''PY_COUNT''
+
+        import json,pathlib,os
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[x
+        for t in r[''testResults''] for x in t[''assertionResults'']];c={k:r[k] for
+        k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};c[''innerPassAssertionsExpected'']=3;c[''innerEvidence'']=''unchanged
+        wrapper asserts exact titles, statuses and no run errors'';c[''side'']=''baseline'';c[''baselineAcquisitionOnly'']=False;(p/''counts.json'').write_text(json.dumps(c,indent=2));assert
+        len(a)==r[''numTotalTests'']==1 and r[''numPendingTests'']==0
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      working-directory: baseline
+      if: ${{ success() && steps.selector_types.outcome == 'success' }}
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: union-boundaries-original-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_SELECTOR_PAIR_LABEL: baseline
+  union-boundaries-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 24
+    - name: Record exact product identity
+      run: 'set -euo pipefail
+
+        test -z "$(git -C . status --porcelain)"
+
+        mkdir -p evidence
+
+        git -C . rev-parse HEAD > evidence/product-checkout.sha
+
+        git -C . rev-parse HEAD^{tree} > evidence/product-checkout.tree
+
+        sha256sum ./packages/e2e/tests/fixtures/public-union-boundaries.e2e.ts ./packages/e2e/tests/integration/web-selector-union-boundaries.test.ts
+        > evidence/probe-files.sha256
+
+        printf ''%s\n'' candidate > evidence/pair-label
+
+        printf "PLAYWRIGHT_BROWSERS_PATH=%s/selector-pw-host\n" "$RUNNER_TEMP" >>
+        "$GITHUB_ENV"
+
+        '
+    - run: pnpm install --frozen-lockfile
+    - name: Restore immutable ordinary artifact 12801534331 with metadata and ZIP
+        hash verification
+      timeout-minutes: 4
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        mkdir -p evidence
+
+        python3 scripts/ci/download-browser-recovery-runtime.py
+
+        '
+    - name: Verify exact prior source compiler host and binary
+      id: verify
+      run: 'set -euo pipefail
+
+        node scripts/ci/verify-browser-recovery-runtime.ts "$RUNNER_TEMP/ci-native-runtime"
+
+        '
+      timeout-minutes: 1
+    - name: Install native Chrome without unconditional OS font downloads
+      timeout-minutes: 9
+      run: 'set -euo pipefail
+
+        date -u +%FT%TZ > evidence/native-install.started
+
+        "$E2E_AGENT_BROWSER_EXECUTABLE" install 2>&1 | tee evidence/native-install.log
+
+        python3 scripts/ci/check-focused-chrome.py
+
+        date -u +%FT%TZ > evidence/native-install.finished'
+      id: chrome
+    - name: Build actual public core and web adapter
+      run: 'pnpm --filter e2e run build
+
+        pnpm --filter @e2e-dev/web run build'
+      id: build
+    - name: Install and verify the exact original borrowed-host Playwright Chromium
+      timeout-minutes: 8
+      id: borrowed_chrome
+      run: 'set -euo pipefail
+
+        pnpm --filter @e2e-dev/web exec playwright-core install chromium
+
+        pnpm --filter @e2e-dev/web exec node --input-type=module - <<''JS_CHROME''
+
+        import { chromium } from ''playwright-core'';
+
+        import { readFileSync, writeFileSync } from ''node:fs'';
+
+        import { createHash } from ''node:crypto'';
+
+        import { execFileSync } from ''node:child_process'';
+
+        import assert from ''node:assert/strict'';
+
+        import { createRequire } from ''node:module'';
+
+        const require=createRequire(import.meta.url);assert.equal(require(''playwright-core/package.json'').version,''1.64.1'');
+
+        const executable=chromium.executablePath();assert(!/[\r\n]/.test(executable));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.json'',JSON.stringify({executable,version:execFileSync(executable,[''--version''],{encoding:''utf8''}).trim(),sha256:createHash(''sha256'').update(readFileSync(executable)).digest(''hex''),playwright:''1.64.1''},null,2));
+
+        writeFileSync(process.env.GITHUB_WORKSPACE+''/evidence/borrowed-chrome.path'',executable);
+
+        JS_CHROME
+
+        chrome="$(cat evidence/borrowed-chrome.path)"
+
+        ldd "$chrome" > evidence/borrowed-chrome-ldd.txt
+
+        ! grep -q ''not found'' evidence/borrowed-chrome-ldd.txt
+
+        profile="$(mktemp -d "$RUNNER_TEMP/g2-borrowed-preflight.XXXXXX")"
+
+        trap ''rm -rf -- "$profile"'' EXIT
+
+        timeout --kill-after=2s 20 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage
+        --user-data-dir="$profile" --dump-dom about:blank > evidence/borrowed-chrome-preflight.html
+        2> evidence/borrowed-chrome-preflight.log
+
+        '
+    - name: Typecheck identical public selector fixtures and wrappers
+      run: 'set -euo pipefail
+
+        cat > tsconfig.selector-gate.json <<''JSON''
+
+        {"extends": "./tsconfig.base.json", "compilerOptions": {"lib": ["ES2023",
+        "DOM", "DOM.Iterable"], "noEmit": true, "paths": {"e2e": ["./packages/e2e/src/index.ts"],
+        "e2e/engine": ["./packages/e2e/src/engine/index.ts"], "@e2e-dev/web": ["./packages/web/src/index.ts"]}},
+        "files": ["packages/e2e/tests/fixtures/public-union-boundaries.e2e.ts", "packages/e2e/tests/integration/web-selector-union-boundaries.test.ts"]}
+
+        JSON
+
+        pnpm exec tsc --noEmit -p tsconfig.selector-gate.json
+
+        rm tsconfig.selector-gate.json
+
+        '
+      id: selector_types
+    - name: Execute identical public union boundaries
+      run: 'set -euo pipefail
+
+        test -x "$E2E_AGENT_BROWSER_EXECUTABLE"
+
+        pnpm --filter e2e exec vitest list tests/integration/web-selector-union-boundaries.test.ts
+        --no-staticParse --json="$GITHUB_WORKSPACE/evidence/collection.json"
+
+        python3 - <<''PY_LIST''
+
+        import json,os
+
+        rows=json.load(open(os.environ[''GITHUB_WORKSPACE'']+''/evidence/collection.json''));assert
+        len(rows)==1
+
+        assert rows[0][''file''].split(''/'')[-1]==''web-selector-union-boundaries.test.ts''
+
+        PY_LIST
+
+        unset GH_TOKEN GITHUB_TOKEN ACTIONS_RUNTIME_TOKEN
+
+        set +e
+
+        pnpm --filter e2e exec vitest run tests/integration/web-selector-union-boundaries.test.ts
+        --project integration --reporter=verbose --reporter=json --outputFile.json="$GITHUB_WORKSPACE/evidence/results.json"
+        2>&1 | tee "$GITHUB_WORKSPACE/evidence/tests.log"
+
+        status=${PIPESTATUS[0]}
+
+        set -e
+
+        printf ''%s\n'' "$status" > "$GITHUB_WORKSPACE/evidence/tests.exit"
+
+        python3 - <<''PY_COUNT''
+
+        import json,pathlib,os
+
+        p=pathlib.Path(os.environ[''GITHUB_WORKSPACE''])/''evidence'';r=json.load(open(p/''results.json''));a=[x
+        for t in r[''testResults''] for x in t[''assertionResults'']];c={k:r[k] for
+        k in [''numTotalTests'',''numPassedTests'',''numFailedTests'',''numPendingTests'']};c[''innerPassAssertionsExpected'']=3;c[''innerEvidence'']=''unchanged
+        wrapper asserts exact titles, statuses and no run errors'';c[''side'']=''candidate'';c[''baselineAcquisitionOnly'']=False;(p/''counts.json'').write_text(json.dumps(c,indent=2));assert
+        len(a)==r[''numTotalTests'']==1 and r[''numPendingTests'']==0
+
+        PY_COUNT
+
+        exit "$status"
+
+        '
+      if: ${{ success() && steps.selector_types.outcome == 'success' }}
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: union-boundaries-candidate-evidence
+        path: evidence/
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      E2E_SCOPE_RETIREMENT_DIAGNOSTIC: '0'
+      E2E_INTEROP_BINDING_DIAGNOSTIC: '0'
+      E2E_PLATFORM_HANDLER_DIAGNOSTIC: '0'
+      E2E_DOWNLOAD_RELEASE_DIAGNOSTIC: '0'
+      E2E_SELECTOR_PAIR_LABEL: candidate

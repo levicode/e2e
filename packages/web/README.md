@@ -1,7 +1,7 @@
 # @e2e-dev/web
 
 The browser engine for [`e2e`](https://www.npmjs.com/package/e2e), built on
-[Playwright](https://playwright.dev).
+[agent-browser](https://github.com/vercel-labs/agent-browser).
 
 `e2e` ships no engine of its own: every target names the engine that drives
 it, and this package is the one for browsers. It implements the public
@@ -10,14 +10,32 @@ seam with no privilege either way.
 
 ## Install
 
-```bash
-npm install --save-dev e2e @e2e-dev/web
-```
+Use a matching e2e/Web/native bundle. This source branch replaces the existing
+`@e2e-dev/web` implementation; it does not add a second runtime package. A package
+version alone does not establish that an arbitrary native binary matches it.
 
-This package depends on `playwright-core` pinned to an exact version, so the
-engine always runs the Playwright it was tested against. An app that depends
-on Playwright itself keeps its own copy; the two share a browser cache only
-when their versions match.
+The adapter requires the complete negotiated native capability contract before
+starting a browser. A foundation-only binary is rejected, never used as a
+reduced-feature fallback. The development override
+`E2E_AGENT_BROWSER_EXECUTABLE` must name an absolute trusted executable; setting
+it does not verify release provenance or install Chromium. Installing the
+upstream npm package alone does not install this migration's matched bundle.
+
+The default runtime is selected by the project-owned `.e2e/native-runtime.json`
+created by the explicit bundle installer. From an independently trusted matching source checkout, run
+`node scripts/acceptance/install-bundle.ts /absolute/bundle EXTERNAL_MANIFEST_SHA256 /absolute/project`.
+Obtain the digest from the independently trusted release or CI artifact, not the
+bundle's own `manifest.sha256`. The generated `install.mjs` is not a trust bootstrap: it imports bundled code before verification. Run it only after independently verifying the entire installer inventory with a trusted verifier. Passing a digest to untrusted installer code cannot authenticate code already executing. The installer adds the exact local core and Web
+tarballs with install scripts disabled, checks their complete published file
+inventories, then creates the descriptor. It refuses to overwrite an existing
+trust descriptor. It requires Node and pnpm and does not download a native runtime or install Chromium.
+
+Every default startup verifies those package bytes, the core actually imported
+by Web, the platform, and the native binary/producer/handshake tuple. The descriptor
+is trusted project configuration, not a signature. Dependency directories are
+package-manager-owned and are not certified by the core/Web file inventories.
+There is no PATH or automatic download fallback. A verified bundle still must
+negotiate the complete native contract; integrity is not browser acceptance.
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -36,7 +54,7 @@ with `readyUrl` to poll, default `url`), `environment` (`test`, `staging`,
 session key when the origin is ephemeral). `web({ url })` and the other old
 app options are `INVALID_CONFIG`. A target with `app.url` is a `browser`
 target, so a test can `requires: ['browser']`. Browser options:
-`browser` (`chromium`, `firefox`, `webkit`; default `chromium`; or a
+`browser` (`chromium`, the current supported backend; or a
 `BrowserProvider` that leases hosted browsers, see below), `viewport`
 (`{ width, height }`; default 1280x720), `testIdAttribute` (the attribute
 `getByTestId` and a node's `testId` read; default `data-testid`), `userAgent`
@@ -78,7 +96,7 @@ the attempt. The host owns deleting the remote browser after cleanup.
 This mode does not support `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`, context reset, or session
 state capture and restore. Recording resumes after reconnect, but a segment
 lost during the disconnect remains unavailable. See the
-[Playwright reference](../../docs/reference/web.mdx#recovering-a-cdp-transport)
+[Web reference](../../docs/reference/web.mdx#recovering-a-cdp-transport)
 for the lifecycle and ownership contract.
 
 ### Leasing hosted browsers (`browser`)
@@ -126,23 +144,30 @@ test('signs in', async ({ app, screen, browser }) => {
 
 ## Browsers
 
-A missing browser is downloaded once per run, in the runner process, after the
-tests are collected and before the app starts: the progress prints in the run
-log, the run's clock starts only once the download is done, and no launch or
-test timeout ever includes it. Workers launch the browser the runner installed.
-
-In CI, install browsers as their own step instead, so the cost is visible and
-cacheable:
+Chromium acquisition is an explicit setup step, not an implicit effect of a test
+run. After installing the matching trusted native runtime, prepare Chromium and
+any required Linux libraries with:
 
 ```bash
-npx @e2e-dev/web install chromium --with-deps
+pnpm exec e2e-web install chromium --with-deps
 ```
 
-It downloads the browsers for the Playwright version this package pins, the
-ones the engine launches. Under pnpm, run the bin by name:
-`pnpm exec e2e-web install chromium --with-deps`.
+The CLI invokes that exact native executable with `install --with-deps`, without
+a shell, PATH fallback, or package-manager auto-install. The native installer
+owns the Chromium version/cache and reports its exit status. `--with-deps` is
+only forwarded when requested. Firefox and WebKit are not accepted by this
+backend. Playwright remains a development-only independent validation oracle,
+not a production dependency or selectable fallback.
 
-`--with-deps` also installs the system libraries a slim container image lacks.
+### Recorder cleanup failures
+
+A provider recording error is not silently treated as successful cleanup. If
+recording completion cannot be established, cleanup reports the provider-named
+failure and retains the affected lease instead of handing its browser to another
+attempt. A malformed artifact report does not prove that recording is still
+running, but also cannot establish safe completion on its own. A later explicit,
+contract-safe stop or confirmed teardown must resolve that ownership. This is an
+intentional reliability correction to the former best-effort cleanup behavior.
 
 ## Documentation
 

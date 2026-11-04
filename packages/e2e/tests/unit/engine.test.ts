@@ -391,6 +391,45 @@ describe('createEngineSession', () => {
     expect(performed[1]).toEqual({ id: 'screen', revision: 'b2', kind: 'swipe', direction: 'left', momentum: 'fast' });
   });
 
+  it('keeps an exact document root separate from a stable viewport capability across replacement', async () => {
+    let generation = 1;
+    const performed: { id: string; kind: string }[] = [];
+    const session = createEngineSession({
+      engine: defineEngine(observingEngine({
+        observe: async () => ({ identityScope: `scope-${generation}`, root: { ref: { id: `document-${generation}`, revision: '' }, role: 'document' }, viewportRef: { id: 'viewport-capability', revision: '' }, viewport: { width: 10, height: 10 } }),
+        actions: ['tap', 'swipe', 'dragTo'],
+        perform: async (ref, action) => { performed.push({ id: ref.id, kind: action.kind }); },
+      })), targetName: 'toy-target',
+    });
+    const first = await session.observe(OP);
+    expect(first.root.id).toBe('document-1');
+    expect(first.viewportRef).toEqual({ id: 'viewport-capability', revision: first.revision });
+    await session.perform(first.root, { kind: 'tap' }, OP);
+    await session.swipe('down', undefined, OP);
+    generation = 2;
+    const second = await session.observe(OP);
+    expect(second.root.id).toBe('document-2');
+    expect(second.viewportRef?.id).toBe(first.viewportRef?.id);
+    await session.swipe('up', undefined, OP);
+    await session.perform(second.root, { kind: 'tap' }, OP);
+    await expect(session.perform(second.viewportRef!, { kind: 'tap' }, OP)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(session.perform(second.root, { kind: 'dragTo', target: second.viewportRef! }, OP)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(performed).toEqual([{ id: 'document-1', kind: 'tap' }, { id: 'viewport-capability', kind: 'swipe' }, { id: 'viewport-capability', kind: 'swipe' }, { id: 'document-2', kind: 'tap' }]);
+  });
+
+  it('rejects a malformed runtime viewport reference with a typed engine error', async () => {
+    const session = createEngineSession({ engine: defineEngine(observingEngine({ observe: async () => ({ root: { ref: { id: 'root', revision: '' } }, viewportRef: null as never, viewport: { width: 10, height: 10 } }) })), targetName: 'toy-target' });
+    await expect(session.observe(OP)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  });
+
+  it('rejects a viewport capability presented as an actionable semantic node', async () => {
+    const session = createEngineSession({
+      engine: defineEngine(observingEngine({ observe: async () => ({ root: { ref: { id: 'document', revision: '' }, children: [{ ref: { id: 'viewport', revision: '' }, role: 'button' }] }, viewportRef: { id: 'viewport', revision: '' }, viewport: { width: 10, height: 10 } }) })),
+      targetName: 'toy-target',
+    });
+    await expect(session.observe(OP)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  });
+
   it('carries the engine location and viewport onto the observation', async () => {
     const session = createEngineSession({
       engine: defineEngine(observingEngine({ observe: async () => snapshot([], { location: 'app://device/Home' }) })),
