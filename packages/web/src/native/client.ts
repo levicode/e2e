@@ -41,6 +41,8 @@ interface Pending {
   readonly command?: string;
   readonly identityScope?: string;
   readonly generation?: number;
+  /** The exact request cannot have written page content; see recoveryReadsWithoutWriting. */
+  readonly readOnlyForRecovery?: boolean;
   readonly resolve: (message: ServerMessage) => void;
   readonly reject: (error: EngineError) => void;
   readonly clear: () => void;
@@ -69,6 +71,30 @@ interface CallbackTransition {
   readonly retired: Promise<boolean>;
   interop?: InteropReplacement;
   complete(retired: boolean): void;
+}
+
+/**
+ * Commands whose interrupted result cannot have written page content. A
+ * quarantine receipt may describe one of these as a clean non-dispatch; it
+ * mirrors the native read-only set, narrowing browser.observe to tree-only.
+ * Pixel and trace captures, screenshots, and every action keep Unknown.
+ */
+const RECOVERY_READ_ONLY_COMMANDS = new Set([
+  'page.url', 'page.title', 'session.environment', 'context.cookies.get',
+  'browser.query', 'fixture.query', 'fixture.read-fields', 'fixture.correlate',
+]);
+
+function recoveryReadsWithoutWriting(command: string, args: unknown): boolean {
+  if (command === 'browser.observe') {
+    // Pixel capture and pixel fallback may install protection or stabilization,
+    // so a lost cleanup proof is real page uncertainty, never a non-dispatch.
+    if (args === null || typeof args !== 'object' || Array.isArray(args)) return false;
+    const options = (args as Record<string, unknown>)['options'];
+    if (options === null || typeof options !== 'object' || Array.isArray(options)) return false;
+    const read = options as Record<string, unknown>;
+    return read['pixels'] !== true && read['pixelFallback'] !== true;
+  }
+  return RECOVERY_READ_ONLY_COMMANDS.has(command);
 }
 
 type ReceiveFailureKind = 'event-order' | 'response-correlation' | 'response-kind' | 'callback-proof' | 'capacity' | 'native-refusal';
@@ -123,7 +149,11 @@ export class NativeClient {
         for (const frame of this.frames.read(chunk)) {
           channel.acceptanceTrace?.observe('FrameComplete');
           let message: ServerMessage;
-          try { message = serverMessage(frame, this.requiredCapabilities.filter(capability => this.ready?.capabilities.includes(capability))); }
+          // Frame validation may admit a clean non-dispatch receipt only for the
+          // exact pending command, before any other field can mutate client state.
+          const frameId = frame['id'];
+          const pending = typeof frameId === 'string' ? this.pending.get(frameId) : undefined;
+          try { message = serverMessage(frame, this.requiredCapabilities.filter(capability => this.ready?.capabilities.includes(capability)), pending?.readOnlyForRecovery === true); }
           catch { channel.acceptanceTrace?.observe('FrameRefused', { reason: 'schema' }); this.fail('The native browser protocol became invalid (schema)'); return; }
           try { this.receive(message); }
           catch (cause) {
@@ -655,7 +685,7 @@ export class NativeClient {
       };
       const args = message['args'];
       const scope = args !== null && typeof args === 'object' && 'identityScope' in args && typeof args.identityScope === 'string' ? args.identityScope : undefined;
-      this.pending.set(id, { kind, ...(kind === 'decision' && dispatchSignal !== undefined ? { decisionReceipt: 'ordinary' as const } : {}), ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(message['command'] === 'browser.observe' ? { continuedObservation: Object.hasOwn(message['args'] as object, 'continuation') } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
+      this.pending.set(id, { kind, ...(kind === 'decision' && dispatchSignal !== undefined ? { decisionReceipt: 'ordinary' as const } : {}), ...(scope === undefined ? {} : { identityScope: scope }), ...(kind === 'request' && typeof message['callbackToken'] === 'string' ? { callbackToken: message['callbackToken'] } : {}), ...(cancelTarget === undefined ? {} : { cancelTarget }), ...(typeof message['command'] === 'string' ? { command: message['command'] } : {}), ...(kind === 'request' && typeof message['command'] === 'string' && recoveryReadsWithoutWriting(message['command'], message['args']) ? { readOnlyForRecovery: true as const } : {}), ...(message['command'] === 'browser.observe' ? { continuedObservation: Object.hasOwn(message['args'] as object, 'continuation') } : {}), ...(callbackTransition === undefined ? {} : { callbackTransition }), ...(operationSeq === undefined ? {} : { operationSeq }), ...(this.ready === undefined ? {} : { generation: this.ready.generation }), resolve: accept, reject: cause => { retire(); reject(cause); }, clear, settlement });
       // Check after serialization and before the sole write. Pre-dispatch
       // caller cancellation is definite no-effect, not a protocol failure.
       if (dispatchSignal?.aborted) {

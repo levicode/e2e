@@ -24,8 +24,9 @@ function harness(required: readonly string[] = capabilities) {
   const ready = (advertised: readonly string[] = capabilities) => ({ type: 'ready', id: requests[0]!['id'], protocol: 'agent-browser-session/1', sessionId: 'recovery-client', generation: 1, capabilities: advertised, limits: { maxFrameBytes: 1048576, maxPendingOperations: 64, maxPendingDecisions: 256, maxTimeoutMs: 3600000 }, scopeState: 'usable' });
   const result = (request: Record<string, unknown>) => ({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: true, data: { identityScope: 'new-owner-scope' }, effects: 'completed', scopeState: 'usable' });
   const unknown = (request: Record<string, unknown>, offered = true) => ({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code: 'browser-failure' }, effects: 'unknown', scopeState: 'quarantined', ...(offered ? { recovery: { version: 1, identityScope: scope } } : {}) });
+  const notDispatched = (request: Record<string, unknown>, offered = true, code = 'browser-failure') => ({ type: 'result', id: request['id'], generation: 1, operationSeq: request['operationSeq'], ok: false, error: { code }, effects: 'not-dispatched', scopeState: 'quarantined', ...(offered ? { recovery: { version: 1, identityScope: scope } } : {}) });
   const connect = (onEvent: (event: NativeEvent) => void | Promise<void> = () => {}) => NativeClient.connect({ readable: output, writable: input, dispose }, required, context(), onEvent);
-  return { requests, dispose, send, ready, result, unknown, connect };
+  return { requests, dispose, send, ready, result, unknown, notDispatched, connect };
 }
 async function opened(required: readonly string[] = capabilities, onEvent?: (event: NativeEvent) => void | Promise<void>) {
   const fixture = harness(required);
@@ -51,20 +52,106 @@ async function recover(fixture: Awaited<ReturnType<typeof opened>>) {
 }
 
 describe('negotiated disconnected-owner recovery', () => {
-  it('accepts only an explicitly negotiated, quarantined Unknown descriptor', () => {
+  it('accepts only an explicitly negotiated, quarantined descriptor', () => {
     const fixture = harness();
     const message = fixture.unknown({ id: 'a', operationSeq: 1 });
     expect(serverMessage(message, capabilities)).toBe(message);
     expect(() => serverMessage(message)).toThrow(NativeFrameError);
+    // A page-read-only command that provably never dispatched may carry the
+    // same receipt as a clean non-dispatch. The default stays the closed
+    // Unknown shape, and every other receipt invariant is unchanged.
+    const clean = { ...message, effects: 'not-dispatched' };
+    expect(serverMessage(clean, capabilities, true)).toBe(clean);
+    expect(() => serverMessage(clean, capabilities)).toThrow(NativeFrameError);
+    expect(() => serverMessage(clean, capabilities, false)).toThrow(NativeFrameError);
+    expect(() => serverMessage(clean, [], true)).toThrow(NativeFrameError);
     for (const invalid of [
-      { ...message, effects: 'not-dispatched' },
       { ...message, scopeState: 'usable' },
       { ...message, ok: true },
       { ...message, retention: { version: 1, retiredOperationSeq: 1, producerState: 'retired', inputDebt: 1, objectDebt: 0 } },
       { ...message, recovery: { version: 2, identityScope: scope } },
       { ...message, recovery: { version: 1, identityScope: '' } },
       { ...message, recovery: { version: 1, identityScope: scope, timeoutMs: 5000 } },
-    ]) expect(() => serverMessage(invalid, capabilities)).toThrow(NativeFrameError);
+      { ...clean, scopeState: 'usable' },
+      { ...clean, ok: true },
+      { ...clean, retention: { version: 1, retiredOperationSeq: 1, producerState: 'retired', inputDebt: 1, objectDebt: 0 } },
+    ]) expect(() => serverMessage(invalid, capabilities, true)).toThrow(NativeFrameError);
+  });
+
+  it('keeps a read-only non-dispatch receipt as one recoverable ticket, not a protocol failure', async () => {
+    const fixture = await opened();
+    const read = fixture.client.request('page.title', { identityScope: scope }, context());
+    fixture.send(fixture.notDispatched(fixture.requests.at(-1)!));
+    expect(await read).toMatchObject({ ok: false, effects: 'not-dispatched', scopeState: 'quarantined', recovery: { version: 1, identityScope: scope } });
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(true);
+    await expect(fixture.client.request('page.title', { identityScope: scope }, context())).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await recover(fixture);
+    await close(fixture);
+  });
+
+  it('keeps a tree-only observation non-dispatch recoverable', async () => {
+    const fixture = await opened();
+    const read = fixture.client.request('browser.observe', { identityScope: scope, options: {} }, context());
+    fixture.send(fixture.notDispatched(fixture.requests.at(-1)!));
+    expect(await read).toMatchObject({ ok: false, effects: 'not-dispatched', scopeState: 'quarantined' });
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(true);
+    await recover(fixture);
+    await close(fixture);
+  });
+
+  it('classifies an interrupted read receipt as the native refusal, never an unknown action outcome', async () => {
+    const fixture = await opened(); const engine = new EngineChannel(fixture.client);
+    const reading = engine.command('browser.query', {
+      identityScope: scope, testIdAttribute: 'data-testid', secureFieldSelector: '#password',
+      expression: { kind: 'selector', selector: 'section' },
+    }, context());
+    fixture.send(fixture.notDispatched(fixture.requests.at(-1)!, true, 'cancelled'));
+    await expect(reading).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    expect(exactRecoveryTicketReady(fixture.client, scope)).toBe(true);
+    await recover(fixture);
+    await close(fixture);
+  });
+
+  it.each(['page.url', 'session.environment', 'context.cookies.get', 'fixture.query', 'fixture.read-fields', 'fixture.correlate'] as const)('keeps a %s non-dispatch receipt recoverable', async command => {
+    const fixture = await opened();
+    const read = fixture.client.request(command, { identityScope: scope }, context());
+    fixture.send(fixture.notDispatched(fixture.requests.at(-1)!));
+    expect(await read).toMatchObject({ ok: false, effects: 'not-dispatched', scopeState: 'quarantined' });
+    expect(fixture.dispose).not.toHaveBeenCalled();
+    await recover(fixture);
+    await close(fixture);
+  });
+
+  it.each([
+    ['page-writing action', 'browser.pointer', { identityScope: scope }],
+    ['element action', 'browser.perform', { identityScope: scope, ref: '@e1', action: { kind: 'tap' } }],
+    ['keyboard input', 'browser.keyboard.type', { identityScope: scope, text: 'x', replace: false }],
+    ['arbitrary evaluation', 'page.evaluate', { identityScope: scope, source: 'document.title', argument: null }],
+    ['navigation', 'page.navigate', { identityScope: scope, url: 'https://example.test/', waitUntil: 'load' }],
+    ['cookie write', 'context.cookies.set', { identityScope: scope, cookies: [] }],
+    ['pixel observation', 'browser.observe', { identityScope: scope, options: { pixels: true } }],
+    ['pixel-fallback observation', 'browser.observe', { identityScope: scope, options: { pixelFallback: true } }],
+    ['trace observation', 'browser.trace', { identityScope: scope, options: {} }],
+    ['screenshot', 'capture.screenshot', { identityScope: scope, secureFieldSelector: '#password' }],
+  ] as const)('rejects a clean non-dispatch receipt for a %s', async (_label, command, args) => {
+    const fixture = await opened();
+    const action = fixture.client.request(command, args, context());
+    fixture.send(fixture.notDispatched(fixture.requests.at(-1)!));
+    await expect(action).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(fixture.dispose).toHaveBeenCalledOnce();
+    expect(fixture.client.recoveryScope()).toBeUndefined();
+  });
+
+  it('rejects a read-only receipt correlated to a different operation', async () => {
+    const fixture = await opened();
+    const read = fixture.client.request('page.title', { identityScope: scope }, context());
+    const request = fixture.requests.at(-1)!;
+    fixture.send({ ...fixture.notDispatched(request), operationSeq: (request['operationSeq'] as number) + 1 });
+    await expect(read).rejects.toMatchObject({ code: 'ENGINE_FAILURE' });
+    expect(fixture.dispose).toHaveBeenCalledOnce();
   });
 
   it('observes exact recovery when its receipt precedes and suppresses the ordinary disconnect event', async () => {

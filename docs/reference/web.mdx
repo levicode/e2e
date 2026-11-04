@@ -1356,7 +1356,11 @@ The Web adapter requires this coordinated capability; older native runtimes fail
 negotiation rather than silently changing uncertainty semantics.
 
 A disconnect during an action can instead leave that result `unknown` and its
-old scope quarantined. With mutually negotiated `scope.reconnect-quarantined/1`,
+old scope quarantined. A page-read-only command that provably never dispatched
+may carry the same recovery descriptor with `not-dispatched` instead; that is a
+clean refusal with nothing to replay. A receipt that claims `not-dispatched`
+for a page-writing command, a pixel observation, a trace, or a screenshot is a
+protocol violation. With mutually negotiated `scope.reconnect-quarantined/1`,
 a qualified native recovery descriptor permits one explicit reconnect to the
 same browser, context and page. The next operation uses the existing recovery
 budget; old local producers must retire before the new scope is published.

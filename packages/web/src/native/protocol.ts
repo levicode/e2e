@@ -40,7 +40,11 @@ export interface NativeResult {
   readonly effects: Effects; readonly scopeState: ScopeState;
   readonly retention?: OperationRetention;
   readonly observeContinuation?: ObserveContinuation;
-  /** One explicit recovery attempt only; old scope and effects remain quarantined/Unknown. */
+  /**
+   * One explicit recovery attempt only; the old scope stays quarantined. The
+   * correlated command's effects are Unknown when it may have written page
+   * content, and may be NotDispatched when the command cannot have written any.
+   */
   readonly recovery?: { readonly version: 1; readonly identityScope: string };
 }
 export interface NativeControlResult {
@@ -65,13 +69,20 @@ const ERROR_CODES = new Set([
 const STATES = new Set(['usable', 'quarantined', 'closed']);
 const EFFECTS = new Set(['not-dispatched', 'completed', 'unknown']);
 
-/** Validate the negotiated server envelope before it can mutate client state. */
-export function serverMessage(value: Record<string, unknown>, negotiatedCapabilities: readonly string[] = []): ServerMessage {
-  if (!isServerMessage(value, negotiatedCapabilities)) throw new NativeFrameError();
+/**
+ * Validate the negotiated server envelope before it can mutate client state.
+ *
+ * `allowRecoveryNotDispatched` is set only from the correlated pending request
+ * when that exact command cannot have written page content. Without it the
+ * original closed receipt shape is unchanged: a recovery descriptor still
+ * requires a failed Unknown result on a quarantined scope.
+ */
+export function serverMessage(value: Record<string, unknown>, negotiatedCapabilities: readonly string[] = [], allowRecoveryNotDispatched = false): ServerMessage {
+  if (!isServerMessage(value, negotiatedCapabilities, allowRecoveryNotDispatched)) throw new NativeFrameError();
   return value;
 }
 
-function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities: readonly string[]): value is Record<string, unknown> & ServerMessage {
+function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities: readonly string[], allowRecoveryNotDispatched: boolean): value is Record<string, unknown> & ServerMessage {
   if (typeof value['type'] !== 'string') throw new NativeFrameError();
   validateJson(value);
   switch (value['type']) {
@@ -104,7 +115,11 @@ function isServerMessage(value: Record<string, unknown>, negotiatedCapabilities:
         identifier(continuation['token']);
       }
       if (Object.hasOwn(value, 'recovery')) {
-        if (!negotiatedCapabilities.includes(DISCONNECTED_RECOVERY_CAPABILITY) || value['effects'] !== 'unknown' || value['ok'] || value['scopeState'] !== 'quarantined' || Object.hasOwn(value, 'retention')) throw new NativeFrameError();
+        const notDispatched = value['effects'] === 'not-dispatched';
+        // A page-read-only command that provably never dispatched has no effect
+        // to be uncertain about, so its receipt may carry NotDispatched. Every
+        // page-writing command, pixel capture, and screenshot keeps Unknown.
+        if (!negotiatedCapabilities.includes(DISCONNECTED_RECOVERY_CAPABILITY) || (!notDispatched && value['effects'] !== 'unknown') || (notDispatched && !allowRecoveryNotDispatched) || value['ok'] || value['scopeState'] !== 'quarantined' || Object.hasOwn(value, 'retention')) throw new NativeFrameError();
         const recovery = record(value['recovery']);
         keys(recovery, ['version', 'identityScope']);
         if (recovery['version'] !== 1) throw new NativeFrameError();
