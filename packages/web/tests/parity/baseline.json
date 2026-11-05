@@ -1,0 +1,956 @@
+{
+  "schemaVersion": 1,
+  "oracle": {
+    "playwright": "1.64.1",
+    "chromium": "156.0.8078.4",
+    "originalRevision": "e557432eb8e535e5862d9ede7eb40c1d92da0948",
+    "originalEntry": "packages/web/src/browser.ts@e557432 locator() -> locators.ts projectExpression case selector -> scope.locator(selector)"
+  },
+  "fixtureSha256": "c688855d5cf92a1c154d7701deb8055083cd7e6ee79b879311eea78aa4485996",
+  "cases": [
+    {
+      "family": "30",
+      "selector": "text=Alpha Beta",
+      "intent": "lax normalized substring",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "d-wrap"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=\"Alpha Beta\"",
+      "intent": "quoted exact immediate text",
+      "ids": [
+        "p-alpha",
+        "p-space"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=alpha",
+      "intent": "lax is case-insensitive",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "d-wrap",
+        "p-nospace",
+        "s-inner",
+        "i-button",
+        "li-1",
+        "div-hidden",
+        "div-invisible",
+        "div-zero",
+        "span-a",
+        "label-alpha",
+        "by-label",
+        "shadow-p"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=/^Alpha/",
+      "intent": "regex source",
+      "ids": [
+        "p-alpha",
+        "d-wrap",
+        "p-nospace",
+        "s-inner",
+        "i-button",
+        "li-1",
+        "div-hidden",
+        "div-invisible",
+        "div-zero",
+        "span-a",
+        "label-alpha",
+        "by-label"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "\"Alpha Beta\"",
+      "intent": "implicit text from a quoted body",
+      "ids": [
+        "p-alpha",
+        "p-space"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "'Alpha Beta'",
+      "intent": "implicit text from a single-quoted body",
+      "ids": [
+        "p-alpha",
+        "p-space"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=\"Alpha\"",
+      "intent": "exact matches an element whose own text is Alpha",
+      "ids": [
+        "d-wrap",
+        "span-a"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=AlphaBeta",
+      "intent": "lax matches without a space",
+      "ids": [
+        "p-nospace"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=\"AlphaBeta\"",
+      "intent": "exact matches without a space",
+      "ids": [
+        "p-nospace"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=/^alpha beta$/i",
+      "intent": "regex flags",
+      "ids": [
+        "p-alpha",
+        "d-wrap"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=日本",
+      "intent": "unicode substring",
+      "ids": [
+        "p-unicode"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=Bob's Place",
+      "intent": "apostrophe is data, not a quote",
+      "ids": [
+        "p-apostrophe"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=Shadow Alpha",
+      "intent": "text pierces an open shadow root",
+      "ids": [
+        "shadow-p"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text:light=Shadow Alpha",
+      "intent": "text:light does not pierce",
+      "ids": [],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text:light=\"Alpha Beta\"",
+      "intent": "quoted text:light",
+      "ids": [],
+      "error": "\"text:light\" selector is not supported: locator('text:light=\"Alpha Beta\"') resolved to 2 elements:     1) <p data-id=\"p-alpha\">Alpha Beta</p> aka getByRole('paragraph').filter({ hasText: /^Alpha Beta$/ })     2) <p data-id=\"p-space\">  Alpha   Beta  </p> aka getByText('Alpha Beta').nth(2) "
+    },
+    {
+      "family": "30",
+      "selector": "text=Alpha >> text=Beta",
+      "intent": "text chained onto text",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "s-beta",
+        "p-nospace"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "css=p >> text=Alpha",
+      "intent": "text chained onto CSS",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "p-nospace",
+        "s-inner",
+        "shadow-p"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=Alpha hidden",
+      "intent": "text matches rendered-hidden content",
+      "ids": [
+        "div-hidden"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=Alpha >> nth=1",
+      "intent": "nth after text",
+      "ids": [
+        "p-lower"
+      ],
+      "error": null
+    },
+    {
+      "family": "30",
+      "selector": "text=",
+      "intent": "empty text body is malformed",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "s-beta",
+        "p-nospace",
+        "p-unicode",
+        "p-apostrophe",
+        "s-inner",
+        "p-empty",
+        "i-button",
+        "i-text",
+        "li-1",
+        "li-2",
+        "li-3",
+        "row-a",
+        "row-b",
+        "layout-anchor",
+        "layout-right",
+        "layout-left",
+        "layout-above",
+        "layout-below",
+        "layout-near",
+        "btn-save",
+        "btn-save-draft",
+        "btn-custom",
+        "btn-submit",
+        "check-wifi",
+        "btn-hidden",
+        "btn-disabled",
+        "heading-two",
+        "div-hidden",
+        "div-invisible",
+        "div-zero",
+        "closed-host",
+        "span-a",
+        "span-b",
+        "div-title",
+        "label-target",
+        "testid-x",
+        "label-alpha",
+        "labelled-input",
+        "placeholder-input",
+        "by-label",
+        "labelledby-input",
+        "shadow-p",
+        "shadow-btn"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button",
+      "intent": "raw role without a body tag",
+      "ids": [
+        "i-button",
+        "btn-save",
+        "btn-save-draft",
+        "btn-custom",
+        "btn-submit",
+        "btn-disabled",
+        "shadow-btn"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[name=\"Save\"]",
+      "intent": "role name in the typed body",
+      "ids": [
+        "btn-save",
+        "btn-custom",
+        "btn-submit"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[name=\"Save draft\"]",
+      "intent": "role name with a space",
+      "ids": [
+        "btn-save-draft"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[name=\"save\"i]",
+      "intent": "role name with the i flag",
+      "ids": [
+        "btn-save",
+        "btn-custom",
+        "btn-submit"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[name=/^Save/]",
+      "intent": "role name regex",
+      "ids": [
+        "btn-save",
+        "btn-save-draft",
+        "btn-custom",
+        "btn-submit",
+        "btn-disabled"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=checkbox[checked]",
+      "intent": "role ARIA state",
+      "ids": [
+        "check-wifi"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=heading[level=2]",
+      "intent": "role heading level",
+      "ids": [
+        "heading-two"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[disabled]",
+      "intent": "role disabled state",
+      "ids": [
+        "btn-disabled"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button >> nth=0",
+      "intent": "nth after role",
+      "ids": [
+        "i-button"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[name=\"Save\"] >> nth=0",
+      "intent": "nth after a named role",
+      "ids": [
+        "btn-save"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=",
+      "intent": "empty role body is malformed",
+      "ids": [],
+      "error": "InvalidSelectorError: Error while parsing selector `` - selector cannot be empty     at parseAttributeSelector (<anonymous>:2199:11)     at Object.queryAll (<anonymous>:5527:22)     at InjectedScript._queryEngineAll (<anonymous>:7241:49)     at InjectedScript.querySelectorAll (<anonymous>:7228:30)     at eval (eval at evaluate (:370:30), <anonymous>:2:42)     at UtilityScript.evaluate (<anonymous>:372:16)     at UtilityScript.<anonymous> (<anonymous>:1:44)"
+    },
+    {
+      "family": "32",
+      "selector": "css=li:has-text(\"Alpha\")",
+      "intent": ":has-text descendant text",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:has-text(\"alpha\")",
+      "intent": ":has-text is case-insensitive",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:text(\"Alpha\")",
+      "intent": ":text normalized substring",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:text-is(\"Alpha one\")",
+      "intent": ":text-is exact normalized text",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:text-matches(\"^Alpha\")",
+      "intent": ":text-matches regex",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:text-matches(\"^BETA\", \"i\")",
+      "intent": ":text-matches with the i flag",
+      "ids": [
+        "li-2"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=:nth-match(li, 1)",
+      "intent": ":nth-match is one-based",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=:nth-match(li, 2)",
+      "intent": ":nth-match second match",
+      "ids": [
+        "li-2"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=:nth-match(li, 0)",
+      "intent": ":nth-match zero matches nothing",
+      "ids": [],
+      "error": "\"nth-match\" engine expects a one-based index as the last argument     at Object.query (<anonymous>:5973:13)     at <anonymous>:5807:21     at SelectorEvaluatorImpl._cached (<anonymous>:5604:20)     at SelectorEvaluatorImpl._callQuery (<anonymous>:5806:17)     at SelectorEvaluatorImpl._queryEngine (<anonymous>:5795:19)     at <anonymous>:5708:25     at SelectorEvaluatorImpl._cached (<anonymous>:5604:20)     at SelectorEvaluatorImpl._querySimple (<anonymous>:5695:17)     at <anonymous>:5642:29     at SelectorEvaluatorImpl._cached (<anonymous>:5604:20)"
+    },
+    {
+      "family": "32",
+      "selector": "css=:nth-match(:text(\"Alpha\"), 1)",
+      "intent": ":nth-match with a text matcher",
+      "ids": [
+        "p-alpha"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=p:visible",
+      "intent": ":visible keeps rendered paragraphs",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "p-nospace",
+        "p-unicode",
+        "p-apostrophe",
+        "p-inner",
+        "shadow-p"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=:visible",
+      "intent": ":visible across the document",
+      "ids": [
+        "html",
+        "body",
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "d-wrap",
+        "s-beta",
+        "p-nospace",
+        "p-unicode",
+        "p-apostrophe",
+        "p-inner",
+        "s-inner",
+        "i-button",
+        "i-text",
+        "list",
+        "li-1",
+        "li-2",
+        "li-3",
+        "row",
+        "row-a",
+        "row-b",
+        "layout-anchor",
+        "layout-right",
+        "layout-left",
+        "layout-above",
+        "layout-below",
+        "layout-near",
+        "btn-save",
+        "btn-save-draft",
+        "btn-custom",
+        "btn-submit",
+        "check-wifi",
+        "btn-disabled",
+        "heading-two",
+        "shadow-host",
+        "closed-host",
+        "sec-a",
+        "span-a",
+        "sec-b",
+        "span-b",
+        "div-title",
+        "label-target",
+        "testid-x",
+        "label-alpha",
+        "labelled-input",
+        "placeholder-input",
+        "by-label",
+        "labelledby-input",
+        "shadow-p",
+        "shadow-btn"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=div:has-text(\"Shadow\")",
+      "intent": ":has-text pierces an open shadow root",
+      "ids": [
+        "shadow-host"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=:text(\"Alpha Button\")",
+      "intent": ":text reads a button input value",
+      "ids": [
+        "i-button"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=input:text(\"Alpha Field\")",
+      "intent": ":text ignores a text input value",
+      "ids": [],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=p:text-is(\"Alpha Beta\")",
+      "intent": ":text-is on paragraphs",
+      "ids": [
+        "p-alpha",
+        "p-space"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:has-text(\"Alpha\"):visible",
+      "intent": "chained extended matchers",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=button:has-text(\"Save\")",
+      "intent": ":has-text on buttons",
+      "ids": [
+        "btn-save",
+        "btn-save-draft",
+        "btn-hidden",
+        "btn-disabled",
+        "shadow-btn"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=li:has-text(\"Alpha\") >> nth=0",
+      "intent": "extended CSS followed by nth",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:has=\"css=span\"",
+      "intent": "internal:has composed selector",
+      "ids": [],
+      "error": "\"internal:has\" selector cannot be first"
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> internal:has=\"css=span\"",
+      "intent": "internal:has scoped by CSS",
+      "ids": [
+        "sec-a",
+        "sec-b"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> internal:has-not=\"css=span\"",
+      "intent": "internal:has-not",
+      "ids": [],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> internal:and=\"css=[data-id='sec-a']\"",
+      "intent": "internal:and intersects",
+      "ids": [
+        "sec-a"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> internal:or=\"css=[data-id='sec-b']\"",
+      "intent": "internal:or unions in DOM order",
+      "ids": [
+        "sec-a",
+        "sec-b"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> internal:chain=\"css=span\"",
+      "intent": "internal:chain continues the chain",
+      "ids": [
+        "span-a",
+        "span-b"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:text=\"Alpha inner\"",
+      "intent": "internal:text exact normalized text",
+      "ids": [
+        "s-inner"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:text=\"Alpha\"",
+      "intent": "internal:text exact without descendants",
+      "ids": [
+        "span-a"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:label=\"Alpha label text\"",
+      "intent": "internal:label",
+      "ids": [
+        "labelled-input"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:role=button[name=\"Save\"]",
+      "intent": "internal:role typed body",
+      "ids": [
+        "btn-save",
+        "btn-custom",
+        "btn-submit"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:attr=[title=\"Alpha title\"i]",
+      "intent": "internal:attr named attribute",
+      "ids": [
+        "div-title"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:testid=[data-testid=\"x\"s]",
+      "intent": "internal:testid typed body",
+      "ids": [
+        "testid-x"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "*css=section >> css=span",
+      "intent": "capture a non-final part",
+      "ids": [
+        "sec-a",
+        "sec-b"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> *css=span",
+      "intent": "capture the final part",
+      "ids": [
+        "span-a",
+        "span-b"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "*css=li >> css=span",
+      "intent": "capture with no descendant match",
+      "ids": [],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "*css=li >> nth=0",
+      "intent": "capture with nth is refused",
+      "ids": [],
+      "error": "Can't query n-th element in a request with the capture."
+    },
+    {
+      "family": "33",
+      "selector": "css=li >> nth=1",
+      "intent": "nth after CSS",
+      "ids": [
+        "li-2"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=li >> nth=-1",
+      "intent": "negative nth",
+      "ids": [
+        "li-3"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "div >>",
+      "intent": "trailing chain syntax",
+      "ids": [],
+      "error": "Unexpected token \"\" while parsing css selector \"\". Did you mean to CSS.escape it?"
+    },
+    {
+      "family": "33",
+      "selector": "nosuch=1",
+      "intent": "unknown engine",
+      "ids": [],
+      "error": "Unknown engine \"nosuch\" while parsing selector nosuch=1"
+    },
+    {
+      "family": "32",
+      "selector": "css=[data-layout]:right-of([data-id=\"layout-anchor\"])",
+      "intent": ":right-of layout matcher",
+      "ids": [
+        "layout-near",
+        "layout-right"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=[data-layout]:left-of([data-id=\"layout-anchor\"])",
+      "intent": ":left-of layout matcher",
+      "ids": [
+        "layout-left"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=[data-layout]:above([data-id=\"layout-anchor\"])",
+      "intent": ":above layout matcher",
+      "ids": [
+        "layout-above"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=[data-layout]:below([data-id=\"layout-anchor\"])",
+      "intent": ":below layout matcher",
+      "ids": [
+        "layout-below"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=[data-layout]:near([data-id=\"layout-anchor\"], 60)",
+      "intent": ":near with a distance",
+      "ids": [
+        "layout-near",
+        "layout-left",
+        "layout-above"
+      ],
+      "error": null
+    },
+    {
+      "family": "32",
+      "selector": "css=[data-layout]:near([data-id=\"layout-anchor\"], 10)",
+      "intent": ":near excludes a farther element",
+      "ids": [],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=li >> internal:has-text=\"alpha\"i",
+      "intent": "internal:has-text lax",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=li >> internal:has-text=\"Alpha one\"",
+      "intent": "internal:has-text strict normalized text",
+      "ids": [
+        "li-1"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=li >> internal:has-not-text=\"beta\"i",
+      "intent": "internal:has-not-text lax",
+      "ids": [
+        "li-1",
+        "li-3"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=li >> internal:has-not=\"css=span\"",
+      "intent": "internal:has-not keeps roots without the target",
+      "ids": [
+        "li-1",
+        "li-2",
+        "li-3"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "*text=Alpha",
+      "intent": "capture a text engine",
+      "ids": [
+        "p-alpha",
+        "p-lower",
+        "p-space",
+        "d-wrap",
+        "p-nospace",
+        "s-inner",
+        "i-button",
+        "li-1",
+        "div-hidden",
+        "div-invisible",
+        "div-zero",
+        "span-a",
+        "label-alpha",
+        "by-label",
+        "shadow-p"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "css=section >> *text=Alpha >> css=span",
+      "intent": "capture in the middle of a chain",
+      "ids": [],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "*css=section >> *css=span",
+      "intent": "two captures are refused",
+      "ids": [],
+      "error": "Only one of the selectors can capture using * modifier"
+    },
+    {
+      "family": "33",
+      "selector": "css=ul >> internal:chain=\"css=li\"",
+      "intent": "internal:chain after CSS",
+      "ids": [
+        "li-1",
+        "li-2",
+        "li-3"
+      ],
+      "error": null
+    },
+    {
+      "family": "33",
+      "selector": "internal:label=\"Alpha by label\"",
+      "intent": "internal:label from aria-labelledby",
+      "ids": [
+        "labelledby-input"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "role=button[name=\"Shadow Save\"]",
+      "intent": "raw role pierces an open shadow root",
+      "ids": [
+        "shadow-btn"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "css=section >> role=button",
+      "intent": "raw role scoped by CSS",
+      "ids": [],
+      "error": null
+    }
+  ]
+}
