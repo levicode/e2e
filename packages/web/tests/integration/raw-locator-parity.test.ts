@@ -9,12 +9,15 @@
  * the run re-checks that freeze, then compares the current native entry and
  * keeps each disagreement in `expected.txt` with its reason.
  *
- * A refusal here means the call threw. The original entry surfaced every
- * Playwright selector error as `ENGINE_FAILURE`; the native entry classifies
- * user syntax as `INVALID_LOCATOR` and an unimplemented engine as
+ * A refusal here means the call threw. The original entry translated a
+ * Playwright selector refusal into `ENGINE_FAILURE` (its `staleOr` path at
+ * `packages/web/src/surface.ts@e557432`); the native entry classifies user
+ * syntax as `INVALID_LOCATOR` and an unimplemented engine as
  * `UNSUPPORTED_CAPABILITY`. Both are refusals, so the comparison treats
  * refusal-vs-refusal as parity and records the current code, while a refusal
- * against a match (in either direction) is a real difference.
+ * against a match (in either direction) is a real difference. Comparing codes
+ * against the original would only restate the typed split the current contract
+ * added, not a change in what a selector reaches.
  *
  * `E2E_RAW_PARITY_UPDATE=1` regenerates both committed files. The fixture, the
  * Playwright version, the Chromium version and the original revision are

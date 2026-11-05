@@ -18,16 +18,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
-
-/** One selector under differential test, grouped by the issue family it covers. */
-export interface RawLocatorCase {
-  /** Issue family: 30 raw text, 31 raw role, 32 extended CSS, 33 internal/capture. */
-  readonly family: '30' | '31' | '32' | '33';
-  /** The authored selector, passed to both the original and the current entry. */
-  readonly selector: string;
-  /** Why this selector is in the matrix. */
-  readonly intent: string;
-}
+import type { RawLocatorCase } from './cases.ts';
 
 /** What one entry returned: its ordered match set, or the error it refused with. */
 export interface Outcome {
@@ -70,7 +61,7 @@ export function normalizeOracleError(error: unknown): string {
 }
 
 /** A whitespace-free summary used inside a committed expectation key. */
-export function summarize(outcome: Outcome): string {
+function summarize(outcome: Outcome): string {
   if (outcome.error !== null) return `error ${outcome.error}`;
   return `count ${outcome.ids.length} [${outcome.ids.join(',')}]`;
 }
