@@ -26,7 +26,7 @@ import type { WebOptions } from './web-options.ts';
 import { decodeBrowserEvent, decodeBrowserResult } from './native/browser-decode.ts';
 import { BrowserChannel, isNativeNotDispatched, isNativeResourceCleanupFailure, isNativeUsableFailure } from './native/browser-channel.ts';
 import type { BrowserCommandMap, BrowserDecision, BrowserEventMap, NativeWebSurface } from './native/browser-contract.ts';
-import { EngineChannel, takeObservationContinuation, isCleanObservationRefusal, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
+import { EngineChannel, takeObservationContinuation, isCleanObservationRefusal, isPixelStaleObservation, isNativeReconnectAdmissionRefusal, isUnavailableBlobRead, type BlobBatchCustody } from './native/engine-channel.ts';
 import { NativeReferenceBridge, type ReferenceOwner } from './native/reference-bridge.ts';
 import { FinalizedVideoFiles } from './native/finalized-video-files.ts';
 import { PartialVideoTransferError, type FinalizedVideoBytes } from './native/finalized-recording.ts';
@@ -1278,6 +1278,17 @@ export class NativeSurface implements NativeWebSurface {
         this.assertObservationOwner(attempt, scope, epoch, client);
         this.assertPublication(client, publication); this.assertBudget(operation);
         snapshot = await this.engineCommand('browser.observe', args, operation);
+      } else if (isPixelStaleObservation(cause)) {
+        // The semantic prefix completed on a usable scope; only the optional
+        // masked pixels lost their refs during a same-document route change.
+        // A fresh tree-only capture keeps the screen usable and never exposes
+        // a partially completed pixel result.
+        this.assertObservationOwner(attempt, scope, epoch, client);
+        this.assertPublication(client, publication); this.assertBudget(operation);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        this.assertObservationOwner(attempt, scope, epoch, client);
+        this.assertPublication(client, publication); this.assertBudget(operation);
+        snapshot = await this.engineCommand('browser.observe', { ...args, options: { ...options, pixels: false } }, operation);
       } else throw cause;
     }
     this.assertObservationOwner(attempt, scope, epoch, client);

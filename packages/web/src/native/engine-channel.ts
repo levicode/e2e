@@ -47,6 +47,12 @@ export function isCleanObservationRefusal(cause: unknown): boolean {
   return (cause instanceof EngineError || cause instanceof TestError) && cleanObservationRefusals.has(cause);
 }
 
+const pixelStaleObservations = new WeakSet<EngineError | TestError>();
+/** An observation whose semantic prefix completed, but whose optional pixels lost their refs. */
+export function isPixelStaleObservation(cause: unknown): boolean {
+  return (cause instanceof EngineError || cause instanceof TestError) && pixelStaleObservations.has(cause);
+}
+
 const unavailableBlobReads = new WeakSet<EngineError | TestError>();
 const rejectedReconnectAdmissions = new WeakSet<EngineError | TestError>();
 /** Exact native refusal evidence, not a public error code or cleanup receipt. */
@@ -127,6 +133,11 @@ export class EngineChannel {
         && result.error?.code === 'stale-scope' && result.effects === 'not-dispatched' && result.scopeState === 'usable'
         && result.observeContinuation === undefined) {
         cleanObservationRefusals.add(cause);
+      }
+      if (name === 'browser.observe' && result.error?.code === 'stale-reference'
+        && result.effects === 'completed' && result.scopeState === 'usable'
+        && (args as { options?: { pixels?: unknown } }).options?.pixels === true) {
+        pixelStaleObservations.add(cause);
       }
       if (name === 'browser.observe' && result.observeContinuation !== undefined) observationContinuations.set(cause, result.observeContinuation);
       if (name === 'scope.reconnect' && result.effects === 'not-dispatched' && result.scopeState === 'quarantined'

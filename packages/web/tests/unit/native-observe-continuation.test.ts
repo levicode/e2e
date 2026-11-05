@@ -68,6 +68,32 @@ test('retries one clean stale-scope observation and returns the second refusal',
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
+test('falls back to a tree-only observation after a completed pixel stale-reference', async () => {
+  let count = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    if (++count === 1) return { error: 'stale-reference', effects: 'completed' };
+    return { data: snapshot() };
+  });
+  try {
+    await expect(engine.observe!(operation(), { pixels: true })).resolves.toMatchObject({ identityScope: 'scope-1' });
+    const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
+    expect(calls).toHaveLength(2);
+    expect((calls[0]!.args['options'] as { pixels?: boolean }).pixels).toBe(true);
+    expect((calls[1]!.args['options'] as { pixels?: boolean }).pixels).toBe(false);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test('never retries an unproven pixel stale-reference', async () => {
+  for (const effects of ['unknown', 'not-dispatched'] as const) {
+    const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-reference', effects } : undefined);
+    try {
+      await expect(engine.observe!(operation(), { pixels: true })).rejects.toBeInstanceOf(Error);
+      expect(peer!.requests.filter(frame => frame.command === 'browser.observe')).toHaveLength(1);
+    } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+  }
+});
+
 test('never retries an unproven stale-scope observation', async () => {
   for (const effects of ['unknown', 'completed'] as const) {
     const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-scope', effects } : undefined);
