@@ -79,13 +79,13 @@ test('CSS chains pierce open roots but never closed roots', async ({ app, browse
   expect(count).toBe(0);
 });
 
-test('syntax and non-final capture failures keep the public error class', async ({ app, browser }) => {
+test('syntax and double-capture failures keep the public error class', async ({ app, browser }) => {
   await app.open();
   for (const [selector, expectedCode] of [
     ['css=[', 'ENGINE_FAILURE'],
     ['xpath=//*[', 'ENGINE_FAILURE'],
     ['div >>', 'ENGINE_FAILURE'],
-    ['*css=ul >> li', 'INVALID_LOCATOR'],
+    ['*css=ul >> *css=li', 'INVALID_LOCATOR'],
   ] as const) {
     let code = 'no error';
     try { await browser.locator(selector).count(); } catch (error) { code = error.code; }

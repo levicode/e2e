@@ -94,10 +94,7 @@ export default {
         kind: 'error', stage: 'count', name: 'E2EError', category: 'infrastructure', code: 'ENGINE_FAILURE', retryable: false,
         causeName: 'EngineError', causeCode: 'ENGINE_FAILURE', causeRetryable: false,
       } })),
-      { id: 'non-final-capture', selector: '*css=ul >> li', action: 'locator.count', expectation: 'observation-only', result: {
-        kind: 'error', stage: 'count', name: 'TestError', category: 'test', code: 'INVALID_LOCATOR', retryable: false,
-        causeName: null, causeCode: null, causeRetryable: null,
-      } },
+      { id: 'non-final-capture', selector: '*css=ul >> li', action: 'locator.count', expectation: 'observation-only', result: { kind: 'count', count: 1 } },
     ]);
     expect(outcome!.report.run.errors).toEqual([]);
   });
