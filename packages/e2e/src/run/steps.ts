@@ -49,6 +49,8 @@ export interface StepEvent {
   inputTokens?: number;
   outputTokens?: number;
   bytes?: number;
+  /** Native observation phase durations in milliseconds, when the engine reports them. */
+  phases?: Readonly<Record<string, number>>;
   decision?: 'allowed' | 'denied';
   code?: string;
   /**

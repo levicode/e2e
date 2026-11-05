@@ -195,6 +195,11 @@
         "inputTokens": { "type": "integer", "minimum": 0 },
         "outputTokens": { "type": "integer", "minimum": 0 },
         "bytes": { "type": "integer", "minimum": 0 },
+        "phases": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
         "decision": { "enum": ["allowed", "denied"] },
         "code": { "type": "string", "maxLength": 128 },
         "detail": { "type": "string", "maxLength": 300 },
