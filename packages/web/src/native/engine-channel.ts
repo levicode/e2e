@@ -41,6 +41,12 @@ export function takeObservationContinuation(cause: unknown): ObserveContinuation
   return continuation;
 }
 
+const cleanObservationRefusals = new WeakSet<EngineError | TestError>();
+/** A read-only refusal that native proved undispatched on a usable scope: one fresh retry is safe. */
+export function isCleanObservationRefusal(cause: unknown): boolean {
+  return (cause instanceof EngineError || cause instanceof TestError) && cleanObservationRefusals.has(cause);
+}
+
 const unavailableBlobReads = new WeakSet<EngineError | TestError>();
 const rejectedReconnectAdmissions = new WeakSet<EngineError | TestError>();
 /** Exact native refusal evidence, not a public error code or cleanup receipt. */
@@ -113,6 +119,15 @@ export class EngineChannel {
         frameDiagnostic = { selector, index: facts.index, count: facts.count };
       }
       const cause = resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
+      // A same-document navigation can move the page inventory between admission
+      // and the first read. Native proves the refusal had no effects and the scope
+      // is still usable; one fresh capture is safe. An unproven/unknown outcome is
+      // never admitted here, and a second refusal is returned to the caller.
+      if ((name === 'browser.observe' || name === 'capture.screenshot')
+        && result.error?.code === 'stale-scope' && result.effects === 'not-dispatched' && result.scopeState === 'usable'
+        && result.observeContinuation === undefined) {
+        cleanObservationRefusals.add(cause);
+      }
       if (name === 'browser.observe' && result.observeContinuation !== undefined) observationContinuations.set(cause, result.observeContinuation);
       if (name === 'scope.reconnect' && result.effects === 'not-dispatched' && result.scopeState === 'quarantined'
         && result.error?.code === 'stale-scope') rejectedReconnectAdmissions.add(cause);
