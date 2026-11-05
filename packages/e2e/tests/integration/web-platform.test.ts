@@ -240,16 +240,10 @@ test('a viewport set before the first navigation opens no page', async ({ screen
   await screen.getByTestId('items').tap({ timeout: 200 });
 });
 
-test('a *css= capture is refused before the last selector part', async ({ app, browser }) => {
+test('a *css= capture before the last selector part projects the captured prefix', async ({ app, browser }) => {
   await app.open();
   await expect(browser.locator('css=ul[data-testid="items"] >> *css=li')).toHaveCount(3);
-  let capture = 'no error';
-  try {
-    await browser.locator('*css=ul[data-testid="items"] >> li').count();
-  } catch (error) {
-    capture = (error as Error).message;
-  }
-  expect(capture).toContain('a selector that captures with * (*css=article >> text=Hello) is not supported');
+  await expect(browser.locator('*css=ul[data-testid="items"] >> li')).toHaveCount(1);
 });
 
 test('forbidden URL schemes are refused', async ({ app }) => {
@@ -473,7 +467,7 @@ describe('web platform integration', () => {
     'reads under an absent frame answer with no match',
     'a nested absent frame counts as zero matches at once',
     'absence matchers and waits under an absent frame pass at once',
-    'a *css= capture is refused before the last selector part',
+    'a *css= capture before the last selector part projects the captured prefix',
     'downloads are captured as artifacts',
     'clicks hold the modifiers they name',
     'a viewport set before the first navigation holds through app.open',

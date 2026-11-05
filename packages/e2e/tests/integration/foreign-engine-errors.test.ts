@@ -24,7 +24,7 @@ test('a caught engine TestError keeps its code', async ({ app, browser }) => {
   await app.open();
   let code = 'no error';
   try {
-    await browser.locator('*css=ul[data-testid="items"] >> li').count();
+    await browser.locator('*css=ul[data-testid="items"] >> *css=li').count();
   } catch (error) {
     code = error.code ?? 'no code';
   }
@@ -33,7 +33,7 @@ test('a caught engine TestError keeps its code', async ({ app, browser }) => {
 
 test('an uncaught engine TestError fails the test with its code', async ({ app, browser }) => {
   await app.open();
-  await browser.locator('*css=ul[data-testid="items"] >> li').count();
+  await browser.locator('*css=ul[data-testid="items"] >> *css=li').count();
 });
 `;
 
