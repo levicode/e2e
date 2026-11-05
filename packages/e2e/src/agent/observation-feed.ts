@@ -8,7 +8,7 @@
  * the engine; the dispatcher and the pixel tier ask the feed.
  */
 
-import { referenceText } from './reference-text.ts';
+import { listedReference, referenceText } from './reference-text.ts';
 import type { SemanticNode } from '../engine/surface.ts';
 import { relocateDescriptor } from '../cache/relocate.ts';
 import { TestError } from '../internal/errors.ts';
@@ -228,8 +228,8 @@ export class ObservationFeed {
    * The node a target names on the newest screen, if the screen still lists
    * it or its descriptor re-finds it; the screen must list nodes at all. The
    * id is the target's without the `#` the listing prefixes, which a model
-   * copies now and then, and an id written without the engine's `@` is the
-   * screen's id without a copy mark (see `listedReference`). A caller with
+   * copies now and then, and an id written without the engine's `@` is a
+   * listed id without that copy mark (see `listedReference`). A caller with
    * its own way of re-finding a lost node (`scroll-target.ts`) starts here.
    */
   lookup(target: ExecutorTarget): Lookup {
@@ -483,25 +483,9 @@ function echoesInput(node: SemanticNode): boolean {
   return isEditable(node) || node.value !== undefined;
 }
 
-/**
- * The screen's own spelling of a target id. A listing prints each id as
- * `#@e123` (the `#` the listing adds, the `@` the web engine mints), and a
- * model copies it without the `#`, or now and then without the `@` too. An
- * id the step's recent screens do not list is retried with that `@` toggled,
- * since a screen lists ids under one spelling only: an id that names no node
- * stays as written, so its error repeats what was asked.
- */
-export function listedReference(id: string, listed: (id: string) => boolean): string {
-  if (listed(id)) return id;
-  const toggled = id.startsWith('@') ? id.slice(1) : `@${id}`;
-  return listed(toggled) ? toggled : id;
-}
-
-/** One prose list such as `#@e1, #@e2 and #@e3`, or the one id itself. */
+/** One prose list such as `#@e1, #@e2 and #@e3`, or the one id itself; the caller only passes a listed id. */
 function listingSample(ids: readonly string[]): string {
-  if (ids.length === 0) return '';
-  if (ids.length === 1) return ids[0]!;
-  return `${ids.slice(0, -1).join(', ')} and ${ids.at(-1)}`;
+  return ids.length === 1 ? ids[0]! : `${ids.slice(0, -1).join(', ')} and ${ids.at(-1)}`;
 }
 
 /**
@@ -514,10 +498,9 @@ function listingSample(ids: readonly string[]): string {
  */
 export function nodeGone(id: string, latest: SemanticAgentObservation): AgentError {
   const listed = [...latest.nodes.keys()];
-  const sample = listingSample(listed.slice(0, 3).map((key) => referenceText(key)));
   const digest = listed.length === 0
     ? 'The screen lists no nodes'
-    : `The screen lists ${listed.length} node${listed.length === 1 ? '' : 's'}${sample === '' ? '' : `, such as ${sample}`}`;
+    : `The screen lists ${listed.length} node${listed.length === 1 ? '' : 's'}, such as ${listingSample(listed.slice(0, 3).map((key) => referenceText(key)))}`;
   const truncation = latest.truncated ? ' That listing is truncated, so a node past the cut is not listed.' : '';
   return new AgentError(
     'LOCATOR_NOT_FOUND',

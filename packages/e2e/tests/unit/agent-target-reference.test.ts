@@ -1,6 +1,6 @@
 /**
  * A model that copies a listed id can drop one of its two copy marks: the
- * `#` the listing adds and the `@` the web engine mints. `lookup` already
+ * `#` the listing adds and the `@` the engine may mint. `lookup` already
  * tolerated the `#`; these pin the `@` and the error that now names the
  * listing a missing id should have quoted. The incident: observation b2
  * listed the home page, the model wrote `e347`, and the harness answered
@@ -10,7 +10,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Observation, SemanticNode } from '../../src/engine/surface.ts';
 import { prepareObservation, type SemanticAgentObservation } from '../../src/agent/observation.ts';
-import { listedReference, nodeGone } from '../../src/agent/observation-feed.ts';
+import { nodeGone } from '../../src/agent/observation-feed.ts';
+import { listedReference } from '../../src/agent/reference-text.ts';
 
 const NO_REDACT = (text: string): string => text;
 
@@ -44,7 +45,7 @@ describe('listedReference', () => {
     expect(listedReference('@e347', web)).toBe('@e347');
   });
 
-  it('restores the web engine @ a model dropped from a listed id', () => {
+  it('restores the engine @ a model dropped from a listed id', () => {
     expect(listedReference('e347', web)).toBe('@e347');
     expect(listedReference('e7110', web)).toBe('@e7110');
   });
