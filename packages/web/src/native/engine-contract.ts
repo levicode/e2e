@@ -34,6 +34,7 @@ export interface NativeObservation extends Scoped {
   readonly treeUnavailable?: boolean;
   readonly pixels?: NativeImage;
   readonly maskedRegionCount?: number;
+  readonly phases?: Readonly<Record<string, number>>;
 }
 export type NativeLocatorAction = Exclude<LocatorAction, { kind: 'setInputFiles' }> | {
   readonly kind: 'setInputFiles';

@@ -69,7 +69,17 @@ function observation(value: unknown): NativeObservation {
     ...(item['treeUnavailable'] === undefined ? {} : { treeUnavailable: bool(item['treeUnavailable']) }),
     ...(item['pixels'] === undefined ? {} : { pixels: image(item['pixels']) }),
     ...(item['maskedRegionCount'] === undefined ? {} : { maskedRegionCount: count(item['maskedRegionCount']) }),
+    ...(item['phases'] === undefined ? {} : { phases: phases(item['phases']) }),
   };
+}
+function phases(value: unknown): Readonly<Record<string, number>> {
+  const item = record(value);
+  const result: Record<string, number> = {};
+  for (const [name, micros] of Object.entries(item)) {
+    if (name.length === 0 || name.length > 64) invalid();
+    result[name] = Math.round(count(micros) / 1000);
+  }
+  return result;
 }
 const empty = (value: unknown): null => value === null ? null : invalid();
 const recoveryScope = (value: unknown) => { const item = record(value); const recovery = record(item['recoveryIdentity']); return { ...scoped(item), recoveryIdentity: { browser: identity(recovery['browser']), context: identity(recovery['context']), page: identity(recovery['page']) } }; };

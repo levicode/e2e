@@ -95,6 +95,8 @@ interface ObservationMetadata {
   readonly revision: string;
   readonly capturedAt: string;
   readonly viewport: ViewportSize;
+  /** Native observation phase durations in milliseconds, when the engine reports them. */
+  readonly phases?: Readonly<Record<string, number>>;
   /**
    * What the engine masked against what it saw. Pixel completeness is judged
    * downstream from these counts: fewer masked regions than secure nodes

@@ -1,6 +1,6 @@
 import { assert, describe, expect, it, vi } from 'vitest';
 import type { Observation, SemanticNode } from '../../src/engine/surface.ts';
-import { changeShape, interactiveNodeCount, isTransitionalObservation, observationShape, prepareObservation, projectTree, redactNode, redactNodesAgain, settleObservation } from '../../src/agent/observation.ts';
+import { changeShape, interactiveNodeCount, isTransitionalObservation, observationDetail, observationShape, prepareObservation, projectTree, redactNode, redactNodesAgain, settleObservation } from '../../src/agent/observation.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../../src/engine/contract.ts';
 import { SecretLedger } from '../../src/internal/redact.ts';
 import { describeDelta } from '../../src/cache/anchors.ts';
@@ -819,4 +819,14 @@ describe('interactiveNodeCount', () => {
     ).toBe(3);
     expect(interactiveNodeCount(lines('#n1 document "Canvas"', ' #n2 heading "Map"', ' #n3 status "Picked"'))).toBe(0);
   });
+});
+
+it('keeps engine phase timings on the observation and its report detail', () => {
+  const raw: Observation = {
+    ...observation(node('@e1')),
+    phases: { 'semantic-metadata': 12, 'semantic-node-geometry': 3 },
+  };
+  const prepared = prepareObservation(raw, { redact: text => text, redactCut: text => text, maxBytes: 4_096 });
+  expect(prepared.phases).toEqual({ 'semantic-metadata': 12, 'semantic-node-geometry': 3 });
+  expect(observationDetail(prepared).phases).toEqual({ 'semantic-metadata': 12, 'semantic-node-geometry': 3 });
 });

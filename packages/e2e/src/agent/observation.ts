@@ -58,6 +58,8 @@ interface AgentObservationMetadata {
   readonly text: string;
   readonly bytes: number;
   readonly viewport: ViewportSize;
+  /** Native observation phase durations in milliseconds, when the engine reports them. */
+  readonly phases?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -93,6 +95,7 @@ export function prepareObservation(
     ...(location === undefined ? {} : { location }),
     ...(path === undefined ? {} : { path }),
     viewport: observation.viewport,
+    ...(observation.phases === undefined ? {} : { phases: observation.phases }),
   };
   const pixels = clearPixels(observation);
   if (observation.kind === 'pixels') {
@@ -306,8 +309,12 @@ function observationPath(location: string): string {
 }
 
 /** Phase metrics describe a node count only when the capture actually read nodes. */
-export function observationDetail(observation: AgentObservation): { count?: number; bytes: number } {
-  return { bytes: observation.bytes, ...(observation.kind === 'semantic' ? { count: observation.nodes.size } : {}) };
+export function observationDetail(observation: AgentObservation): { count?: number; bytes: number; phases?: Readonly<Record<string, number>> } {
+  return {
+    bytes: observation.bytes,
+    ...(observation.kind === 'semantic' ? { count: observation.nodes.size } : {}),
+    ...(observation.phases === undefined ? {} : { phases: observation.phases }),
+  };
 }
 
 /**

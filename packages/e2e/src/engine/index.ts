@@ -688,6 +688,11 @@ export interface EngineSnapshot {
   /** The viewport `SemanticNode.rect` and `ViewportPoint` are measured in. */
   readonly viewport: ViewportSize;
   /**
+   * Optional native observation phase durations in milliseconds, keyed by the
+   * engine's stage names. Reporting evidence only; never model input or policy.
+   */
+  readonly phases?: Readonly<Record<string, number>>;
+  /**
    * True when `root` leaves out nodes that are on the surface: the engine
    * stopped reading at a node cap or a depth limit, or could not enter a
    * child document. The harness tells the model the listing is incomplete
