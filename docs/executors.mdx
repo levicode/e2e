@@ -150,7 +150,11 @@ missing file with `INVALID_ARGUMENT`.
 Treat node IDs as opaque: pass the tree's `id` unchanged to actions. Screen text
 prefixes every engine's IDs with `#`: a Web ID such as `@e7` appears as `#@e7`.
 Web IDs come directly from the native engine. Copy an observed ID rather than
-constructing one, and do not reuse it after its scope ends.
+constructing one, and do not reuse it after its scope ends. A copied ID that
+lost the `#` or the engine's own `@` still resolves while the current screen
+lists that node; a target that names no listed node fails with
+`LOCATOR_NOT_FOUND`, whose message names the current listing, its ID form, and
+a sample of its IDs so the model can re-aim instead of guessing.
 
 The observation's `keyboardVisible` says whether an on-screen keyboard is
 showing, and is absent when the engine can't tell.

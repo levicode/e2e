@@ -228,18 +228,20 @@ export class ObservationFeed {
    * The node a target names on the newest screen, if the screen still lists
    * it or its descriptor re-finds it; the screen must list nodes at all. The
    * id is the target's without the `#` the listing prefixes, which a model
-   * copies now and then. A caller with its own way of re-finding a lost node
-   * (`scroll-target.ts`) starts here.
+   * copies now and then, and an id written without the engine's `@` is the
+   * screen's id without a copy mark (see `listedReference`). A caller with
+   * its own way of re-finding a lost node (`scroll-target.ts`) starts here.
    */
   lookup(target: ExecutorTarget): Lookup {
     if (typeof target?.id !== 'string' || target.id === '') {
       throw new TestError('INVALID_ARGUMENT', 'action target must be { id: string }');
     }
-    const id = target.id.replace(/^#/, '');
+    const requested = target.id.replace(/^#/, '');
     const latest = this.requireLatest();
     if (latest.kind === 'pixels') {
       throw new AgentError('LOCATOR_NOT_FOUND', 'semantic capture is unavailable; previous node ids are no longer valid, so use the current screenshot');
     }
+    const id = listedReference(requested, (candidate) => this.recent.some((observation) => observation.nodes.has(candidate)));
     return { id, node: latest.nodes.get(id) ?? this.refound(id, latest), observation: latest };
   }
 
@@ -481,10 +483,44 @@ function echoesInput(node: SemanticNode): boolean {
   return isEditable(node) || node.value !== undefined;
 }
 
-/** The error for a target id the newest screen no longer lists. */
+/**
+ * The screen's own spelling of a target id. A listing prints each id as
+ * `#@e123` (the `#` the listing adds, the `@` the web engine mints), and a
+ * model copies it without the `#`, or now and then without the `@` too. An
+ * id the step's recent screens do not list is retried with that `@` toggled,
+ * since a screen lists ids under one spelling only: an id that names no node
+ * stays as written, so its error repeats what was asked.
+ */
+export function listedReference(id: string, listed: (id: string) => boolean): string {
+  if (listed(id)) return id;
+  const toggled = id.startsWith('@') ? id.slice(1) : `@${id}`;
+  return listed(toggled) ? toggled : id;
+}
+
+/** One prose list such as `#@e1, #@e2 and #@e3`, or the one id itself. */
+function listingSample(ids: readonly string[]): string {
+  if (ids.length === 0) return '';
+  if (ids.length === 1) return ids[0]!;
+  return `${ids.slice(0, -1).join(', ')} and ${ids.at(-1)}`;
+}
+
+/**
+ * The error for a target id the newest screen no longer lists. It repeats the
+ * id as it was asked, then the listing the model can quote from: how many
+ * nodes the screen lists, the spelling they use, and a few examples, so a
+ * dropped copy mark or an invented id is answered with something to act on
+ * rather than only "never existed". A truncated listing says so, because the
+ * id may name a node past the cut rather than a node that is gone.
+ */
 export function nodeGone(id: string, latest: SemanticAgentObservation): AgentError {
+  const listed = [...latest.nodes.keys()];
+  const sample = listingSample(listed.slice(0, 3).map((key) => referenceText(key)));
+  const digest = listed.length === 0
+    ? 'The screen lists no nodes'
+    : `The screen lists ${listed.length} node${listed.length === 1 ? '' : 's'}${sample === '' ? '' : `, such as ${sample}`}`;
+  const truncation = latest.truncated ? ' That listing is truncated, so a node past the cut is not listed.' : '';
   return new AgentError(
     'LOCATOR_NOT_FOUND',
-    `node ${referenceText(id)} is not on the current screen (observation ${latest.revision}); it was removed or never existed`,
+    `node ${referenceText(id)} is not on the current screen (observation ${latest.revision}); it was removed or never existed. ${digest}; quote an id exactly as the current listing prints it.${truncation}`,
   );
 }
