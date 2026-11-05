@@ -20,6 +20,7 @@ import { z } from 'zod';
 import type { ExecutorNode, ExecutorObservation, ExecutorObserveOptions, StepExecutorContext } from '../agent/executor.ts';
 import { isFailedResult } from '../agent/loop-guards.ts';
 import { typedThroughKeyboard } from '../agent/primitives.ts';
+import { listedReference } from '../agent/reference-text.ts';
 import type { ScreenOutput } from '../agent/screen-update.ts';
 import type { LocatorExpression, NodeRef, SemanticNode } from '../engine/surface.ts';
 import { codedMessage, InfrastructureError } from '../internal/errors.ts';
@@ -220,8 +221,10 @@ export class SessionTestLines {
   /** The node an id names on the newest screen, with its ancestors. */
   private listed(id: string): Listed | undefined {
     const screen = this.screen;
-    const entry = screen?.nodes.get(id.replace(/^#/, ''));
-    if (screen === undefined || entry === undefined) return undefined;
+    if (screen === undefined) return undefined;
+    // The screen's own spelling: a model's copy may have lost the engine's `@`.
+    const entry = screen.nodes.get(listedReference(id.replace(/^#/, ''), (candidate) => screen.nodes.has(candidate)));
+    if (entry === undefined) return undefined;
     const ancestors: ExecutorNode[] = [];
     for (let parent = entry.parent; parent !== undefined; parent = screen.nodes.get(parent)?.parent) {
       const node = screen.nodes.get(parent)?.node;

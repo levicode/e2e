@@ -159,7 +159,7 @@ describe('navigationLine', () => {
 });
 
 describe('SessionTestLines', () => {
-  it.each(['@e42', '#@e42'])('derives a replayable test line from native target %s', async (target) => {
+  it.each(['@e42', '#@e42', 'e42'])('derives a replayable test line from native target %s', async (target) => {
     const save: Fake = { id: '@e42', role: 'button', name: 'Save', y: 40 };
     const session = await harness({ screen: [save], matches: { 'getByRole("button", name: "Save")': [save] } });
     const text = await session.run('tap', { target });
