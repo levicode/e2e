@@ -45,7 +45,9 @@ export const RAW_LOCATOR_CASES: readonly RawLocatorCase[] = [
   { family: '31', selector: 'role=button[name="Save"] >> nth=0', intent: 'nth after a named role' },
   { family: '31', selector: 'role=', intent: 'empty role body is malformed' },
 
-  // #32 Playwright extended CSS: text matchers, visibility and nth-match.
+  // #32 Playwright extended CSS: text matchers, visibility, nth-match and the
+  // layout matchers. Every selector here matched the original entry when the
+  // ledger was recorded, so a line for this family is a new regression.
   { family: '32', selector: 'css=li:has-text("Alpha")', intent: ':has-text descendant text' },
   { family: '32', selector: 'css=li:has-text("alpha")', intent: ':has-text is case-insensitive' },
   { family: '32', selector: 'css=li:text("Alpha")', intent: ':text normalized substring' },
@@ -90,6 +92,8 @@ export const RAW_LOCATOR_CASES: readonly RawLocatorCase[] = [
   // Shared syntax errors, so the error classification is compared too.
   { family: '33', selector: 'div >>', intent: 'trailing chain syntax' },
   { family: '33', selector: 'nosuch=1', intent: 'unknown engine' },
+  { family: '33', selector: '_react=Button', intent: '_react reachability: the original client registers no such engine' },
+  { family: '33', selector: '_vue=Button', intent: '_vue reachability: the original client registers no such engine' },
   { family: '32', selector: 'css=[data-layout]:right-of([data-id="layout-anchor"])', intent: ':right-of layout matcher' },
   { family: '32', selector: 'css=[data-layout]:left-of([data-id="layout-anchor"])', intent: ':left-of layout matcher' },
   { family: '32', selector: 'css=[data-layout]:above([data-id="layout-anchor"])', intent: ':above layout matcher' },
@@ -106,6 +110,7 @@ export const RAW_LOCATOR_CASES: readonly RawLocatorCase[] = [
   { family: '33', selector: 'css=ul >> internal:chain="css=li"', intent: 'internal:chain after CSS' },
   { family: '33', selector: 'internal:label="Alpha by label"', intent: 'internal:label from aria-labelledby' },
   { family: '31', selector: 'role=button[name="Shadow Save"]', intent: 'raw role pierces an open shadow root' },
+  { family: '31', selector: 'css=[data-id="shadow-host"] >> role=button', intent: 'raw role under an element root still pierces that host shadow' },
   { family: '31', selector: 'css=section >> role=button', intent: 'raw role scoped by CSS' },
 ];
 

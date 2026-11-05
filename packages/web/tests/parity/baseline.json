@@ -786,6 +786,20 @@
       "error": "Unknown engine \"nosuch\" while parsing selector nosuch=1"
     },
     {
+      "family": "33",
+      "selector": "_react=Button",
+      "intent": "_react reachability: the original client registers no such engine",
+      "ids": [],
+      "error": "TypeError: Cannot read properties of undefined (reading 'queryAll')     at InjectedScript._queryEngineAll (<anonymous>:7241:48)     at InjectedScript.querySelectorAll (<anonymous>:7228:30)     at eval (eval at evaluate (:370:30), <anonymous>:2:42)     at UtilityScript.evaluate (<anonymous>:372:16)     at UtilityScript.<anonymous> (<anonymous>:1:44)"
+    },
+    {
+      "family": "33",
+      "selector": "_vue=Button",
+      "intent": "_vue reachability: the original client registers no such engine",
+      "ids": [],
+      "error": "TypeError: Cannot read properties of undefined (reading 'queryAll')     at InjectedScript._queryEngineAll (<anonymous>:7241:48)     at InjectedScript.querySelectorAll (<anonymous>:7228:30)     at eval (eval at evaluate (:370:30), <anonymous>:2:42)     at UtilityScript.evaluate (<anonymous>:372:16)     at UtilityScript.<anonymous> (<anonymous>:1:44)"
+    },
+    {
       "family": "32",
       "selector": "css=[data-layout]:right-of([data-id=\"layout-anchor\"])",
       "intent": ":right-of layout matcher",
@@ -940,6 +954,15 @@
       "family": "31",
       "selector": "role=button[name=\"Shadow Save\"]",
       "intent": "raw role pierces an open shadow root",
+      "ids": [
+        "shadow-btn"
+      ],
+      "error": null
+    },
+    {
+      "family": "31",
+      "selector": "css=[data-id=\"shadow-host\"] >> role=button",
+      "intent": "raw role under an element root still pierces that host shadow",
       "ids": [
         "shadow-btn"
       ],
