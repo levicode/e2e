@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "0f5a8ed05ba0af6a4b4ed1e932aeb888b191cd25",
-    "tree": "ebcc6f22dfdf37c126af3a43c2339f5e4debb1d9",
+    "commit": "0324c1f560901e036a68d6228ce4833856e1944b",
+    "tree": "630815d1df9b8dced75dcb756478b76c80fdd32d",
     "lockSHA256": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb"
   },
   "required": [
@@ -1632,475 +1632,475 @@
       {
         "name": "native::client_debt::tests::unpublished_non_pausing_autoattach_is_exact_observer_only",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_ingress_observation_preserves_existing_live_window",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_capture_before_reader_without_slot_cannot_install_stale_stamp",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_publication_pending_blocks_arm_and_final_consume_without_clearing_root",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_owned_event_fences_new_capture_after_old_slot_settles_before_publish",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_incomplete_or_overlapping_publication_never_reopens_authority",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_created_foreign_observer_and_recording_events_do_not_revoke",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_final_submit_rejects_pre_admitted_unrelated_input",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_revoke_before_consume_has_no_child_mutation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_consume_before_revoke_keeps_both_debts_and_late_ack_never_reopens",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_root_terminal_and_authority_change_each_reject_reserved_child",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_is_one_child_and_exact_owner_not_just_equal_numeric_keys",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_admission_preserves_token_first_cause_before_clock_expiry",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_reservation_failure_before_commit_does_not_leave_a_half_reservation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_native_identity_and_owner_retirement_revoke_before_reserved_child_submit",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_failure_receipt_is_not_cleared_by_full_late_ack_and_producer_settlement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::admission_stop_receipt_is_exact_and_not_minted_from_revocation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::admission_stop_expired_original_deadline_keeps_legacy_error_and_typed_cause",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_waiters_all_wake_on_exact_reader_ack_without_forgiving_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_deadline_and_cancel_keep_unsettled_input_owned",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_rechecks_authority_after_ack_and_never_revives_failed_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_eof_and_context_retirement_wake_without_admitting",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::quotas_do_not_borrow_recording_security_or_destroy_slots",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::native_group_accounts_many_roots_and_property_handles_as_one_obligation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::early_release_ack_cannot_discharge_late_creation_and_disposal_is_once_only",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::unsent_old_receipt_never_submits_into_or_drops_a_later_group_lifecycle",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::abandoning_unsubmitted_group_does_not_leak_an_obligation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_release_before_exact_realm_destroy_is_discharged",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_pending_release_exact_session_detach_is_discharged",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_wrong_realm_session_or_frame_detach_keeps_rejected_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_unknown_creator_preserves_pending_and_rejected_cleanup_on_realm_destroy",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_new_context_epoch_never_borrows_prior_realm_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_child_group_detach_discharges_only_child_and_preserves_parent_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destroyed_group_consumes_without_new_release_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_live_release_retains_exact_pending_command_until_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_foreign_owner_operation_session_and_name_never_consume_proof",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_old_receipt_cannot_consume_reused_name_or_new_realm_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_mixed_unknown_creator_never_acquires_destroyed_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_unsent_abandonment_keeps_legacy_strict_disposal_not_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_integrity_loss_cannot_borrow_prior_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_never_discharges_other_rejected_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_between_claim_and_reserve_removes_only_own_unsent_release",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_between_reserve_and_finish_accepts_only_destroyed_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_name_alone_cannot_mint_receipt_for_registered_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_context_epoch_reuse_without_new_group_refuses_old_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_pending_unknown_creator_and_late_ack_preserve_cleanup_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_rejected_release_never_turns_into_success_or_retry",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_retired_owner_never_uses_destruction_noop",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destroyed_receipt_preserves_unrelated_pending_input",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_child_detach_noop_preserves_parent_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_unknown_creator_after_release_reservation_revokes_realm_retirement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::realm_destruction_discharges_object_component_but_not_input_effect",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_relinquishment_is_exact_and_never_restores_admission",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_relinquishment_retains_unknown_child_and_command_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_failed_commit_preserves_index_and_ledger",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::terminal_read_only_settled_ack_requires_operation_proof_and_exact_bindings",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_is_read_only_exact_borrowed_owner_evidence_not_admission",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_refuses_every_live_resource_and_uncertain_context",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eof_never_acknowledges_commands_or_pending_acquisition",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_contamination_survives_exact_debt_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::retired_owner_cleanup_is_one_shot_accounted_and_not_application_authority",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::realm_metadata_is_bounded_and_counted_without_borrowing_destroy_reserve",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::thirty_third_group_is_rejected_without_losing_existing_native_groups",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::malformed_or_foreign_response_never_becomes_an_input_ack",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::receiver_drop_between_settlement_and_delivery_still_selects_exact_disposal",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::revoked_journal_rejects_old_application_step_but_admits_mandatory_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::validated_rejected_input_reply_is_terminal_failure_not_release_proof",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::validated_error_reply_requires_exact_reader_envelope_not_unknown_or_success",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::point_drag_cleanup_proof_retires_only_its_exact_rejections_without_success_ack",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::point_drag_cleanup_proof_rejects_mixed_unknown_cleanup_and_wrong_scope_without_partial_retirement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::rejected_object_release_is_retained_debt_not_cleanup_success",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_eof_object_handoff_keeps_owned_debt_and_never_settles_producers",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_eof_object_handoff_rejects_nonexact_or_contaminated_responsibility",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::recording_start_status_tests::recording_refusal_requires_exact_error_ack_not_success_or_terminal_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_requires_exact_operation_release_and_disposition",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_refuses_retired_integrity_lost_and_poisoned_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
@@ -2328,781 +2328,781 @@
       {
         "name": "native::client_observation::tests::observation_check_preserves_typed_stop_before_clock",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_settled_stop_never_relabels_hard_or_cleanup_failures",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::nonretained_object_projection_keeps_late_success_and_opaque_failure",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::nonretained_typed_stop_projection_does_not_consult_later_signal",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::retained_security_inventory_preserves_many_closed_roots_and_property_array",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::private_query_payload_preserves_false_states_independent_of_public_projection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::author_observation_excludes_only_browser_owned_shadow_identities",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::query_domains_keep_light_open_then_closed_order_without_changing_observation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::native_control_roles_use_the_public_vocabulary_without_rebinding",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::implicit_landmarks_obey_author_section_scope_without_changing_explicit_roles",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::simple_name_inventory_declines_author_shadow_but_not_browser_internals",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::local_name_inventory_requires_complete_shadow_free_subtrees",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_content_names_preserve_empty_unavailable_and_explicit_authority",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_do_not_become_role_matching_names",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_preserve_explicit_role_names_and_read_confirmation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_are_cleared_by_security_and_keep_proven_empty_distinct",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_reject_invalid_proofs_and_bound_observation_only",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ax_omitted_listitem_content_facts_decline_without_weakening_validation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::suppressed_listitem_content_facts_reach_author_graph_compaction",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::html_heading_projection_keeps_original_tag_semantics_when_ax_omits_role",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::inert_heading_projection_reaches_existing_parent_subtree_suppression",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::html_heading_projection_preserves_explicit_roles_pseudo_and_editing_host",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::html_heading_projection_does_not_relax_content_fact_validation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_empty_reference_clears_ax_without_title_or_label_fallback",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_associated_label_only_fills_missing_unprotected_ax_name",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_button_names_correct_ax_and_distinguish_empty_from_unavailable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_button_names_preserve_role_priority_and_security_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_button_name_proof_projects_exact_and_observed_compatibility",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_button_name_proof_preserves_priority_security_and_unavailable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_button_name_proof_rejects_invalid_source_and_oversized_facts",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ordinary_header_neighbor_proof_corrects_ax_without_changing_explicit_scope",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::direct_caption_facts_share_exact_query_and_bounded_projection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::unavailable_hidden_caption_shape_preserves_native_separators",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::direct_caption_facts_preserve_higher_priority_and_security_clears",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::direct_caption_facts_reject_malformed_or_mismatched_sources",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editor_placeholder_facts_share_projection_without_using_editor_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editor_placeholder_facts_preserve_priority_role_and_security_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editor_placeholder_facts_reject_malformed_and_inconsistent_sources",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::restricted_svg_link_facts_share_projection_and_preserve_independent_svg",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::restricted_svg_link_facts_preserve_priority_and_security",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::restricted_svg_link_facts_reject_malformed_and_wrong_receiver",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::inherited_ax_disabled_is_projected_without_overriding_native_disabled",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_publication_retains_only_emitted_additions_without_resurrection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::author_formatting_role_is_omitted_without_changing_explicit_role_or_identity",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::incidental_ax_roles_do_not_become_public_roles_from_invalid_authored_tokens",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hidden_iframe_proof_survives_compaction_without_tolerating_missing_owners",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::exact_control_metadata_precedes_native_ax_state",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_table_and_form_role_facts_preserve_authored_precedence",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::role_facts_from_pseudo_origin_do_not_change_pseudo_role",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::recognized_authored_roles_survive_absent_or_demoted_ax_without_rebinding",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_drawn_and_table_roles_do_not_depend_on_ax_layout_categories",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::implicit_table_rows_keep_public_container_roles_without_rebinding",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::effective_presentation_role_preserves_native_controls_and_implicit_tags",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ignored_presentation_restores_controls_even_when_ax_omits_the_receiver",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ignored_presentation_uses_bounded_header_neighbor_fact_without_ax",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ignored_presentation_header_fallback_preserves_single_cell_suppression",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::decorative_image_fact_only_changes_implicit_image_semantics",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editing_host_role_uses_concrete_authored_precedence",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_glyph_names_preserve_real_text_and_security_boundaries",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::summary_and_description_list_roles_require_recognized_author_tokens",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_labels_normalize_embedded_control_whitespace",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::renderer_tree_join_requires_native_parent_and_preserves_existing_edges",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::live_source_retains_full_frames_and_original_projection_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::acquisition_inventory_excludes_foreign_documents_ua_and_pseudo_nodes",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::frame_cardinality_requires_complete_bounded_projection_and_checked_ordinal",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::stopped_fresh_frame_queries_keep_stop_reason_without_allocating_refs",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fresh_frame_cardinality_rechecks_cleanup_document_and_parent_ancestry",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::retained_frame_sources_recheck_full_parent_dom_and_current_owned_documents",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::stopped_worlds_without_release_ack_do_not_poison_later_fresh_fields",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::stopped_worlds_with_exact_release_ack_leave_fresh_fields_usable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::cancelled_fresh_fields_resolve_retains_group_until_late_disposal_ack",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fixture_fields_keep_frame_cancellation_and_cleanup_guards_without_publication",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::query_group_cleanup_failure_preserves_primary_and_never_publishes",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::frame_enumeration_owner_cleanup_failure_and_timeout_preserve_read_primary",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::late_document_failure_keeps_previous_generation_and_consumes_ids",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::successful_snapshot_publishes_once_and_stable_node_keeps_id",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::cancellation_before_capture_does_not_publish",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::chromium_native_observation_query_exact_and_secure_contract",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": true
       },
       {
         "name": "native::client_observation::tests::chromium_historical_public_content_name_contract",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": true
       },
       {
         "name": "native::client_observation::tests::chromium_native_same_process_frame_coordinate_convention",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": true
       },
       {
         "name": "native::client_observation::tests::sibling_order_follows_child_ids_not_ax_array_order",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::query_frame_wrappers_lift_through_index_and_scope",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_failure_schema_is_closed_and_value_free",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_witness_preserves_first_failure_per_invocation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_stage_evaluates_once_and_returns_the_original_error",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_frame_kind_uses_only_parent_presence",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::diagnostic_labels_never_echo_renderer_source",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::metadata_acquisition_policy_follows_mixed_native_receivers_not_pseudo_identity",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::focus_anchor_matches_only_exact_author_identity_across_metadata_chunks",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::security_handles_require_explicit_null_or_exact_focus_node",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::security_focus_reuses_root_acquisition_and_always_settles_its_group",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::interrupted_focus_description_never_publishes_and_releases_the_acquisition_group",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hint_collection_preserves_cleanup_failure_after_primary",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::onclick_sibling_failure_drains_held_resolution_and_cleanup",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::main_onclick_hint_is_boolean_only_exact_and_always_cleans_up",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::metadata_batch_keeps_remote_arguments_in_native_candidate_order",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_preserves_href_elision_markers_but_full_read_keeps_raw_attribute",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_shadow_text_and_ancestor_names_never_serialize",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::security_inventory_bounds_dom_depth_and_root_count",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_ancestor_uses_only_sanitized_public_name_not_ax_content",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_main_content_fallback_never_becomes_a_public_name",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_name_content_source_rejects_malformed_facts",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_inventory_keeps_public_password_labels_without_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_attributes_are_bounded_but_explicit_read_preserves_them",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::exact_reference_exhaustion_returns_error_without_publishing",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hidden_frame_proof_requires_exact_inventory_and_positive_descendant_closure",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hidden_frame_proof_rechecks_owner_visibility_and_always_settles_group",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::revision_wire_preserves_full_native_integer_precision",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_state_serialization_preserves_raw_flags_and_explicit_false_controls",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_state_serialization_keeps_nonstandard_false_states",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_state_serialization_preserves_all_true_flags_and_empty_maps",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_query_and_exact_read_share_public_state_serialization",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::selected_read_states_share_public_projection_and_keep_exact_reference",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::selected_secure_read_states_preserve_policy_flags_and_redaction",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::selected_secure_read_retains_policy_metadata_not_an_empty_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fixture_field_projection_has_no_reference_geometry_or_unrequested_content",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fixture_fields_reject_empty_duplicate_unknown_and_geometry_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::schema_rejects_unknown_nested_query_fields",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::projection_redacts_secure_even_if_renderer_returns_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::shuffled_tree_keeps_real_parent_and_children",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::abandoned_staging_never_recycles_ids_or_publishes_nodes",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::frame_or_document_replacement_allocates_new_identity",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::structural_refs_are_not_actionable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::native_pseudo_classification_requires_owned_inventory_and_exact_descriptor",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::pseudo_projection_keeps_own_readonly_identity_and_redacts_origin_secrets",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::pseudo_metadata_uses_verified_origin_without_rebinding_and_rejects_late_change",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::every_hard_refusal_dominates_node_negative_in_both_orders",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::cleanup_dominates_hard_and_negative_across_more_than_one_buffer",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::all_negative_bindings_are_retained_not_only_first",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::ordinary_stale_reference_has_no_positive_node_proof",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "2cd1a4cfd5e098672932ab489ba156bef295f595f74b265bd0b286452b0a9b69",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
         "ignored": false
       },
       {
@@ -3648,175 +3648,175 @@
       {
         "name": "native::client_observation::selector::tests::documented_chain_and_final_capture",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::quotes_escapes_and_unicode_are_not_chain_boundaries",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::capture_is_rejected_before_unsupported_engine_classification",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::xpath_detection_and_negative_positions",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::trailing_chain_syntax_keeps_engine_error_separate_from_capture",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::positions_preserve_javascript_coercion_for_the_renderer",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::javascript_whitespace_is_not_rust_whitespace",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::unsupported_engines_are_not_misclassified_as_css",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::raw_internal_composition_bodies_are_preserved_for_renderer_validation",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::raw_text_baseline_bodies_remain_authored_data",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::attribute_engines_keep_authored_bodies_literal",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::attribute_bodies_are_trimmed_exactly_like_every_other_engine",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::attribute_engines_accept_empty_bodies_but_other_engines_do_not",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::visible_engine_preserves_playwright_body_equality",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::visible_engine_keeps_final_capture_and_chain_boundaries",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::attribute_engines_still_reject_capture_inputs_and_foreign_engines",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::capture_refuses_every_nth_position_and_neighbour_engine",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::nth_without_capture_and_capture_without_nth_are_unchanged",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::nth_text_never_participates_in_the_capture_rule",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector::tests::parser_work_is_bounded",
         "path": "cli/src/native/client_observation/selector.rs",
-        "sha256": "33f28d4a7e66d2516fbb9b6c70a0bc1b70f974a849ba1dab2dbbdf0f64f4d499",
+        "sha256": "1847804c180ce43ccce6c92957a94a83541a3ef056d23d39b1b7f0f4b6df1309",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::selector_compilation_preserves_the_wire_and_retained_source",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::capture_refusal_survives_nested_scopes_filters_unions_and_frames",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::malformed_protocol_arguments_are_not_relabelled_as_user_selectors",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::nested_selector_leaves_compile_without_changing_semantic_queries",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::attribute_engines_compile_inside_the_existing_chain",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::visible_engine_compiles_inside_the_existing_chain",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::capture_with_any_nth_is_an_invalid_locator_through_every_scope",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::nth_without_capture_keeps_compiling_with_its_renderer_body",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
         "name": "native::client_observation::selector_expression_tests::trailing_chain_syntax_is_backend_failure_not_capture_invalid_locator",
         "path": "cli/src/native/client_observation/selector_expression_tests.rs",
-        "sha256": "91dd2bda44ee2f2533247a15ac6a41359a7a1655b0f27f8b0efe7e3fb63f30ea",
+        "sha256": "e91ace6fbfa74b67cfb53836cfd321e65b9c6ab58694aa07b8dc5e78be0faef4",
         "ignored": false
       },
       {
@@ -3858,121 +3858,121 @@
       {
         "name": "native::client_observation::equivalence_tests::original_observation_capture_deadline_preserves_per_capture_and_case_bounds",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_closed_shadow_unique_focus_and_selection_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_twenty_controls_budget_and_frame_truncation_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_original_child_frame_budget_three_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_original_offsite_data_frame_budget_three_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_original_onsite_frame_depth_four_five_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_observation_frame_dfs_budget_eight_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_embedded_control_and_password_public_labels_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_observation_metadata_gc_and_exact_ref_actionability",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_observation_retirement_races_are_stale_not_deadline",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_exact_read_retirement_races_are_stale_not_deadline",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::metadata_lifetime_hook_is_exact_operation_scoped",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_query_churn_bounds_durable_metadata_without_evicting_authority",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
         "name": "native::client_observation::equivalence_tests::capture_retirement_is_task_scoped_and_does_not_leak_to_spawned_work",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::closed_retirement_channel_does_not_manufacture_supersession",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::established_deadline_and_cleanup_failure_are_not_relabeled_superseded",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::superseded_resource_reply_is_owned_before_exact_group_cleanup",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::metadata_hold_hook_retires_and_reports_only_its_acked_group",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::metadata_acquisition_error_drains_started_sibling_before_group_release",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": false
       },
       {
         "name": "native::client_observation::equivalence_tests::chromium_svg_title_idref_public_names_contract",
         "path": "cli/src/native/client_observation_equivalence_tests.rs",
-        "sha256": "f67303b65649889e689d8ae826000cd1c5554359370f434f33eed68ae0dc201e",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
         "ignored": true
       },
       {
@@ -3996,212 +3996,530 @@
       {
         "name": "native::client_geometry::readonly_disposal_tests::semantic_box_held_group_ack_preserves_eighty_ms_and_exact_later_group",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::semantic_frame_owner_held_group_ack_does_not_consume_eighty_ms",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::refused_semantic_geometry_keeps_primary_failure_and_all_group_custody",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::wrong_session_readonly_group_ack_never_discharges_semantic_box_custody",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::strict_action_and_pixel_geometry_still_wait_for_exact_object_release",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::refused_frame_owner_proof_keeps_group_custody_without_publishing_frames",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::old_readonly_group_release_after_new_same_text_acquisition_keeps_new_group_live",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::strict_snapshot_semantic_bounds_debt_never_discharges_strict_polygon_object",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::semantic_snapshot_rejects_strict_polygon_before_any_new_cdp_work",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_geometry::readonly_disposal_tests::semantic_box_detached_proof_refuses_cleanly_and_next_read_can_succeed",
         "path": "cli/src/native/client_readonly_disposal_tests.rs",
-        "sha256": "d92f8cd121350fafdcffada08e71005ec21e32c4abaf358649a25104c840f154",
+        "sha256": "e69f92c93e2ae5dfbf202321512e2da4dd9745c96a351cef31ca7787dccc9188",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::aborted_response_requires_exact_started_loader_and_explicit_non_download",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::subscription_sequence_and_pretrigger_events_are_not_navigation_authority",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::intervening_navigation_detach_and_malformed_events_fail_closed",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::exact_abort_and_stop_proof_preserves_both_original_interruption_causes",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::stop_ack_alone_wrong_loader_or_rejected_command_never_mints_receipt",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::successful_ack_is_not_an_aborted_response_and_requires_exact_fresh_identity",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_stop_needs_current_loader_and_only_a_post_baseline_stopped_event",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_previous_or_replacement_loader_permanently_invalidates_witness",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_pretrigger_or_second_start_and_wrong_url_are_not_authority",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_old_events_only_before_start_and_foreign_frame_stop_never_complete",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_gap_detach_same_document_and_malformed_events_fail_closed",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_exact_original_and_stop_retire_in_the_original_producer",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_wrong_loader_or_missing_stop_proof_stays_unknown",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_wrong_scope_or_detached_attachment_cannot_send_stop",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_lifecycle_alone_and_optional_flags_do_not_grant_current_authority",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_prequeued_stop_replacement_and_residual_debt_are_not_receipts",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::acknowledged_interruption_reason_freezes_deadline_without_reclassifying_other_failures",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::original_ack_selected_before_cancel_keeps_the_exact_terminal_proof",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::ack_cancel_race_still_rejects_wrong_loader_error_and_missing_terminal_events",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "8fa3a5fbb82f672119cc1cabcb596e74d15f2f79b50b9d423a7758a3009b53f1",
+        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_capture_scope_does_not_duplicate_large_future_storage",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_capture_scope_is_poll_local_and_cancellation_preserves_custody",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_unsubmitted_reservation_preserves_actual_abandonment_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_already_destroyed_unsent_reservation_preserves_exact_terminal_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_old_destroyed_reservation_never_changes_new_command_or_its_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_missing_unsent_command_cannot_fabricate_a_terminal_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "4612a3a5b58e42bc6bc85c0aca047199884a445386634f23091c1a8aa71949ce",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
         "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_finish_timeout_preserves_unknown",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_late_own_event_is_cancelled_once",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_cancelled_cleanup_negative_in_destroyed_realm_is_not_proof",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_cancelled_submitted_finish_without_value_is_not_replayed",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_enable_error_ack_before_held_move_preserves_primary_and_cleans",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_existing_object_capacity_rejects_before_press_and_cleans_every_observer",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_held_move_error_ack_with_own_receipt_cleans_without_replay",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_held_move_error_ack_without_drag_receipt_preserves_unknown",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_html5_early_and_late_interception_wait_for_exact_drop_ack",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_html5_rejected_drop_is_failure_and_cleans_own_drag_once",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_double_tap_at_10_20",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_fractional_tap_and_swipe_round_to_css_pixels",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_long_press_at_10_20_holds_700_ms",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_secondary_tap_at_10_20",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_110_20_uses_midpoint",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_cancel_after_first_move_releases_once",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_swipe_to_70_20_paces_three_moves_over_48_ms",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::direct_point_clicks::direct_point_original_tap_at_10_20",
+        "path": "cli/src/native/client_actions_direct_point_click_tests.rs",
+        "sha256": "ab36908d8930d5cf8c9f1b2ac4bf8007616159aeb8119ba7a08450dc00e3e846",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retained_action_errors::disabled_readonly_and_unsupported_fields_refuse_before_fill_mutation",
+        "path": "cli/src/native/client_actions_error_boundary_tests.rs",
+        "sha256": "2cebd83d6bf3b65bc8b7792afed15c5b8bdc4f28e8c254b9c1e2d0baa5bc285f",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retained_action_errors::ordinary_div_fill_refuses_before_mutation_and_releases_exact_owned_handle",
+        "path": "cli/src/native/client_actions_error_boundary_tests.rs",
+        "sha256": "2cebd83d6bf3b65bc8b7792afed15c5b8bdc4f28e8c254b9c1e2d0baa5bc285f",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retained_action_errors::readonly_race_after_fill_probe_keeps_mutation_unknown_without_input",
+        "path": "cli/src/native/client_actions_error_boundary_tests.rs",
+        "sha256": "2cebd83d6bf3b65bc8b7792afed15c5b8bdc4f28e8c254b9c1e2d0baa5bc285f",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retained_action_errors::sensitive_div_fill_refuses_before_mutation_and_releases_exact_owned_handle",
+        "path": "cli/src/native/client_actions_error_boundary_tests.rs",
+        "sha256": "2cebd83d6bf3b65bc8b7792afed15c5b8bdc4f28e8c254b9c1e2d0baa5bc285f",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retained_action_errors::valid_fields_and_inherited_contenteditable_keep_original_fill_path",
+        "path": "cli/src/native/client_actions_error_boundary_tests.rs",
+        "sha256": "2cebd83d6bf3b65bc8b7792afed15c5b8bdc4f28e8c254b9c1e2d0baa5bc285f",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::legacy_locator_dispatch::locator_clear_uses_exact_empty_value_then_fallback_delete",
+        "path": "cli/src/native/client_actions_locator_dispatch_tests.rs",
+        "sha256": "1e7743eba7adbe551832ac978f8b5c3832a7d4c7cbb62c6ae473d3043833d210",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::legacy_locator_dispatch::locator_long_press_witnesses_original_900_ms_hold",
+        "path": "cli/src/native/client_actions_locator_dispatch_tests.rs",
+        "sha256": "1e7743eba7adbe551832ac978f8b5c3832a7d4c7cbb62c6ae473d3043833d210",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::legacy_locator_dispatch::locator_select_option_positive_index_two_executes_native_selection",
+        "path": "cli/src/native/client_actions_locator_dispatch_tests.rs",
+        "sha256": "1e7743eba7adbe551832ac978f8b5c3832a7d4c7cbb62c6ae473d3043833d210",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::recording_wire_contracts::recording_delayed_initial_frame_precedes_ready_and_silent_stop_is_bounded",
+        "path": "cli/src/native/client_actions_recording_wire_contract_tests.rs",
+        "sha256": "d92dc2e9262883420ca3901e0f3ddb67e16a5d67e79d1d8bc10e5eb839c7f22d",
+        "ignored": true
+      },
+      {
+        "name": "native::client_actions::tests::recording_wire_contracts::recording_freeze_preserves_finished_segment_without_stopping_active_second",
+        "path": "cli/src/native/client_actions_recording_wire_contract_tests.rs",
+        "sha256": "d92dc2e9262883420ca3901e0f3ddb67e16a5d67e79d1d8bc10e5eb839c7f22d",
+        "ignored": true
+      },
+      {
+        "name": "native::client_actions::tests::recording_wire_contracts::recording_missing_second_file_returns_first_real_segment_without_another_stop",
+        "path": "cli/src/native/client_actions_recording_wire_contract_tests.rs",
+        "sha256": "d92dc2e9262883420ca3901e0f3ddb67e16a5d67e79d1d8bc10e5eb839c7f22d",
+        "ignored": true
+      },
+      {
+        "name": "native::client_actions::tests::recording_wire_contracts::recording_page_opened_remeasures_second_viewport_and_stops_each_capture_once",
+        "path": "cli/src/native/client_actions_recording_wire_contract_tests.rs",
+        "sha256": "d92dc2e9262883420ca3901e0f3ddb67e16a5d67e79d1d8bc10e5eb839c7f22d",
+        "ignored": true
+      },
+      {
+        "name": "native::client_actions::tests::recording_wire_contracts::recording_real_screencast_start_error_disarms_and_joins_without_late_segment",
+        "path": "cli/src/native/client_actions_recording_wire_contract_tests.rs",
+        "sha256": "d92dc2e9262883420ca3901e0f3ddb67e16a5d67e79d1d8bc10e5eb839c7f22d",
+        "ignored": true
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node100x100_overflow_child_keeps_hovered_pointer120_50",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_blocked_preaim_down_then_fast_left_waits_for_each_render",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_clear_centre_moves200_150_before_down150",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_covered_pointer_does_not_bypass_centre_targeting",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_explicit_hover_keeps_centre_mode_then_swipe_reuses_it",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_iframe_uses_original_centre_targeting",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_known_zero_is_distinct_from_unknown_zero",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_pointer80_70_preserves_position_across_directions",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_pointer_on_right_edge_still_aims_at_centre",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::retirement_node_swipes::node400x300_unknown_default_zero_still_aims_at_centre",
+        "path": "cli/src/native/client_actions_retirement_node_swipe_tests.rs",
+        "sha256": "6e1ee349835f3bdcafbe6a167f4de23b5ab162104396b94246e67cd3988605d4",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::tap_before_press::connected_tap_revalidates_the_exact_receiver_before_its_single_press",
+        "path": "cli/src/native/client_actions_tap_before_press_tests.rs",
+        "sha256": "00bb0f06d23e65850b6cc7a46e5f56b2aa00e09202786265804ba64202b17e22",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::tap_before_press::exact_tap_detached_after_hover_returns_only_a_settled_no_press_receipt",
+        "path": "cli/src/native/client_actions_tap_before_press_tests.rs",
+        "sha256": "00bb0f06d23e65850b6cc7a46e5f56b2aa00e09202786265804ba64202b17e22",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::tap_before_press::tap_receipt_is_terminal_and_cannot_hide_later_authority_cleanup_or_input",
+        "path": "cli/src/native/client_actions_tap_before_press_tests.rs",
+        "sha256": "00bb0f06d23e65850b6cc7a46e5f56b2aa00e09202786265804ba64202b17e22",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::tap_before_press::uncertain_hover_probe_cleanup_or_authority_never_authorizes_relocation",
+        "path": "cli/src/native/client_actions_tap_before_press_tests.rs",
+        "sha256": "00bb0f06d23e65850b6cc7a46e5f56b2aa00e09202786265804ba64202b17e22",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::tap_before_press::uncertain_press_is_never_replayed_or_relabelled_as_prepress_refusal",
+        "path": "cli/src/native/client_actions_tap_before_press_tests.rs",
+        "sha256": "00bb0f06d23e65850b6cc7a46e5f56b2aa00e09202786265804ba64202b17e22",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::upload_label_controls::upload_control_release_failure_preserves_dispatched_effects",
+        "path": "cli/src/native/client_actions_upload_label_tests.rs",
+        "sha256": "718b92f0f41b97b9207d950ca4d705596f36c162b270f254192578cd958767c9",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::upload_label_controls::upload_label_mapping_cannot_bypass_opaque_scope_or_revision_guards",
+        "path": "cli/src/native/client_actions_upload_label_tests.rs",
+        "sha256": "718b92f0f41b97b9207d950ca4d705596f36c162b270f254192578cd958767c9",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::upload_label_controls::upload_label_refusal_and_lost_authority_never_dispatch_or_retry",
+        "path": "cli/src/native/client_actions_upload_label_tests.rs",
+        "sha256": "718b92f0f41b97b9207d950ca4d705596f36c162b270f254192578cd958767c9",
+        "ignored": false
+      },
+      {
+        "name": "native::client_actions::tests::upload_label_controls::upload_label_uses_only_its_captured_control_and_releases_both_handles",
+        "path": "cli/src/native/client_actions_upload_label_tests.rs",
+        "sha256": "718b92f0f41b97b9207d950ca4d705596f36c162b270f254192578cd958767c9",
+        "ignored": false
+      },
+      {
+        "name": "native::client_debt::tests::navigation_lifecycle_setup_is_not_application_mutation",
+        "path": "cli/src/native/client_debt.rs",
+        "sha256": "deeece9e9b825d8a0e6df35fa75c71a931bd520a80fd819bccf525a826224dcf",
+        "ignored": false
+      },
+      {
+        "name": "native::client_observation::opaque_plugin_frame_tests::object_and_embed_owner_frames_are_opaque_plugin_content",
+        "path": "cli/src/native/client_observation.rs",
+        "sha256": "39e1deea502334c5c495f7b54964061466de3909c86bbf694a8187f74ccb904a",
+        "ignored": false
+      },
+      {
+        "name": "native::client_observation::equivalence_tests::chromium_raw_role_engine_matches_typed_bodies_and_root_rules",
+        "path": "cli/src/native/client_observation_equivalence_tests.rs",
+        "sha256": "7b59b1abbbcda0bb679d4d94cf4b014c79de825f29f48d93dda4af502c773cb6",
+        "ignored": true
       }
     ],
     "knownDiagnosticGaps": [
