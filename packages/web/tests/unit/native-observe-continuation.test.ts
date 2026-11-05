@@ -58,12 +58,24 @@ test('continues one clean native-fenced observation with a fresh sequence and un
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
-test('does not repeat an unproved stale-scope observation', async () => {
+test('retries one clean stale-scope observation and returns the second refusal', async () => {
   const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-scope' } : undefined);
   try {
     await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE', retryable: false });
-    expect(peer!.requests.filter(frame => frame.command === 'browser.observe')).toHaveLength(1);
+    const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.operationSeq).toBeGreaterThan(calls[0]!.operationSeq);
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test('never retries an unproven stale-scope observation', async () => {
+  for (const effects of ['unknown', 'completed'] as const) {
+    const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-scope', effects } : undefined);
+    try {
+      await expect(engine.observe!(operation())).rejects.toBeInstanceOf(Error);
+      expect(peer!.requests.filter(frame => frame.command === 'browser.observe')).toHaveLength(1);
+    } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+  }
 });
 
 test('never chains a second continuation receipt', async () => {
@@ -135,7 +147,7 @@ test('rejects a continuation attached to an action response without replaying th
   } finally { actionPeer.dispose(); }
 });
 
-test('does not turn a second unproved refusal into another fresh capture', async () => {
+test('a continuation refusal is not also retried as a clean stale-scope', async () => {
   let count = 0;
   const engine = await fixture(frame => frame.command === 'browser.observe' ? ++count === 1 ? refusal(frame) : { error: 'stale-scope' } : undefined);
   try {
