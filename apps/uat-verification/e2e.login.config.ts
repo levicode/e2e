@@ -4,7 +4,7 @@
  * scan needs a window a person can see.
  */
 import type { E2EConfig } from 'e2e';
-import { web } from '@e2e-dev/web';
+import { uatEngine } from './src/engine.ts';
 import { loadUatSettings } from './src/settings.ts';
 
 const settings = loadUatSettings();
@@ -14,7 +14,7 @@ export default {
   targets: [
     {
       name: 'uat',
-      engine: web({ viewport: null, locale: 'zh-CN' }),
+      engine: uatEngine(),
       app: { url: settings.entryUrl },
     },
   ],

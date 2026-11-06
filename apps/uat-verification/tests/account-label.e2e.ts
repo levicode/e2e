@@ -27,7 +27,7 @@ test('account label page queries the configured account read-only', { session: '
   // A restored session carries cookies and storage, not a page: open the app entry in this attempt.
   await app.open(settings.entryUrl);
   await waitForHome(browser, settings, { foreignOrigin: 'expired', timeoutMs: 20_000 });
-  await agent.act(SCENARIO_INSTRUCTION);
+  await agent.act(SCENARIO_INSTRUCTION, { params: { accountId } });
   await expect(screen.getByPlaceholder('请输入账号ID')).toHaveValue(accountId);
   // The scenario's own 查询 is the fixed path; this awaited second query is what
   // makes the read itself deterministic in the report.

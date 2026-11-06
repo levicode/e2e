@@ -48,6 +48,7 @@
     "scripts/ci/run-selector-matcher-fixture.mjs",
     "scripts/web-acceptance.ts",
     "apps/uat-verification/e2e.config.ts",
+    "apps/uat-verification/e2e.model.config.ts",
     "apps/uat-verification/e2e.login.config.ts",
     "apps/uat-verification/tests/**/*.ts",
     "apps/uat-verification/scripts/**/*.ts",

@@ -287,12 +287,21 @@ importers:
 
   apps/uat-verification:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: 4.0.102
+        version: 4.0.102(zod@4.6.7)
       '@e2e-dev/web':
         specifier: workspace:*
         version: link:../../packages/web
+      ai:
+        specifier: 7.0.153
+        version: 7.0.153(zod@4.6.7)
       e2e:
         specifier: workspace:*
         version: link:../../packages/e2e
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: 26.6.5

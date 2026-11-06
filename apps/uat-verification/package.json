@@ -2,18 +2,22 @@
   "name": "@e2e-dev/uat-verification",
   "version": "0.0.0",
   "private": true,
-  "description": "Local UAT verification loop: a reusable scanned-in session, one fixed read-only scenario, and a redacted report",
+  "description": "Local UAT verification loop: a reusable scanned-in session, a scripted read-only baseline, a real-model path, and redacted reports",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "login": "node scripts/login.ts",
-    "verify": "node scripts/verify.ts",
+    "verify": "node scripts/verify.ts scripted",
+    "verify:model": "node scripts/verify.ts model",
     "test": "node --test \"test/*.test.ts\"",
     "test:loop": "node test/loop-check.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "4.0.102",
     "@e2e-dev/web": "workspace:*",
-    "e2e": "workspace:*"
+    "ai": "7.0.153",
+    "e2e": "workspace:*",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "26.6.5",

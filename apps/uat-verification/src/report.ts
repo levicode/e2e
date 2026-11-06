@@ -5,9 +5,9 @@
  * The raw report stays in the gitignored output directory because it carries
  * app log lines and a screen snapshot; this renderer copies only closed facts —
  * statuses, error codes, messages, observation phase timings, native settlement
- * enums, retention counters — and redacts the UAT host, the login host, and the
- * queried account ID from every string it keeps. Reports land under the user's
- * state directory, never in the checkout.
+ * enums, model rounds and token counts — and redacts the UAT host, the login
+ * host, the queried account ID, and the configured label from every string it
+ * keeps. Reports land under the user's state directory, never in the checkout.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -40,6 +40,56 @@ export interface ReportInputs {
   readonly settings: UatSettings;
   readonly accountId: string;
   readonly rawOutput: string;
+  /** Which verification path produced this run. */
+  readonly verifyPath: 'scripted' | 'model';
+  /** The configured model, recorded even when the run failed before its first call. */
+  readonly model?: ModelConfig;
+}
+
+/** The model the run was configured to use; the key and gateway URL never reach a report. */
+export interface ModelConfig {
+  readonly label: string;
+  readonly provider: string;
+  readonly model: string;
+}
+
+/** One model-backed step's rounds, latency, tokens, and the decisions it made. */
+interface ModelStep {
+  readonly test: string;
+  readonly step: string;
+  readonly status?: string;
+  readonly provider?: string;
+  readonly model?: string;
+  readonly calls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
+  readonly estimatedCostUsd?: number;
+  /** Wall time of the step's model turns, summed from its `model` events. */
+  readonly durationMs: number;
+  readonly turns: readonly ModelTurn[];
+}
+
+/** One model round: the tool calls it proposed and what came back, redacted and bounded. */
+interface ModelTurn {
+  readonly index: number;
+  readonly calls: readonly string[];
+  readonly outcome?: string;
+}
+
+/** The whole run's model cost: what was configured, what was spent, and where. */
+interface ModelReport {
+  readonly configured?: ModelConfig;
+  readonly calls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
+  readonly estimatedCostUsd?: number;
+  readonly durationMs: number;
+  readonly tokenAccounting?: string;
+  readonly steps: readonly ModelStep[];
 }
 
 export interface RenderedReport {
@@ -80,14 +130,16 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
   const failures = collectFailures(results, redact);
   const observations = collectObservations(results, redact);
   const engineEvents = collectEngineEvents(results, redact);
+  const model = collectModel(results, redact, inputs.model);
 
   const markdown = markdownReport({
-    inputs, redact, status, runErrors, vcs, environment, failures, observations, engineEvents, sessionExpired,
+    inputs, redact, status, runErrors, vcs, environment, failures, observations, engineEvents, sessionExpired, model,
   });
   const json = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     status,
+    path: inputs.verifyPath,
     exitCode: number(runRecord['exitCode']),
     runId: string(runRecord['id']),
     startedAt: string(runRecord['startedAt']),
@@ -98,8 +150,9 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
       native: inputs.native,
       environment: { os: string(environment['os']), arch: string(environment['arch']), runtime: string(environment['runtime']) },
     },
-    scenario: 'login → home → 账号管理 → 账号标签管理 → account ID → 查询 (read-only)',
+    scenario: scenarioText(inputs.verifyPath),
     sessionExpired,
+    model,
     failures,
     observations,
     engineEvents,
@@ -128,6 +181,8 @@ function createRedactor(settings: UatSettings, accountId: string): (text: string
   const entry = new URL(settings.entryUrl);
   const rules: Array<readonly [RegExp, string]> = [];
   if (accountId.length >= 4) rules.push([new RegExp(`(?<![0-9A-Za-z])${escapeRegExp(accountId)}(?![0-9A-Za-z])`, 'g'), '<account-id>']);
+  if (settings.labelId !== undefined && settings.labelId.length >= 4) rules.push([new RegExp(`(?<![0-9A-Za-z])${escapeRegExp(settings.labelId)}(?![0-9A-Za-z])`, 'g'), '<label-id>']);
+  if (settings.labelName !== undefined && settings.labelName !== '') rules.push([new RegExp(escapeRegExp(settings.labelName), 'g'), '<label-name>']);
   rules.push([new RegExp(escapeRegExp(settings.entryUrl), 'g'), '<uat-entry>']);
   rules.push([new RegExp(escapeRegExp(entry.host), 'g'), '<uat-host>']);
   if (settings.loginUrl !== undefined) {
@@ -297,6 +352,97 @@ function collectEngineEvents(results: readonly Record<string, unknown>[], redact
   return events;
 }
 
+function collectModel(
+  results: readonly Record<string, unknown>[],
+  redact: (text: string) => string,
+  configured: ModelConfig | undefined,
+): ModelReport | undefined {
+  const steps: ModelStep[] = [];
+  let calls = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  let estimatedCostUsd = 0;
+  let durationMs = 0;
+  let tokenAccounting: string | undefined;
+  for (const result of results) {
+    const test = testTitle(result, redact);
+    for (const attempt of array(result['attempts']).map(record)) {
+      for (const step of array(attempt['steps']).map(record)) {
+        const info = record(step['model']);
+        const events = array(step['events']).map(record);
+        const stepCalls = number(info['calls']) ?? events.filter(event => string(event['kind']) === 'model').length;
+        if (stepCalls === 0 && Object.keys(info).length === 0) continue;
+        const stepDuration = events
+          .filter(event => string(event['kind']) === 'model')
+          .reduce((total, event) => total + (number(event['durationMs']) ?? 0), 0);
+        const stepInput = number(info['inputTokens']) ?? 0;
+        const stepOutput = number(info['outputTokens']) ?? 0;
+        const stepCacheRead = number(info['cacheReadTokens']);
+        const stepCacheWrite = number(info['cacheWriteTokens']);
+        const stepCost = number(info['estimatedCostUsd']);
+        calls += stepCalls;
+        inputTokens += stepInput;
+        outputTokens += stepOutput;
+        cacheReadTokens += stepCacheRead ?? 0;
+        cacheWriteTokens += stepCacheWrite ?? 0;
+        estimatedCostUsd += stepCost ?? 0;
+        durationMs += stepDuration;
+        tokenAccounting ??= string(info['tokenAccounting']);
+        const stepStatus = string(step['status']);
+        const stepProvider = string(info['provider']);
+        const stepModel = string(info['model']);
+        steps.push({
+          test,
+          step: stepLabel(step, redact),
+          ...(stepStatus === undefined ? {} : { status: stepStatus }),
+          ...(stepProvider === undefined ? {} : { provider: stepProvider }),
+          ...(stepModel === undefined ? {} : { model: stepModel }),
+          calls: stepCalls,
+          inputTokens: stepInput,
+          outputTokens: stepOutput,
+          ...(stepCacheRead === undefined ? {} : { cacheReadTokens: stepCacheRead }),
+          ...(stepCacheWrite === undefined ? {} : { cacheWriteTokens: stepCacheWrite }),
+          ...(stepCost === undefined ? {} : { estimatedCostUsd: stepCost }),
+          durationMs: stepDuration,
+          turns: collectTurns(step, redact),
+        });
+      }
+    }
+  }
+  if (steps.length === 0 && configured === undefined) return undefined;
+  return {
+    ...(configured === undefined ? {} : { configured }),
+    calls,
+    inputTokens,
+    outputTokens,
+    ...(cacheReadTokens === 0 ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === 0 ? {} : { cacheWriteTokens }),
+    ...(estimatedCostUsd === 0 ? {} : { estimatedCostUsd }),
+    durationMs,
+    ...(tokenAccounting === undefined ? {} : { tokenAccounting }),
+    steps,
+  };
+}
+
+/** The model's own rounds for one step: what it proposed and what the screen said back. */
+function collectTurns(step: Record<string, unknown>, redact: (text: string) => string): ModelTurn[] {
+  const turns: ModelTurn[] = [];
+  for (const turn of array(step['turns']).map(record)) {
+    const index = number(turn['index']);
+    if (index === undefined) continue;
+    const calls = array(turn['calls']).filter((call): call is string => typeof call === 'string').map(call => redact(call).slice(0, 400));
+    const outcome = string(turn['outcome']);
+    turns.push({
+      index,
+      calls,
+      ...(outcome === undefined ? {} : { outcome: redact(outcome).slice(0, 800) }),
+    });
+  }
+  return turns;
+}
+
 function markdownReport(input: {
   readonly inputs: ReportInputs;
   readonly redact: (text: string) => string;
@@ -308,6 +454,7 @@ function markdownReport(input: {
   readonly observations: readonly Observation[];
   readonly engineEvents: readonly EngineEvent[];
   readonly sessionExpired: boolean;
+  readonly model: ModelReport | undefined;
 }): string {
   const { inputs, redact } = input;
   const run = record(record(input.inputs.report)['run']);
@@ -331,7 +478,9 @@ function markdownReport(input: {
   lines.push(`  - \`agent-browser\` ${nativeVersion ?? 'unknown'}${nativeCommit === undefined ? '' : ` @ \`${nativeCommit}\``}${inputs.native.source === 'executable-environment' && inputs.native.sha256 !== undefined ? ` · sha256 \`${inputs.native.sha256}\`` : ''}`);
   if (inputs.native.source === 'unknown') lines.push('  - 原生身份未知：没有 verified runtime 描述符，也没有设置 `E2E_AGENT_BROWSER_EXECUTABLE`。');
   lines.push(`- 环境：${string(input.environment['os']) ?? '?'} / ${string(input.environment['arch']) ?? '?'} · Node ${nodeVersion(string(input.environment['runtime']))}`);
-  lines.push('- 场景：登录 → 首页 → 账号管理 → 账号标签管理 → 输入账号 ID → 查询（默认只读，账号 ID 已脱敏）');
+  lines.push(`- 验证路径：\`${inputs.verifyPath}\`${inputs.verifyPath === 'model' ? '（真实模型决策，错误决策按原样保留，retries=0）' : '（脚本化确定性回归基线）'}`);
+  if (input.model?.configured !== undefined) lines.push(`- 模型：\`${input.model.configured.label}\``);
+  lines.push(`- 场景：${scenarioText(inputs.verifyPath)}（账号 ID 与标签已脱敏）`);
   lines.push(`- 原始输出（本机、未提交）：\`${inputs.rawOutput}\``, '');
 
   lines.push('## 用例', '');
@@ -361,6 +510,43 @@ function markdownReport(input: {
       lines.push(`- \`${string(error['code']) ?? 'unknown'}\`：${(redact(string(error['message']) ?? '')).slice(0, 2000)}`);
     }
     lines.push('');
+  }
+
+  lines.push('## 模型轮次与成本', '');
+  if (input.model === undefined || input.model.calls === 0 && input.model.configured === undefined) {
+    lines.push('本路径不调用模型。', '');
+  } else {
+    const model = input.model;
+    lines.push(`- 配置模型：${model.configured === undefined ? '`unknown`' : `\`${model.configured.label}\``}`);
+    lines.push(`- 调用轮次：${model.calls}；模型耗时：${model.durationMs} ms；token：输入 ${model.inputTokens} / 输出 ${model.outputTokens}${model.tokenAccounting === undefined ? '' : `（${model.tokenAccounting}）`}${model.estimatedCostUsd === undefined ? '' : `；估算成本 $${model.estimatedCostUsd}`}`);
+    if (model.steps.length > 0) {
+      lines.push('', '| 步骤 | 状态 | 轮次 | 耗时 (ms) | 输入 token | 输出 token | 缓存读/写 | 估算成本 |', '| --- | --- | ---: | ---: | ---: | ---: | --- | ---: |');
+      for (const step of model.steps) {
+        lines.push(`| ${cell(step.step)} | ${cell(step.status ?? '?')} | ${step.calls} | ${step.durationMs} | ${step.inputTokens} | ${step.outputTokens} | ${step.cacheReadTokens ?? 0} / ${step.cacheWriteTokens ?? 0} | ${step.estimatedCostUsd === undefined ? '—' : `$${step.estimatedCostUsd}`} |`);
+      }
+      lines.push('');
+      lines.push('- 模型耗时只统计 `model` 事件的轮次时间；整步耗时见上面的用例表，观察阶段见下一节。');
+    }
+    lines.push('');
+  }
+
+  lines.push('## 模型决策与动作', '');
+  if (input.model === undefined || input.model.steps.length === 0) {
+    lines.push('本路径没有模型决策记录。', '');
+  } else {
+    for (const step of input.model.steps) {
+      lines.push(`### ${cell(step.test)} · ${cell(step.step)}`);
+      lines.push('');
+      if (step.turns.length === 0) {
+        lines.push('没有保留的轮次记录；以失败与观察事件为准。', '');
+        continue;
+      }
+      for (const turn of step.turns) {
+        lines.push(`- 第 ${turn.index} 轮：${turn.calls.length === 0 ? '（无工具调用）' : turn.calls.map(call => `\`${cell(call)}\``).join('；')}${turn.outcome === undefined ? '' : ` → ${cell(turn.outcome)}`}`);
+      }
+      lines.push('');
+    }
+    lines.push('- 这些是模型实际提出的动作与得到的结果，未因结果不符而自动重试或替换；失败码与原生证据见上一节。', '');
   }
 
   lines.push('## 观察与阶段', '');
@@ -394,9 +580,13 @@ function markdownReport(input: {
   lines.push('');
 
   lines.push('## 说明与限制', '');
-  lines.push('- 本报告只含状态、错误码、阶段耗时和原生结算枚举；原始 report/trace/截图仅留在上面的本机目录，未提交、未发布。');
+  lines.push('- 本报告只含状态、错误码、阶段耗时、模型轮次与 token、原生结算枚举；原始 report/trace/截图仅留在上面的本机目录，未提交、未发布。');
   lines.push('- `effects` / `scopeState` 来自原生操作记录（`E2E_NATIVE_RESULT_LEDGER`）；`phases` 来自 agent 观察事件。');
-  lines.push('- 场景只做查询；任何写入类验证需要单独确认，不包含在本循环里。');
+  if (input.inputs.verifyPath === 'model') {
+    lines.push('- 模型路径只对私有配置指定的账号执行“新增标签 → 断言 → 移除标签 → 断言复原”，不触碰其他账号或标签；中途失败时报告如实保留失败决策与残留状态，不自动重试掩盖。');
+  } else {
+    lines.push('- 脚本化路径只做查询；写入类验证由模型路径单独执行，需要私有配置指定账号与标签。');
+  }
   lines.push('');
   return lines.join('\n');
 }
@@ -443,6 +633,13 @@ function nodeVersion(runtime: string | undefined): string {
 
 function cell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+/** What each path walked, in the words the report can show after redaction. */
+function scenarioText(verifyPath: 'scripted' | 'model'): string {
+  return verifyPath === 'model'
+    ? 'login → home → 账号管理 → 账号标签管理 → account ID → 查询 → 新增标签 → 断言 → 移除标签 → 断言复原 (model-decided; writes only the configured account and label)'
+    : 'login → home → 账号管理 → 账号标签管理 → account ID → 查询 (read-only, scripted)';
 }
 
 function isPhaseMap(value: unknown): boolean {

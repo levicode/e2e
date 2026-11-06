@@ -10,8 +10,11 @@ const settings: UatSettings = {
   entryUrl: 'http://uat.example.test/app/',
   loginUrl: 'http://sso.example.test/login.html',
   accountId: '1234567890',
+  labelId: undefined,
+  labelName: undefined,
   homeHash: '#/home',
   sessionFile: '',
+  env: {},
 };
 
 function directory(): string {
