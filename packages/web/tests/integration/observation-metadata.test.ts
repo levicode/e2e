@@ -49,3 +49,21 @@ it.each(['stringify', 'bound-stringify', 'object-toJSON', 'array-toJSON', 'funct
     await fixture.close();
   }
 });
+
+it('reports native observation phase timings through the engine and the typed session', async () => {
+  const fixture = await startNativeFixture('observation-phases');
+  try {
+    await nativeDocument(fixture.browser, '<button>Save</button>');
+    const captured = await fixture.engine.observe!({ ...fixture.operation(), origin: 'agent' });
+    // Native stage durations, decoded from microseconds into milliseconds.
+    expect(Object.keys(captured.phases ?? {}).length).toBeGreaterThan(0);
+    for (const millis of Object.values(captured.phases ?? {})) {
+      expect(Number.isSafeInteger(millis)).toBe(true);
+      expect(millis).toBeGreaterThanOrEqual(0);
+    }
+    const observed = await fixture.session.observe(fixture.operation());
+    expect(Object.keys(observed.phases ?? {}).length).toBeGreaterThan(0);
+  } finally {
+    await fixture.close();
+  }
+});

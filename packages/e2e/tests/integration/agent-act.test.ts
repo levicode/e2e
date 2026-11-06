@@ -145,6 +145,11 @@ describe('agent.act with a hand-rolled step executor', () => {
     expect(step!.status).toBe('passed');
     expect(step!.metrics!.actionSteps).toBe(1);
     expect(step!.explanation).toContain('the counter shows 1');
+    // Native stage timings survive the realization and session layers into the
+    // report event; a dropped field here is telemetry the user cannot see.
+    const observations = step!.events.filter((event) => event.kind === 'observation' && event.status === 'passed');
+    expect(observations.length).toBeGreaterThan(0);
+    for (const event of observations) expect(Object.keys(event.phases ?? {}).length).toBeGreaterThan(0);
     const engineEvents = step!.events.filter((event) => event.kind === 'engine');
     expect(engineEvents).toHaveLength(1);
     const modelEvents = step!.events.filter((event) => event.kind === 'model');
