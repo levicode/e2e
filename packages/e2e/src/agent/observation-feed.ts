@@ -494,14 +494,14 @@ function listingSample(ids: readonly string[]): string {
  * nodes the screen lists, the spelling they use, and a few examples, so a
  * dropped copy mark or an invented id is answered with something to act on
  * rather than only "never existed". A truncated listing says so, because the
- * id may name a node past the cut rather than a node that is gone.
+ * id may name a node the budget left out rather than a node that is gone.
  */
 export function nodeGone(id: string, latest: SemanticAgentObservation): AgentError {
   const listed = [...latest.nodes.keys()];
   const digest = listed.length === 0
     ? 'The screen lists no nodes'
     : `The screen lists ${listed.length} node${listed.length === 1 ? '' : 's'}, such as ${listingSample(listed.slice(0, 3).map((key) => referenceText(key)))}`;
-  const truncation = latest.truncated ? ' That listing is truncated, so a node past the cut is not listed.' : '';
+  const truncation = latest.truncated ? ' That listing is truncated, so a node it left out is not listed.' : '';
   return new AgentError(
     'LOCATOR_NOT_FOUND',
     `node ${referenceText(id)} is not on the current screen (observation ${latest.revision}); it was removed or never existed. ${digest}; quote an id exactly as the current listing prints it.${truncation}`,

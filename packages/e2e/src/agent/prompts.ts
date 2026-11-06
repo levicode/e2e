@@ -97,7 +97,7 @@ export function buildPrompt(input: PromptInput): string {
         '</observation>',
       );
       if (observation.kind === 'semantic' && observation.truncated) {
-        sections.push('The observation above is incomplete: nodes past its cut are on screen but not listed.');
+        sections.push('The observation above is incomplete: some nodes are on screen but not in the listing.');
       }
     }
     const pixels = observation.pixels;

@@ -318,8 +318,85 @@ describe('prepareObservation', () => {
     assert(prepared.kind === 'semantic');
     expect(prepared.truncated).toBe(true);
     expect(prepared.bytes).toBeLessThanOrEqual(256);
-    expect(prepared.text.endsWith('[observation truncated at the resolved observation byte limit]')).toBe(true);
+    expect(prepared.text.endsWith('[observation truncated at the resolved observation byte limit: interactive nodes are prioritized]')).toBe(true);
     expect(prepared.text).not.toContain('engine stopped');
+  });
+
+  it('keeps an engine-truncated screen whole when it fits under the engine marker', () => {
+    // The first pass must reserve the marker it would append. Reserving the
+    // longer budget marker here would cut a tree that fits, and misname the
+    // reason for the cut.
+    const children = Array.from({ length: 5 }, (_, index) => node(`t${index}`, { text: `${'x'.repeat(20)}${index}` }));
+    const tree = node('n1', { role: 'document', children });
+    const plain = prepareObservation(observation(tree), { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: 4_096 });
+    assert(plain.kind === 'semantic');
+    const engineMarker = '[observation truncated: the engine stopped listing nodes at its limit]';
+    const full = `${plain.text}\n${engineMarker}`;
+    const prepared = prepareObservation(
+      { ...observation(tree), truncated: true },
+      { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: new TextEncoder().encode(full).byteLength + 1 },
+    );
+    assert(prepared.kind === 'semantic');
+    expect(prepared.text).toBe(full);
+    expect(prepared.bytes).toBe(new TextEncoder().encode(full).byteLength);
+    expect(prepared.text).not.toContain('interactive nodes are prioritized');
+  });
+
+  it('keeps a control the in-order cut would hide, with the ancestors that place it', () => {
+    const fillers = Array.from({ length: 40 }, (_, index) =>
+      index === 39
+        ? node('t39', { text: 'filler '.repeat(8), children: [node('t39a', { text: 'nested filler' })] })
+        : node(`t${index}`, { text: 'filler '.repeat(8) }),
+    );
+    const tree = node('n1', {
+      role: 'document',
+      children: [node('n2', { role: 'list', children: [...fillers, node('n3', { role: 'button', name: 'Save', states: { disabled: true } })] })],
+    });
+    const prepared = prepareObservation(observation(tree), { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: 640 });
+    assert(prepared.kind === 'semantic');
+    expect(prepared.truncated).toBe(true);
+    // The control and the list that places it survive; its name and state do too.
+    expect(prepared.text).toContain('#n2 list');
+    expect(prepared.text).toContain('#n3 button "Save" [disabled]');
+    // A filler line does not all fit: the budget went to what the model can act on.
+    expect(prepared.text.split('\n').filter(line => line.includes('filler')).length).toBeLessThan(40);
+    expect(prepared.text.split('\n').filter(line => line.includes('filler')).length).toBeGreaterThan(0);
+    // The omitted filler is a whole subtree, and the listed chain keeps its order.
+    expect(prepared.text).not.toContain('#t39');
+    expect(prepared.text).not.toContain('#t39a');
+    const text = prepared.text;
+    expect(text.indexOf('#n1 document')).toBeLessThan(text.indexOf('#n2 list'));
+    expect(text.indexOf('#n2 list')).toBeLessThan(text.indexOf('#n3 button'));
+    expect(prepared.bytes).toBeLessThanOrEqual(640);
+    expect(prepared.bytes).toBe(new TextEncoder().encode(prepared.text).byteLength);
+  });
+
+  it('stays within the budget when the controls alone cannot fit', () => {
+    const children = Array.from({ length: 80 }, (_, index) => node(`c${index}`, { role: 'button', name: `Button ${index}` }));
+    const prepared = prepareObservation(observation(node('n1', { role: 'document', children })), {
+      redact: NO_REDACT,
+      redactCut: NO_REDACT,
+      maxBytes: 640,
+    });
+    assert(prepared.kind === 'semantic');
+    expect(prepared.truncated).toBe(true);
+    expect(prepared.bytes).toBeLessThanOrEqual(640);
+    expect(prepared.text).toContain('#c0 button "Button 0"');
+    expect(prepared.text).not.toContain('#c79');
+  });
+
+  it('keeps the plain in-order cut when the tree names no control', () => {
+    const children = Array.from({ length: 80 }, (_, index) => node(`t${index}`, { text: 'filler '.repeat(8) }));
+    const prepared = prepareObservation(observation(node('n1', { role: 'document', children })), {
+      redact: NO_REDACT,
+      redactCut: NO_REDACT,
+      maxBytes: 640,
+    });
+    assert(prepared.kind === 'semantic');
+    expect(prepared.truncated).toBe(true);
+    expect(prepared.bytes).toBeLessThanOrEqual(640);
+    expect(prepared.text).toContain('#t0');
+    expect(prepared.text).not.toContain('#t79');
   });
 
   it('collapses whitespace and strips control characters from app text', () => {

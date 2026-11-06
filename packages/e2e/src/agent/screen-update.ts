@@ -39,7 +39,7 @@ interface ShownScreen {
   readonly order: readonly string[];
   readonly byId: ReadonlyMap<string, string>;
   readonly nodes: number;
-  /** The listing is cut short (byte limit or engine cap): nodes beyond it exist but are not listed. */
+  /** The listing is cut short (byte limit or engine cap): nodes it left out exist but are not listed. */
   readonly truncated: boolean;
   /** An on-screen keyboard is among the nodes. */
   readonly keyboard: boolean;
@@ -167,7 +167,7 @@ export class ScreenPresenter {
       return `${lead}The screen changed substantially since revision ${previous.revision}. ${renderFull(observation)}${closed}`;
     }
     const assurance = observation.truncated
-      ? 'The screen listing is truncated: nodes past the cut are not listed and none is reported removed; every listed node keeps the id you have.'
+      ? 'The screen listing is truncated: nodes it left out are not listed and none is reported removed; every listed node keeps the id you have.'
       : 'Every node not listed as removed is still on screen under the id you have.';
     return [
       `${lead}Screen changes since revision ${previous.revision} (now revision ${observation.revision}${describeLocation(observation)}, ${String(next.nodes)} nodes): ${describeCounts(diff)}. ${assurance}`,
