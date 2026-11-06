@@ -6,14 +6,14 @@
  * nobody can scan. It never prints a cookie, the host, or the account ID.
  */
 import { test } from '@e2e-dev/web';
-import { captureLocalStorage, loginEntry, waitForHome } from '../src/app-location.ts';
+import { captureLocalStorage, loginEntry, waitForHome, waitForSignedInApp } from '../src/app-location.ts';
 import { toStoredCookies, writeSessionFile } from '../src/session.ts';
 import { loadUatSettings } from '../src/settings.ts';
 
 test('scan the WeCom QR once and save the UAT session', { timeout: 540_000 }, async ({ app, browser }) => {
   const settings = loadUatSettings();
   await browser.goto(loginEntry(settings));
-  await waitForHome(browser, settings, { foreignOrigin: 'wait', timeoutMs: 480_000 });
+  await waitForSignedInApp(browser, settings, 480_000);
   // The login redirect may land on the app entry without the home fragment; open it once more to be sure.
   await app.open(settings.entryUrl);
   await waitForHome(browser, settings, { foreignOrigin: 'expired', timeoutMs: 30_000 });
