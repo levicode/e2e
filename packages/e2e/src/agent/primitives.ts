@@ -569,17 +569,20 @@ export function createGrammarTools(
       execute: () => acting({ done: 'Navigated back.', attempt: 'back' }, () => context.actions.back()),
     });
   }
-  // The pixel verbs are offered while pixels can still leave the runner. Once
-  // a secret was filled in the attempt they could only decline, and a verb
-  // that is absent costs the model nothing where one that declines costs a
-  // turn. They are the fallback for a target the tree does not list: a tap
-  // or hover reaches the engine as a bare point where it takes one, and a
-  // type, press, or select acts on a listed control under the point by id,
-  // else through the keyboard.
-  if (!context.pixelsTainted) {
+  // The pixel verbs are offered while pixels can still leave the runner and
+  // the agent's policy allows them. Once a secret was filled in the attempt
+  // they could only decline, and a verb that is absent costs the model
+  // nothing where one that declines costs a turn. They are the fallback for a
+  // target the tree does not list: a tap or hover reaches the engine as a
+  // bare point where it takes one, and a type, press, or select acts on a
+  // listed control under the point by id, else through the keyboard.
+  if (!context.pixelsTainted && screen.policy !== 'off') {
     tools['screenshot'] = screenTool({
       description:
-        'Attach a screenshot of the current viewport. Use it when the screen lists too little to act on (a canvas, a map, an image, a game, a system sheet) or contradicts what you expect. From then on every action result carries a fresh screenshot too, so you can see what each action did.',
+        'Attach a screenshot of the current viewport. Use it when the screen lists too little to act on (a canvas, a map, an image, a game, a system sheet) or contradicts what you expect.' +
+        (screen.policy === 'on-request'
+          ? ' Action results carry no screenshot under this agent\'s pixel policy, so ask again when you need current pixels.'
+          : ' From then on every action result carries a fresh screenshot too, so you can see what each action did.'),
       inputSchema: z.object({}),
       execute: () => inOrder(() => guard(async () => screen.present(await context.observe({ pixels: true })))),
     });
@@ -679,6 +682,11 @@ function createPointTools(
   const x = z.number().describe('x in the latest screenshot, pixels from the left edge');
   const y = z.number().describe('y in the latest screenshot, pixels from the top edge');
   const at = (px: number, py: number) => `(${String(px)}, ${String(py)})`;
+  /** Under `on-request` an ordinary action result has no image, so a point re-aims from an older one and must ask first. */
+  const policyNote =
+    screen.policy === 'on-request'
+      ? " This agent's action results carry no screenshot, so take a new one after any change before aiming; this point action's own result carries a fresh one."
+      : '';
 
   /**
    * A point the model read off the latest screenshot in viewport pixels, or
@@ -700,7 +708,9 @@ function createPointTools(
    * Runs a point verb in the queue, resolving the point only when its turn
    * comes: a `type_secret` batched ahead of it in the same turn has filled by
    * then, so the taint check sees it, and the screenshot it reads is the one
-   * the model held when the verb ran, not when it was queued.
+   * the model held when the verb ran, not when it was queued. A point action
+   * is an explicit pixel request: its result carries a fresh screenshot even
+   * under `on-request`, so the image the next point reads is current.
    */
   const atPoint = (
     verb: string,
@@ -711,7 +721,7 @@ function createPointTools(
     inOrder(() => {
       const point = pointOf(px, py, verb);
       if (typeof point === 'string') return Promise.resolve(point);
-      return perform(pointAttempt(verb, at(px, py)), () => action(point));
+      return perform(pointAttempt(verb, at(px, py)), () => action(point), {}, true);
     });
 
   /**
@@ -750,7 +760,8 @@ function createPointTools(
       description:
         does +
         (verbs.has(verb) ? '.' : ', which this engine cannot do: the point must land on a listed control.') +
-        ` Last resort: when the screen lists the target, ${byId}.`,
+        ` Last resort: when the screen lists the target, ${byId}.` +
+        policyNote,
       inputSchema: z.object({ x, y }),
       execute: ({ x: px, y: py }) => atPoint(tool, px, py, async (point) => (await context.actions[verb](point)).summary),
     });
@@ -758,8 +769,10 @@ function createPointTools(
   if (verbs.has('type') || keyboard) {
     tools['type_at'] = screenTool({
       description: keyboard
-        ? 'Type a plain-text value into the field at a point in the latest screenshot, for a field the screen does not list. A listed input under the point is filled by id, replacing its value; anything else is tapped to focus it and typed into through the keyboard, inserting at the caret unless replace is set. Last resort: when the screen lists the field, type by id.'
-        : 'Type a plain-text value into the input at a point in the latest screenshot, replacing its value. Aim at the field itself; a point on nothing listed fails. Last resort: when the screen lists the field, type by id.',
+        ? 'Type a plain-text value into the field at a point in the latest screenshot, for a field the screen does not list. A listed input under the point is filled by id, replacing its value; anything else is tapped to focus it and typed into through the keyboard, inserting at the caret unless replace is set. Last resort: when the screen lists the field, type by id.' +
+          policyNote
+        : 'Type a plain-text value into the input at a point in the latest screenshot, replacing its value. Aim at the field itself; a point on nothing listed fails. Last resort: when the screen lists the field, type by id.' +
+          policyNote,
       inputSchema: z.object({
         x,
         y,
@@ -784,7 +797,8 @@ function createPointTools(
       description:
         'Send one key (e.g. "Enter", "Escape", "Tab") to the control at a point in the latest screenshot, for a control the screen does not list.' +
         (keyboard ? ' A listed control under the point gets the key by id; anything else is tapped to focus it and the key goes through the keyboard.' : '') +
-        ' Last resort: when the screen lists the control, press by id.',
+        ' Last resort: when the screen lists the control, press by id.' +
+        policyNote,
       inputSchema: z.object({ x, y, key: z.string().min(1).max(64) }),
       execute: ({ x: px, y: py, key }) =>
         atPoint('press_at', px, py, async (point) => {
@@ -798,7 +812,8 @@ function createPointTools(
   if (verbs.has('select')) {
     tools['select_at'] = screenTool({
       description:
-        'Pick one option, by its visible label, from the select-like control at a point in the latest screenshot. Last resort: when the screen lists the select, use select by id.',
+        'Pick one option, by its visible label, from the select-like control at a point in the latest screenshot. Last resort: when the screen lists the select, use select by id.' +
+        policyNote,
       inputSchema: z.object({ x, y, value: z.string().min(1) }),
       execute: ({ x: px, y: py, value }) =>
         atPoint('select_at', px, py, async (point) => {
@@ -830,14 +845,24 @@ function verbKit(context: StepExecutorContext, options: GrammarToolOptions) {
   const screen: ScreenPresenter = options.screen ?? new ScreenPresenter({ pixelsUnavailable: () => context.pixelsTainted });
   const queue = new OperationQueue();
   const inOrder = <T>(body: () => Promise<T>): Promise<T> => queue.run(body);
-  /** The screen after an action: the changes since the one the model holds and, once the step shows pixels, a fresh screenshot. */
-  const present = async (lead: string, update: ScreenUpdate = {}): Promise<ScreenOutput> =>
-    screen.present(await context.observe({ pixels: screen.showingPixels }), { lead, ...update });
+  /**
+   * The screen after an action: the changes since the one the model holds and,
+   * when this call asks for pixels, a fresh screenshot. Under the default
+   * `always` policy `screen.showingPixels` keeps a step that has seen one in
+   * pixel mode; `on-request` passes `true` only from a point action.
+   */
+  const present = async (
+    lead: string,
+    update: ScreenUpdate = {},
+    pixels = screen.showingPixels,
+  ): Promise<ScreenOutput> =>
+    screen.present(await context.observe({ pixels }), { lead, ...update });
   /** An action and its look at the result, for a caller already inside the queue. */
   const perform = (
     label: ActionLabel,
     action: () => Promise<string | ActionOutcome | void>,
     { expectChange = true, ...update }: ScreenUpdate = {},
+    pixels = screen.showingPixels,
   ): Promise<ScreenOutput | string> =>
     guard(async () => {
       let outcome: ActionOutcome = { lead: label.done, expectChange };
@@ -847,12 +872,12 @@ function verbKit(context: StepExecutorContext, options: GrammarToolOptions) {
         else if (returned !== undefined) outcome = { lead: returned.lead, expectChange: returned.expectChange ?? expectChange };
       } catch (cause) {
         if (isRuntimeHardStop(cause)) throw cause;
-        const failed = await present(failureLead(label, cause));
+        const failed = await present(failureLead(label, cause), {}, pixels);
         // After the look, so a look that throws fails the call once, as itself.
         options.onActionFailed?.(cause);
         return failed;
       }
-      return present(outcome.lead, { expectChange: outcome.expectChange, ...update });
+      return present(outcome.lead, { expectChange: outcome.expectChange, ...update }, pixels);
     });
   const acting = (
     label: ActionLabel,

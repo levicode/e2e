@@ -1355,6 +1355,18 @@ export interface AgentTool {
   readonly annotations: { readonly mutates: boolean; readonly platforms?: readonly string[] };
 }
 
+/**
+ * When the built-in agent's model sees the viewport's pixels.
+ *
+ * - `always` (the default): once the model has seen a screenshot in a step,
+ *   every later action and observe result carries a fresh one until the step
+ *   ends.
+ * - `on-request`: only a result the model asked pixels for carries one: the
+ *   `screenshot` tool, or a point action read off the latest image.
+ * - `off`: no screenshot is ever sent, and the pixel tools are not offered.
+ */
+export type PixelPolicy = 'always' | 'on-request' | 'off';
+
 /** The options every agent takes, whichever brain runs its `act` steps. */
 export interface AgentOptions {
   /** An AI SDK model instance; no implicit default. */
@@ -1387,6 +1399,14 @@ export interface AgentOptions {
    * prompt cache key unless set here.
    */
   providerOptions?: ProviderOptions;
+  /**
+   * When the built-in agent's model sees pixels: `always` (the default, each
+   * action result carries a screenshot once one was seen), `on-request` (only
+   * `screenshot` and point actions carry one), or `off` (no pixels at all).
+   * With `executor` it is `INVALID_CONFIG`: that brain decides what its own
+   * model sees.
+   */
+  pixels?: PixelPolicy;
   /** Never set: an entry is not itself a `StepExecutor`; a custom brain goes under `executor`. */
   runStep?: never;
 }
@@ -1414,12 +1434,14 @@ export type AgentConfig = AgentOptions &
     | {
         /**
          * A custom brain `agent.act()` dispatches to instead of the built-in
-         * agent. The model, judge, budgets, and context still apply; `system`
-         * and `tools` belong to the built-in agent and are rejected here.
+         * agent. The model, judge, budgets, and context still apply; `system`,
+         * `tools`, and `pixels` belong to the built-in agent and are rejected
+         * here.
          */
         executor: StepExecutor;
         system?: never;
         tools?: never;
+        pixels?: never;
       }
   );
 

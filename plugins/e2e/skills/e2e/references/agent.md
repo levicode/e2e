@@ -55,8 +55,9 @@ gates, and limits.
 - Pass a model instance, not a string (`INVALID_CONFIG`).
 - An agents entry is one plain object of `model`, `judge`, `system`,
   `context`, `tools`, `maxSteps`, `maxModelCalls`, `judgmentTimeout`,
-  `maxObservationBytes`, `maxInputTokens`, `providerOptions`, or `executor`
-  for a custom brain; none inherits `model` or `context` from `default`.
+  `maxObservationBytes`, `maxInputTokens`, `providerOptions`, `pixels`, or
+  `executor` for a custom brain; none inherits `model` or `context` from
+  `default`.
 - `model` drives `agent.act`. Judgments use `judge` when set, else `model`.
 - A missing model for the built-in agent raises one run-level
   `MODEL_UNAVAILABLE` when the first test acquires `agent`, exit 2, and so
@@ -150,8 +151,11 @@ The tools, one per engine action. Name the target as the screen names it
 - `back`: browser history or in-app back.
 - `type_secret`: a declared secret by name; plaintext never reaches the model.
   Offered only when the step declares secrets and the engine can fill them.
-- `screenshot`: attach viewport pixels; every later result then carries one.
+- `screenshot`: attach viewport pixels; under the default `pixels: 'always'`
+  every later result then carries one.
 - `tap_at`/`hover_at`/`press_at`/`select_at`/`type_at`: a screenshot point.
+  Under `pixels: 'on-request'` a point action's own result carries a fresh
+  screenshot while ordinary results stay text-only.
 - `dismiss_keyboard` (device): hide the on-screen keyboard.
 
 The focused field's selected text is listed as `selection="..."` (never for
@@ -160,10 +164,12 @@ feedback. Point tools serve a canvas shape, map pin, image region, or system
 sheet control. `tap_at` and `hover_at` act at the point; `press_at`,
 `select_at`, and `type_at` hit-test the tree first so a listed control
 underneath is acted on by id, and `type_at` on nothing listed taps, then
-types. A screen with
-nothing to tap by id opens with a screenshot attached. A device has no
+types. Under `pixels: 'always'` (the default) a screen with nothing to tap by
+id opens with a screenshot attached; `on-request` leaves that screenshot to
+the model's own `screenshot` call, and `off` sends none. A device has no
 `right_click`, `select`, `upload`, or `scroll_to` by node id. Pixels are
-masked and withheld after a secret fill (topic writing-tests): act on pixels
+masked and withheld after a secret fill (topic writing-tests), and no pixel
+tool is offered when the agent's `pixels` policy is `off`: act on pixels
 before signing in, or in a test of its own. A result says when an action
 closed an on-screen keyboard; on a touch screen that tap was often spent
 closing it, so act again.
@@ -282,7 +288,11 @@ Screen text prefixes IDs with `#`; Web uses `nN` and the main document's
 `root`. Copy the observed ID unchanged into actions, never a native browser
 reference or an ID from a retired scope. Pixels arrive through `vision` on
 a judgment or the act loop's
-`screenshot` and point tools, masked and withheld after a secret fill. When
+`screenshot` and point tools, masked and withheld after a secret fill.
+`agents.<name>.pixels` decides which action results also carry one: `always`
+(the default) attaches a fresh screenshot to every result once the model has
+seen one, `on-request` only to the results that ask (`screenshot`, a point
+action), and `off` sends none and offers no pixel tool. When
 the browser engine's tree capture times out, the model gets a screenshot and
 a warning, a judgment needs `vision: true`, and no control may be inferred
 absent nor old node ids reused. The browser engine's tree shows a frame
@@ -411,7 +421,8 @@ make no model calls.
   vocabulary.
 - Any `StepExecutor` (`{ name, version?, cache?, runStep(ctx) }`) goes under
   `executor`; the runner still owns observations, actions, budgets, and the
-  report, and `system` or `tools` beside `executor` is `INVALID_CONFIG`.
+  report, and `system`, `tools`, or `pixels` beside `executor` is
+  `INVALID_CONFIG`.
 
 Reference: https://e2e.tester.army/docs/agents
 

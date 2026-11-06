@@ -10,11 +10,13 @@
  *
  * A screen may carry its pixels too. The presenter is where a screenshot
  * joins the text: it notes the image's size and coordinate space under the
- * screen, remembers that the model now holds pixels (from then on the step is
- * in pixel mode, and an unchanged tree under a screenshot that moved is
- * reported as that rather than as a failed action), and explains once why
- * pixels the step asked for were withheld. The transcript-side
- * elision of superseded screens and screenshots lives in
+ * screen, remembers the newest screenshot the model holds (an unchanged tree
+ * under a screenshot that moved is reported as that rather than as a failed
+ * action), and explains once why pixels the step asked for were withheld.
+ * The agent's pixel policy decides whether an ordinary result carries one:
+ * `always` (the default) keeps the model in pixel mode after the first
+ * screenshot, `on-request` leaves it to the tools that ask, `off` sends none.
+ * The transcript-side elision of superseded screens and screenshots lives in
  * `transcript-compaction.ts`.
  */
 
@@ -22,6 +24,7 @@ import type { ToolResultPart } from 'ai';
 import type { ExecutorObservation, ExecutorPixels } from './executor.ts';
 import { interactiveNodeCount, pixelDigest } from './observation.ts';
 import type { VisionDegradation } from '../run/steps.ts';
+import type { PixelPolicy } from '../types.ts';
 
 /** A diff past this many lines goes out as the full screen instead. */
 const MAX_DIFF_LINES = 60;
@@ -118,13 +121,30 @@ export class ScreenPresenter {
   /**
    * `pixelsUnavailable` says whether the step can get no screenshot at all
    * (a secret was filled, so no pixel tool is offered), which makes the
-   * listing the only evidence an action result has.
+   * listing the only evidence an action result has. `policy` decides when a
+   * screenshot goes out: `always` (the default) attaches one to every result
+   * once the model has seen one, `on-request` only to the results that asked,
+   * `off` never.
    */
-  constructor(private readonly options: { readonly pixelsUnavailable?: () => boolean } = {}) {}
+  constructor(
+    private readonly options: {
+      readonly pixelsUnavailable?: () => boolean;
+      readonly policy?: PixelPolicy;
+    } = {},
+  ) {}
 
-  /** True once a screenshot went to the model in this step. */
+  /** The step's pixel policy; `always` when the caller configured none. */
+  get policy(): PixelPolicy {
+    return this.options.policy ?? 'always';
+  }
+
+  /**
+   * True when an ordinary action or observe result carries a screenshot: the
+   * model has seen one and the policy is `always`. Under `on-request` only a
+   * result that asked for pixels carries one.
+   */
   get showingPixels(): boolean {
-    return this.screenshot !== undefined;
+    return this.policy === 'always' && this.screenshot !== undefined;
   }
 
   /** The newest screenshot the model holds; the coordinate space of `tap_at`. */
@@ -191,11 +211,17 @@ export class ScreenPresenter {
    * the control had no visible effect only when an identical screenshot says
    * so too. A moved screenshot means what changed is drawn, not listed, and
    * the model is told to read the image; with no screenshot to compare, the
-   * model is told only that no listed node changed.
+   * model is told only that no listed node changed. Under `off` no screenshot
+   * can be taken at all, so the listing is named as the only evidence.
    */
   present(observation: ExecutorObservation, options: ScreenUpdateOptions = {}): ScreenOutput {
     const compared = this.attach(observation);
-    const pixels = compared === 'none' && (this.pixelsDenied || this.options.pixelsUnavailable?.() === true) ? 'unavailable' : compared;
+    const pixels =
+      this.policy === 'off'
+        ? 'unavailable'
+        : compared === 'none' && (this.pixelsDenied || this.options.pixelsUnavailable?.() === true)
+          ? 'unavailable'
+          : compared;
     const text = this.render(
       observation,
       {
@@ -208,11 +234,13 @@ export class ScreenPresenter {
   }
 
   /**
-   * Records that a screenshot is going to the model; from here on the step is
-   * in pixel mode. Returns what it says against the screenshot the model
-   * held, which is how an unchanged tree is kept from being read as no effect.
+   * Records that a screenshot is going to the model. Returns what it says
+   * against the screenshot the model held, which is how an unchanged tree is
+   * kept from being read as no effect. Under `off` nothing is recorded and no
+   * observation's pixels reach the model.
    */
   private attach(observation: ExecutorObservation): PixelEvidence {
+    if (this.policy === 'off') return 'none';
     // Masking can be proven again on the next screen; an engine without capture never captures.
     if (observation.pixelsWithheld === 'UNSUPPORTED_CAPABILITY') this.pixelsDenied = true;
     if (observation.pixels === undefined) return 'none';
@@ -227,9 +255,10 @@ export class ScreenPresenter {
   /**
    * The rendered screen with its screenshot and the coordinate note, or with
    * the reason the pixels the step asked for did not come, or as is when no
-   * pixels were asked for.
+   * pixels were asked for. Under `off` the text goes out alone.
    */
   private withScreenshot(observation: ExecutorObservation, text: string): ScreenOutput {
+    if (this.policy === 'off') return text;
     const { pixels } = observation;
     if (pixels !== undefined) return { text: `${text}\n\n${screenshotNote(pixels)}`, pixels };
     if (observation.pixelsWithheld === undefined) return text;

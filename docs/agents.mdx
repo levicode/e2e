@@ -37,17 +37,19 @@ export default {
 ```
 
 An entry holds the `model`, an optional [`judge`](/models#a-judge-of-its-own),
-`system`, `context`, [tools](/tools), budgets, and `providerOptions`.
+`system`, `context`, [tools](/tools), budgets, `providerOptions`, and a
+[`pixels`](/reference/config#pixels) policy.
 `maxSteps` caps the actions of one step and `maxModelCalls` its model
-calls: 25 by default, 100 at most. See the
-[config reference](/reference/config#agents).
+calls: 25 by default, 100 at most. `pixels` decides how often the built-in
+agent's model gets a screenshot: `always` (default), `on-request`, or `off`.
+See the [config reference](/reference/config#agents).
 
 Entries don't inherit from `default`. Give each one the model and context it needs,
 for example from a shared constant as above.
 
 A [custom executor](/executors) goes under `executor`. The model, judge,
-context, and budgets still apply. `system` and `tools` are rejected, since
-the executor brings its own prompt and tools.
+context, and budgets still apply. `system`, `tools`, and `pixels` are
+rejected, since the executor brings its own prompt, tools, and pixel policy.
 
 ## Instructions and vocabulary
 

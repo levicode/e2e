@@ -20,9 +20,32 @@ import { compactScreenHistory, compactScreenshotHistory } from './transcript-com
 import { createToolLoopExecutor, type ToolLoopHelpers } from './tool-loop.ts';
 import { toolAppliesTo, withToolContext } from './tool.ts';
 import { boundToolOutput } from './tool-output.ts';
-import type { AgentTool } from '../types.ts';
+import type { AgentTool, PixelPolicy } from '../types.ts';
 
-const BASE_RULES = `You are an autonomous end-to-end testing agent executing exactly one test step against a real application.
+/** The pixel-tool bullet of the execution rules, per policy; `off` offers no pixel tool. */
+const PIXEL_RULES: Readonly<Record<PixelPolicy, string>> = {
+  always:
+    '- Pixel tools, when offered: screenshot attaches the viewport\'s pixels when the tree lacks what you need (a shape on a canvas, a pin on a map, a region of an image, a control inside a system sheet) or contradicts what you expect; once you have one, every action result carries a fresh screenshot so you can see what the action did. tap_at, hover_at, type_at, press_at, and select_at act at a point in the latest screenshot\'s pixel coordinates; a listed control under the point is acted on by its id. Prefer ids: tap, hover, type, press, and select by id whenever the screen lists the target, use the point tools only for a target the screen does not list, and take a screenshot before guessing a point rather than aiming from memory or from what you expect to be drawn.',
+  'on-request':
+    '- Pixel tools, when offered: screenshot attaches the viewport\'s pixels when the tree lacks what you need (a shape on a canvas, a pin on a map, a region of an image, a control inside a system sheet) or contradicts what you expect. This agent sends pixels only when you ask: action and observe results carry no screenshot, so take a new one when you need current pixels after a change, and never aim a point from an image the screen has moved past. tap_at, hover_at, type_at, press_at, and select_at act at a point in the latest screenshot\'s pixel coordinates; a listed control under the point is acted on by its id, and a point action\'s own result carries a fresh screenshot. Prefer ids: tap, hover, type, press, and select by id whenever the screen lists the target, use the point tools only for a target the screen does not list, and take a screenshot before guessing a point rather than aiming from memory or from what you expect to be drawn.',
+  off: '- No pixel tools are offered: this agent sends no screenshots. Act only on listed node ids and read the tree; when the tree lists nothing you can act on, conclude rather than guessing a point.',
+};
+
+/** The bullet on typing where a target is unlisted; a point tool focuses it while pixels are offered. */
+const UNLISTED_FIELD_RULE =
+  '- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.';
+
+/** The same bullet under `off`, where no point tool can focus an unlisted field. */
+const NO_PIXEL_FIELD_RULE =
+  '- When type and press accept no target: a field the screen does not list cannot be reached without pixel tools. A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.';
+
+const TYPE_RULES: Readonly<Record<PixelPolicy, string>> = {
+  always: UNLISTED_FIELD_RULE,
+  'on-request': UNLISTED_FIELD_RULE,
+  off: NO_PIXEL_FIELD_RULE,
+};
+
+const BASE_RULES = (pixels: PixelPolicy): string => `You are an autonomous end-to-end testing agent executing exactly one test step against a real application.
 
 Rules:
 - Work only toward the given step; do not start the next step or explore beyond it.
@@ -31,36 +54,39 @@ Rules:
 - You may issue several actions in one turn when each targets a node already on screen and no earlier action in the turn changes what a later one targets: fill several fields, then press the submit button as the last action. Actions run in order; each result reports its own changes. Anything that changes the page (a tap on a link or button, a navigation, a submit) should be the last action of its turn.
 - If the target is not on screen, bring it on screen with the tools you have (scroll_to for a node the screen lists, scroll, navigate) or conclude. Scrolling may repeat (times) or be issued several times in one turn to move far; each result reports what came into the tree.
 - tap is the default gesture for a listed control. The other verbs are offered only when this app's engine can perform them, and each one's description says what it is for; none of them makes a tap stronger.
-- Pixel tools, when offered: screenshot attaches the viewport's pixels when the tree lacks what you need (a shape on a canvas, a pin on a map, a region of an image, a control inside a system sheet) or contradicts what you expect; once you have one, every action result carries a fresh screenshot so you can see what the action did. tap_at, hover_at, type_at, press_at, and select_at act at a point in the latest screenshot's pixel coordinates; a listed control under the point is acted on by its id. Prefer ids: tap, hover, type, press, and select by id whenever the screen lists the target, use the point tools only for a target the screen does not list, and take a screenshot before guessing a point rather than aiming from memory or from what you expect to be drawn.
-- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.
+${PIXEL_RULES[pixels]}
+${TYPE_RULES[pixels]}
 - On a touch screen, a tap made while the keyboard is up may only close the keyboard; the result says so when the keyboard went away. Then act on the control again rather than concluding.
 - Conclude "passed" only when the latest result shows the outcome the step asked for. A result that reports no change, or only the keyboard closing, means the decisive action did not land: act again or conclude "failed". A result that says only that no listed node changed has not ruled out a drawn change: take a screenshot, when offered, before deciding. Never describe an unchanged screen as the outcome.`;
 
 /** One presenter per dispatched step, shared by the opening prompt and the tools that follow it. */
 const presenters = new WeakMap<StepExecutorContext, ScreenPresenter>();
 
-function presenterFor(context: StepExecutorContext): ScreenPresenter {
+function presenterFor(context: StepExecutorContext, pixels: PixelPolicy): ScreenPresenter {
   let presenter = presenters.get(context);
   if (presenter === undefined) {
-    presenter = new ScreenPresenter({ pixelsUnavailable: () => context.pixelsTainted });
+    presenter = new ScreenPresenter({ pixelsUnavailable: () => context.pixelsTainted, policy: pixels });
     presenters.set(context, presenter);
   }
   return presenter;
 }
 
-/** What the built-in agent is built from: an agents entry's `system` and its validated `tools`. */
+/** What the built-in agent is built from: an agents entry's `system`, its validated `tools`, and its pixel policy. */
 export interface BuiltInAgentOptions {
   /** Appended to the built-in execution rules; only the act loop reads it. */
   readonly system?: string | undefined;
   /** Project tools from `defineTool`, validated by config resolution. */
   readonly tools?: Readonly<Record<string, AgentTool>>;
+  /** When the model sees pixels; `always` keeps the historical behavior. */
+  readonly pixels?: PixelPolicy | undefined;
 }
 
 /** Builds the built-in AI SDK step executor. */
 export function createBuiltInAgent(options: BuiltInAgentOptions = {}): StepExecutor {
   const userTools = options.tools ?? {};
+  const pixels = options.pixels ?? 'always';
   const system = (): string =>
-    [BASE_RULES, options.system]
+    [BASE_RULES(pixels), options.system]
       .filter((part): part is string => part !== undefined && part.trim() !== '')
       .join('\n\n');
   return createToolLoopExecutor({
@@ -69,7 +95,7 @@ export function createBuiltInAgent(options: BuiltInAgentOptions = {}): StepExecu
     prepareMessages: (messages) => compactScreenshotHistory(compactScreenHistory(messages)),
     tools: (context, helpers) => ({
       ...guardedTools(helpers, projectTools(context, userTools)),
-      ...createGrammarTools(context, { guard: helpers.guard, screen: presenterFor(context) }),
+      ...createGrammarTools(context, { guard: helpers.guard, screen: presenterFor(context, pixels) }),
     }),
     buildPrompt: async (context) => {
       // The opening look is tree-only, unless pixels are allowed and no
@@ -78,8 +104,15 @@ export function createBuiltInAgent(options: BuiltInAgentOptions = {}): StepExecu
       // or a semantics-free native screen too poorly to act on, and the model
       // would only spend a turn asking for one. One listed control is enough
       // to leave the decision to the model; a small page is not a blind one.
+      // `on-request` leaves even that look to the model's own screenshot; `off`
+      // never sends one.
       let observation = await context.observe();
-      if (!context.pixelsTainted && observation.pixels === undefined && interactiveNodeCount(observation) === 0) {
+      if (
+        pixels === 'always' &&
+        !context.pixelsTainted &&
+        observation.pixels === undefined &&
+        interactiveNodeCount(observation) === 0
+      ) {
         observation = await context.observe({ pixels: true });
       }
       const title = testTitleLine(context.attempt.titlePath);
@@ -98,7 +131,7 @@ export function createBuiltInAgent(options: BuiltInAgentOptions = {}): StepExecu
       if (context.ledger !== '') {
         parts.push(`Previously completed steps:\n${context.ledger}`);
       }
-      const opening = presenterFor(context).open(observation);
+      const opening = presenterFor(context, pixels).open(observation);
       if (typeof opening === 'string') return [...parts, opening].join('\n\n');
       return [
         {

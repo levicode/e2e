@@ -374,10 +374,10 @@ function fixtureContext(
 }
 
 /**
- * The built-in agent, built from the entry's `system` and `tools`, behind a
- * dynamic import, so the agent's loop loads only if an `agent.act()` step
- * actually runs. Deterministic suites and custom-executor projects never pay
- * for it.
+ * The built-in agent, built from the entry's `system`, `tools`, and pixel
+ * policy, behind a dynamic import, so the agent's loop loads only if an
+ * `agent.act()` step actually runs. Deterministic suites and custom-executor
+ * projects never pay for it.
  */
 function lazyBuiltInAgent(config: ResolvedAgentConfig): StepExecutor {
   let executor: StepExecutor | undefined;
@@ -388,7 +388,7 @@ function lazyBuiltInAgent(config: ResolvedAgentConfig): StepExecutor {
     async runStep(context) {
       if (executor === undefined) {
         const { createBuiltInAgent } = await import('../agent/default-agent.ts');
-        executor = createBuiltInAgent({ system: config.system, tools: config.tools });
+        executor = createBuiltInAgent({ system: config.system, tools: config.tools, pixels: config.pixels });
       }
       return executor.runStep(context);
     },

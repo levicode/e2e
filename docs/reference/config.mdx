@@ -880,6 +880,7 @@ export default {
 | [`maxObservationBytes`](#maxobservationbytes) | `number` | `262144` |
 | [`maxInputTokens`](#maxinputtokens) | `number` | `64000` |
 | [`providerOptions`](#provideroptions) | `ProviderOptions` | - |
+| [`pixels`](#pixels) | `'always' \| 'on-request' \| 'off'` | `'always'` |
 
 - Tests use the `default` agent unless you select another: with
   `e2e run --agent <name>`, a test or group option, or an `agent.*` call. A
@@ -986,8 +987,8 @@ house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxMode
 ```
 
 - `model`, `judge`, `context`, and the budgets still apply; judgments need a
-  model. [`system`](#system) and [`tools`](#tools) beside it are
-  `INVALID_CONFIG`.
+  model. [`system`](#system), [`tools`](#tools), and [`pixels`](#pixels) beside
+  it are `INVALID_CONFIG`.
 - `maxModelCalls` bounds the model turns of one step.
 - A `model` or `judge` that differs from the one the executor brought is
   `INVALID_CONFIG`.
@@ -1058,6 +1059,32 @@ providerOptions: { openai: { reasoningEffort: 'low' } },
 
 OpenAI and Azure OpenAI Responses calls also carry `store: false` and a prompt
 cache key unless set here.
+
+#### `pixels`
+
+When the built-in agent's model sees the viewport's pixels.
+
+```ts
+pixels: 'on-request', // default: 'always'
+```
+
+- `always`: once the model has seen a screenshot in a step, every later action
+  and `observe` result carries a fresh one until the step ends. This is the
+  default and the historical behavior.
+- `on-request`: only a result the model asked pixels for carries one: the
+  `screenshot` tool, or a point action (`tap_at`, `hover_at`, `type_at`,
+  `press_at`, `select_at`) read off the latest image. Action and `observe`
+  results stay text-only, which keeps a long step from paying for an image on
+  every turn. A point action's own result carries a fresh screenshot so the
+  image the next point reads is current; the model takes a new screenshot
+  after an ordinary action before aiming again.
+- `off`: no screenshot is ever sent, and the pixel tools are not offered. The
+  model acts only on listed node ids.
+
+`screenshot` and the masking rules are unchanged; only which results carry an
+image differs. `assert`'s `vision` is a separate judgment setting and keeps its
+meaning. With `executor` it is `INVALID_CONFIG`: a custom brain decides what
+its own model sees.
 
 #### Removed options
 
@@ -1662,6 +1689,9 @@ export interface AgentTool {
   readonly annotations: { readonly mutates: boolean; readonly platforms?: readonly string[] };
 }
 
+/** When the built-in agent's model sees the viewport's pixels. */
+export type PixelPolicy = 'always' | 'on-request' | 'off';
+
 /** The options every agent takes, whichever brain runs its `act` steps. */
 export interface AgentOptions {
   /** An AI SDK model instance; no implicit default. */
@@ -1682,6 +1712,8 @@ export interface AgentOptions {
   maxInputTokens?: number;
   /** Provider options every model call carries, such as a reasoning effort. */
   providerOptions?: ProviderOptions;
+  /** When the built-in agent's model sees pixels; default `always`. */
+  pixels?: PixelPolicy;
 }
 
 /** One entry of `agents`: the built-in agent with its options, or a custom brain under `executor`. */
@@ -1696,6 +1728,9 @@ export type AgentConfig = AgentOptions &
     | {
         /** A custom brain `agent.act()` dispatches to instead of the built-in agent. */
         executor: StepExecutor;
+        system?: never;
+        tools?: never;
+        pixels?: never;
       }
   );
 ```
