@@ -330,7 +330,7 @@ describe('native action error public contracts', () => {
 
   it('keeps unacknowledged tap input Unknown and non-retryable', async () => {
     const failure = await nativeActionFailure({ kind: 'tap' }, { error: 'deadline-exceeded', effects: 'unknown', scopeState: 'quarantined' });
-    expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false, message: 'tap outcome is unknown; the action may have committed' });
+    expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false, message: 'tap outcome is unknown; the action may have committed (native deadline-exceeded; effects unknown; scope quarantined)' });
     expect(failure.cause).toBeUndefined();
   });
 

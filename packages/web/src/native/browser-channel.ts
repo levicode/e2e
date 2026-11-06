@@ -243,7 +243,8 @@ function classifyResultError(result: NativeResult, checkedAction?: 'check' | 'un
     // command was dispatched, and formatting never authorizes a replay.
     const message = actionContext === undefined ? 'The native browser action outcome is unknown'
       : `${actionContext.kind} outcome is unknown; the action may have committed`;
-    return new EngineError('ACTION_MAY_HAVE_COMMITTED', `${message}${suffix}`, { retryable: false });
+    const nativeEvidence = ` (native ${result.error?.code ?? 'none'}; effects ${result.effects}; scope ${result.scopeState})`;
+    return new EngineError('ACTION_MAY_HAVE_COMMITTED', `${message}${suffix}${nativeEvidence}`, { retryable: false });
   }
   const reason = result.error?.code;
   // The native receipt certifies only an acknowledged hover/scroll prefix and

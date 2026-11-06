@@ -73,7 +73,7 @@ describe('native request-local action diagnostics', () => {
       const args = { identityScope: 'scope', ref: { id: '@e1', revision: '1' }, action: { kind: 'fill', value: 'hunter2-plaintext', sensitive: true } as const };
       const channel = new EngineChannel(client);
       const failure: unknown = await channel.command('browser.perform', args, context).catch((cause: unknown) => cause);
-      expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false, message: 'fill outcome is unknown; the action may have committed (fill value [redacted])' });
+      expect(failure).toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED', retryable: false, message: 'fill outcome is unknown; the action may have committed (fill value [redacted]) (native not-actionable; effects unknown; scope quarantined)' });
       expect(isNativeNotDispatched(failure)).toBe(false);
       expect((failure as Error).message).not.toContain('input was dispatched');
       expect((failure as Error).message).not.toContain(args.action.value);
