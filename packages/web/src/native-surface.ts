@@ -1323,6 +1323,7 @@ export class NativeSurface implements NativeWebSurface {
       ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }),
       ...(snapshot.treeUnavailable === true ? { treeUnavailable: true as const } : {}),
       ...(snapshot.maskedRegionCount === undefined || (snapshot.pixels !== undefined && pixels === undefined) ? {} : { maskedRegionCount: snapshot.maskedRegionCount }),
+      ...(snapshot.phases === undefined ? {} : { phases: snapshot.phases }),
       ...(pixels === undefined ? {} : { pixels }),
     };
   }
