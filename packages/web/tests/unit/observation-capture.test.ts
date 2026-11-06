@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -89,6 +90,36 @@ describe('native observation capture ownership', () => {
     expect(fixture.peer.requests.slice(start).map(request => [request.command, request.args])).toEqual([
       ['browser.observe', { identityScope: 'scope', options: { pixels: true }, testIdAttribute: 'data-testid', secureFieldSelector: 'input[type="password" i]' }],
     ]);
+  });
+
+  it('returns every decoded observation field, including phases, from one capture', async () => {
+    // Native reports stage durations in microseconds; the adapter returns milliseconds.
+    const bytes = Buffer.from('png-bytes');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const root = { ref: { id: '@e1', revision: '1' }, role: 'document', children: [{ ref: { id: '@e2', revision: '1' }, role: 'button', name: 'Save' }] };
+    const fixture = await nativeCapture(request => {
+      if (request.command === 'browser.observe') return { data: {
+        identityScope: 'scope', revision: '1', viewport: { width: 100, height: 80 },
+        viewportRef: { id: '@e3', revision: '1' }, location: 'https://fixture.test/',
+        truncated: true, maskedRegionCount: 1,
+        phases: { 'semantic-metadata': 2000, 'semantic-node-geometry': 500 },
+        root,
+        pixels: { identityScope: 'scope', handle: 'image-1', size: bytes.length, sha256, mediaType: 'image/png', width: 100, height: 80, scale: 1, maskedRegionCount: 1 },
+      } };
+      if (request.command === 'blob.read') return { data: { base64: bytes.toString('base64'), nextOffset: bytes.length, eof: true } };
+      if (request.command === 'blob.release') return { data: { released: true } };
+      return { data: null };
+    });
+    // Whole-object equality so a dropped decoded field shows up by name: this
+    // is the regression guard for telemetry that native sent and the adapter lost.
+    const snapshot = await fixture.surface.observe(fixture.operation);
+    expect(snapshot).toEqual({
+      identityScope: 'scope', root, viewport: { width: 100, height: 80 },
+      viewportRef: { id: '@e3', revision: '1' }, location: 'https://fixture.test/',
+      truncated: true, maskedRegionCount: 1,
+      phases: { 'semantic-metadata': 2, 'semantic-node-geometry': 1 },
+      pixels: { data: bytes, mediaType: 'image/png', width: 100, height: 80, scale: 1 },
+    });
   });
 
   it('does not start a screenshot when cancelled mask probes eventually finish', async () => {
