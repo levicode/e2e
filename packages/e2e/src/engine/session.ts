@@ -411,6 +411,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
         ...(snapshot.identityScope === undefined ? {} : { identityScope: snapshot.identityScope }),
         viewport: snapshot.viewport,
+        ...(snapshot.phases === undefined ? {} : { phases: snapshot.phases }),
         redaction: {
           secureNodeCount: countSecure(snapshot.root),
           maskedRegionCount: snapshot.maskedRegionCount ?? 0,
