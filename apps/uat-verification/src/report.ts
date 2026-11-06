@@ -475,7 +475,14 @@ function markdownReport(input: {
   lines.push(`- 被测版本：`);
   lines.push(`  - \`e2e\` ${e2eVersion}${commit === undefined ? '' : ` @ \`${commit}${dirty === true ? ' (dirty)' : ''}\``}`);
   lines.push(`  - \`@e2e-dev/web\` ${webVersion}`);
-  lines.push(`  - \`agent-browser\` ${nativeVersion ?? 'unknown'}${nativeCommit === undefined ? '' : ` @ \`${nativeCommit}\``}${inputs.native.source === 'executable-environment' && inputs.native.sha256 !== undefined ? ` · sha256 \`${inputs.native.sha256}\`` : ''}`);
+  const native = [`\`agent-browser\` ${nativeVersion ?? 'unknown'}`];
+  if (nativeCommit !== undefined) native.push(`@ \`${nativeCommit}\``);
+  else if (inputs.native.source === 'executable-environment') native.push('· 构建提交未验证');
+  if (inputs.native.source === 'executable-environment' && inputs.native.sha256 !== undefined) native.push(`· sha256 \`${inputs.native.sha256}\``);
+  lines.push(`  - ${native.join(' ')}`);
+  if (inputs.native.source === 'executable-environment' && nativeCommit === undefined) {
+    lines.push('  - 原生提交未验证：没有与该 sha256 匹配的 native build record（`native-build.json`）；报告不会用所在 git 检出的 HEAD 代替。在 pin 检出构建后运行 `pnpm --filter @e2e-dev/uat-verification native:record` 记录。');
+  }
   if (inputs.native.source === 'unknown') lines.push('  - 原生身份未知：没有 verified runtime 描述符，也没有设置 `E2E_AGENT_BROWSER_EXECUTABLE`。');
   lines.push(`- 环境：${string(input.environment['os']) ?? '?'} / ${string(input.environment['arch']) ?? '?'} · Node ${nodeVersion(string(input.environment['runtime']))}`);
   lines.push(`- 验证路径：\`${inputs.verifyPath}\`${inputs.verifyPath === 'model' ? '（真实模型决策，错误决策按原样保留，retries=0）' : '（脚本化确定性回归基线）'}`);
@@ -582,6 +589,7 @@ function markdownReport(input: {
   lines.push('## 说明与限制', '');
   lines.push('- 本报告只含状态、错误码、阶段耗时、模型轮次与 token、原生结算枚举；原始 report/trace/截图仅留在上面的本机目录，未提交、未发布。');
   lines.push('- `effects` / `scopeState` 来自原生操作记录（`E2E_NATIVE_RESULT_LEDGER`）；`phases` 来自 agent 观察事件。');
+  lines.push('- `agent-browser` 的提交只在 native build record 的 sha256 与二进制一致时显示；记录与二进制不一致时会在启动浏览器前以 `UAT_NATIVE_IDENTITY_MISMATCH` 失败，而不是静默显示一个它没有构建的提交。');
   if (input.inputs.verifyPath === 'model') {
     lines.push('- 模型路径只对私有配置指定的账号执行“新增标签 → 断言 → 移除标签 → 断言复原”，不触碰其他账号或标签；中途失败时报告如实保留失败决策与残留状态，不自动重试掩盖。');
   } else {

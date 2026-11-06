@@ -108,9 +108,11 @@ The native half has fixed locations:
 - `~/.local/state/e2e-uat/native-build.json` records which commit and binary
   digest the last successful build produced. `UAT_NATIVE_BUILD_STATE` moves it.
 
-The report records the agent-browser source commit because the binary sits
-inside that git checkout, plus its version and sha256. A binary outside a
-checkout still records version and sha256, but not the commit.
+The report takes the agent-browser source commit from `native-build.json` only
+when that record's sha256 matches the binary that runs, and its version and
+sha256 from the binary. The checkout's HEAD is never the commit label: a
+checkout can move after the build. A binary with no matching record still
+records its version and sha256, but not the commit.
 
 ### An explicit binary
 
