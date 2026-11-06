@@ -285,6 +285,22 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  apps/uat-verification:
+    dependencies:
+      '@e2e-dev/web':
+        specifier: workspace:*
+        version: link:../../packages/web
+      e2e:
+        specifier: workspace:*
+        version: link:../../packages/e2e
+    devDependencies:
+      '@types/node':
+        specifier: 26.6.5
+        version: 26.6.5
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   apps/web-benchmark:
     dependencies:
       '@e2e-dev/web':

@@ -1,0 +1,3 @@
+# Raw run output carries page content, app logs, and a failure screenshot.
+.e2e/
+.e2e-login/

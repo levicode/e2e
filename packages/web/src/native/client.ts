@@ -9,6 +9,7 @@ import { connectionCancellation, connectionDeadline } from '../operation-budget.
 import { rejectedDecision } from './decision-outcome.ts';
 import { NativeFrameError, NativeFrames } from './frames.ts';
 import { acceptanceIo, type AcceptanceTrace, type AcceptanceReason } from './acceptance-trace.ts';
+import { recordNativeResult } from './result-ledger.ts';
 import { MAX_FRAME_BYTES, MAX_TIMEOUT_MS, NATIVE_PROTOCOL, serverMessage, type NativeEvent, type NativeReady, type NativeResult, type ServerMessage } from './protocol.ts';
 
 // Only a validated closed frame can mint this local cancellation. It is not
@@ -324,14 +325,17 @@ export class NativeClient {
       this.transition!.interop = { operationSeq: sequence, operation, handler: interop, phase: 'retire', pending: 0, settlements: new Set() };
     }
     if (recovery !== undefined) recovery.claimed = true;
+    let timeoutMs = 0;
     let message: ServerMessage;
     try {
-      message = await this.exchange('request', { type: 'request', generation: this.ready!.generation, operationSeq: sequence, timeoutMs: this.timeout(context), command, args, ...(callback === undefined ? {} : { callbackToken: callback.token }) }, context, sequence, callbackTransition);
+      timeoutMs = this.timeout(context);
+      message = await this.exchange('request', { type: 'request', generation: this.ready!.generation, operationSeq: sequence, timeoutMs, command, args, ...(callback === undefined ? {} : { callbackToken: callback.token }) }, context, sequence, callbackTransition);
     } catch (cause) {
       if (callbackTransition !== undefined && this.publishingEpoch === undefined && this.transition?.epoch === callbackTransition) this.completeTransition(false);
       throw cause;
     }
     if (message.type !== 'result') throw this.fail('The native browser returned an unexpected operation response');
+    recordNativeResult(command, sequence, timeoutMs, message);
     return message;
   }
 
