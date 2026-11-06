@@ -20,8 +20,14 @@ export interface TrustedBrowser {
   close(): Promise<void>;
 }
 
+/** How the loop's own Chromium should open. */
+export interface TrustedBrowserOptions {
+  /** Show the window, for the one-time QR scan; off for a normal verification run. */
+  readonly headed?: boolean;
+}
+
 /** Launches the bundled Chromium with the private TLS and proxy args and waits for CDP. */
-export async function launchTrustedBrowser(settings: UatSettings): Promise<TrustedBrowser> {
+export async function launchTrustedBrowser(settings: UatSettings, options: TrustedBrowserOptions = {}): Promise<TrustedBrowser> {
   const executable = chromeExecutable(settings);
   const profile = mkdtempSync(path.join(tmpdir(), 'uat-chrome-'));
   const args = [
@@ -29,7 +35,7 @@ export async function launchTrustedBrowser(settings: UatSettings): Promise<Trust
     `--user-data-dir=${profile}`,
     '--no-first-run',
     '--no-default-browser-check',
-    '--headless=new',
+    ...(options.headed === true ? [] : ['--headless=new']),
     ...(settings.chromiumArgs ?? []),
   ];
   const proxy = settings.env['AGENT_BROWSER_PROXY'];

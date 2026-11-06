@@ -17,7 +17,7 @@ if (settings.loginUrl === undefined) {
   console.log('Opening the UAT login page in a headed browser.');
   console.log('Scan the QR code with WeCom once. The window redirects to the app and closes when the session is saved.');
   console.log(`Session file (private, outside the repository): ${settings.sessionFile}`);
-  const trustedBrowser = needsTrustedBrowser(settings) ? await launchTrustedBrowser(settings) : undefined;
+  const trustedBrowser = needsTrustedBrowser(settings) ? await launchTrustedBrowser(settings, { headed: true }) : undefined;
   let code: number;
   try {
     code = await runE2e(['run', '--config', 'e2e.login.config.ts', '--headed'], {
