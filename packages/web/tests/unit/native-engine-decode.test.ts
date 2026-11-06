@@ -14,6 +14,22 @@ describe('native engine result boundary', () => {
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), root: { ...snapshot().root, states: { secure: 'true' } } })).toThrow();
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), root: { ...snapshot().root, rect: { x: 0, y: 0, width: -1, height: 10 } } })).toThrow();
   });
+  it('admits the engine clickable state on an anonymous action target and leaves it optional', () => {
+    const clickable = () => {
+      const value = snapshot();
+      return { ...value, root: { ...value.root, children: value.root.children.map(node => ({ ...node, states: { clickable: true } })) } };
+    };
+    const withStates = (states: Record<string, unknown>) => {
+      const value = clickable();
+      return { ...value, root: { ...value.root, children: value.root.children.map(node => ({ ...node, states })) } };
+    };
+    expect(decodeEngineResult('browser.observe', clickable())).toEqual(clickable());
+    // Optional: an engine that gives no state sends no key.
+    expect(decodeEngineResult('browser.observe', snapshot()).root.children?.[0]?.states).toBeUndefined();
+    // Still a closed state allowlist: a boolean is required and unknown states are refused.
+    expect(() => decodeEngineResult('browser.observe', withStates({ clickable: 'true' }))).toThrow();
+    expect(() => decodeEngineResult('browser.observe', withStates({ clickable: true, hovered: true }))).toThrow();
+  });
   it('does not relabel legacy state as native storage state', () => {
     const blob = { identityScope: 'scope-1', handle: 'blob-1', size: 1, sha256: '0'.repeat(64), version: 1 };
     expect(() => decodeEngineResult('state.capture', { ...blob, format: 'playwright-storage-state' })).toThrow();
