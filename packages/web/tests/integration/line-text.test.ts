@@ -69,6 +69,9 @@ it('keeps an inline element that offers an action listed, its words still in the
     'Pick this now',
     'this',
     'Outside',
+    // The tab-stop span around <b>any</b> has no name of its own and stays an
+    // addressable action target, so it lists as an unnamed node.
+    '',
     'any',
   ]);
 });
