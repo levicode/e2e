@@ -13,7 +13,7 @@ import { sizeForModel } from './pixels.ts';
 import { TestError } from '../internal/errors.ts';
 
 /** Appended when the node walk stopped at the observation byte budget. */
-const TRUNCATION_MARKER = '[observation truncated at the resolved observation byte limit]';
+const TRUNCATION_MARKER = '[observation truncated at the resolved observation byte limit: interactive nodes are prioritized]';
 /** Appended when the engine reported its tree incomplete and the byte budget did not cut it further. */
 const ENGINE_TRUNCATION_MARKER = '[observation truncated: the engine stopped listing nodes at its limit]';
 /** Missing semantics are unknown, including on a surface that appears empty. */
@@ -118,20 +118,34 @@ export function prepareObservation(
   const lines: string[] = [];
   const encoder = new TextEncoder();
   // The marker is reserved up front so a truncated observation still fits the
-  // budget; the budget is what keeps the request under the token ceiling.
-  const markerFor = (cutByBudget: boolean): string | undefined => {
-    if (cutByBudget) return TRUNCATION_MARKER;
+  // budget; the budget is what keeps the request under the token ceiling. The
+  // first pass reserves the marker it would append, exactly as before: an
+  // engine-truncated tree that fit under that reservation stays whole.
+  const markerFor = (cut: boolean): string | undefined => {
+    if (cut) return TRUNCATION_MARKER;
     return observation.truncated === true ? ENGINE_TRUNCATION_MARKER : undefined;
   };
   const markerBytes = encoder.encode(`${markerFor(false) ?? TRUNCATION_MARKER}\n`).byteLength;
-  const budget = Math.max(0, options.maxBytes - markerBytes);
+  let budget = Math.max(0, options.maxBytes - markerBytes);
   let bytes = 0;
   let cutByBudget = false;
+  let omitted = false;
+  // Measured once per node: the priority pass and the fill pass render the
+  // same line, and a line's size includes its newline.
+  const metrics = new Map<RedactedNode, MeasuredLine>();
+  const lineOf = (node: RedactedNode, depth: number): MeasuredLine => {
+    let measured = metrics.get(node);
+    if (measured === undefined) {
+      const line = formatNode(node, depth, options.appOrigin);
+      measured = { line, size: encoder.encode(`${line}\n`).byteLength };
+      metrics.set(node, measured);
+    }
+    return measured;
+  };
 
   const emit = (node: RedactedNode, depth: number): void => {
     if (cutByBudget) return;
-    const line = formatNode(node, depth, options.appOrigin);
-    const size = encoder.encode(`${line}\n`).byteLength;
+    const { line, size } = lineOf(node, depth);
     if (lines.length > 0 && bytes + size > budget) {
       cutByBudget = true;
       return;
@@ -141,7 +155,53 @@ export function prepareObservation(
     for (const child of node.children ?? []) emit(child, depth + 1);
   };
   emit(tree, 0);
-  const marker = markerFor(cutByBudget);
+  // A page that fits needs no policy. When it does not, spend the budget on
+  // the controls `INTERACTIVE_ROLES` names and the ancestors that place them,
+  // then fill what is left with the rest of the tree in order. Cutting in
+  // document order alone hides every control past the cut — often the ones
+  // below the fold, which is exactly what the model must still be able to
+  // address.
+  if (cutByBudget) {
+    // A budget cut always appends the truncation marker, which is longer than
+    // the engine marker an engine-truncated tree reserved above.
+    budget = Math.max(0, options.maxBytes - encoder.encode(`${TRUNCATION_MARKER}\n`).byteLength);
+    const selected = new Set<RedactedNode>();
+    const required = selectInteractiveContext(tree, 0, lineOf, selected).bytes;
+    if (selected.size > 0) {
+      lines.length = 0;
+      bytes = 0;
+      cutByBudget = false;
+      let remaining = required;
+      const fill = (node: RedactedNode, depth: number): void => {
+        if (cutByBudget) return;
+        const { line, size } = lineOf(node, depth);
+        if (!selected.has(node) && lines.length > 0 && bytes + size + remaining > budget) {
+          // Nothing in this subtree is selected, so leaving it out loses no
+          // control. It is kept only while the bytes the selection still
+          // needs stay reserved.
+          omitted = true;
+          return;
+        }
+        if (lines.length > 0 && bytes + size > budget) {
+          cutByBudget = true;
+          return;
+        }
+        bytes += size;
+        if (selected.has(node)) remaining -= size;
+        lines.push(line);
+        for (const child of node.children ?? []) fill(child, depth + 1);
+      };
+      fill(tree, 0);
+    } else {
+      // No control to prioritize: cut in document order under the marker the
+      // cut will actually append.
+      lines.length = 0;
+      bytes = 0;
+      cutByBudget = false;
+      emit(tree, 0);
+    }
+  }
+  const marker = markerFor(cutByBudget || omitted);
   if (marker !== undefined) lines.push(marker);
   const truncated = marker !== undefined;
 
@@ -163,6 +223,39 @@ export function prepareObservation(
     ...(pixels.cleared === undefined ? {} : { pixels: pixels.cleared }),
     ...(pixels.withheld === undefined ? {} : { pixelsWithheld: pixels.withheld }),
   };
+}
+
+/** One rendered node line, measured with the newline the listing adds. */
+interface MeasuredLine {
+  readonly line: string;
+  readonly size: number;
+}
+
+/**
+ * Selects every node the model can act on by id and every ancestor that gives
+ * it its place in the listing, together with the bytes their lines need. An
+ * action node without its ancestors cannot be addressed from the listing alone,
+ * so the chain is part of the selection; nothing else is. The caller spends
+ * what the selection leaves on the rest of the tree in document order.
+ */
+function selectInteractiveContext(
+  node: RedactedNode,
+  depth: number,
+  lineOf: (node: RedactedNode, depth: number) => MeasuredLine,
+  selected: Set<RedactedNode>,
+): { readonly bytes: number; readonly interactive: boolean } {
+  let bytes = 0;
+  let interactive = INTERACTIVE_ROLES.has(node.role ?? '');
+  for (const child of node.children ?? []) {
+    const childContext = selectInteractiveContext(child, depth + 1, lineOf, selected);
+    bytes += childContext.bytes;
+    interactive = interactive || childContext.interactive;
+  }
+  if (interactive) {
+    selected.add(node);
+    bytes += lineOf(node, depth).size;
+  }
+  return { bytes, interactive };
 }
 
 /** What redacts a node: whole values, and the leading part of one a cut field ends with. */

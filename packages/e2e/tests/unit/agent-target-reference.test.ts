@@ -69,8 +69,8 @@ describe('nodeGone', () => {
     );
   });
 
-  it('says a truncated listing may have cut the node instead of calling it gone', () => {
+  it('says a truncated listing may have left the node out instead of calling it gone', () => {
     const message = nodeGone('e347', semantic([node('@e2', { role: 'button', name: 'Increment' })], true)).message;
-    expect(message).toContain('That listing is truncated, so a node past the cut is not listed.');
+    expect(message).toContain('That listing is truncated, so a node it left out is not listed.');
   });
 });
