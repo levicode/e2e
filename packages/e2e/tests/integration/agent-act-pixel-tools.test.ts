@@ -249,7 +249,7 @@ describe('agent.act pixel verbs', () => {
     const step = stepOf('taps a canvas pin the tree does not list');
     const actions = step.events.filter((event) => event.kind === 'engine');
     expect(actions.map((event) => event.name)).toEqual(['tapAt']);
-    expect(actions[0]!.detail).toBe('tap the point (300, 60)');
+    expect(actions[0]!.detail).toBe('tap the point (300, 60) on node');
     // No harness-made model call: the pixels went to the act model itself.
     expect(step.metrics!.modelCalls).toBe(3);
     expect(step.visionInput).toBe(true);
@@ -341,8 +341,10 @@ describe('agent.act pixel verbs', () => {
     expect(resultByTitle(outcome, 'refuses a point with nothing selectable under it').status).toBe('failed');
     const [, , third] = turnsOf('select on the map');
     // The lead echoes the model's image coordinates; the hit summary speaks in viewport pixels.
-    expect(third!.lastToolResult).toContain(
-      'select_at (30, 30) failed: nothing the screen lists is at (50, 50); select_at needs a control the screen lists.',
+    // The pin keeps an unnamed canvas target addressable, so the hit summary
+    // names it under the point even though it has no role, name or text.
+    expect(third!.lastToolResult).toMatch(
+      /select_at \(30, 30\) failed: no control is listed at \(50, 50\); under it: #\S+; select_at needs a control the screen lists\./,
     );
     const step = stepOf('refuses a point with nothing selectable under it');
     expect(step.events.filter((event) => event.kind === 'engine')).toHaveLength(0);
@@ -357,7 +359,7 @@ describe('agent.act pixel verbs', () => {
     expect(actions[1]!.detail).toBe('type "hi" into the focused field');
     expect(actions[2]!.detail).toBe('press "Enter" on the focused field');
     const [, , third, fourth] = turnsOf('type hi into the drawn field');
-    expect(third!.lastToolResult).toContain('Typed into the field at (120, 60) (tapped to focus it; nothing the screen lists is at (200, 100)).');
+    expect(third!.lastToolResult).toMatch(/Typed into the field at \(120, 60\) \(tapped to focus it; no control is listed at \(200, 100\); under it: #\S+\)\./);
     expect(fourth!.lastToolResult).toContain('Pressed Enter on the focused field.');
   });
 
