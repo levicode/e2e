@@ -34,8 +34,24 @@ export interface PackageIdentity {
   readonly dirty?: boolean;
 }
 
-/** The native build a run will use, from the same two places the web engine reads. */
+/**
+ * The native build a run will use, from the same two places the web engine
+ * reads and in the same order: an explicit executable first, then a runtime
+ * descriptor. A leftover descriptor must not name a binary the run did not use.
+ */
 export function readNativeIdentity(projectRoot: string, env: NodeJS.ProcessEnv): NativeIdentity {
+  const executable = env['E2E_AGENT_BROWSER_EXECUTABLE'] ?? env['AGENT_BROWSER_EXECUTABLE'];
+  if (executable !== undefined && executable !== '') {
+    if (!path.isAbsolute(executable) || !existsSync(executable)) return { source: 'unknown' };
+    const reported = version(executable);
+    const sha256 = digest(executable);
+    return {
+      source: 'executable-environment',
+      ...(reported === undefined ? {} : { version: reported }),
+      ...(sha256 === undefined ? {} : { sha256 }),
+      ...checkoutIdentity(path.dirname(executable)),
+    };
+  }
   const descriptor = path.join(projectRoot, '.e2e', 'native-runtime.json');
   if (existsSync(descriptor)) {
     try {
@@ -56,18 +72,7 @@ export function readNativeIdentity(projectRoot: string, env: NodeJS.ProcessEnv):
       // A malformed descriptor never reached a browser either; fall through.
     }
   }
-  const executable = env['E2E_AGENT_BROWSER_EXECUTABLE'];
-  if (executable === undefined || executable === '' || !path.isAbsolute(executable) || !existsSync(executable)) {
-    return { source: 'unknown' };
-  }
-  const reported = version(executable);
-  const sha256 = digest(executable);
-  return {
-    source: 'executable-environment',
-    ...(reported === undefined ? {} : { version: reported }),
-    ...(sha256 === undefined ? {} : { sha256 }),
-    ...checkoutIdentity(path.dirname(executable)),
-  };
+  return { source: 'unknown' };
 }
 
 /** The installed `e2e` and `@e2e-dev/web` versions the app resolves. */
