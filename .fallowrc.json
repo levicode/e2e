@@ -46,7 +46,13 @@
     "scripts/ci/frozen-cache-gate.mjs",
     "scripts/ci/pixel-coverage-diagnostic.mjs",
     "scripts/ci/run-selector-matcher-fixture.mjs",
-    "scripts/web-acceptance.ts"
+    "scripts/web-acceptance.ts",
+    "apps/uat-verification/e2e.config.ts",
+    "apps/uat-verification/e2e.login.config.ts",
+    "apps/uat-verification/tests/**/*.ts",
+    "apps/uat-verification/scripts/**/*.ts",
+    "apps/uat-verification/test/**/*.ts",
+    "apps/uat-verification/test/fixture/server.mjs"
   ],
   "ignorePatterns": [
     "docs/**",

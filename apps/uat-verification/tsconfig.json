@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "noEmit": true
+  },
+  "include": [
+    "e2e.config.ts",
+    "e2e.login.config.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "test/**/*.ts",
+    "scripts/**/*.ts"
+  ]
+}
