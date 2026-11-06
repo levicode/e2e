@@ -385,6 +385,71 @@ describe('prepareObservation', () => {
     expect(prepared.bytes).toBe(new TextEncoder().encode(prepared.text).byteLength);
   });
 
+  it('keeps a clickable anonymous target the role-only selection would cut, with the ancestors that place it', () => {
+    // The web engine marks a retained anonymous action target `clickable` and
+    // gives it no role; a role-only selection treats it as filler and the
+    // in-order cut hides it, so the model cannot address the one control the
+    // row offers.
+    const clickable: NonNullable<SemanticNode['states']> & { readonly clickable: boolean } = { clickable: true };
+    const fillers = Array.from({ length: 40 }, (_, index) => node(`t${index}`, { text: 'filler '.repeat(8) }));
+    const tree = node('n1', {
+      role: 'document',
+      children: [
+        node('n2', {
+          role: 'list',
+          children: [
+            ...fillers,
+            node('n3', { states: clickable }),
+            node('n4', { text: 'row tail', children: [node('n5', { states: clickable })] }),
+          ],
+        }),
+      ],
+    });
+    const prepared = prepareObservation(observation(tree), { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: 640 });
+    assert(prepared.kind === 'semantic');
+    expect(prepared.truncated).toBe(true);
+    // The anonymous target and both ancestors that place it survive, and its
+    // line still names the state that makes it actionable.
+    expect(prepared.text).toContain('#n1 document');
+    expect(prepared.text).toContain('#n2 list');
+    expect(prepared.text).toContain('#n3 [clickable]');
+    expect(prepared.text).toContain('#n5 [clickable]');
+    // Filler does not all fit: the budget went to what the model can act on.
+    expect(prepared.text.split('\n').filter(line => line.includes('filler')).length).toBeLessThan(40);
+    expect(prepared.text.split('\n').filter(line => line.includes('filler')).length).toBeGreaterThan(0);
+    expect(prepared.bytes).toBeLessThanOrEqual(640);
+    expect(prepared.bytes).toBe(new TextEncoder().encode(prepared.text).byteLength);
+  });
+
+  it('keeps every clickable anonymous target on a dense screen at the reported budget', () => {
+    // The reported UAT page shape: 1,476 nodes cut to 1,107 lines at roughly
+    // 58.8 KB. The clickable targets sit throughout, including after the
+    // in-order cut; every one of them must stay addressable.
+    const clickable: NonNullable<SemanticNode['states']> & { readonly clickable: boolean } = { clickable: true };
+    const clickableIds: string[] = [];
+    const children: SemanticNode[] = [];
+    for (let index = 0; index < 1_476; index += 1) {
+      if (index % 41 === 40) {
+        const id = `k${index}`;
+        clickableIds.push(id);
+        children.push(node(id, { states: clickable }));
+      } else {
+        children.push(node(`t${index}`, { role: 'listitem', text: `row ${index} ${'x'.repeat(18)}` }));
+      }
+    }
+    const prepared = prepareObservation(observation(node('n1', { role: 'document', children })), {
+      redact: NO_REDACT,
+      redactCut: NO_REDACT,
+      maxBytes: 58_804,
+    });
+    assert(prepared.kind === 'semantic');
+    expect(prepared.truncated).toBe(true);
+    expect(prepared.nodes.size).toBe(1_477);
+    for (const id of clickableIds) expect(prepared.text).toContain(`#${id} [clickable]`);
+    expect(prepared.bytes).toBeLessThanOrEqual(58_804);
+    expect(prepared.bytes).toBe(new TextEncoder().encode(prepared.text).byteLength);
+  });
+
   it('stays within the budget when the controls alone cannot fit', () => {
     const children = Array.from({ length: 80 }, (_, index) => node(`c${index}`, { role: 'button', name: `Button ${index}` }));
     const prepared = prepareObservation(observation(node('n1', { role: 'document', children })), {

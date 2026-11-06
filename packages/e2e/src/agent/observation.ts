@@ -156,11 +156,10 @@ export function prepareObservation(
   };
   emit(tree, 0);
   // A page that fits needs no policy. When it does not, spend the budget on
-  // the controls `INTERACTIVE_ROLES` names and the ancestors that place them,
-  // then fill what is left with the rest of the tree in order. Cutting in
-  // document order alone hides every control past the cut — often the ones
-  // below the fold, which is exactly what the model must still be able to
-  // address.
+  // the controls the model can act on and the ancestors that place them, then
+  // fill what is left with the rest of the tree in order. Cutting in document
+  // order alone hides every control past the cut — often the ones below the
+  // fold, which is exactly what the model must still be able to address.
   if (cutByBudget) {
     // A budget cut always appends the truncation marker, which is longer than
     // the engine marker an engine-truncated tree reserved above.
@@ -245,7 +244,7 @@ function selectInteractiveContext(
   selected: Set<RedactedNode>,
 ): { readonly bytes: number; readonly interactive: boolean } {
   let bytes = 0;
-  let interactive = INTERACTIVE_ROLES.has(node.role ?? '');
+  let interactive = isActionable(node);
   for (const child of node.children ?? []) {
     const childContext = selectInteractiveContext(child, depth + 1, lineOf, selected);
     bytes += childContext.bytes;
@@ -256,6 +255,26 @@ function selectInteractiveContext(
     bytes += lineOf(node, depth).size;
   }
   return { bytes, interactive };
+}
+
+/**
+ * States an engine reports as evidence that a node without an interactive role
+ * acts. The web engine marks a retained anonymous action target `clickable`
+ * (pointer, click, tab-stop, or editable evidence); the line renders that
+ * state, and the node is addressed by id like a named control.
+ */
+const ACTIONABLE_STATES: ReadonlySet<string> = new Set(['clickable']);
+
+/**
+ * Whether the model can act on this node by id: its role is one
+ * `INTERACTIVE_ROLES` names, or an engine-reported state proves it acts even
+ * though the role vocabulary does not name it. The state is read generically
+ * because the public state vocabulary does not name every state an engine may
+ * prove; `describeNode` renders the same true states verbatim.
+ */
+function isActionable(node: RedactedNode): boolean {
+  if (INTERACTIVE_ROLES.has(node.role ?? '')) return true;
+  return Object.entries(node.states ?? {}).some(([state, value]) => value === true && ACTIONABLE_STATES.has(state));
 }
 
 /** What redacts a node: whole values, and the leading part of one a cut field ends with. */

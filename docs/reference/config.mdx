@@ -1044,10 +1044,11 @@ maxInputTokens: 128_000, // default: 64000
 ```
 
 - 1 through 1000000.
-- A dense screen is cut to fit under it. The cut keeps interactive nodes —
-  buttons, links, fields — and the ancestors that place them in preference to
-  non-interactive structure, in document order; the listing says it was
-  truncated and that interactive nodes were prioritized.
+- A dense screen is cut to fit under it. The cut keeps the nodes the model can
+  act on — buttons, links, fields, and a role-less node an engine proves
+  actionable with a state such as `clickable` — and the ancestors that place
+  them in preference to other structure, in document order; the listing says it
+  was truncated and that interactive nodes were prioritized.
 
 #### `providerOptions`
 
