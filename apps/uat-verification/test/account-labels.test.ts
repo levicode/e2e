@@ -5,9 +5,9 @@ import { accountHasLabel, labelRemovalPayload, parseAccountLabelState } from '..
 test('the edit response yields the account and both label lists', () => {
   const state = parseAccountLabelState({
     status: 'success',
-    result: { account_id: 94002939, manual_mapping_label_ids: [101, 102], auto_mapping_label_ids: [201] },
+    result: { account_id: 40012345, manual_mapping_label_ids: [101, 102], auto_mapping_label_ids: [201] },
   });
-  assert.deepEqual(state, { accountId: '94002939', manual: ['101', '102'], auto: ['201'] });
+  assert.deepEqual(state, { accountId: '40012345', manual: ['101', '102'], auto: ['201'] });
 });
 
 test('the legacy label_ids field stands in when the manual list is absent', () => {
