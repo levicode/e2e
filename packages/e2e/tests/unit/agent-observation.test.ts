@@ -119,6 +119,20 @@ describe('prepareObservation', () => {
     expect(prepared.bytes).toBe(prepared.text.length);
   });
 
+  it('renders a true engine-reported state the public vocabulary does not name', () => {
+    // The native engine marks an anonymous action target `clickable`; the
+    // reader keeps every true state, so the model-facing line names it in the
+    // same slot as a named state.
+    const states: NonNullable<SemanticNode['states']> & { readonly clickable: boolean } = { clickable: true };
+    const prepared = prepareObservation(observation(node('n1', { states })), {
+      redact: NO_REDACT,
+      redactCut: NO_REDACT,
+      maxBytes: 4_096,
+    });
+    expect(prepared.kind).toBe('semantic');
+    expect(prepared.text).toBe('#n1 [clickable]');
+  });
+
   it('masks secure fields and never renders their value', () => {
     const tree = node('n1', {
       children: [
