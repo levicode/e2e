@@ -7,8 +7,11 @@ const settings: UatSettings = {
   entryUrl: 'http://uat.example.test/app/',
   loginUrl: 'https://sso.example.test/login.html',
   accountId: '1234567890',
+  labelId: undefined,
+  labelName: undefined,
   homeHash: '#/home',
   sessionFile: '',
+  env: {},
 };
 
 test('the sign-in wait returns the home location and never opens the app while the QR page is up', async () => {

@@ -1,15 +1,20 @@
 # Local UAT verification loop
 
-A private, read-only harness for the ad-manager UAT environment: sign in once by
-scanning a QR code, then run one fixed scenario on this machine and get a
-redacted report that says which e2e and agent-browser builds ran, which step
-failed with which code, which native operation settled how, and how long each
-observation phase took.
+A private harness for the ad-manager UAT environment: sign in once, then run one
+of two paths on this machine and get a redacted report that says which e2e and
+agent-browser builds ran, which step failed with which code, which native
+operation settled how, how long each observation phase took, and — on the model
+path — how many model rounds it spent and what those rounds decided.
 
-Nothing private is committed. The entry URL and the queried account ID live in a
-file outside the checkout, the login state lives beside it, and the raw run
-output stays in the gitignored `.e2e/` directory. Only the redacted report is
-written to the user's state directory.
+| Path | Command | What decides | Used for |
+| --- | --- | --- | --- |
+| `scripted` | `pnpm --filter @e2e-dev/uat-verification verify` | `src/scenario.ts`, no model | Deterministic regression baseline |
+| `model` | `pnpm --filter @e2e-dev/uat-verification verify:model` | A real AI SDK model from the private config | Real agent decisions, including the writable label loop |
+
+Nothing private is committed. The entry URL, the queried account ID, the label,
+and the model credential live in files outside the checkout; the login state
+lives beside them; raw run output stays in the gitignored output directories.
+Only the redacted report is written to the user's state directory.
 
 ## One-time setup
 
@@ -33,15 +38,50 @@ cat > ~/.config/e2e-uat/config.json <<'JSON'
 {
   "entryUrl": "http://<uat-host>/<app>/",
   "loginUrl": "http://<sso-host>/login.html",
-  "accountId": "<account id to query>"
+  "accountId": "<account id to query>",
+  "labelId": "<label id to add and remove>",
+  "labelName": "<label name as the page renders it>"
 }
 JSON
 chmod 600 ~/.config/e2e-uat/config.json
 ```
 
-`UAT_ENTRY_URL`, `UAT_LOGIN_URL`, and `UAT_ACCOUNT_ID` override the file, and
-`UAT_CONFIG_FILE`/`UAT_SESSION_FILE`/`UAT_REPORTS_DIR` move the three fixed
-locations.
+`UAT_ENTRY_URL`, `UAT_LOGIN_URL`, `UAT_ACCOUNT_ID`, `UAT_LABEL_ID`, and
+`UAT_LABEL_NAME` override the file, and
+`UAT_CONFIG_FILE`/`UAT_SESSION_FILE`/`UAT_REPORTS_DIR` move the fixed locations.
+
+An environment whose app needs a proxy or an internal CA may also put `env`
+(environment variables for the browser, such as `AGENT_BROWSER_PROXY` and
+`AGENT_BROWSER_PROXY_BYPASS`), `chromiumArgs` (for example the exact SPKI
+hashes: `["--ignore-certificate-errors-spki-list=<hash>"]`), and
+`chromeExecutable` in that file. When any of them is set, `verify` launches
+Chromium with them and attaches the engine over CDP; otherwise the engine
+launches its usual browser. These values are machine-local and private.
+
+For the model path only, write the private model settings beside it:
+
+```bash
+cat > ~/.config/e2e-uat/llm.json <<'JSON'
+{
+  "provider": "openai",
+  "api": "responses",
+  "model": "<model id>",
+  "baseUrl": "http://<internal-gateway>/v1",
+  "apiKey": "<key>"
+}
+JSON
+chmod 600 ~/.config/e2e-uat/llm.json
+```
+
+`api` is `responses` (the default) or `chat`; it selects
+`openai.responses(model)` or `openai.chat(model)` and the provider label the
+report records (`openai.responses/<id>` or `openai.chat/<id>`). `baseUrl` is for
+an internal gateway; omit it for the public API. `UAT_LLM_FILE` moves the file,
+and `UAT_LLM_PROVIDER`/`UAT_LLM_API`/`UAT_LLM_MODEL`/`UAT_LLM_BASE_URL`/
+`UAT_LLM_API_KEY` override it for one run. A missing file, a mode other than
+0600, a missing key, an unimplemented provider, or an unknown protocol fails
+with a `UAT_LLM_*` code before any browser opens; there is no silent fallback to
+the scripted path.
 
 ## Sign in once
 
@@ -60,41 +100,80 @@ An expired session is a first-class failure: a missing, unreadable, foreign
 origin, or fully expired file fails the run with `UAT_SESSION_EXPIRED` and the
 login command above, instead of a silent redirect to the login page.
 
-## Run the fixed scenario
+## Run the scripted baseline
 
 ```bash
 E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/agent-browser \
   pnpm --filter @e2e-dev/uat-verification verify
 ```
 
-This one command restores the session, runs the read-only scenario — home →
-账号管理 → 账号标签管理 → the account ID field → 查询 — and writes the report.
-It never creates, edits, deletes, or submits business data; the only request it
-waits for is the page's own account query.
+One command restores the session, walks the fixed read-only scenario — home →
+账号管理 → 账号标签管理 → the account ID field → 查询 — and writes the report. It
+never creates, edits, deletes, or submits business data; the only request it
+waits for is the page's own account query. This is the regression baseline: the
+same path, the same engine events, and the same observation phases on every run,
+with no model variance or cost.
 
-Exit codes: `0` passed, `2` the saved session expired (scan again), anything
-else the run itself failed.
+## Run the model path
+
+```bash
+E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/agent-browser \
+  pnpm --filter @e2e-dev/uat-verification verify:model
+```
+
+The same session and read path, then a real model decides how to add the
+configured label to the configured account, a deterministic assertion checks the
+result, the model removes it, and a final assertion checks the account is back
+to its initial state. Writes are limited to the account and label named in
+`config.json`; no other account or label is touched.
+
+The path is built to show what the model actually did:
+
+- `retries: 0` and no harness repair. A wrong node, a misread result, or a
+  failed action stays in the report with its code and native
+  `effects`/`scopeState`; the runner never retries it behind the model's back.
+- The report's `model` section sums the model rounds, the model-turn wall time,
+  and provider-reported input/output tokens (plus cache and estimated cost when
+  the provider reports them), per step and for the run.
+- The `# 模型决策与动作` section lists each round's tool calls and what came
+  back, so a wrong decision can be read without the full raw transcript.
+
+If the model path fails part-way, the report says what remains changed and the
+next step; do not read a failed run as "the account is clean". The raw trace and
+screenshots (which the model saw) stay in `.e2e-model/`, gitignored and private.
 
 ## Output conventions
 
-- Raw run output: `apps/uat-verification/.e2e/` (gitignored). It holds the
-  report, trace pages, and a failure screenshot; treat it as private.
-- Native ledger: `apps/uat-verification/.e2e/native-results.jsonl`, enabled by
+- Raw run output: `apps/uat-verification/.e2e/` (scripted) or
+  `apps/uat-verification/.e2e-model/` (model), both gitignored. They hold the
+  report, trace pages, and a failure screenshot; treat them as private.
+- Native ledger: `native-results.jsonl` in the same output directory, enabled by
   `E2E_NATIVE_RESULT_LEDGER` for this run only. One line per native operation
   with the command, sequence, transmitted timeout, `ok`, `effects`,
   `scopeState`, error code, and retention counters — never arguments, payloads,
   page text, or URLs.
 - Redacted report: `~/.local/state/e2e-uat/reports/<timestamp>/report.md` and
-  `report.json`. The markdown carries the status, the exact e2e and
-  agent-browser builds, per-step codes, observation `phases`, and the native
-  `code`/`effects`/`scopeState` table; the host, login host, and account ID are
+  `report.json`. Both paths share the structure: `path`, status, the exact e2e
+  and agent-browser builds, per-step codes, observation `phases`, the native
+  `code`/`effects`/`scopeState` table, and — on the model path — `model` with
+  rounds, latency, and tokens. The host, login host, account ID, and label are
   replaced with placeholders.
 
-## Why a scripted executor
+Exit codes: `0` passed, `2` the saved session or the private model settings are
+unusable (fix the named file, scan again if the session expired), anything else
+the run itself failed.
 
-The scenario drives the agent step path with a scripted executor
-(`src/scenario.ts`) instead of a model: a fixed scenario must take the same path
-on every run, and the observation events (and their phases) come from that path.
-The executor finds controls by their visible name or placeholder and acts by
-node id, exactly as an agent step would, so the report records the same engine
-events and phases a real agent run produces — without model variance or cost.
+## Why two paths
+
+The scripted path answers “did the product regress on this fixed route?” without
+depending on a model, a key, or a network. The model path answers the question a
+script cannot: “can a real agent still complete this flow, including the write
+path that previously failed with unknown outcomes?” A model failure is a result,
+not a reason to silently rerun the scripted path; the two reports share a
+structure so they can be compared side by side, and only the model report has
+model rounds, latency, and token usage.
+
+A model-path failure first says which layer failed: connection (gateway
+unreachable or proxy), authentication (key rejected), protocol (responses/chat
+mismatch or the gateway rejecting the request shape), or the product itself. The
+report keeps the code and message so that distinction is not lost.

@@ -7,6 +7,7 @@
  */
 import { runE2e } from '../src/e2e-cli.ts';
 import { loadUatSettings, uatConfigFile } from '../src/settings.ts';
+import { launchTrustedBrowser, needsTrustedBrowser } from '../src/trusted-browser.ts';
 
 const settings = loadUatSettings();
 if (settings.loginUrl === undefined) {
@@ -16,7 +17,16 @@ if (settings.loginUrl === undefined) {
   console.log('Opening the UAT login page in a headed browser.');
   console.log('Scan the QR code with WeCom once. The window redirects to the app and closes when the session is saved.');
   console.log(`Session file (private, outside the repository): ${settings.sessionFile}`);
-  const code = await runE2e(['run', '--config', 'e2e.login.config.ts', '--headed']);
+  const trustedBrowser = needsTrustedBrowser(settings) ? await launchTrustedBrowser(settings) : undefined;
+  let code: number;
+  try {
+    code = await runE2e(['run', '--config', 'e2e.login.config.ts', '--headed'], {
+      ...process.env,
+      ...(trustedBrowser === undefined ? {} : { ...settings.env, UAT_CDP_ENDPOINT: trustedBrowser.endpoint }),
+    });
+  } finally {
+    await trustedBrowser?.close();
+  }
   if (code === 0) {
     console.log(`Signed in. Session saved to ${settings.sessionFile}.`);
     console.log('Next: pnpm --filter @e2e-dev/uat-verification verify');
