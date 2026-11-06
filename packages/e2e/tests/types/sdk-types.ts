@@ -625,7 +625,9 @@ await agent.act('approve it', { agent: 'admin' });
 await agent.assert('it is approved', { agent: 'buyer' });
 // An agents entry is one plain object: model, how it works, the app's vocabulary, and its tools.
 declare const seedCart: ReturnType<typeof defineTool>;
-({ targets, agents: { default: { model, judge: model, system: 'Be thorough.', context: 'Plans are called tiers.', tools: { seedCart }, providerOptions: { openai: { reasoningEffort: 'low' } } } } }) satisfies E2EConfig;
+({ targets, agents: { default: { model, judge: model, system: 'Be thorough.', context: 'Plans are called tiers.', tools: { seedCart }, providerOptions: { openai: { reasoningEffort: 'low' } }, pixels: 'on-request' } } }) satisfies E2EConfig;
+// @ts-expect-error pixels is one of always, on-request, or off
+({ targets, agents: { default: { model, pixels: 'sometimes' } } }) satisfies E2EConfig;
 // @ts-expect-error context is one string
 ({ targets, agents: { default: { model, context: ['Plans are called tiers.'] } } }) satisfies E2EConfig;
 // A custom brain goes under executor, and keeps the model, judge, context, and budgets.
@@ -639,6 +641,8 @@ declare const brain: StepExecutor;
 ({ targets, agents: { default: { executor: brain, system: 'Be thorough.' } } }) satisfies E2EConfig;
 // @ts-expect-error tools belong to the built-in agent; a custom executor brings its own
 ({ targets, agents: { default: { executor: brain, tools: { seedCart } } } }) satisfies E2EConfig;
+// @ts-expect-error pixels belongs to the built-in agent; a custom executor brings its own
+({ targets, agents: { default: { executor: brain, pixels: 'off' } } }) satisfies E2EConfig;
 // @ts-expect-error a bare executor is not an agents entry: pass it as { executor }
 ({ targets, agents: { default: brain } }) satisfies E2EConfig;
 // @ts-expect-error maxTurns left createToolLoopExecutor: the agent's maxModelCalls bounds its turns

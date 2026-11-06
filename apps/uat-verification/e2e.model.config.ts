@@ -33,6 +33,10 @@ export default {
       maxSteps: 40,
       maxModelCalls: 60,
       judgmentTimeout: 90_000,
+      // Every action result used to carry a screenshot once the model had
+      // seen one: 13 images for 2 explicit looks in one run. Pay for pixels
+      // only when the model asks for them.
+      pixels: 'on-request',
       system: [
         'Hands-on tester. Act on what the screen shows, verify each save, and never guess a different account or label.',
         'When a needed control is an unlabeled icon, take a screenshot and use tap_at on the icon; prefer a listed node id otherwise.',

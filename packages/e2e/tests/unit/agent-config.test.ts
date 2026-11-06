@@ -131,7 +131,7 @@ describe('the agents entry shape', () => {
       },
     });
     const ux = config.agents.get('ux')!;
-    expect(ux).toMatchObject({ model: undefined, judge: undefined, system: undefined, context: undefined, tools: {}, maxSteps: 25, judgmentTimeout: 30_000, maxInputTokens: 64_000 });
+    expect(ux).toMatchObject({ model: undefined, judge: undefined, system: undefined, context: undefined, tools: {}, pixels: 'always', maxSteps: 25, judgmentTimeout: 30_000, maxInputTokens: 64_000 });
   });
 });
 
@@ -169,6 +169,12 @@ describe('a custom executor', () => {
     expect(() => resolve({ agents: { ux: { executor: brain(), tools: { lookup: readOnlyTool() } } } } as never)).toThrow(/^agents\.ux\.tools is an option of the built-in agent.*drop tools or drop executor$/);
   });
 
+  it('rejects a pixel policy, which belongs to the built-in agent', () => {
+    expect(() => resolve({ agents: { default: { executor: brain(), pixels: 'on-request' } } } as never)).toThrow(
+      /^agents\.default\.pixels is an option of the built-in agent.*a custom executor brings its own pixel policy.*drop pixels or drop executor$/,
+    );
+  });
+
   it('rejects an executor value that is not a StepExecutor', () => {
     expect(() => resolve({ agents: { default: { executor: { name: 'x' } } } } as never)).toThrow(
       /agents\.default\.executor must be a StepExecutor/,
@@ -194,6 +200,19 @@ describe('the built-in agent options', () => {
         `agents.ux.tools.${name}: the ${name} tool name is reserved for the agent's own tools`,
       );
     }
+  });
+
+  it('defaults the pixel policy to always and passes another one through', () => {
+    expect(resolve({}).agent.pixels).toBe('always');
+    expect(resolve({ agents: { default: { pixels: 'on-request' } } }).agent.pixels).toBe('on-request');
+    expect(resolve({ agents: { default: { pixels: 'off' } } }).agent.pixels).toBe('off');
+  });
+
+  it('rejects a pixel policy outside the three names', () => {
+    expect(() => resolve({ agents: { default: { pixels: 'sometimes' } } } as never)).toThrow(
+      'agents.default.pixels must be "always", "on-request", or "off", got "sometimes"',
+    );
+    expect(() => resolve({ agents: { default: { pixels: true } } } as never)).toThrow(/agents\.default\.pixels must be/);
   });
 
   it('rejects the names of the tools the harness adds in an agent step, an e2e mcp session, and explore', () => {

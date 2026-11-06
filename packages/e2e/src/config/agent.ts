@@ -11,6 +11,7 @@ import type {
   AgentConfig,
   AgentTool,
   ModelInstance,
+  PixelPolicy,
   ProviderOptions,
   VisionMode,
 } from '../types.ts';
@@ -61,6 +62,8 @@ export interface ResolvedAgentConfig {
   readonly system: string | undefined;
   /** The built-in agent's project tools, validated; empty with a custom executor. */
   readonly tools: Readonly<Record<string, AgentTool>>;
+  /** When the built-in agent's model sees pixels; `always` unless configured. */
+  readonly pixels: PixelPolicy;
   readonly maxSteps: number;
   readonly maxModelCalls: number;
   /** Deadline of one judgment-tier call (`assert`, `waitFor`, `extract`), in milliseconds. */
@@ -103,6 +106,7 @@ const AGENT_KEYS = [
   'maxObservationBytes',
   'maxInputTokens',
   'providerOptions',
+  'pixels',
 ] as const;
 
 const AGENT_KEY_SET: ReadonlySet<string> = new Set(AGENT_KEYS);
@@ -115,8 +119,12 @@ const REMOVED_AGENT_KEYS: ReadonlyMap<string, string> = new Map([
   ['limits', 'set maxInputTokens on the agent; the runner fixes the other limits'],
 ]);
 
-/** The keys only the built-in agent reads; a custom executor brings its own. */
-const BUILT_IN_ONLY_KEYS = ['system', 'tools'] as const;
+/** The keys only the built-in agent reads, each with what a custom executor brings instead. */
+const BUILT_IN_ONLY_KEYS: ReadonlyMap<'system' | 'tools' | 'pixels', string> = new Map([
+  ['system', 'prompt'],
+  ['tools', 'tools'],
+  ['pixels', 'pixel policy'],
+]);
 
 /** The shape an agents entry takes, for messages that point at it. */
 const AGENT_SHAPE = '{ model, judge, system, context, tools, maxSteps, maxModelCalls, ... }';
@@ -183,11 +191,11 @@ export function resolveAgentConfig(
   let executor: StepExecutor | undefined;
   if (agent?.executor !== undefined) {
     executor = checkExecutor(agent.executor, `${label}.executor`);
-    for (const key of BUILT_IN_ONLY_KEYS) {
+    for (const [key, brought] of BUILT_IN_ONLY_KEYS) {
       if (agent[key] === undefined) continue;
       throw new ConfigurationError(
         'INVALID_CONFIG',
-        `${label}.${key} is an option of the built-in agent, and ${label}.executor replaces it: a custom executor brings its own ${key === 'system' ? 'prompt' : 'tools'}; drop ${key} or drop executor`,
+        `${label}.${key} is an option of the built-in agent, and ${label}.executor replaces it: a custom executor brings its own ${brought}; drop ${key} or drop executor`,
       );
     }
   }
@@ -209,6 +217,7 @@ export function resolveAgentConfig(
     judge: resolveCanonicalModel(agent?.judge, executor?.judge, label, 'judge') ?? model,
     system: resolveSystem(agent?.system, label),
     tools: resolveTools(agent?.tools, label),
+    pixels: resolvePixelPolicy(agent?.pixels, `${label}.pixels`),
     maxSteps,
     maxModelCalls,
     judgmentTimeout,
@@ -300,6 +309,23 @@ function resolveSystem(value: unknown, label: string): string | undefined {
     throw new ConfigurationError('INVALID_CONFIG', `${label}.system must be a string`);
   }
   return value;
+}
+
+const PIXEL_POLICIES: ReadonlySet<unknown> = new Set<PixelPolicy>(['always', 'on-request', 'off']);
+
+/**
+ * When the built-in agent's model sees pixels. `always` keeps the historical
+ * behavior, so a config that names none does not change.
+ */
+function resolvePixelPolicy(value: unknown, label: string): PixelPolicy {
+  if (value === undefined) return 'always';
+  if (!PIXEL_POLICIES.has(value)) {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${label} must be "always", "on-request", or "off", got ${JSON.stringify(value)}`,
+    );
+  }
+  return value as PixelPolicy;
 }
 
 const NO_TOOLS: Readonly<Record<string, AgentTool>> = Object.freeze({});
