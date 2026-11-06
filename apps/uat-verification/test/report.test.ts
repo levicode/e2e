@@ -170,6 +170,30 @@ test('the model path records rounds, latency, tokens, and the wrong decision as 
   }
 });
 
+test('an explicit binary without a build record shows its digest and marks the commit unverified', () => {
+  const rendered = renderReport({
+    report: report('passed'),
+    ledger,
+    native: {
+      source: 'executable-environment',
+      version: 'agent-browser 0.39.4',
+      sha256: 'c'.repeat(64),
+      checkout: { commit: 'd'.repeat(40), dirty: false },
+    },
+    packages: { e2e: { version: '0.21.3' }, web: { version: '0.15.3' } },
+    settings,
+    accountId: '1234567890',
+    rawOutput: '/checkout/apps/uat-verification/.e2e',
+    verifyPath: 'scripted',
+  });
+  assert.equal(rendered.markdown.includes('构建提交未验证'), true);
+  assert.equal(rendered.markdown.includes(`sha256 \`${'c'.repeat(64)}\``), true);
+  assert.equal(rendered.markdown.includes(`@ \`${'d'.repeat(40)}\``), false);
+  const native = (rendered.json['identity'] as Record<string, unknown>)['native'] as Record<string, unknown>;
+  assert.equal(native['commit'], undefined);
+  assert.equal(native['sha256'], 'c'.repeat(64));
+});
+
 test('a model run that failed before its first call still names the configured model', () => {
   const rendered = renderReport({
     report: report('failed'),

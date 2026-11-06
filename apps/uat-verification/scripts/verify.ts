@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { appRoot, runE2e } from '../src/e2e-cli.ts';
-import { readNativeIdentity, readPackageIdentities } from '../src/identity.ts';
+import { readPackageIdentities, resolveNativeIdentity } from '../src/identity.ts';
 import { loadUatModelSettings, uatModelLabel, type UatModelSettings } from '../src/model.ts';
 import { parseLedger, renderReport, writeReport } from '../src/report.ts';
 import { readUatSession } from '../src/session.ts';
@@ -51,7 +51,21 @@ const output = path.join(appRoot, verifyPath === 'model' ? '.e2e-model' : '.e2e'
 mkdirSync(output, { recursive: true });
 const ledgerFile = path.join(output, 'native-results.jsonl');
 writeFileSync(ledgerFile, '');
-const native = readNativeIdentity(appRoot, process.env);
+let resolved: ReturnType<typeof resolveNativeIdentity>;
+try {
+  resolved = resolveNativeIdentity(appRoot, process.env);
+} catch (cause) {
+  // An unprovable native build is a setup failure, not a product verdict: stop
+  // before opening a browser instead of printing a commit the binary did not build.
+  console.error(cause instanceof Error ? cause.message : String(cause));
+  process.exit(UAT_UNUSABLE_EXIT);
+}
+const native = resolved.identity;
+if (resolved.recordError !== undefined) {
+  // A refused record still leaves an honest report; say why the commit is
+  // unverified instead of swallowing the reason.
+  console.error(`Native build record not written: ${resolved.recordError} The report marks the commit unverified.`);
+}
 const packages = readPackageIdentities(appRoot);
 
 console.log(

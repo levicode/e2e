@@ -10,6 +10,7 @@
     "login": "node scripts/login.ts",
     "verify": "node scripts/verify.ts scripted",
     "verify:model": "node scripts/verify.ts model",
+    "native:record": "node scripts/record-native-build.ts",
     "test": "node --test \"test/*.test.ts\"",
     "test:loop": "node test/loop-check.ts"
   },

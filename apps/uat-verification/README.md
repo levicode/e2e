@@ -43,8 +43,9 @@ Prerequisites:
   development checkout instead needs a native agent-browser build: a verified
   runtime bundle installed as `.e2e/native-runtime.json`, or
   `E2E_AGENT_BROWSER_EXECUTABLE` pointing at a trusted absolute binary. The
-  report records the version, binary sha256, and the checkout commit when one
-  can be found.
+  report records the version and binary sha256, plus the commit only when the
+  native build record proves that commit built this binary (see
+  [Native build identity](#native-build-identity)).
 
 Write the private settings once (mode 0600, never in the repository):
 
@@ -98,6 +99,38 @@ and `UAT_LLM_PROVIDER`/`UAT_LLM_API`/`UAT_LLM_MODEL`/`UAT_LLM_BASE_URL`/
 0600, a missing key, an unimplemented provider, or an unknown protocol fails
 with a `UAT_LLM_*` code before any browser opens; there is no silent fallback to
 the scripted path.
+
+## Native build identity
+
+The report may only name an agent-browser commit when something ties it to the
+binary that actually ran, by sha256. That thing is a native build record at
+`~/.local/state/e2e-uat/native-build.json` (`UAT_NATIVE_BUILD_STATE` moves it).
+The fixed-checkout runner writes it with the build; `verify` writes it on the
+first run after a build when the provenance checks pass, and `native:record`
+writes it explicitly:
+
+```bash
+E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/agent-browser \
+  pnpm --filter @e2e-dev/uat-verification native:record
+```
+
+The recorder refuses a checkout with uncommitted changes, a HEAD other than
+the commit `.github/native-candidate.json` pins, a checkout with no remote for
+the pinned repository, and a binary older than the checkout's last HEAD move;
+those states cannot prove what built the binary. `verify` prints the refusal
+reason otherwise, so the scripted and model paths agree without an extra step.
+Run the command yourself after checking out the pin and building:
+`cargo build --locked --profile ci --no-default-features` in the checkout's
+`cli/` directory. A no-op `cargo build` that leaves the old binary in place
+keeps its old mtime; touch it or force a rebuild before recording.
+
+The report never falls back to the HEAD of the git checkout that contains the
+binary. A checkout can move after the build — that is what once labelled the
+same `354fe006` binary with the previous `75bb6ed3` pin — so without a matching
+record the version line shows the sha256 and `构建提交未验证` (commit
+unverified) instead of a commit. If a record exists and its sha256 does not
+match the binary, the run stops before opening a browser with
+`UAT_NATIVE_IDENTITY_MISMATCH` and names both digests.
 
 ## Sign in once
 
@@ -171,14 +204,15 @@ screenshots (which the model saw) stay in `.e2e-model/`, gitignored and private.
   page text, or URLs.
 - Redacted report: `~/.local/state/e2e-uat/reports/<timestamp>/report.md` and
   `report.json`. Both paths share the structure: `path`, status, the exact e2e
-  and agent-browser builds, per-step codes, observation `phases`, the native
+  and agent-browser builds (the native commit only when a build record proves
+  it), per-step codes, observation `phases`, the native
   `code`/`effects`/`scopeState` table, and — on the model path — `model` with
   rounds, latency, and tokens. The host, login host, account ID, and label are
   replaced with placeholders.
 
-Exit codes: `0` passed, `2` the saved session or the private model settings are
-unusable (fix the named file, scan again if the session expired), anything else
-the run itself failed.
+Exit codes: `0` passed, `2` the saved session, the private model settings, or
+the native build identity are unusable (fix the named file or build record,
+scan again if the session expired), anything else the run itself failed.
 
 ## Why two paths
 
