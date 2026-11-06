@@ -31,13 +31,18 @@ const PIXEL_RULES: Readonly<Record<PixelPolicy, string>> = {
   off: '- No pixel tools are offered: this agent sends no screenshots. Act only on listed node ids and read the tree; when the tree lists nothing you can act on, conclude rather than guessing a point.',
 };
 
-/** The bullet on typing where a target is unlisted; under `off` no point tool can focus one. */
+/** The bullet on typing where a target is unlisted; a point tool focuses it while pixels are offered. */
+const UNLISTED_FIELD_RULE =
+  '- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.';
+
+/** The same bullet under `off`, where no point tool can focus an unlisted field. */
+const NO_PIXEL_FIELD_RULE =
+  '- When type and press accept no target: a field the screen does not list cannot be reached without pixel tools. A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.';
+
 const TYPE_RULES: Readonly<Record<PixelPolicy, string>> = {
-  always:
-    '- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.',
-  'on-request':
-    '- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.',
-  off: '- When type and press accept no target: a field the screen does not list cannot be reached without pixel tools. A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.',
+  always: UNLISTED_FIELD_RULE,
+  'on-request': UNLISTED_FIELD_RULE,
+  off: NO_PIXEL_FIELD_RULE,
 };
 
 const BASE_RULES = (pixels: PixelPolicy): string => `You are an autonomous end-to-end testing agent executing exactly one test step against a real application.
