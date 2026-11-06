@@ -14,11 +14,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { appRoot, runE2e } from '../src/e2e-cli.ts';
 import { readNativeIdentity, readPackageIdentities } from '../src/identity.ts';
-import { loadUatModelSettings, uatModelLabel } from '../src/model.ts';
+import { loadUatModelSettings, uatModelLabel, type UatModelSettings } from '../src/model.ts';
 import { parseLedger, renderReport, writeReport } from '../src/report.ts';
 import { readUatSession } from '../src/session.ts';
-import { loadUatSettings, uatConfigFile, uatReportsDirectory } from '../src/settings.ts';
+import { loadUatSettings, uatConfigFile, uatReportsDirectory, type UatSettings } from '../src/settings.ts';
 import { launchTrustedBrowser, needsTrustedBrowser } from '../src/trusted-browser.ts';
+import { UAT_UNUSABLE_EXIT, verifyExitCode } from '../src/verify-exit.ts';
 
 /** The two paths: the fixed scripted baseline, and the real-model decision path. */
 export type VerifyPath = 'scripted' | 'model';
@@ -26,25 +27,24 @@ export type VerifyPath = 'scripted' | 'model';
 const requested = process.argv[2] ?? 'scripted';
 if (requested !== 'scripted' && requested !== 'model') {
   console.error(`UAT_VERIFY_USAGE: unknown path "${requested}"; use "scripted" or "model"`);
-  process.exit(2);
+  process.exit(UAT_UNUSABLE_EXIT);
 }
 const verifyPath: VerifyPath = requested;
 
-const settings = loadUatSettings({ requireAccountId: true, requireLabel: verifyPath === 'model' });
-if (settings.accountId === undefined) {
-  // loadUatSettings already fails without it; this narrows the type for the report.
-  console.error(`UAT_CONFIG_MISSING: set UAT_ACCOUNT_ID or write accountId to ${uatConfigFile()}`);
-  process.exit(2);
-}
-
-// Fail before opening a browser when the private model settings are unusable.
-const modelSettings = verifyPath === 'model' ? loadUatModelSettings() : undefined;
-
+let settings: UatSettings;
+let modelSettings: UatModelSettings | undefined;
 try {
+  settings = loadUatSettings({ requireAccountId: true, requireLabel: verifyPath === 'model' });
+  if (settings.accountId === undefined) {
+    // loadUatSettings already fails without it; this narrows the type for the report.
+    throw new Error(`UAT_CONFIG_MISSING: set UAT_ACCOUNT_ID or write accountId to ${uatConfigFile()}`);
+  }
+  // Fail before opening a browser when the private model settings are unusable.
+  modelSettings = verifyPath === 'model' ? loadUatModelSettings() : undefined;
   readUatSession(settings);
 } catch (cause) {
   console.error(cause instanceof Error ? cause.message : String(cause));
-  process.exit(2);
+  process.exit(UAT_UNUSABLE_EXIT);
 }
 
 const output = path.join(appRoot, verifyPath === 'model' ? '.e2e-model' : '.e2e');
@@ -77,7 +77,7 @@ try {
 const reportFile = path.join(output, 'report.json');
 if (!existsSync(reportFile)) {
   console.error('UAT_VERIFY_NO_REPORT: the run produced no report.json; the run could not start (see the e2e output above).');
-  process.exit(exitCode === 0 ? 1 : exitCode);
+  process.exit(exitCode === 0 ? 1 : verifyExitCode(exitCode, false));
 }
 
 const report: unknown = JSON.parse(readFileSync(reportFile, 'utf8'));
@@ -115,7 +115,5 @@ console.log(`Report: ${written.markdown}`);
 console.log(`Raw output (private, gitignored): ${output}`);
 if (rendered.sessionExpired) {
   console.error('The saved UAT session expired. Run pnpm --filter @e2e-dev/uat-verification login and scan the QR once, then verify again.');
-  process.exitCode = 2;
-} else {
-  process.exitCode = exitCode;
 }
+process.exitCode = verifyExitCode(exitCode, rendered.sessionExpired);

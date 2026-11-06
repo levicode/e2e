@@ -11,12 +11,26 @@ path — how many model rounds it spent and what those rounds decided.
 | `scripted` | `pnpm --filter @e2e-dev/uat-verification verify` | `src/scenario.ts`, no model | Deterministic regression baseline |
 | `model` | `pnpm --filter @e2e-dev/uat-verification verify:model` | A real AI SDK model from the private config | Real agent decisions, including the writable label loop |
 
+The fixed runner runs both paths in order. Add `--paths scripted` or
+`--paths model` to run one.
+
 Nothing private is committed. The entry URL, the queried account ID, the label,
 and the model credential live in files outside the checkout; the login state
 lives beside them; raw run output stays in the gitignored output directories.
 Only the redacted report is written to the user's state directory.
 
+The normal way to run the loop is the fixed checkout at `~/src/e2e-uat`, with
+one command that updates it, installs and builds when needed, builds the
+pinned agent-browser, and runs both paths with the saved session. See
+[FIXED-CHECKOUT.md](FIXED-CHECKOUT.md) for that flow, its dependencies, and its
+failure modes. The commands in this README also work from a normal development
+checkout when the packages are already built.
+
 ## One-time setup
+
+The fixed-checkout runner installs and builds the packages and the pinned
+agent-browser source by itself. A development checkout still needs the
+prerequisites below.
 
 Prerequisites:
 
@@ -25,10 +39,12 @@ Prerequisites:
   `packages/web/dist` exist.
 - Chromium for the web engine:
   `pnpm --filter @e2e-dev/web exec playwright-core install chromium`.
-- A native agent-browser build: either a verified runtime bundle installed as
-  `.e2e/native-runtime.json`, or `E2E_AGENT_BROWSER_EXECUTABLE` pointing at a
-  trusted absolute binary. The report records the version, binary sha256, and
-  the checkout commit when one can be found.
+- Rust and `cargo` on `PATH` for the fixed runner's agent-browser build. A
+  development checkout instead needs a native agent-browser build: a verified
+  runtime bundle installed as `.e2e/native-runtime.json`, or
+  `E2E_AGENT_BROWSER_EXECUTABLE` pointing at a trusted absolute binary. The
+  report records the version, binary sha256, and the checkout commit when one
+  can be found.
 
 Write the private settings once (mode 0600, never in the repository):
 
@@ -145,8 +161,9 @@ screenshots (which the model saw) stay in `.e2e-model/`, gitignored and private.
 ## Output conventions
 
 - Raw run output: `apps/uat-verification/.e2e/` (scripted) or
-  `apps/uat-verification/.e2e-model/` (model), both gitignored. They hold the
-  report, trace pages, and a failure screenshot; treat them as private.
+  `apps/uat-verification/.e2e-model/` (model) in the checkout that executed the
+  run, both gitignored. The fixed runner leaves them in `~/src/e2e-uat`. They
+  hold the report, trace pages, and a failure screenshot; treat them as private.
 - Native ledger: `native-results.jsonl` in the same output directory, enabled by
   `E2E_NATIVE_RESULT_LEDGER` for this run only. One line per native operation
   with the command, sequence, transmitted timeout, `ok`, `effects`,

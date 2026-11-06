@@ -46,6 +46,8 @@ jobs:
         run: pnpm check:dead-code
       - name: Typecheck packages
         run: pnpm typecheck
+      - name: UAT verification app tests
+        run: pnpm --filter @e2e-dev/uat-verification test
       - name: Error code reference
         run: pnpm docs:check-errors
       - name: Peer ranges on the runner

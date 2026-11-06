@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "fixed": "node scripts/fixed-checkout.ts",
     "login": "node scripts/login.ts",
     "verify": "node scripts/verify.ts scripted",
     "verify:model": "node scripts/verify.ts model",
