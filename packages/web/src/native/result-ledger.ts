@@ -16,7 +16,7 @@ import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import type { NativeResult } from './protocol.ts';
 
-export const NATIVE_RESULT_LEDGER_ENV = 'E2E_NATIVE_RESULT_LEDGER';
+const NATIVE_RESULT_LEDGER_ENV = 'E2E_NATIVE_RESULT_LEDGER';
 
 /** One file takes at most this many result lines, then one truncation line. */
 const MAX_ENTRIES = 4096;

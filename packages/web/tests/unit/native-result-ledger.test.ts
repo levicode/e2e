@@ -2,7 +2,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { NATIVE_RESULT_LEDGER_ENV, recordNativeResult } from '../../src/native/result-ledger.ts';
+import { recordNativeResult } from '../../src/native/result-ledger.ts';
+
+const NATIVE_RESULT_LEDGER_ENV = 'E2E_NATIVE_RESULT_LEDGER';
 import type { NativeResult } from '../../src/native/protocol.ts';
 
 const previous = process.env[NATIVE_RESULT_LEDGER_ENV];
