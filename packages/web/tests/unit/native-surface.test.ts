@@ -637,6 +637,29 @@ describe('isolated native startup creation receipts', () => {
   });
 });
 
+describe('private CA launch option', () => {
+  it('forwards AGENT_BROWSER_CA_CERT as caCert on the isolated launch', async () => {
+    const surface = new NativeSurface({});
+    const prepared = await surface.prepare({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: { site: 'fixture.test' }, env: {}, headed: false, slots: 1, signal, log: () => {} });
+    await surface.init({ runId: 'run', targetName: 'web', projectRoot: '/tmp', app: { site: 'fixture.test' }, env: { ...prepared?.env, AGENT_BROWSER_CA_CERT: ' /private/ca.pem ', AGENT_BROWSER_PROXY: 'http://127.0.0.1:7890', AGENT_BROWSER_PROXY_BYPASS: '*.internal.test,localhost' }, headed: false, workerSlot: 0, signal, log: () => {} });
+    try {
+      await surface.startAttempt(context('attempt'));
+      const prepare = frames.find(frame => frame['command'] === 'scope.interop.prepare');
+      expect(prepare?.['args']).toMatchObject({ source: 'launch', caCert: '/private/ca.pem', proxy: 'http://127.0.0.1:7890', proxyBypass: '*.internal.test,localhost' });
+      expect(frames.filter(frame => frame['command'] === 'scope.open' && (frame['args'] as Record<string, unknown>)['caCert'] !== undefined)).toHaveLength(0);
+    } finally { await surface.dispose(cleanup()); }
+  });
+
+  it('sends no caCert when the worker was not given one', async () => {
+    const surface = new NativeSurface({});
+    await start(surface);
+    try {
+      const prepare = frames.find(frame => frame['command'] === 'scope.interop.prepare');
+      expect(prepare?.['args']).not.toHaveProperty('caCert');
+    } finally { await surface.dispose(cleanup()); }
+  });
+});
+
 describe('native environment report compatibility', () => {
   it.each([
     ['Chrome/156.0.8100.0', 'chromium 156.0.8100.0'],

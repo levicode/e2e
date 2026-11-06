@@ -138,6 +138,12 @@ export class NativeSurface implements NativeWebSurface {
   private connecting: PendingConnection | undefined;
   private engine: EngineChannel | undefined;
   private executable: string | undefined;
+  /** A private CA file this worker's launches trust, from `AGENT_BROWSER_CA_CERT`. */
+  private caCert: string | undefined;
+  /** The proxy the launched browser uses, from `AGENT_BROWSER_PROXY`. */
+  private proxy: string | undefined;
+  /** The proxy bypass list, from `AGENT_BROWSER_PROXY_BYPASS`. */
+  private proxyBypass: string | undefined;
   private workerEndpoint: string | undefined;
   private playwrightClient: PlaywrightBrowser | undefined;
   private playwrightClosing: Promise<void> | undefined;
@@ -259,6 +265,12 @@ export class NativeSurface implements NativeWebSurface {
     check(); this.scripts = scripts;
     const executable = await raceAbort(() => resolveNativeExecutable(info.env, info.projectRoot), signal, 'resolving native browser executable');
     check(); this.executable = executable;
+    const caCert = info.env['AGENT_BROWSER_CA_CERT'];
+    this.caCert = caCert === undefined || caCert.trim() === '' ? undefined : caCert.trim();
+    const proxy = info.env['AGENT_BROWSER_PROXY'];
+    this.proxy = proxy === undefined || proxy.trim() === '' ? undefined : proxy.trim();
+    const proxyBypass = info.env['AGENT_BROWSER_PROXY_BYPASS'];
+    this.proxyBypass = proxyBypass === undefined || proxyBypass.trim() === '' ? undefined : proxyBypass.trim();
     if (!this.persistent) {
       const endpoint = this.leases !== undefined
         ? await raceAbort(() => this.leases!.endpoint(signal), signal, 'resolving worker browser endpoint')
@@ -323,7 +335,10 @@ export class NativeSurface implements NativeWebSurface {
       const args: EngineCommandMap['scope.open']['args'] = this.openedBefore && !this.persistent
         ? { ...creation, source: 'reuse', context: 'isolated' }
         : endpoint === undefined
-          ? { ...creation, source: 'launch', context: 'isolated', headless: this.initInfo?.headed !== true }
+          ? { ...creation, source: 'launch', context: 'isolated', headless: this.initInfo?.headed !== true,
+              ...(this.caCert === undefined ? {} : { caCert: this.caCert }),
+              ...(this.proxy === undefined ? {} : { proxy: this.proxy }),
+              ...(this.proxyBypass === undefined ? {} : { proxyBypass: this.proxyBypass }) }
           : { ...creation, source: 'connect', context: this.persistent ? 'persistent' : 'isolated', endpoint };
       openDispatched = true;
       const establishing = (async () => {

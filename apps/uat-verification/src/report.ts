@@ -61,6 +61,8 @@ export interface BrowserRun {
    * or nowhere because the private settings named none.
    */
   readonly privateSettings: 'engine-env' | 'external-launch-args' | 'none';
+  /** Where CA trust came from: the engine's `AGENT_BROWSER_CA_CERT`, external launch args, or nowhere. */
+  readonly caTrust: 'agent-browser-ca-cert' | 'external-launch-args' | 'none';
 }
 
 /** The model the run was configured to use; the key and gateway URL never reach a report. */
@@ -669,13 +671,18 @@ function cell(text: string): string {
 function browserLaunchText(browser: BrowserRun): string {
   const window = browser.headed ? '有界面' : '无头';
   const settings = browser.privateSettings === 'engine-env'
-    ? '代理/TLS 经引擎环境变量（`AGENT_BROWSER_*`）'
+    ? '代理经引擎环境变量（`AGENT_BROWSER_*`）'
     : browser.privateSettings === 'external-launch-args'
-      ? '代理/TLS 经外部启动参数'
-      : '未配置私有代理/TLS';
+      ? '代理经外部启动参数'
+      : '未配置私有代理';
+  const ca = browser.caTrust === 'agent-browser-ca-cert'
+    ? 'CA 信任经 `AGENT_BROWSER_CA_CERT`（内核按该文件放行）'
+    : browser.caTrust === 'external-launch-args'
+      ? 'CA 信任经外部启动参数'
+      : '未配置私有 CA';
   return browser.path === 'engine'
-    ? `引擎自启（\`engine\`，${window}，${browser.viewport} 视口；${settings}）`
-    : `外部启动 + CDP 连接（\`cdp\`，${window}，${browser.viewport} 视口；${settings}）`;
+    ? `引擎自启（\`engine\`，${window}，${browser.viewport} 视口；${settings}；${ca}）`
+    : `外部启动 + CDP 连接（\`cdp\`，${window}，${browser.viewport} 视口；${settings}；${ca}）`;
 }
 
 /** What each path walked, in the words the report can show after redaction. */

@@ -105,7 +105,7 @@ function render(status: 'passed' | 'failed', messages: readonly string[] = []): 
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e',
     verifyPath: 'scripted',
-    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args' },
+    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' },
   });
 }
 
@@ -151,7 +151,7 @@ test('the model path records rounds, latency, tokens, and the wrong decision as 
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e-model',
     verifyPath: 'model',
-    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env' },
+    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' },
     model: { label: 'openai.responses/deepseek-v4.1-flash', provider: 'openai.responses', model: 'deepseek-v4.1-flash' },
   });
   assert.equal(rendered.json['path'], 'model');
@@ -187,7 +187,7 @@ test('an explicit binary without a build record shows its digest and marks the c
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e',
     verifyPath: 'scripted',
-    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args' },
+    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' },
   });
   assert.equal(rendered.markdown.includes('构建提交未验证'), true);
   assert.equal(rendered.markdown.includes(`sha256 \`${'c'.repeat(64)}\``), true);
@@ -207,7 +207,7 @@ test('a model run that failed before its first call still names the configured m
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e-model',
     verifyPath: 'model',
-    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env' },
+    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' },
     model: { label: 'openai.responses/deepseek-v4.1-flash', provider: 'openai.responses', model: 'deepseek-v4.1-flash' },
   });
   const model = rendered.json['model'] as Record<string, unknown>;
@@ -225,10 +225,10 @@ test('the report names the browser launch and how the private settings reached i
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e',
     verifyPath: 'scripted',
-    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env' },
+    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' },
   });
-  assert.deepEqual(engine.json['browser'], { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env' });
-  for (const expected of ['浏览器启动', '`engine`', '无头', '1440x1000', '`AGENT_BROWSER_*`', '原生隔离传输']) {
+  assert.deepEqual(engine.json['browser'], { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' });
+  for (const expected of ['浏览器启动', '`engine`', '无头', '1440x1000', '`AGENT_BROWSER_*`', '`AGENT_BROWSER_CA_CERT`', '原生隔离传输']) {
     assert.equal(engine.markdown.includes(expected), true, `markdown is missing ${expected}`);
   }
 
@@ -241,9 +241,9 @@ test('the report names the browser launch and how the private settings reached i
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e',
     verifyPath: 'scripted',
-    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args' },
+    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' },
   });
-  assert.deepEqual(cdp.json['browser'], { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args' });
+  assert.deepEqual(cdp.json['browser'], { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' });
   for (const expected of ['浏览器启动', '`cdp`', '无头', '1440x900', '外部启动参数']) {
     assert.equal(cdp.markdown.includes(expected), true, `markdown is missing ${expected}`);
   }

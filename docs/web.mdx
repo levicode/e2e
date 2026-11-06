@@ -29,6 +29,26 @@ installation command after installing the matched runtime. Full native
 capability negotiation and real-browser acceptance remain separate gates from
 bundle integrity.
 
+## Private CA
+
+When the app sits behind an internal CA, name the CA file in the run environment; local launches trust only that file, without disabling certificate checks:
+
+<CodeGroup>
+```bash npm
+AGENT_BROWSER_CA_CERT=/absolute/internal-ca.pem npx e2e run
+```
+
+```bash pnpm
+AGENT_BROWSER_CA_CERT=/absolute/internal-ca.pem pnpm exec e2e run
+```
+
+```bash bun
+AGENT_BROWSER_CA_CERT=/absolute/internal-ca.pem bunx e2e run
+```
+</CodeGroup>
+
+Linux imports it into the launch's isolated NSS store; macOS pins its public key in Chromium's SPKI allow list. `AGENT_BROWSER_PROXY` and `AGENT_BROWSER_PROXY_BYPASS` are forwarded to the same launch. See [the Web reference](/reference/web#private-ca) for the platform details.
+
 ## Starting your app
 
 Set your app's URL in the target's `app`. `app.open('/path')` resolves

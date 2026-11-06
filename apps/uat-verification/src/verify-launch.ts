@@ -24,6 +24,8 @@ export interface LaunchInput {
   readonly exportedEndpoint: string | undefined;
   /** The run's private native-result ledger file. */
   readonly ledgerFile: string;
+  /** A private CA file the engine launch should trust, when one is configured. */
+  readonly caCert?: string;
 }
 
 export interface LaunchPlan {
@@ -57,6 +59,7 @@ export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
 
   if (input.browserPath === 'engine') {
     Object.assign(env, input.privateEnv);
+    if (input.caCert !== undefined) env['AGENT_BROWSER_CA_CERT'] = input.caCert;
     // A private env entry that happens to carry the endpoint must not leak
     // either: this launch is the engine's own, whatever the variable says.
     delete env['UAT_CDP_ENDPOINT'];

@@ -25,7 +25,7 @@ by default; `--browsers engine,cdp` runs both.
 
 | Launch | Chromium started by | Window | Viewport | Private proxy/TLS |
 | --- | --- | --- | --- | --- |
-| `engine` (default) | the target's `web()`, as the user's project does | headless | 1440×1000 | engine `AGENT_BROWSER_*` environment (stripped at this pin; see below) |
+| `engine` (default) | the target's `web()`, as the user's project does | headless | 1440×1000 | `AGENT_BROWSER_CA_CERT`, `AGENT_BROWSER_PROXY`, `AGENT_BROWSER_PROXY_BYPASS` forwarded (see below) |
 | `cdp` (optional) | `src/trusted-browser.ts`; the target attaches over CDP | headless | 1440×900 | external launch arguments |
 
 See [Browser launch paths](#browser-launch-paths) for what each one proves and
@@ -94,16 +94,20 @@ hashes: `["--ignore-certificate-errors-spki-list=<hash>"]`), and
 
 The engine launch is the default and the main path: the target's `web()` starts
 Chromium, verification runs headless, and the private `env` reaches it as
-`AGENT_BROWSER_*` variables, the way the user's project loads `.env.local`;
-`chromiumArgs` and `chromeExecutable` have no channel there. The optional
-`--browser cdp` launch starts Chromium with those arguments instead and attaches
-the engine over CDP.
+`AGENT_BROWSER_*` variables, the way the user's project loads `.env.local`. The
+private CA at `~/.config/e2e-uat/internal-ca.pem`, or the file named by
+`UAT_CA_CERT`, is passed as `AGENT_BROWSER_CA_CERT`; the web engine forwards it
+to the native launcher, which trusts only that file (Linux imports it into the
+launch's NSS store, macOS pins its public key in Chromium's SPKI allow list).
+`chromiumArgs` and `chromeExecutable` have no channel on this launch. The
+optional `--browser cdp` launch starts Chromium with those arguments instead and
+attaches the engine over CDP.
 
 The `cdp` launch honors a `UAT_CDP_ENDPOINT` exported in the shell when the
 private settings name no Chromium, args, or env, so an operator-started browser
 still works. Otherwise the loop starts its own Chromium and replaces a leftover
-endpoint. The default engine launch opens a window: on a host with no display
-pass `--browser cdp`.
+endpoint. Verification is headless on both launches; only the login step asks
+for a window.
 
 For the model path only, write the private model settings beside it:
 
@@ -244,8 +248,9 @@ screenshots (which the model saw) stay in `.e2e-model/`, gitignored and private.
   page text, or URLs.
 - Redacted report: `~/.local/state/e2e-uat/reports/<timestamp>/report.md` and
   `report.json`. Both paths share the structure: `path`, the `browser` launch
-  (`engine` or `cdp`, headed or headless, viewport, and how the private settings
-  reached the browser), status, the exact e2e and agent-browser builds (the
+  (`engine` or `cdp`, headed or headless, viewport, how the private settings
+  reached the browser, and whether CA trust came from the engine, external
+  launch args, or nowhere), status, the exact e2e and agent-browser builds (the
   native commit only when a build record proves it), per-step codes, observation
   `phases`, the native `code`/`effects`/`scopeState` table, and — on the model
   path — `model` with rounds, latency, and tokens. The host, login host, account
@@ -284,18 +289,6 @@ proxy must be applied by launch arguments, or when a headless baseline is
 wanted. Run the fixed runner with the default `--browsers engine`, or
 `--browsers cdp`, or both.
 
-agent-browser's own CA switch does not help here. `--ca-cert` (and
-`AGENT_BROWSER_CA_CERT`) is Linux-only: `prepare_nss_home` is compiled only for
-Linux and every other platform rejects it with “--ca-cert is currently supported
-only on Linux”. The PEM a user exported to
-`~/.config/e2e-uat/internal-ca.pem` therefore cannot make the engine launch
-trust the private CA on macOS, and the e2e engine's interop launch passes no
-launch options to the browser at all, so it could not forward the CA even on
-Linux without an engine/native change. A macOS that trusts the CA in its login
-keychain needs none of this and the engine launch loads the app directly; this
-machine does not, so the optional CDP launch with the SPKI list is the one that
-opens the app here.
-
 The native library's isolated `session connect` transport is what separates the
 two. The e2e engine starts the native worker through that transport, and the
 worker removes **every** `AGENT_BROWSER_*` variable from its environment before
@@ -304,29 +297,33 @@ only a small allowlist of socket, namespace, and diagnostic variables survives).
 The engine's own environment is not the limitation: the variables reach the
 worker and are removed one layer later.
 
-That has two consequences at the current pin (`agent-browser` `d6e0e5f2`):
+The private CA and proxy are the launch options the engine carries across that
+boundary in the launch command itself (`caCert`, `proxy`, `proxyBypass` in the
+interop envelope), so they work even though the environment is stripped.
+agent-browser implements the CA on Linux with an isolated NSS store and on macOS
+with Chromium's SPKI allow list derived from the named file; no certificate
+errors are ignored globally. Arbitrary Chromium arguments (`AGENT_BROWSER_ARGS`)
+still cannot reach this launch, so `.env.local` settings other than the CA and
+proxy do not affect it; use the optional CDP launch for those.
 
-- The engine launch cannot be given the internal CA or the local proxy through
-  `AGENT_BROWSER_*`. An e2e project that loads `.env.local` into `process.env`
-  loses the same variables at the same place, so `.env.local` is not what makes
-  the user's project reach the site. Since that project runs the same e2e and
-  agent-browser versions and reaches the app, the remaining explanation is that
-  its machine trusts the internal CA (and reaches the host directly). This
-  verification machine does not: no internal CA is in its System or login
-  keychain, and a Chromium started through the same native worker reports
-  `net::ERR_CERT_AUTHORITY_INVALID` before the app renders.
-- The external launch layer therefore cannot be simplified away yet: on a
-  machine without the internal CA in its OS trust store it is the only launch
-  that can open the app. It can be removed once the isolated transport forwards
-  the browser environment, or once this machine trusts the private CA.
+That has two consequences:
 
-On this machine the engine launch therefore fails before the app renders: the
-report shows `ACTION_FAILED` with native code `browser-failure`,
-`effects unknown`, and `scopeState usable` on `page.navigate`, and the engine
-sits on `chrome-error://chromewebdata/`. That is a real failure, recorded not
-suppressed; it is the check that will turn green when that layer is fixed. It is
-also why the failure reported in agent-browser#61 (a `browser-failure` on the
-first observation after a hash-route navigation) cannot be reproduced from here
-today — this run fails one step earlier, at the first navigation, so it never
-reaches an observation or `phases`. On a machine that trusts the private CA,
-the same path reaches the app and is the one that can reproduce it.
+- The engine launch trusts the private CA through `AGENT_BROWSER_CA_CERT` and
+  uses the private proxy through `AGENT_BROWSER_PROXY`/`AGENT_BROWSER_PROXY_BYPASS`,
+  forwarded in the launch command even though the isolated transport strips the
+  environment. Arbitrary Chromium arguments (`AGENT_BROWSER_ARGS`) still cannot
+  reach it; use the optional CDP launch for those.
+- The external CDP launch stays as the optional path for arbitrary launch
+  arguments and the SPKI-based launch. It is no longer the only way to trust the
+  private CA or set the browser proxy.
+
+A machine that also trusts the CA in its OS store needs none of this; the loop
+does not depend on that, so a macOS machine with no keychain trust in the CA is
+covered too. This is the same launch shape as the user's run: on the pre-fix
+agent-browser pin (`d6e0e5f2` plus only the CA forwarding) the model path
+reproduced agent-browser#61, the observation right after 账号标签管理 failing
+with `browser-failure` and a quarantined scope before the context was
+destroyed; with the current pin that scenario passes. Before the native pin carried `caCert` across the interop boundary
+and implemented macOS trust, the engine launch failed at the first navigation
+with `ACTION_FAILED` / `browser-failure`; the report keeps that failure shape
+whenever the CA file is missing or rejected.

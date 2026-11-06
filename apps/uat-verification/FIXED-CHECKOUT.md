@@ -173,17 +173,17 @@ reuses it. Do not copy the session file into the repository or a ticket.
 
 ### TLS, an internal CA, or a proxy
 
-The private `config.json` can name a Chromium binary, extra launch arguments,
-and browser environment variables. They are applied by the optional `cdp`
-browser launch; the default `engine` launch hands only the `env` block to the
-engine, and the native isolated transport strips `AGENT_BROWSER_*` before
-Chromium starts, so the engine launch fails with a certificate error on a
-machine that does not trust the internal CA in its OS keychain. On such a
-machine the default run reports the main engine launch as failed until that is
-resolved. `--ca-cert`/`AGENT_BROWSER_CA_CERT` is not an alternative on macOS:
-agent-browser compiles its CA trust store only for Linux. `--browsers cdp` runs
-the optional all-green SPKI/proxy loop. See "Browser launch paths" in
-[README.md](README.md) for the full explanation.
+The default `engine` launch trusts a private CA file: put the PEM at
+`~/.config/e2e-uat/internal-ca.pem` (or set `UAT_CA_CERT`), and `verify` passes
+it as `AGENT_BROWSER_CA_CERT`; the web engine forwards it to the native launcher,
+which trusts only that file (Linux NSS, macOS SPKI allow list). Without that
+file the engine launch fails with a certificate error, so provide it on an
+internal-CA machine. The private `config.json` may still name a Chromium binary,
+extra launch arguments, and browser environment variables. Its `env` proxy
+settings also apply to the default engine launch (the engine forwards
+`AGENT_BROWSER_PROXY`/`AGENT_BROWSER_PROXY_BYPASS`); `chromiumArgs` and
+`chromeExecutable` apply to the optional `cdp` browser launch only. See
+"Browser launch paths" in [README.md](README.md) for the full explanation.
 
 ```json
 {
@@ -196,8 +196,9 @@ the optional all-green SPKI/proxy loop. See "Browser launch paths" in
 }
 ```
 
-With any of these set, `verify` launches that Chromium and the engine attaches
-over CDP, so the private TLS trust and proxy apply to the page. A missing binary
+With any of these set, `--browser cdp` (or `--browsers cdp`) launches that
+Chromium and the engine attaches over CDP, so the private proxy and SPKI list
+apply to the page. A missing binary
 fails with `UAT_CHROME_MISSING`. Use the exact SPKI hash for the internal CA
 rather than disabling certificate validation for every host.
 

@@ -51,6 +51,12 @@ export interface ScopeCreationOptions {
   readonly userAgent?: string;
   readonly locale?: string;
   readonly timezoneId?: string;
+  /** A local CA file the launcher trusts for this launch, from `AGENT_BROWSER_CA_CERT`. */
+  readonly caCert?: string;
+  /** The proxy the launched browser uses, from `AGENT_BROWSER_PROXY`. */
+  readonly proxy?: string;
+  /** The proxy bypass list, from `AGENT_BROWSER_PROXY_BYPASS`. */
+  readonly proxyBypass?: string;
   readonly media: { readonly colorScheme?: 'light' | 'dark' | 'no-preference'; readonly reducedMotion?: 'reduce' | 'no-preference' };
   readonly initScripts: readonly string[];
 }

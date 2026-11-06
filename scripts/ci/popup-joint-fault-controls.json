@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "a0ec19d32530a2a953dc1f62b92b0eb566b742cf",
-    "tree": "66d6c64a4575133801af410330614ae1b905efb8",
-    "lockSHA256": "33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb"
+    "commit": "00667755b33fe8c0c2c6e0f67b54b41fdc0de623",
+    "tree": "5fbee7c1962320e9e2784e8d550f0890624041ea",
+    "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
     "native::cdp::popup_relay::tests::popup_relay_readiness_accepts_only_closed_loopback_metadata",

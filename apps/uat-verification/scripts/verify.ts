@@ -25,7 +25,7 @@ import { readPackageIdentities, resolveNativeIdentity } from '../src/identity.ts
 import { loadUatModelSettings, uatModelLabel, type UatModelSettings } from '../src/model.ts';
 import { parseLedger, renderReport, writeReport, type BrowserRun } from '../src/report.ts';
 import { readUatSession } from '../src/session.ts';
-import { loadUatSettings, uatConfigFile, uatReportsDirectory, type UatSettings } from '../src/settings.ts';
+import { loadUatSettings, uatCaCertFile, uatConfigFile, uatReportsDirectory, type UatSettings } from '../src/settings.ts';
 import { launchTrustedBrowser, needsTrustedBrowser, type TrustedBrowser } from '../src/trusted-browser.ts';
 import { planVerificationLaunch } from '../src/verify-launch.ts';
 import { UAT_UNUSABLE_EXIT, verifyExitCode } from '../src/verify-exit.ts';
@@ -64,6 +64,14 @@ const exportedEndpoint = process.env['UAT_CDP_ENDPOINT'] === undefined || proces
   ? undefined
   : process.env['UAT_CDP_ENDPOINT'];
 
+let caCert: string | undefined;
+try {
+  caCert = uatCaCertFile();
+} catch (cause) {
+  console.error(cause instanceof Error ? cause.message : String(cause));
+  process.exit(UAT_UNUSABLE_EXIT);
+}
+
 const output = path.join(appRoot, verifyPath === 'model' ? '.e2e-model' : '.e2e');
 mkdirSync(output, { recursive: true });
 const ledgerFile = path.join(output, 'native-results.jsonl');
@@ -76,6 +84,7 @@ const plan = planVerificationLaunch({
   trustedSettings: needsTrustedBrowser(settings),
   exportedEndpoint,
   ledgerFile,
+  ...(caCert === undefined ? {} : { caCert }),
 });
 const { headed, viewport } = plan;
 let resolved: ReturnType<typeof resolveNativeIdentity>;
@@ -139,6 +148,9 @@ const browser: BrowserRun = {
   headed,
   viewport: `${viewport.width}x${viewport.height}`,
   privateSettings: plan.privateSettings,
+  caTrust: browserPath === 'engine'
+    ? (caCert === undefined ? 'none' : 'agent-browser-ca-cert')
+    : (trustedBrowser === undefined ? 'none' : 'external-launch-args'),
 };
 const report: unknown = JSON.parse(readFileSync(reportFile, 'utf8'));
 const ledger = parseLedger(existsSync(ledgerFile) ? readFileSync(ledgerFile, 'utf8') : '');
