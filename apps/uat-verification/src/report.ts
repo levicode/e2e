@@ -42,8 +42,25 @@ export interface ReportInputs {
   readonly rawOutput: string;
   /** Which verification path produced this run. */
   readonly verifyPath: 'scripted' | 'model';
+  /** Which browser launch the run used, and how the private settings reached it. */
+  readonly browser: BrowserRun;
   /** The configured model, recorded even when the run failed before its first call. */
   readonly model?: ModelConfig;
+}
+
+/** One browser launch: the user's engine launch, or the loop's external Chromium over CDP. */
+export interface BrowserRun {
+  readonly path: 'cdp' | 'engine';
+  /** A visible window (the user's headed run; the login step). */
+  readonly headed: boolean;
+  /** The page viewport, `1440x1000` for the engine launch and `1440x900` for CDP. */
+  readonly viewport: string;
+  /**
+   * Where the private TLS/proxy settings were handed over: the engine's
+   * environment (the user's `.env.local` route), the external launch arguments,
+   * or nowhere because the private settings named none.
+   */
+  readonly privateSettings: 'engine-env' | 'external-launch-args' | 'none';
 }
 
 /** The model the run was configured to use; the key and gateway URL never reach a report. */
@@ -140,6 +157,7 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
     generatedAt: new Date().toISOString(),
     status,
     path: inputs.verifyPath,
+    browser: inputs.browser,
     exitCode: number(runRecord['exitCode']),
     runId: string(runRecord['id']),
     startedAt: string(runRecord['startedAt']),
@@ -486,6 +504,7 @@ function markdownReport(input: {
   if (inputs.native.source === 'unknown') lines.push('  - 原生身份未知：没有 verified runtime 描述符，也没有设置 `E2E_AGENT_BROWSER_EXECUTABLE`。');
   lines.push(`- 环境：${string(input.environment['os']) ?? '?'} / ${string(input.environment['arch']) ?? '?'} · Node ${nodeVersion(string(input.environment['runtime']))}`);
   lines.push(`- 验证路径：\`${inputs.verifyPath}\`${inputs.verifyPath === 'model' ? '（真实模型决策，错误决策按原样保留，retries=0）' : '（脚本化确定性回归基线）'}`);
+  lines.push(`- 浏览器启动：${browserLaunchText(inputs.browser)}`);
   if (input.model?.configured !== undefined) lines.push(`- 模型：\`${input.model.configured.label}\``);
   lines.push(`- 场景：${scenarioText(inputs.verifyPath)}（账号 ID 与标签已脱敏）`);
   lines.push(`- 原始输出（本机、未提交）：\`${inputs.rawOutput}\``, '');
@@ -595,6 +614,9 @@ function markdownReport(input: {
   } else {
     lines.push('- 脚本化路径只做查询；写入类验证由模型路径单独执行，需要私有配置指定账号与标签。');
   }
+  if (inputs.browser.path === 'engine' && inputs.browser.privateSettings === 'engine-env') {
+    lines.push('- 引擎自启路径把私有 `AGENT_BROWSER_*` 变量交给引擎，和用户项目的 `.env.local` 一样；原生隔离传输会在 Chromium 启动前剥离它们，所以它们是否生效要看该路径的结果，报告不假设已生效。');
+  }
   lines.push('');
   return lines.join('\n');
 }
@@ -641,6 +663,19 @@ function nodeVersion(runtime: string | undefined): string {
 
 function cell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+/** Which launch opened the browser, in the words the report can show. */
+function browserLaunchText(browser: BrowserRun): string {
+  const window = browser.headed ? '有界面' : '无头';
+  const settings = browser.privateSettings === 'engine-env'
+    ? '代理/TLS 经引擎环境变量（`AGENT_BROWSER_*`）'
+    : browser.privateSettings === 'external-launch-args'
+      ? '代理/TLS 经外部启动参数'
+      : '未配置私有代理/TLS';
+  return browser.path === 'engine'
+    ? `引擎自启（\`engine\`，${window}，${browser.viewport} 视口；${settings}）`
+    : `外部启动 + CDP 连接（\`cdp\`，${window}，${browser.viewport} 视口；${settings}）`;
 }
 
 /** What each path walked, in the words the report can show after redaction. */

@@ -1,7 +1,8 @@
 /**
  * One command for one verification path: `scripted` (the deterministic
  * read-only baseline) or `model` (the same read path plus the writable label
- * loop, decided by a real model).
+ * loop, decided by a real model), on one of the two browser launches: `engine`
+ * (the user's own `web()` launch) or `cdp` (the loop's external Chromium).
  *
  * The raw `report.json`, trace pages, and any screenshots stay in the project's
  * gitignored output directory (`.e2e` or `.e2e-model`); the rendered report goes
@@ -12,24 +13,35 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import {
+  DEFAULT_BROWSER_PATH,
+  parseVerifyInvocation,
+  VERIFY_USAGE,
+  type BrowserPath,
+  type VerifyPath,
+} from '../src/browser-path.ts';
 import { appRoot, runE2e } from '../src/e2e-cli.ts';
 import { readPackageIdentities, resolveNativeIdentity } from '../src/identity.ts';
 import { loadUatModelSettings, uatModelLabel, type UatModelSettings } from '../src/model.ts';
-import { parseLedger, renderReport, writeReport } from '../src/report.ts';
+import { parseLedger, renderReport, writeReport, type BrowserRun } from '../src/report.ts';
 import { readUatSession } from '../src/session.ts';
 import { loadUatSettings, uatConfigFile, uatReportsDirectory, type UatSettings } from '../src/settings.ts';
-import { launchTrustedBrowser, needsTrustedBrowser } from '../src/trusted-browser.ts';
+import { launchTrustedBrowser, needsTrustedBrowser, type TrustedBrowser } from '../src/trusted-browser.ts';
+import { planVerificationLaunch } from '../src/verify-launch.ts';
 import { UAT_UNUSABLE_EXIT, verifyExitCode } from '../src/verify-exit.ts';
 
-/** The two paths: the fixed scripted baseline, and the real-model decision path. */
-export type VerifyPath = 'scripted' | 'model';
-
-const requested = process.argv[2] ?? 'scripted';
-if (requested !== 'scripted' && requested !== 'model') {
-  console.error(`UAT_VERIFY_USAGE: unknown path "${requested}"; use "scripted" or "model"`);
+let verifyPath: VerifyPath;
+let requestedBrowser: BrowserPath | undefined;
+try {
+  const invocation = parseVerifyInvocation(process.argv.slice(2));
+  verifyPath = invocation.verifyPath;
+  requestedBrowser = invocation.browserPath;
+} catch (cause) {
+  console.error(cause instanceof Error ? cause.message : String(cause));
+  console.error('');
+  console.error(VERIFY_USAGE);
   process.exit(UAT_UNUSABLE_EXIT);
 }
-const verifyPath: VerifyPath = requested;
 
 let settings: UatSettings;
 let modelSettings: UatModelSettings | undefined;
@@ -47,10 +59,25 @@ try {
   process.exit(UAT_UNUSABLE_EXIT);
 }
 
+const browserPath: BrowserPath = requestedBrowser ?? DEFAULT_BROWSER_PATH;
+const exportedEndpoint = process.env['UAT_CDP_ENDPOINT'] === undefined || process.env['UAT_CDP_ENDPOINT'] === ''
+  ? undefined
+  : process.env['UAT_CDP_ENDPOINT'];
+
 const output = path.join(appRoot, verifyPath === 'model' ? '.e2e-model' : '.e2e');
 mkdirSync(output, { recursive: true });
 const ledgerFile = path.join(output, 'native-results.jsonl');
 writeFileSync(ledgerFile, '');
+const plan = planVerificationLaunch({
+  verifyPath,
+  browserPath,
+  baseEnv: process.env,
+  privateEnv: settings.env,
+  trustedSettings: needsTrustedBrowser(settings),
+  exportedEndpoint,
+  ledgerFile,
+});
+const { headed, viewport } = plan;
 let resolved: ReturnType<typeof resolveNativeIdentity>;
 try {
   resolved = resolveNativeIdentity(appRoot, process.env);
@@ -70,20 +97,33 @@ const packages = readPackageIdentities(appRoot);
 
 console.log(
   verifyPath === 'model'
-    ? `Running the model-driven UAT path (${uatModelLabel(modelSettings!)}; headless). Model decisions are recorded as made, never retried.`
-    : 'Running the fixed scripted read-only UAT scenario (headless).',
+    ? `Running the model-driven UAT path via ${browserPath}${browserPath === 'engine' ? ' (headless 1440×1000; engine launches Chromium)' : ' (headless 1440×900; external Chromium over CDP)'} (${uatModelLabel(modelSettings!)}). Model decisions are recorded as made, never retried.`
+    : `Running the fixed scripted read-only UAT scenario via ${browserPath}${browserPath === 'engine' ? ' (headless 1440×1000; engine launches Chromium)' : ' (headless 1440×900; external Chromium over CDP)'}.`,
 );
-// The private environment needs its own Chromium: an internal CA and a proxy
-// the engine's isolated launch cannot be told about. Everywhere else the engine
-// launches its own browser as usual.
-const trustedBrowser = needsTrustedBrowser(settings) ? await launchTrustedBrowser(settings) : undefined;
+if (browserPath === 'engine' && (settings.chromiumArgs !== undefined || settings.chromeExecutable !== undefined)) {
+  console.error('UAT_ENGINE_LAUNCH_LIMITS: the engine-launch path has no channel for chromiumArgs or chromeExecutable; only the cdp path applies them. Use --browser cdp when the private Chromium settings are required.');
+}
+if (browserPath === 'engine' && Object.keys(settings.env).length > 0) {
+  // The user's project loads these like `.env.local`; the native isolated
+  // transport strips them, so the report must not claim they took effect.
+  console.error('UAT_ENGINE_LAUNCH_ENV: passing the private AGENT_BROWSER_* variables to the engine as the user\'s project does. The native isolated transport removes them before Chromium starts; see the "Browser launch paths" section in README.md.');
+}
+
+// The cdp path needs its own Chromium unless an operator already started one
+// whose endpoint they exported. The engine path always lets the target launch.
+let trustedBrowser: TrustedBrowser | undefined;
+try {
+  trustedBrowser = plan.launchesTrustedBrowser ? await launchTrustedBrowser(settings) : undefined;
+} catch (cause) {
+  console.error(cause instanceof Error ? cause.message : String(cause));
+  process.exit(UAT_UNUSABLE_EXIT);
+}
+const childEnv: NodeJS.ProcessEnv = { ...plan.env };
+if (trustedBrowser !== undefined) childEnv['UAT_CDP_ENDPOINT'] = trustedBrowser.endpoint;
+
 let exitCode: number;
 try {
-  exitCode = await runE2e(['run', '--config', verifyPath === 'model' ? 'e2e.model.config.ts' : 'e2e.config.ts', ], {
-    ...process.env,
-    ...(trustedBrowser === undefined ? {} : { ...settings.env, UAT_CDP_ENDPOINT: trustedBrowser.endpoint }),
-    E2E_NATIVE_RESULT_LEDGER: ledgerFile,
-  });
+  exitCode = await runE2e(plan.args, childEnv);
 } finally {
   await trustedBrowser?.close();
 }
@@ -94,6 +134,12 @@ if (!existsSync(reportFile)) {
   process.exit(exitCode === 0 ? 1 : verifyExitCode(exitCode, false));
 }
 
+const browser: BrowserRun = {
+  path: browserPath,
+  headed,
+  viewport: `${viewport.width}x${viewport.height}`,
+  privateSettings: plan.privateSettings,
+};
 const report: unknown = JSON.parse(readFileSync(reportFile, 'utf8'));
 const ledger = parseLedger(existsSync(ledgerFile) ? readFileSync(ledgerFile, 'utf8') : '');
 const rendered = renderReport({
@@ -105,6 +151,7 @@ const rendered = renderReport({
   accountId: settings.accountId,
   rawOutput: output,
   verifyPath,
+  browser,
   ...(modelSettings === undefined
     ? {}
     : { model: { label: uatModelLabel(modelSettings), provider: `openai.${modelSettings.api}`, model: modelSettings.model } }),
@@ -118,7 +165,7 @@ const codes = [...new Set(failures.map(failure => (failure !== null && typeof fa
 const nativeFailed = ledger.filter(entry => entry.ok === false).length;
 const model = rendered.json['model'];
 
-console.log(`UAT verification (${verifyPath}): ${status}.`);
+console.log(`UAT verification (${verifyPath}, ${browserPath} browser): ${status}.`);
 if (codes.length > 0) console.log(`Failure codes: ${codes.join(', ')}.`);
 if (model !== null && typeof model === 'object' && 'calls' in model) {
   const total = model as { calls?: number; inputTokens?: number; outputTokens?: number; durationMs?: number };

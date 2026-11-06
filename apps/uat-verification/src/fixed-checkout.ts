@@ -11,9 +11,7 @@
 import { createHash } from 'node:crypto';
 import { accessSync, constants, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-
-/** The two verification paths the runner can start, in their default order. */
-export type VerifyPath = 'scripted' | 'model';
+import { DEFAULT_BROWSER_PATH, type BrowserPath, type VerifyPath } from './browser-path.ts';
 
 /** Used when a flag names no value or the command cannot be parsed. */
 export class FixedCheckoutUsageError extends Error {}
@@ -28,6 +26,8 @@ export interface FixedCheckoutOptions {
   readonly commit: string | undefined;
   /** Which paths to run, in order. */
   readonly paths: readonly VerifyPath[];
+  /** Which browser launches to run, in order; each path runs once per launch. */
+  readonly browsers: readonly BrowserPath[];
   readonly forceInstall: boolean;
   readonly forceBuild: boolean;
   /** The URL a missing checkout is cloned from. */
@@ -45,18 +45,22 @@ export interface FixedCheckoutContext {
 const DEFAULT_REMOTE = 'https://github.com/levicode/e2e.git';
 const DEFAULT_REF = 'origin/main';
 const ALL_PATHS: readonly VerifyPath[] = ['scripted', 'model'];
+/** The user's engine launch is the default; CDP is selected only for the SPKI scenario. */
+const ALL_BROWSERS: readonly BrowserPath[] = [DEFAULT_BROWSER_PATH];
 
 export const FIXED_CHECKOUT_USAGE = `Usage: node apps/uat-verification/scripts/fixed-checkout.ts [options]
 
-Fetch, install, build, and run both UAT verification paths from a checkout that
+Fetch, install, build, and run the UAT verification paths from a checkout that
 belongs to no ticket, including the pinned agent-browser build and the saved
-~/.config/e2e-uat/session.json.
+~/.config/e2e-uat/session.json. Each selected path runs on each selected
+browser launch (the engine launch by default).
 
 Options:
   --checkout <dir>   fixed checkout (default $UAT_CHECKOUT_DIR or ~/src/e2e-uat)
   --ref <ref>        ref to check out (default origin/main)
   --commit <sha>     exact commit to check out; overrides --ref
   --paths <list>     comma-separated scripted,model (default both, in that order)
+  --browsers <list>  comma-separated engine,cdp (default engine)
   --remote <url>     clone URL when the checkout does not exist
   --force-install    install even when the lockfile and toolchain are unchanged
   --force-build      build even when this commit was already built
@@ -87,6 +91,7 @@ export function parseFixedCheckoutArgs(argv: readonly string[], context: FixedCh
   let ref = DEFAULT_REF;
   let commit: string | undefined;
   let paths: readonly VerifyPath[] = ALL_PATHS;
+  let browsers: readonly BrowserPath[] = ALL_BROWSERS;
   let forceInstall = false;
   let forceBuild = false;
   let remote = context.env['UAT_CHECKOUT_REMOTE']?.trim() || DEFAULT_REMOTE;
@@ -119,6 +124,10 @@ export function parseFixedCheckoutArgs(argv: readonly string[], context: FixedCh
         paths = parseVerifyPaths(value(flag, index));
         index += 1;
         break;
+      case '--browsers':
+        browsers = parseBrowserPaths(value(flag, index));
+        index += 1;
+        break;
       case '--remote':
         remote = value(flag, index);
         index += 1;
@@ -138,7 +147,23 @@ export function parseFixedCheckoutArgs(argv: readonly string[], context: FixedCh
     }
   }
 
-  return { checkout, ref, commit, paths, forceInstall, forceBuild, remote, help };
+  return { checkout, ref, commit, paths, browsers, forceInstall, forceBuild, remote, help };
+}
+
+/** One verification of one path on one browser launch. */
+export interface VerificationRun {
+  readonly verifyPath: VerifyPath;
+  readonly browserPath: BrowserPath;
+}
+
+/** Every selected path on every selected launch, path by path in the given order. */
+export function verificationRuns(paths: readonly VerifyPath[], browsers: readonly BrowserPath[]): readonly VerificationRun[] {
+  return paths.flatMap(verifyPath => browsers.map(browserPath => ({ verifyPath, browserPath })));
+}
+
+/** The verify-script arguments for one run; the script parses them, the runner does not reshape them. */
+export function verificationArguments(script: string, run: VerificationRun): readonly string[] {
+  return [script, run.verifyPath, '--browser', run.browserPath];
 }
 
 /** Parses `--paths`; unknown names and an empty list fail instead of silently running nothing. */
@@ -152,6 +177,23 @@ export function parseVerifyPaths(value: string): readonly VerifyPath[] {
   for (const name of names) {
     if (name !== 'scripted' && name !== 'model') {
       throw new FixedCheckoutUsageError(`unknown verification path "${name}"; use scripted or model`);
+    }
+    if (!selected.includes(name)) selected.push(name);
+  }
+  return selected;
+}
+
+/** Parses `--browsers`; unknown names and an empty list fail instead of silently running nothing. */
+export function parseBrowserPaths(value: string): readonly BrowserPath[] {
+  const names = value
+    .split(',')
+    .map(name => name.trim())
+    .filter(name => name !== '');
+  if (names.length === 0) throw new FixedCheckoutUsageError('--browsers needs at least one of engine,cdp');
+  const selected: BrowserPath[] = [];
+  for (const name of names) {
+    if (name !== 'engine' && name !== 'cdp') {
+      throw new FixedCheckoutUsageError(`unknown browser path "${name}"; use engine or cdp`);
     }
     if (!selected.includes(name)) selected.push(name);
   }

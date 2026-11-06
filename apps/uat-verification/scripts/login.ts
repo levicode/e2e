@@ -23,6 +23,7 @@ if (settings.loginUrl === undefined) {
     code = await runE2e(['run', '--config', 'e2e.login.config.ts', '--headed'], {
       ...process.env,
       ...(trustedBrowser === undefined ? {} : { ...settings.env, UAT_CDP_ENDPOINT: trustedBrowser.endpoint }),
+      UAT_BROWSER_PATH: trustedBrowser === undefined ? 'engine' : 'cdp',
     });
   } finally {
     await trustedBrowser?.close();

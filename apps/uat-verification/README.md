@@ -11,8 +11,26 @@ path — how many model rounds it spent and what those rounds decided.
 | `scripted` | `pnpm --filter @e2e-dev/uat-verification verify` | `src/scenario.ts`, no model | Deterministic regression baseline |
 | `model` | `pnpm --filter @e2e-dev/uat-verification verify:model` | A real AI SDK model from the private config | Real agent decisions, including the writable label loop |
 
-The fixed runner runs both paths in order. Add `--paths scripted` or
-`--paths model` to run one.
+The default commands use the engine launch; `verify:cdp` and `verify:model:cdp`
+run the optional CDP launch, and `verify:engine`/`verify:model:engine` name the
+default explicitly.
+
+Both verification paths can run on two browser launches. The engine launch is
+the main path and the default, because it is how the user starts the browser;
+the CDP launch is optional, for an environment that needs external SPKI/proxy
+launch arguments. Add `--paths scripted` or `--paths model` to the fixed runner
+to run one path; pass `--browser cdp` to `verify`/`verify:model` for the
+optional launch. The fixed runner runs each selected path on the engine launch
+by default; `--browsers engine,cdp` runs both.
+
+| Launch | Chromium started by | Window | Viewport | Private proxy/TLS |
+| --- | --- | --- | --- | --- |
+| `engine` (default) | the target's `web()`, as the user's project does | headless | 1440×1000 | engine `AGENT_BROWSER_*` environment (stripped at this pin; see below) |
+| `cdp` (optional) | `src/trusted-browser.ts`; the target attaches over CDP | headless | 1440×900 | external launch arguments |
+
+See [Browser launch paths](#browser-launch-paths) for what each one proves and
+why both exist. A config run directly reads `UAT_BROWSER_PATH` (`engine` or
+`cdp`); the scripts set it.
 
 Nothing private is committed. The entry URL, the queried account ID, the label,
 and the model credential live in files outside the checkout; the login state
@@ -21,7 +39,8 @@ Only the redacted report is written to the user's state directory.
 
 The normal way to run the loop is the fixed checkout at `~/src/e2e-uat`, with
 one command that updates it, installs and builds when needed, builds the
-pinned agent-browser, and runs both paths with the saved session. See
+pinned agent-browser, and runs each selected path on the selected launch (the
+engine launch by default) with the saved session. See
 [FIXED-CHECKOUT.md](FIXED-CHECKOUT.md) for that flow, its dependencies, and its
 failure modes. The commands in this README also work from a normal development
 checkout when the packages are already built.
@@ -71,9 +90,20 @@ An environment whose app needs a proxy or an internal CA may also put `env`
 (environment variables for the browser, such as `AGENT_BROWSER_PROXY` and
 `AGENT_BROWSER_PROXY_BYPASS`), `chromiumArgs` (for example the exact SPKI
 hashes: `["--ignore-certificate-errors-spki-list=<hash>"]`), and
-`chromeExecutable` in that file. When any of them is set, `verify` launches
-Chromium with them and attaches the engine over CDP; otherwise the engine
-launches its usual browser. These values are machine-local and private.
+`chromeExecutable` in that file. These values are machine-local and private.
+
+The engine launch is the default and the main path: the target's `web()` starts
+Chromium, verification runs headless, and the private `env` reaches it as
+`AGENT_BROWSER_*` variables, the way the user's project loads `.env.local`;
+`chromiumArgs` and `chromeExecutable` have no channel there. The optional
+`--browser cdp` launch starts Chromium with those arguments instead and attaches
+the engine over CDP.
+
+The `cdp` launch honors a `UAT_CDP_ENDPOINT` exported in the shell when the
+private settings name no Chromium, args, or env, so an operator-started browser
+still works. Otherwise the loop starts its own Chromium and replaces a leftover
+endpoint. The default engine launch opens a window: on a host with no display
+pass `--browser cdp`.
 
 For the model path only, write the private model settings beside it:
 
@@ -139,7 +169,11 @@ E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/agent-browser \
   pnpm --filter @e2e-dev/uat-verification login
 ```
 
-A headed browser opens the UAT login page. Scan the QR code with WeCom once; the
+When the private settings name a Chromium, launch arguments, or browser env,
+login starts that trusted Chromium and attaches over CDP, because the sign-in
+page needs the same TLS/proxy handling; verification still defaults to the
+engine launch. Otherwise login uses the engine launch. Either way a headed
+browser opens the UAT login page; only the login step needs a window. Scan the QR code with WeCom once; the
 page redirects back to the app, the test verifies the home route, and the login
 state is saved to `~/.config/e2e-uat/session.json` (directory 0700, file 0600).
 The file holds live cookies and the app origin's `localStorage`; it is never
@@ -163,6 +197,9 @@ waits for is the page's own account query. This is the regression baseline: the
 same path, the same engine events, and the same observation phases on every run,
 with no model variance or cost.
 
+Run it on one browser launch with `... verify -- --browser engine` or
+`... verify -- --browser cdp`; without the flag the engine launch runs.
+
 ## Run the model path
 
 ```bash
@@ -175,6 +212,9 @@ configured label to the configured account, a deterministic assertion checks the
 result, the model removes it, and a final assertion checks the account is back
 to its initial state. Writes are limited to the account and label named in
 `config.json`; no other account or label is touched.
+
+`... verify:model -- --browser engine` runs the same model path on the user's
+launch.
 
 The path is built to show what the model actually did:
 
@@ -203,12 +243,13 @@ screenshots (which the model saw) stay in `.e2e-model/`, gitignored and private.
   `scopeState`, error code, and retention counters — never arguments, payloads,
   page text, or URLs.
 - Redacted report: `~/.local/state/e2e-uat/reports/<timestamp>/report.md` and
-  `report.json`. Both paths share the structure: `path`, status, the exact e2e
-  and agent-browser builds (the native commit only when a build record proves
-  it), per-step codes, observation `phases`, the native
-  `code`/`effects`/`scopeState` table, and — on the model path — `model` with
-  rounds, latency, and tokens. The host, login host, account ID, and label are
-  replaced with placeholders.
+  `report.json`. Both paths share the structure: `path`, the `browser` launch
+  (`engine` or `cdp`, headed or headless, viewport, and how the private settings
+  reached the browser), status, the exact e2e and agent-browser builds (the
+  native commit only when a build record proves it), per-step codes, observation
+  `phases`, the native `code`/`effects`/`scopeState` table, and — on the model
+  path — `model` with rounds, latency, and tokens. The host, login host, account
+  ID, and label are replaced with placeholders.
 
 Exit codes: `0` passed, `2` the saved session, the private model settings, or
 the native build identity are unusable (fix the named file or build record,
@@ -228,3 +269,64 @@ A model-path failure first says which layer failed: connection (gateway
 unreachable or proxy), authentication (key rejected), protocol (responses/chat
 mismatch or the gateway rejecting the request shape), or the product itself. The
 report keeps the code and message so that distinction is not lost.
+
+## Browser launch paths
+
+The engine launch is the main path and runs by default: it answers “does the
+flow work when Chromium is started the way the user's project starts it?”. The
+target's `web()` launches, verification runs headless, the page is 1440×1000,
+and the private `env` is handed to the engine as `AGENT_BROWSER_*` variables,
+the way a project that loads `.env.local` does. The CDP launch is optional: it answers
+“does the external-launch + SPKI scheme still work?”, with
+`src/trusted-browser.ts` starting Chromium with the private `chromiumArgs` and
+proxy arguments and the target attaching over CDP. Use it when the private CA or
+proxy must be applied by launch arguments, or when a headless baseline is
+wanted. Run the fixed runner with the default `--browsers engine`, or
+`--browsers cdp`, or both.
+
+agent-browser's own CA switch does not help here. `--ca-cert` (and
+`AGENT_BROWSER_CA_CERT`) is Linux-only: `prepare_nss_home` is compiled only for
+Linux and every other platform rejects it with “--ca-cert is currently supported
+only on Linux”. The PEM a user exported to
+`~/.config/e2e-uat/internal-ca.pem` therefore cannot make the engine launch
+trust the private CA on macOS, and the e2e engine's interop launch passes no
+launch options to the browser at all, so it could not forward the CA even on
+Linux without an engine/native change. A macOS that trusts the CA in its login
+keychain needs none of this and the engine launch loads the app directly; this
+machine does not, so the optional CDP launch with the SPKI list is the one that
+opens the app here.
+
+The native library's isolated `session connect` transport is what separates the
+two. The e2e engine starts the native worker through that transport, and the
+worker removes **every** `AGENT_BROWSER_*` variable from its environment before
+it starts the browser daemon (`cli/src/connection.rs`, `run_isolated_client_session`;
+only a small allowlist of socket, namespace, and diagnostic variables survives).
+The engine's own environment is not the limitation: the variables reach the
+worker and are removed one layer later.
+
+That has two consequences at the current pin (`agent-browser` `d6e0e5f2`):
+
+- The engine launch cannot be given the internal CA or the local proxy through
+  `AGENT_BROWSER_*`. An e2e project that loads `.env.local` into `process.env`
+  loses the same variables at the same place, so `.env.local` is not what makes
+  the user's project reach the site. Since that project runs the same e2e and
+  agent-browser versions and reaches the app, the remaining explanation is that
+  its machine trusts the internal CA (and reaches the host directly). This
+  verification machine does not: no internal CA is in its System or login
+  keychain, and a Chromium started through the same native worker reports
+  `net::ERR_CERT_AUTHORITY_INVALID` before the app renders.
+- The external launch layer therefore cannot be simplified away yet: on a
+  machine without the internal CA in its OS trust store it is the only launch
+  that can open the app. It can be removed once the isolated transport forwards
+  the browser environment, or once this machine trusts the private CA.
+
+On this machine the engine launch therefore fails before the app renders: the
+report shows `ACTION_FAILED` with native code `browser-failure`,
+`effects unknown`, and `scopeState usable` on `page.navigate`, and the engine
+sits on `chrome-error://chromewebdata/`. That is a real failure, recorded not
+suppressed; it is the check that will turn green when that layer is fixed. It is
+also why the failure reported in agent-browser#61 (a `browser-failure` on the
+first observation after a hash-route navigation) cannot be reproduced from here
+today — this run fails one step earlier, at the first navigation, so it never
+reaches an observation or `phases`. On a machine that trusts the private CA,
+the same path reaches the app and is the one that can reproduce it.
