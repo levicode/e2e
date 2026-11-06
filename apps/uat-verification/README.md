@@ -1,15 +1,15 @@
 # Local UAT verification loop
 
-A private, read-only harness for the ad-manager UAT environment: sign in once by
-scanning a QR code, then run one fixed scenario on this machine and get a
-redacted report that says which e2e and agent-browser builds ran, which step
-failed with which code, which native operation settled how, and how long each
-observation phase took.
+A private, read-only harness for the ad-manager UAT environment: reuse the
+local SSO session, run one fixed scenario on this machine, and get a redacted
+report that says which e2e and agent-browser builds ran, which step failed with
+which code, which native operation settled how, and how long each observation
+phase took.
 
-Nothing private is committed. The entry URL and the queried account ID live in a
-file outside the checkout, the login state lives beside it, and the raw run
-output stays in the gitignored `.e2e/` directory. Only the redacted report is
-written to the user's state directory.
+Nothing private is committed. The entry URL, the queried account ID, the
+machine-local Chromium args, and the login state live in files outside the
+checkout, and the raw run output stays in the gitignored `.e2e/` directory. Only
+the redacted report is written to the user's state directory.
 
 ## One-time setup
 
@@ -24,6 +24,9 @@ Prerequisites:
   `.e2e/native-runtime.json`, or `E2E_AGENT_BROWSER_EXECUTABLE` pointing at a
   trusted absolute binary. The report records the version, binary sha256, and
   the checkout commit when one can be found.
+- The local SSO client (`~/code/script/bili-auth`) with a usable cached session.
+  `bili-auth status` reports readiness; `bili-auth setup --store file` is the
+  one-time local setup and never happens in this loop.
 
 Write the private settings once (mode 0600, never in the repository):
 
@@ -43,18 +46,50 @@ chmod 600 ~/.config/e2e-uat/config.json
 `UAT_CONFIG_FILE`/`UAT_SESSION_FILE`/`UAT_REPORTS_DIR` move the three fixed
 locations.
 
-## Sign in once
+A private environment may need machine-local browser settings: an internal CA the
+bundled Chromium does not trust, or a local proxy that must bypass the internal
+hosts. Add them to the same private file:
+
+```json
+"chromiumArgs": [
+  "--ignore-certificate-errors-spki-list=<sha256 of the leaf's SPKI>"
+],
+"env": {
+  "AGENT_BROWSER_PROXY": "http://127.0.0.1:7890",
+  "AGENT_BROWSER_PROXY_BYPASS": "*.hdslb.com,*.bilibili.co,localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+}
+```
+
+`chromiumArgs` go only to the Chromium this loop launches. The SPKI list trusts
+exactly the named certificate, not every HTTPS origin: prefer it over a global
+certificate-error bypass. `AGENT_BROWSER_PROXY_BYPASS` is comma-separated here
+and becomes Chromium's semicolon-separated bypass list; internal hosts must be
+listed or the local proxy will swallow them.
+
+The e2e engine's own launch path isolates the browser transport and strips every
+`AGENT_BROWSER_*` variable, so it cannot carry those values. The loop therefore
+launches its Chromium itself and the target attaches over CDP through
+`connect: { cdpEndpoint }` (`UAT_CDP_ENDPOINT`), which is a public engine
+option. `chromeExecutable` may name a different Chromium; by default the
+engine's installed browser is used.
+
+## Sign in from the local SSO session
 
 ```bash
 E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/agent-browser \
   pnpm --filter @e2e-dev/uat-verification login
 ```
 
-A headed browser opens the UAT login page. Scan the QR code with WeCom once; the
-page redirects back to the app, the test verifies the home route, and the login
-state is saved to `~/.config/e2e-uat/session.json` (directory 0700, file 0600).
-The file holds live cookies and the app origin's `localStorage`; it is never
-printed, committed, attached to a report, or sent to GitHub.
+No QR code and no human step: a small Python helper asks the local `bili-auth`
+client for the current SSO session and writes the `_AJSESSIONID` and `username`
+cookies to a 0600 file (never to an argument, stdout, or a log). The loop sets
+them in the Chromium it launched, opens the app, verifies the home route, and
+saves the browser's cookies and `localStorage` to
+`~/.config/e2e-uat/session.json` (directory 0700, file 0600). The session file
+holds live credentials; it is never printed, committed, attached to a report, or
+sent to GitHub. If the app redirects to the login page, the SSO session or the
+TLS trust is the problem, and the run says so instead of reporting a product
+defect.
 
 An expired session is a first-class failure: a missing, unreadable, foreign
 origin, or fully expired file fails the run with `UAT_SESSION_EXPIRED` and the

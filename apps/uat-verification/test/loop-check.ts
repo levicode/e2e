@@ -40,7 +40,9 @@ writeFileSync(configFile, `${JSON.stringify({ entryUrl: `${base}/app/`, loginUrl
 const env: NodeJS.ProcessEnv = { ...process.env, UAT_CONFIG_FILE: configFile, UAT_SESSION_FILE: sessionFile, UAT_REPORTS_DIR: reportsDirectory };
 
 try {
-  const login = await run(process.execPath, [e2eCli(), 'run', '--config', 'e2e.login.config.ts'], env);
+  const bootstrap = path.join(root, 'cookies.json');
+  writeFileSync(bootstrap, `${JSON.stringify([{ name: 'uat_session', value: 'ok', domain: '127.0.0.1', path: '/' }])}\n`, { mode: 0o600 });
+  const login = await run(process.execPath, [e2eCli(), 'run', '--config', 'e2e.login.config.ts'], { ...env, UAT_BOOTSTRAP_COOKIES: bootstrap });
   assert(login.code === 0, `login run exited ${login.code}\n${login.stdout}\n${login.stderr}`);
   assert((statSync(sessionFile).mode & 0o777) === 0o600, 'the saved session is not 0600');
 

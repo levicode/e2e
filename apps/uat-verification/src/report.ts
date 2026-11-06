@@ -128,6 +128,8 @@ function createRedactor(settings: UatSettings, accountId: string): (text: string
   const entry = new URL(settings.entryUrl);
   const rules: Array<readonly [RegExp, string]> = [];
   if (accountId.length >= 4) rules.push([new RegExp(`(?<![0-9A-Za-z])${escapeRegExp(accountId)}(?![0-9A-Za-z])`, 'g'), '<account-id>']);
+  if (settings.labelId !== undefined && settings.labelId !== '') rules.push([new RegExp(`(?<![0-9A-Za-z])${escapeRegExp(settings.labelId)}(?![0-9A-Za-z])`, 'g'), '<label-id>']);
+  if (settings.labelName !== undefined && settings.labelName !== '') rules.push([new RegExp(escapeRegExp(settings.labelName), 'g'), '<label-name>']);
   rules.push([new RegExp(escapeRegExp(settings.entryUrl), 'g'), '<uat-entry>']);
   rules.push([new RegExp(escapeRegExp(entry.host), 'g'), '<uat-host>']);
   if (settings.loginUrl !== undefined) {

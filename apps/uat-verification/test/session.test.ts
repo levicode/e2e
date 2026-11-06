@@ -12,6 +12,7 @@ const settings: UatSettings = {
   accountId: '1234567890',
   homeHash: '#/home',
   sessionFile: '',
+  env: {},
 };
 
 function directory(): string {

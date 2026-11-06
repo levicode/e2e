@@ -14,6 +14,7 @@ import { appRoot, runE2e } from '../src/e2e-cli.ts';
 import { readNativeIdentity, readPackageIdentities } from '../src/identity.ts';
 import { parseLedger, renderReport, writeReport } from '../src/report.ts';
 import { readUatSession } from '../src/session.ts';
+import { launchTrustedBrowser } from '../src/trusted-browser.ts';
 import { loadUatSettings, uatConfigFile, uatReportsDirectory } from '../src/settings.ts';
 
 const settings = loadUatSettings({ requireAccountId: true });
@@ -38,7 +39,18 @@ const native = readNativeIdentity(appRoot, process.env);
 const packages = readPackageIdentities(appRoot);
 
 console.log('Running the fixed read-only UAT scenario (headless).');
-const exitCode = await runE2e(['run', '--config', 'e2e.config.ts'], { ...process.env, E2E_NATIVE_RESULT_LEDGER: ledgerFile });
+const browser = await launchTrustedBrowser(settings);
+let exitCode: number;
+try {
+  exitCode = await runE2e(['run', '--config', 'e2e.config.ts'], {
+    ...process.env,
+    ...settings.env,
+    E2E_NATIVE_RESULT_LEDGER: ledgerFile,
+    UAT_CDP_ENDPOINT: browser.endpoint,
+  });
+} finally {
+  await browser.close();
+}
 
 const reportFile = path.join(output, 'report.json');
 if (!existsSync(reportFile)) {

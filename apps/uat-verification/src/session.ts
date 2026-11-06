@@ -1,9 +1,9 @@
 /**
  * The reusable UAT login state.
  *
- * The first run scans a QR code once on a headed browser and saves every cookie
- * that browser holds plus the app origin's `localStorage`; later runs restore
- * both and verify the app still answers as a signed-in user. The file lives
+ * The login step sets the local SSO cookies in a browser and saves every cookie
+ * it holds plus the app origin's `localStorage`; later runs restore both and
+ * verify the app still answers as a signed-in user. The file lives
  * outside the checkout, in a 0700 directory with 0600 permissions, because the
  * values are live credentials — it is never committed, printed, or attached to
  * a report. A missing, unreadable, foreign-origin, or fully expired file fails

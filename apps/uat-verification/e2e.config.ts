@@ -7,7 +7,7 @@
  * project (gitignored) that holds the raw report and the native ledger.
  */
 import type { E2EConfig } from 'e2e';
-import { web } from '@e2e-dev/web';
+import { uatEngine } from './src/engine.ts';
 import { loadUatSettings } from './src/settings.ts';
 import { readOnlyScenario } from './src/scenario.ts';
 
@@ -15,13 +15,7 @@ const settings = loadUatSettings({ requireAccountId: true });
 
 export default {
   projectId: 'dev.e2e.uat-verification',
-  targets: [
-    {
-      name: 'uat',
-      engine: web({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' }),
-      app: { url: settings.entryUrl },
-    },
-  ],
+  targets: [{ name: 'uat', engine: uatEngine(), app: { url: settings.entryUrl } }],
   tests: ['tests/**/*.e2e.ts', '!tests/login.e2e.ts'],
   agents: { default: { executor: readOnlyScenario(settings) } },
   timeout: 180_000,

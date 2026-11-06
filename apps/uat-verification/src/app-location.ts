@@ -1,9 +1,8 @@
 /**
- * Waits shared by the login step and the session-restoring setup.
- *
- * Both need one definition of "the app is signed in": the same origin and the
- * home fragment. Leaving that origin is a login redirect, and only the login
- * step, which starts there on purpose, may sit on a foreign origin waiting.
+ * The one definition of "the app is signed in": the entry origin and the home
+ * fragment. A navigation that leaves that origin is the login redirect an
+ * unusable session earns, and the run must report `UAT_SESSION_EXPIRED` rather
+ * than letting a login page pass for a product state.
  */
 import type { Browser } from '@e2e-dev/web';
 import { entryOrigin, type UatSettings } from './settings.ts';
@@ -11,34 +10,23 @@ import { sessionExpired } from './session.ts';
 
 const POLL_MS = 500;
 
-/** What the sign-in wait reads and changes: the browser fixture, or a stub in a unit test. */
-interface SignedInProbe {
+/** What the wait reads: the browser fixture, or a stub in a unit test. */
+interface UrlProbe {
   url(): Promise<string>;
-  goto(url: string): Promise<void>;
 }
 
-export interface WaitForHomeOptions {
-  /** `expired`: a foreign origin is the login redirect an expired session earns; `wait`: only the login step sees one on purpose. */
-  readonly foreignOrigin: 'expired' | 'wait';
-  readonly timeoutMs: number;
-}
-
-/** Waits for the app's home location, distinguishing an expired session from a slow login. */
-export async function waitForHome(browser: Browser, settings: UatSettings, options: WaitForHomeOptions): Promise<string> {
+/** Waits for the app's home location, failing as an expired session otherwise. */
+export async function waitForHome(browser: Browser | UrlProbe, settings: UatSettings, timeoutMs: number): Promise<string> {
   const origin = entryOrigin(settings);
-  const deadline = Date.now() + options.timeoutMs;
+  const deadline = Date.now() + timeoutMs;
   for (;;) {
     const url = await browser.url();
     if (isHome(url, settings)) return url;
     const current = originOf(url);
-    if (current !== undefined && current !== origin && options.foreignOrigin === 'expired') {
+    if (current !== undefined && current !== origin) {
       throw sessionExpired(settings, 'the app redirected to the login page');
     }
-    if (Date.now() >= deadline) {
-      throw options.foreignOrigin === 'expired'
-        ? sessionExpired(settings, `the app did not reach ${settings.homeHash}`)
-        : loginNotFinished();
-    }
+    if (Date.now() >= deadline) throw sessionExpired(settings, `the app did not reach ${settings.homeHash}`);
     await sleep(POLL_MS);
   }
 }
@@ -46,57 +34,6 @@ export async function waitForHome(browser: Browser, settings: UatSettings, optio
 /** True when `url` is on the app's origin and carries the home fragment. */
 function isHome(url: string, settings: UatSettings): boolean {
   return originOf(url) === entryOrigin(settings) && url.includes(settings.homeHash);
-}
-
-/**
- * Waits out the scan: the QR page stays until WeCom confirms, then the backend
- * either follows `redirect` to the app or lands on its own home. In the second
- * case the cookies are already set, so opening the app takes them there; a
- * redirect back to the QR page means the scan has not finished and waiting
- * resumes.
- */
-export async function waitForSignedInApp(browser: SignedInProbe, settings: UatSettings, timeoutMs: number): Promise<string> {
-  const origin = entryOrigin(settings);
-  const deadline = Date.now() + timeoutMs;
-  let recoveryOpens = 0;
-  for (;;) {
-    const url = await browser.url();
-    if (isHome(url, settings)) return url;
-    if (Date.now() >= deadline) throw loginNotFinished();
-    const current = originOf(url);
-    if (current !== undefined && current !== origin && !isLoginPage(url, settings) && recoveryOpens < 3) {
-      recoveryOpens += 1;
-      await browser.goto(settings.entryUrl);
-      continue;
-    }
-    await sleep(POLL_MS);
-  }
-}
-
-/** True when `url` is the configured login page itself. */
-function isLoginPage(url: string, settings: UatSettings): boolean {
-  if (settings.loginUrl === undefined) return false;
-  const login = new URL(settings.loginUrl);
-  const current = originOf(url);
-  return current !== undefined && current === login.origin && safePath(url) === login.pathname;
-}
-
-function safePath(url: string): string | undefined {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The login URL that returns to the app entry once the scan succeeds. */
-export function loginEntry(settings: UatSettings): string {
-  if (settings.loginUrl === undefined) {
-    throw new Error('UAT_CONFIG_MISSING: set UAT_LOGIN_URL or write loginUrl to the private settings file');
-  }
-  const login = new URL(settings.loginUrl);
-  login.searchParams.set('redirect', settings.entryUrl);
-  return login.toString();
 }
 
 /** The saved origin's `localStorage`, read through the browser fixture. */
@@ -109,12 +46,6 @@ export async function captureLocalStorage(browser: Browser): Promise<Record<stri
     }
     return entries;
   });
-}
-
-function loginNotFinished(): Error {
-  return new Error(
-    'UAT_LOGIN_TIMEOUT: the QR sign-in did not finish within the window. Run pnpm --filter @e2e-dev/uat-verification login again and scan the code with WeCom while the window is open.',
-  );
 }
 
 function originOf(url: string): string | undefined {

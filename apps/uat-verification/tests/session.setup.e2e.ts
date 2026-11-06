@@ -31,6 +31,6 @@ test.setup('restore the saved UAT session', { sessions: ['uat'] }, async ({ app,
     }, { origin: restore.origin, entries: { ...restore.entries } });
   }
   await app.open(settings.entryUrl);
-  await waitForHome(browser, settings, { foreignOrigin: 'expired', timeoutMs: 20_000 });
+  await waitForHome(browser, settings, 20_000);
   await session.save('uat');
 });

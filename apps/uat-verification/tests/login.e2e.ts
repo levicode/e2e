@@ -1,22 +1,27 @@
 /**
- * The one-time login: open the SSO QR page headed, wait for the person to scan
- * it once, then save the resulting browser state to the fixed private path.
+ * Saves the reusable login state from the local SSO session.
  *
- * This runs under `scripts/login.ts`, which passes `--headed`; without a window
- * nobody can scan. It never prints a cookie, the host, or the account ID.
+ * `scripts/login.ts` asks `bili-auth` for the SSO cookie (written to a 0600
+ * file, never to an argument or a log) and launches the Chromium that trusts
+ * this environment's certificate; this test sets those cookies, proves the app
+ * answers as a signed-in user, and stores the browser's cookies and storage in
+ * `~/.config/e2e-uat/session.json`. No QR code and no human step.
  */
+import { readFileSync } from 'node:fs';
 import { test } from '@e2e-dev/web';
-import { captureLocalStorage, loginEntry, waitForHome, waitForSignedInApp } from '../src/app-location.ts';
+import { captureLocalStorage, waitForHome } from '../src/app-location.ts';
 import { toStoredCookies, writeSessionFile } from '../src/session.ts';
 import { loadUatSettings } from '../src/settings.ts';
 
-test('scan the WeCom QR once and save the UAT session', { timeout: 540_000 }, async ({ app, browser }) => {
+test('sign in with the local SSO session and save the UAT session', { timeout: 180_000 }, async ({ app, browser }) => {
   const settings = loadUatSettings();
-  await browser.goto(loginEntry(settings));
-  await waitForSignedInApp(browser, settings, 480_000);
-  // The login redirect may land on the app entry without the home fragment; open it once more to be sure.
+  const bootstrap = process.env['UAT_BOOTSTRAP_COOKIES'];
+  if (bootstrap === undefined || bootstrap === '') throw new Error('UAT_SSO_UNAVAILABLE: no bootstrap cookie file was provided');
+  const parsed: unknown = JSON.parse(readFileSync(bootstrap, 'utf8'));
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('UAT_SSO_UNAVAILABLE: the bootstrap cookie file is empty');
+  await browser.setCookies(parsed as Parameters<typeof browser.setCookies>[0]);
   await app.open(settings.entryUrl);
-  await waitForHome(browser, settings, { foreignOrigin: 'expired', timeoutMs: 30_000 });
+  await waitForHome(browser, settings, 60_000);
   const cookies = toStoredCookies(await browser.cookies());
   const localStorage = await captureLocalStorage(browser);
   writeSessionFile(settings.sessionFile, {

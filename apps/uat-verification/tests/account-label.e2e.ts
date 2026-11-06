@@ -26,7 +26,7 @@ const QUERY_REQUEST = /\/account\/label\/query_account\?(?:[^#]*&)?account_id=[^
 test('account label page queries the configured account read-only', { session: 'uat', timeout: 150_000 }, async ({ agent, app, browser, screen }) => {
   // A restored session carries cookies and storage, not a page: open the app entry in this attempt.
   await app.open(settings.entryUrl);
-  await waitForHome(browser, settings, { foreignOrigin: 'expired', timeoutMs: 20_000 });
+  await waitForHome(browser, settings, 20_000);
   await agent.act(SCENARIO_INSTRUCTION);
   await expect(screen.getByPlaceholder('请输入账号ID')).toHaveValue(accountId);
   // The scenario's own 查询 is the fixed path; this awaited second query is what

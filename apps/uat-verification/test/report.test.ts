@@ -9,6 +9,7 @@ const settings: UatSettings = {
   accountId: '1234567890',
   homeHash: '#/home',
   sessionFile: '/private/session.json',
+  env: {},
 };
 
 function report(status: 'passed' | 'failed', messages: readonly string[] = []): unknown {
