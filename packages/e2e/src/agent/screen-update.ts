@@ -211,11 +211,17 @@ export class ScreenPresenter {
    * the control had no visible effect only when an identical screenshot says
    * so too. A moved screenshot means what changed is drawn, not listed, and
    * the model is told to read the image; with no screenshot to compare, the
-   * model is told only that no listed node changed.
+   * model is told only that no listed node changed. Under `off` no screenshot
+   * can be taken at all, so the listing is named as the only evidence.
    */
   present(observation: ExecutorObservation, options: ScreenUpdateOptions = {}): ScreenOutput {
     const compared = this.attach(observation);
-    const pixels = compared === 'none' && (this.pixelsDenied || this.options.pixelsUnavailable?.() === true) ? 'unavailable' : compared;
+    const pixels =
+      this.policy === 'off'
+        ? 'unavailable'
+        : compared === 'none' && (this.pixelsDenied || this.options.pixelsUnavailable?.() === true)
+          ? 'unavailable'
+          : compared;
     const text = this.render(
       observation,
       {

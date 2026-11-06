@@ -116,6 +116,12 @@ describe('the off policy', () => {
     expect(tools['tap']).toBeDefined();
     expect(hasImage(presenter.open(screen('x1', shot(1))))).toBe(false);
     expect(hasImage(presenter.present(screen('x2', shot(2))))).toBe(false);
+    // A result that changed no listed node must not send the model looking
+    // for a screenshot tool this policy does not offer.
+    const unchanged = presenter.present(screen('x3', shot(3)), { lead: 'Tapped #n1.', expectChange: true });
+    const text = typeof unchanged === 'string' ? unchanged : unchanged.text;
+    expect(text).toContain('No screenshot can be taken in this step');
+    expect(text).not.toContain('needs a screenshot to see');
     expect(presenter.showingPixels).toBe(false);
     expect(requests).toEqual([]);
   });

@@ -17,7 +17,7 @@ const TRUNCATION_MARKER = '[observation truncated at the resolved observation by
 /** Appended when the engine reported its tree incomplete and the byte budget did not cut it further. */
 const ENGINE_TRUNCATION_MARKER = '[observation truncated: the engine stopped listing nodes at its limit]';
 /** Missing semantics are unknown, including on a surface that appears empty. */
-const UNAVAILABLE_TREE_MARKER = '[semantic capture unavailable: no nodes were read; previous node ids are no longer valid. Use the screenshot, never infer absence from this listing]';
+const UNAVAILABLE_TREE_MARKER = '[semantic capture unavailable: no nodes were read; previous node ids are no longer valid. Use the screenshot when one is attached, never infer absence from this listing]';
 
 /** Why pixels the caller asked for are not part of this observation. */
 type PixelsWithheld = 'MASKING_UNPROVEN';

@@ -31,6 +31,15 @@ const PIXEL_RULES: Readonly<Record<PixelPolicy, string>> = {
   off: '- No pixel tools are offered: this agent sends no screenshots. Act only on listed node ids and read the tree; when the tree lists nothing you can act on, conclude rather than guessing a point.',
 };
 
+/** The bullet on typing where a target is unlisted; under `off` no point tool can focus one. */
+const TYPE_RULES: Readonly<Record<PixelPolicy, string>> = {
+  always:
+    '- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.',
+  'on-request':
+    '- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.',
+  off: '- When type and press accept no target: a field the screen does not list cannot be reached without pixel tools. A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.',
+};
+
 const BASE_RULES = (pixels: PixelPolicy): string => `You are an autonomous end-to-end testing agent executing exactly one test step against a real application.
 
 Rules:
@@ -41,7 +50,7 @@ Rules:
 - If the target is not on screen, bring it on screen with the tools you have (scroll_to for a node the screen lists, scroll, navigate) or conclude. Scrolling may repeat (times) or be issued several times in one turn to move far; each result reports what came into the tree.
 - tap is the default gesture for a listed control. The other verbs are offered only when this app's engine can perform them, and each one's description says what it is for; none of them makes a tap stronger.
 ${PIXEL_RULES[pixels]}
-- When type and press accept no target: a field the screen does not list still takes text. tap_at it to give it focus, then type without a target (and press Enter without a target to submit). A field the screen lists is typed by id, and a listed node that is not an input (a canvas, a widget with its own key handling) is focused and typed into through the keyboard by the same call: never spell a value out with one press per character. dismiss_keyboard, when offered, hides an on-screen keyboard covering the target.
+${TYPE_RULES[pixels]}
 - On a touch screen, a tap made while the keyboard is up may only close the keyboard; the result says so when the keyboard went away. Then act on the control again rather than concluding.
 - Conclude "passed" only when the latest result shows the outcome the step asked for. A result that reports no change, or only the keyboard closing, means the decisive action did not land: act again or conclude "failed". A result that says only that no listed node changed has not ruled out a drawn change: take a screenshot, when offered, before deciding. Never describe an unchanged screen as the outcome.`;
 

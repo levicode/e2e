@@ -543,9 +543,9 @@ actResult.data;
 await agent.act('open billing', { plan: 'pro' }, {});
 // @ts-expect-error act takes no schema; structured output is extract({ schema })
 await agent.act('read total', { schema: z.object({ total: z.number() }) });
-// @ts-expect-error act takes no vision; the model asks for a screenshot itself
+// @ts-expect-error act takes no vision; the agent's pixels policy decides when it gets a screenshot
 await agent.act('open billing', { vision: true });
-// @ts-expect-error act takes no vision; the model asks for a screenshot itself
+// @ts-expect-error act takes no vision; the agent's pixels policy decides when it gets a screenshot
 await agent.act('pick the red pin', { vision: 'only' });
 await agent.assert('the chart trends upward', { vision: true });
 await agent.assert('the form is not covered', { vision: 'only' });

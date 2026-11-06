@@ -351,15 +351,19 @@ switching has no verb yet: a new tab is invisible to the model.
 
 ## Pixel tools: screenshot and the point verbs
 
-`act` reads the semantic tree and requests screenshots when it needs them;
-the same model reads both. A screen with no listed interactive nodes, such
-as a canvas, opens with a screenshot.
+`act` reads the semantic tree and gets screenshots when its
+[`pixels`](/reference/config#pixels) policy allows them; the same model reads
+both. Under `always` (the default) a screen with no listed interactive nodes,
+such as a canvas, opens with a screenshot, and every action result after it
+carries a fresh one. Under `on-request` the model asks for the opening
+screenshot and any later one; under `off` it works from the tree alone.
 
-The built-in agent offers these tools while no secret has been filled:
+The built-in agent offers these tools while no secret has been filled and the
+policy is not `off`:
 
 | Tool | What it does |
 | --- | --- |
-| `screenshot()` | Returns a masked viewport screenshot and includes a fresh screenshot after every later action in the step. |
+| `screenshot()` | Returns a masked viewport screenshot. Under `always`, every later action result in the step also carries a fresh one; under `on-request`, a point action's own result does. |
 | `tap_at({ x, y })` | Taps the coordinates. On an engine that cannot, taps the listed control at the point by node id. |
 | `hover_at({ x, y })` | Moves the pointer to the coordinates. On an engine that cannot, hovers the listed control at the point by node id. Needs the `hover` action or pointer kind. |
 | `type_at({ x, y, value, replace? })` | Replaces a listed input's value. For an unlisted input, taps to focus and types at the caret unless `replace` is set. Unlisted inputs require keyboard support. |
@@ -378,8 +382,9 @@ The built-in agent offers these tools while no secret has been filled:
   point must land on a listed control.
 - A bare-point tap or hover replays only on a viewport of the recorded size,
   or at the same place inside the listed node that contained it.
-- Once screenshots are in use, the post-action wait also detects pixel
-  changes, including canvas redraws.
+- Under `always`, once screenshots are in use, the post-action wait also
+  detects pixel changes, including canvas redraws. Under `on-request` only a
+  point action's result is compared with the image before it.
 - Screenshots have a maximum long side of 768 px. Older images are removed in
   batches, keeping the newest two.
 - A step that sent pixels records `visionInput: true` and
@@ -387,25 +392,28 @@ The built-in agent offers these tools while no secret has been filled:
 
 A secret filled during the step withholds every later screenshot from the
 model (`PIXEL_TAINTED`). A step that opens on a tainted viewport offers none of the
-six pixel tools.
+six pixel tools; neither does an agent with `pixels: 'off'`.
 
 If semantic capture times out, an engine that proves masking independently
 can return a fresh screenshot with an explicit unavailable-tree warning.
-Every `act` observation with unavailable semantics includes that image and
-warning. Earlier node ids are then invalid, and the next successful semantic
-capture presents the whole tree again. The screenshot shows the current
-viewport; an unavailable tree does not prove that a control or message is
-absent. After a secret fill there is no fallback. When semantic capture times
-out before the step does, `act`, and a judgment with `vision: true`, fails
-with `POLICY_DENIED`.
+Under `always`, an `act` observation with unavailable semantics includes that
+image and warning when pixels may reach the model; under `on-request` only
+the observation the model asked pixels for does, and under `off` the warning
+goes out without an image. Earlier node ids are then
+invalid, and the next successful semantic capture presents the whole tree
+again. The screenshot shows the current viewport; an unavailable tree does not
+prove that a control or message is absent. After a secret fill there is no
+fallback. When semantic capture times out before the step does, `act`, and a
+judgment with `vision: true`, fails with `POLICY_DENIED`.
 
 If semantic capture fails, trace replay stops. The step cannot record a new
 trace entry, even if the tree recovers later.
 
 ## Vision
 
-`assert`, `waitFor`, and `extract` accept `vision`; `act` requests its own
-screenshots through the [pixel tools](#pixel-tools-screenshot-and-the-point-verbs).
+`assert`, `waitFor`, and `extract` accept `vision`; `act` gets its screenshots
+through the [pixel tools](#pixel-tools-screenshot-and-the-point-verbs) its
+[`pixels`](/reference/config#pixels) policy allows.
 A screenshot goes to the model that asked for it, so it must accept images:
 the judge (else `model`) for a judgment, `model` for `act`.
 

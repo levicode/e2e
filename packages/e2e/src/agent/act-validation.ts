@@ -68,7 +68,7 @@ export function validateActOptions(options: ActOptions | undefined, extraArgumen
   if (loose.vision !== undefined) {
     throw new ConfigurationError(
       'UNSUPPORTED_CAPABILITY',
-      'agent.act takes no vision option: the model works from the tree and asks for a screenshot itself when the tree lacks what it needs; vision is a judgment option (assert, waitFor, extract)',
+      'agent.act takes no vision option: the built-in agent works from the tree and its `pixels` policy decides when it gets a screenshot; vision is a judgment option (assert, waitFor, extract)',
     );
   }
   const onAction: unknown = options.onAction;

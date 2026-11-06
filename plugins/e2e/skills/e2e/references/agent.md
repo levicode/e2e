@@ -164,10 +164,12 @@ feedback. Point tools serve a canvas shape, map pin, image region, or system
 sheet control. `tap_at` and `hover_at` act at the point; `press_at`,
 `select_at`, and `type_at` hit-test the tree first so a listed control
 underneath is acted on by id, and `type_at` on nothing listed taps, then
-types. A screen with
-nothing to tap by id opens with a screenshot attached. A device has no
+types. Under `pixels: 'always'` (the default) a screen with nothing to tap by
+id opens with a screenshot attached; `on-request` leaves that screenshot to
+the model's own `screenshot` call, and `off` sends none. A device has no
 `right_click`, `select`, `upload`, or `scroll_to` by node id. Pixels are
-masked and withheld after a secret fill (topic writing-tests): act on pixels
+masked and withheld after a secret fill (topic writing-tests), and no pixel
+tool is offered when the agent's `pixels` policy is `off`: act on pixels
 before signing in, or in a test of its own. A result says when an action
 closed an on-screen keyboard; on a touch screen that tap was often spent
 closing it, so act again.
@@ -419,7 +421,8 @@ make no model calls.
   vocabulary.
 - Any `StepExecutor` (`{ name, version?, cache?, runStep(ctx) }`) goes under
   `executor`; the runner still owns observations, actions, budgets, and the
-  report, and `system` or `tools` beside `executor` is `INVALID_CONFIG`.
+  report, and `system`, `tools`, or `pixels` beside `executor` is
+  `INVALID_CONFIG`.
 
 Reference: https://e2e.tester.army/docs/agents
 

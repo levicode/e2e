@@ -124,6 +124,7 @@ describe('the configured pixel policy', () => {
     }
     expect(first!.toolNames).toContain('tap');
     expect(first!.system).toContain('No pixel tools are offered');
+    expect(first!.system).not.toContain('tap_at');
     expect(first!.imageParts).toBe(0);
   });
 });

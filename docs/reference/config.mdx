@@ -987,8 +987,8 @@ house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxMode
 ```
 
 - `model`, `judge`, `context`, and the budgets still apply; judgments need a
-  model. [`system`](#system) and [`tools`](#tools) beside it are
-  `INVALID_CONFIG`.
+  model. [`system`](#system), [`tools`](#tools), and [`pixels`](#pixels) beside
+  it are `INVALID_CONFIG`.
 - `maxModelCalls` bounds the model turns of one step.
 - A `model` or `judge` that differs from the one the executor brought is
   `INVALID_CONFIG`.
@@ -1686,6 +1686,9 @@ export interface AgentTool {
   readonly annotations: { readonly mutates: boolean; readonly platforms?: readonly string[] };
 }
 
+/** When the built-in agent's model sees the viewport's pixels. */
+export type PixelPolicy = 'always' | 'on-request' | 'off';
+
 /** The options every agent takes, whichever brain runs its `act` steps. */
 export interface AgentOptions {
   /** An AI SDK model instance; no implicit default. */
@@ -1706,6 +1709,8 @@ export interface AgentOptions {
   maxInputTokens?: number;
   /** Provider options every model call carries, such as a reasoning effort. */
   providerOptions?: ProviderOptions;
+  /** When the built-in agent's model sees pixels; default `always`. */
+  pixels?: PixelPolicy;
 }
 
 /** One entry of `agents`: the built-in agent with its options, or a custom brain under `executor`. */
@@ -1720,6 +1725,9 @@ export type AgentConfig = AgentOptions &
     | {
         /** A custom brain `agent.act()` dispatches to instead of the built-in agent. */
         executor: StepExecutor;
+        system?: never;
+        tools?: never;
+        pixels?: never;
       }
   );
 ```
