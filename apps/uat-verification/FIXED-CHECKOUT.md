@@ -139,8 +139,9 @@ The native checkout is UAT machinery, not a development clone. The default
 state files and reports, and is created, fetched, and checked out by the same
 command that runs the verification. A manual clone such as
 `~/src/agent-browser`, and any worktree inside it, is a different directory: the
-runner never reads, verifies, or cleans it unless `UAT_NATIVE_CLONE` names it,
-so concurrent development cannot change or fail a UAT run.
+runner never reads, verifies, or cleans it unless `UAT_NATIVE_CLONE` (or
+`UAT_AGENT_BROWSER_CHECKOUT`) names it, so concurrent development cannot change
+or fail a UAT run.
 
 Set `UAT_NATIVE_CLONE` (or `UAT_AGENT_BROWSER_CHECKOUT`) to build in a clone you
 own instead. The standalone-clone and worktree guards apply to whichever path is
