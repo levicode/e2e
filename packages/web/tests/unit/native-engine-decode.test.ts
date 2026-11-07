@@ -30,6 +30,16 @@ describe('native engine result boundary', () => {
     expect(() => decodeEngineResult('browser.observe', withStates({ clickable: 'true' }))).toThrow();
     expect(() => decodeEngineResult('browser.observe', withStates({ clickable: true, hovered: true }))).toThrow();
   });
+  it('admits the trailing-target layout states on an anonymous action target', () => {
+    const value = snapshot();
+    const trailing = { ...value, root: { ...value.root, children: value.root.children.map(node => ({ ...node, states: { clickable: true, row: true, last: true, trailing: true } })) } };
+    const withStates = (states: Record<string, unknown>) => ({ ...value, root: { ...value.root, children: value.root.children.map(node => ({ ...node, states })) } });
+    expect(decodeEngineResult('browser.observe', trailing)).toEqual(trailing);
+    // Still boolean and still a closed vocabulary.
+    expect(() => decodeEngineResult('browser.observe', withStates({ last: 'true' }))).toThrow();
+    expect(() => decodeEngineResult('browser.observe', withStates({ trailing: 1 }))).toThrow();
+    expect(() => decodeEngineResult('browser.observe', withStates({ row: true, unknown: true }))).toThrow();
+  });
   it('does not relabel legacy state as native storage state', () => {
     const blob = { identityScope: 'scope-1', handle: 'blob-1', size: 1, sha256: '0'.repeat(64), version: 1 };
     expect(() => decodeEngineResult('state.capture', { ...blob, format: 'playwright-storage-state' })).toThrow();

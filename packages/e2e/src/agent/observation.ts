@@ -133,10 +133,19 @@ export function prepareObservation(
   // Measured once per node: the priority pass and the fill pass render the
   // same line, and a line's size includes its newline.
   const metrics = new Map<RedactedNode, MeasuredLine>();
+  const positions = new Map<string, string>();
+  const notePositions = (node: RedactedNode): void => {
+    const actions = (node.children ?? []).filter(isAnonymousClickable);
+    if (actions.length > 1) {
+      actions.forEach((child, index) => positions.set(child.ref.id, `${index + 1}/${actions.length}`));
+    }
+    for (const child of node.children ?? []) notePositions(child);
+  };
+  notePositions(tree);
   const lineOf = (node: RedactedNode, depth: number): MeasuredLine => {
     let measured = metrics.get(node);
     if (measured === undefined) {
-      const line = formatNode(node, depth, options.appOrigin);
+      const line = formatNode(node, depth, options.appOrigin, positions.get(node.ref.id));
       measured = { line, size: encoder.encode(`${line}\n`).byteLength };
       metrics.set(node, measured);
     }
@@ -548,8 +557,23 @@ const MAX_HREF_LENGTH = 256;
  * lines, and the model needs their text, not a filler word. A link target on
  * `appOrigin`, the app base URL's, renders as its path.
  */
-export function formatNode(node: RedactedNode, depth: number, appOrigin?: string): string {
-  const description = describeNode(node, appOrigin);
+/**
+ * Whether a node is an unnamed action target, the only node that needs a
+ * disambiguator: a named or text-bearing control already says what it is.
+ */
+function isAnonymousClickable(node: RedactedNode): boolean {
+  // `clickable` is an engine-reported state outside the public vocabulary the
+  // SemanticNode type names; the reader still renders it generically.
+  const states = (node.states ?? {}) as Readonly<Record<string, boolean>>;
+  return states['clickable'] === true
+    && (node.role === undefined || node.role === '')
+    && (node.name === undefined || node.name === '')
+    && (node.text === undefined || node.text === '')
+    && (node.testId === undefined || node.testId === '');
+}
+
+export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, position?: string): string {
+  const description = describeNode(node, appOrigin, new Set(), position);
   return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}${referenceText(node.ref.id)}${description === '' ? '' : ` ${description}`}`;
 }
 
@@ -559,7 +583,7 @@ export function formatNode(node: RedactedNode, depth: number, appOrigin?: string
  * out states a reader comparing two screens does not count as a change
  * (focus moves with every action).
  */
-export function describeNode(node: RedactedNode, appOrigin?: string, ignoreStates: ReadonlySet<string> = new Set()): string {
+export function describeNode(node: RedactedNode, appOrigin?: string, ignoreStates: ReadonlySet<string> = new Set(), position?: string): string {
   const parts: string[] = [];
   if (node.role !== undefined && node.role !== '') parts.push(node.role);
   if (node.name !== undefined && node.name !== '') parts.push(JSON.stringify(node.name));
@@ -573,6 +597,20 @@ export function describeNode(node: RedactedNode, appOrigin?: string, ignoreState
   const placeholder = node.attributes?.['placeholder'];
   if (placeholder !== undefined && placeholder !== '' && (node.name ?? '') === '') {
     parts.push(`placeholder=${JSON.stringify(placeholder)}`);
+  }
+  if (isAnonymousClickable(node)) {
+    // Page-authored identifiers and the target's order among the anonymous
+    // actions in its group. Both are DOM facts, not labels: an icon class may
+    // name the glyph the page drew, and the ordinal places the target without
+    // claiming what it does.
+    const id = node.attributes?.['id'];
+    if (id !== undefined && id !== '') parts.push(`id=${JSON.stringify(collapseText(id).slice(0, 200))}`);
+    const className = node.attributes?.['class'];
+    if (className !== undefined && className !== '') parts.push(`class=${JSON.stringify(collapseText(className).slice(0, 200))}`);
+    for (const [key, value] of Object.entries(node.attributes ?? {}).filter(([key]) => key.startsWith('aria-')).slice(0, 4)) {
+      if (value !== '') parts.push(`${key}=${JSON.stringify(collapseText(value).slice(0, 120))}`);
+    }
+    if (position !== undefined) parts.push(`nth=${position}`);
   }
   if (node.states?.secure === true) {
     parts.push('value=<secure>');

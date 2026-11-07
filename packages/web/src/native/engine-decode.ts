@@ -49,7 +49,7 @@ function node(value: unknown, depth = 0): SemanticNode {
   }
   if (item['states'] !== undefined) {
     const states = record(item['states']);
-    if (Object.keys(states).some(key => !['checked', 'disabled', 'selected', 'expanded', 'pressed', 'focused', 'hidden', 'secure', 'clickable'].includes(key))) invalid();
+    if (Object.keys(states).some(key => !['checked', 'disabled', 'selected', 'expanded', 'pressed', 'focused', 'hidden', 'secure', 'clickable', 'row', 'last', 'trailing'].includes(key))) invalid();
     result['states'] = Object.fromEntries(Object.entries(states).map(([key, field]) => [key, bool(field)]));
   }
   if (item['attributes'] !== undefined) result['attributes'] = Object.fromEntries(Object.entries(record(item['attributes'])).map(([key, field]) => [key, text(field)]));
