@@ -214,7 +214,7 @@ function provisionNative(e2eCheckout: string, invocation: FixedCheckoutContext):
   return { ...check, detail: check.ready ? `agent-browser ${pin.commit.slice(0, 12)} at ${binary}` : check.detail, env };
 }
 
-/** Clones or validates the dedicated agent-browser checkout and detaches at the pin. */
+/** Clones the runner-owned agent-browser checkout when missing, then fetches and detaches at the pin. */
 function ensureNativeCheckout(requested: string, pin: NativePin, invocation: FixedCheckoutContext): string {
   const directory = path.resolve(requested);
   rejectTicketWorkspace(directory, invocation);
@@ -234,7 +234,7 @@ function ensureNativeCheckout(requested: string, pin: NativePin, invocation: Fix
     throw new Error(`UAT_NATIVE_CHECKOUT_INVALID: ${checkout} is a git worktree; the native checkout must be a standalone clone`);
   }
   if (worktreeCount(checkout) > 1) {
-    throw new Error(`UAT_NATIVE_CHECKOUT_INVALID: ${checkout} hosts git worktrees; use a dedicated clone such as ~/src/agent-browser`);
+    throw new Error(`UAT_NATIVE_CHECKOUT_INVALID: ${checkout} hosts git worktrees; remove them or point UAT_NATIVE_CLONE at a dedicated clone`);
   }
   const status = captureGit(checkout, ['status', '--porcelain', '--untracked-files=all']);
   if (status !== '') {

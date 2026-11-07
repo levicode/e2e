@@ -23,9 +23,10 @@ That command:
 3. Runs `pnpm install --frozen-lockfile` only when the lockfile or toolchain
    changed since the last successful install.
 4. Runs `pnpm run build` only when this commit has not been built yet.
-5. Checks out the agent-browser pin from `.github/native-candidate.json` at
-   `~/src/agent-browser` and builds it when the pin or the binary changed. The
-   built binary is handed to the engine as `E2E_AGENT_BROWSER_EXECUTABLE`.
+5. Checks out the agent-browser pin from `.github/native-candidate.json` in the
+   runner-owned clone at `~/.local/state/e2e-uat/agent-browser` and builds it
+   when the pin or the binary changed. The built binary is handed to the engine
+   as `E2E_AGENT_BROWSER_EXECUTABLE`.
 6. Runs `verify` and `verify:model` with the saved SSO session on the engine
    launch, the user's main path. `--browsers cdp` adds the optional SPKI
    launch.
@@ -62,9 +63,20 @@ when the current directory is the fixed checkout.
 | `--force-build` | off | Build the packages even when this commit was already built. |
 
 `UAT_CHECKOUT_DIR`, `UAT_CHECKOUT_STATE`, and `UAT_CHECKOUT_REMOTE` move the
-default checkout, the state file, and the clone URL.
-`UAT_AGENT_BROWSER_CHECKOUT` and `UAT_NATIVE_BUILD_STATE` move the native
+default checkout, the state file, and the clone URL. `UAT_NATIVE_CLONE` (or the
+older `UAT_AGENT_BROWSER_CHECKOUT`) and `UAT_NATIVE_BUILD_STATE` move the native
 checkout and its build record. `UAT_REPORTS_DIR` moves the report directory.
+
+For example, to build in a dedicated clone you manage yourself:
+
+```bash
+UAT_NATIVE_CLONE="$HOME/src/agent-browser-uat" \
+  node ~/src/e2e-uat/apps/uat-verification/scripts/fixed-checkout.ts --paths scripted
+```
+
+That clone must still be a standalone, clean checkout with no worktrees; the
+guards do not weaken for an explicit path. Do not point it at
+`~/src/agent-browser`, the shared clone this default exists to stay out of.
 
 Exit codes: `0` every selected verification path passed on every selected
 browser launch, `2` the run could not start or the session or private model
@@ -83,8 +95,9 @@ git clone https://github.com/levicode/e2e.git ~/src/e2e-uat
 ```
 
 Then write the private settings and sign in as described in
-[README.md](README.md). The runner creates the state directory, installs the
-packages, and clones and builds agent-browser on its first run.
+[README.md](README.md). The runner creates its state directory and the
+runner-owned native clone at `~/.local/state/e2e-uat/agent-browser`, installs
+the packages, and builds agent-browser on its first run.
 
 ## Dependencies
 
@@ -103,10 +116,11 @@ The runner checks these before it starts a browser and names the missing one:
 
 The native half has fixed locations:
 
-- `~/src/agent-browser` is the agent-browser checkout. The runner requires the
-  pin file to use schemaVersion 1 and name `levicode/agent-browser`, clones that
-  repository, and checks out the pinned commit.
-  `UAT_AGENT_BROWSER_CHECKOUT` moves it.
+- `~/.local/state/e2e-uat/agent-browser` is the runner-owned agent-browser
+  checkout. The runner requires the pin file to use schemaVersion 1 and name
+  `levicode/agent-browser`, clones that repository there when the directory is
+  missing, and fetches and checks out the pinned commit on every run.
+  `UAT_NATIVE_CLONE` moves it; `UAT_AGENT_BROWSER_CHECKOUT` is its older alias.
 - `cli/target/ci/agent-browser` is the binary `cargo build --locked --profile
   ci --no-default-features` writes in that checkout's `cli/` directory.
 - `~/.local/state/e2e-uat/native-build.json` records which commit and binary
@@ -117,6 +131,24 @@ when that record's sha256 matches the binary that runs, and its version and
 sha256 from the binary. The checkout's HEAD is never the commit label: a
 checkout can move after the build. A binary with no matching record still
 records its version and sha256, but not the commit.
+
+### The runner-owned native clone
+
+The native checkout is UAT machinery, not a development clone. The default
+`~/.local/state/e2e-uat/agent-browser` belongs to the runner, sits beside its
+state files and reports, and is created, fetched, and checked out by the same
+command that runs the verification. A manual clone such as
+`~/src/agent-browser`, and any worktree inside it, is a different directory: the
+runner never reads, verifies, or cleans it unless `UAT_NATIVE_CLONE` (or
+`UAT_AGENT_BROWSER_CHECKOUT`) names it, so concurrent development cannot change
+or fail a UAT run.
+
+Set `UAT_NATIVE_CLONE` (or `UAT_AGENT_BROWSER_CHECKOUT`) to build in a clone you
+own instead. The standalone-clone and worktree guards apply to whichever path is
+used: a checkout that hosts worktrees is still refused with
+`UAT_NATIVE_CHECKOUT_INVALID`, because a shared checkout can change under the
+build. To force a fresh clone at the same pin, delete the runner-owned
+directory; the next run clones and builds it again.
 
 ### An explicit binary
 
@@ -213,10 +245,11 @@ shell environment, not in the browser `env` block.
 `UAT_NATIVE_PIN_MISSING` names a missing or malformed
 `.github/native-candidate.json`; `UAT_NATIVE_PIN_UNREACHABLE` means the pinned
 commit is not in the agent-browser checkout's origin. `UAT_NATIVE_CHECKOUT_DIRTY`
-lists local changes in `~/src/agent-browser`; keep that checkout build-only.
+lists local changes in the runner-owned clone; keep that checkout build-only.
 `UAT_NATIVE_CHECKOUT_INVALID` means the path is not a standalone clone or hosts
-worktrees. `UAT_NATIVE_BUILD_FAILED` means cargo finished without producing
-`cli/target/ci/agent-browser`; read the cargo output above it.
+worktrees; this applies to the runner-owned path and to an explicit
+`UAT_NATIVE_CLONE`. `UAT_NATIVE_BUILD_FAILED` means cargo finished without
+producing `cli/target/ci/agent-browser`; read the cargo output above it.
 
 A failed build leaves no reusable native fingerprint, so the next run builds
 again. To force a rebuild at the same pin, remove
@@ -267,7 +300,7 @@ paths share the same structure. The `identity` section records:
 - `e2e.commit` and `dirty` from the fixed checkout the runner checked out.
 - `@e2e-dev/web`'s package version and the native `agent-browser` source commit
   and sha256 from the binary that ran. The provisioned binary lives inside the
-  pinned `~/src/agent-browser` checkout, so its commit is recorded.
+  pinned runner-owned checkout, so its commit is recorded.
 - Per-step error codes, observation `phases`, and the native `code` / `effects`
   / `scopeState` table.
 - On the model path, the model rounds, latency, and input/output/cache tokens.

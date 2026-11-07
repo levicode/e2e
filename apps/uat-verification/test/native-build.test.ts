@@ -55,15 +55,22 @@ test('rejects a missing, malformed, or non-commit native pin', () => {
   }
 });
 
-test('defaults the native checkout and its build state outside the repository', () => {
-  assert.equal(nativeCheckoutDirectory(context), path.resolve('/home/tester/src/agent-browser'));
+test('defaults the native checkout to the runner-owned state directory and its build state outside the repository', () => {
+  assert.equal(nativeCheckoutDirectory(context), path.resolve('/home/tester/.local/state/e2e-uat/agent-browser'));
   assert.equal(nativeBuildStateFile(context), path.join('/home/tester', '.local', 'state', 'e2e-uat', 'native-build.json'));
-  assert.equal(
-    nativeCheckoutDirectory({ ...context, env: { UAT_AGENT_BROWSER_CHECKOUT: 'native/agent-browser' } }),
-    '/work/tree/native/agent-browser',
-  );
   assert.equal(nativeBuildStateFile({ ...context, env: { UAT_NATIVE_BUILD_STATE: 'state/native.json' } }), '/work/tree/state/native.json');
   assert.equal(nativeBinaryPath('/native'), path.join('/native', 'cli', 'target', 'ci', 'agent-browser'));
+});
+
+test('an explicit native clone wins, with the older variable kept as an alias', () => {
+  assert.equal(nativeCheckoutDirectory({ ...context, env: { UAT_NATIVE_CLONE: 'native/agent-browser' } }), '/work/tree/native/agent-browser');
+  assert.equal(nativeCheckoutDirectory({ ...context, env: { UAT_AGENT_BROWSER_CHECKOUT: 'legacy/agent-browser' } }), '/work/tree/legacy/agent-browser');
+  assert.equal(
+    nativeCheckoutDirectory({ ...context, env: { UAT_NATIVE_CLONE: '/absolute/agent-browser', UAT_AGENT_BROWSER_CHECKOUT: 'legacy/agent-browser' } }),
+    '/absolute/agent-browser',
+  );
+  assert.equal(nativeCheckoutDirectory({ ...context, env: { UAT_NATIVE_CLONE: '  ', UAT_AGENT_BROWSER_CHECKOUT: 'legacy/agent-browser' } }), '/work/tree/legacy/agent-browser');
+  assert.equal(nativeCheckoutDirectory({ ...context, env: { UAT_NATIVE_CLONE: '', UAT_AGENT_BROWSER_CHECKOUT: '' } }), path.resolve('/home/tester/.local/state/e2e-uat/agent-browser'));
 });
 
 test('an explicit native binary wins over provisioning, including the legacy name', () => {
