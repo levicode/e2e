@@ -48,8 +48,11 @@ checkout when the packages are already built.
 ## One-time setup
 
 The fixed-checkout runner installs and builds the packages and the pinned
-agent-browser source by itself. A development checkout still needs the
-prerequisites below.
+agent-browser source by itself, in its own clone at
+`~/.local/state/e2e-uat/agent-browser`. A manual clone such as
+`~/src/agent-browser` is separate: the runner never reads it, so worktrees there
+cannot fail a UAT run. `UAT_NATIVE_CLONE` points the runner at a clone you own
+instead. A development checkout still needs the prerequisites below.
 
 Prerequisites:
 
@@ -141,7 +144,9 @@ binary that actually ran, by sha256. That thing is a native build record at
 `~/.local/state/e2e-uat/native-build.json` (`UAT_NATIVE_BUILD_STATE` moves it).
 The fixed-checkout runner writes it with the build; `verify` writes it on the
 first run after a build when the provenance checks pass, and `native:record`
-writes it explicitly:
+writes it explicitly. The runner builds in its runner-owned clone at
+`~/.local/state/e2e-uat/agent-browser`, so its record names that checkout;
+`native:record` is for a binary built by hand elsewhere:
 
 ```bash
 E2E_AGENT_BROWSER_EXECUTABLE=/absolute/path/to/agent-browser \

@@ -21,10 +21,26 @@ export interface NativePin {
   readonly commit: string;
 }
 
-/** The fixed placement of the agent-browser checkout, `UAT_AGENT_BROWSER_CHECKOUT` or `~/src/agent-browser`. */
+/**
+ * The runner-owned agent-browser checkout, or the one `UAT_NATIVE_CLONE` (or
+ * the older `UAT_AGENT_BROWSER_CHECKOUT`) names.
+ *
+ * The default sits under the runner's own state directory, so a developer's
+ * manual clone and the worktrees inside it cannot change this checkout. An
+ * explicit override still runs the standalone-clone and worktree guards.
+ */
 export function nativeCheckoutDirectory(context: FixedCheckoutContext): string {
-  const configured = context.env['UAT_AGENT_BROWSER_CHECKOUT'];
-  return path.resolve(context.cwd, configured === undefined || configured.trim() === '' ? path.join(context.home, 'src', 'agent-browser') : configured.trim());
+  const configured = configuredNativeCheckout(context.env);
+  return path.resolve(context.cwd, configured ?? path.join(context.home, '.local', 'state', 'e2e-uat', 'agent-browser'));
+}
+
+/** The explicit native clone, preferring `UAT_NATIVE_CLONE` over its legacy alias. */
+function configuredNativeCheckout(env: NodeJS.ProcessEnv): string | undefined {
+  for (const name of ['UAT_NATIVE_CLONE', 'UAT_AGENT_BROWSER_CHECKOUT'] as const) {
+    const value = env[name]?.trim();
+    if (value !== undefined && value !== '') return value;
+  }
+  return undefined;
 }
 
 /** Where the last successful native build is recorded, outside the checkout. */
