@@ -520,6 +520,12 @@ tree(options?: ActionOptions): Promise<string>;
   #n36 checkbox "Milk" [checked]
 ```
 
+An unnamed action target that carries a page-authored `class`, `id` or
+`aria-*` attribute, or that shares its group with another unnamed action
+target, also shows those attributes and its place in the group as `nth=i/n`.
+They are DOM facts (an icon class may name the glyph; the ordinal places the
+target), not invented labels, and only unnamed action targets get them.
+
 - Uses `config.actionTimeout`.
 - The text has the same format and size limit as the trace's
   [screen at failure](/debugging#traces).

@@ -133,6 +133,33 @@ describe('prepareObservation', () => {
     expect(prepared.text).toBe('#n1 [clickable]');
   });
 
+  it('shows page-authored identifiers and the group ordinal for anonymous action targets', () => {
+    // An icon-only control has no name; the page's own class/id and its place
+    // among the anonymous actions in the group are the DOM facts that tell two
+    // icons apart. A named control keeps its line unchanged.
+    const states: NonNullable<SemanticNode['states']> & { readonly clickable: boolean } = { clickable: true };
+    const close = node('@c', { states, attributes: { class: 'icon close', id: 'close' } });
+    const add = node('@a', { states, attributes: { class: 'icon add', id: 'add' } });
+    const prepared = prepareObservation(observation(node('@r', { role: 'document', children: [close, add] })), {
+      redact: NO_REDACT,
+      redactCut: NO_REDACT,
+      maxBytes: 4_096,
+    });
+    expect(prepared.text).toBe([
+      '#@r document',
+      ' #@c id="close" class="icon close" nth=1/2 [clickable]',
+      ' #@a id="add" class="icon add" nth=2/2 [clickable]',
+    ].join('\n'));
+
+    const named = node('@n', { role: 'button', name: 'Add', attributes: { class: 'icon add', id: 'add' } });
+    const namedPrepared = prepareObservation(observation(node('@r', { role: 'document', children: [named] })), {
+      redact: NO_REDACT,
+      redactCut: NO_REDACT,
+      maxBytes: 4_096,
+    });
+    expect(namedPrepared.text).toBe('#@r document\n #@n button "Add"');
+  });
+
   it('masks secure fields and never renders their value', () => {
     const tree = node('n1', {
       children: [
@@ -445,7 +472,7 @@ describe('prepareObservation', () => {
     assert(prepared.kind === 'semantic');
     expect(prepared.truncated).toBe(true);
     expect(prepared.nodes.size).toBe(1_477);
-    for (const id of clickableIds) expect(prepared.text).toContain(`#${id} [clickable]`);
+    for (const id of clickableIds) expect(prepared.text).toMatch(new RegExp(`#${id} .*\\[clickable\\]`));
     expect(prepared.bytes).toBeLessThanOrEqual(58_804);
     expect(prepared.bytes).toBe(new TextEncoder().encode(prepared.text).byteLength);
   });
