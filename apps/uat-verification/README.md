@@ -47,12 +47,12 @@ checkout when the packages are already built.
 
 ## One-time setup
 
-The fixed-checkout runner installs and builds the packages and the pinned
-agent-browser source by itself, in its own clone at
+The fixed-checkout runner installs and builds the packages in the fixed
+checkout, and builds the pinned agent-browser source in its own clone at
 `~/.local/state/e2e-uat/agent-browser`. A manual clone such as
-`~/src/agent-browser` is separate: the runner never reads it, so worktrees there
-cannot fail a UAT run. `UAT_NATIVE_CLONE` points the runner at a clone you own
-instead. A development checkout still needs the prerequisites below.
+`~/src/agent-browser` is separate: unless `UAT_NATIVE_CLONE` names it, the
+runner never reads it, so worktrees there cannot fail a UAT run. A development
+checkout still needs the prerequisites below.
 
 Prerequisites:
 

@@ -67,15 +67,16 @@ default checkout, the state file, and the clone URL. `UAT_NATIVE_CLONE` (or the
 older `UAT_AGENT_BROWSER_CHECKOUT`) and `UAT_NATIVE_BUILD_STATE` move the native
 checkout and its build record. `UAT_REPORTS_DIR` moves the report directory.
 
-For example, to build in a clone you manage yourself:
+For example, to build in a dedicated clone you manage yourself:
 
 ```bash
-UAT_NATIVE_CLONE="$HOME/src/agent-browser" \
+UAT_NATIVE_CLONE="$HOME/src/agent-browser-uat" \
   node ~/src/e2e-uat/apps/uat-verification/scripts/fixed-checkout.ts --paths scripted
 ```
 
 That clone must still be a standalone, clean checkout with no worktrees; the
-guards do not weaken for an explicit path.
+guards do not weaken for an explicit path. Do not point it at
+`~/src/agent-browser`, the shared clone this default exists to stay out of.
 
 Exit codes: `0` every selected verification path passed on every selected
 browser launch, `2` the run could not start or the session or private model
@@ -137,9 +138,9 @@ The native checkout is UAT machinery, not a development clone. The default
 `~/.local/state/e2e-uat/agent-browser` belongs to the runner, sits beside its
 state files and reports, and is created, fetched, and checked out by the same
 command that runs the verification. A manual clone such as
-`~/src/agent-browser`, and any worktree inside it, is a different directory the
-runner never reads, verifies, or cleans, so concurrent development cannot change
-or fail a UAT run.
+`~/src/agent-browser`, and any worktree inside it, is a different directory: the
+runner never reads, verifies, or cleans it unless `UAT_NATIVE_CLONE` names it,
+so concurrent development cannot change or fail a UAT run.
 
 Set `UAT_NATIVE_CLONE` (or `UAT_AGENT_BROWSER_CHECKOUT`) to build in a clone you
 own instead. The standalone-clone and worktree guards apply to whichever path is
