@@ -186,7 +186,7 @@ export class NativeInteropResources {
     switch (command) {
       case 'scope.interop.prepare': {
         if (this.prepared !== undefined || this.scope !== undefined) fail('preparation already owned');
-        const allowed = new Set(['source', 'context', 'endpoint', 'executablePath', 'headless', 'blockServiceWorkers', 'viewport', 'userAgent', 'locale', 'timezoneId', 'media', 'initScripts', 'preparationId']);
+        const allowed = new Set(['source', 'context', 'endpoint', 'executablePath', 'headless', 'caCert', 'proxy', 'proxyBypass', 'blockServiceWorkers', 'viewport', 'userAgent', 'locale', 'timezoneId', 'media', 'initScripts', 'preparationId']);
         if (Object.keys(args).some(key => !allowed.has(key))) fail('unknown prepare argument');
         if (args['context'] !== 'isolated' || !['launch', 'connect', 'reuse'].includes(text(args, 'source'))) fail('prepare requires an isolated source');
         if (!Array.isArray(args['initScripts']) || args['initScripts'].length !== 0) fail('user scripts must not run before adoption');

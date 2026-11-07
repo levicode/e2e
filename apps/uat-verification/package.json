@@ -9,7 +9,11 @@
     "fixed": "node scripts/fixed-checkout.ts",
     "login": "node scripts/login.ts",
     "verify": "node scripts/verify.ts scripted",
+    "verify:engine": "node scripts/verify.ts scripted --browser engine",
+    "verify:cdp": "node scripts/verify.ts scripted --browser cdp",
     "verify:model": "node scripts/verify.ts model",
+    "verify:model:engine": "node scripts/verify.ts model --browser engine",
+    "verify:model:cdp": "node scripts/verify.ts model --browser cdp",
     "native:record": "node scripts/record-native-build.ts",
     "test": "node --test \"test/*.test.ts\"",
     "test:loop": "node test/loop-check.ts"

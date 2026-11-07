@@ -32,6 +32,8 @@ import {
   parseFixedCheckoutArgs,
   readCheckoutState,
   refCandidates,
+  verificationArguments,
+  verificationRuns,
   reportDirectories,
   stateAfterBuild,
   stateAfterInstall,
@@ -105,26 +107,26 @@ function run(options: FixedCheckoutOptions, invocation: FixedCheckoutContext): n
   const reportsDirectory = path.resolve(appRoot, invocation.env['UAT_REPORTS_DIR'] ?? path.join(invocation.home, '.local', 'state', 'e2e-uat', 'reports'));
   const verifyScript = path.join(appRoot, 'scripts', 'verify.ts');
   const codes: number[] = [];
-  for (const verifyPath of options.paths) {
+  for (const verification of verificationRuns(options.paths, options.browsers)) {
     const before = reportDirectories(reportsDirectory);
-    console.log(`[e2e-uat] running the ${verifyPath} verification`);
-    const result = spawnSync(process.execPath, [verifyScript, verifyPath], { cwd: appRoot, stdio: 'inherit', env: native.env });
+    console.log(`[e2e-uat] running the ${verification.verifyPath} verification on the ${verification.browserPath} browser path`);
+    const result = spawnSync(process.execPath, [...verificationArguments(verifyScript, verification)], { cwd: appRoot, stdio: 'inherit', env: native.env });
     if (result.error !== undefined) throw result.error;
     const code = result.status ?? 1;
     codes.push(code);
     const report = newestReportDirectory(before, reportsDirectory);
     console.log(
-      `[e2e-uat] ${verifyPath}: ${code === 0 ? 'passed' : `exit ${code}`}${report === undefined ? ' (no new report directory)' : `; report ${path.join(reportsDirectory, report, 'report.md')}`}`,
+      `[e2e-uat] ${verification.verifyPath} / ${verification.browserPath}: ${code === 0 ? 'passed' : `exit ${code}`}${report === undefined ? ' (no new report directory)' : `; report ${path.join(reportsDirectory, report, 'report.md')}`}`,
     );
     if (code === 2) {
-      console.error('[e2e-uat] the saved session or the private model settings are unusable; fix the named file and re-run.');
+      console.error('[e2e-uat] a run could not start: the saved session, the private model settings, the native build identity, or the trusted Chromium launch is unusable; fix the named reason and re-run.');
       break;
     }
   }
 
   const failed = codes.filter(code => code !== 0);
   if (failed.length === 0) {
-    console.log(`[e2e-uat] all paths passed; reports are under ${reportsDirectory}`);
+    console.log(`[e2e-uat] all verification paths passed on every browser launch; reports are under ${reportsDirectory}`);
     return 0;
   }
   console.error(`[e2e-uat] ${String(failed.length)} of ${String(codes.length)} path(s) did not pass; reports are under ${reportsDirectory}`);

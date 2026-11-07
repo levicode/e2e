@@ -49,6 +49,21 @@ export function uatConfigFile(): string {
   return process.env['UAT_CONFIG_FILE'] ?? path.join(homedir(), '.config', 'e2e-uat', 'config.json');
 }
 
+/**
+ * The private CA file the engine launch trusts, when one is configured.
+ * `UAT_CA_CERT` overrides the fixed path; a named file that does not exist is
+ * a setup error, while an absent default just means there is no private CA.
+ */
+export function uatCaCertFile(): string | undefined {
+  const configured = process.env['UAT_CA_CERT'];
+  if (configured !== undefined && ['none', 'off'].includes(configured.trim().toLowerCase())) return undefined;
+  const explicit = configured !== undefined && configured.trim() !== '';
+  const file = explicit ? configured.trim() : path.join(homedir(), '.config', 'e2e-uat', 'internal-ca.pem');
+  if (existsSync(file)) return file;
+  if (explicit) throw new Error(`UAT_CA_CERT_MISSING: ${file} does not exist`);
+  return undefined;
+}
+
 /** The fixed directory rendered reports go to, outside the checkout. */
 export function uatReportsDirectory(): string {
   return process.env['UAT_REPORTS_DIR'] ?? path.join(homedir(), '.local', 'state', 'e2e-uat', 'reports');

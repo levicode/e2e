@@ -21,12 +21,15 @@ import {
   nodeSupported,
   packageManagerMajor,
   parseFixedCheckoutArgs,
+  parseBrowserPaths,
   parseVerifyPaths,
   readCheckoutState,
   stateAfterBuild,
   stateAfterInstall,
   stateBeforeBuild,
   stateBeforeInstall,
+  verificationArguments,
+  verificationRuns,
   writeCheckoutState,
   type CheckoutState,
   type FixedCheckoutContext,
@@ -38,12 +41,13 @@ function state(overrides: Partial<CheckoutState> = {}): CheckoutState {
   return { schemaVersion: 1, checkout: '/home/tester/src/e2e-uat', commit: 'a'.repeat(40), installKey: 'install-a', buildKey: 'build-a', ...overrides };
 }
 
-test('defaults to the fixed checkout, origin/main, and both paths', () => {
+test('defaults to the fixed checkout, origin/main, both paths, and the engine launch', () => {
   const options = parseFixedCheckoutArgs([], context);
   assert.equal(options.checkout, path.resolve('/home/tester/src/e2e-uat'));
   assert.equal(options.ref, 'origin/main');
   assert.equal(options.commit, undefined);
   assert.deepEqual(options.paths, ['scripted', 'model']);
+  assert.deepEqual(options.browsers, ['engine']);
   assert.equal(options.forceInstall, false);
   assert.equal(options.forceBuild, false);
   assert.equal(options.help, false);
@@ -51,13 +55,14 @@ test('defaults to the fixed checkout, origin/main, and both paths', () => {
 
 test('parses an explicit checkout, target, paths, and force flags', () => {
   const options = parseFixedCheckoutArgs(
-    ['--checkout', '/tmp/fixed', '--ref', 'origin/main', '--commit', 'abc123', '--paths', 'model,scripted,model', '--remote', 'https://example.test/e2e.git', '--force-install', '--force-build'],
+    ['--checkout', '/tmp/fixed', '--ref', 'origin/main', '--commit', 'abc123', '--paths', 'model,scripted,model', '--browsers', 'cdp,engine,cdp', '--remote', 'https://example.test/e2e.git', '--force-install', '--force-build'],
     context,
   );
   assert.equal(options.checkout, '/tmp/fixed');
   assert.equal(options.ref, 'origin/main');
   assert.equal(options.commit, 'abc123');
   assert.deepEqual(options.paths, ['model', 'scripted']);
+  assert.deepEqual(options.browsers, ['cdp', 'engine']);
   assert.equal(options.remote, 'https://example.test/e2e.git');
   assert.equal(options.forceInstall, true);
   assert.equal(options.forceBuild, true);
@@ -77,6 +82,21 @@ test('rejects unknown options, missing values, and unknown or empty path lists',
   assert.throws(() => parseFixedCheckoutArgs(['--checkout', '--force-build'], context), FixedCheckoutUsageError);
   assert.throws(() => parseVerifyPaths(''), /at least one/);
   assert.throws(() => parseVerifyPaths('scripted,smoke'), /unknown verification path "smoke"/);
+  assert.throws(() => parseBrowserPaths(''), /at least one/);
+  assert.throws(() => parseBrowserPaths('engine,playwright'), /unknown browser path "playwright"/);
+});
+
+test('expands every path on every launch, one path at a time', () => {
+  assert.deepEqual(verificationRuns(['scripted', 'model'], ['engine', 'cdp']), [
+    { verifyPath: 'scripted', browserPath: 'engine' },
+    { verifyPath: 'scripted', browserPath: 'cdp' },
+    { verifyPath: 'model', browserPath: 'engine' },
+    { verifyPath: 'model', browserPath: 'cdp' },
+  ]);
+  assert.deepEqual(verificationRuns(['scripted'], ['cdp']), [{ verifyPath: 'scripted', browserPath: 'cdp' }]);
+  assert.deepEqual(verificationArguments('/app/scripts/verify.ts', { verifyPath: 'model', browserPath: 'engine' }), [
+    '/app/scripts/verify.ts', 'model', '--browser', 'engine',
+  ]);
 });
 
 test('parses help without requiring a target', () => {

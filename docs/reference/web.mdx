@@ -1053,6 +1053,30 @@ bunx @e2e-dev/web install chromium --with-deps
 - Reports display recognized Chromium product versions as `chromium <version>`
   and preserve the configured user-agent text.
 
+### Private CA
+
+A locally launched browser trusts a private CA when `AGENT_BROWSER_CA_CERT` names an absolute path to a PEM bundle (or a single DER certificate) in the run's environment:
+
+<CodeGroup>
+```bash npm
+AGENT_BROWSER_CA_CERT=/etc/company/internal-ca.pem npx e2e run
+```
+
+```bash pnpm
+AGENT_BROWSER_CA_CERT=/etc/company/internal-ca.pem pnpm exec e2e run
+```
+
+```bash bun
+AGENT_BROWSER_CA_CERT=/etc/company/internal-ca.pem bunx e2e run
+```
+</CodeGroup>
+
+- The worker passes the file to the native launcher, which trusts only the certificates in it. Certificate and hostname checks stay enabled; this is not `--ignore-https-errors`.
+- On Linux the certificates go into the launch's isolated NSS store. On macOS their Subject Public Key Information hashes go into Chromium's `--ignore-certificate-errors-spki-list` for that launch. Other platforms reject the option.
+- The variable applies to local launches only. A `connect` target and a `BrowserProvider` launch their own browser and ignore it; pass the CA to that browser instead.
+
+`AGENT_BROWSER_PROXY` and `AGENT_BROWSER_PROXY_BYPASS` (a comma-separated host list) are forwarded to the same local launch, so a proxy the browser needs can be set in the run environment instead of in engine options. They do not apply to a `connect` target or a provider launch either.
+
 ## Semantic capture recovery
 
 When the semantic reader times out, agent observations can recover with a

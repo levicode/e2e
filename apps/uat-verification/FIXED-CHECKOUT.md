@@ -26,7 +26,9 @@ That command:
 5. Checks out the agent-browser pin from `.github/native-candidate.json` at
    `~/src/agent-browser` and builds it when the pin or the binary changed. The
    built binary is handed to the engine as `E2E_AGENT_BROWSER_EXECUTABLE`.
-6. Runs `verify` and then `verify:model` with the saved SSO session.
+6. Runs `verify` and `verify:model` with the saved SSO session on the engine
+   launch, the user's main path. `--browsers cdp` adds the optional SPKI
+   launch.
 7. Prints each run's report path under `~/.local/state/e2e-uat/reports`.
 
 One run at a time. The runner holds
@@ -53,7 +55,8 @@ when the current directory is the fixed checkout.
 | `--checkout <dir>` | `$UAT_CHECKOUT_DIR` or `~/src/e2e-uat` | The standalone clone to execute from. |
 | `--ref <ref>` | `origin/main` | The fetched ref to check out. A bare branch is read from `origin` first; a tag or local-only ref falls back to the local name. |
 | `--commit <sha>` | none | An exact commit to check out; overrides `--ref`. |
-| `--paths <list>` | `scripted,model` | Run one or both paths, comma-separated, in the order given. |
+| `--paths <list>` | `scripted,model` | Run one or both verification paths, comma-separated, in the order given. |
+| `--browsers <list>` | `engine` | Run each selected path on one or both browser launches, comma-separated, in the order given. `cdp` is the optional SPKI launch. |
 | `--remote <url>` | `https://github.com/levicode/e2e.git` | Clone URL when the checkout does not exist. |
 | `--force-install` | off | Install even when the lockfile and toolchain are unchanged. |
 | `--force-build` | off | Build the packages even when this commit was already built. |
@@ -63,11 +66,12 @@ default checkout, the state file, and the clone URL.
 `UAT_AGENT_BROWSER_CHECKOUT` and `UAT_NATIVE_BUILD_STATE` move the native
 checkout and its build record. `UAT_REPORTS_DIR` moves the report directory.
 
-Exit codes: `0` every selected path passed, `2` the run could not start or the
-session or private model settings are unusable, anything else a path ran and
-did not pass. Setup failures (usage, a rejected checkout, a missing build
-tool, a commit without the UAT runner) also exit 2. A session or settings
-failure stops before the second path.
+Exit codes: `0` every selected verification path passed on every selected
+browser launch, `2` the run could not start or the session or private model
+settings are unusable, anything else a path ran and did not pass. Setup
+failures (usage, a rejected checkout, a missing build tool, a commit without
+the UAT runner) also exit 2. A session or settings failure stops before the
+second path.
 
 ## First-time setup
 
@@ -169,8 +173,17 @@ reuses it. Do not copy the session file into the repository or a ticket.
 
 ### TLS, an internal CA, or a proxy
 
-The private `config.json` can name a Chromium binary, extra launch arguments,
-and browser environment variables:
+The default `engine` launch trusts a private CA file: put the PEM at
+`~/.config/e2e-uat/internal-ca.pem` (or set `UAT_CA_CERT`), and `verify` passes
+it as `AGENT_BROWSER_CA_CERT`; the web engine forwards it to the native launcher,
+which trusts only that file (Linux NSS, macOS SPKI allow list). Without that
+file the engine launch fails with a certificate error, so provide it on an
+internal-CA machine. The private `config.json` may still name a Chromium binary,
+extra launch arguments, and browser environment variables. Its `env` proxy
+settings also apply to the default engine launch (the engine forwards
+`AGENT_BROWSER_PROXY`/`AGENT_BROWSER_PROXY_BYPASS`); `chromiumArgs` and
+`chromeExecutable` apply to the optional `cdp` browser launch only. See
+"Browser launch paths" in [README.md](README.md) for the full explanation.
 
 ```json
 {
@@ -183,8 +196,9 @@ and browser environment variables:
 }
 ```
 
-With any of these set, `verify` launches that Chromium and the engine attaches
-over CDP, so the private TLS trust and proxy apply to the page. A missing binary
+With any of these set, `--browser cdp` (or `--browsers cdp`) launches that
+Chromium and the engine attaches over CDP, so the private proxy and SPKI list
+apply to the page. A missing binary
 fails with `UAT_CHROME_MISSING`. Use the exact SPKI hash for the internal CA
 rather than disabling certificate validation for every host.
 

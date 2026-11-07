@@ -5,8 +5,8 @@ import {spawnSync,execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,mkdirSync,openSync,closeSync,existsSync,lstatSync,realpathSync} from 'node:fs';
 import {resolve,join,relative,isAbsolute,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
-export const NATIVE=Object.freeze({commit:'a0ec19d32530a2a953dc1f62b92b0eb566b742cf',tree:'66d6c64a4575133801af410330614ae1b905efb8'});
-export const LOCK='33c48b2f377608ec05f2be6b0528c2ea2f6e778058cf5fe73708e778a265eefb';
+export const NATIVE=Object.freeze({commit:'00667755b33fe8c0c2c6e0f67b54b41fdc0de623',tree:'5fbee7c1962320e9e2784e8d550f0890624041ea'});
+export const LOCK='5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 export function outside(root,p){const r=relative(root,p);return r==='..'||r.startsWith('../')||isAbsolute(r);}
 export function checkSource(git,expected){const source={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};assert.match(source.commit,/^[a-f0-9]{40}$/);assert.match(source.tree,/^[a-f0-9]{40}$/);assert.equal(git('status','--porcelain'),'');if(expected)assert.deepEqual(source,expected);return source;}
