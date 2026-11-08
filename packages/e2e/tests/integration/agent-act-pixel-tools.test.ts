@@ -343,9 +343,10 @@ describe('agent.act pixel verbs', () => {
     // The lead echoes the model's image coordinates; the hit summary speaks in viewport pixels.
     // The pin keeps an unnamed canvas target addressable and marks it `clickable`,
     // so the hit summary names it under the point even though it has no role,
-    // name or text.
+    // name or text. It may carry the page-authored id/class/aria-* fields and
+    // its ordinal before the states.
     expect(third!.lastToolResult).toMatch(
-      /select_at \(30, 30\) failed: no control is listed at \(50, 50\); under it: #\S+(?: \[[^\]]+\])?; select_at needs a control the screen lists\./,
+      /select_at \(30, 30\) failed: no control is listed at \(50, 50\); under it: #\S+(?: (?:id|class|aria-[a-z0-9-]+|nth)=(?:"(?:[^"\\]|\\.)*"|\S+))*(?: \[[^\]]+\])?; select_at needs a control the screen lists\./,
     );
     const step = stepOf('refuses a point with nothing selectable under it');
     expect(step.events.filter((event) => event.kind === 'engine')).toHaveLength(0);
@@ -360,7 +361,7 @@ describe('agent.act pixel verbs', () => {
     expect(actions[1]!.detail).toBe('type "hi" into the focused field');
     expect(actions[2]!.detail).toBe('press "Enter" on the focused field');
     const [, , third, fourth] = turnsOf('type hi into the drawn field');
-    expect(third!.lastToolResult).toMatch(/Typed into the field at \(120, 60\) \(tapped to focus it; no control is listed at \(200, 100\); under it: #\S+(?: \[[^\]]+\])?\)\./);
+    expect(third!.lastToolResult).toMatch(/Typed into the field at \(120, 60\) \(tapped to focus it; no control is listed at \(200, 100\); under it: #\S+(?: (?:id|class|aria-[a-z0-9-]+|nth)=(?:"(?:[^"\\]|\\.)*"|\S+))*(?: \[[^\]]+\])?\)\./);
     expect(fourth!.lastToolResult).toContain('Pressed Enter on the focused field.');
   });
 
