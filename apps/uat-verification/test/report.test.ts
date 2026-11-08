@@ -105,7 +105,7 @@ function render(status: 'passed' | 'failed', messages: readonly string[] = []): 
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e',
     verifyPath: 'scripted',
-    browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' },
+    browser: { path: 'cdp', headed: true, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' },
   });
 }
 
@@ -215,7 +215,7 @@ test('a model run that failed before its first call still names the configured m
   assert.equal(rendered.markdown.includes('openai.responses/deepseek-v4.1-flash'), true);
 });
 
-test('the report names the browser launch and how the private settings reached it', () => {
+test('the report names the browser launch, its window mode, and how the private settings reached it', () => {
   const engine = renderReport({
     report: report('passed'),
     ledger,
@@ -225,10 +225,10 @@ test('the report names the browser launch and how the private settings reached i
     accountId: '1234567890',
     rawOutput: '/checkout/apps/uat-verification/.e2e',
     verifyPath: 'scripted',
-    browser: { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' },
+    browser: { path: 'engine', headed: true, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' },
   });
-  assert.deepEqual(engine.json['browser'], { path: 'engine', headed: false, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' });
-  for (const expected of ['浏览器启动', '`engine`', '无头', '1440x1000', '`AGENT_BROWSER_*`', '`AGENT_BROWSER_CA_CERT`', '原生隔离传输']) {
+  assert.deepEqual(engine.json['browser'], { path: 'engine', headed: true, viewport: '1440x1000', privateSettings: 'engine-env', caTrust: 'agent-browser-ca-cert' });
+  for (const expected of ['# UAT 验证报告 — passed（有界面）', '> 窗口模式：**有界面**', '与用户 `--headed` 运行一致', '浏览器启动', '`engine`', '有界面 · 引擎自启', '1440x1000', '`AGENT_BROWSER_*`', '`AGENT_BROWSER_CA_CERT`', '原生隔离传输']) {
     assert.equal(engine.markdown.includes(expected), true, `markdown is missing ${expected}`);
   }
 
@@ -244,8 +244,29 @@ test('the report names the browser launch and how the private settings reached i
     browser: { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' },
   });
   assert.deepEqual(cdp.json['browser'], { path: 'cdp', headed: false, viewport: '1440x900', privateSettings: 'external-launch-args', caTrust: 'external-launch-args' });
-  for (const expected of ['浏览器启动', '`cdp`', '无头', '1440x900', '外部启动参数']) {
+  for (const expected of ['# UAT 验证报告 — passed（无头）', '> 窗口模式：**无头**', '显式 `--headless`', '浏览器启动', '`cdp`', '无头 · 外部启动 + CDP 连接', '1440x900', '外部启动参数']) {
     assert.equal(cdp.markdown.includes(expected), true, `markdown is missing ${expected}`);
   }
   assert.equal(cdp.markdown.includes('原生隔离传输'), false);
+});
+
+test('an operator-attached Chromium reports the window as unverified instead of claiming a mode', () => {
+  const rendered = renderReport({
+    report: report('passed'),
+    ledger,
+    native: { source: 'runtime-descriptor', commit: 'b'.repeat(40) },
+    packages: { e2e: { version: '0.21.3' }, web: { version: '0.15.3' } },
+    settings,
+    accountId: '1234567890',
+    rawOutput: '/checkout/apps/uat-verification/.e2e',
+    verifyPath: 'scripted',
+    browser: { path: 'cdp', headed: true, viewport: '1440x900', privateSettings: 'none', caTrust: 'none' },
+    operatorWindow: true,
+  });
+  for (const expected of ['# UAT 验证报告 — passed（窗口模式未验证）', '> 窗口模式：**未验证**', '循环不控制该窗口', '窗口模式未验证 · 外部启动 + CDP 连接', '1440x900']) {
+    assert.equal(rendered.markdown.includes(expected), true, `markdown is missing ${expected}`);
+  }
+  assert.equal(rendered.markdown.includes('与用户 `--headed` 运行一致'), false);
+  // The report JSON keeps its existing shape; the caveat lives in the readable report.
+  assert.deepEqual(rendered.json['browser'], { path: 'cdp', headed: true, viewport: '1440x900', privateSettings: 'none', caTrust: 'none' });
 });

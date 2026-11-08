@@ -29,6 +29,7 @@ import {
   stateBeforeBuild,
   stateBeforeInstall,
   verificationArguments,
+  verificationEnvironment,
   verificationRuns,
   writeCheckoutState,
   type CheckoutState,
@@ -41,21 +42,22 @@ function state(overrides: Partial<CheckoutState> = {}): CheckoutState {
   return { schemaVersion: 1, checkout: '/home/tester/src/e2e-uat', commit: 'a'.repeat(40), installKey: 'install-a', buildKey: 'build-a', ...overrides };
 }
 
-test('defaults to the fixed checkout, origin/main, both paths, and the engine launch', () => {
+test('defaults to the fixed checkout, origin/main, both paths, the engine launch, and a visible window', () => {
   const options = parseFixedCheckoutArgs([], context);
   assert.equal(options.checkout, path.resolve('/home/tester/src/e2e-uat'));
   assert.equal(options.ref, 'origin/main');
   assert.equal(options.commit, undefined);
   assert.deepEqual(options.paths, ['scripted', 'model']);
   assert.deepEqual(options.browsers, ['engine']);
+  assert.equal(options.headless, false);
   assert.equal(options.forceInstall, false);
   assert.equal(options.forceBuild, false);
   assert.equal(options.help, false);
 });
 
-test('parses an explicit checkout, target, paths, and force flags', () => {
+test('parses an explicit checkout, target, paths, window mode, and force flags', () => {
   const options = parseFixedCheckoutArgs(
-    ['--checkout', '/tmp/fixed', '--ref', 'origin/main', '--commit', 'abc123', '--paths', 'model,scripted,model', '--browsers', 'cdp,engine,cdp', '--remote', 'https://example.test/e2e.git', '--force-install', '--force-build'],
+    ['--checkout', '/tmp/fixed', '--ref', 'origin/main', '--commit', 'abc123', '--paths', 'model,scripted,model', '--browsers', 'cdp,engine,cdp', '--headless', '--remote', 'https://example.test/e2e.git', '--force-install', '--force-build'],
     context,
   );
   assert.equal(options.checkout, '/tmp/fixed');
@@ -63,6 +65,7 @@ test('parses an explicit checkout, target, paths, and force flags', () => {
   assert.equal(options.commit, 'abc123');
   assert.deepEqual(options.paths, ['model', 'scripted']);
   assert.deepEqual(options.browsers, ['cdp', 'engine']);
+  assert.equal(options.headless, true);
   assert.equal(options.remote, 'https://example.test/e2e.git');
   assert.equal(options.forceInstall, true);
   assert.equal(options.forceBuild, true);
@@ -97,6 +100,11 @@ test('expands every path on every launch, one path at a time', () => {
   assert.deepEqual(verificationArguments('/app/scripts/verify.ts', { verifyPath: 'model', browserPath: 'engine' }), [
     '/app/scripts/verify.ts', 'model', '--browser', 'engine',
   ]);
+  // The mode travels in the environment, so a target checkout older than the flag still runs.
+  assert.deepEqual(verificationEnvironment({ PATH: '/usr/bin' }, false), { PATH: '/usr/bin' });
+  assert.deepEqual(verificationEnvironment({ PATH: '/usr/bin' }, true), { PATH: '/usr/bin', UAT_HEADLESS: '1' });
+  // The runner's own flag decides; a stale exported value must not hide the window it asked for.
+  assert.equal(verificationEnvironment({ UAT_HEADLESS: '1' }, false)['UAT_HEADLESS'], undefined);
 });
 
 test('parses help without requiring a target', () => {

@@ -2,11 +2,17 @@
  * What one verification invocation hands the e2e process, decided without
  * starting a browser.
  *
- * The two launches differ in more than a flag: the engine launch is headed,
- * uses the user's 1440×1000 page, and carries the private settings as
+ * The two launches differ in more than a flag: the engine launch uses the
+ * user's 1440×1000 page and carries the private settings as
  * `AGENT_BROWSER_*` environment variables; the CDP launch may attach to a
  * Chromium an operator already started, otherwise the loop starts its own
- * headless 1440×900 browser and never exports the endpoint it must replace.
+ * 1440×900 browser and never exports the endpoint it must replace.
+ *
+ * Both launches open a visible window unless `--headless` was passed, because
+ * the user runs the flow with `--headed`. A headless verification can pass
+ * while the user's headed run fails (agent-browser#82: the headed run hit a
+ * stale scope and lost its isolated context), so the window mode is explicit
+ * in the arguments and in the report.
  */
 import { browserViewport, type BrowserPath, type VerifyPath } from './browser-path.ts';
 
@@ -24,6 +30,8 @@ export interface LaunchInput {
   readonly exportedEndpoint: string | undefined;
   /** The run's private native-result ledger file. */
   readonly ledgerFile: string;
+  /** True only when `--headless` asks for a hidden window. */
+  readonly headless: boolean;
   /** A private CA file the engine launch should trust, when one is configured. */
   readonly caCert?: string;
 }
@@ -32,6 +40,11 @@ export interface LaunchPlan {
   /** True when the loop starts its own Chromium (the endpoint is known only after it opens). */
   readonly launchesTrustedBrowser: boolean;
   readonly headed: boolean;
+  /**
+   * True when the run attaches to a Chromium an operator already started, so
+   * the loop controls no window and cannot say whether it is visible.
+   */
+  readonly operatorWindow: boolean;
   readonly viewport: { readonly width: number; readonly height: number };
   /** The e2e CLI arguments, with the config selected by the verification path. */
   readonly args: readonly string[];
@@ -43,9 +56,9 @@ export interface LaunchPlan {
 /** Decides the arguments, environment, and private-settings channel of one run. */
 export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
   const config = input.verifyPath === 'model' ? 'e2e.model.config.ts' : 'e2e.config.ts';
-  // Verification is headless on both launches; only the one-time login step
-  // asks for a window. The user confirmed headless is fine for verification.
-  const headed = false;
+  // The user runs the flow headed, so verification does too; `--headless` is the
+  // explicit opt-out. The login step is headed either way: it needs a scan.
+  const headed = !input.headless;
   const viewport = browserViewport(input.browserPath);
   // The engine launch must launch its own Chromium even when the operator's
   // shell still exports an endpoint from an earlier cdp run.
@@ -64,7 +77,7 @@ export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
     // either: this launch is the engine's own, whatever the variable says.
     delete env['UAT_CDP_ENDPOINT'];
     const privateSettings = Object.keys(input.privateEnv).length > 0 ? 'engine-env' as const : 'none' as const;
-    return { launchesTrustedBrowser: false, headed, viewport, args, env, privateSettings };
+    return { launchesTrustedBrowser: false, headed, operatorWindow: false, viewport, args, env, privateSettings };
   }
 
   // An operator-started Chromium is honored only when the private settings do
@@ -75,6 +88,7 @@ export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
   return {
     launchesTrustedBrowser: !useExportedEndpoint,
     headed,
+    operatorWindow: useExportedEndpoint,
     viewport,
     args,
     env,

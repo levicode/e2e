@@ -25,9 +25,11 @@ by default; `--browsers engine,cdp` runs both.
 
 | Launch | Chromium started by | Window | Viewport | Private proxy/TLS |
 | --- | --- | --- | --- | --- |
-| `engine` (default) | the target's `web()`, as the user's project does | headless | 1440×1000 | `AGENT_BROWSER_CA_CERT`, `AGENT_BROWSER_PROXY`, `AGENT_BROWSER_PROXY_BYPASS` forwarded (see below) |
-| `cdp` (optional) | `src/trusted-browser.ts`; the target attaches over CDP | headless | 1440×900 | external launch arguments |
+| `engine` (default) | the target's `web()`, as the user's project does | visible (headed) | 1440×1000 | `AGENT_BROWSER_CA_CERT`, `AGENT_BROWSER_PROXY`, `AGENT_BROWSER_PROXY_BYPASS` forwarded (see below) |
+| `cdp` (optional) | `src/trusted-browser.ts`; the target attaches over CDP | visible (headed) | 1440×900 | external launch arguments |
 
+Both launches show the window by default, matching the user's `--headed` run;
+`--headless` hides it (see [Why headed by default](#why-headed-by-default)).
 See [Browser launch paths](#browser-launch-paths) for what each one proves and
 why both exist. A config run directly reads `UAT_BROWSER_PATH` (`engine` or
 `cdp`); the scripts set it.
@@ -97,7 +99,7 @@ hashes: `["--ignore-certificate-errors-spki-list=<hash>"]`), and
 `chromeExecutable` in that file. These values are machine-local and private.
 
 The engine launch is the default and the main path: the target's `web()` starts
-Chromium, verification runs headless, and the private `env` reaches it as
+Chromium, the window is visible, and the private `env` reaches it as
 `AGENT_BROWSER_*` variables, the way the user's project loads `.env.local`. The
 private CA at `~/.config/e2e-uat/internal-ca.pem`, or the file named by
 `UAT_CA_CERT`, is passed as `AGENT_BROWSER_CA_CERT`; the web engine forwards it
@@ -110,8 +112,10 @@ attaches the engine over CDP.
 The `cdp` launch honors a `UAT_CDP_ENDPOINT` exported in the shell when the
 private settings name no Chromium, args, or env, so an operator-started browser
 still works. Otherwise the loop starts its own Chromium and replaces a leftover
-endpoint. Verification is headless on both launches; only the login step asks
-for a window.
+endpoint. Both launches open a visible window by default; `--headless` hides it.
+An operator-attached Chromium keeps its own window mode, so the report marks the
+window as unverified for that run instead of claiming a mode. The login step is
+always headed: a person must scan the QR code there.
 
 For the model path only, write the private model settings beside it:
 
@@ -183,7 +187,8 @@ When the private settings name a Chromium, launch arguments, or browser env,
 login starts that trusted Chromium and attaches over CDP, because the sign-in
 page needs the same TLS/proxy handling; verification still defaults to the
 engine launch. Otherwise login uses the engine launch. Either way a headed
-browser opens the UAT login page; only the login step needs a window. Scan the QR code with WeCom once; the
+browser opens the UAT login page; login is the only step a person must interact
+with, so it never runs headless. Scan the QR code with WeCom once; the
 page redirects back to the app, the test verifies the home route, and the login
 state is saved to `~/.config/e2e-uat/session.json` (directory 0700, file 0600).
 The file holds live cookies and the app origin's `localStorage`; it is never
@@ -208,7 +213,9 @@ same path, the same engine events, and the same observation phases on every run,
 with no model variance or cost.
 
 Run it on one browser launch with `... verify -- --browser engine` or
-`... verify -- --browser cdp`; without the flag the engine launch runs.
+`... verify -- --browser cdp`; without the flag the engine launch runs. The run
+shows a window, as the user's own run does; `... verify -- --headless` hides it
+for a machine with no display.
 
 ## Run the model path
 
@@ -281,19 +288,31 @@ unreachable or proxy), authentication (key rejected), protocol (responses/chat
 mismatch or the gateway rejecting the request shape), or the product itself. The
 report keeps the code and message so that distinction is not lost.
 
+## Why headed by default
+
+The user's real run is headed: `npm run act:manager` expands to a run with
+`--headed`. A headless verification can therefore be green while the user's run
+fails. That is what agent-browser#82 recorded for the same scenario at
+1440×1000: `24/24 + 12/12` passed headless, while the headed run hit a
+stale-scope observation, destroyed the isolated context, and invalidated the
+run. Verifying in a mode the user does not use answers the wrong question, so
+the loop now defaults to a visible window on both launches and keeps
+`--headless` as an explicit opt-out. The report and its console summary name the
+window mode, so a headless pass is never read as the user's configuration.
+
 ## Browser launch paths
 
 The engine launch is the main path and runs by default: it answers “does the
 flow work when Chromium is started the way the user's project starts it?”. The
-target's `web()` launches, verification runs headless, the page is 1440×1000,
+target's `web()` launches, the window is visible, the page is 1440×1000,
 and the private `env` is handed to the engine as `AGENT_BROWSER_*` variables,
 the way a project that loads `.env.local` does. The CDP launch is optional: it answers
 “does the external-launch + SPKI scheme still work?”, with
 `src/trusted-browser.ts` starting Chromium with the private `chromiumArgs` and
 proxy arguments and the target attaching over CDP. Use it when the private CA or
-proxy must be applied by launch arguments, or when a headless baseline is
-wanted. Run the fixed runner with the default `--browsers engine`, or
-`--browsers cdp`, or both.
+proxy must be applied by launch arguments. Run the fixed runner with the default
+`--browsers engine`, or `--browsers cdp`, or both; add `--headless` for a hidden
+window.
 
 The native library's isolated `session connect` transport is what separates the
 two. The e2e engine starts the native worker through that transport, and the

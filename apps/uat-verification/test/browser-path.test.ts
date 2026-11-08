@@ -4,19 +4,33 @@ import {
   DEFAULT_BROWSER_PATH,
   browserPathFromEnvironment,
   browserViewport,
+  headlessFromEnvironment,
   parseVerifyInvocation,
 } from '../src/browser-path.ts';
 
-test('defaults to the scripted path and the engine launch', () => {
-  assert.deepEqual(parseVerifyInvocation([]), { verifyPath: 'scripted', browserPath: undefined });
-  assert.deepEqual(parseVerifyInvocation(['model']), { verifyPath: 'model', browserPath: undefined });
+test('defaults to the scripted path, the engine launch, and a visible window', () => {
+  assert.deepEqual(parseVerifyInvocation([]), { verifyPath: 'scripted', browserPath: undefined, headless: false });
+  assert.deepEqual(parseVerifyInvocation(['model']), { verifyPath: 'model', browserPath: undefined, headless: false });
   assert.equal(DEFAULT_BROWSER_PATH, 'engine');
 });
 
 test('takes the browser launch before or after the verification path', () => {
-  assert.deepEqual(parseVerifyInvocation(['--browser', 'engine']), { verifyPath: 'scripted', browserPath: 'engine' });
-  assert.deepEqual(parseVerifyInvocation(['model', '--browser', 'cdp']), { verifyPath: 'model', browserPath: 'cdp' });
-  assert.deepEqual(parseVerifyInvocation(['--browser', 'cdp', 'scripted']), { verifyPath: 'scripted', browserPath: 'cdp' });
+  assert.deepEqual(parseVerifyInvocation(['--browser', 'engine']), { verifyPath: 'scripted', browserPath: 'engine', headless: false });
+  assert.deepEqual(parseVerifyInvocation(['model', '--browser', 'cdp']), { verifyPath: 'model', browserPath: 'cdp', headless: false });
+  assert.deepEqual(parseVerifyInvocation(['--browser', 'cdp', 'scripted']), { verifyPath: 'scripted', browserPath: 'cdp', headless: false });
+});
+
+test('--headless is the explicit opt-out and combines with every other argument', () => {
+  assert.deepEqual(parseVerifyInvocation(['--headless']), { verifyPath: 'scripted', browserPath: undefined, headless: true });
+  assert.deepEqual(parseVerifyInvocation(['model', '--headless', '--browser', 'cdp']), { verifyPath: 'model', browserPath: 'cdp', headless: true });
+  assert.throws(() => parseVerifyInvocation(['--headless', '--headless']), /--headless was given twice/);
+});
+
+test('UAT_HEADLESS=1 is the same request for a caller that cannot pass arguments', () => {
+  assert.equal(headlessFromEnvironment({}), false);
+  assert.equal(headlessFromEnvironment({ UAT_HEADLESS: '' }), false);
+  assert.equal(headlessFromEnvironment({ UAT_HEADLESS: '0' }), false);
+  assert.equal(headlessFromEnvironment({ UAT_HEADLESS: '1' }), true);
 });
 
 test('rejects an unknown path, an unknown launch, and repeats', () => {
