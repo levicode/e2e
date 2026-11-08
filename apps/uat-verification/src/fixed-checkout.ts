@@ -169,8 +169,22 @@ export function verificationRuns(paths: readonly VerifyPath[], browsers: readonl
 }
 
 /** The verify-script arguments for one run; the script parses them, the runner does not reshape them. */
-export function verificationArguments(script: string, run: VerificationRun, headless: boolean): readonly string[] {
-  return [script, run.verifyPath, '--browser', run.browserPath, ...(headless ? ['--headless'] : [])];
+export function verificationArguments(script: string, run: VerificationRun): readonly string[] {
+  return [script, run.verifyPath, '--browser', run.browserPath];
+}
+
+/**
+ * The environment for one verify run. The window mode travels as
+ * `UAT_HEADLESS=1` rather than a flag because the fixed runner executes the
+ * target checkout's own `verify.ts`: a target older than `--headless` ignores
+ * the variable and runs headless, its only behavior, instead of failing on an
+ * unknown argument.
+ */
+export function verificationEnvironment(env: NodeJS.ProcessEnv, headless: boolean): NodeJS.ProcessEnv {
+  const child = { ...env };
+  if (headless) child['UAT_HEADLESS'] = '1';
+  else delete child['UAT_HEADLESS'];
+  return child;
 }
 
 /** Parses `--paths`; unknown names and an empty list fail instead of silently running nothing. */

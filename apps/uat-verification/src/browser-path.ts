@@ -43,7 +43,13 @@ export const VERIFY_USAGE =
   + '  --browser engine  the main launch, the user\'s own: 1440x1000, AGENT_BROWSER_* environment (default)\n'
   + '  --browser cdp     optional: external Chromium over CDP with the private SPKI/proxy launch args\n'
   + '  --headless        hide the window; the default is a visible window, as the user runs it\n'
+  + '  UAT_HEADLESS=1    the same as --headless, for a caller that cannot pass arguments\n'
   + '  Without --browser, the engine launch runs.';
+
+/** True when `UAT_HEADLESS=1` asks for a hidden window; the fixed runner passes the mode this way. */
+export function headlessFromEnvironment(env: Readonly<Record<string, string | undefined>>): boolean {
+  return env['UAT_HEADLESS'] === '1';
+}
 
 /** Parses one `verify.ts` invocation without touching settings, a browser, or a model. */
 export function parseVerifyInvocation(argv: readonly string[]): VerifyInvocation {

@@ -33,6 +33,7 @@ import {
   readCheckoutState,
   refCandidates,
   verificationArguments,
+  verificationEnvironment,
   verificationRuns,
   reportDirectories,
   stateAfterBuild,
@@ -110,8 +111,8 @@ function run(options: FixedCheckoutOptions, invocation: FixedCheckoutContext): n
   const codes: number[] = [];
   for (const verification of verificationRuns(options.paths, options.browsers)) {
     const before = reportDirectories(reportsDirectory);
-    console.log(`[e2e-uat] running the ${verification.verifyPath} verification on the ${verification.browserPath} browser path (${windowMode})`);
-    const result = spawnSync(process.execPath, [...verificationArguments(verifyScript, verification, options.headless)], { cwd: appRoot, stdio: 'inherit', env: native.env });
+    console.log(`[e2e-uat] running the ${verification.verifyPath} verification on the ${verification.browserPath} browser path (${windowMode} requested)`);
+    const result = spawnSync(process.execPath, [...verificationArguments(verifyScript, verification)], { cwd: appRoot, stdio: 'inherit', env: verificationEnvironment(native.env, options.headless) });
     if (result.error !== undefined) throw result.error;
     const code = result.status ?? 1;
     codes.push(code);
@@ -127,7 +128,7 @@ function run(options: FixedCheckoutOptions, invocation: FixedCheckoutContext): n
 
   const failed = codes.filter(code => code !== 0);
   if (failed.length === 0) {
-    console.log(`[e2e-uat] all verification paths passed on every browser launch (${windowMode}); reports are under ${reportsDirectory}`);
+    console.log(`[e2e-uat] all verification paths passed on every browser launch (${windowMode} requested); reports are under ${reportsDirectory}`);
     return 0;
   }
   console.error(`[e2e-uat] ${String(failed.length)} of ${String(codes.length)} path(s) did not pass; reports are under ${reportsDirectory}`);

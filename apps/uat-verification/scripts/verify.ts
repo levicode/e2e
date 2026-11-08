@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   DEFAULT_BROWSER_PATH,
+  headlessFromEnvironment,
   parseVerifyInvocation,
   VERIFY_USAGE,
   type BrowserPath,
@@ -37,7 +38,7 @@ try {
   const invocation = parseVerifyInvocation(process.argv.slice(2));
   verifyPath = invocation.verifyPath;
   requestedBrowser = invocation.browserPath;
-  headless = invocation.headless;
+  headless = invocation.headless || headlessFromEnvironment(process.env);
 } catch (cause) {
   console.error(cause instanceof Error ? cause.message : String(cause));
   console.error('');
@@ -89,7 +90,7 @@ const plan = planVerificationLaunch({
   headless,
   ...(caCert === undefined ? {} : { caCert }),
 });
-const { headed, viewport } = plan;
+const { headed, operatorWindow, viewport } = plan;
 let resolved: ReturnType<typeof resolveNativeIdentity>;
 try {
   resolved = resolveNativeIdentity(appRoot, process.env);
@@ -107,11 +108,15 @@ if (resolved.recordError !== undefined) {
 }
 const packages = readPackageIdentities(appRoot);
 
-const windowMode = headed ? 'headed' : 'headless';
-const launchText = `${windowMode} ${viewport.width}×${viewport.height}; ${browserPath === 'engine' ? 'engine launches Chromium' : 'external Chromium over CDP'}`;
-if (!headed) {
+// The loop controls the window on its own launches; an operator-started
+// Chromium keeps its own, so that run's mode is reported as unverified.
+const windowMode = operatorWindow ? 'window mode unverified' : headed ? 'headed' : 'headless';
+const launchText = operatorWindow
+  ? `${windowMode}; ${viewport.width}×${viewport.height}; attaches to the operator's Chromium over CDP`
+  : `${windowMode} ${viewport.width}×${viewport.height}; ${browserPath === 'engine' ? 'engine launches Chromium' : 'external Chromium over CDP'}`;
+if (!headed && !operatorWindow) {
   // The user's real run is headed; a hidden-window pass is not the configuration the user sees.
-  console.log('Running headless (--headless): the user runs this flow with a visible window, so a headless pass is not the run the user sees.');
+  console.log('Running headless (explicit): the user runs this flow with a visible window, so a headless pass is not the run the user sees.');
 }
 console.log(
   verifyPath === 'model'
@@ -173,6 +178,7 @@ const rendered = renderReport({
   rawOutput: output,
   verifyPath,
   browser,
+  ...(operatorWindow ? { operatorWindow: true } : {}),
   ...(modelSettings === undefined
     ? {}
     : { model: { label: uatModelLabel(modelSettings), provider: `openai.${modelSettings.api}`, model: modelSettings.model } }),

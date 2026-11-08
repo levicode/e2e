@@ -40,6 +40,11 @@ export interface LaunchPlan {
   /** True when the loop starts its own Chromium (the endpoint is known only after it opens). */
   readonly launchesTrustedBrowser: boolean;
   readonly headed: boolean;
+  /**
+   * True when the run attaches to a Chromium an operator already started, so
+   * the loop controls no window and cannot say whether it is visible.
+   */
+  readonly operatorWindow: boolean;
   readonly viewport: { readonly width: number; readonly height: number };
   /** The e2e CLI arguments, with the config selected by the verification path. */
   readonly args: readonly string[];
@@ -72,7 +77,7 @@ export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
     // either: this launch is the engine's own, whatever the variable says.
     delete env['UAT_CDP_ENDPOINT'];
     const privateSettings = Object.keys(input.privateEnv).length > 0 ? 'engine-env' as const : 'none' as const;
-    return { launchesTrustedBrowser: false, headed, viewport, args, env, privateSettings };
+    return { launchesTrustedBrowser: false, headed, operatorWindow: false, viewport, args, env, privateSettings };
   }
 
   // An operator-started Chromium is honored only when the private settings do
@@ -83,6 +88,7 @@ export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
   return {
     launchesTrustedBrowser: !useExportedEndpoint,
     headed,
+    operatorWindow: useExportedEndpoint,
     viewport,
     args,
     env,

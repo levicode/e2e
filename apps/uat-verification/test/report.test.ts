@@ -249,3 +249,24 @@ test('the report names the browser launch, its window mode, and how the private 
   }
   assert.equal(cdp.markdown.includes('原生隔离传输'), false);
 });
+
+test('an operator-attached Chromium reports the window as unverified instead of claiming a mode', () => {
+  const rendered = renderReport({
+    report: report('passed'),
+    ledger,
+    native: { source: 'runtime-descriptor', commit: 'b'.repeat(40) },
+    packages: { e2e: { version: '0.21.3' }, web: { version: '0.15.3' } },
+    settings,
+    accountId: '1234567890',
+    rawOutput: '/checkout/apps/uat-verification/.e2e',
+    verifyPath: 'scripted',
+    browser: { path: 'cdp', headed: true, viewport: '1440x900', privateSettings: 'none', caTrust: 'none' },
+    operatorWindow: true,
+  });
+  for (const expected of ['# UAT 验证报告 — passed（窗口模式未验证）', '> 窗口模式：**未验证**', '循环不控制该窗口', '窗口模式未验证 · 外部启动 + CDP 连接', '1440x900']) {
+    assert.equal(rendered.markdown.includes(expected), true, `markdown is missing ${expected}`);
+  }
+  assert.equal(rendered.markdown.includes('与用户 `--headed` 运行一致'), false);
+  // The report JSON keeps its existing shape; the caveat lives in the readable report.
+  assert.deepEqual(rendered.json['browser'], { path: 'cdp', headed: true, viewport: '1440x900', privateSettings: 'none', caTrust: 'none' });
+});

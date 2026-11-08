@@ -58,7 +58,7 @@ when the current directory is the fixed checkout.
 | `--commit <sha>` | none | An exact commit to check out; overrides `--ref`. |
 | `--paths <list>` | `scripted,model` | Run one or both verification paths, comma-separated, in the order given. |
 | `--browsers <list>` | `engine` | Run each selected path on one or both browser launches, comma-separated, in the order given. `cdp` is the optional SPKI launch. |
-| `--headless` | off | Hide the window. The default shows it, because the user's real run is headed; a headless pass is not the configuration the user sees. |
+| `--headless` | off | Hide the window. The default shows it, because the user's real run is headed; a headless pass is not the configuration the user sees. The runner passes this as `UAT_HEADLESS=1`, so a target commit older than the flag runs headless instead of failing on an unknown argument. |
 | `--remote <url>` | `https://github.com/levicode/e2e.git` | Clone URL when the checkout does not exist. |
 | `--force-install` | off | Install even when the lockfile and toolchain are unchanged. |
 | `--force-build` | off | Build the packages even when this commit was already built. |

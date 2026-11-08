@@ -44,6 +44,11 @@ export interface ReportInputs {
   readonly verifyPath: 'scripted' | 'model';
   /** Which browser launch the run used, and how the private settings reached it. */
   readonly browser: BrowserRun;
+  /**
+   * True when the run attached to a Chromium an operator already started: the
+   * loop controls no window, so its mode is reported as unverified.
+   */
+  readonly operatorWindow?: boolean;
   /** The configured model, recorded even when the run failed before its first call. */
   readonly model?: ModelConfig;
 }
@@ -486,9 +491,9 @@ function markdownReport(input: {
   const nativeCommit = inputs.native.commit;
   const nativeVersion = inputs.native.version?.replace(/^agent-browser\s+/i, '');
 
-  lines.push(`# UAT 验证报告 — ${input.status}（${windowText(inputs.browser.headed)}）`, '');
+  lines.push(`# UAT 验证报告 — ${input.status}（${windowText(inputs.browser, inputs.operatorWindow)}）`, '');
   // The window mode is part of the verdict: a headless pass is not the run the user sees.
-  lines.push(`> 窗口模式：**${windowText(inputs.browser.headed)}**${inputs.browser.headed ? '（默认，与用户 `--headed` 运行一致）' : '（显式 `--headless`，与用户实际运行不同）'}`, '');
+  lines.push(windowNote(inputs.browser, inputs.operatorWindow), '');
   if (input.sessionExpired) lines.push('> **登录态已过期**：本次没有产生产品结论。重新运行 `pnpm --filter @e2e-dev/uat-verification login` 扫码一次后再验证。', '');
   lines.push('## 运行', '');
   lines.push(`- 结论：\`${input.status}\`（exit ${String(number(run['exitCode']) ?? '?')}）`);
@@ -508,7 +513,7 @@ function markdownReport(input: {
   if (inputs.native.source === 'unknown') lines.push('  - 原生身份未知：没有 verified runtime 描述符，也没有设置 `E2E_AGENT_BROWSER_EXECUTABLE`。');
   lines.push(`- 环境：${string(input.environment['os']) ?? '?'} / ${string(input.environment['arch']) ?? '?'} · Node ${nodeVersion(string(input.environment['runtime']))}`);
   lines.push(`- 验证路径：\`${inputs.verifyPath}\`${inputs.verifyPath === 'model' ? '（真实模型决策，错误决策按原样保留，retries=0）' : '（脚本化确定性回归基线）'}`);
-  lines.push(`- 浏览器启动：${browserLaunchText(inputs.browser)}`);
+  lines.push(`- 浏览器启动：${browserLaunchText(inputs.browser, inputs.operatorWindow)}`);
   if (input.model?.configured !== undefined) lines.push(`- 模型：\`${input.model.configured.label}\``);
   lines.push(`- 场景：${scenarioText(inputs.verifyPath)}（账号 ID 与标签已脱敏）`);
   lines.push(`- 原始输出（本机、未提交）：\`${inputs.rawOutput}\``, '');
@@ -670,8 +675,8 @@ function cell(text: string): string {
 }
 
 /** Which launch opened the browser, in the words the report can show. */
-function browserLaunchText(browser: BrowserRun): string {
-  const window = windowText(browser.headed);
+function browserLaunchText(browser: BrowserRun, operatorWindow: boolean | undefined): string {
+  const window = windowText(browser, operatorWindow);
   const settings = browser.privateSettings === 'engine-env'
     ? '代理经引擎环境变量（`AGENT_BROWSER_*`）'
     : browser.privateSettings === 'external-launch-args'
@@ -688,8 +693,19 @@ function browserLaunchText(browser: BrowserRun): string {
 }
 
 /** The window mode the report and the console name. */
-function windowText(headed: boolean): string {
-  return headed ? '有界面' : '无头';
+function windowText(browser: BrowserRun, operatorWindow: boolean | undefined): string {
+  if (operatorWindow === true) return '窗口模式未验证';
+  return browser.headed ? '有界面' : '无头';
+}
+
+/** The sentence under the report title that explains the window mode. */
+function windowNote(browser: BrowserRun, operatorWindow: boolean | undefined): string {
+  if (operatorWindow === true) {
+    return '> 窗口模式：**未验证**（本次连接到操作者已启动的 Chromium，循环不控制该窗口；`--headless` 也不会隐藏它）';
+  }
+  return browser.headed
+    ? '> 窗口模式：**有界面**（默认，与用户 `--headed` 运行一致）'
+    : '> 窗口模式：**无头**（显式 `--headless`，与用户实际运行不同）';
 }
 
 /** What each path walked, in the words the report can show after redaction. */

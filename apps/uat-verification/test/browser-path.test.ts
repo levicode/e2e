@@ -4,6 +4,7 @@ import {
   DEFAULT_BROWSER_PATH,
   browserPathFromEnvironment,
   browserViewport,
+  headlessFromEnvironment,
   parseVerifyInvocation,
 } from '../src/browser-path.ts';
 
@@ -23,6 +24,13 @@ test('--headless is the explicit opt-out and combines with every other argument'
   assert.deepEqual(parseVerifyInvocation(['--headless']), { verifyPath: 'scripted', browserPath: undefined, headless: true });
   assert.deepEqual(parseVerifyInvocation(['model', '--headless', '--browser', 'cdp']), { verifyPath: 'model', browserPath: 'cdp', headless: true });
   assert.throws(() => parseVerifyInvocation(['--headless', '--headless']), /--headless was given twice/);
+});
+
+test('UAT_HEADLESS=1 is the same request for a caller that cannot pass arguments', () => {
+  assert.equal(headlessFromEnvironment({}), false);
+  assert.equal(headlessFromEnvironment({ UAT_HEADLESS: '' }), false);
+  assert.equal(headlessFromEnvironment({ UAT_HEADLESS: '0' }), false);
+  assert.equal(headlessFromEnvironment({ UAT_HEADLESS: '1' }), true);
 });
 
 test('rejects an unknown path, an unknown launch, and repeats', () => {

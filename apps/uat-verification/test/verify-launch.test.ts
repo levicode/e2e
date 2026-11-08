@@ -19,6 +19,7 @@ test('the engine launch is headed 1440x1000 by default, carries the private env,
   });
   assert.equal(plan.launchesTrustedBrowser, false);
   assert.equal(plan.headed, true);
+  assert.equal(plan.operatorWindow, false);
   assert.deepEqual(plan.viewport, { width: 1440, height: 1000 });
   assert.deepEqual(plan.args, ['run', '--config', 'e2e.config.ts', '--headed']);
   assert.equal(plan.env['UAT_BROWSER_PATH'], 'engine');
@@ -41,6 +42,7 @@ test('--headless drops --headed and keeps every other choice', () => {
     headless: true,
   });
   assert.equal(plan.headed, false);
+  assert.equal(plan.operatorWindow, false);
   assert.deepEqual(plan.args, ['run', '--config', 'e2e.model.config.ts']);
   assert.equal(plan.privateSettings, 'none');
   assert.equal(plan.env['AGENT_BROWSER_CA_CERT'], undefined);
@@ -74,6 +76,7 @@ test('a cdp launch starts its own headed 1440x900 browser by default and lets th
   });
   assert.equal(plan.launchesTrustedBrowser, true);
   assert.equal(plan.headed, true);
+  assert.equal(plan.operatorWindow, false);
   assert.deepEqual(plan.viewport, { width: 1440, height: 900 });
   assert.deepEqual(plan.args, ['run', '--config', 'e2e.model.config.ts', '--headed']);
   assert.equal(plan.env['UAT_BROWSER_PATH'], 'cdp');
@@ -95,6 +98,7 @@ test('a cdp launch honors an operator-exported endpoint when the private setting
     headless: false,
   });
   assert.equal(plan.launchesTrustedBrowser, false);
+  assert.equal(plan.operatorWindow, true);
   assert.equal(plan.env['UAT_CDP_ENDPOINT'], 'http://127.0.0.1:9222');
   assert.equal(plan.privateSettings, 'none');
 });
@@ -111,6 +115,7 @@ test('a cdp launch replaces an exported endpoint when the private settings name 
     headless: false,
   });
   assert.equal(plan.launchesTrustedBrowser, true);
+  assert.equal(plan.operatorWindow, false);
   assert.equal(plan.env['UAT_CDP_ENDPOINT'], undefined);
 });
 

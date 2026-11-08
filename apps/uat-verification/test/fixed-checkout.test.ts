@@ -29,6 +29,7 @@ import {
   stateBeforeBuild,
   stateBeforeInstall,
   verificationArguments,
+  verificationEnvironment,
   verificationRuns,
   writeCheckoutState,
   type CheckoutState,
@@ -96,12 +97,14 @@ test('expands every path on every launch, one path at a time', () => {
     { verifyPath: 'model', browserPath: 'cdp' },
   ]);
   assert.deepEqual(verificationRuns(['scripted'], ['cdp']), [{ verifyPath: 'scripted', browserPath: 'cdp' }]);
-  assert.deepEqual(verificationArguments('/app/scripts/verify.ts', { verifyPath: 'model', browserPath: 'engine' }, false), [
+  assert.deepEqual(verificationArguments('/app/scripts/verify.ts', { verifyPath: 'model', browserPath: 'engine' }), [
     '/app/scripts/verify.ts', 'model', '--browser', 'engine',
   ]);
-  assert.deepEqual(verificationArguments('/app/scripts/verify.ts', { verifyPath: 'scripted', browserPath: 'cdp' }, true), [
-    '/app/scripts/verify.ts', 'scripted', '--browser', 'cdp', '--headless',
-  ]);
+  // The mode travels in the environment, so a target checkout older than the flag still runs.
+  assert.deepEqual(verificationEnvironment({ PATH: '/usr/bin' }, false), { PATH: '/usr/bin' });
+  assert.deepEqual(verificationEnvironment({ PATH: '/usr/bin' }, true), { PATH: '/usr/bin', UAT_HEADLESS: '1' });
+  // The runner's own flag decides; a stale exported value must not hide the window it asked for.
+  assert.equal(verificationEnvironment({ UAT_HEADLESS: '1' }, false)['UAT_HEADLESS'], undefined);
 });
 
 test('parses help without requiring a target', () => {
