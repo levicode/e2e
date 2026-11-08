@@ -113,7 +113,9 @@ The `cdp` launch honors a `UAT_CDP_ENDPOINT` exported in the shell when the
 private settings name no Chromium, args, or env, so an operator-started browser
 still works. Otherwise the loop starts its own Chromium and replaces a leftover
 endpoint. Both launches open a visible window by default; `--headless` hides it.
-The login step is always headed: a person must scan the QR code there.
+An operator-attached Chromium keeps its own window mode, so the report names the
+mode the loop asked for, not what that browser shows. The login step is always
+headed: a person must scan the QR code there.
 
 For the model path only, write the private model settings beside it:
 
