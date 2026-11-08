@@ -51,7 +51,7 @@ export interface ReportInputs {
 /** One browser launch: the user's engine launch, or the loop's external Chromium over CDP. */
 export interface BrowserRun {
   readonly path: 'cdp' | 'engine';
-  /** A visible window (the user's headed run; the login step). */
+  /** A visible window: the default, the user's headed run, and the login step; false only for an explicit `--headless`. */
   readonly headed: boolean;
   /** The page viewport, `1440x1000` for the engine launch and `1440x900` for CDP. */
   readonly viewport: string;
@@ -486,7 +486,9 @@ function markdownReport(input: {
   const nativeCommit = inputs.native.commit;
   const nativeVersion = inputs.native.version?.replace(/^agent-browser\s+/i, '');
 
-  lines.push(`# UAT 验证报告 — ${input.status}`, '');
+  lines.push(`# UAT 验证报告 — ${input.status}（${windowText(inputs.browser.headed)}）`, '');
+  // The window mode is part of the verdict: a headless pass is not the run the user sees.
+  lines.push(`> 窗口模式：**${windowText(inputs.browser.headed)}**${inputs.browser.headed ? '（默认，与用户 `--headed` 运行一致）' : '（显式 `--headless`，与用户实际运行不同）'}`, '');
   if (input.sessionExpired) lines.push('> **登录态已过期**：本次没有产生产品结论。重新运行 `pnpm --filter @e2e-dev/uat-verification login` 扫码一次后再验证。', '');
   lines.push('## 运行', '');
   lines.push(`- 结论：\`${input.status}\`（exit ${String(number(run['exitCode']) ?? '?')}）`);
@@ -669,7 +671,7 @@ function cell(text: string): string {
 
 /** Which launch opened the browser, in the words the report can show. */
 function browserLaunchText(browser: BrowserRun): string {
-  const window = browser.headed ? '有界面' : '无头';
+  const window = windowText(browser.headed);
   const settings = browser.privateSettings === 'engine-env'
     ? '代理经引擎环境变量（`AGENT_BROWSER_*`）'
     : browser.privateSettings === 'external-launch-args'
@@ -681,8 +683,13 @@ function browserLaunchText(browser: BrowserRun): string {
       ? 'CA 信任经外部启动参数'
       : '未配置私有 CA';
   return browser.path === 'engine'
-    ? `引擎自启（\`engine\`，${window}，${browser.viewport} 视口；${settings}；${ca}）`
-    : `外部启动 + CDP 连接（\`cdp\`，${window}，${browser.viewport} 视口；${settings}；${ca}）`;
+    ? `${window} · 引擎自启（\`engine\`，${browser.viewport} 视口；${settings}；${ca}）`
+    : `${window} · 外部启动 + CDP 连接（\`cdp\`，${browser.viewport} 视口；${settings}；${ca}）`;
+}
+
+/** The window mode the report and the console name. */
+function windowText(headed: boolean): string {
+  return headed ? '有界面' : '无头';
 }
 
 /** What each path walked, in the words the report can show after redaction. */

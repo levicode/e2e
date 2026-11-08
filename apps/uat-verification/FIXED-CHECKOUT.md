@@ -28,8 +28,8 @@ That command:
    when the pin or the binary changed. The built binary is handed to the engine
    as `E2E_AGENT_BROWSER_EXECUTABLE`.
 6. Runs `verify` and `verify:model` with the saved SSO session on the engine
-   launch, the user's main path. `--browsers cdp` adds the optional SPKI
-   launch.
+   launch, the user's main path, in a visible window as the user runs it.
+   `--browsers cdp` adds the optional SPKI launch; `--headless` hides the window.
 7. Prints each run's report path under `~/.local/state/e2e-uat/reports`.
 
 One run at a time. The runner holds
@@ -58,6 +58,7 @@ when the current directory is the fixed checkout.
 | `--commit <sha>` | none | An exact commit to check out; overrides `--ref`. |
 | `--paths <list>` | `scripted,model` | Run one or both verification paths, comma-separated, in the order given. |
 | `--browsers <list>` | `engine` | Run each selected path on one or both browser launches, comma-separated, in the order given. `cdp` is the optional SPKI launch. |
+| `--headless` | off | Hide the window. The default shows it, because the user's real run is headed; a headless pass is not the configuration the user sees. |
 | `--remote <url>` | `https://github.com/levicode/e2e.git` | Clone URL when the checkout does not exist. |
 | `--force-install` | off | Install even when the lockfile and toolchain are unchanged. |
 | `--force-build` | off | Build the packages even when this commit was already built. |

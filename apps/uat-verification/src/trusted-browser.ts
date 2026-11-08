@@ -22,7 +22,7 @@ export interface TrustedBrowser {
 
 /** How the loop's own Chromium should open. */
 export interface TrustedBrowserOptions {
-  /** Show the window, for the one-time QR scan; off for a normal verification run. */
+  /** Show the window: the verification default (the user's run is headed) and the one-time QR scan; off only for an explicit `--headless`. */
   readonly headed?: boolean;
 }
 

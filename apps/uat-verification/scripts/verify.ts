@@ -32,10 +32,12 @@ import { UAT_UNUSABLE_EXIT, verifyExitCode } from '../src/verify-exit.ts';
 
 let verifyPath: VerifyPath;
 let requestedBrowser: BrowserPath | undefined;
+let headless = false;
 try {
   const invocation = parseVerifyInvocation(process.argv.slice(2));
   verifyPath = invocation.verifyPath;
   requestedBrowser = invocation.browserPath;
+  headless = invocation.headless;
 } catch (cause) {
   console.error(cause instanceof Error ? cause.message : String(cause));
   console.error('');
@@ -84,6 +86,7 @@ const plan = planVerificationLaunch({
   trustedSettings: needsTrustedBrowser(settings),
   exportedEndpoint,
   ledgerFile,
+  headless,
   ...(caCert === undefined ? {} : { caCert }),
 });
 const { headed, viewport } = plan;
@@ -104,10 +107,16 @@ if (resolved.recordError !== undefined) {
 }
 const packages = readPackageIdentities(appRoot);
 
+const windowMode = headed ? 'headed' : 'headless';
+const launchText = `${windowMode} ${viewport.width}×${viewport.height}; ${browserPath === 'engine' ? 'engine launches Chromium' : 'external Chromium over CDP'}`;
+if (!headed) {
+  // The user's real run is headed; a hidden-window pass is not the configuration the user sees.
+  console.log('Running headless (--headless): the user runs this flow with a visible window, so a headless pass is not the run the user sees.');
+}
 console.log(
   verifyPath === 'model'
-    ? `Running the model-driven UAT path via ${browserPath}${browserPath === 'engine' ? ' (headless 1440×1000; engine launches Chromium)' : ' (headless 1440×900; external Chromium over CDP)'} (${uatModelLabel(modelSettings!)}). Model decisions are recorded as made, never retried.`
-    : `Running the fixed scripted read-only UAT scenario via ${browserPath}${browserPath === 'engine' ? ' (headless 1440×1000; engine launches Chromium)' : ' (headless 1440×900; external Chromium over CDP)'}.`,
+    ? `Running the model-driven UAT path via ${browserPath} (${launchText}) (${uatModelLabel(modelSettings!)}). Model decisions are recorded as made, never retried.`
+    : `Running the fixed scripted read-only UAT scenario via ${browserPath} (${launchText}).`,
 );
 if (browserPath === 'engine' && (settings.chromiumArgs !== undefined || settings.chromeExecutable !== undefined)) {
   console.error('UAT_ENGINE_LAUNCH_LIMITS: the engine-launch path has no channel for chromiumArgs or chromeExecutable; only the cdp path applies them. Use --browser cdp when the private Chromium settings are required.');
@@ -122,7 +131,7 @@ if (browserPath === 'engine' && Object.keys(settings.env).length > 0) {
 // whose endpoint they exported. The engine path always lets the target launch.
 let trustedBrowser: TrustedBrowser | undefined;
 try {
-  trustedBrowser = plan.launchesTrustedBrowser ? await launchTrustedBrowser(settings) : undefined;
+  trustedBrowser = plan.launchesTrustedBrowser ? await launchTrustedBrowser(settings, { headed }) : undefined;
 } catch (cause) {
   console.error(cause instanceof Error ? cause.message : String(cause));
   process.exit(UAT_UNUSABLE_EXIT);
@@ -177,7 +186,7 @@ const codes = [...new Set(failures.map(failure => (failure !== null && typeof fa
 const nativeFailed = ledger.filter(entry => entry.ok === false).length;
 const model = rendered.json['model'];
 
-console.log(`UAT verification (${verifyPath}, ${browserPath} browser): ${status}.`);
+console.log(`UAT verification (${verifyPath}, ${browserPath} browser, ${windowMode}): ${status}.`);
 if (codes.length > 0) console.log(`Failure codes: ${codes.join(', ')}.`);
 if (model !== null && typeof model === 'object' && 'calls' in model) {
   const total = model as { calls?: number; inputTokens?: number; outputTokens?: number; durationMs?: number };

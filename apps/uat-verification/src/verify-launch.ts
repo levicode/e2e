@@ -2,11 +2,17 @@
  * What one verification invocation hands the e2e process, decided without
  * starting a browser.
  *
- * The two launches differ in more than a flag: the engine launch is headed,
- * uses the user's 1440×1000 page, and carries the private settings as
+ * The two launches differ in more than a flag: the engine launch uses the
+ * user's 1440×1000 page and carries the private settings as
  * `AGENT_BROWSER_*` environment variables; the CDP launch may attach to a
  * Chromium an operator already started, otherwise the loop starts its own
- * headless 1440×900 browser and never exports the endpoint it must replace.
+ * 1440×900 browser and never exports the endpoint it must replace.
+ *
+ * Both launches open a visible window unless `--headless` was passed, because
+ * the user runs the flow with `--headed`. A headless verification can pass
+ * while the user's headed run fails (agent-browser#82: the headed run hit a
+ * stale scope and lost its isolated context), so the window mode is explicit
+ * in the arguments and in the report.
  */
 import { browserViewport, type BrowserPath, type VerifyPath } from './browser-path.ts';
 
@@ -24,6 +30,8 @@ export interface LaunchInput {
   readonly exportedEndpoint: string | undefined;
   /** The run's private native-result ledger file. */
   readonly ledgerFile: string;
+  /** True only when `--headless` asks for a hidden window. */
+  readonly headless: boolean;
   /** A private CA file the engine launch should trust, when one is configured. */
   readonly caCert?: string;
 }
@@ -43,9 +51,9 @@ export interface LaunchPlan {
 /** Decides the arguments, environment, and private-settings channel of one run. */
 export function planVerificationLaunch(input: LaunchInput): LaunchPlan {
   const config = input.verifyPath === 'model' ? 'e2e.model.config.ts' : 'e2e.config.ts';
-  // Verification is headless on both launches; only the one-time login step
-  // asks for a window. The user confirmed headless is fine for verification.
-  const headed = false;
+  // The user runs the flow headed, so verification does too; `--headless` is the
+  // explicit opt-out. The login step is headed either way: it needs a scan.
+  const headed = !input.headless;
   const viewport = browserViewport(input.browserPath);
   // The engine launch must launch its own Chromium even when the operator's
   // shell still exports an endpoint from an earlier cdp run.

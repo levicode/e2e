@@ -28,6 +28,8 @@ export interface FixedCheckoutOptions {
   readonly paths: readonly VerifyPath[];
   /** Which browser launches to run, in order; each path runs once per launch. */
   readonly browsers: readonly BrowserPath[];
+  /** True when the runs should hide the window; the default shows it, as the user runs it. */
+  readonly headless: boolean;
   readonly forceInstall: boolean;
   readonly forceBuild: boolean;
   /** The URL a missing checkout is cloned from. */
@@ -53,7 +55,7 @@ export const FIXED_CHECKOUT_USAGE = `Usage: node apps/uat-verification/scripts/f
 Fetch, install, build, and run the UAT verification paths from a checkout that
 belongs to no ticket, including the pinned agent-browser build and the saved
 ~/.config/e2e-uat/session.json. Each selected path runs on each selected
-browser launch (the engine launch by default).
+browser launch (the engine launch by default), with a visible window.
 
 Options:
   --checkout <dir>   fixed checkout (default $UAT_CHECKOUT_DIR or ~/src/e2e-uat)
@@ -61,6 +63,7 @@ Options:
   --commit <sha>     exact commit to check out; overrides --ref
   --paths <list>     comma-separated scripted,model (default both, in that order)
   --browsers <list>  comma-separated engine,cdp (default engine)
+  --headless         hide the window; the default shows it, as the user runs it
   --remote <url>     clone URL when the checkout does not exist
   --force-install    install even when the lockfile and toolchain are unchanged
   --force-build      build even when this commit was already built
@@ -92,6 +95,7 @@ export function parseFixedCheckoutArgs(argv: readonly string[], context: FixedCh
   let commit: string | undefined;
   let paths: readonly VerifyPath[] = ALL_PATHS;
   let browsers: readonly BrowserPath[] = ALL_BROWSERS;
+  let headless = false;
   let forceInstall = false;
   let forceBuild = false;
   let remote = context.env['UAT_CHECKOUT_REMOTE']?.trim() || DEFAULT_REMOTE;
@@ -132,6 +136,9 @@ export function parseFixedCheckoutArgs(argv: readonly string[], context: FixedCh
         remote = value(flag, index);
         index += 1;
         break;
+      case '--headless':
+        headless = true;
+        break;
       case '--force-install':
         forceInstall = true;
         break;
@@ -147,7 +154,7 @@ export function parseFixedCheckoutArgs(argv: readonly string[], context: FixedCh
     }
   }
 
-  return { checkout, ref, commit, paths, browsers, forceInstall, forceBuild, remote, help };
+  return { checkout, ref, commit, paths, browsers, headless, forceInstall, forceBuild, remote, help };
 }
 
 /** One verification of one path on one browser launch. */
@@ -162,8 +169,8 @@ export function verificationRuns(paths: readonly VerifyPath[], browsers: readonl
 }
 
 /** The verify-script arguments for one run; the script parses them, the runner does not reshape them. */
-export function verificationArguments(script: string, run: VerificationRun): readonly string[] {
-  return [script, run.verifyPath, '--browser', run.browserPath];
+export function verificationArguments(script: string, run: VerificationRun, headless: boolean): readonly string[] {
+  return [script, run.verifyPath, '--browser', run.browserPath, ...(headless ? ['--headless'] : [])];
 }
 
 /** Parses `--paths`; unknown names and an empty list fail instead of silently running nothing. */
