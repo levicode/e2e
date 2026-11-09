@@ -14,6 +14,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StepExecutor } from '../../src/agent/executor.ts';
+import type { StepRecord } from '../../src/run/steps.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { installFakeLoopModel, loopCalls, nodeIdFor } from '../helpers/fake-loop-model.ts';
 import { createProject, resultByTitle, runProject, type FixtureProject } from '../helpers/run-project.ts';
@@ -116,8 +117,8 @@ describe('the trace screen diff', () => {
     await app.close();
   });
 
-  /** The step whose recorded event detail is `detail`. */
-  const stepWith = (steps: readonly { readonly events: readonly { readonly detail?: string }[]; readonly screen?: unknown }[], detail: string) =>
+  /** The index of the step whose recorded event detail is `detail`. */
+  const stepWith = (steps: readonly StepRecord[], detail: string): number =>
     steps.findIndex((step) => step.events.some((event) => event.detail === detail));
 
   it('follows a navigation across documents', async () => {
@@ -165,10 +166,10 @@ test('the diff after a viewport swipe', async ({ app, screen }) => {
       const steps = result.attempts.at(-1)!.steps;
       const swiped = steps.findIndex((step) => step.api === 'screen.swipe');
       const tapped = steps.findIndex((step) => step.api === 'locator.tap');
-      // A viewport move is not a tree change: no line appeared, moved, or lost
-      // its id, and the step says so.
+      // A viewport move is not a tree change: the step reports no added,
+      // removed, or changed line.
       expect(steps[swiped]!.screen).toMatchObject({ since: 0, nodes: 33, changes: [] });
-      // The action after it is still reported against the same ids.
+      // The action after it is diffed against the swipe's screen.
       expect(steps[tapped]!.screen!.since).toBe(steps[swiped]!.index);
       expect(steps[tapped]!.screen!.changes).toEqual([
         'added status "Gesture state" text="tapped"',
