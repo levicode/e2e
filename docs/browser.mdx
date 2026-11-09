@@ -7,10 +7,12 @@ icon: "window-maximize"
 ---
 
 The `browser` fixture of `@e2e-dev/web` mocks requests, handles dialogs,
-downloads files, and runs code in the page. The engine runs Chromium,
-Firefox, and WebKit through
-[Playwright](https://github.com/microsoft/playwright). For navigation,
-interactions, and checks, use `screen`, `app`, and `expect`.
+downloads files, and runs code in the page. This native engine runs Chromium
+through a trusted native agent-browser executable. It uses
+[Playwright](https://github.com/microsoft/playwright) as its CDP client;
+Playwright does not supply the browser, and Firefox and WebKit are not
+implemented. For navigation, interactions, and checks, use `screen`, `app`,
+and `expect`.
 
 Import `test` from `@e2e-dev/web` to get `browser`:
 

@@ -323,7 +323,7 @@ uses it declares `requires: ['browser']` and other targets skip it. Calls on
 | `npx playwright codegen` | `npx e2e explore` walks the app from a goal and reports what it found; `npx e2e mcp` lets a coding agent drive the app while it writes the test, see [MCP server](/mcp-server) | renamed |
 | `npx playwright show-trace` | no viewer; open the `trace.md` under `.e2e/results/` that the terminal names | by design |
 | `npx playwright show-report` | `.e2e/summary.md` from the `markdown` reporter | missing |
-| `npx playwright install` | `npx @e2e-dev/web install`, for the Playwright version the engine pins; a run also installs a missing browser on its own | renamed |
+| `npx playwright install` | `npx @e2e-dev/web install` after a matching native runtime bundle is installed and verified (see [Installing browsers](/reference/web#installing-browsers)); a run never installs a browser on its own | renamed |
 
 </Accordion>
 </AccordionGroup>

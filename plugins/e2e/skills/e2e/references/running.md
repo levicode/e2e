@@ -233,6 +233,9 @@ jobs:
           node-version: 26 # Node >= 24.8, or >= 22.22.3 on 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Install the trusted runtime bundle and let it write .e2e/native-runtime.json.
+      # Package installation alone does not create it; see reference/web#installing-browsers.
+      - run: test -f .e2e/native-runtime.json
       - run: pnpm exec e2e-web install chromium --with-deps
       - run: npx e2e run --reporter list,junit
         env:

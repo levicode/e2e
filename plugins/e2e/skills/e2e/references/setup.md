@@ -20,11 +20,17 @@
   Imports follow TypeScript: `./x.js` or `./x` loads `x.ts`, and the nearest
   `tsconfig.json` `paths` and `baseUrl` apply. Decorators need
   `experimentalDecorators`; CommonJS TypeScript goes in `.cts`.
-- Browser tests: `@e2e-dev/web`, pinning `playwright-core` exactly; do not
-  add `playwright` for it. Missing browsers download on first boot; in CI run
+- Browser tests: `@e2e-dev/web`, which drives Chromium through a trusted native
+  runtime bundle; `playwright-core` is pinned exactly and is the CDP client, not
+  the browser supply, so do not add `playwright` for it. Before the first run,
+  install and verify a matching bundle with its independently trusted manifest
+  digest, then run the explicit installer:
   `npx @e2e-dev/web install chromium --with-deps` (pnpm: `pnpm exec e2e-web
-  install chromium --with-deps`). Mobile tests: `@e2e-dev/mobile`, pinning
-  `agent-device` exactly; each pin moves with its engine release.
+  install chromium --with-deps`). A plain package install or `e2e init` does
+  not obtain the runtime, and a run never downloads a browser. See
+  [Installing browsers](https://e2e.tester.army/docs/reference/web#installing-browsers).
+  Mobile tests: `@e2e-dev/mobile`, pinning `agent-device` exactly; each pin
+  moves with its engine release.
 
 ## Scaffold
 
@@ -40,7 +46,8 @@ e2e init`; `npx e2e init my-app` scaffolds into a new directory.
 
 The wizard picks the engines (web, mobile, or both) and a model provider (None for tests without AI)
 and offers to install this skill, register the MCP server for your coding
-agent, and install dependencies. `--yes` picks the web engine (Playwright) and Vercel AI
+agent, and install dependencies. `--yes` picks the web engine (native
+agent-browser, Chromium) and Vercel AI
 Gateway, installs the skill in `.agents/skills/` (`.claude/skills/e2e`
 symlinks to it), registers MCP in `.mcp.json` and `.cursor/mcp.json`, skips
 installing dependencies. A flag per question overrides one default:
@@ -66,6 +73,10 @@ Without the wizard (`ai`, Vercel AI SDK v7, only for `agent.*` steps):
 ```bash
 npm install --save-dev e2e @e2e-dev/web ai@^7
 ```
+
+Then install the matching native runtime bundle and Chromium as described in
+the browser-tests requirement; the package install alone does not make a Web
+test runnable.
 
 ## Subscriptions and API keys
 

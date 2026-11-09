@@ -17,7 +17,7 @@ export const setupPrompt = `Set up e2e end-to-end tests in this project. Docs: \
 2. Read the e2e skill (\`npx e2e guide\` prints it, \`npx e2e guide <topic>\` prints a topic) and follow it for every step below.
 3. Point the target at this app. For a web app, set its URL and the command that starts its dev server. For an iOS or Android app, replace @e2e-dev/web with @e2e-dev/mobile and rewrite the example test for the mobile engine.
 4. Ask me which model to use for agent steps: a ChatGPT, GitHub Copilot, OpenCode Console, or SuperGrok subscription, an API key, or a local model. Configure it with its provider package. If it needs a sign-in, give me the \`npx e2e login\` command and wait until I confirm.
-5. Install dependencies, run the example test, and fix setup errors until it passes.
+5. For a web target, install and verify the matching native runtime bundle and Chromium as the Web reference says (https://e2e.tester.army/docs/reference/web#installing-browsers); no browser downloads implicitly. Then install dependencies, run the example test, and fix setup errors until it passes.
 6. Write one test for the most important user flow in this app, run it, and iterate until it passes.`;
 
 <VideoCard
@@ -67,15 +67,25 @@ need Xcode with an iOS simulator runtime, or the Android SDK with an emulator.
   ```
   </CodeGroup>
 
-  Choose **Web (Playwright)** or **Mobile (iOS/Android)**, then a
-  subscription, a model provider, or **None** for tests without AI. The
-  wizard writes a config and an example test, adds dependencies, and offers
-  to set up your coding agent. It keeps existing files.
+  Choose **Web** (native agent-browser, Chromium) or **Mobile
+  (iOS/Android)**, then a subscription, a model provider, or **None** for
+  tests without AI. The wizard writes a config and an example test, adds
+  dependencies, and offers to set up your coding agent. It keeps existing
+  files.
 
   <Tabs>
     <Tab title="Web">
     Start your app's dev server at `http://localhost:3000`, or set its address
     in `e2e.config.ts`. You can also [let e2e start it](/web#starting-your-app).
+
+    <Note>
+      A locally launched web test needs a trusted native runtime bundle and
+      Chromium. Installing the npm packages or running `e2e init` does not
+      obtain either, and a run never downloads a browser. Follow
+      [Installing browsers](/reference/web#installing-browsers) before the
+      first run; today this is an explicit offline bundle step, and no public
+      bundle download URL is published.
+    </Note>
 
     <Accordion title="Example web config and test">
     This config uses Vercel AI Gateway. The wizard configures the provider you chose.
@@ -171,9 +181,11 @@ export default {
   ```
   </CodeGroup>
 
-  e2e downloads a browser or boots the simulator or emulator, checks that
-  the app opens, and prints the result. The example makes no model calls,
-  so it needs no sign-in or API key.
+  e2e boots the simulator or emulator, or launches Chromium through the
+  verified native runtime for a local web target, checks that the app opens,
+  and prints the result. A web run never downloads a browser; complete
+  [Installing browsers](/reference/web#installing-browsers) first. The
+  example makes no model calls, so it needs no sign-in or API key.
   </Step>
 </Steps>
 
