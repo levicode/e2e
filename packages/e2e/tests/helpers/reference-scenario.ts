@@ -65,6 +65,8 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
   const generations = new Map<string, string>();
   const texts = new Map<string, string>();
   for (const node of tree) if (node.text !== undefined) texts.set(node.key, node.text);
+  /** What every attempt starts from, so one attempt's taps never leak into the next. */
+  const initialTexts = new Map(texts);
 
   let generation = 0;
   let nextId = 1;
@@ -112,6 +114,7 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
     async startAttempt(context) {
       attempt = context;
       opened = false;
+      for (const [key, text] of initialTexts) texts.set(key, text);
       issue();
     },
     async endAttempt() {
