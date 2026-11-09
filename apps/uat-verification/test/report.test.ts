@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLedger, renderReport } from '../src/report.ts';
+import type { SetupRecord } from '../src/setup.ts';
 import type { UatSettings } from '../src/settings.ts';
 
 const settings: UatSettings = {
@@ -14,7 +15,7 @@ const settings: UatSettings = {
   env: {},
 };
 
-function report(status: 'passed' | 'failed', messages: readonly string[] = []): unknown {
+function report(status: 'passed' | 'failed', messages: readonly string[] = [], code = 'ENGINE_FAILURE'): unknown {
   return {
     schemaVersion: 'report-1',
     run: {
@@ -34,7 +35,7 @@ function report(status: 'passed' | 'failed', messages: readonly string[] = []): 
             {
               status,
               durationMs: 1234,
-              error: status === 'failed' ? { code: 'ENGINE_FAILURE', message: messages[0] ?? 'The native browser operation failed' } : undefined,
+              error: status === 'failed' ? { code, message: messages[0] ?? 'The native browser operation failed' } : undefined,
               steps: [
                 {
                   api: 'agent.act',
@@ -95,9 +96,10 @@ const ledger = parseLedger([
   'not json',
 ].join('\n'));
 
-function render(status: 'passed' | 'failed', messages: readonly string[] = []): ReturnType<typeof renderReport> {
+function render(status: 'passed' | 'failed', messages: readonly string[] = [], setup?: SetupRecord, code?: string): ReturnType<typeof renderReport> {
   return renderReport({
-    report: report(status, messages),
+    report: report(status, messages, code),
+    ...(setup === undefined ? {} : { setup }),
     ledger,
     native: { source: 'executable-environment', version: 'agent-browser 0.39.4', commit: 'b'.repeat(40), sha256: 'c'.repeat(64) },
     packages: { e2e: { version: '0.21.3' }, web: { version: '0.15.3' } },
@@ -269,4 +271,48 @@ test('an operator-attached Chromium reports the window as unverified instead of 
   assert.equal(rendered.markdown.includes('与用户 `--headed` 运行一致'), false);
   // The report JSON keeps its existing shape; the caveat lives in the readable report.
   assert.deepEqual(rendered.json['browser'], { path: 'cdp', headed: true, viewport: '1440x900', privateSettings: 'none', caTrust: 'none' });
+});
+
+test('an unreachable app is called out as a gateway/connection problem, not a login problem', () => {
+  const rendered = render('failed', [
+    'UAT_APP_UNREACHABLE: GET http://uat.example.test/app/ got HTTP 504 after 10900 ms; gave up after 3 setup attempts (HTTP 504, HTTP 504, HTTP 504), separated by waits of 1000 ms and 3000 ms. The UAT gateway or app is unreachable, not the saved login state: do not sign in again; re-run once the gateway answers.',
+  ]);
+  assert.equal(rendered.appUnreachable, true);
+  assert.equal(rendered.sessionExpired, false);
+  assert.equal(rendered.json['appUnreachable'], true);
+  assert.equal(rendered.markdown.includes('被测应用/网关不可达'), true);
+  assert.equal(rendered.markdown.includes('登录态已过期'), false);
+  assert.equal(rendered.markdown.includes('HTTP 504'), true);
+});
+
+test('the setup retry schedule and each attempt reach the report', () => {
+  const setup: SetupRecord = {
+    schemaVersion: 1,
+    retryDelaysMs: [1_000, 3_000],
+    attempts: [
+      { attempt: 1, startedAt: '2026-11-09T03:49:00.000Z', durationMs: 12, status: 504, outcome: 'unreachable' },
+      { attempt: 2, startedAt: '2026-11-09T03:49:02.000Z', durationMs: 3, status: 200, outcome: 'passed' },
+    ],
+    outcome: 'passed',
+  };
+  const rendered = render('passed', [], setup);
+  assert.equal(rendered.markdown.includes('## Setup 连接重试'), true);
+  assert.equal(rendered.markdown.includes('1000 ms、3000 ms'), true);
+  assert.equal(rendered.markdown.includes('| 1 | 2026-11-09T03:49:00.000Z | 12 | 504 | unreachable |'), true);
+  assert.equal(rendered.markdown.includes('| 2 | 2026-11-09T03:49:02.000Z | 3 | 200 | passed |'), true);
+  assert.equal(rendered.markdown.includes('业务动作阶段保持 `retries: 0`'), true);
+  assert.deepEqual(rendered.json['setup'], setup);
+});
+
+test('without a setup record the report says so instead of inventing a retry', () => {
+  const rendered = render('passed');
+  assert.equal(rendered.markdown.includes('本次没有 setup 尝试记录'), true);
+  assert.equal('setup' in rendered.json, false);
+});
+
+test('a plain thrown failure names this loop own code from its message', () => {
+  const rendered = render('failed', ['UAT_APP_UNREACHABLE: GET <uat-entry> got HTTP 504 after 10900 ms; gave up after 3 setup attempts.'], undefined, 'ERROR');
+  const failures = rendered.json['failures'] as Array<Record<string, unknown>>;
+  assert.equal(failures[0]?.['code'], 'UAT_APP_UNREACHABLE');
+  assert.equal(rendered.markdown.includes('错误码：`UAT_APP_UNREACHABLE`'), true);
 });

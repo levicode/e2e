@@ -12,6 +12,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { NativeIdentity, PackageIdentity } from './identity.ts';
+import type { SetupRecord } from './setup.ts';
 import type { UatSettings } from './settings.ts';
 
 export interface NativeLedgerEntry {
@@ -51,6 +52,8 @@ export interface ReportInputs {
   readonly operatorWindow?: boolean;
   /** The configured model, recorded even when the run failed before its first call. */
   readonly model?: ModelConfig;
+  /** The setup's bounded connection retry, when the run wrote one. */
+  readonly setup?: SetupRecord;
 }
 
 /** One browser launch: the user's engine launch, or the loop's external Chromium over CDP. */
@@ -121,6 +124,8 @@ export interface RenderedReport {
   readonly json: Record<string, unknown>;
   /** Set when the run failed because the saved login state no longer works. */
   readonly sessionExpired: boolean;
+  /** Set when the run failed because the app or its gateway answered 5xx or nothing at all. */
+  readonly appUnreachable: boolean;
 }
 
 /** Parses the ledger tolerantly; a truncated or partial final line is dropped. */
@@ -150,6 +155,7 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
   const vcs = record(runRecord['vcs']);
   const environment = record(runRecord['environment']);
   const sessionExpired = [...runErrors, ...results.flatMap(result => allErrors(result))].some(error => (string(error['message']) ?? '').includes('UAT_SESSION_EXPIRED'));
+  const appUnreachable = [...runErrors, ...results.flatMap(result => allErrors(result))].some(error => (string(error['message']) ?? '').includes('UAT_APP_UNREACHABLE'));
 
   const failures = collectFailures(results, redact);
   const observations = collectObservations(results, redact);
@@ -157,7 +163,7 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
   const model = collectModel(results, redact, inputs.model);
 
   const markdown = markdownReport({
-    inputs, redact, status, runErrors, vcs, environment, failures, observations, engineEvents, sessionExpired, model,
+    inputs, redact, status, runErrors, vcs, environment, failures, observations, engineEvents, sessionExpired, appUnreachable, model,
   });
   const json = {
     schemaVersion: 1,
@@ -177,6 +183,8 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
     },
     scenario: scenarioText(inputs.verifyPath),
     sessionExpired,
+    appUnreachable,
+    ...(inputs.setup === undefined ? {} : { setup: inputs.setup }),
     model,
     failures,
     observations,
@@ -188,7 +196,7 @@ export function renderReport(inputs: ReportInputs): RenderedReport {
     },
     rawOutput: inputs.rawOutput,
   };
-  return { markdown, json, sessionExpired };
+  return { markdown, json, sessionExpired, appUnreachable };
 }
 
 /** Writes both report files under one run directory and returns their paths. */
@@ -291,9 +299,12 @@ function collectFailures(results: readonly Record<string, unknown>[], redact: (t
 }
 
 function pushFailure(failures: Failure[], test: string, where: string, error: Record<string, unknown>, redact: (text: string) => string): void {
-  const code = string(error['code']);
+  const rawCode = string(error['code']);
   const message = string(error['message']);
-  if (code === undefined && message === undefined) return;
+  if (rawCode === undefined && message === undefined) return;
+  // A plain thrown Error reaches the raw report as `ERROR`; this loop's own
+  // codes live at the start of the message, so the report names them instead.
+  const code = (rawCode === undefined || rawCode === 'ERROR') && message !== undefined ? appCode(message) ?? rawCode : rawCode;
   const redacted = message === undefined ? undefined : redact(message);
   failures.push({
     test,
@@ -302,6 +313,11 @@ function pushFailure(failures: Failure[], test: string, where: string, error: Re
     ...(redacted === undefined ? {} : { message: redacted }),
     ...nativeEvidence(redacted ?? ''),
   });
+}
+
+/** This loop's own code, when a thrown message begins with it: `UAT_APP_UNREACHABLE: …`. */
+function appCode(message: string): string | undefined {
+  return /^(UAT_[A-Z0-9_]+):/.exec(message)?.[1];
 }
 
 /** The native tuple the web engine appends to an uncertain action's message, when present. */
@@ -479,6 +495,7 @@ function markdownReport(input: {
   readonly observations: readonly Observation[];
   readonly engineEvents: readonly EngineEvent[];
   readonly sessionExpired: boolean;
+  readonly appUnreachable: boolean;
   readonly model: ModelReport | undefined;
 }): string {
   const { inputs, redact } = input;
@@ -495,6 +512,9 @@ function markdownReport(input: {
   // The window mode is part of the verdict: a headless pass is not the run the user sees.
   lines.push(windowNote(inputs.browser, inputs.operatorWindow), '');
   if (input.sessionExpired) lines.push('> **登录态已过期**：本次没有产生产品结论。重新运行 `pnpm --filter @e2e-dev/uat-verification login` 扫码一次后再验证。', '');
+  if (input.appUnreachable) {
+    lines.push('> **被测应用/网关不可达（连接类失败）**：本次没有产生产品结论，也不是登录态问题——不要重新扫码登录。失败码 `UAT_APP_UNREACHABLE` 带实际状态码与耗时，setup 的重试次数与间隔见下文。', '');
+  }
   lines.push('## 运行', '');
   lines.push(`- 结论：\`${input.status}\`（exit ${String(number(run['exitCode']) ?? '?')}）`);
   lines.push(`- 开始：${string(run['startedAt']) ?? '?'}`);
@@ -526,6 +546,23 @@ function markdownReport(input: {
     lines.push(`| ${cell(testTitle(result, redact))} | ${cell(string(result['status']) ?? '?')} | ${attempts.length} | ${duration} |`);
   }
   lines.push('');
+
+  lines.push('## Setup 连接重试', '');
+  const setup = inputs.setup;
+  if (setup === undefined) {
+    lines.push('本次没有 setup 尝试记录（报告不是由 `verify` 渲染，或 setup 未运行）。', '');
+  } else {
+    const retries = Math.max(0, setup.attempts.length - 1);
+    const budget = setup.retryDelaysMs.map(ms => `${ms} ms`).join('、');
+    lines.push(`- 结果：\`${setup.outcome}\`；尝试 ${setup.attempts.length} 次（重试 ${retries} 次）；重试预算 ${budget === '' ? '无' : budget}。`);
+    lines.push('- 只有 setup 阶段的连接类失败（5xx、连接重置、超时）会重试；业务动作阶段保持 `retries: 0`，失败按原样保留。');
+    lines.push('', '| 尝试 | 开始 | 耗时 (ms) | HTTP | 结果 |', '| ---: | --- | ---: | --- | --- |');
+    for (const attempt of setup.attempts) {
+      const http = attempt.status === undefined ? '—' : attempt.status === 0 ? '无响应' : String(attempt.status);
+      lines.push(`| ${attempt.attempt} | ${attempt.startedAt} | ${attempt.durationMs} | ${http} | ${attempt.outcome} |`);
+    }
+    lines.push('');
+  }
 
   lines.push('## 失败', '');
   if (input.failures.length === 0) lines.push('无。', '');

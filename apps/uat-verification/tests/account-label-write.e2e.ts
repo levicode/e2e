@@ -15,7 +15,7 @@ import { expect } from 'e2e';
 import type { Browser } from '@e2e-dev/web';
 import type { Screen } from 'e2e';
 import { accountHasLabel, parseAccountLabelState, type AccountLabelState } from '../src/account-labels.ts';
-import { waitForHome } from '../src/app-location.ts';
+import { browserHomeProbe, waitForHome } from '../src/app-location.ts';
 import { SCENARIO_INSTRUCTION } from '../src/scenario.ts';
 import { loadUatSettings } from '../src/settings.ts';
 
@@ -30,7 +30,7 @@ const REMOVE_INSTRUCTION = `从当前账号移除标签“${labelName}”，保�
 
 test('the model adds then removes the configured account label', { session: 'uat', timeout: 300_000 }, async ({ agent, app, browser, screen }) => {
   await app.open(settings.entryUrl);
-  await waitForHome(browser, settings, { foreignOrigin: 'expired', timeoutMs: 20_000 });
+  await waitForHome(browserHomeProbe(browser), settings, { foreignOrigin: 'expired', timeoutMs: 20_000 });
   await agent.act(SCENARIO_INSTRUCTION, { params: { accountId } });
   await expect(screen.getByPlaceholder('请输入账号ID')).toHaveValue(accountId);
   const apiBase = await queryAccount(screen, browser);

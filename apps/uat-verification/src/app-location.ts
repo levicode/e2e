@@ -4,6 +4,12 @@
  * Both need one definition of "the app is signed in": the same origin and the
  * home fragment. Leaving that origin is a login redirect, and only the login
  * step, which starts there on purpose, may sit on a foreign origin waiting.
+ *
+ * A wait that times out is not automatically an expired session: a gateway
+ * that answers 5xx, or a navigation that got no response at all, is the app
+ * being unreachable. The two failures get different codes and different
+ * guidance, because sending someone to scan the QR code again for a 504 wastes
+ * the one thing the report exists to save.
  */
 import type { Browser } from '@e2e-dev/web';
 import { entryOrigin, type UatSettings } from './settings.ts';
@@ -11,10 +17,12 @@ import { sessionExpired } from './session.ts';
 
 const POLL_MS = 500;
 
-/** What the sign-in wait reads and changes: the browser fixture, or a stub in a unit test. */
-interface SignedInProbe {
+/** What the home wait reads: the browser fixture, or a stub in a unit test. */
+export interface HomeProbe {
+  /** The location the page is on now. */
   url(): Promise<string>;
-  goto(url: string): Promise<void>;
+  /** The current document's HTTP status, or undefined when no page can report one. */
+  navigationStatus(): Promise<number | undefined>;
 }
 
 export interface WaitForHomeOptions {
@@ -23,12 +31,21 @@ export interface WaitForHomeOptions {
   readonly timeoutMs: number;
 }
 
-/** Waits for the app's home location, distinguishing an expired session from a slow login. */
-export async function waitForHome(browser: Browser, settings: UatSettings, options: WaitForHomeOptions): Promise<string> {
+/** The home wait over a browser fixture, with the document status the page reports. */
+export function browserHomeProbe(browser: Browser): HomeProbe {
+  return {
+    url: () => browser.url(),
+    navigationStatus: () => navigationResponseStatus(browser),
+  };
+}
+
+/** Waits for the app's home location, distinguishing an expired session from a gateway failure. */
+export async function waitForHome(probe: HomeProbe, settings: UatSettings, options: WaitForHomeOptions): Promise<string> {
   const origin = entryOrigin(settings);
-  const deadline = Date.now() + options.timeoutMs;
+  const startedAt = Date.now();
+  const deadline = startedAt + options.timeoutMs;
   for (;;) {
-    const url = await browser.url();
+    const url = await probe.url();
     if (isHome(url, settings)) return url;
     const current = originOf(url);
     if (current !== undefined && current !== origin && options.foreignOrigin === 'expired') {
@@ -36,16 +53,74 @@ export async function waitForHome(browser: Browser, settings: UatSettings, optio
     }
     if (Date.now() >= deadline) {
       throw options.foreignOrigin === 'expired'
-        ? sessionExpired(settings, `the app did not reach ${settings.homeHash}`)
+        ? await homeTimeout(probe, settings, startedAt)
         : loginNotFinished();
     }
     await sleep(POLL_MS);
   }
 }
 
+/** True for the statuses a gateway or a failed connection produces, never for an answered app. */
+export function isUnreachableStatus(status: number | undefined): boolean {
+  return status === 0 || (status !== undefined && status >= 500);
+}
+
+/** What one unreachable attempt observed, kept so the report can name the status and the wait. */
+export interface UnreachableDetail {
+  /** The document's HTTP status; 0 when the navigation got no response at all. */
+  readonly status: number | undefined;
+  /** How long the attempt waited before the failure was decided. */
+  readonly elapsedMs: number;
+  /** A trailing sentence, such as the setup's bounded retry schedule after it gave up. */
+  readonly note?: string;
+}
+
+/** The `UAT_APP_UNREACHABLE` failure: a 5xx gateway page or a connection that answered nothing. */
+export function appUnreachable(settings: UatSettings, detail: UnreachableDetail): Error {
+  const url = new URL(settings.entryUrl);
+  const answer = detail.status === undefined || detail.status === 0
+    ? 'no HTTP response (the connection failed or timed out)'
+    : `HTTP ${detail.status}`;
+  return new Error(
+    `UAT_APP_UNREACHABLE: GET ${url.origin}${url.pathname} got ${answer} after ${detail.elapsedMs} ms${detail.note ?? ''}. `
+    + 'The UAT gateway or app is unreachable, not the saved login state: do not sign in again; re-run once the gateway answers.',
+  );
+}
+
+/** Decides what a wait that ran out of time saw: a gateway/connection failure, or an answered app without the home route. */
+async function homeTimeout(probe: HomeProbe, settings: UatSettings, startedAt: number): Promise<Error> {
+  const status = await probe.navigationStatus();
+  const elapsedMs = Date.now() - startedAt;
+  if (isUnreachableStatus(status)) return appUnreachable(settings, { status, elapsedMs });
+  return sessionExpired(
+    settings,
+    `the app answered ${status === undefined ? 'no document status' : `HTTP ${status}`} but did not reach ${settings.homeHash} within ${elapsedMs} ms`,
+  );
+}
+
+/** The document's HTTP status as the page itself reports it; undefined when nothing can be read. */
+async function navigationResponseStatus(browser: Browser): Promise<number | undefined> {
+  try {
+    const status = await browser.evaluate(() => {
+      const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+      const response = entry === undefined ? undefined : (entry as PerformanceNavigationTiming & { responseStatus?: number }).responseStatus;
+      return typeof response === 'number' ? response : null;
+    });
+    return typeof status === 'number' ? status : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** True when `url` is on the app's origin and carries the home fragment. */
 function isHome(url: string, settings: UatSettings): boolean {
   return originOf(url) === entryOrigin(settings) && url.includes(settings.homeHash);
+}
+
+/** What the sign-in wait reads and changes: the browser fixture, or a stub in a unit test. */
+interface SignedInProbe {
+  url(): Promise<string>;
+  goto(url: string): Promise<void>;
 }
 
 /**
@@ -119,7 +194,10 @@ function loginNotFinished(): Error {
 
 function originOf(url: string): string | undefined {
   try {
-    return new URL(url).origin;
+    const parsed = new URL(url);
+    // A page that failed to load sits on `chrome-error://chromewebdata/`; that
+    // is no origin to compare with, and certainly not a login redirect.
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : undefined;
   } catch {
     return undefined;
   }

@@ -11,7 +11,7 @@
  * confuse: `2` means the saved login state (or the private model settings) is
  * unusable, anything else means the run itself did not pass.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   DEFAULT_BROWSER_PATH,
@@ -26,6 +26,7 @@ import { readPackageIdentities, resolveNativeIdentity } from '../src/identity.ts
 import { loadUatModelSettings, uatModelLabel, type UatModelSettings } from '../src/model.ts';
 import { parseLedger, renderReport, writeReport, type BrowserRun } from '../src/report.ts';
 import { readUatSession } from '../src/session.ts';
+import { readSetupRecord } from '../src/setup.ts';
 import { loadUatSettings, uatCaCertFile, uatConfigFile, uatReportsDirectory, type UatSettings } from '../src/settings.ts';
 import { launchTrustedBrowser, needsTrustedBrowser, type TrustedBrowser } from '../src/trusted-browser.ts';
 import { planVerificationLaunch } from '../src/verify-launch.ts';
@@ -79,6 +80,10 @@ const output = path.join(appRoot, verifyPath === 'model' ? '.e2e-model' : '.e2e'
 mkdirSync(output, { recursive: true });
 const ledgerFile = path.join(output, 'native-results.jsonl');
 writeFileSync(ledgerFile, '');
+// The setup writes its bounded connection retry here; a stale record from an
+// earlier run must not describe this one.
+const setupAttemptsFile = path.join(output, 'setup-attempts.json');
+rmSync(setupAttemptsFile, { force: true });
 const plan = planVerificationLaunch({
   verifyPath,
   browserPath,
@@ -142,6 +147,7 @@ try {
   process.exit(UAT_UNUSABLE_EXIT);
 }
 const childEnv: NodeJS.ProcessEnv = { ...plan.env };
+childEnv['UAT_SETUP_ATTEMPTS_FILE'] = setupAttemptsFile;
 if (trustedBrowser !== undefined) childEnv['UAT_CDP_ENDPOINT'] = trustedBrowser.endpoint;
 
 let exitCode: number;
@@ -168,6 +174,7 @@ const browser: BrowserRun = {
 };
 const report: unknown = JSON.parse(readFileSync(reportFile, 'utf8'));
 const ledger = parseLedger(existsSync(ledgerFile) ? readFileSync(ledgerFile, 'utf8') : '');
+const setup = readSetupRecord(setupAttemptsFile);
 const rendered = renderReport({
   report,
   ledger,
@@ -178,6 +185,7 @@ const rendered = renderReport({
   rawOutput: output,
   verifyPath,
   browser,
+  ...(setup === undefined ? {} : { setup }),
   ...(operatorWindow ? { operatorWindow: true } : {}),
   ...(modelSettings === undefined
     ? {}
@@ -203,5 +211,8 @@ console.log(`Report: ${written.markdown}`);
 console.log(`Raw output (private, gitignored): ${output}`);
 if (rendered.sessionExpired) {
   console.error('The saved UAT session expired. Run pnpm --filter @e2e-dev/uat-verification login and scan the QR once, then verify again.');
+}
+if (rendered.appUnreachable) {
+  console.error('The UAT app or its gateway was unreachable (HTTP 5xx or no connection response); this is not a login problem, so do not re-scan. The failure message names the status and the setup retry schedule.');
 }
 process.exitCode = verifyExitCode(exitCode, rendered.sessionExpired);
