@@ -607,7 +607,7 @@ export function describeNode(node: RedactedNode, appOrigin?: string, ignoreState
     if (id !== undefined && id !== '') parts.push(`id=${JSON.stringify(collapseText(id).slice(0, 200))}`);
     const className = node.attributes?.['class'];
     if (className !== undefined && className !== '') parts.push(`class=${JSON.stringify(collapseText(className).slice(0, 200))}`);
-    for (const [key, value] of Object.entries(node.attributes ?? {}).filter(([key]) => key.startsWith('aria-')).slice(0, 4)) {
+    for (const [key, value] of Object.entries(node.attributes ?? {}).filter(([attribute]) => attribute.startsWith('aria-')).slice(0, 4)) {
       if (value !== '') parts.push(`${key}=${JSON.stringify(collapseText(value).slice(0, 120))}`);
     }
     if (position !== undefined) parts.push(`nth=${position}`);
