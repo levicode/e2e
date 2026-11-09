@@ -132,8 +132,8 @@ describe('the trace screen diff across a reconnect', () => {
       expect(result.status, JSON.stringify(result.attempts.at(-1)?.error)).toBe('passed');
       const steps = result.attempts.at(-1)!.steps;
       const open = steps.find((step) => step.api === 'app.open')!;
-      const reconnected = steps.find((step) => step.events.some((event) => event.name === 'tap' && event.detail === 'tap button "Reconnect the browser"'))!;
-      const incremented = steps.find((step) => step.events.some((event) => event.name === 'tap' && event.detail === 'tap button "Increment"'))!;
+      const reconnected = steps.find((step) => step.api === 'locator.tap' && step.label.includes('"Reconnect the browser"'))!;
+      const incremented = steps.find((step) => step.api === 'locator.tap' && step.label.includes('"Increment"'))!;
       // Re-issued ids are not a screen change: the same controls are described
       // by the same lines, and the diff says so instead of reporting a
       // wholesale replacement.

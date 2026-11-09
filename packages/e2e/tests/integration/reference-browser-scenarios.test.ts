@@ -117,9 +117,9 @@ describe('the trace screen diff', () => {
     await app.close();
   });
 
-  /** The index of the step whose recorded event detail is `detail`. */
-  const stepWith = (steps: readonly StepRecord[], detail: string): number =>
-    steps.findIndex((step) => step.events.some((event) => event.detail === detail));
+  /** The index of the tap on the locator whose description holds `text`. */
+  const tapOn = (steps: readonly StepRecord[], text: string): number =>
+    steps.findIndex((step) => step.api === 'locator.tap' && step.label.includes(text));
 
   it('follows a navigation across documents', async () => {
     const NAVIGATION = `import { test } from 'e2e';
@@ -135,7 +135,7 @@ test('the diff follows a navigation', async ({ app, screen }) => {
       const result = resultByTitle(outcome, 'the diff follows a navigation');
       expect(result.status, JSON.stringify(result.attempts.at(-1)?.error)).toBe('passed');
       const steps = result.attempts.at(-1)!.steps;
-      const tapped = stepWith(steps, 'tap button "Increment"');
+      const tapped = tapOn(steps, '"Increment"');
       const about = steps.at(-1)!;
       expect(about.screen).toMatchObject({ since: steps[tapped]!.index });
       const changes = about.screen!.changes.join('\n');
