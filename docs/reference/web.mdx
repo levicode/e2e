@@ -1059,17 +1059,78 @@ bunx @e2e-dev/web install chromium --with-deps
 - Reports display recognized Chromium product versions as `chromium <version>`
   and preserve the configured user-agent text.
 
+### Installing from this repository (internal use)
+
+This project is for internal use. Nothing publishes a native runtime bundle:
+there is no release asset, no public download URL, and no npm package that
+supplies this runtime, so a normal consumer install is not available. An
+internal user builds the bundle from a checkout. That build is the trusted
+producer, and the digest comes from the build, never from the bundle's own
+checksum file.
+
+Prerequisites:
+
+- The pinned Node.js 24.22.1 and pnpm 12.3.4.
+- A Rust toolchain whose host triple matches the machine.
+- Network access to fetch the pinned `agent-browser` source commit.
+- A clean checkout: the setup script refuses a dirty tree, and the bundle
+  records the source commit and tree it was built from.
+- A platform Chrome for Testing supports; see [Platform support](#platform-support).
+
+From the checkout root, where neither directory exists yet:
+
+```bash
+node scripts/setup-source-native.mjs /tmp/e2e-native-work /tmp/e2e-native-project
+```
+
+The script installs the workspace, builds `e2e` and `@e2e-dev/web`, builds the
+native binary from the pinned `agent-browser` commit, installs Chromium, writes
+the bundle to `/tmp/e2e-native-work/bundle`, and installs it into
+`/tmp/e2e-native-project` through the bundle's `install.mjs`. It writes the
+SHA-256 it computed from the `manifest.json` it just wrote to
+`/tmp/e2e-native-work/trusted-manifest.json`.
+
+Read the digest outside the bundle and check the manifest against it before
+trusting either:
+
+```bash
+B=/tmp/e2e-native-work/bundle
+DIGEST=$(node -p "require('/tmp/e2e-native-work/trusted-manifest.json').sha256")
+shasum -a 256 "$B/manifest.json"        # must print $DIGEST
+```
+
+To install with the public CLI instead, start from a project that has a
+`package.json` and the bundle's tarballs:
+
+```bash
+PROJECT=/tmp/e2e-native-cli
+mkdir "$PROJECT" && cd "$PROJECT" && npm init -y
+npm install --save-dev file:"$B"/tarballs/e2e-[0-9]*.tgz file:"$B"/tarballs/e2e-dev-web-*.tgz
+npx e2e init --yes && npm install
+npx e2e-web runtime install --bundle "$B" --manifest-sha256 "$DIGEST" --package-manager npm --project "$PWD"
+npx e2e-web install chromium
+```
+
+Then run the example against an app URL as the Quickstart describes. After the
+install, `npx e2e -v`, `.e2e/native-runtime.json`, and the bundle's
+`manifest.json` are the identity record; see [Version identity](#version-identity).
+
 ### Platform support
 
-| Platform | Local Web status | Notes |
+| Platform | Status | Evidence |
 | --- | --- | --- |
-| macOS arm64 | Supported | Chrome for Testing `mac-arm64`, with a matching verified bundle. |
-| macOS x64 | Supported by the installer | Chrome for Testing `mac-x64`, with a matching verified bundle. |
-| Linux x64 | Supported | Chrome for Testing `linux64`; `--with-deps` also installs the system libraries Chromium needs. |
-| Linux arm64 | Not supported for a local launch | The native Chromium installer exits 1 because Chrome for Testing publishes no ARM64 Linux build, and the public Web options have no way to select a system Chromium. Use a hosted `BrowserProvider` for these hosts. |
-| Windows | WSL only | Follow the Quickstart note; native Windows is not part of the supported matrix. |
+| macOS arm64 | Verified | A clean install of the source-built bundle (`e2e` 0.21.3, `@e2e-dev/web` 0.15.3, native `agent-browser` 0.39.4, manifest `96b23b72…`) ran a Web test and `--video on` on 2026-11-09. |
+| macOS x64 | Unverified | The installer has a Chrome for Testing `mac-x64` path, and `native-macos-candidate.yml` builds the architecture, but no install or run has been recorded. Not a support claim. |
+| Linux x64 | Unverified | The installer has a Chrome for Testing `linux64` path, and `native-candidate.yml` builds a Linux bundle, but no install or run has been recorded. Not a support claim. |
+| Linux arm64 | Not supported | The native Chromium installer exits 1 because Chrome for Testing publishes no ARM64 Linux build, and the public Web options cannot select a system Chromium. Use a hosted `BrowserProvider` for these hosts. |
+| Windows | Not supported (WSL only) | Native Windows is outside the matrix; follow the Quickstart WSL note. |
 
-A matching bundle is still required on every supported platform.
+**Verified** means a clean install and a passing Web run were recorded from a
+specific bundle. **Unverified** means the code path exists but that run has not
+been recorded, so it is not a support claim. **Not supported** means the
+platform is known not to work with a local Web launch. A platform moves from
+unverified to verified only with a recorded clean-install run, and every
+platform still requires a matching bundle.
 
 ### Recording and FFmpeg
 
@@ -1077,16 +1138,18 @@ Recording is the only Web feature that needs FFmpeg. The native engine invokes
 `ffmpeg` from `PATH`; npm packages do not provide it.
 
 - Without FFmpeg, tests that do not record still pass. An attempt with `video`
-  enabled fails when recording starts. The native error names FFmpeg
-  (`ffmpeg not found or failed to execute: ... Install ffmpeg to enable
-  recording.`), but the runner currently surfaces `ENGINE_FAILURE` and
-  `browser-failure` without that cause, so read the trace and run the bundle's
-  `agent-browser doctor` when a recording fails.
+  enabled fails before the page is activated, with an `ENGINE_FAILURE` naming
+  the dependency: `Video recording requires FFmpeg, and no ffmpeg executable is
+  on PATH. Install it (macOS: brew install ffmpeg; Debian/Ubuntu: sudo apt-get
+  install ffmpeg) and rerun.` A provider recorder is exempt because its encoder
+  runs with the hosted browser.
 - `agent-browser doctor` reports a missing FFmpeg as a warning with the
   platform install hint. Install it with the platform package manager.
 - A `.webm` recording needs the `libvpx` encoder and an `.mp4` recording needs
   `libx264`; a stripped-down FFmpeg build that lacks one fails only those
-  recordings.
+  recordings. That failure comes from the native encoder, so the runner reports
+  the native `browser-failure` and the bundle's `agent-browser doctor` names the
+  missing encoder.
 
 ### Version identity
 

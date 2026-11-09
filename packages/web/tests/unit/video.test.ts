@@ -57,10 +57,10 @@ function connectPeer(override?: (request: PeerRequest) => PeerOutcome | undefine
   });
   return () => peer;
 }
-async function fixture(override?: (request: PeerRequest) => PeerOutcome | undefined | Promise<PeerOutcome | undefined>) {
+async function fixture(override?: (request: PeerRequest) => PeerOutcome | undefined | Promise<PeerOutcome | undefined>, env: Readonly<Record<string, string | undefined>> = {}) {
   const getPeer = connectPeer(override);
   const surface = new NativeSurface({});
-  await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env: {}, headed: false, workerSlot: 0, signal: operation().signal, log: () => {} });
+  await surface.init({ runId: 'run', targetName: 'web', projectRoot: process.cwd(), app: {}, env, headed: false, workerSlot: 0, signal: operation().signal, log: () => {} });
   await surface.startAttempt({ attemptId: 'video', artifactsDir: directory, signal: operation().signal, resolveSecret: noSecrets, ...ignoreTrace });
   return { surface, peer: getPeer() };
 }
@@ -146,6 +146,18 @@ it.each(['not-dispatched', 'completed'] as const)('reports a clean failed first 
     expect(existsSync(path.join(directory, 'video'))).toBe(false);
     await expect(nativeBrowser(engine, operation).title()).resolves.toBe('recording-survived');
   } finally { try { await engine.endAttempt!(operation()); } finally { await engine.dispose!(operation()); } }
+});
+
+it('names a missing FFmpeg dependency before activating the page for a local recording', async () => {
+  const { surface, peer } = await fixture(undefined, { PATH: path.join(directory, 'empty-bin') });
+  try {
+    const failure = await surface.startVideo(operation()).catch((cause: unknown) => cause);
+    expect(failure).toBeInstanceOf(EngineError);
+    expect(failure).toMatchObject({ code: 'ENGINE_FAILURE', retryable: false });
+    expect((failure as EngineError).message).toContain('Video recording requires FFmpeg');
+    expect((failure as EngineError).message).toContain('ffmpeg');
+    expect(peer.requests.filter(request => ['page.activate', 'recording.start'].includes(request.command))).toHaveLength(0);
+  } finally { await surface.dispose(operation()); }
 });
 
 it('retains the first verified segment and continues the third after the second read is refused, without stopping again', async () => {
