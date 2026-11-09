@@ -135,4 +135,27 @@ describe('cleanup receipt provenance', () => {
     } finally { outcome.resolve({ data: null }); rejectSettlement(new Error('cleanup')); await vi.advanceTimersByTimeAsync(0); await engine.dispose!(cleanup()).catch(() => undefined); }
   });
 
+  it('the native retirement keeps its fixed 15s window after the caller budget departs', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const engine = await nativeAttempt();
+    await engine.startAttempt!(nativeContext());
+    // No close ACK ever arrives; only the native retirement's own deadline can end it.
+    peers[0]!.holdCloseUntil(new Promise<void>(() => {}));
+    const departed = engine.endAttempt!({ timeoutMs: 1_000, signal: new AbortController().signal });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(departed).resolves.toBeUndefined();
+    expect(peers[0]!.frames.filter(frame => frame['type'] === 'close')).toHaveLength(1);
+    // The retained exact close keeps its own fixed window, not the departed caller's 1s.
+    const owned = engine.endAttempt!({ timeoutMs: 30_000, signal: new AbortController().signal });
+    void owned.catch(() => {});
+    let settled = false;
+    void owned.then(() => { settled = true; }, () => { settled = true; });
+    await vi.advanceTimersByTimeAsync(13_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const failure = await owned.catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    await engine.dispose!(cleanup()).catch(() => undefined);
+  });
+
 });

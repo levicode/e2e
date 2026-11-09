@@ -155,3 +155,57 @@ it.each(['confirmed', 'transport-loss'] as const)('passes caller cancellation to
     } finally { closure.mockRestore(); connection.mockRestore(); }
   }
 });
+
+it('revokes the attempt lease once when the native close receipt fails with the caller budget still live', async () => {
+  const artifactsDir = await mkdtemp(path.join(tmpdir(), 'e2e-provider-close-receipt-'));
+  const browsers = new Map<BrowserLease, RemoteChrome>();
+  const released: { lease: BrowserLease; signalAborted: boolean }[] = [];
+  const billingFinalized: string[] = [];
+  let engine: EngineHandle | undefined;
+  let env: Readonly<Record<string, string | undefined>> = process.env;
+  const realClose = NativeClient.prototype.close;
+  const closeSpy = vi.spyOn(NativeClient.prototype, 'close').mockImplementation(function (this: NativeClient, context) {
+    // The browser really closes; only its receipt is lost. This is the close
+    // failure that must not skip the exact lease revocation.
+    return realClose.call(this, context).then(() => { throw new Error('native close receipt lost'); });
+  });
+  const provider: BrowserProvider = {
+    name: 'local-close-receipt-fixture', scope: 'attempt',
+    async acquire() {
+      const chrome = await launchRemoteChrome();
+      const lease = { id: `local-close-${browsers.size + 1}`, cdpEndpoint: chrome.endpoint };
+      browsers.set(lease, chrome); return lease;
+    },
+    async release(lease, context) {
+      released.push({ lease, signalAborted: context.signal.aborted });
+      await closeRemoteChrome(browsers.get(lease)!);
+      billingFinalized.push(lease.id);
+    },
+  };
+  const init = () => ({ runId: 'provider-close-receipt', targetName: 'web', projectRoot: process.cwd(), app: {}, env, headed: false, workerSlot: 0, signal: new AbortController().signal, log: () => undefined });
+  const attempt = (attemptId: string) => ({ attemptId, artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+  try {
+    engine = web({ browser: provider });
+    const prepared = await engine.prepare!({ ...init(), slots: 1 }); env = { ...env, ...prepared?.env };
+    await engine.init!(init()); await engine.startAttempt!(attempt('a1'));
+    const failure = await engine.endAttempt!(cleanup()).catch((cause: unknown) => cause);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('native close receipt lost');
+    // A live caller budget keeps the release signal live, so the provider can
+    // finish billing: the exact lease is released once and its Chrome exits.
+    expect(released).toHaveLength(1);
+    expect(released[0]!.lease.id).toBe('local-close-1');
+    expect(released[0]!.signalAborted).toBe(false);
+    expect(billingFinalized).toEqual(['local-close-1']);
+    for (const chrome of browsers.values()) expect(chrome.proc.exitCode !== null || chrome.proc.signalCode !== null).toBe(true);
+    await expect(engine.startAttempt!(attempt('must-not-reuse'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(engine.dispose!(cleanup())).rejects.toBe(failure);
+    expect(released).toHaveLength(1);
+  } finally {
+    closeSpy.mockRestore();
+    await engine?.dispose!(cleanup()).catch(() => undefined);
+    await engine?.finish!({ ...init(), ...cleanup() });
+    for (const chrome of browsers.values()) await closeRemoteChrome(chrome);
+    await rm(artifactsDir, { recursive: true, force: true });
+  }
+});
