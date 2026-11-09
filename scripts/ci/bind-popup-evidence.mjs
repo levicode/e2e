@@ -47,7 +47,9 @@ export function bind({ root, slot, node, chromeVersion, chromeSha256, sourceComm
   for (const relative of dirs) {
     const directory = path.join(root, relative);
     if (!existsSync(directory) || !statSync(directory).isDirectory()) continue;
-    const files = walk(directory);
+    // The init-order runner directory holds a whole runner tree locally, but
+    // the artifact upload keeps only this one file from it.
+    const files = walk(directory).filter(file => relative !== EVIDENCE_DIRS[0] || path.basename(file) === 'popup-document-evidence.json');
     if (files.length === 0) continue;
     if (typeof chromeVersion !== 'string' || chromeVersion.trim() === '' || typeof chromeSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(chromeSha256)) {
       throw new Error(`popup evidence in ${relative} cannot be bound without the installed Chromium version and sha256`);

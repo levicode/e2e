@@ -114,12 +114,14 @@ test('collect and report compose over one artifact directory per slot', () => {
     writeFileSync(exitFile, '1\n');
     const summaries = path.join(directory, 'slots');
     mkdirSync(path.join(summaries, 'spec-slot-22.22.3'), { recursive: true });
+    mkdirSync(path.join(summaries, 'spec-slot-26'), { recursive: true });
     const script = path.join(import.meta.dirname, 'spec-slot-summary.mjs');
     execFileSync(process.execPath, [script, 'collect', '--slot', '22.22.3', '--log', logFile, '--exit-file', exitFile,
       '--job-status', 'failure', '--node-version', 'v22.22.3', '--output', path.join(summaries, 'spec-slot-22.22.3', 'summary.json')]);
+    // The CI upload keeps the artifact's own file name, not `summary.json`.
+    writeFileSync(path.join(summaries, 'spec-slot-26', 'spec-slot-26.json'), JSON.stringify({ slot: '26', status: 'success', failures: [], errors: [] }));
     const read = readSummaries(summaries);
-    assert.equal(read.length, 1);
-    assert.equal(read[0].slot, '22.22.3');
+    assert.deepEqual(read.map(summary => summary.slot), ['22.22.3', '26']);
     assert.equal(read[0].status, 'failure');
     assert.equal(read[0].failures.length, 1);
     assert.equal(read[0].errors.length, 1);

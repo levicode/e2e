@@ -15,6 +15,8 @@ function fixture() {
   const [initDir, borrowedDir, swipeDir] = EVIDENCE_DIRS;
   const init = path.join(root, initDir);
   writeFileSync(path.join(init, 'popup-document-evidence.json'), '{"schemaVersion":2}\n');
+  // The init-order runner tree stays local; the artifact keeps one file from it.
+  writeFileSync(path.join(init, 'trace.md'), 'not uploaded\n');
   const borrowed = path.join(root, borrowedDir);
   writeFileSync(path.join(borrowed, 'report.json'), '{"borrowed":true}\n');
   const swipe = path.join(root, swipeDir);

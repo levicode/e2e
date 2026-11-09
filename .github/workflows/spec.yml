@@ -273,6 +273,8 @@ jobs:
       # tests instead of only the job. This step never changes the verdict.
       - name: Per-slot test summary
         if: ${{ always() }}
+        # Diagnostic only: the test step above owns the verdict.
+        continue-on-error: true
         run: |
           node scripts/ci/spec-slot-summary.mjs collect \
             --slot "${{ matrix.node }}" \
@@ -500,6 +502,7 @@ jobs:
         run: node scripts/ci/spec-slot-summary.mjs annotations --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --output "$RUNNER_TEMP/spec-annotations.json"
       - name: Report failed slots and tests
         if: ${{ always() }}
+        continue-on-error: true
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: node scripts/ci/spec-slot-summary.mjs report --dir "$RUNNER_TEMP/spec-slots" --annotations "$RUNNER_TEMP/spec-annotations.json" --needs "$RESULTS"

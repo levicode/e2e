@@ -125,7 +125,7 @@ export function compareSlots(a, b) {
   return a.localeCompare(b);
 }
 
-/** Read every summary.json below dir (artifact downloads keep one directory per slot). */
+/** Read every per-slot summary below dir (artifact downloads keep one directory per slot). */
 export function readSummaries(dir) {
   const summaries = [];
   if (!existsSync(dir)) return summaries;
@@ -134,7 +134,7 @@ export function readSummaries(dir) {
       const file = path.join(directory, entry);
       const info = statSync(file);
       if (info.isDirectory()) { walk(file); continue; }
-      if (entry !== 'summary.json') continue;
+      if (!entry.endsWith('.json')) continue;
       try {
         const value = JSON.parse(readFileSync(file, 'utf8'));
         if (value !== null && typeof value === 'object' && typeof value.slot === 'string') summaries.push(value);
