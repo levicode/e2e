@@ -198,6 +198,16 @@ An expired session is a first-class failure: a missing, unreadable, foreign
 origin, or fully expired file fails the run with `UAT_SESSION_EXPIRED` and the
 login command above, instead of a silent redirect to the login page.
 
+A gateway page is not a session problem. When the entry answers 5xx, or the
+connection fails outright, the run fails with `UAT_APP_UNREACHABLE`, naming the
+status, the host, and how long the attempt waited. The setup stage opens the
+entry before any business action, so those connection-class failures are
+retried only there: at most twice, with waits of 1 s and then 3 s. A login
+redirect, an unusable session file, or any other failure is never retried, and
+the business steps keep `retries: 0`. The report's `## Setup 连接重试` section
+lists every attempt with its status and duration plus the retry budget, so a
+run the retry recovered shows the 504 it survived instead of hiding it.
+
 ## Run the scripted baseline
 
 ```bash
@@ -253,7 +263,8 @@ screenshots (which the model saw) stay in `.e2e-model/`, gitignored and private.
 - Raw run output: `apps/uat-verification/.e2e/` (scripted) or
   `apps/uat-verification/.e2e-model/` (model) in the checkout that executed the
   run, both gitignored. The fixed runner leaves them in `~/src/e2e-uat`. They
-  hold the report, trace pages, and a failure screenshot; treat them as private.
+  hold the report, trace pages, a failure screenshot, and `setup-attempts.json`
+  (the setup's bounded retry record the report reads); treat them as private.
 - Native ledger: `native-results.jsonl` in the same output directory, enabled by
   `E2E_NATIVE_RESULT_LEDGER` for this run only. One line per native operation
   with the command, sequence, transmitted timeout, `ok`, `effects`,

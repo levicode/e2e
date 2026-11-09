@@ -58,20 +58,64 @@ const login = `<!doctype html>
 <body>
   <p>扫码登录（fixture：自动完成）</p>
   <script>
-    const redirect = new URLSearchParams(location.search).get('redirect') || '/app/';
-    setTimeout(() => {
-      document.cookie = 'uat_session=ok; path=/; max-age=3600';
-      location.replace(redirect);
-    }, 300);
+    const params = new URLSearchParams(location.search);
+    const redirect = params.get('redirect') || '/app/';
+    // hold=1 is the page a signed-out app redirects to: it waits for a scan
+    // that never comes, so the loop check can prove the login-redirect verdict.
+    if (params.get('hold') !== '1') {
+      setTimeout(() => {
+        document.cookie = 'uat_session=ok; path=/; max-age=3600';
+        location.replace(redirect);
+      }, 300);
+    }
   </script>
 </body>
 </html>`;
 
+/** The app page, whatever path served it; `/flaky/` reuses it once its gateway recovers. */
+function sendApp(response) {
+  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  response.end(app);
+}
+
+/** A gateway page, not the app: what a 5xx looks like to the setup. */
+function sendGateway(response, status = 504) {
+  response.writeHead(status, { 'content-type': 'text/html; charset=utf-8' });
+  response.end(`<html><body>${status} Gateway Time-out</body></html>`);
+}
+
+// `/flaky/` answers its first request with a 504 and the app after that, so the
+// loop check can prove the bounded setup retry on a real browser.
+let flakyFailuresLeft = 1;
+
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
   if (url.pathname === '/app' || url.pathname === '/app/') {
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(app);
+    sendApp(response);
+    return;
+  }
+  if (url.pathname === '/flaky/' || url.pathname === '/flaky') {
+    if (flakyFailuresLeft > 0) {
+      flakyFailuresLeft -= 1;
+      sendGateway(response);
+      return;
+    }
+    sendApp(response);
+    return;
+  }
+  if (url.pathname === '/down/' || url.pathname === '/down') {
+    sendGateway(response, 503);
+    return;
+  }
+  if (url.pathname === '/signed-out/' || url.pathname === '/signed-out') {
+    // The app's own "the session is gone" answer: a cross-origin redirect to the
+    // SSO page, where the login window is left open (no auto scan here).
+    const port = server.address().port;
+    const loginPage = new URL(`http://localhost:${port}/login.html`);
+    loginPage.searchParams.set('hold', '1');
+    loginPage.searchParams.set('redirect', `http://127.0.0.1:${port}/app/`);
+    response.writeHead(302, { location: loginPage.toString() });
+    response.end();
     return;
   }
   if (url.pathname === '/login.html') {

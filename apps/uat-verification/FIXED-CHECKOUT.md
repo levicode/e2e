@@ -81,10 +81,10 @@ guards do not weaken for an explicit path. Do not point it at
 
 Exit codes: `0` every selected verification path passed on every selected
 browser launch, `2` the run could not start or the session or private model
-settings are unusable, anything else a path ran and did not pass. Setup
-failures (usage, a rejected checkout, a missing build tool, a commit without
-the UAT runner) also exit 2. A session or settings failure stops before the
-second path.
+settings are unusable, anything else a path ran and did not pass (a gateway
+that stayed down is such a failure, not exit `2`). Setup failures (usage, a
+rejected checkout, a missing build tool, a commit without the UAT runner) also
+exit 2. A session or settings failure stops before the second path.
 
 ## First-time setup
 
@@ -203,6 +203,14 @@ pnpm --filter @e2e-dev/uat-verification login
 Scan the QR code with WeCom while the headed window is open. The session is
 written to `~/.config/e2e-uat/session.json` and the next fixed-checkout run
 reuses it. Do not copy the session file into the repository or a ticket.
+
+### The gateway answered 5xx
+
+The run fails with `UAT_APP_UNREACHABLE`, naming the HTTP status, the host, and
+how long the attempt waited. The setup retries a connection-class failure at
+most twice (1 s, then 3 s) before giving up, and the report's
+`## Setup 连接重试` section lists each attempt. This is not a session expiry:
+do not sign in again. Re-run once the gateway answers.
 
 ### TLS, an internal CA, or a proxy
 
