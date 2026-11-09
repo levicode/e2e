@@ -31,7 +31,6 @@ export interface ScenarioNode {
   readonly name?: string;
   readonly text?: string;
   readonly states?: States;
-  readonly children?: readonly ScenarioNode[];
 }
 
 /** What the engine received, in order, with the exact issuance it was told to act on. */
@@ -45,12 +44,8 @@ export interface Dispatched {
 
 export interface ReferenceScenario {
   readonly engine: ReturnType<typeof defineEngine>;
-  /** The newest generation's ids by stable key. */
-  ids(): ReadonlyMap<string, string>;
   /** Every action the engine received, oldest first. */
   readonly dispatched: Dispatched[];
-  /** Retires every id and issues new ones under the same scope, as a reconnect does. */
-  reconnect(): void;
 }
 
 /** The tree every scenario starts from; a node we may act on carries a known role and name. */
@@ -69,15 +64,7 @@ const TREE: readonly ScenarioNode[] = [
 export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): ReferenceScenario {
   const generations = new Map<string, string>();
   const texts = new Map<string, string>();
-  const walked: ScenarioNode[] = [];
-  const walk = (nodes: readonly ScenarioNode[]): void => {
-    for (const node of nodes) {
-      walked.push(node);
-      if (node.text !== undefined) texts.set(node.key, node.text);
-      walk(node.children ?? []);
-    }
-  };
-  walk(tree);
+  for (const node of tree) if (node.text !== undefined) texts.set(node.key, node.text);
 
   let generation = 0;
   let nextId = 1;
@@ -87,7 +74,7 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
 
   const issue = (): void => {
     generation += 1;
-    for (const node of walked) generations.set(node.key, `@e${String(nextId++)}`);
+    for (const node of tree) generations.set(node.key, `@e${String(nextId++)}`);
   };
 
   const semantic = (node: ScenarioNode): SemanticNode => {
@@ -98,7 +85,6 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
       ...(node.name === undefined ? {} : { name: node.name }),
       ...(text === undefined ? {} : { text }),
       ...(node.states === undefined ? {} : { states: { ...node.states } }),
-      ...(node.children === undefined ? {} : { children: node.children.map(semantic) }),
     };
   };
 
@@ -123,7 +109,6 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
     version: '1.0.0',
     spiVersion: ENGINE_SPI_VERSION,
     actions: ['tap', 'dragTo'],
-    async init() {},
     async startAttempt(context) {
       attempt = context;
       opened = false;
@@ -163,13 +148,5 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
     },
   });
 
-  return {
-    engine,
-    ids: () => new Map(generations),
-    dispatched,
-    reconnect: () => {
-      issue();
-      showScreen();
-    },
-  };
+  return { engine, dispatched };
 }
