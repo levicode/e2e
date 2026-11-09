@@ -1063,10 +1063,10 @@ bunx @e2e-dev/web install chromium --with-deps
 
 This project is for internal use. Nothing publishes a native runtime bundle:
 there is no release asset, no public download URL, and no npm package that
-supplies this runtime, so a normal consumer install is not available. An
-internal user builds the bundle from a checkout. That build is the trusted
-producer, and the digest comes from the build, never from the bundle's own
-checksum file.
+supplies this runtime. The npm packages under the same names are a different
+Playwright implementation. An internal user builds the bundle from a checkout;
+that build is the trusted producer, and the digest comes from the build, never
+from the bundle's own checksum file.
 
 Prerequisites:
 
@@ -1077,53 +1077,58 @@ Prerequisites:
   records the source commit and tree it was built from.
 - A platform Chrome for Testing supports; see [Platform support](#platform-support).
 
-From the checkout root, where neither directory exists yet:
+From the checkout root, with both target directories not yet existing and
+their parent already canonical (`/tmp` is a symlink to `/private/tmp` on
+macOS, which the script refuses):
 
 ```bash
-node scripts/setup-source-native.mjs /tmp/e2e-native-work /tmp/e2e-native-project
+WORK=$HOME/e2e-native-work
+PROJECT=$HOME/e2e-native-project
+node scripts/setup-source-native.mjs "$WORK" "$PROJECT"
 ```
 
 The script installs the workspace, builds `e2e` and `@e2e-dev/web`, builds the
 native binary from the pinned `agent-browser` commit, installs Chromium, writes
-the bundle to `/tmp/e2e-native-work/bundle`, and installs it into
-`/tmp/e2e-native-project` through the bundle's `install.mjs`. It writes the
-SHA-256 it computed from the `manifest.json` it just wrote to
-`/tmp/e2e-native-work/trusted-manifest.json`.
+the bundle to `$WORK/bundle`, and installs it into `$PROJECT` through the
+bundle's `install.mjs`. It writes the SHA-256 it computed from the
+`manifest.json` it just wrote to `$WORK/trusted-manifest.json`.
 
 Read the digest outside the bundle and check the manifest against it before
 trusting either:
 
 ```bash
-B=/tmp/e2e-native-work/bundle
-DIGEST=$(node -p "require('/tmp/e2e-native-work/trusted-manifest.json').sha256")
+B="$WORK/bundle"
+DIGEST=$(node -p "require('$WORK/trusted-manifest.json').sha256")
 shasum -a 256 "$B/manifest.json"        # must print $DIGEST
 ```
 
-To install with the public CLI instead, start from a project that has a
-`package.json` and the bundle's tarballs:
+To install with the public CLI instead, use a separate project:
 
 ```bash
-PROJECT=/tmp/e2e-native-cli
-mkdir "$PROJECT" && cd "$PROJECT" && npm init -y
-npm install --save-dev file:"$B"/tarballs/e2e-[0-9]*.tgz file:"$B"/tarballs/e2e-dev-web-*.tgz
-npx e2e init --yes && npm install
-npx e2e-web runtime install --bundle "$B" --manifest-sha256 "$DIGEST" --package-manager npm --project "$PWD"
-npx e2e-web install chromium
+CLI=$HOME/e2e-native-cli
+mkdir "$CLI" && cd "$CLI" && pnpm init
+CORE=$(cd "$B/tarballs" && echo e2e-[0-9]*.tgz)
+WEB=$(cd "$B/tarballs" && echo e2e-dev-web-*.tgz)
+pnpm add --save-dev "file:$B/tarballs/$CORE" "file:$B/tarballs/$WEB"
+pnpm exec e2e init --yes
+pnpm install
+pnpm exec e2e-web runtime install --bundle "$B" --manifest-sha256 "$DIGEST" --package-manager pnpm --project "$PWD"
+pnpm exec e2e-web install chromium
 ```
 
 Then run the example against an app URL as the Quickstart describes. After the
-install, `npx e2e -v`, `.e2e/native-runtime.json`, and the bundle's
+install, `pnpm exec e2e -v`, `.e2e/native-runtime.json`, and the bundle's
 `manifest.json` are the identity record; see [Version identity](#version-identity).
 
 ### Platform support
 
 | Platform | Status | Evidence |
 | --- | --- | --- |
-| macOS arm64 | Verified | A clean install of the source-built bundle (`e2e` 0.21.3, `@e2e-dev/web` 0.15.3, native `agent-browser` 0.39.4, manifest `96b23b72…`) ran a Web test and `--video on` on 2026-11-09. |
+| macOS arm64 | Verified | A clean install of the source-built bundle (`e2e` 0.21.3, `@e2e-dev/web` 0.15.3, native `agent-browser` 0.39.4) ran a Web test, passed `--video on` with FFmpeg present, and named the missing dependency without it, recorded 2026-11-09. |
 | macOS x64 | Unverified | The installer has a Chrome for Testing `mac-x64` path, and `native-macos-candidate.yml` builds the architecture, but no install or run has been recorded. Not a support claim. |
 | Linux x64 | Unverified | The installer has a Chrome for Testing `linux64` path, and `native-candidate.yml` builds a Linux bundle, but no install or run has been recorded. Not a support claim. |
 | Linux arm64 | Not supported | The native Chromium installer exits 1 because Chrome for Testing publishes no ARM64 Linux build, and the public Web options cannot select a system Chromium. Use a hosted `BrowserProvider` for these hosts. |
-| Windows | Not supported (WSL only) | Native Windows is outside the matrix; follow the Quickstart WSL note. |
+| Windows | Not supported (WSL only) | Native Windows is outside the matrix; follow the Quickstart WSL note. A WSL run follows the unverified Linux x64 path. |
 
 **Verified** means a clean install and a passing Web run were recorded from a
 specific bundle. **Unverified** means the code path exists but that run has not
@@ -1141,8 +1146,8 @@ Recording is the only Web feature that needs FFmpeg. The native engine invokes
   enabled fails before the page is activated, with an `ENGINE_FAILURE` naming
   the dependency: `Video recording requires FFmpeg, and no ffmpeg executable is
   on PATH. Install it (macOS: brew install ffmpeg; Debian/Ubuntu: sudo apt-get
-  install ffmpeg) and rerun.` A provider recorder is exempt because its encoder
-  runs with the hosted browser.
+  install ffmpeg) and rerun.` A provider recorder is exempt because it does not
+  use the local native encoder.
 - `agent-browser doctor` reports a missing FFmpeg as a warning with the
   platform install hint. Install it with the platform package manager.
 - A `.webm` recording needs the `libvpx` encoder and an `.mp4` recording needs
