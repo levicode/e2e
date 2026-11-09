@@ -602,7 +602,15 @@ trees, on both platforms, without a device.
   ruleset requires (`spec gate`, `benchmark gate`, `mobile gate`, `docs
   gate`); it fails when any job it needs failed or was cancelled and passes
   over a skipped one, so a new job gates merges once it is in its gate's
-  `needs`. The benchmark and docs workflows gate on paths: a `changes` job
+  `needs`. `spec`'s `consumers` job is the reference consumer matrix on the
+  same source-pinned native runtime (the eleven files the 125-test consumer
+  set names, plus the thirteen scenario tests beside them) and is in `spec
+  gate`'s `needs`, so a red matrix blocks a merge; its per-file counts are
+  pinned there and adding a test to one of those files updates them. `spec`'s
+  `native-targeted` and `popup-joint` jobs stay gated on the
+  `ci/s25-main-integration-20261101` branch: they run only for that branch's
+  pull requests and pushes, and are skipped — which the gate accepts — on
+  every other change. The benchmark and docs workflows gate on paths: a `changes` job
   (dorny/paths-filter over `.github/filters.yml`) skips the suites when the
   change cannot reach them, and a manual dispatch always runs them. Never
   use a workflow-level `paths:` filter: the gate would never report and the

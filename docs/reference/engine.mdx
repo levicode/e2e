@@ -913,6 +913,17 @@ Engines that omit it keep their existing recovery behavior;
 the stable viewport capability remains usable across resets. Changing scope does not
 clear secret exposure, pixel taint, or attempt accounting.
 
+A target whose id the newest observation no longer lists is re-found only by its
+descriptor, only within the same `identityScope`, and only when exactly one node
+of the newest observation matches it. That is a fresh issuance, not a rebinding:
+the runner dispatches the matching node's own reference from that observation,
+with that observation's revision, and never rewrites the old id, reuses the old
+id's value for the replacement, or keeps the old reference alive. Navigation, a
+reconnect that keeps the scope, a batch of actions that re-observes between them,
+and a re-rendered list all follow this one rule. A scope change, a screen with two
+matches, or a node with no descriptor leaves the old target gone
+(`LOCATOR_NOT_FOUND`).
+
 The runner selects a locator read purpose through the optional third `locate`
 argument. Omission means `protected`: model-facing MCP locate must meet the same
 privacy guarantees as protected observations. Deterministic test fixtures explicitly

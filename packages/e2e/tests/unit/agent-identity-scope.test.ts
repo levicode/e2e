@@ -57,6 +57,12 @@ async function exercise(scopes: readonly (string | undefined)[], staleDuringActi
       return { status: 'passed', summary: 'checked scope boundary' };
     },
   };
+  await runAgentStep(engine, executor);
+  return { actions, failure };
+}
+
+/** Runs one agent step through the real fixture, session, feed, and action dispatcher. */
+async function runAgentStep(engine: ReturnType<typeof defineEngine>, executor: StepExecutor): Promise<void> {
   const config = resolveConfig({ targets: [{ name: 'fake', platform: 'custom', engine }], cache: 'off', agents: { default: { executor } } }, { projectRoot: process.cwd(), env: {} });
   const signal = new AbortController().signal;
   const steps = new StepRecorder('attempt');
@@ -68,7 +74,6 @@ async function exercise(scopes: readonly (string | undefined)[], staleDuringActi
     priorSteps: () => steps.completed(), agentContext: undefined, saveSession: undefined, models: new WorkerModels(() => {}),
   });
   await fixtures.agent.act('Save');
-  return { actions, failure };
 }
 
 describe('engine identity scopes', () => {
@@ -107,4 +112,52 @@ describe('engine identity scopes', () => {
       expect(await exercise(scopes, true)).toEqual({ actions: ['old', 'new'], failure: undefined });
     });
   }
+});
+
+/**
+ * The owner decision #9 asks for: after navigation or a same-scope reconnect,
+ * re-finding an old target by its descriptor is a *new issuance*, not a
+ * rebinding. The old id is dropped, and the engine is asked to act on the
+ * newest screen's own reference and revision.
+ */
+describe('a target re-found by its descriptor', () => {
+  it("dispatches the newest screen's own issuance, never the old id", async () => {
+    let phase = 0;
+    const dispatched: { id: string; revision: string }[] = [];
+    const engine = defineEngine({
+      name: 'refound-fixture', version: '1', spiVersion: 1, referenceRevisions: 'engine',
+      actions: ['tap'],
+      async observe(): Promise<EngineSnapshot> {
+        return {
+          identityScope: 'document-1',
+          root: {
+            ref: { id: 'root', revision: `issue-${phase}` }, role: 'document', children: [
+              { ref: { id: phase === 0 ? '@e1' : '@e2', revision: `issue-${phase}` }, role: 'button', name: 'Save' },
+            ],
+          },
+          viewport: { width: 800, height: 600 },
+        };
+      },
+      async perform(ref) {
+        dispatched.push({ id: ref.id, revision: ref.revision });
+      },
+    });
+    let newest = '';
+    const executor: StepExecutor = {
+      name: 'refound-consumer', version: '1', cache: 'off',
+      async runStep(ctx) {
+        expect((await ctx.observe()).text).toContain('#@e1');
+        // The same document re-renders the control: the engine retires the old
+        // element and issues a new id with a new issuance revision.
+        phase = 1;
+        newest = (await ctx.observe()).text;
+        await ctx.actions.tap({ id: '@e1' });
+        return { status: 'passed', summary: 'tapped the re-rendered Save' };
+      },
+    };
+    await runAgentStep(engine, executor);
+    expect(newest).toContain('#@e2');
+    expect(newest).not.toContain('#@e1');
+    expect(dispatched).toEqual([{ id: '@e2', revision: 'issue-1' }]);
+  });
 });
