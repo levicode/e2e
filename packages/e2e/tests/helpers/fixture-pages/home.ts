@@ -130,13 +130,20 @@ line2  </textarea>
   <div id="blank-card" class="">Blank</div>
   <ul data-testid="items"><li>Item</li></ul>
   <script>
-    setTimeout(() => {
-      const card = document.createElement('div');
-      card.id = 'late-card';
-      card.className = 'card late';
-      card.textContent = 'Late card';
-      document.body.appendChild(card);
-    }, 600);
+    // The oracle measures the matcher step from after app.open returns, which
+    // is load plus the runner's post-navigation read. Starting the delay during
+    // parse subtracts that overhead from the step duration and can push it
+    // under the "polled at least once" bound; start it at load and keep the
+    // bound well inside the wait.
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const card = document.createElement('div');
+        card.id = 'late-card';
+        card.className = 'card late';
+        card.textContent = 'Late card';
+        document.body.appendChild(card);
+      }, 1_200);
+    });
   </script>
 </body>
 </html>`),
