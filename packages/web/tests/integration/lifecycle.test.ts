@@ -110,12 +110,12 @@ function* walk(node: SemanticNode): Generator<SemanticNode> {
 /**
  * Decodes a recording inside the page and reads its last frame: the frame's
  * size, how much of it is the grey a screencast pads a smaller frame with,
- * and how much of it is content.
+ * how much of it is content, how long it plays, and how many frames it decoded.
  */
 async function lastFrame(
   browser: Browser,
   webm: Buffer,
-): Promise<{ width: number; height: number; padded: number; inked: number }> {
+): Promise<{ width: number; height: number; padded: number; inked: number; duration: number; frames: number }> {
   return browser.evaluate(async (bytes) => {
     const video = document.createElement('video');
     video.muted = true;
@@ -124,6 +124,9 @@ async function lastFrame(
       video.addEventListener('loadedmetadata', () => resolve(), { once: true });
       video.addEventListener('error', () => reject(new Error('the recording did not decode')), { once: true });
     });
+    let presented = 0;
+    const count = () => { presented += 1; if (!video.ended) video.requestVideoFrameCallback(count); };
+    video.requestVideoFrameCallback(count);
     await video.play();
     await new Promise<void>((resolve) => {
       video.addEventListener('ended', () => resolve(), { once: true });
@@ -145,7 +148,11 @@ async function lastFrame(
       else if (r < 200 || g < 200 || b < 200) inked += 1;
     }
     const total = data.length / 4;
-    return { width: canvas.width, height: canvas.height, padded: padded / total, inked: inked / total };
+    const quality = video.getVideoPlaybackQuality();
+    return {
+      width: canvas.width, height: canvas.height, padded: padded / total, inked: inked / total,
+      duration: video.currentTime, frames: Math.max(presented, quality.totalVideoFrames),
+    };
   }, [...webm]);
 }
 
@@ -1373,6 +1380,9 @@ describe('web engine lifecycle', () => {
           'video/video-part2.webm',
           'video/video-part3.webm',
         ]);
+        // A restart and a state reset continue the recording in order.
+        const started = segments.map((segment) => Date.parse(segment.startedAt));
+        expect(started).toEqual(started.toSorted((a, b) => a - b));
         const viewer = fixtureOf(engine, 'v1');
         for (const segment of segments) {
           const absolute = path.join(videoDir, segment.path);
@@ -1390,6 +1400,9 @@ describe('web engine lifecycle', () => {
           expect({ width: frame.width, height: frame.height }, segment.path).toEqual(viewport);
           expect(frame.padded, `${segment.path} padded`).toBeLessThan(0.01);
           expect(frame.inked, `${segment.path} inked`).toBeGreaterThan(0.0005);
+          // The part actually plays: a real duration and decoded frames.
+          expect(frame.duration, `${segment.path} duration`).toBeGreaterThan(0);
+          expect(frame.frames, `${segment.path} frames`).toBeGreaterThan(0);
         }
       }, evidence);
     } finally {
