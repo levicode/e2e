@@ -402,14 +402,21 @@ describe('AttemptSession', () => {
     const engine = await nativeAttempt({ connect: { cdpEndpoint: () => 'ws://synthetic.test/attempt', reconnectEndpoint: async () => { now += 40; return 'ws://synthetic.test/reconnect'; } } });
     const peer = await disconnected(engine);
     const browser = nativeBrowser(engine, () => operation(200));
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    // Both clocks feed the wire budget: the browser-side deadline uses
+    // Date.now() while the native recovery accounting uses performance.now().
+    const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
       await browser.title();
       // Native owns the CDP dial inside scope.reconnect, under this remaining deadline.
       expect(peer.frames.find(frame => frame['command'] === 'scope.reconnect')?.['timeoutMs']).toBe(160);
       // Explicit native cancellation settlement replaces Playwright's private half-budget timeout lead.
       expect(peer.frames.find(frame => frame['command'] === 'page.title')?.['timeoutMs']).toBe(160);
-    } finally { await engine.dispose!(cleanup()); }
+    } finally {
+      performanceNow.mockRestore();
+      dateNow.mockRestore();
+      await engine.dispose!(cleanup());
+    }
   });
 
   it('keeps the new 1s graph evaluation budget after a 10s witness graph and 300ms reconnect', async () => {
@@ -420,7 +427,10 @@ describe('AttemptSession', () => {
     } }, frame => frame.command === 'page.evaluate' ? { data: { value: { ok: true, value: null } } } : undefined);
     await engine.startAttempt!(nativeContext());
     const peer = peers.at(-1)!;
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    // The browser-side operation deadline uses Date.now(); freeze it with the
+    // performance clock so a loaded host cannot shave the 10s wire budget.
+    const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
       await nativeBrowser(engine, () => operation(10_000)).evaluate(() => null);
       expect(peer.frames.find(frame => frame['command'] === 'page.evaluate')?.['timeoutMs']).toBe(10_000);
@@ -430,7 +440,11 @@ describe('AttemptSession', () => {
       expect(peer.frames.find(frame => frame['command'] === 'scope.reconnect')?.['timeoutMs']).toBe(700);
       expect(peer.frames.findLast(frame => frame['command'] === 'page.evaluate')?.['timeoutMs']).toBe(700);
       expect(peer.frames.filter(frame => frame['command'] === 'page.evaluate')).toHaveLength(2);
-    } finally { await engine.dispose!(cleanup()); }
+    } finally {
+      performanceNow.mockRestore();
+      dateNow.mockRestore();
+      await engine.dispose!(cleanup());
+    }
   });
 
   it('waits for the initial route registry acknowledgment before publishing the attempt', async () => {
@@ -543,12 +557,17 @@ describe('AttemptSession', () => {
     });
     const peer = await disconnected(engine);
     const browser = nativeBrowser(engine, () => operation(200));
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
       await browser.title();
       expect(peer.frames.find(frame => frame['command'] === 'scope.reconnect')?.['timeoutMs']).toBe(160);
       expect(peer.frames.find(frame => frame['command'] === 'page.title')?.['timeoutMs']).toBe(130);
-    } finally { await engine.dispose!(cleanup()); }
+    } finally {
+      performanceNow.mockRestore();
+      dateNow.mockRestore();
+      await engine.dispose!(cleanup());
+    }
   });
 
   it('does not dispatch reconnect or the action when endpoint resolution consumes its deadline', async () => {

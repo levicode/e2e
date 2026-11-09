@@ -66,14 +66,27 @@ jobs:
       - name: MCP Registry entry matches the runner
         run: pnpm mcp-server:check
       # The registry rejects an invalid entry only at publish, from a release
-      # tag that can no longer change.
+      # tag that can no longer change. The publisher tarball is an external
+      # download: it retries with backoff, and when the CDN stays unavailable
+      # the check only loses the live-registry opinion, not the product gate.
+      # `mcp-server:check` above still gates the entry's name and version, and
+      # mcp-registry.yml validates it again at publish time.
       - uses: ./.github/actions/mcp-publisher
+        id: mcp_publisher
+        with:
+          required: false
       - name: MCP Registry accepts the entry
+        if: ${{ steps.mcp_publisher.outputs.available == 'true' }}
         run: '"$RUNNER_TEMP/mcp-publisher" validate packages/e2e/server.json'
-      - name: Agent skill scripts
+      - name: MCP Registry publisher unavailable
+        if: ${{ steps.mcp_publisher.outputs.available != 'true' }}
+        run: echo "::warning::The pinned MCP Registry publisher could not be downloaded; the entry was not checked against the live registry. pnpm mcp-server:check still gates its name and version, and mcp-registry.yml validates it again at publish time."
+      - name: Agent skill and CI script tests
         run: |
           pnpm exec tsc -p .dev/skills/babysit/scripts
           node --test .dev/skills/babysit/scripts/pr-status.test.ts
+          node --test scripts/ci/spec-slot-summary.test.mjs
+          node --test scripts/ci/bind-popup-evidence.test.mjs
       - name: Set up source-pinned native runtime
         uses: ./.github/actions/native-runtime
         with:
@@ -200,11 +213,15 @@ jobs:
             }), { flag: 'wx', mode: 0o600 });
             onActionCapture = directory;
           } catch { console.error('SPEC_ON_ACTION_CAPTURE_UNAVAILABLE'); }
+          const chromeVersion = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
+          const chromeSha256 = createHash('sha256').update(fs.readFileSync(executable)).digest('hex');
           const values = {
             E2E_SPEC_EVIDENCE_DIR: root,
             ...(onActionCapture === undefined ? {} : { E2E_ON_ACTION_CAPTURE_DIR: onActionCapture }),
             E2E_CHAIN_CHROME_EXECUTABLE: executable,
             E2E_POPUP_SWIPE_CHROME_EXECUTABLE: executable,
+            E2E_SPEC_CHROME_VERSION: chromeVersion,
+            E2E_SPEC_CHROME_SHA256: chromeSha256,
             E2E_CHAIN_EVIDENCE_DIR: path.join(root, 'chains'),
             E2E_INTEROP_EVIDENCE_DIR: path.join(root, 'interop'),
             E2E_INTEROP_FILE_SCOPED_EVIDENCE: '1',
@@ -215,9 +232,7 @@ jobs:
           fs.writeFileSync(path.join(root, 'binding.json'), JSON.stringify({
             sourceCommit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
             attempt: process.env.GITHUB_RUN_ATTEMPT, node: process.version,
-            installed, executable,
-            chromeVersion: execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(),
-            chromeSha256: createHash('sha256').update(fs.readFileSync(executable)).digest('hex'),
+            installed, executable, chromeVersion, chromeSha256,
             popupDocumentHelperSha256: createHash('sha256').update(fs.readFileSync(path.join(fs.realpathSync(process.env.GITHUB_WORKSPACE), 'packages/e2e/tests/helpers/popup-document-evidence.ts'))).digest('hex'),
             popupDocumentTestSha256: createHash('sha256').update(fs.readFileSync(path.join(fs.realpathSync(process.env.GITHUB_WORKSPACE), 'packages/e2e/tests/integration/web-popup-init-order.test.ts'))).digest('hex'),
             popupDocumentFixtureSha256: createHash('sha256').update(fs.readFileSync(path.join(fs.realpathSync(process.env.GITHUB_WORKSPACE), 'packages/e2e/tests/fixtures/popup-init-order/cases.txt'))).digest('hex'),
@@ -235,17 +250,60 @@ jobs:
           FAULT_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.fault-manifest-sha256 }}
           FAULT_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.fault-run-attempt }}
         run: |
-          set -euo pipefail
-          pnpm --filter e2e run build
-          pnpm --filter @e2e-dev/web run build
-          export E2E_PLATFORM_HANDLER_DIAGNOSTIC=1
-          export E2E_CAPTURE_SOURCE_COMMIT="$(git rev-parse HEAD)"
-          export E2E_CAPTURE_SOURCE_TREE="$(git rev-parse HEAD^{tree})"
-          test "$E2E_CAPTURE_SOURCE_COMMIT" = "$GITHUB_SHA"
-          # A failure inside the e2e package must not hide the web package's
-          # native acceptance tests (P07 among them): keep the aggregate exit
-          # status while running them when the chained test script stopped early.
-          node scripts/ci/spec-fixture-runtime.ts "$RUNNER_TEMP/ci-native-runtime" "$PRODUCTION_MANIFEST_SHA256" "$PRODUCTION_RUN_ATTEMPT" "$RUNNER_TEMP/ci-native-fault-runtime" "$FAULT_MANIFEST_SHA256" "$FAULT_RUN_ATTEMPT" "$E2E_SPEC_EVIDENCE_DIR/runtime" -- sh -c 'pnpm test; status=$?; if [ "$status" -ne 0 ]; then pnpm --filter @e2e-dev/web run test || status=$?; fi; exit "$status"' 
+          set -uo pipefail
+          log="$RUNNER_TEMP/spec-test-${{ matrix.node }}.log"
+          set +e
+          (
+            set -euo pipefail
+            pnpm --filter e2e run build
+            pnpm --filter @e2e-dev/web run build
+            export E2E_PLATFORM_HANDLER_DIAGNOSTIC=1
+            export E2E_CAPTURE_SOURCE_COMMIT="$(git rev-parse HEAD)"
+            export E2E_CAPTURE_SOURCE_TREE="$(git rev-parse HEAD^{tree})"
+            test "$E2E_CAPTURE_SOURCE_COMMIT" = "$GITHUB_SHA"
+            # A failure inside the e2e package must not hide the web package's
+            # native acceptance tests (P07 among them): keep the aggregate exit
+            # status while running them when the chained test script stopped early.
+            node scripts/ci/spec-fixture-runtime.ts "$RUNNER_TEMP/ci-native-runtime" "$PRODUCTION_MANIFEST_SHA256" "$PRODUCTION_RUN_ATTEMPT" "$RUNNER_TEMP/ci-native-fault-runtime" "$FAULT_MANIFEST_SHA256" "$FAULT_RUN_ATTEMPT" "$E2E_SPEC_EVIDENCE_DIR/runtime" -- sh -c 'pnpm test; status=$?; if [ "$status" -ne 0 ]; then pnpm --filter @e2e-dev/web run test || status=$?; fi; exit "$status"'
+          ) 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$RUNNER_TEMP/spec-test-${{ matrix.node }}.exit"
+          exit "$status"
+      # One small JSON per slot so the gate can name the slot and the failed
+      # tests instead of only the job. This step never changes the verdict.
+      - name: Per-slot test summary
+        if: ${{ always() }}
+        run: |
+          node scripts/ci/spec-slot-summary.mjs collect \
+            --slot "${{ matrix.node }}" \
+            --log "$RUNNER_TEMP/spec-test-${{ matrix.node }}.log" \
+            --exit-file "$RUNNER_TEMP/spec-test-${{ matrix.node }}.exit" \
+            --job-status "${{ job.status }}" \
+            --node-version "$(node --version)" \
+            --output "$RUNNER_TEMP/spec-slot-${{ matrix.node }}.json"
+      - name: Retain the per-slot test summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: spec-slot-${{ matrix.node }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: ${{ runner.temp }}/spec-slot-${{ matrix.node }}.json
+      # Bind the opt-in popup evidence to this exact run, attempt, matrix slot
+      # and installed Chromium. The evidence bytes are untouched; the digest
+      # and identity live beside them in binding.json.
+      - name: Bind popup evidence to this run, attempt, slot and Chromium
+        if: ${{ always() }}
+        run: |
+          node scripts/ci/bind-popup-evidence.mjs \
+            --slot "${{ matrix.node }}" \
+            --node "$(node --version)" \
+            --chrome-version "$E2E_SPEC_CHROME_VERSION" \
+            --chrome-sha256 "$E2E_SPEC_CHROME_SHA256" \
+            --source-commit "$GITHUB_SHA" \
+            --source-tree "$(git rev-parse HEAD^{tree})" \
+            --run "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Retain validated HUNG cleanup metadata
         if: ${{ always() }}
         continue-on-error: true
@@ -266,6 +324,7 @@ jobs:
             ${{ env.E2E_SPEC_EVIDENCE_DIR || format('{0}/spec-fixtures-not-created', runner.temp) }}
             packages/e2e/.e2e/popup-init-order-borrowed
             packages/e2e/.e2e/popup-init-order/runner/popup-document-evidence.json
+            packages/e2e/.e2e/popup-init-order/runner/binding.json
             packages/e2e/.e2e/popup-swipe-borrowed-pair
 
   # A new user's first install of the packed packages, which pnpm 11 and
@@ -409,8 +468,41 @@ jobs:
     needs: [native-runtime, check, test, install, consumers, native-targeted, popup-joint]
     if: ${{ always() }}
     runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      # Read the per-slot test jobs and the failure annotations that name the
+      # exact test. This only reads this run; it grants no write.
+      actions: read
+      checks: read
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # The verdict stays the job results below. These summaries only explain a
+      # red test job with its matrix slot and the tests that failed there.
+      - name: Download per-slot test summaries
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: spec-slot-*
+          path: ${{ runner.temp }}/spec-slots
+          merge-multiple: false
+      - name: Read failure annotations
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/spec-slot-summary.mjs annotations --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --output "$RUNNER_TEMP/spec-annotations.json"
+      - name: Report failed slots and tests
+        if: ${{ always() }}
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: node scripts/ci/spec-slot-summary.mjs report --dir "$RUNNER_TEMP/spec-slots" --annotations "$RUNNER_TEMP/spec-annotations.json" --needs "$RESULTS"
       - name: Require every job to pass or skip
         env:
           RESULTS: ${{ toJSON(needs) }}
