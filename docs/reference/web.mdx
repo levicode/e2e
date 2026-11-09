@@ -1019,8 +1019,16 @@ URL. Do not replace the independent digest with the bundle's own checksum file.
 
 This integration currently requires that explicit offline bundle step. A plain
 npm/pnpm package install or `e2e init --install` does not obtain a native runtime
-or create a verified descriptor. Do not proceed directly to a Web test in a
-fresh project. No public automatic runtime-download path is claimed here.
+or create a verified descriptor, and the explicit Chromium installer fails with
+`INVALID_STATE` until the descriptor exists. Do not proceed directly to a Web
+test in a fresh project.
+
+**Today this blocks a normal user with a local Web target.** No runtime bundle
+and no trusted manifest digest is published: the native candidate workflows
+upload platform bundles as GitHub Actions artifacts after their gates pass, and
+there is no release asset, documented download URL, or automatic acquisition
+path. A fresh project cannot start a local Web test until a trusted producer
+supplies a bundle and a digest obtained independently of that bundle.
 
 <CodeGroup>
 ```bash npm
@@ -1048,12 +1056,54 @@ bunx @e2e-dev/web install chromium --with-deps
 - The native installer selects Chrome for Testing Stable, not Playwright's
   browser revision. Record the actual Chromium version and executable hash in
   reproducible installation evidence; `playwright-core` is the raw client only.
-- Linux ARM64 needs a separately installed system Chromium and an explicit
-  supported executable configuration; the native Chrome for Testing installer
-  does not supply an ARM64 Linux build. Recording also needs a system FFmpeg
-  with the required encoders; npm package installation does not provide it.
 - Reports display recognized Chromium product versions as `chromium <version>`
   and preserve the configured user-agent text.
+
+### Platform support
+
+| Platform | Local Web status | Notes |
+| --- | --- | --- |
+| macOS arm64 | Supported | Chrome for Testing `mac-arm64`, with a matching verified bundle. |
+| macOS x64 | Supported by the installer | Chrome for Testing `mac-x64`, with a matching verified bundle. |
+| Linux x64 | Supported | Chrome for Testing `linux64`; `--with-deps` also installs the system libraries Chromium needs. |
+| Linux arm64 | Not supported for a local launch | The native Chromium installer exits 1 because Chrome for Testing publishes no ARM64 Linux build, and the public Web options have no way to select a system Chromium. Use a hosted `BrowserProvider` for these hosts. |
+| Windows | WSL only | Follow the Quickstart note; native Windows is not part of the supported matrix. |
+
+A matching bundle is still required on every supported platform.
+
+### Recording and FFmpeg
+
+Recording is the only Web feature that needs FFmpeg. The native engine invokes
+`ffmpeg` from `PATH`; npm packages do not provide it.
+
+- Without FFmpeg, tests that do not record still pass. An attempt with `video`
+  enabled fails when recording starts. The native error names FFmpeg
+  (`ffmpeg not found or failed to execute: ... Install ffmpeg to enable
+  recording.`), but the runner currently surfaces `ENGINE_FAILURE` and
+  `browser-failure` without that cause, so read the trace and run the bundle's
+  `agent-browser doctor` when a recording fails.
+- `agent-browser doctor` reports a missing FFmpeg as a warning with the
+  platform install hint. Install it with the platform package manager.
+- A `.webm` recording needs the `libvpx` encoder and an `.mp4` recording needs
+  `libx264`; a stripped-down FFmpeg build that lacks one fails only those
+  recordings.
+
+### Version identity
+
+Read back what is installed instead of assuming it:
+
+- `npx e2e -v` prints the runner version; `npm ls e2e @e2e-dev/web` (or
+  `pnpm list`) prints the runner and engine package versions.
+- `.e2e/native-runtime.json` records the bundle root, `manifestSha256`,
+  `platform`, `architecture`, `source.commit` and `tree`, and
+  `nativeSource.commit` and `tree`.
+- The bundle's `manifest.json` names the native binary path and its SHA-256 and
+  the core/Web archives. Running `"$BUNDLE/bin/agent-browser" --version` prints
+  the native CLI version; the bundle's negotiation record carries the Chromium
+  version and hash.
+- Startup re-verifies the descriptor against the bundle and the installed
+  package inventory, so a mismatched package or binary fails before a test
+  runs.
 
 ### Private CA
 
