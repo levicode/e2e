@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "e274a27991ed9b090ebb7a634c0fef908bbfae56",
-    "tree": "a849ff6a721e499a4e458ab9ee5130062419065a",
+    "commit": "4d00d3a78f5dc11c64c7f9217e6dec473ca5c9c5",
+    "tree": "e7a6f039a0ed1518ccccd230948f73f537118be6",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -1357,475 +1357,487 @@
       {
         "name": "native::client_debt::tests::unpublished_non_pausing_autoattach_is_exact_observer_only",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_ingress_observation_preserves_existing_live_window",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_capture_before_reader_without_slot_cannot_install_stale_stamp",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_publication_pending_blocks_arm_and_final_consume_without_clearing_root",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_owned_event_fences_new_capture_after_old_slot_settles_before_publish",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_incomplete_or_overlapping_publication_never_reopens_authority",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_created_foreign_observer_and_recording_events_do_not_revoke",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_final_submit_rejects_pre_admitted_unrelated_input",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_revoke_before_consume_has_no_child_mutation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_consume_before_revoke_keeps_both_debts_and_late_ack_never_reopens",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_root_terminal_and_authority_change_each_reject_reserved_child",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_is_one_child_and_exact_owner_not_just_equal_numeric_keys",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_admission_preserves_token_first_cause_before_clock_expiry",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_reservation_failure_before_commit_does_not_leave_a_half_reservation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_native_identity_and_owner_retirement_revoke_before_reserved_child_submit",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_failure_receipt_is_not_cleared_by_full_late_ack_and_producer_settlement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::admission_stop_receipt_is_exact_and_not_minted_from_revocation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::admission_stop_expired_original_deadline_keeps_legacy_error_and_typed_cause",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_waiters_all_wake_on_exact_reader_ack_without_forgiving_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_deadline_and_cancel_keep_unsettled_input_owned",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_rechecks_authority_after_ack_and_never_revives_failed_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_eof_and_context_retirement_wake_without_admitting",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
+        "ignored": false
+      },
+      {
+        "name": "native::client_debt::tests::cleanup_object_capacity_waits_for_the_bounded_pool_to_drain",
+        "path": "cli/src/native/client_debt.rs",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
+        "ignored": false
+      },
+      {
+        "name": "native::client_debt::tests::cleanup_object_capacity_uses_the_operation_deadline",
+        "path": "cli/src/native/client_debt.rs",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::quotas_do_not_borrow_recording_security_or_destroy_slots",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::native_group_accounts_many_roots_and_property_handles_as_one_obligation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::early_release_ack_cannot_discharge_late_creation_and_disposal_is_once_only",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::unsent_old_receipt_never_submits_into_or_drops_a_later_group_lifecycle",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::abandoning_unsubmitted_group_does_not_leak_an_obligation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_release_before_exact_realm_destroy_is_discharged",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_pending_release_exact_session_detach_is_discharged",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_wrong_realm_session_or_frame_detach_keeps_rejected_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_unknown_creator_preserves_pending_and_rejected_cleanup_on_realm_destroy",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_new_context_epoch_never_borrows_prior_realm_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_child_group_detach_discharges_only_child_and_preserves_parent_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destroyed_group_consumes_without_new_release_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_live_release_retains_exact_pending_command_until_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_foreign_owner_operation_session_and_name_never_consume_proof",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_old_receipt_cannot_consume_reused_name_or_new_realm_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_mixed_unknown_creator_never_acquires_destroyed_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_unsent_abandonment_keeps_legacy_strict_disposal_not_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_integrity_loss_cannot_borrow_prior_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_never_discharges_other_rejected_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_between_claim_and_reserve_removes_only_own_unsent_release",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_between_reserve_and_finish_accepts_only_destroyed_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_name_alone_cannot_mint_receipt_for_registered_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_context_epoch_reuse_without_new_group_refuses_old_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_pending_unknown_creator_and_late_ack_preserve_cleanup_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_rejected_release_never_turns_into_success_or_retry",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_retired_owner_never_uses_destruction_noop",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destroyed_receipt_preserves_unrelated_pending_input",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_child_detach_noop_preserves_parent_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_unknown_creator_after_release_reservation_revokes_realm_retirement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::realm_destruction_discharges_object_component_but_not_input_effect",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_relinquishment_is_exact_and_never_restores_admission",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_relinquishment_retains_unknown_child_and_command_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_failed_commit_preserves_index_and_ledger",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::terminal_read_only_settled_ack_requires_operation_proof_and_exact_bindings",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_is_read_only_exact_borrowed_owner_evidence_not_admission",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_refuses_every_live_resource_and_uncertain_context",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eof_never_acknowledges_commands_or_pending_acquisition",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_contamination_survives_exact_debt_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::retired_owner_cleanup_is_one_shot_accounted_and_not_application_authority",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::realm_metadata_is_bounded_and_counted_without_borrowing_destroy_reserve",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::thirty_third_group_is_rejected_without_losing_existing_native_groups",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::malformed_or_foreign_response_never_becomes_an_input_ack",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::receiver_drop_between_settlement_and_delivery_still_selects_exact_disposal",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::revoked_journal_rejects_old_application_step_but_admits_mandatory_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::validated_rejected_input_reply_is_terminal_failure_not_release_proof",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::validated_error_reply_requires_exact_reader_envelope_not_unknown_or_success",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::point_drag_cleanup_proof_retires_only_its_exact_rejections_without_success_ack",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::point_drag_cleanup_proof_rejects_mixed_unknown_cleanup_and_wrong_scope_without_partial_retirement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::rejected_object_release_is_retained_debt_not_cleanup_success",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_eof_object_handoff_keeps_owned_debt_and_never_settles_producers",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_eof_object_handoff_rejects_nonexact_or_contaminated_responsibility",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::recording_start_status_tests::recording_refusal_requires_exact_error_ack_not_success_or_terminal_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_requires_exact_operation_release_and_disposition",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_refuses_retired_integrity_lost_and_poisoned_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
@@ -1885,955 +1897,961 @@
       {
         "name": "native::client_geometry::tests::readonly_box_negative_identity_is_not_cleanup_loss",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::readonly_box_only_a_resolver_cleanup_failure_stays_dirty",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::strict_box_negative_identity_keeps_its_existing_fence",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::inverse_points_preserve_affine_and_projective_coordinates",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::frame_local_inverse_does_not_double_compose_same_renderer_ancestors",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::affine_composition_applies_nested_renderer_boundary_once",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::projective_quad_maps_corners_and_independent_center",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::rotated_reflected_and_fractional_quads_preserve_orientation",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::child_visual_offset_is_not_document_scroll",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::clipping_keeps_polygon_until_outward_rasterization",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::fractional_masks_use_actual_bitmap_scale_without_extra_integer_border",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::empty_clipping_is_not_an_all_black_mask",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::degenerate_nonfinite_bowtie_and_horizon_fail_closed",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::finite_vertices_do_not_hide_a_projective_horizon_between_them",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::native_quad_parser_rejects_partial_and_nonfinite_data",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::fractional_frame_source_size_is_not_scrollbar_excluding_integer_viewport",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::directed_intervals_cover_nonbinary_division_and_exact_integer_operations",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::native_tree_parent_edges_cannot_be_replaced_by_caller_claims",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::semantic_exclusion_preserves_full_native_ownership_without_spatial_reads",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::hidden_proof_cleanup_keeps_original_failure",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::semantic_projection_keeps_zero_area_bounds_without_granting_paint_authority",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::semantic_degenerate_bounds_retain_transform_and_reject_nonrectangular_collapse",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::native_geometry_ignores_legacy_additive_offsets_and_revalidates_viewport",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::failed_document_postproof_releases_all_owned_remote_handles",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::unexpected_native_frame_or_renderer_is_not_silently_omitted",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": true
       },
       {
         "name": "native::client_geometry::tests::chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": true
       },
       {
         "name": "native::client_geometry::node_identity_box_proof_tests::box_negative_requires_exact_plain_by_value_object_envelope",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
+        "ignored": false
+      },
+      {
+        "name": "native::client_observation::tests::semantic_geometry_fanout_cannot_saturate_its_own_object_pool",
+        "path": "cli/src/native/client_observation.rs",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_check_preserves_typed_stop_before_clock",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_settled_stop_never_relabels_hard_or_cleanup_failures",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::nonretained_object_projection_keeps_late_success_and_opaque_failure",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::nonretained_typed_stop_projection_does_not_consult_later_signal",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::retained_security_inventory_preserves_many_closed_roots_and_property_array",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::private_query_payload_preserves_false_states_independent_of_public_projection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::author_observation_excludes_only_browser_owned_shadow_identities",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::query_domains_keep_light_open_then_closed_order_without_changing_observation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::native_control_roles_use_the_public_vocabulary_without_rebinding",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::implicit_landmarks_obey_author_section_scope_without_changing_explicit_roles",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::simple_name_inventory_declines_author_shadow_but_not_browser_internals",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::local_name_inventory_requires_complete_shadow_free_subtrees",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_content_names_preserve_empty_unavailable_and_explicit_authority",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_do_not_become_role_matching_names",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_preserve_explicit_role_names_and_read_confirmation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_are_cleared_by_security_and_keep_proven_empty_distinct",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::historical_content_names_reject_invalid_proofs_and_bound_observation_only",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ax_omitted_listitem_content_facts_decline_without_weakening_validation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::suppressed_listitem_content_facts_reach_author_graph_compaction",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::html_heading_projection_keeps_original_tag_semantics_when_ax_omits_role",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::inert_heading_projection_reaches_existing_parent_subtree_suppression",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::html_heading_projection_preserves_explicit_roles_pseudo_and_editing_host",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::html_heading_projection_does_not_relax_content_fact_validation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_empty_reference_clears_ax_without_title_or_label_fallback",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_associated_label_only_fills_missing_unprotected_ax_name",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_button_names_correct_ax_and_distinguish_empty_from_unavailable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::complete_button_names_preserve_role_priority_and_security_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_button_name_proof_projects_exact_and_observed_compatibility",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_button_name_proof_preserves_priority_security_and_unavailable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_button_name_proof_rejects_invalid_source_and_oversized_facts",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ordinary_header_neighbor_proof_corrects_ax_without_changing_explicit_scope",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::direct_caption_facts_share_exact_query_and_bounded_projection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::unavailable_hidden_caption_shape_preserves_native_separators",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::direct_caption_facts_preserve_higher_priority_and_security_clears",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::direct_caption_facts_reject_malformed_or_mismatched_sources",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editor_placeholder_facts_share_projection_without_using_editor_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editor_placeholder_facts_preserve_priority_role_and_security_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editor_placeholder_facts_reject_malformed_and_inconsistent_sources",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::restricted_svg_link_facts_share_projection_and_preserve_independent_svg",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::restricted_svg_link_facts_preserve_priority_and_security",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::restricted_svg_link_facts_reject_malformed_and_wrong_receiver",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::inherited_ax_disabled_is_projected_without_overriding_native_disabled",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_publication_retains_only_emitted_additions_without_resurrection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::author_formatting_role_is_omitted_without_changing_explicit_role_or_identity",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::incidental_ax_roles_do_not_become_public_roles_from_invalid_authored_tokens",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hidden_iframe_proof_survives_compaction_without_tolerating_missing_owners",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::exact_control_metadata_precedes_native_ax_state",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_table_and_form_role_facts_preserve_authored_precedence",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::role_facts_from_pseudo_origin_do_not_change_pseudo_role",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::recognized_authored_roles_survive_absent_or_demoted_ax_without_rebinding",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_drawn_and_table_roles_do_not_depend_on_ax_layout_categories",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::implicit_table_rows_keep_public_container_roles_without_rebinding",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::effective_presentation_role_preserves_native_controls_and_implicit_tags",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ignored_presentation_restores_controls_even_when_ax_omits_the_receiver",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ignored_presentation_uses_bounded_header_neighbor_fact_without_ax",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::ignored_presentation_header_fallback_preserves_single_cell_suppression",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::decorative_image_fact_only_changes_implicit_image_semantics",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::editing_host_role_uses_concrete_authored_precedence",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_glyph_names_preserve_real_text_and_security_boundaries",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::summary_and_description_list_roles_require_recognized_author_tokens",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_labels_normalize_embedded_control_whitespace",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::renderer_tree_join_requires_native_parent_and_preserves_existing_edges",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::live_source_retains_full_frames_and_original_projection_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::acquisition_inventory_excludes_foreign_documents_ua_and_pseudo_nodes",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::frame_cardinality_requires_complete_bounded_projection_and_checked_ordinal",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::stopped_fresh_frame_queries_keep_stop_reason_without_allocating_refs",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fresh_frame_cardinality_rechecks_cleanup_document_and_parent_ancestry",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::retained_frame_sources_recheck_full_parent_dom_and_current_owned_documents",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::stopped_worlds_without_release_ack_do_not_poison_later_fresh_fields",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::stopped_worlds_with_exact_release_ack_leave_fresh_fields_usable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::cancelled_fresh_fields_resolve_retains_group_until_late_disposal_ack",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fixture_fields_keep_frame_cancellation_and_cleanup_guards_without_publication",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::query_group_cleanup_failure_preserves_primary_and_never_publishes",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::frame_enumeration_owner_cleanup_failure_and_timeout_preserve_read_primary",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::late_document_failure_keeps_previous_generation_and_consumes_ids",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::node_removed_during_the_metadata_read_is_a_stale_reference",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::other_cdp_read_failures_stay_backend_failures",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::successful_snapshot_publishes_once_and_stable_node_keeps_id",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::cancellation_before_capture_does_not_publish",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::chromium_native_observation_query_exact_and_secure_contract",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": true
       },
       {
         "name": "native::client_observation::tests::chromium_historical_public_content_name_contract",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": true
       },
       {
         "name": "native::client_observation::tests::chromium_native_same_process_frame_coordinate_convention",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": true
       },
       {
         "name": "native::client_observation::tests::sibling_order_follows_child_ids_not_ax_array_order",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::query_frame_wrappers_lift_through_index_and_scope",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_failure_schema_is_closed_and_value_free",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_witness_preserves_first_failure_per_invocation",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_stage_evaluates_once_and_returns_the_original_error",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::semantic_capture_frame_kind_uses_only_parent_presence",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::diagnostic_labels_never_echo_renderer_source",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::metadata_acquisition_policy_follows_mixed_native_receivers_not_pseudo_identity",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::focus_anchor_matches_only_exact_author_identity_across_metadata_chunks",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::security_handles_require_explicit_null_or_exact_focus_node",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::security_focus_reuses_root_acquisition_and_always_settles_its_group",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::interrupted_focus_description_never_publishes_and_releases_the_acquisition_group",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hint_collection_preserves_cleanup_failure_after_primary",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::metadata_batch_keeps_remote_arguments_in_native_candidate_order",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_preserves_href_elision_markers_but_full_read_keeps_raw_attribute",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_shadow_text_and_ancestor_names_never_serialize",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::security_inventory_bounds_dom_depth_and_root_count",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_ancestor_uses_only_sanitized_public_name_not_ax_content",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_main_content_fallback_never_becomes_a_public_name",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_name_content_source_rejects_malformed_facts",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::secure_inventory_keeps_public_password_labels_without_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_attributes_are_bounded_but_explicit_read_preserves_them",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::exact_reference_exhaustion_returns_error_without_publishing",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hidden_frame_proof_requires_exact_inventory_and_positive_descendant_closure",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::hidden_frame_proof_rechecks_owner_visibility_and_always_settles_group",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::revision_wire_preserves_full_native_integer_precision",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_state_serialization_preserves_raw_flags_and_explicit_false_controls",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_state_serialization_keeps_nonstandard_false_states",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::public_state_serialization_preserves_all_true_flags_and_empty_maps",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_query_and_exact_read_share_public_state_serialization",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::selected_read_states_share_public_projection_and_keep_exact_reference",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::selected_secure_read_states_preserve_policy_flags_and_redaction",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::selected_secure_read_retains_policy_metadata_not_an_empty_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fixture_field_projection_has_no_reference_geometry_or_unrequested_content",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::fixture_fields_reject_empty_duplicate_unknown_and_geometry_selection",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::schema_rejects_unknown_nested_query_fields",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::projection_redacts_secure_even_if_renderer_returns_value",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::shuffled_tree_keeps_real_parent_and_children",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::abandoned_staging_never_recycles_ids_or_publishes_nodes",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::frame_or_document_replacement_allocates_new_identity",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::structural_refs_are_not_actionable",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::native_pseudo_classification_requires_owned_inventory_and_exact_descriptor",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::pseudo_projection_keeps_own_readonly_identity_and_redacts_origin_secrets",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::pseudo_metadata_uses_verified_origin_without_rebinding_and_rejects_late_change",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::every_hard_refusal_dominates_node_negative_in_both_orders",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::cleanup_dominates_hard_and_negative_across_more_than_one_buffer",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::all_negative_bindings_are_retained_not_only_first",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::node_identity_resample_merge_tests::ordinary_stale_reference_has_no_positive_node_proof",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_realm_is_reused_across_metadata_batches",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
@@ -3889,37 +3907,37 @@
       {
         "name": "native::client_debt::tests::readonly_capture_scope_does_not_duplicate_large_future_storage",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_capture_scope_is_poll_local_and_cancellation_preserves_custody",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_unsubmitted_reservation_preserves_actual_abandonment_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_already_destroyed_unsent_reservation_preserves_exact_terminal_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_old_destroyed_reservation_never_changes_new_command_or_its_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_missing_unsent_command_cannot_fabricate_a_terminal_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
@@ -4225,37 +4243,37 @@
       {
         "name": "native::client_debt::tests::navigation_lifecycle_setup_is_not_application_mutation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_observation::opaque_plugin_frame_tests::object_and_embed_owner_frames_are_opaque_plugin_content",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::onclick_hint_batch_drains_held_sibling_resolution_before_cleanup",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::onclick_hint_batch_reads_exact_receivers_and_cleans_up_once",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::deferred_pseudo_revalidation_reads_one_frame_inventory_and_refuses_change",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::observation_pseudo_inventory_reuses_one_frame_inventory_across_batches",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
@@ -4267,7 +4285,7 @@
       {
         "name": "native::client_geometry::tests::opaque_plugin_subtrees_are_proven_omissions_not_missing_inventory",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       },
       {
@@ -4363,19 +4381,19 @@
       {
         "name": "native::client_debt::tests::a_mismatched_named_session_still_loses_ledger_integrity",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::an_omitted_session_on_a_success_reply_still_loses_ledger_integrity",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::browser_level_session_not_found_discharges_the_exact_retired_session",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
@@ -4393,25 +4411,25 @@
       {
         "name": "native::client_observation::tests::folded_text_plan_uses_child_node_positions_and_values",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_observation::tests::suppressed_prefilter_keeps_summary_and_interactive_ancestors",
         "path": "cli/src/native/client_observation.rs",
-        "sha256": "966486012d92fad26b92a0d7f53095a681ceea366cd962f7a1f2f1d15162f1ee",
+        "sha256": "fad6a356a20a94941126ac1126773757b2c0a3cf0232f3872a765167245b6a84",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_session_retirement_requires_the_applied_detach_and_intact_ledger",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "ffe4cb780c5f8e8b13b75cf004ab12c2275a0d247273d1e98997071d218caf78",
+        "sha256": "72a957b24138ed557618607b1e3d383197abc42f7eac8195ad91ac66a8435cfc",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::a_retired_exact_session_makes_a_resolver_failure_a_stale_identity",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "8f39f3da6ffb331d85233583c9553aae905c67b6e59de78dd9b922f2231b7213",
+        "sha256": "ac1b2f5e02f9ca0d25ff66b11333873c8419e5e249f74c138b189c1a554526d9",
         "ignored": false
       }
     ],
