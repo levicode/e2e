@@ -251,8 +251,10 @@ What survives:
 - The deterministic `browser.mouse` and `browser.keyboard` fixtures stay
   available without an agent observation. Test code owns its input and can
   read current geometry and focus with `browser.evaluate` before acting.
-- Custom executors use typed fixture operations and fresh observation references,
-  not retained Playwright objects. See [custom executor migration](#custom-executor-migration).
+- Custom executors use typed fixture operations and fresh observation references
+  rather than Playwright objects retained across the recovery; read the
+  [`surfaceOf`](#surfaceof) accessors again after it. See
+  [custom executor migration](#custom-executor-migration).
 
 A `browser` provider with `scope: 'attempt'` rides the same persistent
 context, with the same limits. The lease's `cdpEndpoint` provisions the
