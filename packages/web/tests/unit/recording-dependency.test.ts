@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -25,6 +25,12 @@ it('accepts ffmpeg from any PATH entry', () => {
     ffmpegIn(directory);
     expect(missingRecordingDependency({ PATH: [first, directory].join(path.delimiter) }, directory)).toBeUndefined();
   } finally { rmSync(first, { recursive: true, force: true }); }
+});
+
+it('resolves a relative PATH entry against the worker directory, not the process cwd', () => {
+  mkdirSync(path.join(directory, 'bin'));
+  ffmpegIn(path.join(directory, 'bin'));
+  expect(missingRecordingDependency({ PATH: 'bin' }, directory)).toBeUndefined();
 });
 
 it('resolves an empty PATH entry against the worker directory', () => {

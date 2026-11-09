@@ -1061,12 +1061,11 @@ bunx @e2e-dev/web install chromium --with-deps
 
 ### Installing from this repository (internal use)
 
-This project is for internal use. Nothing publishes a native runtime bundle:
-there is no release asset, no public download URL, and no npm package that
-supplies this runtime. The npm packages under the same names are a different
-Playwright implementation. An internal user builds the bundle from a checkout;
-that build is the trusted producer, and the digest comes from the build, never
-from the bundle's own checksum file.
+The native runtime bundle is internal to this project. No release asset, public
+download URL, or npm package supplies it, so a normal consumer cannot install
+it. An internal user builds the bundle from a checkout; that build is the
+trusted producer, and the digest comes from the build, never from the bundle's
+own checksum file.
 
 Prerequisites:
 

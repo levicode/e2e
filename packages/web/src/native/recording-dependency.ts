@@ -13,11 +13,15 @@ import path from 'node:path';
  * leaves the native check authoritative instead of guessing.
  */
 export function missingRecordingDependency(env: Readonly<Record<string, string | undefined>>, cwd: string): string | undefined {
+  // Native Windows is outside the supported local matrix; leave that report to
+  // the native check rather than guessing at its PATH spelling.
+  if (process.platform === 'win32') return undefined;
   const value = env['PATH'];
   if (value === undefined) return undefined;
-  const directories = value.split(path.delimiter).map(directory => directory === '' ? cwd : directory);
-  if (directories.some(directory => executable(path.join(directory, 'ffmpeg')))) return undefined;
-  return 'Video recording requires FFmpeg, and no `ffmpeg` executable is on PATH. Install it (macOS: `brew install ffmpeg`; Debian/Ubuntu: `sudo apt-get install ffmpeg`) and rerun. Recording is the only Web feature that needs FFmpeg.';
+  // The native process runs with this cwd, so a relative PATH entry resolves
+  // there too; an empty entry resolves to the cwd, as exec does.
+  if (value.split(path.delimiter).some(directory => executable(path.resolve(cwd, directory, 'ffmpeg')))) return undefined;
+  return 'Video recording requires FFmpeg, and no ffmpeg executable is on PATH. Install it (macOS: brew install ffmpeg; Debian/Ubuntu: sudo apt-get install ffmpeg) and rerun.';
 }
 
 function executable(file: string): boolean {
