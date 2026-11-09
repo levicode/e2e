@@ -154,6 +154,8 @@ await app.open('/raffle');
 
 See [init scripts](/reference/web#init-scripts).
 
+A popup's first document is best effort when the browser is shared with another CDP client: that client can release the popup's start pause before the scripts are registered, so the first document may miss them. A reload or explicit navigation keeps the guarantee.
+
 ## Emulate dark mode and reduced motion
 
 `colorScheme` and `reducedMotion` set what the page's `@media` rules and
