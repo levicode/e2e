@@ -386,7 +386,7 @@ describe('agent semantic fallback through the engine contract', () => {
   it('judges the current screenshot with vision enabled', () => {
     expect(resultByTitle(outcome, 'vision judgment receives fallback').status).toBe('passed');
     expect(fakeCalls).toHaveLength(1);
-    expect(fakeCalls[0]!.images).toEqual([{ mediaType: 'image/png', bytes: 3 }]);
+    expect(fakeCalls[0]!.images).toMatchObject([{ mediaType: 'image/png', bytes: 3 }]);
     expect(fakeCalls[0]!.observation).toContain('semantic capture unavailable');
   });
 

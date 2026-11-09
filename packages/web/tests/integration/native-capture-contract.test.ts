@@ -1,4 +1,5 @@
 /** Public protected-pixel acceptance. These are real web() calls, not a mocked capture producer. */
+import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -8,7 +9,7 @@ import { nativeBrowser, nativeDocument } from '../helpers/native-browser.ts';
 import { decodePng } from '../helpers/png.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
-async function fixture() {
+async function fixture(app: { readonly site?: string } = {}) {
   const artifactsDir = mkdtempSync(path.join(tmpdir(), 'native-capture-contract-'));
   const engine = web({ viewport: { width: 640, height: 480 } });
   const operation = { signal: new AbortController().signal, timeoutMs: 15000, runId: 'capture', attemptId: 'capture', origin: 'test' as const };
@@ -17,7 +18,7 @@ async function fixture() {
     finally { rmSync(artifactsDir, { recursive: true, force: true }); }
   };
   try {
-    await engine.init!({ runId: 'capture', targetName: 'web', projectRoot: process.cwd(), app: {}, env: process.env, headed: false, workerSlot: 0, signal: operation.signal, log: () => undefined });
+    await engine.init!({ runId: 'capture', targetName: 'web', projectRoot: process.cwd(), app, env: process.env, headed: false, workerSlot: 0, signal: operation.signal, log: () => undefined });
     await engine.startAttempt!({ attemptId: 'capture', artifactsDir, signal: operation.signal, resolveSecret: noSecrets, ...ignoreTrace });
     await engine.session!.open!('about:blank', operation);
     return { engine, operation, artifactsDir, browser: nativeBrowser(engine, () => operation), close };
@@ -71,4 +72,78 @@ it('protects closed-shadow password pixels and restores the live field after cap
     expect(password?.states?.secure).toBe(true);
     await f.engine.perform!(password!.ref, { kind: 'fill', value: 'replacement-synthetic', sensitive: true }, f.operation);
   } finally { await f.close(); }
+});
+
+it('masks a plain main-document password in observations and artifacts without blanking public pixels', async () => {
+  const f = await fixture();
+  try {
+    await nativeDocument(f.browser, content);
+    const observation = await f.engine.observe!(f.operation, { pixels: true });
+    expect(observation.maskedRegionCount).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(observation.root)).not.toContain('synthetic-private-value');
+    const relative = await f.engine.artifacts!.screenshot('plain', f.operation);
+    for (const bytes of [observation.pixels!.data, new Uint8Array(readFileSync(path.join(f.artifactsDir, relative)))]) {
+      const pixels = decodePng(bytes);
+      expect({ width: pixels.width, height: pixels.height }).toEqual({ width: 640, height: 480 });
+      expect(pixels.pixelAt(100, 40).slice(0, 3)).toEqual([0, 0, 0]);
+      expect(pixels.pixelAt(100, 120).slice(0, 3)).toEqual([255, 0, 0]);
+      expect(pixels.pixelAt(300, 300).slice(0, 3)).toEqual([0, 0, 255]);
+    }
+  } finally { await f.close(); }
+});
+
+/** One loopback server that hosts a page and its frame on two hostnames, so the sites differ. */
+async function servePages(pages: (port: number) => Record<string, string>) {
+  let routes: Record<string, string> = {};
+  const server = createServer((request, response) => {
+    const body = routes[new URL(request.url ?? '/', 'http://localhost').pathname];
+    if (body === undefined) { response.writeHead(404); response.end(); return; }
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(body);
+  });
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as { port: number }).port;
+  routes = pages(port);
+  return {
+    host: (name: string) => `http://${name}:${port}/`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+it('masks a password inside a frame the observation policy keeps out of the tree', async () => {
+  const service = await servePages((port) => ({
+    '/': `<!doctype html><body style="margin:0;background:#0000ff"><h1>Frame policy host</h1><iframe src="http://127.0.0.1:${port}/frame" style="position:absolute;left:0;top:0;width:400px;height:240px;border:0"></iframe></body>`,
+    '/frame': `<!doctype html><body style="margin:0;background:#00ff00"><h1>Frame-only marker</h1><input type="password" aria-label="Password" value="synthetic-private-value" style="${field};top:20px"></body>`,
+  }));
+  let f: Awaited<ReturnType<typeof fixture>> | undefined;
+  try {
+    f = await fixture({ site: 'localhost' });
+  } catch (cause) {
+    await service.close();
+    throw cause;
+  }
+  try {
+    await f.engine.session!.open!(service.host('localhost'), f.operation);
+    // The offsite frame stays out of the observation, but its pixels are part
+    // of the capture: wait until it has painted and native has masked the field.
+    await expect.poll(async () => {
+      const pixels = decodePng((await f.engine.observe!(f.operation, { pixels: true })).pixels!.data);
+      return [pixels.pixelAt(100, 40).slice(0, 3).join(','), pixels.pixelAt(300, 200).slice(0, 3).join(',')].join('|');
+    }, { timeout: 5_000, interval: 100 }).toBe('0,0,0|0,255,0');
+    const observation = await f.engine.observe!(f.operation, { pixels: true });
+    // The exclusion is real: the parent's heading is listed, the frame's is not.
+    expect(JSON.stringify(observation.root)).toContain('Frame policy host');
+    expect(JSON.stringify(observation.root)).not.toContain('Frame-only marker');
+    expect(observation.maskedRegionCount).toBeGreaterThanOrEqual(1);
+    const relative = await f.engine.artifacts!.screenshot('cross-origin', f.operation);
+    for (const bytes of [observation.pixels!.data, new Uint8Array(readFileSync(path.join(f.artifactsDir, relative)))]) {
+      const pixels = decodePng(bytes);
+      expect(pixels.pixelAt(100, 40).slice(0, 3)).toEqual([0, 0, 0]);
+      expect(pixels.pixelAt(300, 200).slice(0, 3)).toEqual([0, 255, 0]);
+      expect(pixels.pixelAt(300, 300).slice(0, 3)).toEqual([0, 0, 255]);
+    }
+  } finally {
+    await f.close();
+    await service.close();
+  }
 });
