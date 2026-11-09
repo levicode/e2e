@@ -13,32 +13,22 @@
  * so the trace's own screen diff sees the reconnect too.
  */
 
-import type {
-  EngineAttemptContext,
-  EngineSnapshot,
-  LocatorAction,
-  LocatorExpression,
-  SemanticNode,
-} from '../../src/engine/index.ts';
+import type { EngineAttemptContext, EngineSnapshot, LocatorAction, LocatorExpression, SemanticNode } from '../../src/engine/index.ts';
 import { defineEngine, ENGINE_SPI_VERSION, engineFailure, obj, resolveExpression } from './engine-runtime.ts';
 
-type States = NonNullable<SemanticNode['states']>;
-
 /** One element of the scenario, addressed by a key that survives re-issuance. */
-export interface ScenarioNode {
+interface ScenarioNode {
   readonly key: string;
   readonly role: string;
   readonly name?: string;
   readonly text?: string;
-  readonly states?: States;
 }
 
 /** What the engine received, in order, with the exact issuance it was told to act on. */
 export interface Dispatched {
   readonly id: string;
   readonly action: LocatorAction['kind'];
-  readonly to?: string;
-  /** How many reconnects had happened when this arrived: 1 is the first generation. */
+  /** The issuance the action arrived during: 1 is the first capture, 2 the first reconnect. */
   readonly generation: number;
 }
 
@@ -61,7 +51,8 @@ const TREE: readonly ScenarioNode[] = [
  * browser` control reconnects: every id the screen listed becomes stale, and
  * the next capture lists the same descriptors under fresh ids.
  */
-export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): ReferenceScenario {
+export function createReferenceScenario(): ReferenceScenario {
+  const tree = TREE;
   const generations = new Map<string, string>();
   const texts = new Map<string, string>();
   for (const node of tree) if (node.text !== undefined) texts.set(node.key, node.text);
@@ -86,7 +77,6 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
       role: node.role,
       ...(node.name === undefined ? {} : { name: node.name }),
       ...(text === undefined ? {} : { text }),
-      ...(node.states === undefined ? {} : { states: { ...node.states } }),
     };
   };
 
@@ -110,7 +100,7 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
     name: 'reference-scenario',
     version: '1.0.0',
     spiVersion: ENGINE_SPI_VERSION,
-    actions: ['tap', 'dragTo'],
+    actions: ['tap'],
     async startAttempt(context) {
       attempt = context;
       opened = false;
@@ -132,9 +122,7 @@ export function createReferenceScenario(tree: readonly ScenarioNode[] = TREE): R
     async perform(ref, action) {
       const key = keyOf(ref.id);
       if (key === undefined) throw engineFailure('NODE_STALE', `node ${ref.id} was retired by the reconnect`, true);
-      const to = action.kind === 'dragTo' ? keyOf(action.target.id) : undefined;
-      if (action.kind === 'dragTo' && to === undefined) throw engineFailure('NODE_STALE', `drag target ${action.target.id} was retired by the reconnect`, true);
-      dispatched.push({ id: ref.id, action: action.kind, ...(action.kind === 'dragTo' ? { to: action.target.id } : {}), generation });
+      dispatched.push({ id: ref.id, action: action.kind, generation });
       if (action.kind === 'tap' && key === 'increment') texts.set('counter', String(Number(texts.get('counter') ?? '0') + 1));
       if (action.kind === 'tap' && key === 'reconnect') {
         issue();
