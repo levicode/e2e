@@ -209,9 +209,15 @@ checks, deadlines, recording, and the engine's node references. Use the typed
 `browser` fixture in test code for Web-specific operations such as routes,
 responses, downloads, cookies, and trusted JavaScript evaluation.
 
-The native Web engine does not expose a Playwright `Page` or `BrowserContext`.
-Migrate `surfaceOf(handle)` consumers to these contracts; arbitrary helpers
-that require Playwright objects are not compatible with this engine.
+The native Web engine exposes the real Playwright `Page` and `BrowserContext`
+behind its handle. A trusted custom executor reads both from
+`surfaceOf(engine)` in `@e2e-dev/web`, so helpers that only act on the current
+page keep working. The accessors are ready only inside an attempt, and raw
+calls bypass harness authorization and replay. See
+[surfaceOf](/reference/web#surfaceof).
+
+Keep recorded or secret-bearing operations on `ctx.actions` inside an
+executor; test code uses the typed `browser` fixture.
 
 ```ts
 import type { E2EConfig, ExecutorNode, StepExecutor } from 'e2e';

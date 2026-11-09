@@ -282,7 +282,7 @@ uses it declares `requires: ['browser']` and other targets skip it. Calls on
 | `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` and `import { expect } from 'e2e'` | renamed |
 | `test(title, fn)`, `test.describe`, `beforeEach`, `afterEach` | the same; `describe` and the hooks are also top-level imports | same |
 | `test.beforeAll`, `afterAll` | the same, with `platform` as the only fixture; no `browser` or `request` | same |
-| `{ page }` in a test | `{ screen, app, browser }`; no raw `Page` in tests, see [What differs on purpose](#what-differs-on-purpose) | by design |
+| `{ page }` in a test | `{ screen, app, browser }`; no raw `Page` fixture in tests. A trusted executor reads one from [`surfaceOf`](/reference/web#surfaceof) | by design |
 | `test.skip(title, fn)`, `test.skip(condition, reason)` | the same | same |
 | `test.only` | the same; CI rejects it with `ONLY_IN_CI` | same |
 | `test.describe.only` | `test.only` on each member | missing |
@@ -427,10 +427,14 @@ context.
 - Sessions are per run. `test.setup` saves state under a name, one time per
   run and target, and `{ session }` restores it. The file is encrypted and
   deleted at cleanup, so there is no `.auth/user.json` to reuse across runs.
-- No raw `Page` is exposed by the native Web engine. Tests use the typed
-  `Browser` fixture; [custom executors](/executors#driving-the-page-yourself)
-  use its operations plus the executor observation/actions contract. Existing
-  `surfaceOf(engine)` consumers need an explicit migration, not a fake Page shim.
+- No raw `Page` fixture is injected into a test. Tests use the typed `Browser`
+  fixture. A trusted [custom executor](/executors#driving-the-page-yourself)
+  reads the real Playwright `Page` and `BrowserContext` from
+  `surfaceOf(engine)` in `@e2e-dev/web`, so a helper that only acts on the
+  current page keeps working, with no fake Page shim and no rewrite. A helper
+  that sets the viewport, media, or dialog handlers still has to follow the
+  attempt settings and the harness rules, and raw calls bypass authorization
+  and replay. See [surfaceOf](/reference/web#surfaceof).
 
 ## Defaults that differ
 
