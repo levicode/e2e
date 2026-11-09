@@ -29,6 +29,11 @@
   install chromium --with-deps`). A plain package install or `e2e init` does
   not obtain the runtime, and a run never downloads a browser. See
   [Installing browsers](https://e2e.tester.army/docs/reference/web#installing-browsers).
+  Recording is the only Web feature that needs FFmpeg on `PATH`; install it
+  with the platform package manager (`brew install ffmpeg`, `apt-get install
+  ffmpeg`). Only macOS arm64 has recorded clean-install evidence; macOS x64
+  and Linux x64 are unverified, Linux arm64 is unsupported for a local launch,
+  and Windows is WSL only. See the platform table before promising a platform.
   Mobile tests: `@e2e-dev/mobile`, pinning `agent-device` exactly; each pin
   moves with its engine release.
 

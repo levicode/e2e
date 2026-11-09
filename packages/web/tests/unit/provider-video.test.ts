@@ -47,8 +47,11 @@ describe('provider recording lifecycle', () => {
     const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-provider-video-')); dirs.push(artifactsDir);
     const engine = web({ browser: { name: 'cloud', scope: 'attempt', acquire: async () => ({ id: 'lease-0', cdpEndpoint: 'ws://synthetic.test/browser' }), release, record } });
     engines.push(engine);
-    const common = { runId: 'provider-video', targetName: 'web', projectRoot: '/tmp', app: {}, env: {}, headed: false, signal: new AbortController().signal, log: () => {} };
-    const prepared = await engine.prepare!({ ...common, slots: 1 }); await engine.init!({ ...common, env: prepared?.env ?? {}, workerSlot: 0 });
+    // Deliberately FFmpeg-less: a provider recording must not need the local
+    // native encoder, so the recording-dependency probe must not fail it.
+    const emptyPath = mkdtempSync(path.join(tmpdir(), 'e2e-provider-video-path-')); dirs.push(emptyPath);
+    const common = { runId: 'provider-video', targetName: 'web', projectRoot: '/tmp', app: {}, env: { PATH: emptyPath }, headed: false, signal: new AbortController().signal, log: () => {} };
+    const prepared = await engine.prepare!({ ...common, slots: 1 }); await engine.init!({ ...common, env: prepared?.env ?? common.env, workerSlot: 0 });
     await engine.startAttempt!({ attemptId: 'a1', artifactsDir, signal: common.signal, resolveSecret: noSecrets, ...ignoreTrace });
     return engine;
   }

@@ -36,6 +36,7 @@ import { connectNativeProcess } from './native/process.ts';
 import type { NativeEvent } from './native/protocol.ts';
 import { readUploadFile, selectUploadFiles } from './native/upload-files.ts';
 import { resolveNativeExecutable } from './native/runtime.ts';
+import { missingRecordingDependency } from './native/recording-dependency.ts';
 import { createSecretsSurface, withSecretsContext, type SecretsContext, type SecretsRetirementStage, type SecretsAdmissionStage } from './native/secrets-diagnostics.ts';
 
 import { isNativeProcessCleanupUnresolved } from './native/process-cleanup.ts';
@@ -1692,6 +1693,14 @@ export class NativeSurface implements NativeWebSurface {
   async startVideo(operation: OperationContext): Promise<void> {
     const admitted = await this.admit(operation); this.assertScope(admitted.attempt, admitted.scope); operation = admitted.operation;
     const attempt = this.requireAttempt(); const recorder = this.leases?.recorder(attempt.context.attemptId);
+    // A provider recorder owns its encoder; only the local native recorder
+    // resolves FFmpeg from this worker's PATH, and the native protocol reports
+    // that failure as an opaque browser failure. Name the dependency before
+    // activating a page.
+    if (recorder === undefined) {
+      const missing = missingRecordingDependency(this.initInfo?.env ?? {}, this.initInfo?.projectRoot ?? process.cwd());
+      if (missing !== undefined) throw new EngineError('ENGINE_FAILURE', missing, { retryable: false });
+    }
     await withinAttemptRequest(operation, attempt, async current => {
       await this.creatingPage(attempt, current, () => this.requireEngine().command('page.activate', { identityScope: admitted.scope }, current));
       this.assertScope(attempt, admitted.scope); attempt.pageReady = true;
