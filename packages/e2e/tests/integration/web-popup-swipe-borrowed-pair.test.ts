@@ -38,6 +38,9 @@ const boardLedger = `<script>(() => {
   } catch { dispose(); }
 })();</script>`;
 
+// CONTRACT: a popup's first document is best effort in a browser shared with
+// another CDP client; the fixture retries through a reload and asserts the
+// document created after registration.
 describe('same-fixture borrowed popup and path-swipe diagnostic pair', () => {
   let server: Server | undefined;
   let project: FixtureProject | undefined;

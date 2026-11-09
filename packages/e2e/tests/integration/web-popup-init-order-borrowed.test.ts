@@ -14,6 +14,10 @@ const titles = [
   'popup first inline sees each init once and reload starts a fresh document',
   'blank popup has each init once before explicit first navigation',
 ];
+// CONTRACT: a browser shared with another CDP client lets that client release a
+// popup's start pause before native registers init scripts. The popup's first
+// document is best effort; the fixtures assert the guaranteed document created
+// after registration (reload or explicit navigation).
 describe('popup initialization document boundary controls', () => {
   let server: Server | undefined;
   let chrome: RemoteChrome | undefined;
