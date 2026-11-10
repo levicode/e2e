@@ -430,6 +430,10 @@ await app.open('/raffle');
 export type WebInitScript = string | { readonly path: string } | (() => unknown);
 ```
 
+##### Shared browsers and popups
+
+Init-script delivery depends on the engine owning a document's start. When the browser is shared with another CDP client — for example the Playwright client the engine attaches for its live surface — that client can release a new popup's start pause before the scripts are registered. The popup's first document is then best effort: it may miss the init scripts or run one more than once. Documents created after registration (a reload, an explicit navigation, or a popup that starts after enrollment) keep the guarantee. Do not assert first-document init-script behaviour for popups in a shared browser; assert a later document instead. The same limitation applies to native ownership of JavaScript dialogs opened by a popup whose first document the engine did not start.
+
 ### The browser fixture
 
 `browser` is the whole browser, showing one active tab.

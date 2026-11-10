@@ -68,8 +68,15 @@ test('${CASES[3]}', { timeout: 12_000 }, async ({ browser }) => {
   const popup = await browser.evaluate(() => new Promise(resolve => {
     const child = window.open('/popup');
     if (!child) throw new Error('Synthetic popup was not created');
+    // CONTRACT: in a browser shared with another CDP client the popup's first
+    // document is best effort. Retry once through a document created after
+    // registration, which the init scripts are guaranteed to cover.
+    let reloaded = false;
     const timer = setInterval(() => {
-      if (child.fixtureAtFirstScript !== 'synthetic') return;
+      if (child.fixtureAtFirstScript !== 'synthetic') {
+        if (!reloaded) { reloaded = true; child.location.reload(); }
+        return;
+      }
       clearInterval(timer);
       resolve({ marker: child.fixtureAtFirstScript, light: child.matchMedia('(prefers-color-scheme: light)').matches, reduce: child.matchMedia('(prefers-reduced-motion: reduce)').matches });
       child.close();

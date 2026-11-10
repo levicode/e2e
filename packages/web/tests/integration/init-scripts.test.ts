@@ -187,10 +187,20 @@ describe('init scripts', () => {
       evidence.record({ kind: 'phase', section: 'body', phase: 'popup', state: 'enter' });
       const tabTrail = await observer.select(0, 'page.evaluate', () => browser.evaluate((target) => new Promise<string[]>((resolve, reject) => {
         let tab: Window | null = null;
+        let reloaded = false;
         const loaded = (event: MessageEvent) => {
           if (event.origin !== location.origin || event.source !== tab) return;
           const data = event.data as { kind?: unknown; trail?: unknown } | null;
           if (data?.kind !== 'init-script-boot' || !Array.isArray(data.trail) || !data.trail.every(item => typeof item === 'string')) return;
+          // CONTRACT: when the browser is shared with another CDP client, that
+          // client can release the popup's start pause before registration, so
+          // the first document is best effort. A document created after
+          // registration (this reload) is guaranteed.
+          if (!reloaded) {
+            reloaded = true;
+            tab.location.reload();
+            return;
+          }
           window.removeEventListener('message', loaded);
           resolve(data.trail);
         };

@@ -7,6 +7,9 @@ on:
   merge_group:
   push:
     branches: [main]
+  # Re-run the exact head for the per-slot stability evidence a ticket may
+  # ask for without pushing a commit or using rerun.
+  workflow_dispatch:
 
 # The repository's own runs are not usage: the CLI sends no telemetry from CI here.
 env:
@@ -16,7 +19,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Independent dispatch runs collect per-slot evidence in parallel; a pull
+  # request run stays cancellable.
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

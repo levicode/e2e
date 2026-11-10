@@ -23,8 +23,15 @@ test('init scripts and partial media updates cover frames and new tabs', { timeo
     const child = window.open('/popup');
     try { navigator.sendBeacon('/__pair_facts', JSON.stringify({kind:'parent', phase:'created', marker:child ? 'present' : 'absent', ready:document.readyState})); } catch { /* Preserve original popup outcome. */ }
     if (!child) throw new Error('Synthetic popup was not created');
+    // CONTRACT: in a browser shared with another CDP client the popup's first
+    // document is best effort. Retry once through a document created after
+    // registration, which the init scripts are guaranteed to cover.
+    let reloaded = false;
     const timer = setInterval(() => {
-      if (child.fixtureAtFirstScript !== 'synthetic') return;
+      if (child.fixtureAtFirstScript !== 'synthetic') {
+        if (!reloaded) { reloaded = true; child.location.reload(); }
+        return;
+      }
       clearInterval(timer);
       resolve({ marker: child.fixtureAtFirstScript, light: child.matchMedia('(prefers-color-scheme: light)').matches, reduce: child.matchMedia('(prefers-reduced-motion: reduce)').matches });
       child.close();
