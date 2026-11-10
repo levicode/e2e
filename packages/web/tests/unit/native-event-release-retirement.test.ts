@@ -110,6 +110,27 @@ describe.each(['scope.reset', 'state.restore'] as const)('event resource retirem
     } finally { receipt.resolve({ data: null }); f.finishCallback.resolve(); f.transitionResult.resolve(success); await f.transition; await f.eventWork; await f.client.close(operation()).catch(() => undefined); }
   });
 
+  it.each(['published', 'failed'] as const)('keeps a completed stale-scope release retired only when its replacement publishes (%s)', async outcome => {
+    const f = await opened(command, 'download.started', { error: 'stale-scope', effects: 'completed', scopeState: 'usable' });
+    try {
+      f.finishCallback.resolve(); await f.releaseEntered.promise;
+      if (outcome === 'published') { f.transitionResult.resolve(success); await f.transition; f.publish(); }
+      else { f.transitionResult.resolve({ error: 'browser-failure', effects: 'not-dispatched', scopeState: 'usable' }); await f.transition; }
+      await f.eventWork; await Promise.all(f.actualWorks);
+      expect(f.peer.requests.filter(request => request.command === f.releaseName)).toHaveLength(1);
+      if (outcome === 'published') {
+        expect(f.failures).toEqual([]);
+        expect(f.actualFailures).toEqual([]);
+        expect(() => f.client.negotiation()).not.toThrow();
+      } else {
+        expect(f.failures).toHaveLength(1);
+        expect(isNativeResourceCleanupFailure(f.failures[0])).toBe(true);
+        expect(f.actualFailures).toHaveLength(1);
+        expect(f.actualFailures[0]).toBe(f.failures[0]);
+      }
+    } finally { f.finishCallback.resolve(); f.transitionResult.resolve(success); await f.transition; await f.eventWork; await f.client.close(operation()).catch(() => undefined); }
+  });
+
   it('does not make a local cleanup deadline a capability failure before retained replacement settles', async () => {
     const f = await opened(command, 'download.started', { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'usable' }, 100);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });

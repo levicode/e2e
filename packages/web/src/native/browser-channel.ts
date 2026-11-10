@@ -83,8 +83,16 @@ export class BrowserChannel {
     if ((name === 'download.release' || name === 'network.body.release') && !result.ok && process.env['E2E_DOWNLOAD_RELEASE_DIAGNOSTIC'] === '1') process.stderr.write(`DOWNLOAD_RELEASE_DIAGNOSTIC ${JSON.stringify({ phase: 'native-result', command: name, code: result.error?.code, effects: result.effects, scopeState: result.scopeState })}\n`);
     if (!result.ok && (name === 'download.release' || name === 'download.unsubscribe' || name === 'network.body.release')) {
       const failure = resultError(result);
-      if ((result.error?.code === 'scope-unavailable' || result.error?.code === 'stale-scope') && result.effects === 'not-dispatched' && result.scopeState === 'usable') {
-        // Retain the real refusal until exact publication supersedes it. A
+      const staleScope = result.error?.code === 'stale-scope' && result.scopeState === 'usable'
+        && (result.effects === 'not-dispatched' || result.effects === 'completed');
+      const unavailableScope = result.error?.code === 'scope-unavailable' && result.effects === 'not-dispatched' && result.scopeState === 'usable';
+      if (staleScope || unavailableScope) {
+        // A cleanup for a resource of the scope being replaced is retired by
+        // that replacement. A `completed` refusal proves the release already
+        // ran: native releases the resource (or subscription) first and only
+        // then refuses the trailing scope check, so nothing is left to retry.
+        // The replacement's proof decides whether the transport survives; one
+        // that does not retire the old scope keeps the exact refusal, and a
         // local proof-wait timeout is not a replacement for this receipt.
         const retirement = this.client.scopeReplacementRetirement(this.scope);
         if (retirement !== undefined) {
