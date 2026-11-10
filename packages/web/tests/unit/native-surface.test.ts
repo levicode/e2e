@@ -2200,7 +2200,12 @@ describe('native surface ownership and fixed policy binding', () => {
     }
   });
 
-  it.each(['download.release', 'download.unsubscribe'] as const)('does not poison reset publication when old %s is refused during the transition', async (resource) => {
+  it.each([
+    ['download.release', 'scope-unavailable', 'not-dispatched'],
+    ['download.unsubscribe', 'scope-unavailable', 'not-dispatched'],
+    ['download.release', 'stale-scope', 'completed'],
+    ['download.unsubscribe', 'stale-scope', 'completed'],
+  ] as const)('does not poison reset publication when old %s is refused during the transition (%s/%s)', async (resource, refusal, effects) => {
     const surface = new NativeSurface({}); await start(surface); await surface.endAttempt(cleanup());
     const directory = await mkdtemp(path.join(tmpdir(), 'download-reset-publication-'));
     await surface.startAttempt({ ...context('download-reset'), artifactsDir: directory });
@@ -2218,7 +2223,7 @@ describe('native surface ownership and fixed policy binding', () => {
         enterRead(); return true;
       }
       if (frame['command'] === resource) {
-        rejectResource = () => { refused = true; reply({ ok: false, error: { code: 'scope-unavailable' }, effects: 'not-dispatched', scopeState: 'usable' }); };
+        rejectResource = () => { refused = true; reply({ ok: false, error: { code: refusal }, effects, scopeState: 'usable' }); };
         if (resetAdmitted) rejectResource();
         return true;
       }
