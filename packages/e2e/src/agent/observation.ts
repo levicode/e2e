@@ -559,9 +559,12 @@ const MAX_HREF_LENGTH = 256;
  */
 /**
  * Whether a node is an unnamed action target, the only node that needs a
- * disambiguator: a named or text-bearing control already says what it is.
+ * disambiguator: a named or text-bearing control already says what it is. The
+ * model-facing line disambiguates it by the page's own `id` and `class`, and
+ * the trace recorder projects the same facts into a replay target
+ * (`describeTarget`), so the model and a later replay read one vocabulary.
  */
-function isAnonymousClickable(node: RedactedNode): boolean {
+export function isAnonymousClickable(node: RedactedNode): boolean {
   // `clickable` is an engine-reported state outside the public vocabulary the
   // SemanticNode type names; the reader still renders it generically.
   const states = (node.states ?? {}) as Readonly<Record<string, boolean>>;

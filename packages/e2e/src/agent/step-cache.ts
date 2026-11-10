@@ -17,7 +17,7 @@ import type { AgentCacheContext, ClaimedKey } from '../cache/context.ts';
 import { decideTraceReplay, opensWithNavigate, type TraceReplayMissReason } from '../cache/decide.ts';
 import { sameRoute } from '../cache/route.ts';
 import { keyContextChanges, type CacheAgentIdentity } from '../cache/identity.ts';
-import { recordedProvenance, TraceRecorder } from '../cache/recorder.ts';
+import { recordedProvenance, TraceRecorder, type TraceDefect } from '../cache/recorder.ts';
 import { expandTrace, templateParams, templatesCollide, templateTrace, type ParamTemplate } from '../cache/template.ts';
 import { readTraceEntry, targetLabel, type ActionTrace, type DerivedReason, type RecordedModel, type TraceEntry, type TraceTargetDescriptor } from '../cache/trace.ts';
 import { sleep } from '../internal/time.ts';
@@ -642,7 +642,19 @@ export class StepTraceSession {
     }
     const templated = templateTrace(trace, this.options.templates);
     if (templated === undefined) return 'skipped';
-    this.cache.staged.push({ kind: 'write', keyHash: this.keyHash, trace: templated, stepIndex: this.options.stepIndex });
+    // A recording the recorder had to poison is still written for its
+    // documentation, but it is not replayable and the report must say so
+    // beside the write, naming the actions a replay cannot re-find. The
+    // settlement reads `truncated` and this note (`saved-unreplayable`).
+    const defects = recorder.defects;
+    const note = defects.length === 0 ? undefined : this.reportable(describeDefects(defects));
+    this.cache.staged.push({
+      kind: 'write',
+      keyHash: this.keyHash,
+      trace: templated,
+      stepIndex: this.options.stepIndex,
+      ...(note === undefined ? {} : { note }),
+    });
     return 'staged';
   }
 
@@ -678,6 +690,40 @@ export class StepTraceSession {
       ...(detail === undefined ? {} : { detail: this.reportable(detail) }),
     };
   }
+}
+
+/**
+ * Why a written recording cannot replay, as the report's `writeDetail` says
+ * it: the actions a replay could not re-find, the inputs it could not keep
+ * whole, and what took the trace past what one entry holds. Only the actions
+ * are numbered; a dropped action's number would name nothing in the entry.
+ */
+function describeDefects(defects: readonly TraceDefect[]): string {
+  const parts: string[] = [];
+  const numbered = (kind: 'target' | 'input'): number[] =>
+    [...new Set(defects.flatMap((defect) => (defect.kind === kind ? [defect.action] : [])))].toSorted((a, b) => a - b);
+  const targets = numbered('target');
+  if (targets.length > 0) {
+    parts.push(`${actionList(targets)} ${targets.length === 1 ? 'has' : 'have'} no target a replay can re-find`);
+  }
+  const inputs = numbered('input');
+  if (inputs.length > 0) {
+    parts.push(`${actionList(inputs)} ${inputs.length === 1 ? 'carries a value' : 'carry values'} that cannot be stored whole`);
+  }
+  for (const defect of defects) {
+    if (defect.kind === 'location') parts.push(`the step's ${defect.which} location cannot be stored whole`);
+    if (defect.kind === 'overflow') {
+      parts.push(`${String(defect.dropped)} more ${defect.dropped === 1 ? 'action was' : 'actions were'} dropped past the recording's action cap`);
+    }
+  }
+  return parts.join('; ');
+}
+
+/** One to several action numbers as prose: `action 10`, `actions 10 and 13`. */
+function actionList(actions: readonly number[]): string {
+  if (actions.length === 1) return `action ${String(actions[0])}`;
+  const last = actions[actions.length - 1]!;
+  return `actions ${actions.slice(0, -1).map(String).join(', ')} and ${String(last)}`;
 }
 
 /**

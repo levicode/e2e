@@ -46,7 +46,16 @@ export type StagedTrace = {
   /** Index of the step in the attempt's step timeline. */
   readonly stepIndex: number;
 } & (
-  | { readonly kind: 'write'; readonly trace: ActionTrace }
+  | {
+      readonly kind: 'write';
+      readonly trace: ActionTrace;
+      /**
+       * Why a trace that cannot replay says so, in words: the recorded
+       * actions and inputs a replay cannot re-find, from the recorder's
+       * defects. Absent for a whole recording, and never part of the entry.
+       */
+      readonly note?: string;
+    }
   | { readonly kind: 'keep'; readonly recordedFor: TraceProvenance }
   /** What the step decided itself when it concluded: it evicted its entry, or had nothing to record. */
   | { readonly kind: 'decided'; readonly outcome: 'evicted' | 'no-change' }
@@ -100,16 +109,28 @@ export interface AgentCacheContext {
 }
 
 /**
- * What became of a step's recording. `saved`: written for the next run.
- * `kept`: the entry it replayed, or one holding the same flow, stays as it
- * is. `unconfirmed`: not saved, because no check passed after the step.
- * `evicted`: the entry was deleted, since it replayed into a failure or a
- * repair. `no-change`: the step passed but changed nothing a replay could
- * check, so there was nothing to record. `not-written`: confirmed, but the
- * store did not write it (the file store, for one, refuses a recording past
- * its size limit).
+ * What became of a step's recording. `saved`: written for the next run, and
+ * nothing in the recording refuses a replay (a recorded gap still hands the
+ * step over at that action). `saved-unreplayable`: written, but `truncated`,
+ * so it documents the flow and never runs: the next attempt refuses it
+ * before any action, and the report names the actions it could not re-find
+ * (`detail`). Distinguishing the two is the point — a plain `saved` once
+ * promised a replay the entry could not give. `kept`: the entry it replayed, or one holding the same
+ * flow, stays as it is. `unconfirmed`: not saved, because no check passed
+ * after the step. `evicted`: the entry was deleted, since it replayed into a
+ * failure or a repair. `no-change`: the step passed but changed nothing a
+ * replay could check, so there was nothing to record. `not-written`:
+ * confirmed, but the store did not write it (the file store, for one, refuses
+ * a recording past its size limit).
  */
-export type CacheWrite = 'saved' | 'kept' | 'unconfirmed' | 'evicted' | 'no-change' | 'not-written';
+export type CacheWrite = 'saved' | 'saved-unreplayable' | 'kept' | 'unconfirmed' | 'evicted' | 'no-change' | 'not-written';
+
+/** What became of one step's recording, and (for `saved-unreplayable`) why it cannot replay. */
+export interface CacheWriteResult {
+  readonly write: CacheWrite;
+  /** Which actions a replay cannot re-find, and why; `saved-unreplayable` only. */
+  readonly detail?: string;
+}
 
 /**
  * Whether the store already holds this flow: the same actions, paths, anchors,
@@ -164,11 +185,22 @@ export interface AttemptSettlement {
   readonly implicatesUnconfirmed: boolean;
 }
 
+/** What a store write came to: a whole recording replays, a truncated one only documents. */
+function writeOutcome(entry: Extract<StagedTrace, { kind: 'write' }>, written: boolean): CacheWriteResult {
+  if (!written) return { write: 'not-written' };
+  if (entry.trace.truncated !== true) return { write: 'saved' };
+  return { write: 'saved-unreplayable', ...(entry.note === undefined ? {} : { detail: entry.note }) };
+}
+
 /**
  * Settles the attempt's staged trace writes, and says what became of each
  * step's recording, by step index, for the report to show beside the step's
  * cache mode: what a step decided itself when it concluded, and what the
- * settlement made of the rest. A staged trace is confirmed only
+ * settlement made of the rest. A recording the store accepts is `saved` when
+ * a replay can run it whole and `saved-unreplayable` when it is truncated,
+ * with the actions a replay cannot re-find in `detail`: the next attempt
+ * refuses such an entry before any action, so its write must never read as a
+ * replay promise. A staged trace is confirmed only
  * when a verification step — a deterministic assertion or an agent judgment
  * (`run/steps.ts`, `StepRunOptions.verifies`) — passed after it: an act's own
  * verdict is the recording executor's opinion of its work, and a later act
@@ -185,12 +217,12 @@ export interface AttemptSettlement {
  * so the same rule evicts it when nothing confirmed it; when something did,
  * it is left exactly as it was found, but for provenance it lacked.
  */
-export async function settleStagedTraces(context: AgentCacheContext, settlement: AttemptSettlement | undefined): Promise<ReadonlyMap<number, CacheWrite>> {
-  const outcomes = new Map<number, CacheWrite>();
+export async function settleStagedTraces(context: AgentCacheContext, settlement: AttemptSettlement | undefined): Promise<ReadonlyMap<number, CacheWriteResult>> {
+  const outcomes = new Map<number, CacheWriteResult>();
   const staged = context.staged.splice(0);
   for (const entry of staged) {
     if (entry.kind === 'decided') {
-      outcomes.set(entry.stepIndex, entry.outcome);
+      outcomes.set(entry.stepIndex, { write: entry.outcome });
       continue;
     }
     if (settlement === undefined || context.mode !== 'read-write') continue;
@@ -201,23 +233,23 @@ export async function settleStagedTraces(context: AgentCacheContext, settlement:
         // new recording's delete only clears what an earlier run may have left.
         const deletes = settlement.implicatesUnconfirmed && context.store.delete !== undefined;
         const deleted = deletes && await context.store.delete!(entry.keyHash).then(() => true, () => false);
-        outcomes.set(entry.stepIndex, entry.kind === 'keep' && deleted ? 'evicted' : 'unconfirmed');
+        outcomes.set(entry.stepIndex, { write: entry.kind === 'keep' && deleted ? 'evicted' : 'unconfirmed' });
         continue;
       }
       if (entry.kind === 'keep') {
-        outcomes.set(entry.stepIndex, 'kept');
+        outcomes.set(entry.stepIndex, { write: 'kept' });
         await completeProvenance(context.store, entry.keyHash, entry.recordedFor);
         continue;
       }
       if (await holdsSameFlow(context.store, entry.keyHash, entry.trace)) {
-        outcomes.set(entry.stepIndex, 'kept');
+        outcomes.set(entry.stepIndex, { write: 'kept' });
         continue;
       }
       const written = await context.store.write(entry.keyHash, entry.trace);
-      outcomes.set(entry.stepIndex, written === undefined ? 'not-written' : 'saved');
+      outcomes.set(entry.stepIndex, writeOutcome(entry, written !== undefined));
     } catch {
       // The cache is disposable; a failed flush is a slower next run only.
-      if (entry.kind === 'write' && confirmed) outcomes.set(entry.stepIndex, 'not-written');
+      if (entry.kind === 'write' && confirmed) outcomes.set(entry.stepIndex, { write: 'not-written' });
     }
   }
   return outcomes;

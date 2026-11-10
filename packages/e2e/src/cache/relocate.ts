@@ -24,6 +24,12 @@ import type { TracePosition, TraceTargetDescriptor } from './trace.ts';
  * it cold-starts the cache — which is exactly right when the matching rules
  * change, because an entry recorded under different rules could relocate to a
  * different node.
+ *
+ * Widening only what a *new* recording can identify does not qualify: page
+ * identifiers (`domId`/`domClass`) are absent from every entry recorded
+ * before them, and such an entry is matched here exactly as it was before, so
+ * old entries replay identically and a bump would cold-start every committed
+ * recording for nothing.
  */
 export const REPLAY_POLICY_VERSION = 'conservative/6';
 
@@ -52,25 +58,34 @@ interface DescribedNode {
 }
 
 /** Identity fields that must match whenever the recording captured them. */
-const IDENTITY_FIELDS: readonly DescriptorField[] = ['role', 'name', 'testId', 'placeholder', 'inputPurpose'];
+const IDENTITY_FIELDS: readonly DescriptorField[] = ['role', 'name', 'testId', 'placeholder', 'inputPurpose', 'domId', 'domClass'];
+
+/**
+ * The fields an unnamed control must match exactly: its absence of identity,
+ * never the page identifiers a new-style descriptor may carry. An unnamed
+ * textbox must never stand in for a named one.
+ */
+const ANONYMOUS_FIELDS: readonly DescriptorField[] = ['role', 'name', 'testId', 'placeholder', 'inputPurpose', 'text'];
 
 /** Text is identity too when neither a test id nor a name was recorded. */
 const IDENTITY_FIELDS_WITH_TEXT: readonly DescriptorField[] = [...IDENTITY_FIELDS, 'text'];
 
 /**
  * A descriptor with nothing to identify the control by: no test id, name,
- * text, or placeholder, only a role. An icon button and a form built
- * without labels are made of these. Such a descriptor relocates by its place
- * among the unnamed controls of its kind, and it is matched strictly
- * (`fieldsIdentical`): an unnamed textbox must never stand in for a named
- * one.
+ * text, placeholder, or page identifier, only a role. An icon button and a
+ * form built without labels are made of these. Such a descriptor relocates by
+ * its place among the unnamed controls of its kind, and it is matched
+ * strictly (`fieldsIdentical`): an unnamed textbox must never stand in for a
+ * named one.
  */
 function isAnonymous(descriptor: TraceTargetDescriptor): boolean {
   return (
     descriptor.testId === undefined &&
     descriptor.name === undefined &&
     descriptor.text === undefined &&
-    descriptor.placeholder === undefined
+    descriptor.placeholder === undefined &&
+    descriptor.domId === undefined &&
+    descriptor.domClass === undefined
   );
 }
 
@@ -220,7 +235,7 @@ function matchingIds(
 function tierMatches(tier: TraceTargetDescriptor, candidates: readonly DescribedNode[]): string[] {
   if (isAnonymous(tier)) {
     return candidates
-      .filter((candidate) => fieldsIdentical(tier, candidate.descriptor, IDENTITY_FIELDS_WITH_TEXT))
+      .filter((candidate) => fieldsIdentical(tier, candidate.descriptor, ANONYMOUS_FIELDS))
       .map((candidate) => candidate.id);
   }
   const fields = tier.testId === undefined && tier.name === undefined ? IDENTITY_FIELDS_WITH_TEXT : IDENTITY_FIELDS;

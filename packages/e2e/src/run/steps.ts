@@ -149,6 +149,12 @@ export interface StepCacheInfo {
 export type StepCacheRecord = StepCacheInfo & {
   /** Set when the attempt ends, so a step's own `result.cache` never has it; see `CacheWrite`. */
   write?: CacheWrite;
+  /**
+   * For `saved-unreplayable`: why the written recording cannot replay, naming
+   * the actions a replay could not re-find and the inputs it could not keep
+   * whole. Absent on a recording a replay can run.
+   */
+  writeDetail?: string;
 };
 
 /** Agent-specific step detail attached while the step is still running. */

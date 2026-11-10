@@ -266,7 +266,8 @@
         "totalActions": { "type": "integer", "minimum": 0 },
         "entry": { "$ref": "#/$defs/sha256" },
         "detail": { "type": "string", "maxLength": 600 },
-        "write": { "enum": ["saved", "kept", "unconfirmed", "evicted", "no-change", "not-written"] }
+        "write": { "enum": ["saved", "saved-unreplayable", "kept", "unconfirmed", "evicted", "no-change", "not-written"] },
+        "writeDetail": { "type": "string", "maxLength": 600 }
       },
       "allOf": [
         {
@@ -284,6 +285,10 @@
         {
           "if": { "required": ["notRecorded"] },
           "then": { "properties": { "mode": { "enum": ["missed", "agent-concluded"] } } }
+        },
+        {
+          "if": { "required": ["writeDetail"] },
+          "then": { "properties": { "write": { "const": "saved-unreplayable" } } }
         }
       ]
     },

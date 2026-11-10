@@ -275,6 +275,7 @@ const CACHE_REASON_TEXT: Readonly<Record<NonNullable<StepCacheInfo['reason']>, s
 /** What became of a step's recording, in words. */
 const CACHE_WRITE_TEXT: Readonly<Record<NonNullable<StepCacheRecord['write']>, string>> = {
   saved: 'recording saved',
+  'saved-unreplayable': 'recording saved, but it cannot replay',
   kept: 'recording kept',
   unconfirmed: 'recording not saved: no check passed after this step',
   evicted: 'recording deleted: its replay ended in a failure or a repair, or no check confirmed it',
@@ -375,7 +376,13 @@ function cacheLine(cache: StepCacheRecord, cacheDir: string | undefined): string
     `cache: ${how}`,
     ...(cache.recordedBy === undefined ? [] : [`recorded with ${code(modelLabel({ provider: cache.recordedBy.provider, id: cache.recordedBy.model }), MAX_DETAIL_CHARS)}`]),
     ...(cache.detail === undefined ? [] : [cell(cache.detail, MAX_DETAIL_CHARS)]),
-    ...(cache.write === undefined ? [] : [CACHE_WRITE_TEXT[cache.write]]),
+    ...(cache.write === undefined
+      ? []
+      : [
+          `${CACHE_WRITE_TEXT[cache.write]}${
+            cache.write === 'saved-unreplayable' && cache.writeDetail !== undefined ? `: ${cell(cache.writeDetail, MAX_DETAIL_CHARS)}` : ''
+          }`,
+        ]),
     ...(cache.notRecorded === 'param-collision' ? ['nothing recorded: a unique() value collides with another param'] : []),
   ];
   const entry = cache.entry === undefined || cacheDir === undefined ? '' : ` (${code(`${cacheDir}/${cache.entry}.json`, MAX_PATH_CHARS)})`;

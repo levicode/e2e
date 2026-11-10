@@ -249,7 +249,7 @@ describe('agent.act pixel verbs', () => {
     const step = stepOf('taps a canvas pin the tree does not list');
     const actions = step.events.filter((event) => event.kind === 'engine');
     expect(actions.map((event) => event.name)).toEqual(['tapAt']);
-    expect(actions[0]!.detail).toBe('tap the point (300, 60) on node');
+    expect(actions[0]!.detail).toBe('tap the point (300, 60) on node "map"');
     // No harness-made model call: the pixels went to the act model itself.
     expect(step.metrics!.modelCalls).toBe(3);
     expect(step.visionInput).toBe(true);

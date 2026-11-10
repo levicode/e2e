@@ -186,6 +186,37 @@ describe('renderTracePage', () => {
     expect(lines[at + 4]).not.toContain('console.txt');
   });
 
+  it('says a written recording cannot replay, naming its actions, and keeps a replayable save plain', () => {
+    const written = (cache: NonNullable<ReportStep['cache']>) =>
+      page([failed({ steps: [step({ index: 0, kind: 'agent', api: 'agent.act', cache })] })]);
+    expect(
+      written({
+        mode: 'missed',
+        reason: 'no-entry',
+        replayedActions: 0,
+        totalActions: 0,
+        write: 'saved-unreplayable',
+        writeDetail: 'action 2 has no target a replay can re-find',
+      }),
+    ).toContain(
+      'cache: no replay: nothing recorded for this step yet; recording saved, but it cannot replay: action 2 has no target a replay can re-find',
+    );
+    const plain = written({ mode: 'missed', reason: 'no-entry', replayedActions: 0, totalActions: 0, write: 'saved' });
+    expect(plain).toContain('recording saved');
+    expect(plain).not.toContain('cannot replay');
+    // A report from another producer cannot hang the detail on another status.
+    const kept = written({
+      mode: 'missed',
+      reason: 'no-entry',
+      replayedActions: 0,
+      totalActions: 0,
+      write: 'kept',
+      writeDetail: 'action 2 has no target a replay can re-find',
+    });
+    expect(kept).toContain('recording kept');
+    expect(kept).not.toContain('no target a replay can re-find');
+  });
+
   it('quotes a step explanation that starts like a heading as prose, with its linkable tokens as code, through the shared cell', () => {
     const body = page([
       failed({

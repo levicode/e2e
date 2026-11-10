@@ -571,7 +571,9 @@
                     "reason": "gap",
                     "derived": "minted-token",
                     "replayedActions": 0,
-                    "totalActions": 2
+                    "totalActions": 2,
+                    "write": "saved-unreplayable",
+                    "writeDetail": "action 2 has no target a replay can re-find"
                   },
                   "artifacts": [],
                   "turns": [
