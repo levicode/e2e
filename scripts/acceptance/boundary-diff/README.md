@@ -25,6 +25,10 @@ BOUNDARY_DIFF_CHROMIUM="/abs/path/to/chrome" \
 node scripts/acceptance/boundary-diff/run.mjs --json /tmp/boundary-diff.json
 ```
 
+The harness drives the engine's public browser fixture directly, the way the
+Web package's acceptance tests do, instead of starting the scheduler; that keeps
+one case to one browser and one measurement.
+
 `--only <case|family>` narrows the table, `--engine new|old` runs one side, and
 `--list` prints every case. Each case runs in its own child process with a
 120s watchdog, so a hanging boundary becomes a `hang` cell instead of a stuck
