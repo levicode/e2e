@@ -71,6 +71,8 @@ export interface FakeSettings {
 export interface FakeImage {
   readonly mediaType: string | undefined;
   readonly bytes: number;
+  /** The attached bytes themselves, so a test can decode what the model was shown. */
+  readonly data: Uint8Array;
 }
 
 export type FakeResponder = (call: FakeCall) => unknown;
@@ -181,13 +183,23 @@ function promptImages(prompt: FakePrompt): FakeImage[] {
     if (message.role !== 'user' || typeof message.content === 'string') continue;
     for (const part of message.content) {
       if (part.type !== 'image' && part.type !== 'file') continue;
-      images.push({ mediaType: part.mediaType, bytes: byteLength(part.data) });
+      images.push({ mediaType: part.mediaType, bytes: byteLength(part.data), data: bytesOf(part.data) });
     }
   }
   return images;
 }
 
 /** Unwraps the AI SDK's normalized `{ type: 'data', data }` file payload. */
+function bytesOf(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (typeof data === 'string') return new TextEncoder().encode(data);
+  if (typeof data === 'object' && data !== null && 'data' in data) {
+    return bytesOf((data as { data: unknown }).data);
+  }
+  return new Uint8Array();
+}
+
+/** Bytes an image part carries, or zero when the payload is not bytes. */
 function byteLength(data: unknown): number {
   if (data instanceof Uint8Array) return data.byteLength;
   if (typeof data === 'string') return data.length;
