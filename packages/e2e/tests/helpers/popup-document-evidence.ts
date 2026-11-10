@@ -51,7 +51,7 @@ export function validPopupDocumentEvidence(value: unknown): value is PopupDocume
   } catch { return false; }
 }
 
-const POST = 'opener.postMessage({kind: "init-document", snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin);';
+const POST = 'opener.postMessage({kind: "init-document", path: location.pathname, snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin);';
 /** Write bounded private metadata first, then execute the exact original postMessage and payload. */
 export function popupDocumentDiagnosticHtml(html: string, enabled = process.env[FLAG] === '1'): string {
   if (!enabled || html.split(POST).length !== 2) return html;
@@ -103,8 +103,8 @@ export function popupDocumentDiagnosticHtml(html: string, enabled = process.env[
 const CASE = "test('popup first inline sees each init once and reload starts a fresh document', { timeout: 12_000 }, async ({ browser }) => {";
 const NEXT = "\ntest('blank popup has each init once before explicit first navigation'";
 const OPEN = '  const snapshots = await browser.evaluate(() => new Promise((resolve, reject) => {';
-const CLOSE = '  }));\n  expect(snapshots).toEqual([';
-/** Scope every replacement to the named reload case; the other OPEN occurrence is untouched. */
+const CLOSE = '  }));\n  // CONTRACT:';
+/** Scope every replacement to the named reload case; other cases are untouched. */
 export function popupDocumentDiagnosticFixture(source: string, enabled = process.env[FLAG] === '1'): string {
   const start = source.indexOf(CASE); const end = source.indexOf(NEXT, start);
   if (!enabled || start < 0 || end < 0 || source.split(CASE).length !== 2) return source;
@@ -115,7 +115,7 @@ export function popupDocumentDiagnosticFixture(source: string, enabled = process
     .replace(first, `${first}\n  notePopupInitScriptResolved(browser, 0);`)
     .replace(second, `${second}\n  notePopupInitScriptResolved(browser, 1);`)
     .replace(OPEN, "  const snapshots = await withPopupDocumentFailureEvidence(browser, new URL('../.e2e/popup-document-evidence.json', import.meta.url), () => browser.evaluate(() => new Promise((resolve, reject) => {")
-    .replace(CLOSE, '  })));\n  expect(snapshots).toEqual([');
+    .replace(CLOSE, '  })));\n  // CONTRACT:');
   return `import { drainPopupDocumentEvidence, notePopupInitScriptResolved, withPopupDocumentFailureEvidence } from ${JSON.stringify(import.meta.url)};
 test.afterEach(async ({ browser }) => { await drainPopupDocumentEvidence(browser); });
 ${source.slice(0, start)}${instrumented}${source.slice(end)}`;

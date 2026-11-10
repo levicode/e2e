@@ -85,3 +85,33 @@ test('blank popup has each init once before explicit first navigation', { timeou
   expect(snapshots.next).toEqual({ first: ['first', 'second'], final: ['first', 'second'] });
   expect(Array.isArray(snapshots.blank)).toBe(true);
 });
+
+test('popup navigation it started itself keeps the guaranteed document boundary', { timeout: 12_000 }, async ({ browser }) => {
+  await browser.addInitScript(first);
+  await browser.addInitScript(second);
+  await browser.goto('/main');
+  const snapshots = await browser.evaluate(() => new Promise((resolve, reject) => {
+    let child;
+    const snapshots = [];
+    const dispose = () => { removeEventListener('message', received); removeEventListener('pagehide', dispose); };
+    const received = event => {
+      if (event.source !== child || event.origin !== location.origin || event.data?.kind !== 'init-document') return;
+      // Normalize absent init scripts so the documented first-document
+      // limitation stays JSON-safe instead of failing the whole evaluation.
+      snapshots.push({ path: event.data?.path ?? null, first: event.data?.snapshot?.first ?? null, final: event.data?.snapshot?.final ?? null });
+      if (snapshots.length === 1) return; // The popup navigates itself to /next; the parent only listens.
+      dispose(); child.close(); resolve(snapshots);
+    };
+    addEventListener('message', received);
+    addEventListener('pagehide', dispose, { once: true });
+    child = window.open('/self-nav');
+    if (!child) { dispose(); reject(new Error('Synthetic popup missing')); }
+  }));
+  expect(snapshots.map(entry => entry.path)).toEqual(['/self-nav', '/next']);
+  // CONTRACT: the popup's first document is best effort when the browser is
+  // shared with another CDP client. The document its own navigation creates is
+  // started after registration, so each init runs there exactly once, before
+  // the document's own script.
+  expect(snapshots[1]).toEqual({ path: '/next', first: ['first', 'second'], final: ['first', 'second'] });
+  expect(Object.keys(snapshots[0]).toSorted()).toEqual(['final', 'first', 'path']);
+});

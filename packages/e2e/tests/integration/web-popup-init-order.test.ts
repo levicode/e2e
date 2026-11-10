@@ -12,6 +12,7 @@ import { popupDocumentDiagnosticFixture, popupDocumentDiagnosticHtml } from '../
 const titles = [
   'existing document stays untouched until next navigation',
   'popup first inline sees each init once and reload starts a fresh document',
+  'popup navigation it started itself keeps the guaranteed document boundary',
   'blank popup has each init once before explicit first navigation',
 ];
 describe('popup initialization document boundary controls', () => {
@@ -20,11 +21,15 @@ describe('popup initialization document boundary controls', () => {
   let outcome: RunOutcome;
   beforeAll(async () => {
     server = createServer((request, response) => {
-      if (request.method !== 'GET' || !['/main', '/next', '/popup'].includes(request.url ?? '')) {
+      if (request.method !== 'GET' || !['/main', '/next', '/popup', '/self-nav'].includes(request.url ?? '')) {
         response.writeHead(404).end(); return;
       }
+      // A popup's own navigation has to start after its first document posts:
+      // `/self-nav` reports, then moves itself to `/next` without the parent
+      // driving it.
+      const selfNavigation = request.url === '/self-nav' ? '<script>setTimeout(() => { location.href = "/next"; }, 50);</script>' : '';
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(popupDocumentDiagnosticHtml('<!doctype html><script>globalThis.firstInline = [...(globalThis.initOrder ?? [])];</script><script>addEventListener("DOMContentLoaded", () => { if (opener) opener.postMessage({kind: "init-document", snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin); }, {once: true});</script><title>Synthetic init order</title><body>fixture</body>'));
+      response.end(popupDocumentDiagnosticHtml(`<!doctype html><script>globalThis.firstInline = [...(globalThis.initOrder ?? [])];</script><script>addEventListener("DOMContentLoaded", () => { if (opener) opener.postMessage({kind: "init-document", path: location.pathname, snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin); }, {once: true});</script><title>Synthetic init order</title><body>fixture</body>${selfNavigation}`));
     });
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

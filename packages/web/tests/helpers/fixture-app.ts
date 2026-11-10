@@ -172,6 +172,129 @@ const STATE = `<!doctype html>
 </html>`;
 
 /**
+ * The cross-site pair that makes a partitioned cookie observable: a page on
+ * `localhost` embeds a same-origin-to-the-cookie frame on `127.0.0.1`, and the
+ * frame reports the cookies it presented to its parent. A partitioned cookie
+ * restored with its partition intact reaches only this frame, never the
+ * top-level `127.0.0.1` page.
+ */
+const LEGACY_PARTITION_FRAME = `<!doctype html>
+<html>
+<head><title>Fixture Legacy Partition Frame</title></head>
+<body>
+<p id="cookies"></p>
+<script>
+  document.getElementById('cookies').textContent = document.cookie;
+  parent.postMessage({ kind: 'legacy-partition', cookies: document.cookie }, '*');
+</script>
+</body>
+</html>`;
+
+/** The `localhost` top-level page of that pair; the port is filled in when it is served. */
+function legacyPartitionPage(port: number): string {
+  return `<!doctype html>
+<html>
+<head><title>Fixture Legacy Partition</title></head>
+<body>
+<p id="partition">pending</p>
+<iframe src="http://127.0.0.1:${String(port)}/legacy-partition-frame"></iframe>
+<script>
+  addEventListener('message', (event) => {
+    if (event.data?.kind !== 'legacy-partition') return;
+    document.getElementById('partition').textContent = event.data.cookies;
+  });
+</script>
+</body>
+</html>`;
+}
+
+/**
+ * `/legacy-setup` seeds the two stores a Playwright `storageState` file carries
+ * beside cookies: a `localStorage` token and an IndexedDB database with one
+ * store, one index and one record. Cookies are added by the test's own client,
+ * so the recorded file has the shape a Playwright 1.64.1 context emits.
+ */
+const LEGACY_SETUP = `<!doctype html>
+<html>
+<head><title>Fixture Legacy Setup</title></head>
+<body>
+<h1>Setup</h1>
+<script>
+  localStorage.setItem('token', 'file-token');
+  const opening = indexedDB.open('vault', 3);
+  opening.onupgradeneeded = () => {
+    const db = opening.result;
+    if (db.objectStoreNames.contains('sessions')) return;
+    const store = db.createObjectStore('sessions', { keyPath: 'id' });
+    store.createIndex('byUser', 'user', { unique: false });
+  };
+  opening.onsuccess = () => {
+    const tx = opening.result.transaction('sessions', 'readwrite');
+    tx.objectStore('sessions').put({ id: 's1', user: 'ada', role: 'admin' });
+    tx.oncomplete = () => { document.title = 'stored'; };
+  };
+</script>
+</body>
+</html>`;
+
+/** The two cookies a `/legacy-session` request needs, one of them partitioned. */
+export const LEGACY_SESSION_COOKIES = { session: 's1', partitioned: 'pv' } as const;
+
+/**
+ * The gate `/legacy-session` answers without its login cookie. It is a
+ * server-side refusal, so reaching the protected page proves the restored
+ * cookie jar is actually sent, not only stored.
+ */
+const LEGACY_SIGNED_OUT = `<!doctype html>
+<html>
+<head><title>Fixture Legacy Signed Out</title></head>
+<body><h1 id="gate">signed out</h1></body>
+</html>`;
+
+/**
+ * The page `/legacy-session` serves once the cookies are presented. It reads
+ * back the `localStorage` token and the IndexedDB record the imported file
+ * carried, so one read covers all three stores.
+ */
+const LEGACY_PROTECTED = `<!doctype html>
+<html>
+<head><title>Fixture Legacy Protected</title></head>
+<body>
+<h1 id="user">pending</h1>
+<p id="role">pending</p>
+<p id="token">pending</p>
+<p id="cookies"></p>
+<p id="state">pending</p>
+<script>
+  (async () => {
+    const db = await new Promise((resolve) => {
+      const request = indexedDB.open('vault');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+    let record = null;
+    if (db !== null) {
+      if (!db.objectStoreNames.contains('sessions')) db.close();
+      else {
+        record = await new Promise((resolve) => {
+          const read = db.transaction('sessions', 'readonly').objectStore('sessions').get('s1');
+          read.onsuccess = () => resolve(read.result ?? null);
+          read.onerror = () => resolve(null);
+        });
+        db.close();
+      }
+    }
+    document.getElementById('user').textContent = record?.user ?? 'none';
+    document.getElementById('role').textContent = record?.role ?? 'none';
+    document.getElementById('token').textContent = localStorage.getItem('token') ?? 'none';
+    document.getElementById('cookies').textContent = document.cookie;
+    document.getElementById('state').textContent = 'ready';
+  })();
+</script>
+</body>
+</html>`;
+
+/**
  * Every node of interest twice: a hidden copy first, then the copy a person
  * sees, the way a framework keeps a prerendered segment around after a reload.
  * The paragraph pair and the panel pair are hidden by `visibility: hidden`,
@@ -344,6 +467,40 @@ const MEDIA = `<!doctype html>
 <body><p>media</p></body>
 </html>`;
 
+/**
+ * A page whose head script records the trail init scripts left before it, and
+ * whose body carries one element per test-id attribute a differential sets.
+ */
+const TRAIL = `<!doctype html>
+<html>
+<head>
+<title>Fixture Trail</title>
+<script>window.seenAtBoot = [...(window.trail ?? [])];</script>
+</head>
+<body>
+<h1>Trail</h1>
+<button data-qa="primary">Primary</button>
+<button data-testid="default-id">Default</button>
+</body>
+</html>`;
+
+/** Escapes the request header values echoed into HTML text. */
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/** Shows the request's `User-Agent` and `Accept-Language`, for the userAgent and locale differentials. */
+function echoPage(userAgent: string | undefined, acceptLanguage: string | undefined): string {
+  return `<!doctype html>
+<html>
+<head><title>Fixture Echo</title></head>
+<body>
+<p id="user-agent">${escapeHtml(userAgent ?? 'none')}</p>
+<p id="accept-language">${escapeHtml(acceptLanguage ?? 'none')}</p>
+</body>
+</html>`;
+}
+
 const PAGES: Readonly<Record<string, string>> = {
   '/': HOME,
   '/pointer': POINTER,
@@ -359,6 +516,9 @@ const PAGES: Readonly<Record<string, string>> = {
   '/twins': TWINS,
   '/rows': ROWS,
   '/media': MEDIA,
+  '/trail': TRAIL,
+  '/legacy-setup': LEGACY_SETUP,
+  '/legacy-partition-frame': LEGACY_PARTITION_FRAME,
 };
 
 /** Delay before `/slow` answers, long enough for a caller to cancel first. */
@@ -366,6 +526,8 @@ const SLOW_RESPONSE_MS = 5_000;
 
 export interface FixtureApp {
   readonly url: string;
+  /** The same server under a second host, a different site for partition and cross-origin cases. */
+  readonly loopbackUrl: string;
   close(): Promise<void>;
 }
 
@@ -392,6 +554,13 @@ export function startFixtureApp(): Promise<FixtureApp> {
       response.end(headersPage(Array.isArray(value) ? value.join(',') : value));
       return;
     }
+    if (url.pathname === '/echo') {
+      const userAgent = request.headers['user-agent'];
+      const acceptLanguage = request.headers['accept-language'];
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(echoPage(Array.isArray(userAgent) ? userAgent.join(',') : userAgent, Array.isArray(acceptLanguage) ? acceptLanguage.join(',') : acceptLanguage));
+      return;
+    }
     if (url.pathname === '/protected') {
       if (request.headers.authorization === PROTECTED_AUTHORIZATION) {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -403,6 +572,25 @@ export function startFixtureApp(): Promise<FixtureApp> {
         'www-authenticate': 'Basic realm="fixture"',
       });
       response.end(UNAUTHORIZED);
+      return;
+    }
+    if (url.pathname === '/legacy-session') {
+      const presented = new Map<string, string>();
+      for (const part of (request.headers.cookie ?? '').split(';')) {
+        const cut = part.indexOf('=');
+        if (cut > 0) presented.set(part.slice(0, cut).trim(), part.slice(cut + 1).trim());
+      }
+      // The gate is the normal login cookie: a partitioned cookie is never
+      // presented to this first-party request and is checked by the frame pair.
+      const signedIn = presented.get('session') === LEGACY_SESSION_COOKIES.session;
+      response.writeHead(signedIn ? 200 : 401, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(signedIn ? LEGACY_PROTECTED : LEGACY_SIGNED_OUT);
+      return;
+    }
+    if (url.pathname === '/legacy-partition') {
+      const { port } = server.address() as AddressInfo;
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(legacyPartitionPage(port));
       return;
     }
     const page = PAGES[url.pathname];
@@ -420,6 +608,7 @@ export function startFixtureApp(): Promise<FixtureApp> {
       const { port } = server.address() as AddressInfo;
       resolve({
         url: `http://127.0.0.1:${String(port)}`,
+        loopbackUrl: `http://localhost:${String(port)}`,
         close: () =>
           new Promise<void>((done) => {
             server.close(() => done());
