@@ -10,7 +10,7 @@
  */
 
 import type { ViewportPoint, ViewportSize } from '../engine/surface.ts';
-import { redactNode, type NodeRedaction, type RedactedNode } from './observation.ts';
+import { isAnonymousClickable, redactNode, type NodeRedaction, type RedactedNode } from './observation.ts';
 import {
   isNodeAction,
   MAX_TRACE_DESCRIPTOR_CHARS,
@@ -310,6 +310,16 @@ export function describeTarget(node: RedactedNode): TraceTargetDescriptor | unde
   const selector = node.selector === undefined ? undefined : bound(node.selector, MAX_TRACE_DESCRIPTOR_CHARS);
   const inputPurpose =
     node.inputPurpose === undefined || node.inputPurpose === 'none' ? undefined : node.inputPurpose;
+  // An unnamed action target — an icon-only control, an unlabeled clickable
+  // box — has no role, name, or text a replay could re-find it by, while the
+  // page still identifies it: `id` and `class` are the facts the model-facing
+  // line already uses to tell two icons apart, and a replay matches them
+  // exactly like any other identity. The id leads when the page gives one (it
+  // names one element in the document); the class is the icon-glyph name when
+  // it does not. A named control keeps its descriptor unchanged.
+  const anonymousClickable = isAnonymousClickable(node);
+  const domId = anonymousClickable ? field(node.attributes?.['id']) : undefined;
+  const domClass = anonymousClickable && domId === undefined ? field(node.attributes?.['class']) : undefined;
   const descriptor: TraceTargetDescriptor = {
     ...(role === undefined ? {} : { role }),
     ...(name === undefined ? {} : { name }),
@@ -318,6 +328,8 @@ export function describeTarget(node: RedactedNode): TraceTargetDescriptor | unde
     ...(placeholder === undefined ? {} : { placeholder }),
     ...(selector === undefined ? {} : { selector }),
     ...(inputPurpose === undefined ? {} : { inputPurpose }),
+    ...(domId === undefined ? {} : { domId }),
+    ...(domClass === undefined ? {} : { domClass }),
   };
   return Object.keys(descriptor).length === 0 ? undefined : descriptor;
 }

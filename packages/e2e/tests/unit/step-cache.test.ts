@@ -1275,8 +1275,8 @@ describe('settleStagedTraces and a re-recorded flow', () => {
       const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 1, implicatesUnconfirmed: true });
       return writes.get(0);
     };
-    expect(await outcome(16)).toBe('not-written');
-    expect(await outcome(MAX_CACHE_WIRE_BYTES)).toBe('saved');
+    expect(await outcome(16)).toEqual({ write: 'not-written' });
+    expect(await outcome(MAX_CACHE_WIRE_BYTES)).toEqual({ write: 'saved' });
   });
 });
 

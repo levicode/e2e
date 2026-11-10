@@ -14,6 +14,12 @@
  * bent to fit: a trimmed URL or half a typed value would replay a different
  * action than the one recorded, and could self-finalize a step on the wrong
  * state. A poisoned trace still documents what happened; it never replays.
+ *
+ * The recorder also keeps *why* it poisoned one (a `TraceDefect`: the action
+ * with no target a replay could re-find, the input it could not store whole,
+ * the location it could not keep, the actions past the cap) so the step's
+ * report can say a written recording is not replayable, and name the action
+ * numbers, instead of claiming a plain save that the next run refuses.
  */
 
 import { describeAction, type DescribedAction, type RecordableAction } from '../agent/actions.ts';
@@ -41,6 +47,18 @@ import { bound } from '../internal/text.ts';
 /** The summary a run-time value gap records; the prose a project-tool gap would carry for a tool of that name. */
 const DERIVED_GAP_SUMMARY = 'tool type (run-time value)';
 
+/**
+ * Why a recording cannot replay, in the order the recorder found it. A trace
+ * with any of these is `truncated`; the report reads them to say which
+ * actions a replay cannot re-find and why, rather than presenting the write
+ * as a recording the next run will use.
+ */
+export type TraceDefect =
+  | { readonly kind: 'target'; /** One-based position of the action in the recorded list. */ readonly action: number }
+  | { readonly kind: 'input'; readonly action: number }
+  | { readonly kind: 'location'; readonly which: 'start' | 'end' }
+  | { readonly kind: 'overflow'; readonly dropped: number };
+
 export interface TraceRecorderOptions {
   /** The run's secret redactor; applied to every recorded string. */
   readonly redact: (text: string) => string;
@@ -51,6 +69,10 @@ export interface TraceRecorderOptions {
 
 export class TraceRecorder {
   private readonly actions: RecordedAction[] = [];
+  /** Why the trace cannot replay, as the actions and inputs that poisoned it. */
+  private readonly found: TraceDefect[] = [];
+  /** Actions dropped past the cap; each would have been numbered one past the recorded list. */
+  private dropped = 0;
   private truncated = false;
   private readonly redact: (text: string) => string;
   private readonly redactCut: (text: string) => string;
@@ -74,9 +96,29 @@ export class TraceRecorder {
     return this.lastActionAt;
   }
 
+  /**
+   * Why the recording cannot replay, for the report beside the write status;
+   * empty for a recording a replay can run whole. The dropped actions past
+   * the cap are one defect with their count, since they are not numbered in
+   * the recorded list.
+   */
+  get defects(): readonly TraceDefect[] {
+    return this.dropped === 0 ? this.found : [...this.found, { kind: 'overflow', dropped: this.dropped }];
+  }
+
   /** Records one committed grammar action. */
   record(action: RecordableAction): void {
-    this.push(this.toRecorded(action, describeAction(action, { redact: this.redact, redactCut: this.redactCut })));
+    // The place this action takes in the recorded list, one-based. Nothing
+    // that poisons a trace folds into an earlier action (only a repeated
+    // scroll folds), so it is the action's final number.
+    const ordinal = this.actions.length + 1;
+    const mark = this.found.length;
+    if (!this.push(this.toRecorded(action, describeAction(action, { redact: this.redact, redactCut: this.redactCut }), ordinal))) {
+      // A dropped action never reaches the list, so a defect naming its
+      // number would point at nothing; the overflow defect covers it.
+      this.found.length = mark;
+      this.dropped += 1;
+    }
     this.lastActionAt = Date.now();
   }
 
@@ -86,7 +128,7 @@ export class TraceRecorder {
    * that silently dropped a state change would prove nothing.
    */
   recordGap(toolName: string): void {
-    this.push({ name: 'tool', summary: bound(`tool ${this.redact(toolName)}`, MAX_TRACE_SUMMARY_CHARS) });
+    if (!this.push({ name: 'tool', summary: bound(`tool ${this.redact(toolName)}`, MAX_TRACE_SUMMARY_CHARS) })) this.dropped += 1;
     this.lastActionAt = Date.now();
   }
 
@@ -96,7 +138,7 @@ export class TraceRecorder {
    * so the executor derives the value afresh, and the report can say why.
    */
   recordDerivedGap(reason: DerivedReason): void {
-    this.push({ name: 'tool', summary: DERIVED_GAP_SUMMARY, derived: reason });
+    if (!this.push({ name: 'tool', summary: DERIVED_GAP_SUMMARY, derived: reason })) this.dropped += 1;
     this.lastActionAt = Date.now();
   }
 
@@ -129,8 +171,8 @@ export class TraceRecorder {
     // path the redactor alters carried a secret (a token in a query string),
     // and one too long to keep whole cannot be compared, so either marks the
     // trace non-replayable rather than storing it bent.
-    const startPath = this.anchorPath(conclusion.startPath);
-    const endPath = this.anchorPath(conclusion.endPath);
+    const startPath = this.anchorPath(conclusion.startPath, 'start');
+    const endPath = this.anchorPath(conclusion.endPath, 'end');
     return {
       actions: [...this.actions],
       executor: {
@@ -156,8 +198,8 @@ export class TraceRecorder {
     };
   }
 
-  private anchorPath(value: string | undefined): string | undefined {
-    return value === undefined || value === '' ? undefined : this.verbatim(value);
+  private anchorPath(value: string | undefined, which: 'start' | 'end'): string | undefined {
+    return value === undefined || value === '' ? undefined : this.verbatim(value, () => ({ kind: 'location', which }));
   }
 
   /**
@@ -167,17 +209,19 @@ export class TraceRecorder {
    * whose poisoning marks the trace non-replayable when a value cannot be
    * kept whole.
    */
-  private toRecorded(action: RecordableAction, { target, summary, destination }: DescribedAction): RecordedAction {
+  private toRecorded(action: RecordableAction, { target, summary, destination }: DescribedAction, ordinal: number): RecordedAction {
     // A targeted commit whose node yields no descriptor a replay could
     // re-find it by (none at all, or an unnamed twin with no named row to
     // tell it apart) cannot replay; the trace stays honest by poisoning
-    // instead of guessing.
+    // instead of guessing, and the defect names the action.
     const require = (descriptor: TraceTargetDescriptor | undefined): TraceTargetDescriptor => {
       if (descriptor !== undefined && isRelocatableDescriptor(descriptor)) return descriptor;
-      this.truncated = true;
+      this.poison({ kind: 'target', action: ordinal });
       return descriptor ?? { role: 'unknown' };
     };
     const requireTarget = (): TraceTargetDescriptor => require(target);
+    /** A replay input this action carries: verbatim, or poisoned as this action's input. */
+    const input = (text: string): string => this.verbatim(text, () => ({ kind: 'input', action: ordinal }));
     if (isNodeAction(action)) {
       const recorded: RecordedAction = { name: action.name, summary, target: requireTarget() };
       // A tap with held keys replays with them, so the trace keeps them.
@@ -188,19 +232,19 @@ export class TraceRecorder {
       case 'check':
         return { name: 'check', summary, target: requireTarget(), checked: action.checked };
       case 'upload':
-        return { name: 'upload', summary, target: requireTarget(), paths: action.paths.map((path) => this.verbatim(path)) };
+        return { name: 'upload', summary, target: requireTarget(), paths: action.paths.map(input) };
       case 'drag':
         return { name: 'drag', summary, target: requireTarget(), destination: require(destination) };
       case 'back':
         return { name: 'back', summary };
       case 'type':
-        return { name: 'type', summary, target: requireTarget(), value: this.verbatim(action.value) };
+        return { name: 'type', summary, target: requireTarget(), value: input(action.value) };
       case 'typeSecret':
         return { name: 'typeSecret', summary, target: requireTarget(), secret: action.secret };
       case 'press':
-        return { name: 'press', summary, target: requireTarget(), key: this.verbatim(action.key) };
+        return { name: 'press', summary, target: requireTarget(), key: input(action.key) };
       case 'select':
-        return { name: 'select', summary, target: requireTarget(), value: this.verbatim(action.value) };
+        return { name: 'select', summary, target: requireTarget(), value: input(action.value) };
       case 'scroll':
         return {
           name: 'scroll',
@@ -213,17 +257,17 @@ export class TraceRecorder {
         return {
           name: 'scrollUntil',
           summary,
-          text: this.verbatim(action.text),
+          text: input(action.text),
           direction: action.direction,
           ...(target === undefined ? {} : { target }),
           ...(action.spans === undefined ? {} : { spans: fraction(action.spans) }),
         };
       case 'navigate':
-        return { name: 'navigate', summary, url: this.verbatim(action.url) };
+        return { name: 'navigate', summary, url: input(action.url) };
       case 'typeText':
-        return { name: 'typeText', summary, value: this.verbatim(action.value), replace: action.replace };
+        return { name: 'typeText', summary, value: input(action.value), replace: action.replace };
       case 'pressKey':
-        return { name: 'pressKey', summary, key: this.verbatim(action.key) };
+        return { name: 'pressKey', summary, key: input(action.key) };
       case 'dismissKeyboard':
         return { name: 'dismissKeyboard', summary };
       case 'tapAt':
@@ -253,17 +297,24 @@ export class TraceRecorder {
   /**
    * A replay input, verbatim or poisoned. A value the redactor alters carried
    * a registered secret; an oversized one cannot be stored whole. Either way
-   * the trace is marked non-replayable and a redacted, bounded copy is kept
-   * for documentation only.
+   * the trace is marked non-replayable, `poison` says which defect it is, and
+   * a redacted, bounded copy is kept for documentation only.
    */
-  private verbatim(value: string): string {
+  private verbatim(value: string, poison: () => TraceDefect): string {
     const redacted = this.redact(value);
     if (redacted === value && value.length <= MAX_TRACE_INPUT_CHARS) return value;
-    this.truncated = true;
+    this.poison(poison());
     return bound(redacted, MAX_TRACE_INPUT_CHARS);
   }
 
-  private push(action: RecordedAction): void {
+  /** Marks the trace non-replayable and keeps why, for the report beside its write status. */
+  private poison(defect: TraceDefect): void {
+    this.truncated = true;
+    this.found.push(defect);
+  }
+
+  /** Appends one action; returns false when it was dropped past the cap. */
+  private push(action: RecordedAction): boolean {
     // A scroll repeated in the same direction on the same target is one
     // action that ran several times, not several actions: a long list paged
     // to its end fits the trace, and replays with the same repeats.
@@ -274,13 +325,14 @@ export class TraceRecorder {
       const { spans: previous, ...rest } = last;
       const spans = previous === undefined || action.spans === undefined ? undefined : Math.min(previous, action.spans);
       this.actions[this.actions.length - 1] = { ...rest, times: (last.times ?? 1) + 1, ...(spans === undefined ? {} : { spans }) };
-      return;
+      return true;
     }
     if (this.actions.length >= this.maxActions) {
       this.truncated = true;
-      return;
+      return false;
     }
     this.actions.push(action);
+    return true;
   }
 }
 

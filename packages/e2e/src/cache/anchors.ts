@@ -348,11 +348,19 @@ function projectAnchors(nodes: ReadonlyMap<string, RedactedNode>): readonly Anch
   return anchors;
 }
 
-/** One node's anchor projection, or undefined when it could identify nothing. */
+/**
+ * One node's anchor projection, or undefined when it could identify nothing.
+ * The page identifiers of an unnamed action target are left out: an anchor
+ * asks what the step made visible, and an icon appearing is a control, not
+ * an outcome. An icon whose only identity is its `id`/`class` has no anchor
+ * shape at all and is dropped, exactly as before those identifiers could
+ * identify a replay target.
+ */
 function anchorDescriptor(node: RedactedNode): TraceTargetDescriptor | undefined {
   const described = describeTarget(node);
-  if (described === undefined || descriptorTiers(described).length === 0) return undefined;
-  const { selector: _selector, ...anchor } = described;
+  if (described === undefined) return undefined;
+  const { selector: _selector, domId: _domId, domClass: _domClass, ...anchor } = described;
+  if (descriptorTiers(anchor).length === 0) return undefined;
   const states: TraceAnchorState[] = TRACE_ANCHOR_STATES.filter((state) => node.states?.[state] === true);
   const value = node.value === undefined || node.states?.secure === true ? '' : collapseText(node.value);
   return {

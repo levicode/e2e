@@ -269,7 +269,7 @@ describe('settleStagedTraces', () => {
     // The same bytes, createdAt included: a replay is not a rewrite.
     expect(store.entries.get(KEY_A)).toBe(stored);
     expect(store.entries.has(KEY_B)).toBe(false);
-    expect([...writes]).toEqual([[1, 'kept'], [3, 'evicted']]);
+    expect([...writes].map(([index, result]) => [index, result.write])).toEqual([[1, 'kept'], [3, 'evicted']]);
   });
 
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('does not report default-store eviction when the entry directory denies deletion', async () => {
@@ -284,7 +284,7 @@ describe('settleStagedTraces', () => {
       context.staged.push({ kind: 'keep', keyHash: KEY_B, stepIndex: 3, recordedFor: STEP });
       const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
       expect(await readFile(entryPath, 'utf8')).toBe(before);
-      expect(writes.get(3)).toBe('unconfirmed');
+      expect(writes.get(3)).toEqual({ write: 'unconfirmed' });
       await expect(store.delete('c'.repeat(64))).resolves.toBeUndefined();
     } finally {
       await chmod(directory, 0o700);
@@ -307,10 +307,31 @@ describe('settleStagedTraces', () => {
 
     const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 3, implicatesUnconfirmed: true });
 
-    expect(writes.get(1)).toBe('not-written');
-    expect(writes.get(2)).toBe('saved');
+    expect(writes.get(1)).toEqual({ write: 'not-written' });
+    expect(writes.get(2)).toEqual({ write: 'saved' });
     expect(store.entries.has(KEY_A)).toBe(false);
     expect(store.entries.has(KEY_B)).toBe(true);
+  });
+
+  it('says a written recording cannot replay, naming the actions it cannot re-find', async () => {
+    const store = memoryStore();
+    const context = contextWith(store);
+    context.staged.push({
+      kind: 'write',
+      keyHash: KEY_A,
+      trace: { ...trace('unreplayable flow'), truncated: true },
+      stepIndex: 1,
+      note: 'action 2 has no target a replay can re-find',
+    });
+    // The status comes from the trace itself, so a store write that loses its
+    // note still never reads as a plain save.
+    context.staged.push({ kind: 'write', keyHash: KEY_B, trace: { ...trace('unreplayable flow, no note'), truncated: true }, stepIndex: 2 });
+    context.staged.push({ kind: 'write', keyHash: 'c'.repeat(64), trace: trace('whole flow'), stepIndex: 3 });
+    const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 4, implicatesUnconfirmed: true });
+    expect(writes.get(1)).toEqual({ write: 'saved-unreplayable', detail: 'action 2 has no target a replay can re-find' });
+    expect(writes.get(2)).toEqual({ write: 'saved-unreplayable' });
+    expect(writes.get(3)).toEqual({ write: 'saved' });
+    expect([...store.entries.keys()]).toHaveLength(3);
   });
 
   it('does not report an eviction when a custom store rejects deletion, and still settles other entries', async () => {
@@ -322,8 +343,8 @@ describe('settleStagedTraces', () => {
     context.staged.push({ kind: 'write', keyHash: KEY_A, trace: trace('confirmed'), stepIndex: 1 });
     const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
     expect(store.entries.get(KEY_B)).toBe(stored);
-    expect(writes.get(3)).toBe('unconfirmed');
-    expect(writes.get(1)).toBe('saved');
+    expect(writes.get(3)).toEqual({ write: 'unconfirmed' });
+    expect(writes.get(1)).toEqual({ write: 'saved' });
     expect(store.entries.has(KEY_A)).toBe(true);
   });
 
@@ -331,7 +352,7 @@ describe('settleStagedTraces', () => {
     const context = contextWith({ ...memoryStore(), delete: async () => { throw new Error('store unavailable'); } });
     context.staged.push({ kind: 'write', keyHash: KEY_A, trace: trace('unconfirmed'), stepIndex: 3 });
     const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
-    expect([...writes]).toEqual([[3, 'unconfirmed']]);
+    expect([...writes].map(([index, result]) => [index, result.write])).toEqual([[3, 'unconfirmed']]);
   });
 
   it('leaves a confirmed kept entry that records no key context as stored, so a committed cache stays clean', async () => {
@@ -342,7 +363,7 @@ describe('settleStagedTraces', () => {
     context.staged.push({ kind: 'keep', keyHash: KEY_A, stepIndex: 1, recordedFor: STEP });
     const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
     expect(store.entries.get(KEY_A)).toBe(stored);
-    expect(writes.get(1)).toBe('kept');
+    expect(writes.get(1)).toEqual({ write: 'kept' });
   });
 
   it('completes the provenance of a confirmed kept entry recorded before the occurrence fields, and nothing else', async () => {
@@ -370,7 +391,7 @@ describe('settleStagedTraces', () => {
     expect(store.entries.has(KEY_A)).toBe(true);
     expect(store.entries.get(KEY_B)).toBe(stored);
     expect(store.entries.get(KEY_C)).toBe(stored);
-    expect([...writes]).toEqual([[1, 'saved'], [3, 'unconfirmed'], [4, 'unconfirmed']]);
+    expect([...writes].map(([index, result]) => [index, result.write])).toEqual([[1, 'saved'], [3, 'unconfirmed'], [4, 'unconfirmed']]);
   });
 
   it('claims a key per agent and per agent context, so one agent never replays another\'s recording', () => {

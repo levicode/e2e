@@ -12,6 +12,7 @@ import { FORM_PAGES } from './fixture-pages/forms.ts';
 import { FRAME_PAGES } from './fixture-pages/frames.ts';
 import { GESTURE_PAGES } from './fixture-pages/gestures.ts';
 import { HOME_PAGES } from './fixture-pages/home.ts';
+import { ICON_PAGES } from './fixture-pages/icons.ts';
 import { LIVE_PAGES } from './fixture-pages/live.ts';
 import type { FixtureState, PageRenderer } from './fixture-pages/page.ts';
 import { RECORD_PAGES, renderCompany, renderRecord } from './fixture-pages/records.ts';
@@ -33,6 +34,7 @@ const ROUTES: Record<string, PageRenderer> = {
   ...FRAME_PAGES,
   ...CANVAS_PAGES,
   ...FORM_PAGES,
+  ...ICON_PAGES,
   ...GESTURE_PAGES,
   ...LIVE_PAGES,
   ...RECORD_PAGES,

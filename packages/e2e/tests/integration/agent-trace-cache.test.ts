@@ -694,7 +694,15 @@ describe('trace cache: a bare-point tap replays like a coordinate-driven tool', 
     expect(first.exitCode).toBe(0);
     const { entry } = readOnlyEntry(project);
     expect(entry.payload.actions).toEqual([
-      { name: 'tapAt', summary: 'tap the point (300, 60) on node', point: { x: 300, y: 60 }, viewport: { width: 1280, height: 720 } },
+      {
+        name: 'tapAt',
+        // The canvas is an unnamed action target the page identifies by id,
+        // so the point keeps its place inside the canvas and follows it.
+        summary: 'tap the point (300, 60) on node "map"',
+        point: { x: 300, y: 60 },
+        viewport: { width: 1280, height: 720 },
+        within: { target: { selector: '#map', domId: 'map' }, fx: 0.75, fy: 0.3 },
+      },
     ]);
     expect(entry.payload.endAnchors).toContainEqual({ role: 'status', name: 'Hit', text: 'red' });
 

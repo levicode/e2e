@@ -84,6 +84,19 @@ describe.each(schemas)('%s schema', (name) => {
       }
     });
 
+    it('accepts a recording saved but not replayable, with the actions it cannot re-find bounded', () => {
+      const report = readJson('fixtures', 'report-v1.valid.json') as {
+        run: { carried: { results: { attempts: (Record<string, unknown> & { steps: Record<string, unknown>[] })[] }[] } };
+      };
+      const cache = report.run.carried.results[0]!.attempts[0]!.steps[0]!['cache'] as Record<string, unknown>;
+      expect(cache['write']).toBe('saved-unreplayable');
+      expect(validate(report)).toBe(true);
+      cache['writeDetail'] = 'x'.repeat(601);
+      expect(validate(report)).toBe(false);
+      cache['writeDetail'] = 'x'.repeat(600);
+      expect(validate(report)).toBe(true);
+    });
+
     it('constrains result tags to distinct names --tag can spell back', () => {
       const report = readJson('fixtures', 'report-v1.valid.json') as { run: { results: { tags?: string[] }[] } };
       const result = report.run.results[0]!;

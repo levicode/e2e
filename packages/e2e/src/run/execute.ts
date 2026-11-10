@@ -1269,8 +1269,10 @@ export class TargetExecutor implements SerialHost {
             },
       );
       for (const step of record.steps) {
-        const write = writes.get(step.index);
-        if (step.cache !== undefined && write !== undefined) step.cache.write = write;
+        const result = writes.get(step.index);
+        if (step.cache === undefined || result === undefined) continue;
+        step.cache.write = result.write;
+        if (result.detail !== undefined) step.cache.writeDetail = result.detail;
       }
     }
     return record;

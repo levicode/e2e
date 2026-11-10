@@ -43,12 +43,14 @@ export const MAX_TRACE_INPUT_CHARS = 4_096;
 
 /**
  * A node as one line of prose names it, `button "Save"`: its role and its
- * best label (name, text, placeholder, then test id), the label bounded.
- * Every report line that names a node an action or a recording points at
- * reads it this way.
+ * best label (name, text, placeholder, test id, then the page identifier an
+ * unnamed action target carries), the label bounded. Every report line that
+ * names a node an action or a recording points at reads it this way.
  */
-export function targetLabel(target: Pick<TraceTargetDescriptor, 'role' | 'name' | 'text' | 'placeholder' | 'testId'>): string {
-  const label = target.name ?? target.text ?? target.placeholder ?? target.testId ?? '';
+export function targetLabel(
+  target: Pick<TraceTargetDescriptor, 'role' | 'name' | 'text' | 'placeholder' | 'testId' | 'domId' | 'domClass'>,
+): string {
+  const label = target.name ?? target.text ?? target.placeholder ?? target.testId ?? target.domId ?? target.domClass ?? '';
   const role = target.role ?? 'node';
   return label === '' ? role : `${role} ${JSON.stringify(bound(label, 40))}`;
 }
@@ -136,6 +138,22 @@ export interface TraceTargetDescriptor {
   readonly placeholder?: string;
   readonly selector?: string;
   readonly inputPurpose?: string;
+  /**
+   * A page identifier for an unnamed action target: the `id` attribute of a
+   * role-less clickable node (an icon-only button, an unlabeled clickable
+   * box), which the model-facing line already shows as `id=`. It is DOM
+   * fact, not a label, and a replay matches it exactly, so an icon no role or
+   * name can re-find still relocates in a later session. Absent for every
+   * named control, whose label identifies it already.
+   */
+  readonly domId?: string;
+  /**
+   * A page identifier of the same kind: the `class` attribute of an unnamed
+   * action target, recorded only when the page gives the node no `id` (the
+   * icon font's own glyph class, for one). DOM fact like `domId`, matched
+   * exactly.
+   */
+  readonly domClass?: string;
   /** Key of the container the target sat in (a row's first cell); relocation requires the same. */
   readonly within?: string;
   /**
@@ -775,6 +793,8 @@ export const DESCRIPTOR_FIELDS = [
   'placeholder',
   'selector',
   'inputPurpose',
+  'domId',
+  'domClass',
   'within',
   'value',
 ] as const;
@@ -782,9 +802,11 @@ export const DESCRIPTOR_FIELDS = [
 /**
  * The descriptor fields that carry text read off the screen, where a value
  * a test supplied can reappear. `role`, `selector`, and `inputPurpose` are
- * vocabulary, never screen text.
+ * vocabulary, never screen text. The page identifiers are page-authored text
+ * (an app may mint an id or class from a record's name), so a `unique()` value
+ * spelled inside one is templated like any other recorded text.
  */
-const DESCRIPTOR_TEXT_FIELDS = ['name', 'text', 'testId', 'placeholder', 'within', 'value'] as const;
+const DESCRIPTOR_TEXT_FIELDS = ['name', 'text', 'testId', 'placeholder', 'domId', 'domClass', 'within', 'value'] as const;
 
 /** A string rewrite; `undefined` means the text cannot be rewritten and the whole trace is unusable. */
 export type TraceTextMap = (text: string) => string | undefined;

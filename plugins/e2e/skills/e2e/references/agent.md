@@ -341,8 +341,10 @@ matches. Misses and hand-offs use the model; `agent.assert`,
 - A replay needs the app on the recorded route (origin, path, and query,
   ids and tokens aside; unless the recording opens with a navigation),
   re-finds each control by role, name, test id, placeholder, input purpose,
-  and its named row (an unnamed control with twins and no named container
-  hands off), and passes alone only when the recorded end route is back,
+  its page `id` or `class` when it is an unnamed action target such as an
+  icon button, and its named row (an unnamed control with twins, no page
+  identifier, and no named container hands off), and passes alone only when
+  the recorded end route is back,
   every control that appeared (with its checked or selected state) is
   there, every one that went away is gone, at least one of those changed
   during the replay, and no new alert showed; otherwise the agent takes
@@ -354,6 +356,11 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   goal again. `step.cache.reason` says why: `no-entry`,
   `wrong-context`, `target-not-found`, `target-ambiguous`, `end-mismatch`,
   and so on.
+- A recording a replay cannot run whole is still written for its
+  documentation, but the run reports `step.cache.write:
+  saved-unreplayable`, with `writeDetail` naming the actions it could not
+  re-find, and the next run refuses the entry before any action. `saved`
+  means the recording replays.
 - A step changing nothing on screen or in the route creates no entry
   (`step.cache.write`: `no-change`) and runs live every run, strict
   included; a change only inside a frame from another site counts as
