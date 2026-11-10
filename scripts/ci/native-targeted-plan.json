@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "1da1180ed38605ab427dc0586f7973232c2aee69",
-    "tree": "cedaae2898f85d0b87f4e26e262989081ed3dc12",
+    "commit": "9069cb4e228bd68ac44b6cdf04e21e68e48fb860",
+    "tree": "94c408e5ac970ba0d98a45c6c46da2868b1a4a7c",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -4118,115 +4118,121 @@
       {
         "name": "native::client_page::navigation_retirement::tests::aborted_response_requires_exact_started_loader_and_explicit_non_download",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::subscription_sequence_and_pretrigger_events_are_not_navigation_authority",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::intervening_navigation_detach_and_malformed_events_fail_closed",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::exact_abort_and_stop_proof_preserves_both_original_interruption_causes",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::stop_ack_alone_wrong_loader_or_rejected_command_never_mints_receipt",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::successful_ack_is_not_an_aborted_response_and_requires_exact_fresh_identity",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_stop_needs_current_loader_and_only_a_post_baseline_stopped_event",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_previous_or_replacement_loader_permanently_invalidates_witness",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_pretrigger_or_second_start_and_wrong_url_are_not_authority",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_old_events_only_before_start_and_foreign_frame_stop_never_complete",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_gap_detach_same_document_and_malformed_events_fail_closed",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_exact_original_and_stop_retire_in_the_original_producer",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_wrong_loader_or_missing_stop_proof_stays_unknown",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_wrong_scope_or_detached_attachment_cannot_send_stop",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_lifecycle_alone_and_optional_flags_do_not_grant_current_authority",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::post_ack_prequeued_stop_replacement_and_residual_debt_are_not_receipts",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::acknowledged_interruption_reason_freezes_deadline_without_reclassifying_other_failures",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::original_ack_selected_before_cancel_keeps_the_exact_terminal_proof",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {
         "name": "native::client_page::navigation_retirement::tests::ack_cancel_race_still_rejects_wrong_loader_error_and_missing_terminal_events",
         "path": "cli/src/native/client_navigation_retirement_tests.rs",
-        "sha256": "f98a1a342202486ddf66d8124b0f7d93a537e9629cc4c63c6bff369a9550b8b8",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
+        "ignored": false
+      },
+      {
+        "name": "native::client_page::navigation_retirement::tests::reserved_navigation_cancel_before_submit_records_the_command_as_unsubmitted",
+        "path": "cli/src/native/client_navigation_retirement_tests.rs",
+        "sha256": "917f198c5dec94c6c12803606b9d732dce72f00f373cffcb4889f7653c589759",
         "ignored": false
       },
       {

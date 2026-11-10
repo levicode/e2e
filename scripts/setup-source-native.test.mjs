@@ -1,12 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {mkdtempSync,writeFileSync,rmSync,readFileSync,mkdirSync,symlinkSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {NATIVE,LOCK,outside,checkSource,selectProduction,cleanEnvironment,prepareDirectories,verifyBinary,executeLogged} from './setup-source-native.mjs';
+const repoRoot=new URL('..',import.meta.url);
+const readJSON=path=>JSON.parse(readFileSync(new URL(path,repoRoot),'utf8'));
+const digest=path=>createHash('sha256').update(readFileSync(new URL(path,repoRoot))).digest('hex');
 const rows=()=>[{reason:'compiler-artifact',target:{name:'agent-browser',kind:['bin'],src_path:'/native/cli/src/main.rs'},profile:{test:false},fresh:false,features:[],manifest_path:'/native/cli/Cargo.toml',executable:'/target/ci/agent-browser'},{reason:'build-finished',success:true}];
-test('exact native pin binds the decision-window floor, observation latency, text-metadata folding, display-none pre-filter, login-redirect, opaque-plugin scroll, unnamed-action-target, anonymous-clickable identity, optional-trace-isolation, clickable-action-target, post-navigation-stale-node, interop CA/proxy forwarding, macOS CA-trust, scope-unavailable enrollment wait, fixed-read enrollment wait, retired-frame stale-scope, retired-frame browser-level reply, closed object-not-found answer and retained stale-scope refusal, saturated-cleanup-pool capacity and semantic-geometry fan-out, readonly-release cleanup-slot promise fixes, semantic-geometry lane admission, document-attributed saved state, strict unpartitioned query inventory, WebMCP feature and paused-target domain-filter probe fixes',()=>{assert.equal(NATIVE.commit,'1da1180ed38605ab427dc0586f7973232c2aee69');assert.equal(NATIVE.tree,'cedaae2898f85d0b87f4e26e262989081ed3dc12');assert.match(LOCK,/^[a-f0-9]{64}$/);});
+test('exact native pin binds the decision-window floor, observation latency, text-metadata folding, display-none pre-filter, login-redirect, opaque-plugin scroll, unnamed-action-target, anonymous-clickable identity, optional-trace-isolation, clickable-action-target, post-navigation-stale-node, interop CA/proxy forwarding, macOS CA-trust, scope-unavailable enrollment wait, fixed-read enrollment wait, retired-frame stale-scope, retired-frame browser-level reply, closed object-not-found answer and retained stale-scope refusal, saturated-cleanup-pool capacity and semantic-geometry fan-out, readonly-release cleanup-slot promise fixes, semantic-geometry lane admission, document-attributed saved state, strict unpartitioned query inventory, WebMCP feature and paused-target domain-filter probe fixes, cancelled-navigation-before-submit settlement and receipt-less quarantine stale-scope classification',()=>{assert.equal(NATIVE.commit,'9069cb4e228bd68ac44b6cdf04e21e68e48fb860');assert.equal(NATIVE.tree,'94c408e5ac970ba0d98a45c6c46da2868b1a4a7c');assert.match(LOCK,/^[a-f0-9]{64}$/);});
+test('candidate, source build, plans and popup binding carry exactly one native pin',()=>{
+ const candidate=readJSON('.github/native-candidate.json');assert.equal(candidate.repository,'levicode/agent-browser');assert.equal(candidate.commit,NATIVE.commit);
+ const plans=['scripts/ci/native-targeted-plan.json','scripts/ci/popup-joint-fault-controls.json'];
+ for(const path of plans)assert.deepEqual(readJSON(path).native,{commit:NATIVE.commit,tree:NATIVE.tree,lockSHA256:LOCK});
+ const binding=readJSON('scripts/ci/popup-joint-binding.json');assert.deepEqual(binding.native,{commit:NATIVE.commit,tree:NATIVE.tree});for(const path of plans)assert.equal(binding.sourceHashes[path],digest(path),path+' digest in the popup binding');
+ for(const path of ['.github/native-candidate.json','scripts/setup-source-native.mjs','scripts/SOURCE-SETUP.md',...plans,'scripts/ci/popup-joint-binding.json']){
+  const text=readFileSync(new URL(path,repoRoot),'utf8');
+  for(const hex of text.match(/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/g)??[])assert.ok([NATIVE.commit,NATIVE.tree].includes(hex),path+' carries a second native pin: '+hex);
+ }
+ assert.ok(readFileSync(new URL('scripts/SOURCE-SETUP.md',repoRoot),'utf8').includes(NATIVE.commit));
+});
 test('fresh successful production only; missing/duplicate/test/cached/features/wrong paths rejected',()=>{assert.equal(selectProduction(rows(),'/native','/target').fresh,false);for(const mutate of [r=>r.pop(),r=>r.push({...r[1]}),r=>r[1].success=false,r=>r.push({...r[0]}),r=>r[0].profile.test=true,r=>r[0].fresh=true,r=>delete r[0].fresh,r=>r[0].features=['fault-injection'],r=>r[0].target.kind=['lib'],r=>r[0].manifest_path='/old/Cargo.toml',r=>r[0].target.src_path='/old/main.rs',r=>r[0].executable='/old/bin']){const r=rows();mutate(r);assert.throws(()=>selectProduction(r,'/native','/target'));}});
 test('source/environment cannot inherit old runtime/Chrome or compiler override',()=>{const input={PATH:'/bin',HOME:'/home/user',E2E_AGENT_BROWSER_EXECUTABLE:'/old',AGENT_BROWSER_SESSION:'old',E2E_CHROMIUM_EXECUTABLE:'/old',E2E_DIAGNOSTIC_FOO:'1',NATIVE_PROCESS_MODULE:'/old/fake-process.js',NODE_OPTIONS:'--import evil',RUSTFLAGS:'bad',CARGO_TARGET_DIR:'/old',GITHUB_TOKEN:'secret',OPENAI_API_KEY:'secret'};assert.deepEqual(cleanEnvironment(input),{PATH:'/bin',HOME:'/home/user',E2E_TELEMETRY_DISABLED:'1',E2E_UPDATE_CHECK_DISABLED:'1'});assert.equal(input.RUSTFLAGS,'bad');});
 test('output containment rejects checkout itself and its children',()=>{assert.equal(outside('/source','/source'),false);assert.equal(outside('/source','/source/sub'),false);assert.equal(outside('/source','/other'),true);});
