@@ -114,10 +114,11 @@ pinned 32MiB clamp is called out instead of silently mixed in.
 | same | evaluate-size-512KiB, evaluate-size-900KiB, evaluate-depth-80, init-count-100, init-count-1024, init-total-7.4MiB, blob-response-8MiB, blob-download-64MiB, blob-download-130MiB, blob-download-total-150MiB, state-localstorage-4MiB, route-foreground-5s, budget-timeout-2h, video-2s |
 
 The old side closed its context and browser cleanly in every row that
-returned. One row did not return: the old 63MiB response read, whose watchdog
-kill took its whole process group with it, so its Chromium did not outlive the
-table. The new cleanup column above is the one that varies; the JSON records
-both sides' cleanup.
+returned. One row did not return: the old 63MiB response read was killed by the
+watchdog, so its cleanup is not observed. The harness now kills a timed-out
+case's process group, Chromium included, so a later run does not leak it. The
+new cleanup column above is the one that varies; the JSON records both sides'
+cleanup.
 
 ## What the table says
 
