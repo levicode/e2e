@@ -134,6 +134,46 @@ For preview URLs that change on each deploy, set
 identity. On devices, replay uses the
 [screen title](/reference/mobile#replay-cache-on-a-device) as the path.
 
+## Split a shared prefix into its own step
+
+An entry belongs to one `agent.act()` call. Rewording its instruction misses
+that whole call, actions performed before the change included: no part of one
+call's instruction matches another's recording, so a shared prefix only
+replays as its own call.
+
+When two flows start the same way (open a screen, search for a record, then
+write), make that shared part its own `agent.act()` call. Each call records
+and replays on its own, so the unchanged first call keeps its recording while
+the second call's instruction changes:
+
+```ts title="tests/tags.e2e.ts"
+import { expect, test } from 'e2e';
+
+const account = 'E2E-0042';
+const tag = 'VIP';
+
+test('adds the tag', async ({ agent, screen }) => {
+  await agent.act('open account {account} and query it', { params: { account } });
+  await expect(screen.getByRole('cell', { name: account })).toBeVisible();
+  await agent.act('add the tag {tag}', { params: { tag } });
+  await expect(screen.getByRole('status')).toHaveText('saved');
+});
+
+test('removes the tag', async ({ agent, screen }) => {
+  await agent.act('open account {account} and query it', { params: { account } });
+  await expect(screen.getByRole('cell', { name: account })).toBeVisible();
+  await agent.act('remove the tag {tag}', { params: { tag } });
+  await expect(screen.getByRole('status')).toHaveText('saved');
+});
+```
+
+Follow each call with its own check: a later verification step confirms the
+recording in front of it, and the next call opens on the screen the replay
+left. An entry also belongs to one test, so the two tests above record the
+shared call once each rather than sharing one entry. What splitting buys is
+that a change to a write instruction no longer invalidates the actions
+before it.
+
 ## Rerun a test while you fix it
 
 While you fix a failing test, keep the cache on in `read-write` mode, the
@@ -161,8 +201,9 @@ matches the screen.
 2. Find each recorded control by role, name, test id, and surrounding
    context, and repeat its action. An unnamed action target, such as an icon
    button, is found by the page's own `id`, or its `class` when the page
-   gives no id. The runner waits for missing controls and stops when a match
-   is ambiguous.
+   gives no id, or by the text of the one container that holds it and a
+   single text (a chip's label and its remove icon). The runner waits for
+   missing controls and stops when a match is ambiguous.
 3. Check the final route and what the original step changed: the controls
    that appeared, with their checked, selected, expanded, or pressed state,
    and the ones that went away.
@@ -206,7 +247,9 @@ page on any other origin is another route.
 - A control with no name is found by the page's own `id`, or its `class`
   when there is no id. With neither, it is found by its place among the
   unnamed controls of its kind inside the same named row, list item, or
-  group.
+  group, or by the text of a container that holds just that one text and
+  that one control and nothing else actionable (a tag chip's label beside
+  its remove icon).
 </Accordion>
 
 ## Why a step was not replayed

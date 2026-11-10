@@ -526,6 +526,15 @@ target, also shows those attributes and its place in the group as `nth=i/n`.
 They are DOM facts (an icon class may name the glyph; the ordinal places the
 target), not invented labels, and only unnamed action targets get them.
 
+When a container holds exactly one text and that one unnamed action target,
+and nothing else actionable, the target's line also names the container's
+text as `in="…"`: a tag chip
+renders its label beside its remove icon, and the icon line reads
+`class="ivu-icon ivu-icon-ios-close" in="TAG-42"`. The same text anchors the
+recorded target, so the trace reads `tap node "ivu-icon ivu-icon-ios-close"
+in "TAG-42"` and a replay re-finds the icon in that chip rather than by its
+place among every identical icon.
+
 - Uses `config.actionTimeout`.
 - The text has the same format and size limit as the trace's
   [screen at failure](/debugging#traces).

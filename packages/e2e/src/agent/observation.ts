@@ -4,7 +4,7 @@ import { referenceText } from './reference-text.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../engine/contract.ts';
 import type { NodeRef, Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
 import type { SecretLedger } from '../internal/redact.ts';
-import { collapseText } from '../internal/text.ts';
+import { bound, collapseText } from '../internal/text.ts';
 import { sleep } from '../internal/time.ts';
 import { pixelsProvenMasked } from '../run/secrecy.ts';
 import type { VisionDegradation } from '../run/steps.ts';
@@ -142,10 +142,19 @@ export function prepareObservation(
     for (const child of node.children ?? []) notePositions(child);
   };
   notePositions(tree);
+  // The nearest container that holds one text and one unnamed control names it;
+  // post-order, so an outer container cannot claim a control its own child groups.
+  const owners = new Map<string, string>();
+  const noteOwners = (node: RedactedNode): void => {
+    for (const child of node.children ?? []) noteOwners(child);
+    const sole = soleControl(node);
+    if (sole !== undefined && !owners.has(sole.control.ref.id)) owners.set(sole.control.ref.id, sole.label);
+  };
+  noteOwners(tree);
   const lineOf = (node: RedactedNode, depth: number): MeasuredLine => {
     let measured = metrics.get(node);
     if (measured === undefined) {
-      const line = formatNode(node, depth, options.appOrigin, positions.get(node.ref.id));
+      const line = formatNode(node, depth, options.appOrigin, positions.get(node.ref.id), owners.get(node.ref.id));
       measured = { line, size: encoder.encode(`${line}\n`).byteLength };
       metrics.set(node, measured);
     }
@@ -548,6 +557,9 @@ export function projectTree(node: RedactedNode, appOrigin?: string): ExecutorNod
 /** Depth beyond this renders flat; deep chrome must not buy tokens with spaces. */
 const MAX_INDENT_DEPTH = 10;
 
+/** Longest container text shown as an unnamed control's `in=` context. */
+const MAX_OWNER_CHARS = 80;
+
 /** Link target UTF-16 units a line shows; a longer target is cut there and ends with `…`. */
 const MAX_HREF_LENGTH = 256;
 
@@ -575,8 +587,57 @@ export function isAnonymousClickable(node: RedactedNode): boolean {
     && (node.testId === undefined || node.testId === '');
 }
 
-export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, position?: string): string {
-  const description = describeNode(node, appOrigin, new Set(), position);
+/** The one text and unnamed control a container groups, when it holds exactly one of each. */
+export interface SoleControl {
+  readonly control: RedactedNode;
+  readonly label: string;
+}
+
+/**
+ * The one text and unnamed control a container groups when it holds exactly
+ * one of each: a tag chip's label beside its remove icon, which the engine
+ * may flatten into the same parent. The label is the control's context, not
+ * its name; a container that holds many texts or many unnamed controls (a
+ * list, a dialog, a page) is not this shape and names nothing.
+ */
+export function soleControl(container: RedactedNode): SoleControl | undefined {
+  // A page-level container (a document, a dialog, a named row) is never a
+  // chip, and naming its one control after a stray text would invent an
+  // association; only a plain role-less grouping element is this shape.
+  const role = container.role ?? '';
+  if (role !== '' && role !== 'generic' && role !== 'none') return undefined;
+  const labels = new Set<string>();
+  const controls: RedactedNode[] = [];
+  let ambiguous = false;
+  const visit = (node: RedactedNode): void => {
+    if (ambiguous) return;
+    // An unnamed control's own content is not a label for its container.
+    if (isAnonymousClickable(node)) {
+      controls.push(node);
+      if (controls.length > 1) ambiguous = true;
+      return;
+    }
+    // A second control here means the text may name that control, not this one.
+    if (isActionable(node)) {
+      ambiguous = true;
+      return;
+    }
+    const label = collapseText(node.text ?? node.name ?? '').trim();
+    if (label !== '') labels.add(label);
+    if (labels.size > 1) {
+      ambiguous = true;
+      return;
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  for (const child of container.children ?? []) visit(child);
+  const label = labels.values().next().value;
+  if (ambiguous || controls.length !== 1 || label === undefined) return undefined;
+  return { control: controls[0]!, label };
+}
+
+export function formatNode(node: RedactedNode, depth: number, appOrigin?: string, position?: string, owner?: string): string {
+  const description = describeNode(node, appOrigin, new Set(), position, owner);
   return `${' '.repeat(Math.min(depth, MAX_INDENT_DEPTH))}${referenceText(node.ref.id)}${description === '' ? '' : ` ${description}`}`;
 }
 
@@ -586,7 +647,7 @@ export function formatNode(node: RedactedNode, depth: number, appOrigin?: string
  * out states a reader comparing two screens does not count as a change
  * (focus moves with every action).
  */
-export function describeNode(node: RedactedNode, appOrigin?: string, ignoreStates: ReadonlySet<string> = new Set(), position?: string): string {
+export function describeNode(node: RedactedNode, appOrigin?: string, ignoreStates: ReadonlySet<string> = new Set(), position?: string, owner?: string): string {
   const parts: string[] = [];
   if (node.role !== undefined && node.role !== '') parts.push(node.role);
   if (node.name !== undefined && node.name !== '') parts.push(JSON.stringify(node.name));
@@ -613,6 +674,8 @@ export function describeNode(node: RedactedNode, appOrigin?: string, ignoreState
     for (const [key, value] of Object.entries(node.attributes ?? {}).filter(([attribute]) => attribute.startsWith('aria-')).slice(0, 4)) {
       if (value !== '') parts.push(`${key}=${JSON.stringify(collapseText(value).slice(0, 120))}`);
     }
+    // The label of the container that holds this one control and one text.
+    if (owner !== undefined) parts.push(`in=${JSON.stringify(bound(collapseText(owner), MAX_OWNER_CHARS))}`);
     if (position !== undefined) parts.push(`nth=${position}`);
   }
   if (node.states?.secure === true) {

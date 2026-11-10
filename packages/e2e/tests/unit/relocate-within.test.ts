@@ -102,6 +102,62 @@ describe('container keys', () => {
     expect(relocateDescriptor({ role: 'group', name: 'Row 0512', testId: 'row-512' }, live.nodes)).toEqual({ kind: 'found', id: 'row-512' });
   });
 
+  it('keys a chip\'s remove icon by the chip\'s label when the chip holds one text and one control', () => {
+    // The page renders 91 identical remove icons; only the chip each sits in
+    // tells them apart. Chrome may flatten the chip's own element, so the label
+    // and the icon arrive as the same container's children.
+    const clickable: NonNullable<SemanticNode['states']> & { readonly clickable: boolean } = { clickable: true };
+    const chip = (label: string, iconId: string) => {
+      const nodes = new Map<string, RedactedNode>();
+      const parents = new Map<string, string>();
+      const text: SemanticNode = { ref: { id: `${iconId}-label`, revision: 'r' }, text: label };
+      const close: SemanticNode = { ref: { id: iconId, revision: 'r' }, states: clickable, attributes: { class: 'ivu-icon ivu-icon-ios-close' } };
+      const container: SemanticNode = { ref: { id: `${iconId}-chip`, revision: 'r' }, children: [text, close] };
+      for (const item of [container, text, close]) nodes.set(item.ref.id, redacted(item));
+      parents.set(iconId, `${iconId}-chip`);
+      parents.set(`${iconId}-label`, `${iconId}-chip`);
+      return { nodes, parents };
+    };
+    const first = chip('TAG-42', 'x');
+    expect(containerKey('x', first.nodes, first.parents)).toBe('TAG-42');
+    expect(describeAction({ name: 'tap', node: first.nodes.get('x')!, within: 'TAG-42' }, { redact: identity, redactCut: identity }).summary).toBe(
+      'tap node "ivu-icon ivu-icon-ios-close" in "TAG-42"',
+    );
+
+    // Two unnamed controls beside one text, or two texts, name neither: the
+    // container is a list, and its text is not the control's place.
+    const crowded = new Map<string, RedactedNode>();
+    const crowdedParents = new Map<string, string>();
+    const container: SemanticNode = {
+      ref: { id: 'c', revision: 'r' },
+      children: [
+        { ref: { id: 't', revision: 'r' }, text: 'TAG-42' },
+        { ref: { id: 'i1', revision: 'r' }, states: clickable, attributes: { class: 'icon close' } },
+        { ref: { id: 'i2', revision: 'r' }, states: clickable, attributes: { class: 'icon close' } },
+      ],
+    };
+    for (const item of [container, ...(container.children ?? [])]) crowded.set(item.ref.id, redacted(item));
+    crowdedParents.set('i1', 'c');
+    crowdedParents.set('i2', 'c');
+    expect(containerKey('i1', crowded, crowdedParents)).toBeUndefined();
+
+    // The text may name a second control beside the icon (a card's "Save"
+    // button), so it is not the icon's place either.
+    const mixed = new Map<string, RedactedNode>();
+    const mixedParents = new Map<string, string>();
+    const card: SemanticNode = {
+      ref: { id: 'card', revision: 'r' },
+      children: [
+        { ref: { id: 'save', revision: 'r' }, role: 'button', name: 'Save' },
+        { ref: { id: 'x', revision: 'r' }, states: clickable, attributes: { class: 'icon close' } },
+      ],
+    };
+    for (const item of [card, ...(card.children ?? [])]) mixed.set(item.ref.id, redacted(item));
+    mixedParents.set('x', 'card');
+    mixedParents.set('save', 'card');
+    expect(containerKey('x', mixed, mixedParents)).toBeUndefined();
+  });
+
   it('keys a control by its nearest container only, so rows with no text of their own share no outer label', () => {
     const nodes = new Map<string, RedactedNode>();
     const parents = new Map<string, string>();
