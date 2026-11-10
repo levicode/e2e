@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "9069cb4e228bd68ac44b6cdf04e21e68e48fb860",
-    "tree": "94c408e5ac970ba0d98a45c6c46da2868b1a4a7c",
+    "commit": "bbc06bdd5fe85b0cb3fb1bf737240c840962dfd1",
+    "tree": "143a6a725ebaba1277c515e04509f42607b5c029",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -309,7 +309,8 @@
     "native::client_targets::owned_inventory_diagnostic_opt_in_tests::non_fixed_read_dispatch_inventory_keeps_the_immediate_refusal",
     "native::cdp::types::tests::object_not_found_is_its_own_closed_browser_answer",
     "native::client_protected_read::tests::protected_cleanup_only_accepts_the_closed_retirement_answers",
-    "native::client_session::tests::a_stale_scope_unknown_keeps_the_scope_usable"
+    "native::client_session::tests::a_stale_scope_unknown_keeps_the_scope_usable",
+    "native::client_browser::reconnect_tests::reconnect_admitted_before_the_scope_sealed_keeps_the_clean_stale_refusal"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",

@@ -59,14 +59,14 @@ was attempted.
 | Built packages | `e2e` and `@e2e-dev/web` at this branch |
 | Measured | 2026-11-10 |
 
-The native revision is the repository's declared candidate
-(`.github/native-candidate.json`). The older CI pin `d6d7d5d` predates
-capabilities the current engine requires, so it cannot negotiate
-(`unsupported-capability`) and cannot be measured with this branch. The one
-source difference between the two lineages on these boundaries is
+The native revision was the repository's declared candidate
+(`.github/native-candidate.json`) when the table was measured. The older CI
+pin `d6d7d5d` predates capabilities the current engine requires, so it cannot
+negotiate (`unsupported-capability`) and cannot be measured with this branch.
+The one source difference between the two lineages on these boundaries is
 `MAX_STATE_BYTES = 32MiB` in `d6d7d5d`'s `client_state_dispatch.rs`, absent at
-`9069cb4`; the state rows therefore describe the current candidate, and the
-pinned 32MiB clamp is called out instead of silently mixed in.
+`9069cb4`; the state rows therefore describe the candidate at measurement
+time, and the pinned 32MiB clamp is called out instead of silently mixed in.
 
 ## Results
 
@@ -289,4 +289,5 @@ ticket should.
 - A 2h timeout is accepted by both, but the new engine clamps it to 1h
   silently; a boundary above one hour was not waited for.
 - The pinned native revision cannot negotiate with this branch, so every row
-  measures the declared candidate `9069cb4`, not the older CI pin `d6d7d5d`.
+  measures the candidate at measurement time, `9069cb4`, not the older CI pin
+  `d6d7d5d`.
