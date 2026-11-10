@@ -87,6 +87,7 @@ jobs:
           node --test .dev/skills/babysit/scripts/pr-status.test.ts
           node --test scripts/ci/spec-slot-summary.test.mjs
           node --test scripts/ci/bind-popup-evidence.test.mjs
+          node --test scripts/setup-source-native.test.mjs
       - name: Set up source-pinned native runtime
         uses: ./.github/actions/native-runtime
         with:
