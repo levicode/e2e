@@ -22,7 +22,7 @@ import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CASES, MiB } from './cases.mjs';
+import { CASES, MiB, sleep } from './cases.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const requireWeb = createRequire(resolve(ROOT, 'packages/web/package.json'));
@@ -36,7 +36,6 @@ if (CASE === undefined || (ENGINE !== 'new' && ENGINE !== 'old')) {
   process.exit(2);
 }
 
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const summarize = (error) => ({ status: 'fail', code: error?.code ?? error?.name ?? 'unknown', message: String(error?.message ?? error).split('\n')[0].slice(0, 240) });
 const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
 
@@ -82,8 +81,15 @@ async function newSession(base) {
     ...(process.env['BOUNDARY_DIFF_CHROMIUM'] === undefined ? {} : { AGENT_BROWSER_EXECUTABLE_PATH: process.env['BOUNDARY_DIFF_CHROMIUM'] }),
   };
   const op = (timeoutMs = 60_000) => ({ signal, timeoutMs, runId: 'boundary-diff', attemptId: 'boundary-diff', origin: 'test' });
-  await engine.init({ runId: 'boundary-diff', targetName: 'web', projectRoot: ROOT, app: { site: '127.0.0.1' }, env, headed: false, workerSlot: 0, log: () => {}, signal });
-  await engine.startAttempt({ attemptId: 'boundary-diff', artifactsDir, signal, resolveSecret: () => Promise.reject(new Error('this attempt declares no secrets')), appLog: () => {}, screen: () => {}, environment: () => {}, navigation: () => {} });
+  try {
+    await engine.init({ runId: 'boundary-diff', targetName: 'web', projectRoot: ROOT, app: { site: '127.0.0.1' }, env, headed: false, workerSlot: 0, log: () => {}, signal });
+    await engine.startAttempt({ attemptId: 'boundary-diff', artifactsDir, signal, resolveSecret: () => Promise.reject(new Error('this attempt declares no secrets')), appLog: () => {}, screen: () => {}, environment: () => {}, navigation: () => {} });
+  } catch (error) {
+    // A refused start may already own a proxy; do not leave it behind.
+    try { await engine.dispose({ signal, timeoutMs: 20_000 }); } catch {}
+    try { rmSync(artifactsDir, { recursive: true, force: true }); } catch {}
+    throw error;
+  }
   const context = {
     targetName: 'web',
     fixture: (_name, target) => target,
@@ -99,7 +105,7 @@ async function newSession(base) {
   };
   const browser = engine.fixtures.browser(context);
   const session = {
-    kind: 'new', engine, browser, artifactsDir, op,
+    engine, browser, artifactsDir, op,
     evaluate: (fn, value) => value === undefined ? browser.evaluate(fn) : browser.evaluate(fn, value),
     goto: (url, options) => browser.goto(new URL(url, `${base}/`).toString(), options),
     addInitScript: (source) => browser.addInitScript(source),
@@ -117,8 +123,11 @@ async function newSession(base) {
   session.addScripts = async (count, make) => { for (let index = 0; index < count; index += 1) await session.addInitScript(make(index)); };
   session.readResponseBody = async (size) => {
     const waiter = browser.waitForResponse('**/big*', { timeout: 60_000 });
-    await sleep(300);
-    await browser.evaluate((n) => { fetch('/big?n=' + n); }, size);
+    const trigger = () => browser.evaluate((n) => { fetch('/big?n=' + n); }, size);
+    await trigger();
+    // The subscription command is dispatched before the trigger, but its ack
+    // is asynchronous; a second trigger covers a response that beat the ack.
+    if (await Promise.race([waiter.then(() => 'response', () => 'response'), sleep(1_000).then(() => 'retry')]) === 'retry') await trigger();
     const response = await waiter;
     return `body=${(await response.text()).length}`;
   };
@@ -175,11 +184,19 @@ async function oldSession(base, { video = false } = {}) {
   const tempDirs = [];
   const videoDir = video ? mkdtempSync(join(tmpdir(), 'boundary-diff-video-')) : undefined;
   if (videoDir !== undefined) tempDirs.push(videoDir);
-  const contextOptions = videoDir === undefined ? {} : { recordVideo: { dir: videoDir } };
-  const context = await browser.newContext(contextOptions);
-  const page = await context.newPage();
+  let context;
+  let page;
+  try {
+    const contextOptions = videoDir === undefined ? {} : { recordVideo: { dir: videoDir } };
+    context = await browser.newContext(contextOptions);
+    page = await context.newPage();
+  } catch (error) {
+    try { await browser.close(); } catch {}
+    for (const directory of tempDirs) { try { rmSync(directory, { recursive: true, force: true }); } catch {} }
+    throw error;
+  }
   const session = {
-    kind: 'old', page, context, browser, videoDir,
+    page, context, browser, videoDir,
     evaluate: (fn, value) => value === undefined ? page.evaluate(fn) : page.evaluate(fn, value),
     goto: (url, options) => page.goto(new URL(url, `${base}/`).toString(), options),
     addInitScript: (source) => context.addInitScript(source),
@@ -197,8 +214,9 @@ async function oldSession(base, { video = false } = {}) {
   session.addScripts = async (count, make) => { for (let index = 0; index < count; index += 1) await session.addInitScript(make(index)); };
   session.readResponseBody = async (size) => {
     const waiter = page.waitForResponse('**/big*', { timeout: 60_000 });
-    await sleep(300);
-    await page.evaluate((n) => { fetch('/big?n=' + n); }, size);
+    const trigger = () => page.evaluate((n) => { fetch('/big?n=' + n); }, size);
+    await trigger();
+    if (await Promise.race([waiter.then(() => 'response', () => 'response'), sleep(1_000).then(() => 'retry')]) === 'retry') await trigger();
     const response = await waiter;
     return `body=${(await response.body()).length}`;
   };

@@ -32,10 +32,12 @@ one case to one browser and one measurement.
 `--only <case|family>` narrows the table, `--engine new|old` runs one side, and
 `--list` prints every case. Each case runs in its own child process with a
 120s watchdog, so a hanging boundary becomes a `hang` cell instead of a stuck
-run. A timed-out case also kills every `agent-browser` session whose name
-starts with `e2e-` (the prefix the engine uses), because the native proxy
-starts its browser daemon detached and a leaked daemon would hold a browser
-open. Run the harness on a machine where no other e2e run is live.
+run. A timed-out case gets SIGTERM first (Playwright closes its contexts on
+it), its detached native daemon is killed through the pid files in this
+harness's `AGENT_BROWSER_SOCKET_DIR`, its e2e-prefixed proxy is killed through
+its argv, and the case process is SIGKILLed after a 5s grace. The runner exits
+3 when any row is a hang or `setup-failed`, so a table that is not a full
+measurement does not look successful.
 
 Verdicts: `narrowed` means the old engine succeeded and the new one failed (a
 real capability loss), `widened` means the opposite, `same` both succeeded,
@@ -70,55 +72,56 @@ pinned 32MiB clamp is called out instead of silently mixed in.
 
 | Family | Case | Scenario | Old (Playwright 1.64.1) | New (native) | Verdict | New cleanup |
 |---|---|---|---|---|---|---|
-| evaluate size | evaluate-size-512KiB | evaluate returns 'x'.repeat(512KiB) | ok (len=524288, 39ms) | ok (len=524288, 38ms) | same | usable; endAttempt=ok; dispose=ok |
-| evaluate size | evaluate-size-900KiB | evaluate returns 'x'.repeat(900KiB) | ok (len=921600, 35ms) | ok (len=921600, 34ms) | same | usable; endAttempt=ok; dispose=ok |
-| evaluate size | evaluate-size-1MiB | evaluate returns 'x'.repeat(1MiB) | ok (len=1048576, 34ms) | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native capacity-exceeded; effects unknown; scope usable) | narrowed | usable; endAttempt=ok; dispose=ok |
-| evaluate size | evaluate-size-4MiB | evaluate returns 'x'.repeat(4MiB) | ok (len=4194304, 56ms) | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native capacity-exceeded; effects unknown; scope usable) | narrowed | usable; endAttempt=ok; dispose=ok |
-| evaluate depth | evaluate-depth-80 | evaluate returns an object nested 80 deep | ok (depth=80 object, 29ms) | ok (depth=80 object, 31ms) | same | usable; endAttempt=ok; dispose=ok |
-| evaluate depth | evaluate-depth-100 | evaluate returns an object nested 100 deep | Error: page.evaluate: Cannot serialize result: object reference chain is too long. | ok (depth=100 object, 26ms) | widened | usable; endAttempt=ok; dispose=ok |
+| evaluate size | evaluate-size-512KiB | evaluate returns 'x'.repeat(512KiB) | ok (len=524288, 32ms) | ok (len=524288, 27ms) | same | usable; endAttempt=ok; dispose=ok |
+| evaluate size | evaluate-size-900KiB | evaluate returns 'x'.repeat(900KiB) | ok (len=921600, 34ms) | ok (len=921600, 37ms) | same | usable; endAttempt=ok; dispose=ok |
+| evaluate size | evaluate-size-1MiB | evaluate returns 'x'.repeat(1MiB) | ok (len=1048576, 38ms) | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native capacity-exceeded; effects unknown; scope usable) | narrowed | usable; endAttempt=ok; dispose=ok |
+| evaluate size | evaluate-size-4MiB | evaluate returns 'x'.repeat(4MiB) | ok (len=4194304, 60ms) | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native capacity-exceeded; effects unknown; scope usable) | narrowed | usable; endAttempt=ok; dispose=ok |
+| evaluate depth | evaluate-depth-80 | evaluate returns an object nested 80 deep | ok (depth=80, 27ms) | ok (depth=80, 30ms) | same | usable; endAttempt=ok; dispose=ok |
+| evaluate depth | evaluate-depth-100 | evaluate returns an object nested 100 deep | Error: page.evaluate: Cannot serialize result: object reference chain is too long. | ok (depth=100, 24ms) | widened | usable; endAttempt=ok; dispose=ok |
 | evaluate depth | evaluate-depth-126 | evaluate returns an object nested 126 deep | Error: page.evaluate: Cannot serialize result: object reference chain is too long. | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native browser-failure; effects unknown; scope quarantined) | both-fail | unusable; endAttempt=ENGINE_FAILURE: The native browser cleanup could not be proven; dispose=ENGINE_FAILURE: The native browser cleanup could not be proven |
 | evaluate depth | evaluate-depth-128 | evaluate returns an object nested 128 deep | Error: page.evaluate: Cannot serialize result: object reference chain is too long. | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native browser-failure; effects unknown; scope quarantined) | both-fail | unusable; endAttempt=ENGINE_FAILURE: The native browser cleanup could not be proven; dispose=ENGINE_FAILURE: The native browser cleanup could not be proven |
-| initScript count | init-count-100 | add 100 init scripts, navigate, read the last marker | ok (99, 65ms) | ok (99, 65ms) | same | usable; endAttempt=ok; dispose=ok |
-| initScript count | init-count-1024 | add 1024 init scripts, navigate, read the last marker | ok (1023, 202ms) | ok (1023, 246ms) | same | usable; endAttempt=ok; dispose=ok |
-| initScript count | init-count-1025 | add 1025 init scripts | ok (ok, 189ms) | ENGINE_FAILURE: The native browser operation failed (capacity-exceeded) | narrowed | usable; endAttempt=ok; dispose=ok |
-| initScript total | init-total-7.4MiB | add 8 comment-only init scripts totalling 7.4MiB | ok (ok, 83ms) | ok (ok, 123ms) | same | usable; endAttempt=ok; dispose=ok |
-| initScript total | init-total-8.3MiB | add 9 comment-only init scripts totalling 8.3MiB | ok (ok, 85ms) | ENGINE_FAILURE: The native browser operation failed (capacity-exceeded) | narrowed | usable; endAttempt=ok; dispose=ok |
-| initScript per script | init-single-1.2MiB | add one 1.2MiB init script | ok (ok, 36ms) | ENGINE_FAILURE: The native browser request exceeded its protocol bounds | narrowed | usable; endAttempt=ok; dispose=ok |
-| blob single | blob-response-8MiB | waitForResponse and read an 8MiB response body | ok (body=8388608, 510ms) | ok (body=8388608, 590ms) | same | usable; endAttempt=ok; dispose=ok |
-| blob single | blob-response-16MiB | waitForResponse and read a 16MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ok (body=16777216, 714ms) | widened | usable; endAttempt=ok; dispose=ok |
-| blob single | blob-response-32MiB | waitForResponse and read a 32MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ok (body=33554432, 1061ms) | widened | usable; endAttempt=ok; dispose=ok |
-| blob single | blob-response-48MiB | waitForResponse and read a 48MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ok (body=50331648, 1336ms) | widened | usable; endAttempt=ok; dispose=ok |
+| initScript count | init-count-100 | add 100 init scripts, navigate, read the last marker | ok (99, 62ms) | ok (99, 64ms) | same | usable; endAttempt=ok; dispose=ok |
+| initScript count | init-count-1024 | add 1024 init scripts, navigate, read the last marker | ok (1023, 204ms) | ok (1023, 245ms) | same | usable; endAttempt=ok; dispose=ok |
+| initScript count | init-count-1025 | add 1025 init scripts | ok (ok, 190ms) | ENGINE_FAILURE: The native browser operation failed (capacity-exceeded) | narrowed | usable; endAttempt=ok; dispose=ok |
+| initScript total | init-total-8x950KiB | add 8 comment-only init scripts of 950KiB each (7,782,432B) | ok (ok, 84ms) | ok (ok, 133ms) | same | usable; endAttempt=ok; dispose=ok |
+| initScript total | init-total-9x950KiB | add 9 comment-only init scripts of 950KiB each (8,755,236B) | ok (ok, 89ms) | ENGINE_FAILURE: The native browser operation failed (capacity-exceeded) | narrowed | usable; endAttempt=ok; dispose=ok |
+| initScript per script | init-single-1.2MB | add one 1,200,000-byte init script | ok (ok, 37ms) | ENGINE_FAILURE: The native browser request exceeded its protocol bounds | narrowed | usable; endAttempt=ok; dispose=ok |
+| blob single | blob-response-8MiB | waitForResponse and read an 8MiB response body | ok (body=8388608, 167ms) | ok (body=8388608, 258ms) | same | usable; endAttempt=ok; dispose=ok |
+| blob single | blob-response-16MiB | waitForResponse and read a 16MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ok (body=16777216, 447ms) | widened | usable; endAttempt=ok; dispose=ok |
+| blob single | blob-response-32MiB | waitForResponse and read a 32MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ok (body=33554432, 736ms) | widened | usable; endAttempt=ok; dispose=ok |
+| blob single | blob-response-48MiB | waitForResponse and read a 48MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ok (body=50331648, 1094ms) | widened | usable; endAttempt=ok; dispose=ok |
 | blob single | blob-response-50MiB | waitForResponse and read a 50MiB response body | Error: response.body: Protocol error (Network.getResponseBody): Request content was evicted from inspector cache | ACTION_FAILED: waitForResponse: response body could not be read: The native browser operation failed (browser-failure) | both-fail | usable; endAttempt=ok; dispose=ok |
-| blob single | blob-response-63MiB | waitForResponse and read a 63MiB response body | hang: no result in 120000ms | ACTION_FAILED: waitForResponse: response body did not finish within 60000ms | old-hang | usable; endAttempt=ok; dispose=ok |
-| blob single | blob-download-64MiB | download one 64MiB file and read it from disk | ok ({"bytes":67108864}, 343ms) | ok ({"bytes":67108864}, 445ms) | same | usable; endAttempt=ok; dispose=ok |
-| blob total | blob-download-130MiB | download one 130MiB file and read it from disk | ok ({"bytes":136314880}, 230ms) | ok ({"bytes":136314880}, 874ms) | same | usable; endAttempt=ok; dispose=ok |
-| blob total | blob-download-total-150MiB | download three 50MiB files in sequence | ok (52428800+52428800+52428800 = 157286400, 231ms) | ok (52428800+52428800+52428800 = 157286400, 1028ms) | same | usable; endAttempt=ok; dispose=ok |
-| state | state-localstorage-4MiB | capture storage state after 4MiB of localStorage | ok (state=4194409B indexedDb=false, 68ms) | ok (state=4194436B, 206ms) | same | usable; endAttempt=ok; dispose=ok |
-| state | state-indexeddb-16MiB | capture storage state after 16MiB in IndexedDB | ok (state=27B indexedDb=false, 45ms) | ok (state=16777526B, 348ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
-| state | state-indexeddb-33MiB | capture storage state after 33MiB in IndexedDB | ok (state=27B indexedDb=false, 52ms) | ok (state=34603318B, 641ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
-| state | state-indexeddb-40MiB | capture storage state after 40MiB in IndexedDB | ok (state=27B indexedDb=false, 59ms) | ok (state=41943350B, 748ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
-| route timeout | route-background-31s | a page-timer request whose route handler awaits 31s | ok (done, 36022ms) | ACTION_FAILED: route handler exceeded its decision deadline | narrowed | unusable; endAttempt=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget; dispose=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget |
-| route timeout | route-foreground-5s | a goto whose route handler awaits 5s | ok (boundary, 5083ms) | ok (boundary, 5070ms) | same | usable; endAttempt=ok; dispose=ok |
-| dialog timeout | dialog-background-31s | a page-timer alert whose dialog handler awaits 31s | ok (1, 36032ms) | ACTION_FAILED: dialog handler exceeded its decision deadline | narrowed | unusable; endAttempt=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget; dispose=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget |
-| outer budget | budget-timeout-0 | navigate with timeout: 0 | ok (ok, 24ms) | OPERATION_TIMEOUT: Native browser recovery exhausted the operation budget | narrowed | usable; endAttempt=ok; dispose=ok |
-| outer budget | budget-timeout-2h | navigate with timeout: 7200000 (2h) | ok (ok, 24ms) | ok (ok, 33ms) | same | usable; endAttempt=ok; dispose=ok |
-| video | video-2s | record 2s of video and collect the segment files | ok (segments=1 bytes=4988, 2082ms) | ok (segments=1 bytes=10004, 2175ms) | same | usable; endAttempt=ok; dispose=ok |
+| blob single | blob-response-63MiB | waitForResponse and read a 63MiB response body | hang: no result before 120000ms; the watchdog killed the case | ACTION_FAILED: waitForResponse: response body did not finish within 60000ms | old-hang | usable; endAttempt=ok; dispose=ok |
+| blob single | blob-download-64MiB | download one 64MiB file and read it from disk | ok ({"bytes":67108864}, 121ms) | ok ({"bytes":67108864}, 445ms) | same | usable; endAttempt=ok; dispose=ok |
+| blob total | blob-download-130MiB | download one 130MiB file and read it from disk | ok ({"bytes":136314880}, 198ms) | ok ({"bytes":136314880}, 837ms) | same | usable; endAttempt=ok; dispose=ok |
+| blob total | blob-download-total-150MiB | download three 50MiB files in sequence | ok (52428800+52428800+52428800 = 157286400, 218ms) | ok (52428800+52428800+52428800 = 157286400, 1008ms) | same | usable; endAttempt=ok; dispose=ok |
+| state | state-localstorage-4MiB | capture storage state after 4MiB of localStorage | ok (state=4194409B indexedDb=false, 70ms) | ok (state=4194436B, 140ms) | same | usable; endAttempt=ok; dispose=ok |
+| state | state-indexeddb-16MiB | capture storage state after 16MiB in IndexedDB | ok (state=27B indexedDb=false, 42ms) | ok (state=16777526B, 360ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
+| state | state-indexeddb-33MiB | capture storage state after 33MiB in IndexedDB | ok (state=27B indexedDb=false, 47ms) | ok (state=34603318B, 629ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
+| state | state-indexeddb-40MiB | capture storage state after 40MiB in IndexedDB | ok (state=27B indexedDb=false, 54ms) | ok (state=41943350B, 754ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
+| route timeout | route-background-31s | a page-timer request whose route handler awaits 31s | ok (done, 36034ms) | ACTION_FAILED: route handler exceeded its decision deadline | narrowed | unusable; endAttempt=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget; dispose=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget |
+| route timeout | route-foreground-31s | a goto whose route handler awaits 31s | ok (boundary, 31086ms) | ACTION_MAY_HAVE_COMMITTED: The native browser action outcome is unknown (native browser-failure; effects unknown; scope usable) | narrowed | unusable; endAttempt=ok; dispose=ok |
+| dialog timeout | dialog-background-31s | a page-timer alert whose dialog handler awaits 31s | ok (1, 36036ms) | ACTION_FAILED: dialog handler exceeded its decision deadline | narrowed | unusable; endAttempt=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget; dispose=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget |
+| outer budget | budget-timeout-0 | navigate with timeout: 0 | ok (ok, 35ms) | OPERATION_TIMEOUT: Native browser recovery exhausted the operation budget | narrowed | usable; endAttempt=ok; dispose=ok |
+| outer budget | budget-timeout-2h | navigate with timeout: 7200000 (2h) | ok (ok, 34ms) | ok (ok, 36ms) | same | usable; endAttempt=ok; dispose=ok |
+| video | video-2s | record 2s of video and collect the segment files | ok (segments=1 bytes=5078, 2090ms) | ok (segments=1 bytes=10004, 2418ms) | same | usable; endAttempt=ok; dispose=ok |
 
 | Verdict | Cases |
 |---|---|
-| narrowed | evaluate-size-1MiB, evaluate-size-4MiB, init-count-1025, init-total-8.3MiB, init-single-1.2MiB, route-background-31s, dialog-background-31s, budget-timeout-0 |
+| narrowed | evaluate-size-1MiB, evaluate-size-4MiB, init-count-1025, init-total-9x950KiB, init-single-1.2MB, route-background-31s, route-foreground-31s, dialog-background-31s, budget-timeout-0 |
 | old-hang | blob-response-63MiB |
 | old-cannot | state-indexeddb-16MiB, state-indexeddb-33MiB, state-indexeddb-40MiB |
 | both-fail | evaluate-depth-126, evaluate-depth-128, blob-response-50MiB |
 | widened | evaluate-depth-100, blob-response-16MiB, blob-response-32MiB, blob-response-48MiB |
-| same | evaluate-size-512KiB, evaluate-size-900KiB, evaluate-depth-80, init-count-100, init-count-1024, init-total-7.4MiB, blob-response-8MiB, blob-download-64MiB, blob-download-130MiB, blob-download-total-150MiB, state-localstorage-4MiB, route-foreground-5s, budget-timeout-2h, video-2s |
+| same | evaluate-size-512KiB, evaluate-size-900KiB, evaluate-depth-80, init-count-100, init-count-1024, init-total-8x950KiB, blob-response-8MiB, blob-download-64MiB, blob-download-130MiB, blob-download-total-150MiB, state-localstorage-4MiB, budget-timeout-2h, video-2s |
 
 The old side closed its context and browser cleanly in every row that
 returned. One row did not return: the old 63MiB response read was killed by the
-watchdog, so its cleanup is not observed. The harness now kills a timed-out
-case's process group, Chromium included, so a later run does not leak it. The
-new cleanup column above is the one that varies; the JSON records both sides'
-cleanup.
+watchdog, so its cleanup is not observed. The harness asks a timed-out case for
+SIGTERM (Playwright closes its browser on it), kills the detached native daemon
+through its pid file, and SIGKILLs the case after a 5s grace; a browser that
+ignores the grace can still outlive the run. The new cleanup column above is
+the one that varies; the JSON records both sides' cleanup.
 
 ## What the table says
 
@@ -128,9 +131,9 @@ cleanup.
 |---|---|---|---|
 | evaluate size | 1MiB and 4MiB results | returns the value | `capacity-exceeded`, outcome reported unknown |
 | initScript count | 1025 scripts | accepted | `capacity-exceeded` |
-| initScript total | 8.3MiB across scripts | accepted | `capacity-exceeded` |
-| initScript per script | one 1.2MiB script | accepted | request exceeds the protocol bounds |
-| route timeout | page-timer request, 31s handler | completes at 31s | fails at the 30s decision deadline |
+| initScript total | 9 scripts of 950KiB each (8,755,236B) | accepted | `capacity-exceeded` |
+| initScript per script | one 1,200,000-byte script | accepted | request exceeds the protocol bounds |
+| route timeout | goto or page-timer request, 31s handler | completes at 31s | fails at the 30s decision deadline |
 | dialog timeout | page-timer alert, 31s handler | completes at 31s | fails at the 30s decision deadline |
 | outer budget | `timeout: 0` | disables the timeout | `OPERATION_TIMEOUT` before dispatch |
 
@@ -161,9 +164,9 @@ cleanup.
 **Same.**
 
 - 512KiB and 900KiB evaluate results, depth 80, 100-script and 1024-script
-  init lists, 7.4MiB of init scripts, an 8MiB response body, 64/130/150MiB of
-  downloads (local downloads never enter the blob store), a 5s foreground
-  route, a 2h timeout, and a 2s video recording.
+  init lists, 7,782,432B of init scripts, an 8MiB response body,
+  64/130/150MiB of downloads (local downloads never enter the blob store),
+  a 2h timeout, and a 2s video recording.
 
 ## Narrowing details and fix-scope estimates
 
@@ -188,7 +191,7 @@ ticket should.
 
 ### initScript count above 1024 or total above 8MiB
 
-- Measured: 1024 scripts and 7.4MiB pass; 1025 scripts and 8.3MiB fail
+- Measured: 1024 scripts and 7,782,432B pass; 1025 scripts and 8,755,236B fail
   `capacity-exceeded`. The caps are in `append_script`
   (`cli/src/native/client_page.rs`) and `scope.open`
   (`cli/src/native/client_browser.rs`).
@@ -203,8 +206,9 @@ ticket should.
 
 ### One initScript above ~1MiB
 
-- Measured: one 1.2MiB script fails with `ENGINE_FAILURE: ... protocol bounds`;
-  the old engine accepts it. One source travels in one command frame.
+- Measured: one 1,200,000-byte script fails with
+  `ENGINE_FAILURE: ... protocol bounds`; the old engine accepts it. One source
+  travels in one command frame.
 - Impact: a single generated bundle over 1MiB cannot be added as one script.
 - Workaround: split it into several scripts, each under 1MiB; the 1024-script
   cap leaves room.
@@ -214,15 +218,15 @@ ticket should.
 ### route and dialog callbacks over 30s with no waiting test operation
 
 - Measured: a request fired by a page timer whose route handler awaits 31s,
-  and an alert fired by a page timer whose dialog handler awaits 31s, fail with
+  an alert fired by a page timer whose dialog handler awaits 31s, and a `goto`
+  whose own route handler awaits 31s (with a 60s goto budget) all fail with
   `route/dialog handler exceeded its decision deadline`; the old engine
-  completes. A 5s route inside a `goto` succeeds on both. The window is
-  `DEFAULT_DECISION_TIMEOUT_MS = 30_000`
-  (`cli/src/native/client_session.rs:21`), a floor: a longer live operation
-  extends it.
-- Impact: background handlers only (page timers, page-initiated requests).
-  Handlers a test step waits on inherit that step's budget, so ordinary
-  route and dialog use is unaffected.
+  completes. The window is `DEFAULT_DECISION_TIMEOUT_MS = 30_000`
+  (`cli/src/native/client_session.rs:21`); the source computes it from the live
+  operations and floors it there, but the 60s goto in this table did not extend
+  it.
+- Impact: any route or dialog handler that runs longer than 30s, including one
+  a navigation is waiting on, not only a background callback.
 - Workaround: keep background handlers under 30s; answer dialogs immediately.
 - Estimate: small code in agent-browser (the default and the per-scope
   window), but the bound retires abandoned callbacks, so a new default or a

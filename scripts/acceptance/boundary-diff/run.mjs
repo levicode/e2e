@@ -20,9 +20,10 @@
  * API has no way to express the scenario, so the row cannot be a narrowing).
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { readdirSync, readFileSync, rmSync } from 'node:fs';
 import { once } from 'node:events';
 import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CASES } from './cases.mjs';
 
@@ -34,6 +35,15 @@ const ONLY = option('only');
 const ONLY_ENGINE = option('engine');
 const TIMEOUT = Number(option('timeout') ?? 120_000);
 const JSON_OUT = option('json');
+
+if (ONLY_ENGINE !== undefined && ONLY_ENGINE !== 'old' && ONLY_ENGINE !== 'new') {
+  console.error(`--engine must be old or new, got ${ONLY_ENGINE}`);
+  process.exit(2);
+}
+if (!Number.isFinite(TIMEOUT) || TIMEOUT <= 0) {
+  console.error(`--timeout must be a positive number of milliseconds, got ${option('timeout')}`);
+  process.exit(2);
+}
 
 if (args.includes('--list')) {
   for (const [id, definition] of Object.entries(CASES)) console.log(`${definition.family}\t${id}`);
@@ -47,23 +57,52 @@ if (ids.length === 0) {
 }
 const engines = ONLY_ENGINE === undefined ? ['old', 'new'] : [ONLY_ENGINE];
 
+/**
+ * A case may leave its detached native daemon behind when the engine could not
+ * prove cleanup. Its socket dir is named after the case process, so kill the
+ * daemon pid it recorded and the proxy that names the same session, then drop
+ * the dir.
+ */
+function reap(child) {
+  const socketDir = `/tmp/boundary-diff-${child.pid}`;
+  const sessions = new Set();
+  try {
+    for (const file of readdirSync(socketDir)) {
+      if (!file.endsWith('.pid')) continue;
+      const session = file.slice(0, -'.pid'.length);
+      sessions.add(session);
+      try { process.kill(Number(readFileSync(join(socketDir, file), 'utf8').trim()), 'SIGKILL'); } catch {}
+    }
+  } catch {}
+  for (const session of sessions) spawnSync('pkill', ['-f', `agent-browser --session ${session}`], { stdio: 'ignore' });
+  try { rmSync(socketDir, { recursive: true, force: true }); } catch {}
+}
+
 /** Run one case on one engine in a child process with a hard watchdog. */
 function measure(id, engine) {
   return new Promise((done) => {
     const child = spawn(process.execPath, [MEASURE, '--case', id, '--engine', engine], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let output = '';
+    let timedOut = false;
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      // The child leads its own process group, so this also kills the
-      // Playwright Chromium it started. The native proxy starts its daemon
-      // detached, outside that group, so kill the e2e-prefixed session too.
-      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
-      spawnSync('pkill', ['-f', 'agent-browser --session e2e-'], { stdio: 'ignore' });
+      timedOut = true;
+      // Ask the case process to close its browser first. Playwright installs a
+      // SIGTERM handler that closes its contexts; the detached native daemon
+      // is reaped after the case process exits.
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        child.kill('SIGKILL');
+        try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+      }, 5_000);
     }, TIMEOUT);
     once(child, 'close').then(() => {
       clearTimeout(timer);
+      reap(child);
+      // A signal at the watchdog can make a case write a failure result; that
+      // failure is the kill, not a measurement.
+      if (timedOut) { done({ status: 'hang', message: `no result before ${TIMEOUT}ms; the watchdog killed the case`, raw: output.trim().slice(-400) }); return; }
       const line = output.split('\n').find((entry) => entry.startsWith('RESULT:'));
       if (line === undefined) { done({ status: 'hang', message: `no result in ${TIMEOUT}ms`, raw: output.trim().slice(-400) }); return; }
       try { done(JSON.parse(line.slice('RESULT:'.length))); }
@@ -130,3 +169,5 @@ for (const [key] of Object.entries(severity)) {
 const table = lines.join('\n');
 console.log(table);
 if (JSON_OUT !== undefined) writeFileSync(JSON_OUT, `${JSON.stringify({ generatedAt: new Date().toISOString(), rows }, null, 2)}\n`);
+const broken = rows.filter((row) => row.verdict === 'setup-failed' || row.verdict.includes('hang'));
+process.exitCode = broken.length > 0 ? 3 : 0;
