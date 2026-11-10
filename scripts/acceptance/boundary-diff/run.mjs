@@ -50,14 +50,16 @@ const engines = ONLY_ENGINE === undefined ? ['old', 'new'] : [ONLY_ENGINE];
 /** Run one case on one engine in a child process with a hard watchdog. */
 function measure(id, engine) {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [MEASURE, '--case', id, '--engine', engine], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [MEASURE, '--case', id, '--engine', engine], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      // The native proxy starts each browser daemon detached; a timed-out case
-      // must not leave it behind. `e2e-` is the only prefix this engine uses.
+      // The child leads its own process group, so this also kills the
+      // Playwright Chromium it started. The native proxy starts its daemon
+      // detached, outside that group, so kill the e2e-prefixed session too.
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
       spawnSync('pkill', ['-f', 'agent-browser --session e2e-'], { stdio: 'ignore' });
     }, TIMEOUT);
     once(child, 'close').then(() => {
@@ -72,6 +74,7 @@ function measure(id, engine) {
 
 const describe = (measurement) => {
   if (measurement === undefined) return 'not run';
+  if (measurement.setup !== undefined) return `setup failed: ${measurement.setup.code}: ${measurement.setup.message}`;
   const outcome = measurement.outcome;
   if (outcome === undefined) return `${measurement.status ?? 'hang'}${measurement.message === undefined ? '' : `: ${measurement.message}`}`;
   if (outcome.status === 'ok') return `ok (${outcome.value}${outcome.ms === undefined ? '' : `, ${outcome.ms}ms`})`;
@@ -86,6 +89,7 @@ const cleanupText = (measurement) => {
 };
 
 const verdict = (definition, oldResult, newResult) => {
+  if (oldResult?.setup !== undefined || newResult?.setup !== undefined) return 'setup-failed';
   if (newResult?.status === 'hang' && oldResult?.status === 'hang') return 'both-hang';
   if (newResult?.status === 'hang') return 'new-hang';
   if (oldResult?.status === 'hang') return 'old-hang';
@@ -98,7 +102,7 @@ const verdict = (definition, oldResult, newResult) => {
   return 'both-fail';
 };
 
-const severity = { narrowed: 0, 'both-hang': 1, 'new-hang': 2, 'old-hang': 3, 'old-cannot': 4, 'both-fail': 5, widened: 6, same: 7 };
+const severity = { 'setup-failed': 0, narrowed: 1, 'both-hang': 2, 'new-hang': 3, 'old-hang': 4, 'old-cannot': 5, 'both-fail': 6, widened: 7, same: 8 };
 const rows = [];
 for (const id of ids) {
   const definition = CASES[id];

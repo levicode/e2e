@@ -12,7 +12,9 @@ one can, and whether a failure left a usable browser behind.
 The harness reads the built packages, so build them first. It also needs a
 trusted native build and an explicit Chromium so both engines share one binary;
 without `BOUNDARY_DIFF_CHROMIUM` the old side uses Playwright's Chromium and the
-native side resolves its own.
+native side resolves its own. The native side reads `AGENT_BROWSER_EXECUTABLE_PATH`
+when it launches (`cli/src/native/actions.rs` in `levicode/agent-browser`), the
+same override its own test harnesses use.
 
 ```bash
 pnpm --filter e2e run build
@@ -26,12 +28,18 @@ node scripts/acceptance/boundary-diff/run.mjs --json /tmp/boundary-diff.json
 `--only <case|family>` narrows the table, `--engine new|old` runs one side, and
 `--list` prints every case. Each case runs in its own child process with a
 120s watchdog, so a hanging boundary becomes a `hang` cell instead of a stuck
-run.
+run. A timed-out case also kills every `agent-browser` session whose name
+starts with `e2e-` (the prefix the engine uses), because the native proxy
+starts its browser daemon detached and a leaked daemon would hold a browser
+open. Run the harness on a machine where no other e2e run is live.
 
 Verdicts: `narrowed` means the old engine succeeded and the new one failed (a
 real capability loss), `widened` means the opposite, `same` both succeeded,
 `both-fail` neither could do it, `old-cannot` means the old API cannot express
-the scenario at all, and `old-hang` / `new-hang` mark a watchdog expiry.
+the scenario at all, `old-hang` / `new-hang` / `both-hang` mark a watchdog
+expiry, and `setup-failed` means the harness could not start an engine (a
+missing binary, an unbuilt `dist`, or a refused handshake) so no measurement
+was attempted.
 
 ## Environment of the recorded table
 
@@ -86,7 +94,7 @@ pinned 32MiB clamp is called out instead of silently mixed in.
 | state | state-indexeddb-33MiB | capture storage state after 33MiB in IndexedDB | ok (state=27B indexedDb=false, 52ms) | ok (state=34603318B, 641ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
 | state | state-indexeddb-40MiB | capture storage state after 40MiB in IndexedDB | ok (state=27B indexedDb=false, 59ms) | ok (state=41943350B, 748ms) | old-cannot | usable; endAttempt=ok; dispose=ok |
 | route timeout | route-background-31s | a page-timer request whose route handler awaits 31s | ok (done, 36022ms) | ACTION_FAILED: route handler exceeded its decision deadline | narrowed | unusable; endAttempt=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget; dispose=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget |
-| route timeout | route-foreground-5s | a goto whose route handler awaits 5s | ok (1, 7046ms) | ok (1, 7041ms) | same | usable; endAttempt=ok; dispose=ok |
+| route timeout | route-foreground-5s | a goto whose route handler awaits 5s | ok (boundary, 5083ms) | ok (boundary, 5070ms) | same | usable; endAttempt=ok; dispose=ok |
 | dialog timeout | dialog-background-31s | a page-timer alert whose dialog handler awaits 31s | ok (1, 36032ms) | ACTION_FAILED: dialog handler exceeded its decision deadline | narrowed | unusable; endAttempt=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget; dispose=OPERATION_TIMEOUT: The native browser callback exceeded its operation budget |
 | outer budget | budget-timeout-0 | navigate with timeout: 0 | ok (ok, 24ms) | OPERATION_TIMEOUT: Native browser recovery exhausted the operation budget | narrowed | usable; endAttempt=ok; dispose=ok |
 | outer budget | budget-timeout-2h | navigate with timeout: 7200000 (2h) | ok (ok, 24ms) | ok (ok, 33ms) | same | usable; endAttempt=ok; dispose=ok |
@@ -101,8 +109,11 @@ pinned 32MiB clamp is called out instead of silently mixed in.
 | widened | evaluate-depth-100, blob-response-16MiB, blob-response-32MiB, blob-response-48MiB |
 | same | evaluate-size-512KiB, evaluate-size-900KiB, evaluate-depth-80, init-count-100, init-count-1024, init-total-7.4MiB, blob-response-8MiB, blob-download-64MiB, blob-download-130MiB, blob-download-total-150MiB, state-localstorage-4MiB, route-foreground-5s, budget-timeout-2h, video-2s |
 
-The old side closed its context and browser cleanly in every row; the new
-cleanup column above is the one that varies.
+The old side closed its context and browser cleanly in every row that
+returned. One row did not return: the old 63MiB response read, whose watchdog
+kill took its whole process group with it, so its Chromium did not outlive the
+table. The new cleanup column above is the one that varies; the JSON records
+both sides' cleanup.
 
 ## What the table says
 

@@ -254,7 +254,21 @@ async function oldSession(base, { video = false } = {}) {
 const { server, base } = await appServer();
 const definition = CASES[CASE];
 const result = { case: CASE, engine: ENGINE, family: definition.family, scenario: definition.scenario };
-const session = ENGINE === 'new' ? await newSession(base) : await oldSession(base, { video: definition.video === true });
+const writeResult = async () => {
+  await new Promise((done) => process.stdout.write(`RESULT:${JSON.stringify(result)}\n`, done));
+  server.closeAllConnections();
+  await new Promise((done) => server.close(done));
+};
+let session;
+try {
+  session = ENGINE === 'new' ? await newSession(base) : await oldSession(base, { video: definition.video === true });
+} catch (error) {
+  // A missing binary, an unbuilt dist, or a refused handshake is a setup
+  // failure, not a hanging case.
+  result.setup = summarize(error);
+  await writeResult();
+  process.exit(0);
+}
 const started = Date.now();
 try {
   await session.goto('/');
@@ -265,7 +279,5 @@ try {
 }
 result.usable = await session.usable();
 result.cleanup = await session.cleanup();
-server.closeAllConnections();
-await new Promise((done) => server.close(done));
-await new Promise((done) => process.stdout.write(`RESULT:${JSON.stringify(result)}\n`, done));
+await writeResult();
 process.exit(0);
