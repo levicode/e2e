@@ -48,7 +48,7 @@ test('repository guard lint rejects disjunctions, comments and other repositorie
 const forkLinuxRunner = "    runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}";
 
 test('ordinary Linux CI retains all jobs and uses standard runners on forks', () => {
-  for (const [file, count] of [['spec.yml', 4], ['docs.yml', 3], ['benchmark.yml', 4]] as const) {
+  for (const [file, count] of [['spec.yml', 5], ['docs.yml', 3], ['benchmark.yml', 4]] as const) {
     const workflow = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8');
     const runners = workflow.split('\n').filter((line) => line.startsWith('    runs-on:'));
     const expected = Array.from({ length: count }, () => forkLinuxRunner);

@@ -114,7 +114,7 @@ test('ordinary workflows keep original tests and gates while making runtime prep
   const benchmark = read('workflows/benchmark.yml');
   assert.ok(spec.includes('node: [22, 24, 26, 22.22.3, 24.8.0]'));
   assert.ok(spec.includes('pnpm: [11, 12]'));
-  assert.ok(spec.includes('needs: [native-runtime, check, test, install, native-targeted, popup-joint]'));
+  assert.ok(spec.includes('needs: [native-runtime, check, test, install, consumers, native-targeted, popup-joint]'));
   const job = (name: string) => spec.split(`  ${name}:\n`)[1]?.split(/^  [\w-]+:\s*$/m)[0] ?? '';
   assert.match(job('popup-joint'), /^    needs: native-runtime$/m);
   assert.doesNotMatch(job('native-targeted'), /^    needs:/m);
@@ -126,7 +126,7 @@ test('ordinary workflows keep original tests and gates while making runtime prep
   assert.ok(job('gate').includes('.value.result != "success" and .value.result != "skipped"'));
   assert.ok(job('gate').includes('exit 1'));
   assert.ok(benchmark.includes('needs: [changes, native-runtime, web, web-agent]'));
-  assert.equal((spec.match(/uses: \.\/\.github\/actions\/native-runtime/g) ?? []).length, 2);
+  assert.equal((spec.match(/uses: \.\/\.github\/actions\/native-runtime/g) ?? []).length, 3);
   assert.equal((benchmark.match(/uses: \.\/\.github\/actions\/native-runtime/g) ?? []).length, 2);
   for (const command of ['pnpm test', 'pnpm --filter @e2e-dev/testbed test', 'node scripts/install-smoke.ts']) assert.ok(spec.includes(command));
   for (const command of ['pnpm --filter @e2e-dev/web-benchmark run test', 'run test:agent --strict-cache', 'crosscheck.test.ts']) assert.ok(benchmark.includes(command));
