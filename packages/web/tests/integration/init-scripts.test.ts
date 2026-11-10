@@ -198,6 +198,7 @@ describe('init scripts', () => {
           // registration (this reload) is guaranteed.
           if (!reloaded) {
             reloaded = true;
+            if (tab === null) { reject(new Error('The init-script fixture popup closed before its reload')); return; }
             tab.location.reload();
             return;
           }

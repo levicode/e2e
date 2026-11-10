@@ -10,7 +10,7 @@ import type { Browser } from '@e2e-dev/web';
 import { drainPopupDocumentEvidence, notePopupInitScriptResolved, popupDocumentDiagnosticFixture, popupDocumentDiagnosticHtml, validPopupDocumentEvidence, withPopupDocumentFailureEvidence } from '../helpers/popup-document-evidence.ts';
 
 const original = readFileSync(new URL('../fixtures/popup-init-order/cases.txt', import.meta.url), 'utf8');
-const post = 'opener.postMessage({kind: "init-document", snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin);';
+const post = 'opener.postMessage({kind: "init-document", path: location.pathname, snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin);';
 const shape = { present: false, type: 'undefined', isArray: false, length: 'not-array', lengthCapped: false };
 const evidence = { schemaVersion: 2, readState: 'ok', readAttempts: 1, truncated: false, documentIdentitySource: 'same-origin-document-weakmap', registrationCallsResolved: 0, nativeRegistrationAck: 'unknown', frameTenure: 'unknown', documents: [
   { messageOrdinal: 0, documentIdentity: 0, readState: 'ok', final: shape, firstInline: { present: true, type: 'object', isArray: true, length: 0, lengthCapped: false } },
@@ -51,14 +51,14 @@ describe('popup document evidence schema and bounded failure handling', () => {
     const script = new Script(popupDocumentDiagnosticHtml(post, true));
     const firstDocument = {};
     const secondDocument = {};
-    const context = (document: object) => createContext({ opener: parent, document, location: { origin: 'fixture-origin' }, firstInline: [] });
+    const context = (document: object) => createContext({ opener: parent, document, location: { origin: 'fixture-origin', pathname: '/popup' }, firstInline: [] });
     const first = context(firstDocument);
     const second = context(secondDocument);
     script.runInContext(first); script.runInContext(second);
     expect(messages).toHaveLength(2);
     for (const args of messages) {
-      expect(Object.keys(args[0] as object)).toEqual(['kind', 'snapshot']);
-      expect(args[0]).toEqual({ kind: 'init-document', snapshot: { first: [], final: undefined } });
+      expect(Object.keys(args[0] as object)).toEqual(['kind', 'path', 'snapshot']);
+      expect(args[0]).toEqual({ kind: 'init-document', path: '/popup', snapshot: { first: [], final: undefined } });
     }
     const state = Reflect.get(parent, '__e2ePopupInitDocumentEvidence');
     expect(state.identities.get(firstDocument)).toBe(0);
@@ -74,7 +74,7 @@ describe('popup document evidence schema and bounded failure handling', () => {
   it('retains two message observations that refer to the same weak Document identity', () => {
     const parent = { Object, Array, WeakMap, postMessage: vi.fn() };
     const document = {};
-    const context = createContext({ opener: parent, document, location: { origin: 'fixture-origin' }, firstInline: [] });
+    const context = createContext({ opener: parent, document, location: { origin: 'fixture-origin', pathname: '/popup' }, firstInline: [] });
     const script = new Script(popupDocumentDiagnosticHtml(post, true));
     script.runInContext(context); script.runInContext(context);
     const rows = Reflect.get(parent, '__e2ePopupInitDocumentEvidence').documents;
@@ -87,7 +87,7 @@ describe('popup document evidence schema and bounded failure handling', () => {
   it('does not invoke accessors for metadata or block the original message when the store is unavailable', () => {
     let reads = 0; const messages: unknown[] = [];
     const parent = { Object, Array, WeakMap, postMessage: (value: unknown) => { messages.push(value); } };
-    const context = createContext({ opener: parent, document: {}, location: { origin: 'fixture-origin' }, firstInline: [] });
+    const context = createContext({ opener: parent, document: {}, location: { origin: 'fixture-origin', pathname: '/popup' }, firstInline: [] });
     Object.defineProperty(context, 'initOrder', { get() { reads++; return undefined; } });
     const script = new Script(popupDocumentDiagnosticHtml(post, true));
     script.runInContext(context);

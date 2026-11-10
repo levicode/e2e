@@ -13,7 +13,7 @@ export const POPUP_JOINT_CASE_ENTRY = fileURLToPath(import.meta.url);
 async function main(output:string):Promise<void> {
 const title = 'popup first inline sees each init once and reload starts a fresh document';
 const root = output; assert.ok(root);
-const html = '<!doctype html><script>globalThis.firstInline = [...(globalThis.initOrder ?? [])];</script><script>addEventListener("DOMContentLoaded", () => { if (opener) opener.postMessage({kind: "init-document", snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin); }, {once: true});</script><title>Synthetic init order</title><body>fixture</body>';
+const html = '<!doctype html><script>globalThis.firstInline = [...(globalThis.initOrder ?? [])];</script><script>addEventListener("DOMContentLoaded", () => { if (opener) opener.postMessage({kind: "init-document", path: location.pathname, snapshot: {first: globalThis.firstInline, final: globalThis.initOrder}}, location.origin); }, {once: true});</script><title>Synthetic init order</title><body>fixture</body>';
 const testSource = readFileSync('packages/e2e/tests/integration/web-popup-init-order.test.ts','utf8');
 assert.ok(testSource.includes(html), 'Original HTML changed');
 const cases = readFileSync('packages/e2e/tests/fixtures/popup-init-order/cases.txt','utf8');
@@ -33,7 +33,7 @@ try {
   const selected=outcome.results.filter(result=>result.selected);state.selected=selected.length;
   assert.equal(selected.length,1);const result=selected[0]!;
   assert.equal(result.test.title,title);assert.equal(result.repeat,0);state.attempts=result.attempts.length;assert.equal(result.attempts.length,1);
-  assert.equal(outcome.results.length,3);assert.equal(outcome.results.filter(unselected=>!unselected.selected&&unselected.attempts.length===0).length,2);
+  assert.equal(outcome.results.length,4);assert.equal(outcome.results.filter(unselected=>!unselected.selected&&unselected.attempts.length===0).length,3);
   state.cleanup=result.attempts[0]!.cleanup;
   const code=result.attempts[0]!.error?.code;state.errorCode=code===undefined?null:['INVALID_ARGUMENT','ENGINE_FAILURE','ACTION_FAILED','ACTION_MAY_HAVE_COMMITTED','APP_NOT_OPEN','INVALID_STATE','TIMEOUT','CANCELLED'].includes(code)?code:'other';
   state.status=result.status==='passed'&&outcome.exitCode===0?'passed':'failed';failed=state.status!=='passed'||state.cleanup!=='complete';

@@ -1255,6 +1255,102 @@ not browser-disconnect recovery, a new-context fallback, or an acceptance claim.
 
 **Unreleased integration slice:** fresh startup and final cleanup are the current executable gate, not full release acceptance. Same-transport worker reuse, context replacement, and persistent client recovery still require their integration proofs. Persistent binding selects the exact existing default context and target; it must not rebuild lost document state in an incognito context. Read the accessors again after a completed recovery.
 
+## Differential status
+
+The native engine replaces the Playwright-backed public entry at `e557432`.
+This is the four-state ledger for that replaced contract:
+
+- **Verified**: a test asserts the same observable outcome against Playwright
+  1.64.1 driving the same Chromium the native engine owns.
+- **Different**: the behaviour differs, and the row says how and what it costs.
+- **Unsupported**: the native engine refuses it, and the row says what a caller
+  can do instead.
+- **Not differentiated**: no comparison exists yet; it is listed rather than
+  implied.
+
+The receipts are
+`packages/web/tests/integration/web-options-parity.test.ts` (the 13 options),
+`packages/web/tests/integration/legacy-state-import.test.ts` (the old
+storage-state file), and
+`packages/e2e/tests/integration/web-popup-init-order.test.ts` with its
+`-borrowed` sibling (popup document boundaries).
+
+### Legacy `storageState` import
+
+The engine's `state.restore` capability accepts
+`{ format: 'playwright-storage-state', version: 1, data }`, where `data` is the
+file a Playwright 1.64.1 context wrote. This is the payload behind saved
+sessions, not a new file-import command: `use.storageState` still maps to
+sessions, as [the migration guide](/migrate/playwright) says.
+
+| Part | State | Evidence and consequence |
+| --- | --- | --- |
+| The file envelope (`cookies`, `origins`) | Verified | A real file is written to disk, read back, and restored. |
+| Normal cookie | Verified | The fixture server answers `401` without it; the imported file reaches the protected page. |
+| Partitioned cookie | Verified | The cookie is presented only to the cross-site frame it is partitioned for, never to the top-level page (it is not broadened). |
+| `localStorage` | Verified | The imported token renders on the protected page. |
+| IndexedDB database, store, index and record | Verified | The store's `keyPath`, its `byUser` index and its one record's `user`/`role` all read back. |
+| A missing required field | Unsupported | The import is refused (`ENGINE_FAILURE`, `invalid-arguments`) instead of partly restoring the file. |
+| An unknown top-level field | Unsupported | Refused the same way; a field this engine does not understand cannot be silently dropped. |
+| Two databases with one name | Unsupported | Refused instead of merged. |
+| An unknown cookie field | Unsupported | Refused with `UNSUPPORTED_CAPABILITY`; a field a newer client adds never results in a cookie restored without its semantics. |
+| Complex IndexedDB values (cycles, `Date`, `Map`, `Set`, `Blob`, typed arrays) | Not differentiated | The converter has a codec for them; the receipt covers plain JSON records only. |
+| Multiple origins, the 1024-origin cap, the state-size ceiling | Not differentiated | Only the one-origin path is exercised here. |
+
+### `WebOptions`
+
+For the rows marked **Verified**, the reference is the replaced entry's
+public contract as it applied that option at `e557432`: its `contextOptions`
+and `configure` hook, its CDP attach, or its test-id projection. Each was
+executed against Playwright 1.64.1 on the same Chromium. The **Unsupported**
+row cites that entry's `BROWSER_NAMES` and asserts the current refusal.
+
+| Option | State | Findings |
+| --- | --- | --- |
+| `browser` | Unsupported | `firefox` and `webkit` were launchable before; now refused with `UNSUPPORTED_CAPABILITY` naming Chromium only. Use Chromium, or another engine for those browsers. |
+| `viewport` | Verified | Default `1280x720`, a configured size, and `null` filling the window all match. |
+| `screencast` | Not differentiated | The native recorder honors `screencast.size` in its own test (a segment decodes at that size, not the viewport's). The replaced entry used the same CDP JPEG-screencast mapping by source, but no live old-encoder receipt exists and encoded quality is not compared. |
+| `connect` | Verified | Both clients attach to the same browser and keep independent contexts and pages. |
+| `headers` | Verified | The app's site receives them; another site's request does not. Same site-scoped routing as before. |
+| `basicAuth` | Verified | The challenge is answered and the protected page loads; without credentials both entries show the `401` page. |
+| `testIdAttribute` | Verified | The configured attribute resolves through the `testId` query; the default attribute stops matching. |
+| `userAgent` | Verified | `navigator.userAgent` and the request header both carry the configured value. |
+| `locale` | Verified | `navigator.language`, the `Intl` locale and the `Accept-Language` header agree. |
+| `timezoneId` | Verified | `Intl` resolves the configured zone and the date offset matches. |
+| `colorScheme` | Verified | `matchMedia` and the page's `@media` rule reflect it from the first paint. |
+| `reducedMotion` | Verified | Same, including the reduced transition duration. |
+| `initScripts` | Verified | Each script runs before the document's own script, in the configured order. |
+
+### Popup documents
+
+| Case | State | Findings |
+| --- | --- | --- |
+| A document the engine opens (a navigation or reload) | Verified | Each init script runs exactly once, before the document's own script. |
+| A popup's first document in a shared browser | Different | Best effort by contract: it may miss the init scripts or run one twice. Assert a later document instead; see the popup note under [Init scripts](#init-scripts). |
+| A document the popup navigates itself to | Verified | After the popup moves itself on, the next document sees each init script exactly once, in both an engine-owned and a shared browser. |
+| Dialog ownership for a popup's first document | Different | Best effort for the same reason as the first row. |
+
+### Not differentiated
+
+These are deliberately out of this ledger; none of them is claimed as verified:
+
+- The rest of the operation matrix: drag, resize, multi-tab orchestration,
+  window management, and long event sequences.
+- Repeated semantic differentials: the read-node, crosscheck and conformance
+  results already in `packages/web/tests/crosscheck/expected.txt` and
+  `packages/web/tests/conformance/expected.txt` stand instead of a second pass.
+- Low-frequency surfaces with their own integration tests but no old-entry
+  comparison: downloads, routes, uploads, dialogs, frames, tracing,
+  `cookies`/`setCookies`, `setViewport`, `emulateMedia`, and hosted-browser
+  providers.
+- Capacity and budget differentials.
+- The screencast encoder beyond the native frame-size test: `quality`, codec
+  and encoded pixels.
+- The persistent-context option matrix (`connect.reconnectEndpoint`).
+
+No defect was found in these three slices; the refusals above are the
+documented contract, not bugs.
+
 ## Custom executor migration
 
 Existing Playwright helpers use `surfaceOf` rather than being forced onto a smaller fixture API. For recorded and authorized harness operations, keep using the public `StepExecutor` and typed `Browser` fixture.
