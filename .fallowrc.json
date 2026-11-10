@@ -40,6 +40,8 @@
     "packages/web/vitest.isolated-page-reopen-native.config.ts",
     "packages/web/vitest.persistent-raw-reconnect-native.config.ts",
     "packages/web/vitest.persistent-raw-reconnect.config.ts",
+    "scripts/acceptance/boundary-diff/measure.mjs",
+    "scripts/acceptance/boundary-diff/run.mjs",
     "scripts/acceptance/fixtures/installed-candidate.mjs",
     "scripts/ci/context-binding-probe.mjs",
     "scripts/ci/frozen-cache-contract.test.mjs",
