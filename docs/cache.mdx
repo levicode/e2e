@@ -47,7 +47,7 @@ when the attempt ended:
 
 | `step.cache.write` | Meaning |
 | --- | --- |
-| `saved` | Recorded for the next run, and a replay can run it whole. |
+| `saved` | Recorded for the next run. |
 | `saved-unreplayable` | Recorded, but a replay cannot run it: the recording hit one of the [limits](#limits-and-gaps). `step.cache.writeDetail` names the actions it could not re-find and why. |
 | `kept` | The entry stays as it is. |
 | `unconfirmed` | Not saved: no check passed after the step. Follow it with a locator assertion or `agent.assert`. |
@@ -55,9 +55,11 @@ when the attempt ended:
 | `no-change` | Nothing recorded: no control appeared, went away, or changed state, and the route stayed the same. That includes a step whose only change is inside a [frame from another site](/browser#reach-into-an-iframe). Such a step runs live on every run. |
 | `not-written` | Not saved: the store rejected the write, or refused the recording, for example one over the file store's size limit. |
 
-A plain `saved` is a recording the next run replays. `saved-unreplayable`
-adds `step.cache.writeDetail`, for example `action 10 has no target a replay
-can re-find`, because the next run refuses that entry before any action.
+A `saved` recording is one the cache accepted. A replay may still hand the
+step over at a recorded [gap](#limits-and-gaps) or when the app changed.
+`saved-unreplayable` adds `step.cache.writeDetail`, for example `action 10
+has no target a replay can re-find`, because the next run refuses that entry
+before any action.
 
 A step that took no action records nothing and reports no `write`.
 

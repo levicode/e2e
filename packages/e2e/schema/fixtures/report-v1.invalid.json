@@ -54,6 +54,14 @@
                 "startedAt": "2026-07-24T12:00:00.000Z",
                 "durationMs": 1000,
                 "observationTruncated": "yes",
+          "cache": {
+            "mode": "missed",
+            "reason": "no-entry",
+            "replayedActions": 0,
+            "totalActions": 0,
+            "write": "kept",
+            "writeDetail": "action 2 has no target a replay can re-find"
+          },
                 "events": [],
                 "metrics": {
                   "modelCalls": 1,

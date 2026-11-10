@@ -360,7 +360,8 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   documentation, but the run reports `step.cache.write:
   saved-unreplayable`, with `writeDetail` naming the actions it could not
   re-find, and the next run refuses the entry before any action. `saved`
-  means the recording replays.
+  means the cache accepted the recording; a recorded gap still hands the
+  step over at that action.
 - A step changing nothing on screen or in the route creates no entry
   (`step.cache.write`: `no-change`) and runs live every run, strict
   included; a change only inside a frame from another site counts as

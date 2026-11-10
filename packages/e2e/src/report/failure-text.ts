@@ -379,7 +379,9 @@ function cacheLine(cache: StepCacheRecord, cacheDir: string | undefined): string
     ...(cache.write === undefined
       ? []
       : [
-          `${CACHE_WRITE_TEXT[cache.write]}${cache.writeDetail === undefined ? '' : `: ${cell(cache.writeDetail, MAX_DETAIL_CHARS)}`}`,
+          `${CACHE_WRITE_TEXT[cache.write]}${
+            cache.write === 'saved-unreplayable' && cache.writeDetail !== undefined ? `: ${cell(cache.writeDetail, MAX_DETAIL_CHARS)}` : ''
+          }`,
         ]),
     ...(cache.notRecorded === 'param-collision' ? ['nothing recorded: a unique() value collides with another param'] : []),
   ];

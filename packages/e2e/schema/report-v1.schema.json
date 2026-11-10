@@ -285,6 +285,10 @@
         {
           "if": { "required": ["notRecorded"] },
           "then": { "properties": { "mode": { "enum": ["missed", "agent-concluded"] } } }
+        },
+        {
+          "if": { "required": ["writeDetail"] },
+          "then": { "properties": { "write": { "const": "saved-unreplayable" } } }
         }
       ]
     },

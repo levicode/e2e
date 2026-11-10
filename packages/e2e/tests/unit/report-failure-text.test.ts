@@ -204,6 +204,17 @@ describe('renderTracePage', () => {
     const plain = written({ mode: 'missed', reason: 'no-entry', replayedActions: 0, totalActions: 0, write: 'saved' });
     expect(plain).toContain('recording saved');
     expect(plain).not.toContain('cannot replay');
+    // A report from another producer cannot hang the detail on another status.
+    const kept = written({
+      mode: 'missed',
+      reason: 'no-entry',
+      replayedActions: 0,
+      totalActions: 0,
+      write: 'kept',
+      writeDetail: 'action 2 has no target a replay can re-find',
+    });
+    expect(kept).toContain('recording kept');
+    expect(kept).not.toContain('no target a replay can re-find');
   });
 
   it('quotes a step explanation that starts like a heading as prose, with its linkable tokens as code, through the shared cell', () => {

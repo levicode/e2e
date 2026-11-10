@@ -109,12 +109,13 @@ export interface AgentCacheContext {
 }
 
 /**
- * What became of a step's recording. `saved`: written for the next run.
- * `saved-unreplayable`: written, but `truncated`, so it documents the flow
- * and never runs: the next attempt refuses it before any action, and the
- * report names the actions it could not re-find (`detail`). Distinguishing
- * the two is the point — a plain `saved` once promised a replay the entry
- * could not give. `kept`: the entry it replayed, or one holding the same
+ * What became of a step's recording. `saved`: written for the next run, and
+ * nothing in the recording refuses a replay (a recorded gap still hands the
+ * step over at that action). `saved-unreplayable`: written, but `truncated`,
+ * so it documents the flow and never runs: the next attempt refuses it
+ * before any action, and the report names the actions it could not re-find
+ * (`detail`). Distinguishing the two is the point — a plain `saved` once
+ * promised a replay the entry could not give. `kept`: the entry it replayed, or one holding the same
  * flow, stays as it is. `unconfirmed`: not saved, because no check passed
  * after the step. `evicted`: the entry was deleted, since it replayed into a
  * failure or a repair. `no-change`: the step passed but changed nothing a

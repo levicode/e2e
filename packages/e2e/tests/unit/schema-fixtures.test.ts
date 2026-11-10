@@ -95,6 +95,11 @@ describe.each(schemas)('%s schema', (name) => {
       expect(validate(report)).toBe(false);
       cache['writeDetail'] = 'x'.repeat(600);
       expect(validate(report)).toBe(true);
+      // The detail exists only for a recording the run could not make replayable.
+      cache['write'] = 'kept';
+      expect(validate(report)).toBe(false);
+      cache['write'] = 'saved-unreplayable';
+      expect(validate(report)).toBe(true);
     });
 
     it('constrains result tags to distinct names --tag can spell back', () => {
