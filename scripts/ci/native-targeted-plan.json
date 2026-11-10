@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "c5a43a0d4bf7ae78d4e77d93e3668aad087f39b0",
-    "tree": "ee355ffed29b789d4fe2259f7637fa23008ff069",
+    "commit": "518b1817fbec7acf73bf895019a940ffde8ff195",
+    "tree": "490063d6195ba8a33b7e9df8e6df807450f1d30a",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -313,7 +313,8 @@
     "native::client_browser::reconnect_tests::reconnect_admitted_before_the_scope_sealed_keeps_the_clean_stale_refusal",
     "native::client_browser::reconnect_tests::reconnect_refused_after_the_lost_owner_is_past_its_admission_keeps_the_clean_refusal",
     "native::client_browser::reconnect_tests::a_producer_quarantine_still_publishes_the_remote_loss_notice",
-    "native::client_transport::tests::reconnect_refused_inside_admission_on_a_quarantined_scope_settles_as_stale_scope"
+    "native::client_transport::tests::reconnect_refused_inside_admission_on_a_quarantined_scope_settles_as_stale_scope",
+    "native::client_browser::reconnect_tests::loss_noticed_after_publications_close_is_not_a_teardown_failure"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",
