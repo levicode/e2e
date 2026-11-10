@@ -160,6 +160,40 @@ describe('prepareObservation', () => {
     expect(namedPrepared.text).toBe('#@r document\n #@n button "Add"');
   });
 
+  it('names an anonymous action target by the one text of the container that holds it', () => {
+    // A tag chip: one label and one remove icon under the same container. The
+    // icon line carries the label as its context, so the model does not have
+    // to guess which of many identical icons belongs to the tag it wants.
+    const states: NonNullable<SemanticNode['states']> & { readonly clickable: boolean } = { clickable: true };
+    const chip = (label: string, id: string) =>
+      node(`@${id}-chip`, {
+        children: [
+          node(`@${id}-label`, { text: label }),
+          node(`@${id}-close`, { states, attributes: { class: 'ivu-icon ivu-icon-ios-close' } }),
+        ],
+      });
+    const prepared = prepareObservation(
+      observation(node('@r', { role: 'dialog', name: 'Edit tags', children: [chip('TAG-42', 'a'), chip('TAG-43', 'b')] })),
+      { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: 4_096 },
+    );
+    expect(prepared.text.split('\n')).toEqual([
+      '#@r dialog "Edit tags"',
+      ' #@a-chip',
+      '  #@a-label text="TAG-42"',
+      '  #@a-close class="ivu-icon ivu-icon-ios-close" in="TAG-42" [clickable]',
+      ' #@b-chip',
+      '  #@b-label text="TAG-43"',
+      '  #@b-close class="ivu-icon ivu-icon-ios-close" in="TAG-43" [clickable]',
+    ]);
+
+    // A container holding many unnamed controls (a list, a dialog) names none of them.
+    const loose = prepareObservation(
+      observation(node('@r', { role: 'dialog', name: 'Edit tags', children: [node('@l', { text: 'TAG-42' }), node('@x', { states, attributes: { class: 'icon close' } }), node('@y', { states, attributes: { class: 'icon close' } })] })),
+      { redact: NO_REDACT, redactCut: NO_REDACT, maxBytes: 4_096 },
+    );
+    expect(loose.text).not.toContain('in=');
+  });
+
   it('masks secure fields and never renders their value', () => {
     const tree = node('n1', {
       children: [

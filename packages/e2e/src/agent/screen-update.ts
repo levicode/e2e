@@ -366,6 +366,60 @@ function withoutFocus(line: string): string {
   });
 }
 
+/**
+ * The ordinal a line gives an unnamed control among its twins. It describes
+ * the group, not the control: removing one tag chip renumbers every later
+ * twin, so comparing lines as written would report each of them as changed
+ * and turn a one-control removal into a whole-screen re-list that never says
+ * what went away. A reorder keeps the group's members and changes their
+ * order, so it is still reported (`diffScreens`).
+ */
+const POSITION_TOKEN = / nth=\d+\/\d+(?= \[|$)/u;
+
+/** A line without its group ordinal, for telling a real change from renumbering. */
+function withoutPosition(line: string): string {
+  return line.replace(POSITION_TOKEN, '');
+}
+
+/** The ordinal a line carries, or undefined. */
+function positionOf(line: string): string | undefined {
+  return POSITION_TOKEN.exec(line)?.[0];
+}
+
+/** Anonymous twins in screen order, grouped by how they render without their id or ordinal. */
+function twinGroups(screen: ShownScreen): ReadonlyMap<string, readonly string[]> {
+  const groups = new Map<string, string[]>();
+  for (const line of screen.order) {
+    const id = lineId(line);
+    if (id === undefined) continue;
+    const key = twinKey(line);
+    const ids = groups.get(key);
+    if (ids === undefined) groups.set(key, [id]);
+    else ids.push(id);
+  }
+  return groups;
+}
+
+/** How a line renders as a twin: without its own id or its place in the group. */
+function twinKey(line: string): string {
+  return withoutPosition(line.replace(/^#\S+ ?/u, ''));
+}
+
+/**
+ * Whether the twins that two screens share around this line keep their
+ * relative order. A member added or removed shifts the ordinals of the rest
+ * without reordering them; the members that stay still may move.
+ */
+function reordered(previous: ReadonlyMap<string, readonly string[]>, next: ReadonlyMap<string, readonly string[]>, key: string): boolean {
+  const before = previous.get(key) ?? [];
+  const after = next.get(key) ?? [];
+  const stayedAfter = new Set(after);
+  const stayedBefore = new Set(before);
+  const beforeOrder = before.filter((id) => stayedAfter.has(id)).join(',');
+  const afterOrder = after.filter((id) => stayedBefore.has(id)).join(',');
+  return beforeOrder !== afterOrder;
+}
+
 function indexScreen(observation: ExecutorObservation): ShownScreen {
   const order: string[] = [];
   const byId = new Map<string, string>();
@@ -398,13 +452,19 @@ function indexScreen(observation: ExecutorObservation): ShownScreen {
  */
 function diffScreens(previous: ShownScreen, next: ShownScreen): string[] {
   const lines: string[] = [];
+  const beforeGroups = twinGroups(previous);
+  const afterGroups = twinGroups(next);
   for (const line of next.order) {
     const id = lineId(line);
     if (id === undefined) continue;
     const before = previous.byId.get(id);
     if (before === undefined) {
       lines.push(`added ${line}`);
-    } else if (before !== line) {
+    } else if (withoutPosition(before) !== withoutPosition(line)) {
+      lines.push(`changed ${line} (was: ${before})`);
+    } else if (positionOf(before) !== positionOf(line) && reordered(beforeGroups, afterGroups, twinKey(line))) {
+      // Only the ordinal changed, but the twins that stayed moved among
+      // themselves: a reorder, not the renumbering a removal causes.
       lines.push(`changed ${line} (was: ${before})`);
     }
   }

@@ -229,6 +229,69 @@ describe('ScreenPresenter', () => {
     expect(text).toContain('no listed node changed. The screen listing is truncated');
   });
 
+  it('reports the control that left instead of renumbering every remaining twin', () => {
+    // The chip controls are identically named twins carrying their place in
+    // the group. Removing one shifts every later ordinal while the remaining
+    // elements keep their ids; comparing the lines as written would call each
+    // of them changed and turn a one-chip removal into a whole-screen re-list
+    // that never says which tag went away.
+    const before = [
+      '#n1 dialog "Edit tags"',
+      ' #n10 class="ivu-tag" nth=1/3 [clickable]',
+      '  #n20 text="TAG-1"',
+      '  #n30 class="ivu-icon ivu-icon-ios-close" in="TAG-1" [clickable]',
+      ' #n11 class="ivu-tag" nth=2/3 [clickable]',
+      '  #n21 text="TAG-2"',
+      '  #n31 class="ivu-icon ivu-icon-ios-close" in="TAG-2" [clickable]',
+      ' #n12 class="ivu-tag" nth=3/3 [clickable]',
+      '  #n22 text="TAG-3"',
+      '  #n32 class="ivu-icon ivu-icon-ios-close" in="TAG-3" [clickable]',
+    ];
+    const after = [
+      '#n1 dialog "Edit tags"',
+      ' #n10 class="ivu-tag" nth=1/2 [clickable]',
+      '  #n20 text="TAG-1"',
+      '  #n30 class="ivu-icon ivu-icon-ios-close" in="TAG-1" [clickable]',
+      ' #n12 class="ivu-tag" nth=2/2 [clickable]',
+      '  #n22 text="TAG-3"',
+      '  #n32 class="ivu-icon ivu-icon-ios-close" in="TAG-3" [clickable]',
+    ];
+    const presenter = new ScreenPresenter();
+    presenter.initial(screen('b1', before));
+    const text = presenter.update(screen('b2', after), { lead: 'Tapped #n31.' });
+    expect(text).toContain('Screen changes since revision b1');
+    expect(text).toContain('removed #n21 text="TAG-2"');
+    expect(text).toContain('removed #n31 class="ivu-icon ivu-icon-ios-close" in="TAG-2"');
+    expect(text).not.toContain('changed #n10');
+    expect(text).not.toContain('changed #n12');
+    expect(text).not.toContain('Current screen');
+  });
+
+  it('still reports twins that swap places, where only their ordinals moved', () => {
+    // The members stay and the group size stays; the order changed. Erasing
+    // the ordinal would make a reorder read as no change at all.
+    const before = [
+      '#n1 dialog "Edit tags"',
+      ' #n10 class="ivu-tag" nth=1/2 [clickable]',
+      '  #n20 text="TAG-1"',
+      ' #n11 class="ivu-tag" nth=2/2 [clickable]',
+      '  #n21 text="TAG-2"',
+    ];
+    const after = [
+      '#n1 dialog "Edit tags"',
+      ' #n11 class="ivu-tag" nth=1/2 [clickable]',
+      '  #n21 text="TAG-2"',
+      ' #n10 class="ivu-tag" nth=2/2 [clickable]',
+      '  #n20 text="TAG-1"',
+    ];
+    const presenter = new ScreenPresenter();
+    presenter.initial(screen('b1', before));
+    const text = presenter.update(screen('b2', after), { lead: 'Tapped #n21.' });
+    expect(text).toContain('changed #n10 class="ivu-tag" nth=2/2 [clickable] (was: #n10 class="ivu-tag" nth=1/2 [clickable])');
+    expect(text).toContain('changed #n11 class="ivu-tag" nth=1/2 [clickable] (was: #n11 class="ivu-tag" nth=2/2 [clickable])');
+    expect(text).not.toContain('No listed node changed');
+  });
+
   it('does not call a node changed when only its depth moved', () => {
     const presenter = new ScreenPresenter();
     presenter.initial(screen('b1', HOME));

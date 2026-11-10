@@ -10,7 +10,7 @@
  */
 
 import type { ViewportPoint, ViewportSize } from '../engine/surface.ts';
-import { isAnonymousClickable, redactNode, type NodeRedaction, type RedactedNode } from './observation.ts';
+import { isAnonymousClickable, redactNode, soleControl, type NodeRedaction, type RedactedNode } from './observation.ts';
 import {
   isNodeAction,
   MAX_TRACE_DESCRIPTOR_CHARS,
@@ -103,6 +103,11 @@ const MAX_WITHIN_CHARS = 80;
  * renders whichever rows are near the viewport, so its first row is a scroll
  * position, not a place, and the same row would read as `Row 0512 in Row
  * 0500` one time and `in Row 0501` the next. Its own label still keys it.
+ *
+ * An unnamed control is also keyed by the container that holds it and exactly
+ * one text (`soleControl`): a chip's remove icon belongs to the chip's label,
+ * which is the tree's only place to tell that icon from the ninety others
+ * beside it.
  */
 export function containerKey(
   id: string,
@@ -111,10 +116,18 @@ export function containerKey(
 ): string | undefined {
   const node = nodes.get(id);
   const own = node === undefined ? '' : squash(node.name ?? node.text ?? '');
+  const anonymous = node !== undefined && isAnonymousClickable(node);
   let came = id;
   let cursor = parents.get(id);
   while (cursor !== undefined) {
     const container = nodes.get(cursor);
+    if (container !== undefined && anonymous) {
+      const sole = soleControl(container);
+      if (sole !== undefined && sole.control.ref.id === node.ref.id) {
+        const clean = bound(collapseText(sole.label), MAX_WITHIN_CHARS);
+        return clean === '' || squash(clean) === own ? undefined : clean;
+      }
+    }
     if (container !== undefined && CONTAINER_ROLES.has(container.role ?? '')) {
       const key = (namedAfterTwinOf(container, nodes.get(came)) ? undefined : firstLeafText(container)) ?? ownLabel(container);
       const clean = key === undefined ? '' : bound(collapseText(key), MAX_WITHIN_CHARS);
