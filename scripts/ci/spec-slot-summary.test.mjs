@@ -396,6 +396,36 @@ test('the failed jobs API is classified per job and only test-bearing jobs are l
   assert.equal(kinds.check.kind, 'unclassified');
 });
 
+test('a failed slot summary is a test failure even when the test step reports success', async () => {
+  const job = {
+    name: 'test (22)',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'success' },
+      { number: 13, name: 'Require the slot verdict', conclusion: 'failure' },
+    ],
+  };
+  const kinds = await fetchJobFailureKinds({
+    repo: 'levicode/e2e', run: '1', token: 't', entries: infrastructureEntries(),
+    summaries: [{ slot: '22', status: 'failure', failures: [{ test: 'integration  tests/integration/web-platform.test.ts > denies navigation' }] }],
+    fetchImpl: async () => ({ ok: true, json: async () => ({ jobs: [job] }) }),
+    readLog: async () => undefined,
+  });
+  assert.equal(kinds['test (22)'].kind, 'test');
+  assert.equal(kinds['test (22)'].testsExecuted, true);
+  assert.equal(kinds['test (22)'].step, 'Unit and integration tests');
+  const passed = await fetchJobFailureKinds({
+    repo: 'levicode/e2e', run: '1', token: 't', entries: infrastructureEntries(),
+    summaries: [{ slot: '22', status: 'success', failures: [] }],
+    fetchImpl: async () => ({ ok: true, json: async () => ({ jobs: [job] }) }),
+    readLog: async () => undefined,
+  });
+  assert.equal(passed['test (22)'].kind, 'unclassified');
+  assert.equal(passed['test (22)'].testsExecuted, true);
+  assert.match(passed['test (22)'].reason, /the test step passed, but Require the slot verdict failed/);
+});
+
 test('a job log is read over REST, so a run still in progress yields it', async () => {
   const calls = [];
   const text = await fetchJobLog({

@@ -573,7 +573,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/spec-slot-summary.mjs inspect --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --whitelist scripts/ci/known-flakes.json --output "$RUNNER_TEMP/spec-job-kinds.json"
+        run: node scripts/ci/spec-slot-summary.mjs inspect --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --whitelist scripts/ci/known-flakes.json --summaries "$RUNNER_TEMP/spec-slots" --output "$RUNNER_TEMP/spec-job-kinds.json"
       - name: Report failed slots and tests
         if: ${{ always() }}
         continue-on-error: true

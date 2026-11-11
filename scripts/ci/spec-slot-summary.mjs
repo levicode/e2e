@@ -248,7 +248,7 @@ export function classifyJobFailure({ job, log, entries }) {
  * `readLog`, the only evidence that separates an environment error from a
  * broken setup step.
  */
-export async function fetchJobFailureKinds({ repo, run, token, entries, fetchImpl = fetch, readLog }) {
+export async function fetchJobFailureKinds({ repo, run, token, entries, summaries = [], fetchImpl = fetch, readLog }) {
   const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${token}` };
   const request = async url => {
     const response = await fetchImpl(url, { headers });
@@ -261,10 +261,20 @@ export async function fetchJobFailureKinds({ repo, run, token, entries, fetchImp
     jobs.push(...(batch.jobs ?? []));
     if ((batch.jobs ?? []).length < 100) break;
   }
+  const bySlot = new Map((Array.isArray(summaries) ? summaries : []).map(summary => [summary.slot, summary]));
   const kinds = {};
   for (const job of jobs) {
     if (!['failure', 'timed_out', 'cancelled'].includes(job.conclusion)) continue;
     if (testSteps(job.name) === undefined) continue;
+    const slot = slotFromJobName(job.name);
+    // The slot summary is the test verdict: its step uses continue-on-error,
+    // so the jobs API reports the test step's conclusion as success even when
+    // the tests failed. The summary's exit code does not.
+    const summary = slot === undefined ? undefined : bySlot.get(slot);
+    if (summary?.status === 'failure') {
+      kinds[job.name] = { kind: 'test', testsExecuted: true, step: testSteps(job.name)[0], reason: 'the slot summary reports failed tests' };
+      continue;
+    }
     let verdict = classifyJobFailure({ job, entries });
     // Only a registered environment step can gain from the log; a Lint failure
     // is unclassified without reading it.
@@ -481,12 +491,14 @@ async function main(argv) {
     // One loader for the list, so a bad pattern fails the gate instead of
     // silently missing every signature.
     const entries = loadWhitelist(options.get('whitelist')).entries.filter(entry => entry.kind === 'infrastructure');
+    const summaries = options.get('summaries') === undefined ? [] : readSummaries(options.get('summaries'));
     try {
       const kinds = await fetchJobFailureKinds({
         repo,
         run: options.get('run'),
         token,
         entries,
+        summaries,
         readLog: job => fetchJobLog({ repo, job, token }),
       });
       writeFileSync(options.get('output'), `${JSON.stringify({ schemaVersion: 1, run: Number(options.get('run')), jobs: kinds }, null, 2)}\n`);
@@ -517,7 +529,7 @@ async function main(argv) {
     if (process.env.GITHUB_STEP_SUMMARY !== undefined) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## spec per-slot results\n\n${markdown}\n`);
     return;
   }
-  process.stderr.write('usage: spec-slot-summary.mjs collect --slot <node> --output <file> | annotations --repo <owner/name> --run <id> --output <file> | inspect --repo <owner/name> --run <id> --whitelist <file> --output <file> | report --dir <summaries> [--annotations <file>] [--kinds <file>] --needs <json>\n');
+  process.stderr.write('usage: spec-slot-summary.mjs collect --slot <node> --output <file> | annotations --repo <owner/name> --run <id> --output <file> | inspect --repo <owner/name> --run <id> --whitelist <file> [--summaries <dir>] --output <file> | report --dir <summaries> [--annotations <file>] [--kinds <file>] --needs <json>\n');
   process.exitCode = 2;
 }
 
