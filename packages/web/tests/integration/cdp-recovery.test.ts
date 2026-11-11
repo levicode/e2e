@@ -1058,7 +1058,26 @@ describe('CDP session recovery', () => {
         return endpoint;
       },
     });
+    // Native offers its one-use disconnected-recovery receipt only from an
+    // operation that settles into a quarantined scope; an idle loss offers
+    // none, so the exact reconnect settles as a clean stale-scope refusal
+    // (agent-browser#119). A mutation-capable page.evaluate interrupted by the
+    // loss gives this recovery its receipt, so the case exercises recovery
+    // rather than that refusal.
+    const witnessPage = (await witness(engine, remote)).page;
+    expect(witnessPage.url()).toBe(`${app.url}/login`);
+    const interrupted = fixtureOf(engine).evaluate(async () => {
+      (window as unknown as { recoveryInflight?: boolean }).recoveryInflight = true;
+      await new Promise(resolve => setTimeout(resolve, 60_000));
+      return null;
+    }).then(() => new Error('The in-flight mutation unexpectedly completed'), (cause: unknown) => cause);
+    await expect.poll(() => witnessPage.evaluate(() => (window as unknown as { recoveryInflight?: boolean }).recoveryInflight === true),
+      { timeout: 5_000 }).toBe(true);
     await disconnect(remote, engine);
+    await expect.poll(() => exactRecoveryTicketReady(nativeClients.get(engine)!, fixtures.get(engine)!.identityScope()),
+      { timeout: 5_000 }).toBe(true);
+    const interruption = await interrupted;
+    expect(interruption).toMatchObject({ retryable: false });
     const first = engine.locate!(heading, operation());
     await requested;
     const controller = new AbortController();
