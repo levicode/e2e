@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { compareSlots, fetchAnnotations, parseLog, readSummaries, render, slotFromJobName, summarize } from './spec-slot-summary.mjs';
+import { loadWhitelist } from './flake-retry.mjs';
+import { classifyJobFailure, compareSlots, fetchAnnotations, fetchJobFailureKinds, parseLog, readSummaries, render, slotFromJobName, summarize, testStepName } from './spec-slot-summary.mjs';
 
 const log = [
   '  \u001b[1m\u001b[41m FAIL \u001b[49m\u001b[22m \u001b[30m\u001b[103m web \u001b[49m\u001b[39m explore\u001b[2m > \u001b[22mExplore the home page and find bugs',
@@ -66,8 +67,8 @@ test('the gate table names each failed slot, its tests and its collection errors
     { slot: '22', node: 'v22.22.3', status: 'success', jobStatus: 'success', exitCode: 0, testReached: true, failures: [], errors: [] },
     { slot: '22.22.3', node: 'v22.22.3', status: 'failure', jobStatus: 'failure', exitCode: 1, testReached: true, failures: [{ test: 'integration | tests/integration/explore.test.ts > Look around' }], errors: ['configuration error COLLECTION_ERROR'] },
   ], { test: { result: 'failure' } });
-  assert.match(markdown, /\| 22 \| success \| — \|/);
-  assert.match(markdown, /\| 22\.22\.3 \| failure \| `integration \\\| tests\/integration\/explore\.test\.ts > Look around`<br>error: configuration error COLLECTION_ERROR \|/);
+  assert.match(markdown, /\| 22 \| success \| — \| — \|/);
+  assert.match(markdown, /\| 22\.22\.3 \| failure \| test \| `integration \\\| tests\/integration\/explore\.test\.ts > Look around`<br>error: configuration error COLLECTION_ERROR \|/);
 });
 
 test('the report notices a failed job that never wrote a slot summary', () => {
@@ -182,4 +183,156 @@ test('the retry audit file beside a summary is not read as a second slot', () =>
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+// The shape run 43020654584 attempt 2 shows: the matrix job starts, its setup
+// step fails on the archive mirror, and the test step is skipped.
+const aptMirrorLog = [
+  'test (22)\tUNKNOWN STEP\t2026-11-11T13:49:56.7356578Z Ign:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease',
+  'test (22)\tUNKNOWN STEP\t2026-11-11T13:51:07.4901460Z   Temporary failure resolving \'azure.archive.ubuntu.com\'',
+  'test (22)\tUNKNOWN STEP\t2026-11-11T13:51:57.9132978Z W: Failed to fetch mirror+file:/etc/apt/apt-mirrors.txt/dists/noble/InRelease  Temporary failure resolving \'azure.archive.ubuntu.com\'',
+].join('\n');
+
+const failedSetupJob = {
+  name: 'test (22)',
+  conclusion: 'failure',
+  steps: [
+    { number: 1, name: 'Set up job', conclusion: 'success' },
+    { number: 5, name: 'Run pnpm install --frozen-lockfile', conclusion: 'success' },
+    { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'failure' },
+    { number: 10, name: 'Unit and integration tests', conclusion: 'skipped' },
+    { number: 11, name: 'Per-slot test summary', conclusion: 'success' },
+    { number: 13, name: 'Require the slot verdict', conclusion: 'failure' },
+  ],
+};
+
+const failedTestJob = {
+  name: 'test (24)',
+  conclusion: 'failure',
+  steps: [
+    { number: 5, name: 'Run pnpm install --frozen-lockfile', conclusion: 'success' },
+    { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+    { number: 10, name: 'Unit and integration tests', conclusion: 'failure' },
+  ],
+};
+
+function infrastructureEntries() {
+  return loadWhitelist(path.join(import.meta.dirname, 'known-flakes.json')).entries
+    .filter(entry => entry.kind === 'infrastructure')
+    .map(entry => ({ ...entry, compiled: (entry.patterns ?? []).map(pattern => new RegExp(pattern)) }));
+}
+
+test('the test step is the only step that proves a test executed', () => {
+  assert.equal(testStepName('test (22.22.3)'), 'Unit and integration tests');
+  assert.equal(testStepName('check'), 'Testbed');
+  assert.equal(testStepName('consumers'), 'Run the reference consumer matrix with exact counts');
+  assert.equal(testStepName('install (11)'), undefined);
+  assert.equal(testStepName('native-runtime / build'), undefined);
+});
+
+test('a skipped test step and the registered mirror error make infrastructure', () => {
+  const verdict = classifyJobFailure({ job: failedSetupJob, log: aptMirrorLog, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'infrastructure');
+  assert.equal(verdict.testsExecuted, false);
+  assert.equal(verdict.step, 'Set up source-pinned native runtime');
+  assert.equal(verdict.entry, 'runner-apt-mirror-unreachable');
+  assert.match(verdict.reason, /registered environment error/);
+});
+
+test('a failed test step is a test failure even when the log quotes the same environment error', () => {
+  const verdict = classifyJobFailure({ job: failedTestJob, log: aptMirrorLog, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'test');
+  assert.equal(verdict.testsExecuted, true);
+  assert.equal(verdict.step, 'Unit and integration tests');
+});
+
+test('a setup failure the list does not explain stays unclassified', () => {
+  const pinJob = {
+    name: 'test (26)',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'failure' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'skipped' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job: pinJob, log: 'Error: the native runtime manifest digest does not match', entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.step, 'Set up source-pinned native runtime');
+  assert.match(verdict.reason, /carries no registered environment error/);
+});
+
+test('a failing lint or typecheck step is not infrastructure, though no test ran', () => {
+  const checkJob = {
+    name: 'check',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Lint', conclusion: 'failure' },
+      { number: 22, name: 'Testbed', conclusion: 'skipped' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job: checkJob, log: 'error: no-unused-vars', entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.step, 'Lint');
+  assert.match(verdict.reason, /Lint carries no registered environment error/);
+});
+
+test('a job that never got a runner and a missing log are unclassified, not infrastructure', () => {
+  const cancelled = classifyJobFailure({ job: { name: 'test (22)', conclusion: 'cancelled', steps: [] }, entries: infrastructureEntries() });
+  assert.equal(cancelled.kind, 'unclassified');
+  assert.match(cancelled.reason, /no environment error is recorded/);
+  const noLog = classifyJobFailure({ job: failedSetupJob, entries: infrastructureEntries() });
+  assert.equal(noLog.kind, 'unclassified');
+  assert.match(noLog.reason, /log of Set up source-pinned native runtime is unavailable/);
+});
+
+test('the failed jobs API is classified per job and only test-bearing jobs are listed', async () => {
+  const kinds = await fetchJobFailureKinds({
+    repo: 'levicode/e2e', run: '43020654584', token: 't', entries: infrastructureEntries(),
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        jobs: [
+          { id: 1, name: 'test (22)', conclusion: 'failure', steps: failedSetupJob.steps },
+          { id: 2, name: 'test (24)', conclusion: 'failure', steps: failedTestJob.steps },
+          { id: 3, name: 'check', conclusion: 'failure', steps: [{ number: 6, name: 'Lint', conclusion: 'failure' }, { number: 22, name: 'Testbed', conclusion: 'skipped' }] },
+          { id: 4, name: 'install (11)', conclusion: 'failure', steps: [] },
+          { id: 5, name: 'test (26)', conclusion: 'success', steps: [] },
+        ],
+      }),
+    }),
+    readLog: async job => (job.name === 'test (22)' ? aptMirrorLog : undefined),
+  });
+  assert.deepEqual(Object.keys(kinds), ['test (22)', 'test (24)', 'check']);
+  assert.equal(kinds['test (22)'].kind, 'infrastructure');
+  assert.equal(kinds['test (24)'].kind, 'test');
+  assert.equal(kinds.check.kind, 'unclassified');
+});
+
+test('the gate prints infrastructure and test failures in separate columns', () => {
+  const kinds = {
+    'test (22)': { kind: 'infrastructure', testsExecuted: false, step: 'Set up source-pinned native runtime', entry: 'runner-apt-mirror-unreachable', reason: 'Set up source-pinned native runtime failed with the registered environment error of runner-apt-mirror-unreachable' },
+    'test (24)': { kind: 'test', testsExecuted: true, step: 'Unit and integration tests', reason: 'the test step ran' },
+    'check': { kind: 'unclassified', testsExecuted: false, step: 'Lint', reason: 'Lint carries no registered environment error' },
+  };
+  const markdown = render([
+    { slot: '22', status: 'skipped', jobStatus: 'skipped', exitCode: null, testReached: false, failures: [], errors: [] },
+    { slot: '24', status: 'failure', jobStatus: 'failure', exitCode: 1, testReached: true, failures: [{ test: 'integration  tests/integration/broken.test.ts > case' }], errors: [] },
+  ], { test: { result: 'failure' } }, {}, kinds);
+  assert.match(markdown, /\| 22 \| skipped \| infrastructure \(tests did not execute\) \| no failure line in the log \|/);
+  assert.match(markdown, /\| 24 \| failure \| test \| `integration  tests\/integration\/broken\.test\.ts > case` \|/);
+  assert.match(markdown, /### Failed jobs/);
+  assert.match(markdown, /\| test \(22\) \| infrastructure \(tests did not execute\) \| `Set up source-pinned native runtime` \| `runner-apt-mirror-unreachable` \|/);
+  assert.match(markdown, /\| check \| unclassified \(tests did not execute\) \| `Lint` \| Lint carries no registered environment error \|/);
+  assert.match(markdown, /not one of #25's three independent runs/);
+  assert.match(markdown, /::warning::test \(22\): infrastructure failure \(tests did not execute\)/);
+  // The skipped slot is explained, so the "no summary" warning must not fire.
+  assert.doesNotMatch(markdown, /no slot summary reports a failure/);
+});
+
+test('without a classification a skipped slot says unclassified, never infrastructure', () => {
+  const markdown = render([
+    { slot: '22', status: 'skipped', jobStatus: 'skipped', exitCode: null, testReached: false, failures: [], errors: [] },
+  ], { test: { result: 'failure' } });
+  assert.match(markdown, /\| 22 \| skipped \| unclassified \(tests did not execute\) \|/);
+  assert.doesNotMatch(markdown, /infrastructure/);
 });

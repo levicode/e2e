@@ -1,40 +1,70 @@
 ---
 title: Flake policy
 sidebarTitle: Flake policy
-description: How this repository separates deterministic failures from known flakes, and the one bounded retry the spec gate allows.
+description: How this repository separates deterministic failures, known flakes, and infrastructure failures where no test ran, the one bounded retry the spec gate allows, and which runs count as evidence.
 icon: "shield-check"
-"og:image": "https://e2e.tester.army/docs/images/og/flake-policy.png?v=b443dcb9a4"
-"twitter:image": "https://e2e.tester.army/docs/images/og/flake-policy.png?v=b443dcb9a4"
+"og:image": "https://e2e.tester.army/docs/images/og/flake-policy.png?v=13fba63143"
+"twitter:image": "https://e2e.tester.army/docs/images/og/flake-policy.png?v=13fba63143"
 ---
 
-This page is about this repository's own `spec` workflow, not about running e2e in your CI. A red `spec gate` must mean the change is broken, or that a listed flake failed its one retry. The matrix also runs five Node slots on a shared runner, and that load exposes a small set of failures that are not defects in the change. This page defines both kinds, lists the known flakes with their evidence, and states the only retry the gate performs.
+This page is about this repository's own `spec` workflow, not about running e2e in your CI. A red `spec gate` must mean the change is broken, that a listed flake failed its one retry, or that the run never reached a test. The matrix runs five Node slots on shared runners, and that shared infrastructure exposes a small set of failures that are not defects in the change. This page defines the three kinds with their evidence, the retries the gate allows, and which runs count toward #25's three independent runs.
 
-## Two kinds of failure
+## Three kinds of failure
 
 | Kind | When it is this | What happens |
 | --- | --- | --- |
 | Deterministic failure | It repeats on the same head with the same shape, and the shape names a code or config cause. | Fix it. It is never listed and never retried. |
-| Known flake | It appears only in the multi-slot matrix, does not reproduce on its own, its shape is resource or timing contention, and its evidence shows it is unrelated to product semantics. | Listed in `scripts/ci/known-flakes.json`; the slot gets one retry. |
+| Known flake | It appears only in the multi-slot matrix, does not reproduce on its own, its shape is resource or timing contention, and its evidence shows it is unrelated to product semantics. Tests ran in this case. | Listed in `scripts/ci/known-flakes.json`; the slot gets one retry. |
+| Infrastructure failure (tests did not execute) | The run failed before a test started: a runner was never acquired, or a setup step failed, and its log names a concrete environment error. | Not a test failure and not retried by the slot retry. One manual rerun of the failed jobs is allowed. Never counts as one of #25's three independent runs. |
 
-A failure that is not in the list stays red, even when it looks like one of the known shapes. That is the point: the list is a closed set, not a pattern for "probably flaky".
+A failure that is not in the list stays red, even when it looks like one of the known shapes. That is the point: the list is a closed set, not a pattern for "probably flaky", and the infrastructure kind is not a label for "the job looked odd".
+
+## Telling an infrastructure failure from a test failure
+
+All three checks must hold. The spec gate performs them for every failed job that runs tests and prints the result; the same procedure is what a person applies when reading a run.
+
+1. **No test executed.** Read the failed job's steps. The step that runs tests is `Unit and integration tests` in a `test (<node>)` slot, `Testbed` in `check`, and `Run the reference consumer matrix with exact counts` in `consumers`. When that step ends `success` or `failure`, tests ran, and the failure is a test failure. When it is `skipped`, or the job has no steps at all, no test started. A build that fails inside the test step counts as executed and is a code failure.
+2. **The first failed step is environment bootstrap, not the test step.** In a test slot that is `Set up source-pinned native runtime` or `Install browsers`; `check` and `consumers` fail in the same setup step before their test step. A job cancelled while waiting for a runner has no steps at all.
+3. **The log names a concrete environment error registered in the list.** The first failed step must match an infrastructure entry's `step`, and the job log must match its `patterns`. Run `43020654584` attempt 2 is the reference: the step is `Set up source-pinned native runtime`, and the log carries `Temporary failure resolving 'azure.archive.ubuntu.com'` after the `Ign:` retries of the four `noble` suites.
+
+When checks 1 and 2 hold but 3 does not, the failure is **unclassified**: still red, still not evidence, and a defect to fix. So is a failure caused by repository content, such as a bad native pin, a malformed artifact manifest, a failing `Lint` or `pnpm install --frozen-lockfile`, or a build that fails inside the test step: no test ran, but the cause is ours. None of these is infrastructure, and one observation of a new error is a defect to ticket, not an entry to add in the same pass.
+
+## Registered infrastructure failures
+
+Both entries are the same kind at two different phases. `phase` is `job-acquisition` when no runner was ever assigned and `setup` when the job started but failed before its test step.
+
+| id | phase | Signature | Observed | Why it is not a defect |
+| --- | --- | --- | --- | --- |
+| `runner-apt-mirror-unreachable` | `setup` | `Set up source-pinned native runtime` fails in `agent-browser install --with-deps`; the log carries `Temporary failure resolving 'azure.archive.ubuntu.com'` and `W: Failed to fetch mirror+file:/etc/apt/apt-mirrors.txt/dists/noble/...` | `43020654584` attempt 2: `check`, `consumers` and the five `test (<node>)` slots, head `7ac2a5eb8` | Every job skipped its test step, while `install (11)`, `install (12)` and `native-runtime / build` passed in the same attempt, and attempt 1 at the same head was green in every job. The failing step is the shared archive mirror's DNS resolution; no test, assertion, or test file is implicated. |
+| `source-core-macos-runner-capacity` | `job-acquisition` | `source_core (macos-15)` cancelled after 15m02s; annotation `The job was not acquired by Runner of type hosted even after multiple attempts` | `42870695704`, `42870588803` | The job never reached checkout or tests; GitHub never acquired a hosted macOS arm64 runner, and the ubuntu twin of the same run passed. Nothing in the repository ran. |
+
+`source-core-macos-runner-capacity` was the first entry of this kind and is still `retryable: false` in the JSON. That field means no automated retry, not "not this kind": the slot retry reruns failed test files, and a job that was never acquired has none. It stays in `integration-core`, which `spec gate` does not need, so the gate never classifies it; its evidence is the runner annotation. `runner-apt-mirror-unreachable` is in `spec`, so `spec gate` classifies it from the job steps and the log. Both take the same one manual rerun.
+
+## Retry and counting
+
+- **No automated retry for this kind.** `scripts/ci/flake-retry.mjs` reruns a slot's failed test files; an infrastructure failure has none. The gate never retries it.
+- **One manual rerun per head.** Re-run the failed jobs once. The rerun is a new attempt of the same run and is classified the same way. If the rerun fails the same way, the one rerun is spent: do not rerun again. The failure is then either a repository input to fix or an external outage to record as not evidence.
+- **It does not count toward #25.** A run in which tests did not execute is not one of the three independent runs, whether the gate ended red or green. Record it in the evidence as "tests did not execute" and rerun; only runs where the tests actually ran count.
+- **The gate stays red.** The classification explains the failure and marks the attempt; it never turns a job green.
+
+## Reading the gate summary
+
+`spec gate` prints two tables. The per-slot table has a `failure kind` column: `test`, `infrastructure (tests did not execute)`, or `unclassified (tests did not execute)`. The failed-jobs table names every failed job that runs tests, its kind, the first failed step, and either the registered signature that matched or the reason it did not. An infrastructure row is also announced with a warning on the run, so the attempt is marked as not evidence even though the gate is red.
 
 ## The known flakes
 
-Each entry carries the runs it was observed in, the failing test and matrix slot, and why it is not a product defect. The JSON file is the source of truth the retry reads; this table is its readable copy.
+Each test-signature entry carries the runs it was observed in, the failing test and matrix slot, and why it is not a product defect. The JSON file is the source of truth the retry reads; this table is its readable copy.
 
 | id | Signature | Observed | Why it is not a product defect |
 | --- | --- | --- | --- |
 | `native-scope-unavailable` | `EngineError: The native browser operation failed (scope-unavailable)` (`INVALID_STATE`), from `classifyResultError` in `packages/web/src/native/browser-channel.ts`, directly or as the `APP_NOT_OPEN` assertion some popup tests report when the scope is gone | 12 slot-executions in 12 completed runs between 2026-11-10T13:00Z and 2026-11-11T07:00Z, including `42957097387` slot 24, `42957099225` slot 22.22.3, and `42973279306` slot 24 (the wrapped form) | In `42957099225` slots 22, 24, 24.8.0 and 26 pass `cdp-recovery.test.ts` while 22.22.3 fails it, and twelve runs on seven heads hit it in five slots across four test files; the wrapped form carries the same native refusal, not an init-order assertion. The refusal is settled: effects `not-dispatched`, scope `usable`. Each slot runs on its own 4-vCPU runner with three browser workers plus their app processes; that per-slot starvation is transport contention, not a single-user product path. |
 | `attempt-timed-out` | `AssertionError` on an attempt whose status is `timed-out` (`TEST_TIMEOUT`, about 17.5 s) | 2 slot-executions, `42957097387` slot 24.8.0 (`durationMs` 17519) and `42854663289` slot 22.22.3 | An attempt step hung and the 12 s test watchdog cancelled it; the same test passes in the four sibling slots that ran it with the same build. No assertion or engine error was reported. |
-| `source-core-macos-runner-capacity` (infrastructure, no automated retry) | `source_core (macos-15)` cancelled after 15m02s; annotation: `The job was not acquired by Runner of type hosted even after multiple attempts` | `42870695704`, `42870588803` | The job never reached checkout or tests; GitHub never acquired a hosted macOS arm64 runner, and the ubuntu twin of the same run passed. Nothing in the repository ran. |
 
 ### Not listed
 
 `EngineError: The native browser cleanup could not be proven` was observed 84 times in five runs before #174 and #176 merged. It has appeared zero times in the five completed runs from 2026-11-10T17:59Z through 2026-11-11T04:50Z, so it is not in the list and is not retried. If it returns, it is a defect to fix, not a flake to hide.
 
 A different cleanup shape appeared once, in run `42961203815` slot 24: `EngineError: The native browser action outcome is unknown (native cleanup-failed; effects unknown; scope quarantined)`. It is not listed either: the outcome is unknown, the scope was quarantined, and one observation cannot establish the recurrence the registration rule requires. If it recurs, it is a defect to ticket.
-
-`source_core` is the one infrastructure entry. It cannot use the test retry: a job that was never acquired has no failed test file, and `source_core` is not in `spec gate`. Rerun the workflow once capacity is available; the cancellation stays in the run record.
 
 ## The retry
 
@@ -47,7 +77,7 @@ A failed slot may be retried once, under all of these conditions:
 
 A passed retry makes the slot green. A failed retry leaves it red, and so does an unlisted signature. `spec gate` prints one audit table with the slot that retried, the signature the first attempt failed on, and the retry result; the same details live in the slot artifact (`spec-retry-<node>.json` and its log). No retry is silent.
 
-The retry never runs for a slot that never started, for a collection error with no failed test file or one the log's totals cannot account for, or when the previous completed run at the same head left that slot red under a listed signature.
+The retry never runs for a slot that never started, for an infrastructure failure (no failed test file exists), for a collection error with no failed test file or one the log's totals cannot account for, or when the previous completed run at the same head left that slot red under a listed signature.
 
 ## Register a new flake
 
@@ -56,4 +86,4 @@ The retry never runs for a slot that never started, for a collection error with 
 3. Open a pull request and update this page's table in the same change.
 4. Review the list in the pull request that follows a release or a CI change. Remove an entry whose signature stopped appearing or was fixed; add every new signature with its evidence.
 
-A deterministic failure is fixed or tracked with its own issue. It never becomes a listed flake.
+An infrastructure entry uses the same file with `kind: "infrastructure"`, a `phase`, `testsExecuted: false`, and the proof that no test started. An entry `spec gate` sees also carries the `step` it fails in and the log `patterns` that confirm the environment error; one outside `spec gate`, like the macOS capacity entry, sets `gateVisible: false` and is read from the run record instead. It does not need the recurrence a flake needs, because the error is outside the repository: the entry must show the same repository state passing around the failure (a sibling job in the same attempt, the producer job, or the previous attempt at the same head). A setup failure caused by repository content is not this class and goes to an issue. A deterministic failure is fixed or tracked with its own issue. It never becomes a listed flake.

@@ -8,6 +8,7 @@
  * the test step's own exit code is the verdict, and this summary only
  * describes it.
  */
+import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -153,6 +154,103 @@ export function slotFromJobName(name) {
   return match === null ? undefined : match[1];
 }
 
+/**
+ * The step that runs each job's tests. A job without one (install, the native
+ * runtime producer) has no test execution to lose, so it is not classified.
+ */
+const TEST_STEPS = [
+  [/^test \((.+)\)$/, 'Unit and integration tests'],
+  [/^check$/, 'Testbed'],
+  [/^consumers$/, 'Run the reference consumer matrix with exact counts'],
+];
+
+/** The test step of a matrix job, or undefined when the job runs no test. */
+export function testStepName(jobName) {
+  if (typeof jobName !== 'string') return undefined;
+  for (const [pattern, step] of TEST_STEPS) if (pattern.test(jobName)) return step;
+  return undefined;
+}
+
+/** The cause of a failed job by step number: post-job steps carry the highest numbers. */
+function firstFailedStep(steps) {
+  return steps
+    .filter(step => step !== null && typeof step === 'object' && step.conclusion === 'failure')
+    .toSorted((left, right) => (left.number ?? 0) - (right.number ?? 0))[0];
+}
+
+/**
+ * Classify one failed job from its steps and, when no test ran, its log.
+ * Infrastructure is a closed list: the first failed step must match an
+ * entry's `step` and the log one of its patterns. Everything else that
+ * stopped before the test step is unclassified and stays red.
+ */
+export function classifyJobFailure({ job, log, entries }) {
+  const testStep = testStepName(job?.name);
+  if (testStep === undefined) return undefined;
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+  const test = steps.find(step => step !== null && typeof step === 'object' && step.name === testStep);
+  if (test !== undefined && (test.conclusion === 'success' || test.conclusion === 'failure')) {
+    return { kind: 'test', testsExecuted: true, step: testStep, reason: 'the test step ran' };
+  }
+  const firstFailure = firstFailedStep(steps);
+  const base = {
+    kind: 'unclassified',
+    testsExecuted: false,
+    ...(firstFailure === undefined ? {} : { step: firstFailure.name }),
+    ...(test === undefined ? {} : { testStep, testStepConclusion: test.conclusion }),
+  };
+  if (firstFailure === undefined) return { ...base, reason: 'the job ended without a failed step, so no environment error is recorded' };
+  if (typeof log !== 'string' || log === '') return { ...base, reason: `the log of ${firstFailure.name} is unavailable` };
+  const matched = (Array.isArray(entries) ? entries : []).find(entry => entry.step === firstFailure.name
+    && Array.isArray(entry.compiled)
+    && entry.compiled.every(expression => expression.test(log)));
+  if (matched === undefined) return { ...base, reason: `${firstFailure.name} carries no registered environment error` };
+  return {
+    kind: 'infrastructure',
+    testsExecuted: false,
+    step: firstFailure.name,
+    entry: matched.id,
+    reason: `${firstFailure.name} failed with the registered environment error of ${matched.id}`,
+  };
+}
+
+/**
+ * Classify every failed test-bearing job of one run. The jobs API supplies the
+ * steps; a failed job that never reached its test step reads its log through
+ * `readLog`, the only evidence that separates an environment error from a
+ * broken setup step.
+ */
+export async function fetchJobFailureKinds({ repo, run, token, entries, fetchImpl = fetch, readLog }) {
+  const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${token}` };
+  const request = async url => {
+    const response = await fetchImpl(url, { headers });
+    if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+    return response.json();
+  };
+  const jobs = [];
+  for (let page = 1; ; page += 1) {
+    const batch = await request(`https://api.github.com/repos/${repo}/actions/runs/${run}/jobs?per_page=100&page=${page}`);
+    jobs.push(...(batch.jobs ?? []));
+    if ((batch.jobs ?? []).length < 100) break;
+  }
+  const kinds = {};
+  for (const job of jobs) {
+    if (!['failure', 'timed_out', 'cancelled'].includes(job.conclusion)) continue;
+    if (testStepName(job.name) === undefined) continue;
+    let verdict = classifyJobFailure({ job, entries });
+    // Only a registered environment step can gain from the log; a Lint failure
+    // is unclassified without reading it.
+    const registered = verdict.kind === 'unclassified' && verdict.step !== undefined
+      && entries.some(entry => entry.step === verdict.step);
+    if (registered && typeof readLog === 'function') {
+      const log = await readLog(job);
+      if (typeof log === 'string') verdict = classifyJobFailure({ job, log, entries });
+    }
+    kinds[job.name] = verdict;
+  }
+  return kinds;
+}
+
 /** The failure annotations a job produced, naming the exact test that failed. */
 export function failureAnnotations(annotations) {
   const seen = new Set();
@@ -207,9 +305,53 @@ export async function fetchAnnotations({ repo, run, token, fetchImpl = fetch }) 
   return slots;
 }
 
+/** The failure kind cell: what the gate can prove about this slot's failure. */
+function failureKindCell(summary, verdict) {
+  if (summary.status === 'success') return '—';
+  if (verdict?.kind === 'infrastructure') return 'infrastructure (tests did not execute)';
+  if (verdict?.kind === 'test') return 'test';
+  if (verdict?.kind === 'unclassified') return 'unclassified (tests did not execute)';
+  // A missing classification must not claim tests ran, and must not call an
+  // unexplained setup failure infrastructure.
+  return summary.testReached ? 'test' : 'unclassified (tests did not execute)';
+}
+
+/**
+ * Every failed test-bearing job of the run with the proof behind its kind.
+ * Only infrastructure is registered; an unclassified job is a defect to
+ * investigate, so it is listed without a claim.
+ */
+function failedJobsSection(kinds) {
+  const names = Object.keys(kinds ?? {}).toSorted();
+  if (names.length === 0) return [];
+  const lines = [
+    '### Failed jobs',
+    '',
+    '| job | kind | failed step | evidence |',
+    '| --- | --- | --- | --- |',
+  ];
+  for (const name of names) {
+    const verdict = kinds[name];
+    const kind = verdict.kind === 'infrastructure'
+      ? 'infrastructure (tests did not execute)'
+      : verdict.kind === 'test' ? 'test' : 'unclassified (tests did not execute)';
+    const step = verdict.step === undefined ? '—' : `\`${cell(verdict.step)}\``;
+    const evidence = verdict.entry === undefined ? cell(verdict.reason ?? '') : `\`${cell(verdict.entry)}\``;
+    lines.push(`| ${cell(name)} | ${kind} | ${step} | ${evidence} |`);
+  }
+  const infrastructure = names.filter(name => kinds[name].kind === 'infrastructure');
+  if (infrastructure.length > 0) {
+    lines.push('', 'An infrastructure failure did not execute any test: it is not a test failure, the known-flake retry does not apply, and the attempt is not one of #25\'s three independent runs. Re-run the failed jobs once.');
+    for (const name of infrastructure) {
+      lines.push(`::warning::${name}: infrastructure failure (tests did not execute); ${cell(kinds[name].reason ?? '')}`);
+    }
+  }
+  return lines;
+}
+
 /** The markdown table the gate prints and writes to the job summary. */
-export function render(summaries, needs, annotations = {}) {
-  const rows = ['| slot | status | failed tests |', '| --- | --- | --- |'];
+export function render(summaries, needs, annotations = {}, kinds = {}) {
+  const rows = ['| slot | status | failure kind | failed tests |', '| --- | --- | --- | --- |'];
   for (const summary of summaries) {
     const named = annotations[summary.slot];
     // A green slot has no failed tests to show, even when its first attempt
@@ -224,14 +366,18 @@ export function render(summaries, needs, annotations = {}) {
       ? (summary.status === 'success' ? '—' : 'no failure line in the log')
       : parts.join('<br>');
     const retried = summary.retried === true ? ' (retried)' : '';
-    rows.push(`| ${summary.slot} | ${summary.status}${retried}${summary.testReached ? '' : ' (tests did not start)'} | ${failed} |`);
+    const kind = failureKindCell(summary, kinds[`test (${summary.slot})`]);
+    rows.push(`| ${summary.slot} | ${summary.status}${retried} | ${kind} | ${failed} |`);
   }
   const test = needs?.test?.result;
-  const missing = test !== undefined && test !== 'success' && test !== 'skipped' && summaries.every(summary => summary.status !== 'failure');
-  if (summaries.length === 0) rows.push('| — | — | no per-slot summary was uploaded |');
+  const classifiedInfrastructure = Object.values(kinds ?? {}).some(kind => kind?.kind === 'infrastructure');
+  const missing = !classifiedInfrastructure && test !== undefined && test !== 'success' && test !== 'skipped' && summaries.every(summary => summary.status !== 'failure');
+  if (summaries.length === 0) rows.push('| — | — | — | no per-slot summary was uploaded |');
   const lines = [...rows];
   const audit = flakeRetryAudit(summaries);
   if (audit.length > 0) lines.push('', '### Known-flake retry audit', '', ...audit);
+  const failedJobs = failedJobsSection(kinds);
+  if (failedJobs.length > 0) lines.push('', ...failedJobs);
   if (missing) lines.push('', '::warning::The test job failed but no slot summary reports a failure; the job stopped before the tests wrote one.');
   return lines.join('\n');
 }
@@ -293,6 +439,31 @@ async function main(argv) {
     }
     return;
   }
+  if (command === 'inspect') {
+    const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+    if (token === undefined) { process.stderr.write('inspect needs GH_TOKEN\n'); process.exitCode = 2; return; }
+    const repo = options.get('repo');
+    const whitelist = JSON.parse(readFileSync(options.get('whitelist'), 'utf8'));
+    const entries = (Array.isArray(whitelist.entries) ? whitelist.entries : [])
+      .filter(entry => entry.kind === 'infrastructure')
+      .map(entry => ({ ...entry, compiled: Array.isArray(entry.patterns) ? entry.patterns.map(pattern => new RegExp(pattern)) : [] }));
+    try {
+      const kinds = await fetchJobFailureKinds({
+        repo,
+        run: options.get('run'),
+        token,
+        entries,
+        readLog: job => githubJobLog(repo, job),
+      });
+      writeFileSync(options.get('output'), `${JSON.stringify({ schemaVersion: 1, run: Number(options.get('run')), jobs: kinds }, null, 2)}\n`);
+      process.stdout.write(`spec job kinds: ${Object.keys(kinds).length} failed job(s) classified\n`);
+    } catch (cause) {
+      // The gate's verdict is the job results; a classification outage must not
+      // hide them, so it warns and leaves the table to the log fallback.
+      process.stderr.write(`::warning::could not classify failed jobs: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+    }
+    return;
+  }
   if (command === 'report') {
     const summaries = readSummaries(options.get('dir') ?? '.');
     let needs;
@@ -302,13 +473,28 @@ async function main(argv) {
     if (annotationsFile !== undefined && existsSync(annotationsFile)) {
       try { annotations = JSON.parse(readFileSync(annotationsFile, 'utf8')); } catch { annotations = {}; }
     }
-    const markdown = render(summaries, needs, annotations);
+    let kinds = {};
+    const kindsFile = options.get('kinds');
+    if (kindsFile !== undefined && existsSync(kindsFile)) {
+      try { kinds = JSON.parse(readFileSync(kindsFile, 'utf8')).jobs ?? {}; } catch { kinds = {}; }
+    }
+    const markdown = render(summaries, needs, annotations, kinds);
     process.stdout.write(`${markdown}\n`);
     if (process.env.GITHUB_STEP_SUMMARY !== undefined) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## spec per-slot results\n\n${markdown}\n`);
     return;
   }
-  process.stderr.write('usage: spec-slot-summary.mjs collect --slot <node> --output <file> | annotations --repo <owner/name> --run <id> --output <file> | report --dir <summaries> [--annotations <file>] --needs <json>\n');
+  process.stderr.write('usage: spec-slot-summary.mjs collect --slot <node> --output <file> | annotations --repo <owner/name> --run <id> --output <file> | inspect --repo <owner/name> --run <id> --whitelist <file> --output <file> | report --dir <summaries> [--annotations <file>] [--kinds <file>] --needs <json>\n');
   process.exitCode = 2;
+}
+
+/** Read one job's log through gh; the REST log endpoint is a zip, gh unpacks it. */
+function githubJobLog(repo, job) {
+  const result = spawnSync('gh', ['run', 'view', '--repo', repo, '--job', String(job.id), '--log'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (result.error !== undefined || result.status !== 0) {
+    process.stderr.write(`::warning::could not read the log of ${job.name}: ${result.error?.message ?? `gh exited ${result.status}`}\n`);
+    return undefined;
+  }
+  return result.stdout ?? '';
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

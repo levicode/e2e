@@ -69,9 +69,12 @@ export function loadWhitelist(file) {
   if (!Array.isArray(value.entries)) throw new Error(`${file} has no entries array`);
   for (const entry of value.entries) {
     if (typeof entry.id !== 'string' || entry.id === '') throw new Error(`${file} has an entry without an id`);
-    if (entry.kind !== 'test-signature') continue;
-    if (!Array.isArray(entry.patterns) || entry.patterns.length === 0) throw new Error(`${entry.id} has no patterns`);
-    entry.compiled = entry.patterns.map(pattern => new RegExp(pattern));
+    // Test signatures opt a failure into the retry; infrastructure entries
+    // carry the patterns the gate uses to prove no test ran.
+    if (entry.kind === 'test-signature' && (!Array.isArray(entry.patterns) || entry.patterns.length === 0)) {
+      throw new Error(`${entry.id} has no patterns`);
+    }
+    if (Array.isArray(entry.patterns)) entry.compiled = entry.patterns.map(pattern => new RegExp(pattern));
   }
   return value;
 }

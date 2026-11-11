@@ -536,8 +536,9 @@ jobs:
     runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     permissions:
       contents: read
-      # Read the per-slot test jobs and the failure annotations that name the
-      # exact test. This only reads this run; it grants no write.
+      # Read the per-slot test jobs, their setup logs, and the failure
+      # annotations that name the exact test. This only reads this run; it
+      # grants no write.
       actions: read
       checks: read
     timeout-minutes: 5
@@ -564,12 +565,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/spec-slot-summary.mjs annotations --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --output "$RUNNER_TEMP/spec-annotations.json"
+      # docs/flake-policy.mdx: a failure with no test executed is infrastructure
+      # only when the first failed step and its log match a registered entry.
+      # No test, no classification: it stays red and is a defect to fix.
+      - name: Classify failed job kinds
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/spec-slot-summary.mjs inspect --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --whitelist scripts/ci/known-flakes.json --output "$RUNNER_TEMP/spec-job-kinds.json"
       - name: Report failed slots and tests
         if: ${{ always() }}
         continue-on-error: true
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: node scripts/ci/spec-slot-summary.mjs report --dir "$RUNNER_TEMP/spec-slots" --annotations "$RUNNER_TEMP/spec-annotations.json" --needs "$RESULTS"
+        run: node scripts/ci/spec-slot-summary.mjs report --dir "$RUNNER_TEMP/spec-slots" --annotations "$RUNNER_TEMP/spec-annotations.json" --kinds "$RUNNER_TEMP/spec-job-kinds.json" --needs "$RESULTS"
       - name: Require every job to pass or skip
         env:
           RESULTS: ${{ toJSON(needs) }}

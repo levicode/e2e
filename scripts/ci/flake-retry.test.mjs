@@ -41,9 +41,22 @@ function whitelistEntries() {
 
 test('the committed known-flake list is valid and only lists evidence-backed signatures', () => {
   const whitelist = loadWhitelist(path.join(import.meta.dirname, 'known-flakes.json'));
-  assert.equal(whitelist.schemaVersion, 1);
+  assert.equal(whitelist.schemaVersion, 2);
+  assert.deepEqual(whitelist.classes.map(entry => entry.id), ['deterministic', 'known-flake', 'infrastructure']);
   const retryable = whitelist.entries.filter(entry => entry.kind === 'test-signature' && entry.retryable === true);
   assert.deepEqual(retryable.map(entry => entry.id), ['native-scope-unavailable', 'attempt-timed-out']);
+  const infrastructure = whitelist.entries.filter(entry => entry.kind === 'infrastructure');
+  assert.deepEqual(infrastructure.map(entry => entry.id), ['source-core-macos-runner-capacity', 'runner-apt-mirror-unreachable']);
+  assert.deepEqual(infrastructure.map(entry => entry.gateVisible), [false, true]);
+  for (const entry of infrastructure) {
+    assert.equal(entry.testsExecuted, false, `${entry.id} claims a test ran`);
+    assert.equal(entry.countsTowardIndependentRuns, false, `${entry.id} is counted as independent-run evidence`);
+    assert.equal(entry.retryable, false, `${entry.id} must not be retried by the slot retry`);
+  }
+  for (const entry of infrastructure.filter(candidate => candidate.gateVisible)) {
+    assert.equal(typeof entry.step, 'string', `${entry.id} is gate-visible without a step`);
+    assert.ok(Array.isArray(entry.patterns) && entry.patterns.length > 0, `${entry.id} is gate-visible without log patterns`);
+  }
   for (const entry of whitelist.entries) {
     assert.ok(Array.isArray(entry.evidence?.runs) && entry.evidence.runs.length > 0, `${entry.id} has no run evidence`);
   }

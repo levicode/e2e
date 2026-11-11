@@ -1,7 +1,36 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "reviewedAt": "2026-11-11",
   "policy": "docs/flake-policy.mdx",
+  "classes": [
+    {
+      "id": "deterministic",
+      "testsExecuted": true,
+      "retry": "none; fix the defect",
+      "countsTowardIndependentRuns": true,
+      "definition": "It repeats on the same head with the same shape and names a code or config cause."
+    },
+    {
+      "id": "known-flake",
+      "testsExecuted": true,
+      "retry": "one automatic retry of the slot's failed test files, only when every failure matches a listed test-signature entry",
+      "countsTowardIndependentRuns": true,
+      "definition": "It appears only in the multi-slot matrix, does not reproduce on its own, its shape is resource or timing contention, and its evidence shows it is unrelated to product semantics."
+    },
+    {
+      "id": "infrastructure",
+      "testsExecuted": false,
+      "retry": "one manual rerun of the failed jobs at the same head; the in-workflow test retry never applies",
+      "countsTowardIndependentRuns": false,
+      "definition": "The run failed before a test started, either while acquiring a runner or in a setup step, and the failed step's log carries a concrete environment error registered below.",
+      "discrimination": [
+        "A test executed when the job's test step reached success or failure: `Unit and integration tests` in a `test (<node>)` slot, `Testbed` in `check`, and `Run the reference consumer matrix with exact counts` in `consumers`. Such a failure is a test failure.",
+        "When that step is skipped, or the job has no steps at all, no test started. The first failed step must be job acquisition or a registered environment step.",
+        "The first failed step must match an infrastructure entry's `step`, and the job log must match its `patterns`. Without that match the failure is unclassified: it stays red, is not evidence, and is a defect to fix.",
+        "An infrastructure failure never turns the gate green and never counts as one of #25's three independent runs, whether the gate was red or green."
+      ]
+    }
+  ],
   "evidenceWindow": {
     "from": "2026-11-10T13:00:00Z",
     "to": "2026-11-11T04:50:00Z",
@@ -137,7 +166,10 @@
     {
       "id": "source-core-macos-runner-capacity",
       "kind": "infrastructure",
+      "phase": "job-acquisition",
+      "testsExecuted": false,
       "retryable": false,
+      "countsTowardIndependentRuns": false,
       "scope": "integration-core-job",
       "signature": "source_core (macos-15) cancelled after 15m02s: The job was not acquired by Runner of type hosted even after multiple attempts",
       "evidence": {
@@ -157,7 +189,46 @@
         ],
         "notAProductDefect": "The job never reached checkout or tests; GitHub cancelled it while waiting for a hosted macOS arm64 runner and its annotation says the runner was never acquired. The ubuntu-24.04 twin of the same run passed. Nothing in the repository ran, so no repository state is implicated."
       },
-      "automatedRetry": "None in this mechanism: a slot that never started has no failed test file to rerun, and integration-core is not one of the jobs spec gate requires. Rerun the workflow when runner capacity is available; the cancellation is audited by the run record."
+      "automatedRetry": "None: the slot retry reruns failed test files, and a job that was never acquired has none. The class's one manual rerun applies when runner capacity is available; integration-core is not one of the jobs spec gate requires, so spec gate never sees this entry.",
+      "gateVisible": false,
+      "gateVisibility": "integration-core is not in spec gate's needs, so spec gate never classifies this entry; the run record and the runner annotation are its evidence."
+    },
+    {
+      "id": "runner-apt-mirror-unreachable",
+      "kind": "infrastructure",
+      "phase": "setup",
+      "testsExecuted": false,
+      "retryable": false,
+      "countsTowardIndependentRuns": false,
+      "scope": "spec-job-setup",
+      "step": "Set up source-pinned native runtime",
+      "signature": "`Set up source-pinned native runtime` fails in `agent-browser install --with-deps` after the archive mirror stops resolving: `Ign:` retries for the four noble suites, then `Temporary failure resolving 'azure.archive.ubuntu.com'` and `W: Failed to fetch mirror+file:/etc/apt/apt-mirrors.txt/dists/noble/...`",
+      "patterns": [
+        "Temporary failure resolving 'azure\\.archive\\.ubuntu\\.com'"
+      ],
+      "evidence": {
+        "runs": [
+          {
+            "run": 43020654584,
+            "attempt": 2,
+            "head": "7ac2a5eb8",
+            "jobs": [
+              "check",
+              "consumers",
+              "test (22)",
+              "test (22.22.3)",
+              "test (24)",
+              "test (24.8.0)",
+              "test (26)"
+            ],
+            "step": "Set up source-pinned native runtime",
+            "detail": "Every one of the seven jobs skipped its test step (`Testbed`, `Run the reference consumer matrix with exact counts`, `Unit and integration tests`) and failed first in the native runtime setup; the log carries `Temporary failure resolving 'azure.archive.ubuntu.com'` twelve times. `install (11)`, `install (12)` and `native-runtime / build` passed in the same attempt, and attempt 1 of the same run at the same head was green in every job, including `spec gate`."
+          }
+        ],
+        "notAProductDefect": "No test started, so no assertion, engine error, or test file is implicated. The same head's attempt 1 ran the whole matrix green, the source-pinned artifact was built and downloaded successfully in the failing attempt, and the failing step is the shared mirror's DNS resolution rather than a repository input. A run whose tests did not execute is not evidence about the change either way."
+      },
+      "automatedRetry": "None: no test started, so there is no failed test file for the slot retry. Re-run the failed jobs once at the same head. If the rerun fails the same way, the one rerun is spent: investigate whether it is a repository input or an external outage and record the attempt as not evidence.",
+      "gateVisible": true
     }
   ],
   "excluded": [
