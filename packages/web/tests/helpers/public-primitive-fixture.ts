@@ -2,6 +2,13 @@
 export function primitiveFixtureDocument(path: string): string {
   return `<!doctype html><title>Fixture ${path}</title><script>
   globalThis.fixtureAtFirstScript = globalThis.fixtureInit?.marker ?? '';
+  globalThis.fixtureAtFirstScriptRuns = globalThis.fixtureInitRuns ?? 0;
+  ${path === '/popup' ? `addEventListener('load', () => {
+    try {
+      if (opener) opener.postMessage({ kind: 'fixture-boot', path: location.pathname,
+        marker: globalThis.fixtureAtFirstScript, runs: globalThis.fixtureAtFirstScriptRuns }, location.origin);
+    } catch { /* The opener may already be gone. */ }
+  }, { once: true });` : ''}
   globalThis.fixtureKeys = []; globalThis.fixturePointer = [];
   sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));
   addEventListener('keydown', event => fixtureKeys.push('keydown:' + event.key));
